@@ -1,0 +1,23 @@
+{
+  "name": "@super-canvas/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@super-canvas/db": "workspace:*",
+    "@super-canvas/runtime": "workspace:*",
+    "bullmq": "^5.80.9",
+    "ioredis": "^5.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  }
+}

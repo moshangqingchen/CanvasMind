@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "node_run_workflow_node_uq" ON "node_run" USING btree ("workflow_run_id","node_id");--> statement-breakpoint
+CREATE INDEX "node_run_node_status_updated_idx" ON "node_run" USING btree ("node_id","status","updated_at");

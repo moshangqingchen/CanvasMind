@@ -1,0 +1,1 @@
+CREATE INDEX "node_run_provider_task_idx" ON "node_run" USING btree ("provider_task_id");
