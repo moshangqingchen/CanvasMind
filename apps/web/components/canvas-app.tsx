@@ -88,6 +88,8 @@ import {
   type ProviderConnectionView,
 } from "../lib/client-api";
 import {
+  CANGYUAN_ALL_MODELS_GROUP,
+  CANGYUAN_IMAGE_4K_MODEL,
   isCangyuanImageGroup,
   isCangyuanImagePreset,
 } from "../lib/provider-presets";
@@ -973,6 +975,23 @@ function connectionIsConfigured(connection: ProviderConnectionView): boolean {
   );
 }
 
+function newGenerationConnectionPriority(
+  connection: ProviderConnectionView,
+  nodeType: "image-generation" | "video-generation",
+): number {
+  if (providerConnectionUsage(connection) !== "canvas") return -1;
+  if (!connectionIsConfigured(connection)) return -1;
+  if (
+    nodeType === "image-generation" &&
+    isCangyuanImagePreset(connection.config.preset)
+  ) {
+    if (connection.config.modelGroup === CANGYUAN_ALL_MODELS_GROUP) return 100;
+    if (connection.config.modelGroup === "IMAGE") return 80;
+    return 60;
+  }
+  return 0;
+}
+
 function configureNewGenerationNode(
   node: CanvasNode,
   connections: readonly ProviderConnectionView[],
@@ -980,13 +999,30 @@ function configureNewGenerationNode(
   const nodeType = node.data.nodeType;
   if (nodeType !== "image-generation" && nodeType !== "video-generation")
     return node;
-  for (const connection of connections) {
+  const rankedConnections = connections
+    .map((connection, index) => ({
+      connection,
+      index,
+      priority: newGenerationConnectionPriority(connection, nodeType),
+    }))
+    .filter((candidate) => candidate.priority >= 0)
+    .sort(
+      (left, right) =>
+        right.priority - left.priority || left.index - right.index,
+    );
+  for (const { connection } of rankedConnections) {
     if (providerConnectionUsage(connection) !== "canvas") continue;
     if (!connectionIsConfigured(connection)) continue;
+    const preferredModel =
+      nodeType === "image-generation" &&
+      isCangyuanImagePreset(connection.config.preset) &&
+      connection.config.modelGroup === CANGYUAN_ALL_MODELS_GROUP
+        ? CANGYUAN_IMAGE_4K_MODEL
+        : defaultModelForConnection(connection);
     const model = modelForConnectionAndNode(
       connection,
       nodeType,
-      defaultModelForConnection(connection),
+      preferredModel,
     );
     if (!model) continue;
     return {

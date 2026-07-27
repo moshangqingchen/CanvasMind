@@ -28,6 +28,7 @@ import {
 } from "../lib/client-api";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import {
+  CANGYUAN_ALL_MODELS_GROUP,
   CANGYUAN_BACKUP_IMAGE_GROUP,
   CANGYUAN_IMAGE_GROUP,
   CANGYUAN_IMAGE_GROUP_OPTIONS,
@@ -212,18 +213,20 @@ export function SettingsModal({
   const [name, setName] = useState("OpenAI 图片");
   const [provider, setProvider] = useState("openai");
   const [presetId, setPresetId] = useState<string | null>(null);
-  const [modelGroup, setModelGroup] =
-    useState<CangyuanImageGroup>(CANGYUAN_IMAGE_GROUP);
+  const [modelGroup, setModelGroup] = useState<CangyuanImageGroup>(
+    CANGYUAN_ALL_MODELS_GROUP,
+  );
   const [cangyuanModels, setCangyuanModels] = useState<ModelDescriptor[]>(
     () => [
-      ...(cangyuanImageConnectorForGroup(CANGYUAN_IMAGE_GROUP).models ?? []),
+      ...(cangyuanImageConnectorForGroup(CANGYUAN_ALL_MODELS_GROUP).models ??
+        []),
     ],
   );
   const [cangyuanGroups, setCangyuanGroups] = useState<
     CangyuanMarketplaceGroupView[]
   >([]);
   const [selectedMarketplaceGroup, setSelectedMarketplaceGroup] =
-    useState<string>(CANGYUAN_IMAGE_GROUP);
+    useState<string>(CANGYUAN_ALL_MODELS_GROUP);
   const [selectedMarketplaceModel, setSelectedMarketplaceModel] =
     useState<string>("");
   const [catalogSource, setCatalogSource] = useState<
@@ -279,7 +282,7 @@ export function SettingsModal({
   );
   const activeGroupHasUnreadableKey = Boolean(
     activeCangyuanConnection?.apiKeySet &&
-      !activeCangyuanConnection.apiKeyUsable,
+    !activeCangyuanConnection.apiKeyUsable,
   );
   const activeRuntimeModel = cangyuanModels.find(
     (model) => model.id === selectedMarketplaceModel,
@@ -370,8 +373,12 @@ export function SettingsModal({
           marketplace.groups.some((group) => group.id === initialCangyuanGroup)
             ? initialCangyuanGroup
             : marketplace.groups.some((group) => group.id === current)
-            ? current
-            : (marketplace.groups[0]?.id ?? CANGYUAN_IMAGE_GROUP),
+              ? current
+              : (marketplace.groups.find(
+                  (group) => group.id === CANGYUAN_ALL_MODELS_GROUP,
+                )?.id ??
+                marketplace.groups[0]?.id ??
+                CANGYUAN_IMAGE_GROUP),
         );
         setSelectedMarketplaceModel((current) => {
           if (initialCangyuanGroup) {
@@ -387,9 +394,13 @@ export function SettingsModal({
           )
             return current;
           return (
-            marketplace.groups.find(
-              (group) => group.id === CANGYUAN_IMAGE_GROUP,
-            )?.models[0]?.id ??
+            marketplace.groups
+              .find((group) => group.id === CANGYUAN_ALL_MODELS_GROUP)
+              ?.models.find(
+                (model) =>
+                  model.id ===
+                  cangyuanDefaultModelForGroup(CANGYUAN_ALL_MODELS_GROUP),
+              )?.id ??
             marketplace.groups[0]?.models[0]?.id ??
             ""
           );
@@ -478,7 +489,15 @@ export function SettingsModal({
     const usage = cangyuanGroupUsage(marketplaceGroup);
     setSelectedSupplierKey("cangyuan");
     setSelectedMarketplaceGroup(groupId);
-    setSelectedMarketplaceModel(marketplaceGroup.models[0]?.id ?? "");
+    setSelectedMarketplaceModel(
+      isCangyuanImageGroup(groupId)
+        ? (marketplaceGroup.models.find(
+            (model) => model.id === cangyuanDefaultModelForGroup(groupId),
+          )?.id ??
+            marketplaceGroup.models[0]?.id ??
+            "")
+        : (marketplaceGroup.models[0]?.id ?? ""),
+    );
     const connection = connections.find(
       (item) =>
         providerConnectionSupplierKey(item) === "cangyuan" &&
@@ -490,9 +509,7 @@ export function SettingsModal({
       return;
     }
     setSelectedId(null);
-    setCreatingNew(
-      marketplaceGroup.canvasSupported || usage === "agent",
-    );
+    setCreatingNew(marketplaceGroup.canvasSupported || usage === "agent");
     setApiKey("");
     setMessage(null);
     if (usage === "agent") {
@@ -523,7 +540,7 @@ export function SettingsModal({
   }
 
   function applyCangyuanPreset() {
-    const nextGroup = CANGYUAN_IMAGE_GROUP;
+    const nextGroup = CANGYUAN_ALL_MODELS_GROUP;
     setPresetId(CANGYUAN_IMAGE_PRESET_ID);
     setSelectedSupplierKey("cangyuan");
     setProvider("rest");
@@ -1004,9 +1021,9 @@ export function SettingsModal({
                       {editingCangyuanKey ? "取消更换" : "重新填写密钥"}
                     </button>
                   ) : null}
-                  {(activeConnectionUsage === "agent" ||
-                    (activeMarketplaceGroup.canvasSupported &&
-                      isCangyuanImageGroup(activeMarketplaceGroup.id))) ? (
+                  {activeConnectionUsage === "agent" ||
+                  (activeMarketplaceGroup.canvasSupported &&
+                    isCangyuanImageGroup(activeMarketplaceGroup.id)) ? (
                     <button
                       className="button primary"
                       type="button"

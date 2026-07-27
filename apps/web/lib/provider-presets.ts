@@ -22,7 +22,6 @@ export const CANGYUAN_IMAGE_DEFAULT_MODEL = CANGYUAN_IMAGE_MODEL;
 
 export const CANGYUAN_IMAGE_1K_MODEL = "gpt-image-2-1k";
 export const CANGYUAN_IMAGE_2K_MODEL = "gpt-image-2-2k";
-// Retained for saved projects; this SKU is not in the current marketplace.
 export const CANGYUAN_IMAGE_4K_MODEL = "gpt-image-2-4k";
 export const CANGYUAN_NANO_BANANA_PRO_1K_MODEL = "nano-banana-pro-1k";
 export const CANGYUAN_NANO_BANANA_PRO_2K_MODEL = "nano-banana-pro-2k";
@@ -214,6 +213,31 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
         control: "select",
         valueType: "string",
         default: "medium",
+        options: [
+          { label: "低", value: "low" },
+          { label: "中", value: "medium" },
+          { label: "高", value: "high" },
+        ],
+        operations: IMAGE_OPERATIONS,
+      },
+    ],
+    limits: { maxInputImages: 9, supportedMimeTypes: IMAGE_MIME_TYPES },
+  },
+  {
+    id: CANGYUAN_IMAGE_4K_MODEL,
+    name: "GPT Image 2 4K（¥0.08/张）",
+    description: "固定 4K 计费档位；默认高分辨率，支持参考图和精确尺寸",
+    operations: IMAGE_OPERATIONS,
+    metadata: { fixedOutputCount: 1 },
+    parameters: [
+      aspectRatioParameter(GPT_FIXED_RATIO_OPTIONS),
+      dimensionsParameter(),
+      {
+        key: "quality",
+        label: "分辨率",
+        control: "select",
+        valueType: "string",
+        default: "high",
         options: [
           { label: "低", value: "low" },
           { label: "中", value: "medium" },
@@ -474,6 +498,7 @@ export function cangyuanDefaultModelForGroup(
   group: CangyuanImageGroup,
 ): string {
   if (group === CANGYUAN_VIDEO_GROUP) return "sd5-seedance-2.0";
+  if (group === CANGYUAN_ALL_MODELS_GROUP) return CANGYUAN_IMAGE_4K_MODEL;
   return group === CANGYUAN_BACKUP_IMAGE_GROUP
     ? CANGYUAN_CODEX_IMAGE_MODEL
     : CANGYUAN_IMAGE_MODEL;
