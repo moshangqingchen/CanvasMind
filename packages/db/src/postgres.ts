@@ -221,6 +221,15 @@ export class PostgresRepository implements Repository {
     await this.pool.query("UPDATE asset SET deleted=true WHERE id=$1", [id]);
   }
 
+  async deleteAssets(ids: readonly string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.ensureReady();
+    await this.pool.query(
+      "UPDATE asset SET deleted=true WHERE id = ANY($1::text[])",
+      [ids],
+    );
+  }
+
   async listConnections(): Promise<ProviderConnectionRecord[]> {
     await this.ensureReady();
     const result = await this.pool.query(

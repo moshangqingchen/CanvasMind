@@ -141,47 +141,28 @@ export interface DeleteAssetsResult {
   failedIds: string[];
 }
 
-export const DELETE_ASSET_CONCURRENCY = 4;
-
 export async function deleteAssets(
   assetIds: readonly string[],
 ): Promise<DeleteAssetsResult> {
   const uniqueAssetIds = Array.from(new Set(assetIds));
-  const results = new Array<{ assetId: string; deleted: boolean }>(
-    uniqueAssetIds.length,
-  );
-  let nextIndex = 0;
-  const workers = Array.from(
-    {
-      length: Math.min(DELETE_ASSET_CONCURRENCY, uniqueAssetIds.length),
-    },
-    async () => {
-      while (nextIndex < uniqueAssetIds.length) {
-        const index = nextIndex++;
-        const assetId = uniqueAssetIds[index]!;
-        let deleted = false;
-        try {
-          const response = await fetch(
-            `/api/assets/${encodeURIComponent(assetId)}`,
-            { method: "DELETE" },
-          );
-          deleted = response.ok || response.status === 404;
-        } catch {
-          deleted = false;
-        }
-        results[index] = { assetId, deleted };
-      }
-    },
-  );
-  await Promise.all(workers);
-  return {
-    deletedIds: results
-      .filter((result) => result.deleted)
-      .map((result) => result.assetId),
-    failedIds: results
-      .filter((result) => !result.deleted)
-      .map((result) => result.assetId),
-  };
+  if (uniqueAssetIds.length === 0) return { deletedIds: [], failedIds: [] };
+  try {
+    const response = await fetch("/api/assets/bulk-delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assetIds: uniqueAssetIds }),
+    });
+    if (!response.ok) return { deletedIds: [], failedIds: uniqueAssetIds };
+    const payload = (await response.json()) as Partial<DeleteAssetsResult>;
+    return {
+      deletedIds: Array.isArray(payload.deletedIds) ? payload.deletedIds : [],
+      failedIds: Array.isArray(payload.failedIds)
+        ? payload.failedIds
+        : uniqueAssetIds,
+    };
+  } catch {
+    return { deletedIds: [], failedIds: uniqueAssetIds };
+  }
 }
 
 export async function fetchMaterialDrops(): Promise<MaterialDropEventView[]> {

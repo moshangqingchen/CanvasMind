@@ -169,6 +169,13 @@ export class MemoryRepository implements Repository {
     if (existing) this.assets.set(id, { ...existing, deleted: true });
   }
 
+  async deleteAssets(ids: readonly string[]): Promise<void> {
+    for (const id of ids) {
+      const existing = this.assets.get(id);
+      if (existing) this.assets.set(id, { ...existing, deleted: true });
+    }
+  }
+
   async listConnections(): Promise<ProviderConnectionRecord[]> {
     return [...this.connections.values()].map(clone);
   }

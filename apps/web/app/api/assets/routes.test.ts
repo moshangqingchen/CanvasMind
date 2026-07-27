@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const repository = {
     getAsset: vi.fn(),
+    listAssets: vi.fn(),
+    deleteAssets: vi.fn(),
     saveAsset: vi.fn(async (input: Record<string, unknown>) => ({
       ...input,
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -15,6 +17,7 @@ const mocks = vi.hoisted(() => {
     head: vi.fn(),
     presignPut: vi.fn(),
     put: vi.fn(),
+    delete: vi.fn(),
   };
   return { repository, storage };
 });
@@ -29,6 +32,7 @@ vi.mock("../../../lib/server", () => ({
 
 import { GET as getAssetContent } from "./[id]/content/route";
 import { POST as completeUpload } from "./complete/route";
+import { POST as bulkDeleteAssets } from "./bulk-delete/route";
 import { POST as createPresignedUpload } from "./presign/route";
 import { POST as proxyUpload } from "./upload/route";
 import { createUploadToken } from "../../../lib/upload-token";
@@ -57,6 +61,8 @@ function uploadToken(input: {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.repository.getAsset.mockResolvedValue(asset);
+  mocks.repository.listAssets.mockResolvedValue([]);
+  mocks.repository.deleteAssets.mockResolvedValue(undefined);
   mocks.storage.head.mockResolvedValue({ size: 10, contentType: "video/mp4" });
   mocks.storage.get.mockResolvedValue({
     bytes: Uint8Array.from({ length: 10 }, (_, index) => index),
@@ -71,6 +77,72 @@ beforeEach(() => {
       contentType: "video/mp4",
     }),
   );
+  mocks.storage.delete.mockResolvedValue(undefined);
+});
+
+describe("bulk asset deletion route", () => {
+  it("persists once and limits storage cleanup concurrency", async () => {
+    const assets = Array.from({ length: 23 }, (_, index) => ({
+      ...asset,
+      id: `asset-${index}`,
+      storageKey: `assets/asset-${index}/original.png`,
+    }));
+    mocks.repository.listAssets.mockResolvedValue(assets);
+    let activeDeletes = 0;
+    let peakDeletes = 0;
+    mocks.storage.delete.mockImplementation(async () => {
+      activeDeletes += 1;
+      peakDeletes = Math.max(peakDeletes, activeDeletes);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      activeDeletes -= 1;
+    });
+
+    const requestedIds = [
+      ...assets.map((item) => item.id),
+      "already-missing",
+      assets[0]!.id,
+    ];
+    const response = await bulkDeleteAssets(
+      new Request("http://localhost/api/assets/bulk-delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ assetIds: requestedIds }),
+      }),
+    );
+    const payload = (await response.json()) as {
+      deletedIds: string[];
+      failedIds: string[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(mocks.repository.deleteAssets).toHaveBeenCalledOnce();
+    expect(mocks.repository.deleteAssets).toHaveBeenCalledWith(
+      assets.map((item) => item.id),
+    );
+    expect(mocks.storage.delete).toHaveBeenCalledTimes(assets.length);
+    expect(peakDeletes).toBe(4);
+    expect(payload.deletedIds).toEqual([
+      ...assets.map((item) => item.id),
+      "already-missing",
+    ]);
+    expect(payload.failedIds).toEqual([]);
+  });
+
+  it("rejects oversized batches before touching the repository", async () => {
+    const response = await bulkDeleteAssets(
+      new Request("http://localhost/api/assets/bulk-delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          assetIds: Array.from({ length: 501 }, (_, index) => `asset-${index}`),
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.repository.listAssets).not.toHaveBeenCalled();
+    expect(mocks.repository.deleteAssets).not.toHaveBeenCalled();
+  });
 });
 
 describe("asset content route", () => {

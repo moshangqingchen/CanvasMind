@@ -16,6 +16,41 @@ afterEach(async () => {
 });
 
 describe("FileRepository", () => {
+  it("persists a bulk asset deletion with one snapshot write", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json");
+    let replacementCount = 0;
+    const replaceFile: typeof rename = async (oldPath, newPath) => {
+      replacementCount += 1;
+      return rename(oldPath, newPath);
+    };
+    const repository = new FileRepository(path, replaceFile);
+    for (const id of ["one", "two", "keep"]) {
+      await repository.saveAsset({
+        id,
+        name: `${id}.png`,
+        kind: "image",
+        mimeType: "image/png",
+        size: 10,
+        storageKey: `assets/${id}/original.png`,
+        metadata: {},
+      });
+    }
+    const writesBeforeDelete = replacementCount;
+
+    await repository.deleteAssets(["one", "two"]);
+
+    expect(replacementCount).toBe(writesBeforeDelete + 1);
+    await expect(repository.listAssets()).resolves.toEqual([
+      expect.objectContaining({ id: "keep" }),
+    ]);
+    const restored = new FileRepository(path);
+    await expect(restored.listAssets()).resolves.toEqual([
+      expect.objectContaining({ id: "keep" }),
+    ]);
+  });
+
   it("restores canvases and assets after creating a new instance", async () => {
     const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
     temporaryDirectories.push(directory);
@@ -72,9 +107,11 @@ describe("FileRepository", () => {
       "simulated persistence failure",
     );
     const canvas = await repository.ensureDefaultCanvas();
-    await expect(repository.saveCanvas({
-      id: canvas.id,
-      graph: { schemaVersion: 1, nodes: [], edges: [] },
-    })).resolves.toMatchObject({ revision: 1 });
+    await expect(
+      repository.saveCanvas({
+        id: canvas.id,
+        graph: { schemaVersion: 1, nodes: [], edges: [] },
+      }),
+    ).resolves.toMatchObject({ revision: 1 });
   });
 });

@@ -112,6 +112,12 @@ export class FileRepository extends MemoryRepository {
     await this.persist();
   }
 
+  override async deleteAssets(ids: readonly string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await super.deleteAssets(ids);
+    await this.persist();
+  }
+
   override async saveConnection(
     input: Omit<ProviderConnectionRecord, "createdAt" | "updatedAt">,
   ): Promise<ProviderConnectionRecord> {

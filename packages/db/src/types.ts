@@ -120,6 +120,7 @@ export interface Repository {
     },
   ): Promise<AssetRecord>;
   deleteAsset(id: string): Promise<void>;
+  deleteAssets(ids: readonly string[]): Promise<void>;
   listConnections(): Promise<ProviderConnectionRecord[]>;
   getConnection(id: string): Promise<ProviderConnectionRecord | null>;
   saveConnection(
