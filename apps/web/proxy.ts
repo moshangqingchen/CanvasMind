@@ -2,10 +2,15 @@ import { type NextRequest, NextResponse } from "next/server";
 import {
   constantTimeEqual,
   getPublicAuthConfig,
+  isTrustedHost,
+  normalizeHostHeader,
   PUBLIC_AUTH_COOKIE,
 } from "./lib/public-auth";
 
 const PUBLIC_PATH_PREFIXES = ["/_next/", "/api/public-auth/", "/api/webhooks/"];
+/** Provider callbacks carry no Origin and authenticate with their own HMAC. */
+const CSRF_EXEMPT_PREFIXES = ["/api/webhooks/"];
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function isPublicPath(pathname: string) {
   return (
@@ -15,42 +20,92 @@ function isPublicPath(pathname: string) {
   );
 }
 
+function applySecurityHeaders(response: NextResponse) {
+  const headers = response.headers;
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "same-origin");
+  headers.set("X-Frame-Options", "SAMEORIGIN");
+  headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  return response;
+}
+
+function authRequired() {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: {
+        type: "AUTH_REQUIRED",
+        message: "请先登录超级画布",
+      },
+    },
+    {
+      status: 401,
+      headers: { "Cache-Control": "no-store" },
+    },
+  );
+}
+
+/**
+ * Rejects cross-site state-changing calls that would otherwise ride the session
+ * cookie. Requests without an Origin header (curl, provider callbacks, tests)
+ * are allowed through: browsers always send Origin on cross-origin writes, so
+ * "present but mismatched" is the case worth blocking.
+ */
+function isCrossSiteWrite(request: NextRequest, host: string): boolean {
+  if (SAFE_METHODS.has(request.method)) return false;
+  const pathname = request.nextUrl.pathname;
+  if (!pathname.startsWith("/api/")) return false;
+  if (CSRF_EXEMPT_PREFIXES.some((prefix) => pathname.startsWith(prefix)))
+    return false;
+
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  try {
+    return normalizeHostHeader(new URL(origin).host) !== host;
+  } catch {
+    return true;
+  }
+}
+
 export function proxy(request: NextRequest) {
   const config = getPublicAuthConfig();
-  const requestHost = (request.headers.get("host") ?? "")
-    .split(":", 1)[0]
-    .toLowerCase();
+  const configured = Boolean(
+    config.username && config.password && config.sessionToken,
+  );
+  const host = normalizeHostHeader(request.headers.get("host"));
 
-  // Local development remains available without a login prompt.
-  if (
-    !config.username ||
-    !config.password ||
-    !config.sessionToken ||
-    requestHost !== config.host ||
-    isPublicPath(request.nextUrl.pathname)
-  ) {
-    return NextResponse.next();
+  if (!configured) {
+    // No credentials configured: the app runs unauthenticated, as documented.
+    return applySecurityHeaders(NextResponse.next());
+  }
+
+  if (isCrossSiteWrite(request, host)) {
+    return applySecurityHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: {
+            type: "CROSS_ORIGIN_BLOCKED",
+            message: "跨站请求已被拒绝",
+          },
+        },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      ),
+    );
+  }
+
+  // Loopback (and any explicitly trusted host) keeps the no-login dev flow.
+  if (isTrustedHost(host, config) || isPublicPath(request.nextUrl.pathname)) {
+    return applySecurityHeaders(NextResponse.next());
   }
 
   const sessionCookie = request.cookies.get(PUBLIC_AUTH_COOKIE)?.value ?? "";
   if (constantTimeEqual(sessionCookie, config.sessionToken)) {
-    return NextResponse.next();
+    return applySecurityHeaders(NextResponse.next());
   }
 
   if (request.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: {
-          type: "AUTH_REQUIRED",
-          message: "请先登录超级画布",
-        },
-      },
-      {
-        status: 401,
-        headers: { "Cache-Control": "no-store" },
-      },
-    );
+    return applySecurityHeaders(authRequired());
   }
 
   const loginUrl = new URL("/login", request.url);
@@ -58,7 +113,7 @@ export function proxy(request: NextRequest) {
     "next",
     `${request.nextUrl.pathname}${request.nextUrl.search}`,
   );
-  return NextResponse.redirect(loginUrl);
+  return applySecurityHeaders(NextResponse.redirect(loginUrl));
 }
 
 export const config = {

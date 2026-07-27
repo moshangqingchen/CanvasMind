@@ -7,13 +7,17 @@
 ## 已实现能力
 
 - 五类节点：素材输入、Prompt、图片生成/编辑、视频生成、结果预览。
-- 文本、图片、图片数组、视频、视频数组端口；连线时检查类型、数量和环路。
+- 文本、图片、图片数组、视频、视频数组、音频、音频数组端口；连线时检查类型、数量和环路。
 - Tiptap 结构化 `@素材`，保存不可变 `assetId` 和引用角色，不依赖素材 URL 或名称。
-- 单节点运行、下游运行和整张画布运行。
-- 自动保存、撤销/重做、项目 JSON 导入/导出、运行历史和结果版本保留。
-- OpenAI 图片、Runway 视频、通用 REST 和 Fake Provider。
+- 单节点运行、下游运行和整张画布运行；节点右键可直接运行、复制、原地复制和删除。
+- 自动保存并在顶栏显示真实保存状态、撤销/重做、项目 JSON 导入/导出、运行历史和结果版本保留。
+- 画布画笔图层：自由涂鸦、框选、拖动，并可把选中笔画合并成图片素材节点。
+- 右侧「导演台」智能体面板：接入沧元对话模型，可携带选中生成结果的提示词上下文多轮对话。
+- 素材管理拖入桥接：从外部素材管理器拖动文件到画布即可登记为素材节点。
+- OpenAI 图片、Runway 视频、沧元算力图像、通用 REST 和 Fake Provider。
 - PostgreSQL 运行快照、客户端幂等 ID、Worker 恢复、取消、轮询、SSE 状态和输出归档。
 - API Key 仅在服务端解密使用，数据库保存 AES-256-GCM 密文，浏览器只看到掩码。
+- 可选的单账号登录：配置后所有主机名都需要会话，登录接口有失败限流，写接口有跨站 Origin 校验。
 
 ## 快速体验
 
@@ -56,7 +60,30 @@ Invoke-RestMethod http://localhost:3000/api/health
 docker compose logs -f web worker
 ```
 
-默认只将 Web、MinIO API 和 MinIO Console 绑定到 `127.0.0.1`；PostgreSQL 与 Redis 只在 Compose 内部网络可见，Redis 启用 AUTH。镜像使用固定版本 tag，Web/Worker 以非 root 用户运行。应用仍然没有登录，不能原样用于公网或不可信主机。密码修改、升级和备份步骤见 [自托管与运维](docs/self-hosting.md)。
+默认只将 Web、MinIO API 和 MinIO Console 绑定到 `127.0.0.1`；PostgreSQL 与 Redis 只在 Compose 内部网络可见，Redis 启用 AUTH。镜像使用固定版本 tag，Web/Worker 以非 root 用户运行。密码修改、升级和备份步骤见 [自托管与运维](docs/self-hosting.md)。
+
+## 单账号登录
+
+不配置时应用完全没有登录，适合只在本机使用。要在本机以外访问，请设置这三个变量：
+
+```powershell
+$env:SUPERCANVAS_PUBLIC_AUTH_USER = "你的用户名"
+$env:SUPERCANVAS_PUBLIC_AUTH_PASSWORD = "一个足够长的密码"
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+# 把输出写入 SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN
+```
+
+三者齐备后：
+
+- **所有主机名都需要登录**，只有回环地址（`localhost`、`127.0.0.0/8`、`[::1]`）默认豁免。想让本机也要求登录，设置 `SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK=false`。
+- 需要额外免登录的可信内网机器，用 `SUPERCANVAS_PUBLIC_AUTH_TRUSTED_HOSTS=studio.lan,192.168.1.20` 逐个列出。
+- 登录失败按来源 IP 限流（15 分钟内 8 次），并有全局上限抵挡分布式撞库。
+- 携带 `Origin` 的跨站写请求（`POST`/`PUT`/`DELETE`）会被拒绝；Provider Webhook 走自己的 HMAC 校验，不受影响。
+- 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，生产模式下附带 `Secure`。
+
+> 反向代理若把 `Host` 改写成 `localhost`，回环豁免会让登录形同虚设。这种部署必须设置 `SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK=false`，或让代理透传原始 `Host`。
+>
+> 会话令牌是一个静态共享密钥：修改 `SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN` 会立即让所有已登录会话失效，这也是唯一的“强制登出所有设备”手段。
 
 ## 基本工作流
 
@@ -67,7 +94,7 @@ docker compose logs -f web worker
 5. 选择节点后运行当前节点或运行下游。范围外的上游会复用最近一次成功输出；没有可用输出时会在调用付费 API 前失败。
 6. 也可在画布工具栏选择“运行全部”。生成结果自动进入素材库；历史记录中的任一输出可固定成不可变素材输入节点继续复用。
 
-常用快捷键：
+常用快捷键（应用内按 `?` 或 `Ctrl+/` 可随时打开这张表）：
 
 | 操作               | Windows / Linux            | macOS                    |
 | ------------------ | -------------------------- | ------------------------ |
@@ -75,6 +102,16 @@ docker compose logs -f web worker
 | 从当前节点运行下游 | `Ctrl+Shift+Enter`         | `Cmd+Shift+Enter`        |
 | 撤销               | `Ctrl+Z`                   | `Cmd+Z`                  |
 | 重做               | `Ctrl+Y` 或 `Ctrl+Shift+Z` | `Cmd+Y` 或 `Cmd+Shift+Z` |
+| 复制 / 粘贴节点    | `Ctrl+C` / `Ctrl+V`        | `Cmd+C` / `Cmd+V`        |
+| 原地复制选中节点   | `Ctrl+D`                   | `Cmd+D`                  |
+| 选中全部节点       | `Ctrl+A`                   | `Cmd+A`                  |
+| 立即保存画布       | `Ctrl+S`                   | `Cmd+S`                  |
+| 删除选中对象       | `Delete`                   | `Delete`                 |
+| 抓手 / 画笔 / 选择 | `1` / `2` / `3`            | `1` / `2` / `3`          |
+| 缩放到适合全部节点 | `F`                        | `F`                      |
+| 快捷键帮助         | `?` 或 `Ctrl+/`            | `?` 或 `Cmd+/`           |
+
+输入框和 Prompt 编辑器内不会触发画布快捷键。
 
 “导出”只导出画布结构和参数，不包含素材文件、运行历史、供应商密钥或数据库 revision，因此不能替代系统备份。
 
@@ -158,7 +195,7 @@ docker compose logs -f web worker
 
 ## HTTP API
 
-主要接口如下。当前没有登录鉴权，只能在可信本机使用。
+主要接口如下。未配置单账号登录时它们没有任何鉴权，只能在可信本机使用；配置后除 `/api/public-auth/*` 和 `/api/webhooks/*` 外都需要会话 Cookie。
 
 | 方法            | 路径                                    | 用途                                                                   |
 | --------------- | --------------------------------------- | ---------------------------------------------------------------------- |
@@ -216,10 +253,13 @@ packages/storage  本地文件和 S3/MinIO 存储
 infra/minio       本地直传 CORS 配置
 ```
 
+`apps/web/proxy.ts` 是 Next.js 的请求前置层，负责登录门禁、跨站写请求拦截和安全响应头；对应的用例在 `apps/web/proxy.test.ts`。
+
 ## 当前边界
 
-- 单用户、手动运行；没有登录、权限、协作、计费、循环/条件分支或时间线剪辑。
-- `PUBLIC_BASE_URL` 未配置时 Webhook 路由返回 404；OpenAI、Runway 和 Fake 默认依赖轮询，通用 REST 可按 Connector 配置使用 HMAC-SHA256 Webhook。公网部署仍需先增加登录、HTTPS、CSRF/Origin 策略、限流和域名白名单。
+- 单用户、手动运行；只有一个共享账号，没有多用户、权限、协作、计费、循环/条件分支或时间线剪辑。
+- 登录限流是单进程内存实现，只覆盖默认的单容器部署；多副本部署需要换成共享存储的限流器。
+- `PUBLIC_BASE_URL` 未配置时 Webhook 路由返回 404；OpenAI、Runway 和 Fake 默认依赖轮询，通用 REST 可按 Connector 配置使用 HMAC-SHA256 Webhook。公网部署仍需自行提供 HTTPS 和域名白名单。
 - 归档下载器自动兼容 Clash/Mihomo 的 HTTPS Fake-IP DNS，并逐跳校验海外 CDN 跳转；IP 直连、HTTP Fake-IP、HTTPS 降级和真实私网地址仍会被拒绝。
 - `/api/health` 检查数据库与对象存储；Redis 由 Compose 自身健康检查覆盖，仍不探测外部 Provider。
 - 单个 Docker Worker 是默认部署边界。跨多个 Worker 实例的严格分布式执行租约尚未实现，因此不要水平扩容 Worker。

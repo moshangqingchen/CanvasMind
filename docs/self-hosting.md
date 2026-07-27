@@ -1,6 +1,6 @@
 # 自托管与运维
 
-本文面向单机 Docker 自托管。当前应用没有用户登录和租户隔离，默认部署只能放在可信本机；它不是可直接暴露到公网的生产模板。
+本文面向单机 Docker 自托管。应用提供一个可选的共享单账号登录，但没有多用户和租户隔离：未配置登录时只能放在可信本机，配置后也只适合个人自用，不是面向多人的生产模板。
 
 ## 服务与持久化边界
 
@@ -43,6 +43,20 @@
 | `MINIO_APP_PASSWORD`   | 无默认值，Compose 必填                  | 受限 bucket 读写密码                                |
 | `PUBLIC_BASE_URL`      | 空，Webhook 入口关闭                    | 配置公网基址后才启用 Webhook 路由                   |
 | `NEXT_PUBLIC_APP_NAME` | `超级画布`                              | Docker 构建时写入前端的应用名称                     |
+
+单账号登录相关变量（三者必须同时非空才会启用）：
+
+| 变量                                     | 默认行为       | 说明                                           |
+| ---------------------------------------- | -------------- | ---------------------------------------------- |
+| `SUPERCANVAS_PUBLIC_AUTH_USER`           | 空，登录关闭   | 登录用户名                                     |
+| `SUPERCANVAS_PUBLIC_AUTH_PASSWORD`       | 空，登录关闭   | 登录密码                                       |
+| `SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN`  | 空，登录关闭   | 会话 Cookie 的值；改动即让所有已登录设备失效   |
+| `SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK` | 回环地址免登录 | 设为 `false` 时本机访问也要求登录              |
+| `SUPERCANVAS_PUBLIC_AUTH_TRUSTED_HOSTS`  | 空             | 逗号分隔的额外免登录主机名，仅用于可信内网机器 |
+
+启用后，**除回环和上述可信主机外的所有主机名**都需要有效会话。`/api/public-auth/*`（登录本身）、`/api/webhooks/*`（Provider 回调，自带 HMAC 校验）和 `/_next/*` 静态资源保持公开。登录失败按来源 IP 限流（15 分钟 8 次），另有全局阈值抵挡分布式撞库；限流状态保存在 Web 进程内存中，因此只对单个 Web 容器有效。
+
+> 反向代理若把 `Host` 改写成 `localhost`，回环豁免会绕过整个登录。这类部署必须设置 `SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK=false`，或配置代理透传原始 `Host`。
 
 `.env.example` 供本机配置参考。复制后必须填写 Compose 所需的非空密码和连接串；Compose 不再提供任何默认密码。`DATABASE_URL`、`REDIS_URL` 可按部署网络自定义，URL 中的特殊字符必须进行 URL 编码。MinIO root 凭据只用于 `minio-init` 创建 bucket、CORS 和受限 app policy；该 policy 仅允许目标 bucket 的列举、读、写和删除对象，Web/Worker 只使用 `MINIO_APP_USER` / `MINIO_APP_PASSWORD`。真实 Provider 密钥必须通过 UI 的“设置”加密保存，不能放进普通环境变量或 Connector JSON。
 
@@ -129,7 +143,9 @@ pnpm dev:worker
 - Compose 不包含默认 PostgreSQL、Redis 或 MinIO 密码。`minio` 仅持有 root 凭据，`minio-init` 使用 root 创建 bucket/CORS/受限 policy；`web` 和 `worker` 只持有 app user 凭据。更换任一凭据时要同步更新 `.env`，并按轮换流程更新 MinIO app user。
 - Redis 启用 AUTH；`REDIS_URL` 必须包含密码（或由外部受控 URL 提供认证），健康检查也使用认证连接。
 - Compose 镜像使用固定版本 tag；升级前应显式审核 tag、运行测试并完成 PostgreSQL/MinIO 备份。
-- 应用没有身份验证。即使外层已有 HTTPS，也不要在多人或不可信网络开放，除非先增加单用户登录/会话校验，并保护全部 `/api/*` 和 SSE 路由。
+- 不配置 `SUPERCANVAS_PUBLIC_AUTH_*` 时应用没有任何身份验证。要在本机以外访问，必须先按上文启用单账号登录；它会保护页面、全部 `/api/*` 和 SSE 路由，只放行登录接口和自带验签的 Webhook。
+- 登录只有一个共享账号，没有多用户隔离和审计。即使外层已有 HTTPS，也不要在多人或不可信网络开放。
+- 反向代理必须透传原始 `Host`；若代理把 `Host` 改写为 `localhost`，请同时设置 `SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK=false`，否则回环豁免会绕过登录。
 - MinIO Console (`9001`)、S3 API (`9000`)、PostgreSQL (`5432`) 和 Redis (`6379`) 不应经过公网反向代理。
 
 轮换 MinIO app 密码时，先停止 `web`/`worker`，用 root 凭据删除旧 app user，再更新 `.env` 并重新运行一次性初始化服务：

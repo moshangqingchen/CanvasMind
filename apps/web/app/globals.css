@@ -6061,3 +6061,366 @@ body {
 .agent-composer.is-resizing {
   user-select: none;
 }
+
+/* ---------------------------------------------------------------------------
+ * Toasts, save indicator, shortcut sheet and fatal-error screens.
+ * ------------------------------------------------------------------------ */
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px 11px 13px;
+  border-left: 3px solid #6c7a95;
+  line-height: 1.5;
+  animation: toast-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.toast > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #96a3bd;
+}
+
+.toast-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.toast-close {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  margin: -2px -3px 0 0;
+  border: 0;
+  border-radius: 5px;
+  color: #7d8aa4;
+  background: transparent;
+  transition:
+    color 140ms ease,
+    background 140ms ease;
+}
+
+.toast-close:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.toast-success {
+  border-left-color: var(--accent-2);
+}
+
+.toast-success > svg {
+  color: var(--accent-2);
+}
+
+.toast-error {
+  border-left-color: var(--danger);
+  background: #241a22;
+}
+
+.toast-error > svg {
+  color: var(--danger);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+/* The top-bar chip now reports the real autosave state instead of a guess. */
+.save-state {
+  min-width: 84px;
+  justify-content: center;
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.save-state.is-saved {
+  color: #9fb0cb;
+}
+
+.save-state.is-pending,
+.save-state.is-saving {
+  color: #f0d19a;
+  border-color: rgba(242, 198, 109, 0.32);
+  background: rgba(242, 198, 109, 0.07);
+}
+
+.save-state.is-error {
+  color: #ffacb9;
+  border-color: rgba(255, 123, 145, 0.4);
+  background: rgba(255, 123, 145, 0.09);
+}
+
+.save-state.is-running {
+  color: #cfc4ff;
+  border-color: rgba(155, 140, 255, 0.35);
+  background: rgba(155, 140, 255, 0.08);
+}
+
+.project-menu-hint {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+/* Shortcut reference sheet (? or Ctrl+/). */
+.shortcuts-modal {
+  width: min(760px, 94vw);
+}
+
+.shortcuts-modal .modal-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shortcuts-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 8px 22px;
+  padding: 18px 20px;
+}
+
+.shortcuts-group h3 {
+  margin: 0 0 8px;
+  color: var(--accent-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+}
+
+.shortcuts-group ul {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.shortcuts-group li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 7px;
+}
+
+.shortcuts-group li:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.shortcuts-label {
+  color: #c6d0e4;
+  font-size: 12.5px;
+}
+
+.shortcuts-keys {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcuts-keys kbd {
+  min-width: 22px;
+  padding: 3px 6px;
+  border: 1px solid #38425a;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #1b2231;
+  color: #dbe3f5;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.shortcuts-foot {
+  flex: 0 0 auto;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Error boundary and 404 screens. */
+.fatal-screen {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.fatal-card {
+  width: min(460px, 100%);
+  padding: 30px 28px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.fatal-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  color: var(--danger);
+  background: rgba(255, 123, 145, 0.11);
+}
+
+.fatal-card h1 {
+  margin: 0 0 10px;
+  font-size: 19px;
+}
+
+.fatal-card p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.fatal-digest {
+  font-size: 11px !important;
+  opacity: 0.75;
+}
+
+.fatal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.fatal-actions .button {
+  text-decoration: none;
+}
+
+/* A visible keyboard focus ring was missing across the app. */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Right-click menu on a node: run / copy / duplicate / delete. */
+.node-context-menu {
+  width: 208px;
+}
+
+.node-context-menu > span {
+  overflow: hidden;
+  text-transform: none;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-context-menu button.danger {
+  color: #ff9cad;
+}
+
+.node-context-menu button.danger:hover {
+  background: rgba(255, 123, 145, 0.14);
+}
+
+.connection-menu-divider {
+  height: 1px;
+  margin: 3px 0;
+  background: var(--line);
+}
+
+.menu-hint {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Shown after 清空画布 so the canvas is never an unexplained blank grid. */
+.canvas-empty-state {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: min(430px, calc(100% - 48px));
+  padding: 26px 24px;
+  transform: translate(-50%, -50%);
+  border: 1px dashed #3a4560;
+  border-radius: 16px;
+  background: rgba(18, 22, 33, 0.82);
+  backdrop-filter: blur(6px);
+  text-align: center;
+  pointer-events: auto;
+}
+
+.canvas-empty-state h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.canvas-empty-state p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.canvas-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 18px 0 16px;
+}
+
+.canvas-empty-hint {
+  font-size: 11.5px !important;
+  opacity: 0.85;
+}
+
+.canvas-empty-hint kbd {
+  padding: 1px 5px;
+  border: 1px solid #38425a;
+  border-radius: 4px;
+  background: #1b2231;
+  color: #dbe3f5;
+  font-family: inherit;
+  font-size: 10.5px;
+}

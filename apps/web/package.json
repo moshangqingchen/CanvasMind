@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run app/api lib",
+    "test": "vitest run app/api lib proxy.test.ts",
     "lint": "eslint .",
     "e2e": "playwright test"
   },

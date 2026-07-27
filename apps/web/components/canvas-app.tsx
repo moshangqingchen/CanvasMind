@@ -28,12 +28,18 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import {
+  CircleAlert,
+  CircleCheck,
   Combine,
+  Copy,
+  CopyPlus,
   Download,
   FolderOpen,
   Hand,
   History,
+  Info,
   Image as ImageIcon,
+  Keyboard,
   KeyRound,
   MousePointer2,
   MoreHorizontal,
@@ -121,6 +127,7 @@ import {
 import { AgentPanel, type AgentDraftRequest } from "./agent-panel";
 import { DrawingLayer } from "./drawing-layer";
 import { NodeParameterFields } from "./node-parameter-fields";
+import { ShortcutsModal } from "./shortcuts-modal";
 import { useCanvasStore } from "./canvas-store";
 import { WorkflowNode } from "./workflow-node";
 import {
@@ -139,6 +146,24 @@ import type {
   RunErrorDetails,
   RunSnapshot,
 } from "./types";
+
+type ToastTone = "info" | "success" | "error";
+
+interface ToastMessage {
+  id: number;
+  message: string;
+  tone: ToastTone;
+}
+
+/** Reflects the autosave pipeline so the top bar can stop guessing. */
+type SaveState = "saved" | "pending" | "saving" | "error";
+
+const SAVE_STATE_LABEL: Record<SaveState, string> = {
+  saved: "已保存",
+  pending: "待保存",
+  saving: "保存中",
+  error: "保存失败",
+};
 
 const nodeTypes = { workflow: WorkflowNode };
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "超级画布";
@@ -202,6 +227,14 @@ interface CanvasMenuState {
   x: number;
   y: number;
   position: { x: number; y: number };
+}
+
+interface NodeMenuState {
+  x: number;
+  y: number;
+  nodeId: string;
+  label: string;
+  runnable: boolean;
 }
 
 interface CanvasSaveRequest {
@@ -1227,7 +1260,9 @@ function CanvasShell() {
     Map<string, NodeRunStatus>
   >(new Map());
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialCangyuanGroup, setSettingsInitialCangyuanGroup] =
     useState<string | null>(null);
@@ -1243,6 +1278,7 @@ function CanvasShell() {
   const [connectionMenu, setConnectionMenu] =
     useState<ConnectionMenuState | null>(null);
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null);
+  const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [canvasMode, setCanvasMode] = useState<CanvasInteractionMode>("pan");
   const [brushColor, setBrushColor] = useState("#f4f1ff");
@@ -1276,6 +1312,8 @@ function CanvasShell() {
   const activeBridgeDropsRef = useRef(new Set<string>());
   const materialDropConsumerIdRef = useRef(crypto.randomUUID());
   const initialViewportApplied = useRef(false);
+  const toastTimer = useRef<number | null>(null);
+  const toastSeq = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventSources = useRef<Map<string, EventSource>>(new Map());
   const activeRunKeys = useRef(new Set<string>());
@@ -1400,10 +1438,32 @@ function CanvasShell() {
     : null;
   const statuses = useMemo(() => nodeRunStatuses, [nodeRunStatuses]);
 
-  const showToast = useCallback((message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(null), 3500);
+  const showToast = useCallback((message: string, tone: ToastTone = "info") => {
+    // One timer for the whole app: without this a fast second toast used to be
+    // cleared early by the first toast's pending timeout.
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    setToast({ message, tone, id: (toastSeq.current += 1) });
+    toastTimer.current = window.setTimeout(
+      () => {
+        toastTimer.current = null;
+        setToast(null);
+      },
+      tone === "error" ? 5_500 : 3_500,
+    );
   }, []);
+
+  const dismissToast = useCallback(() => {
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    toastTimer.current = null;
+    setToast(null);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
   const recordLinkedAssetDuration = useCallback(
     (assetId: string, seconds: number) => {
@@ -1472,7 +1532,10 @@ function CanvasShell() {
     try {
       setAssets(await fetchAssets());
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "素材库读取失败");
+      showToast(
+        error instanceof Error ? error.message : "素材库读取失败",
+        "error",
+      );
     }
   }, [showToast]);
 
@@ -1524,11 +1587,15 @@ function CanvasShell() {
               .catch((error: unknown) =>
                 showToast(
                   error instanceof Error ? error.message : "画布保存失败",
+                  "error",
                 ),
               );
           }, 200);
       } catch (error) {
-        showToast(error instanceof Error ? error.message : "初始化失败");
+        showToast(
+          error instanceof Error ? error.message : "初始化失败",
+          "error",
+        );
       }
     })();
     return () => {
@@ -1547,6 +1614,7 @@ function CanvasShell() {
       nextViewport = useCanvasStore.getState().viewport,
       nextDrawings = useCanvasStore.getState().drawings,
     ) => {
+      setSaveState("saving");
       try {
         await saveQueue.current?.enqueue({
           canvasId: id,
@@ -1558,8 +1626,15 @@ function CanvasShell() {
           ),
           title: useCanvasStore.getState().title,
         });
+        // A newer edit may have queued another save while this one was in
+        // flight; only the last writer clears the indicator.
+        setSaveState((current) => (current === "saving" ? "saved" : current));
       } catch (error) {
-        showToast(error instanceof Error ? error.message : "画布保存失败");
+        setSaveState("error");
+        showToast(
+          error instanceof Error ? error.message : "画布保存失败",
+          "error",
+        );
       }
     },
     [showToast],
@@ -1574,6 +1649,7 @@ function CanvasShell() {
     ) => {
       if (!canvasId) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      setSaveState("pending");
       saveTimer.current = setTimeout(() => {
         saveTimer.current = null;
         void saveGraph(
@@ -1587,6 +1663,23 @@ function CanvasShell() {
     },
     [canvasId, saveGraph],
   );
+
+  /** Flushes the debounced autosave immediately (Ctrl/Cmd+S, project menu). */
+  const saveNow = useCallback(async () => {
+    if (!canvasId) return;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const state = useCanvasStore.getState();
+    await saveGraph(
+      canvasId,
+      state.nodes,
+      state.edges,
+      state.viewport,
+      state.drawings,
+    );
+  }, [canvasId, saveGraph]);
 
   const checkpoint = useCallback(
     (force = false) => {
@@ -1890,7 +1983,10 @@ function CanvasShell() {
     setDrawings(nextDrawings);
     setSelectedDrawingIds(new Set());
     scheduleSave(state.nodes, state.edges, state.viewport, nextDrawings);
-    showToast(`已删除 ${state.drawings.length - nextDrawings.length} 条涂鸦`);
+    showToast(
+      `已删除 ${state.drawings.length - nextDrawings.length} 条涂鸦`,
+      "success",
+    );
     return true;
   }, [checkpoint, scheduleSave, selectedDrawingIds, setDrawings, showToast]);
 
@@ -2265,7 +2361,7 @@ function CanvasShell() {
       ),
       pasteCount: 0,
     };
-    showToast(`已复制 ${selected.length} 个节点`);
+    showToast(`已复制 ${selected.length} 个节点`, "success");
     return true;
   }, [showToast]);
 
@@ -2330,9 +2426,41 @@ function CanvasShell() {
         .querySelector<HTMLElement>(".react-flow")
         ?.focus({ preventScroll: true });
     });
-    showToast(`已粘贴 ${pastedNodes.length} 个节点`);
+    showToast(`已粘贴 ${pastedNodes.length} 个节点`, "success");
     return true;
   }, [checkpoint, scheduleSave, showToast]);
+
+  /** Ctrl/Cmd+D — copy and paste in one step, keeping the clipboard untouched. */
+  const duplicateSelectedNodes = useCallback((): boolean => {
+    const preserved = nodeClipboardRef.current;
+    if (!copySelectedNodes()) return false;
+    const duplicated = pasteCopiedNodes();
+    nodeClipboardRef.current = preserved;
+    return duplicated;
+  }, [copySelectedNodes, pasteCopiedNodes]);
+
+  const selectAllNodes = useCallback((): boolean => {
+    const state = useCanvasStore.getState();
+    if (state.nodes.length === 0) return false;
+    useCanvasStore.setState({
+      nodes: state.nodes.map((node) =>
+        node.selected ? node : { ...node, selected: true },
+      ),
+      selectedId: state.selectedId ?? state.nodes.at(-1)?.id ?? null,
+    });
+    showToast(`已选中 ${state.nodes.length} 个节点`);
+    return true;
+  }, [showToast]);
+
+  const fitViewToCanvas = useCallback(() => {
+    const instance = reactFlowRef.current;
+    if (!instance) return;
+    if (useCanvasStore.getState().nodes.length === 0) {
+      showToast("画布还没有节点");
+      return;
+    }
+    void instance.fitView({ padding: 0.24, duration: 320 });
+  }, [showToast]);
 
   const updateNodeData = useCallback(
     (id: string, patch: Partial<CanvasNodeData>) => {
@@ -2989,7 +3117,7 @@ function CanvasShell() {
           if (terminalRunStatuses.has(snapshot.run.status)) {
             void refreshAssets();
           } else {
-            showToast("任务已提交，正在等待 API 服务商返回");
+            showToast("任务已提交，正在等待 API 服务商返回", "success");
             subscribeToRun(snapshot.run.id);
           }
         } catch (error) {
@@ -3062,14 +3190,20 @@ function CanvasShell() {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        setShortcutsOpen(false);
+        setProjectMenuOpen(false);
         setConnectionMenu(null);
         setCanvasMenu(null);
+        setNodeMenu(null);
         setDropActive(false);
         if (canvasMode !== "pan") changeCanvasMode("pan");
         return;
       }
       if (event.isComposing) return;
-      const target = event.target as HTMLElement | null;
+      // A keydown can be retargeted to a non-Element (window/document); calling
+      // closest() on that throws and would disable every shortcut below.
+      const target =
+        event.target instanceof Element ? (event.target as HTMLElement) : null;
       const editing = Boolean(
         target?.closest("input, textarea, select, [contenteditable='true']"),
       );
@@ -3092,6 +3226,36 @@ function CanvasShell() {
         modalOpen,
         interactiveControl,
       });
+      // Plain-key canvas shortcuts must never fire while typing or in a dialog.
+      // A focused button is fine: digits and "F" are not activation keys, and
+      // clicking any node control would otherwise disable these shortcuts.
+      const bareKeyAllowed =
+        !editing &&
+        !modalOpen &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey;
+
+      if (bareKeyAllowed && (event.key === "?" || event.key === "F1")) {
+        event.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (bareKeyAllowed && !event.shiftKey) {
+        const modeKey = { "1": "pan", "2": "draw", "3": "select-drawing" }[
+          event.key
+        ] as CanvasInteractionMode | undefined;
+        if (modeKey) {
+          event.preventDefault();
+          changeCanvasMode(modeKey);
+          return;
+        }
+        if (event.key === "f" || event.key === "F") {
+          event.preventDefault();
+          fitViewToCanvas();
+          return;
+        }
+      }
       if (
         (event.key === "Delete" || event.key === "Backspace") &&
         !event.metaKey &&
@@ -3123,9 +3287,7 @@ function CanvasShell() {
         if (selectedEdges.length > 0) {
           event.preventDefault();
           checkpoint(true);
-          const selectedEdgeIds = new Set(
-            selectedEdges.map((edge) => edge.id),
-          );
+          const selectedEdgeIds = new Set(selectedEdges.map((edge) => edge.id));
           setEdges((current) => {
             const next = current.filter(
               (edge) => !selectedEdgeIds.has(edge.id),
@@ -3176,6 +3338,25 @@ function CanvasShell() {
         if (handled) event.preventDefault();
         return;
       }
+      if (key === "d" && clipboardShortcutAllowed) {
+        // Overrides the browser bookmark shortcut only when a node is selected.
+        if (duplicateSelectedNodes()) event.preventDefault();
+        return;
+      }
+      if (key === "s" && !editing && !modalOpen) {
+        event.preventDefault();
+        void saveNow().then(() => showToast("画布已保存", "success"));
+        return;
+      }
+      if (key === "a" && !editing && !modalOpen && !interactiveControl) {
+        if (selectAllNodes()) event.preventDefault();
+        return;
+      }
+      if (key === "/" || (key === "?" && !editing)) {
+        event.preventDefault();
+        setShortcutsOpen((open) => !open);
+        return;
+      }
       if ((key === "z" || key === "y") && historyShortcutAllowed) {
         event.preventDefault();
         if (key === "y" || event.shiftKey) redo();
@@ -3206,11 +3387,15 @@ function CanvasShell() {
     checkpoint,
     deleteNode,
     deleteSelectedDrawings,
+    duplicateSelectedNodes,
+    fitViewToCanvas,
     nodes,
     pasteCopiedNodes,
     redo,
     runNode,
+    saveNow,
     scheduleSave,
+    selectAllNodes,
     selectedDrawingIds,
     selectedId,
     setEdges,
@@ -3720,10 +3905,7 @@ function CanvasShell() {
             ? Math.max(0, (window.outerWidth - window.innerWidth) / 2)
             : 0;
           const topFrame = hasScreenOrigin
-            ? Math.max(
-                0,
-                window.outerHeight - window.innerHeight - sideFrame,
-              )
+            ? Math.max(0, window.outerHeight - window.innerHeight - sideFrame)
             : 0;
           let clientX = hasScreenOrigin
             ? drop.screenX - (window.screenX + sideFrame)
@@ -3825,6 +4007,7 @@ function CanvasShell() {
             );
             showToast(
               error instanceof Error ? error.message : "素材管理拖入失败",
+              "error",
             );
           } finally {
             activeBridgeDropsRef.current.delete(recentKey);
@@ -3838,6 +4021,7 @@ function CanvasShell() {
         if (!disposed)
           showToast(
             error instanceof Error ? error.message : "素材管理拖入失败",
+            "error",
           );
       } finally {
         polling = false;
@@ -3859,14 +4043,7 @@ function CanvasShell() {
         // Ignore unavailable storage during teardown.
       }
     };
-  }, [
-    canvasId,
-    checkpoint,
-    scheduleSave,
-    setNodes,
-    setSelectedId,
-    showToast,
-  ]);
+  }, [canvasId, checkpoint, scheduleSave, setNodes, setSelectedId, showToast]);
 
   const handleUpload = useCallback(
     async (file: File) => {
@@ -3876,10 +4053,10 @@ function CanvasShell() {
           asset,
           ...current.filter((item) => item.id !== asset.id),
         ]);
-        showToast("素材已加入素材库");
+        showToast("素材已加入素材库", "success");
         return asset;
       } catch (error) {
-        showToast(error instanceof Error ? error.message : "上传失败");
+        showToast(error instanceof Error ? error.message : "上传失败", "error");
         return null;
       }
     },
@@ -3931,9 +4108,12 @@ function CanvasShell() {
       setSelectedDrawingIds(new Set());
       changeCanvasMode("pan");
       scheduleSave(nextNodes, state.edges, state.viewport, nextDrawings);
-      showToast(`已将 ${selected.length} 条涂鸦合并为图片素材节点`);
+      showToast(`已将 ${selected.length} 条涂鸦合并为图片素材节点`, "success");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "涂鸦合并失败");
+      showToast(
+        error instanceof Error ? error.message : "涂鸦合并失败",
+        "error",
+      );
     } finally {
       setMergingDrawings(false);
     }
@@ -4026,7 +4206,7 @@ function CanvasShell() {
       }
       placeAssetsOnCanvas(uploaded, position);
       if (uploaded.length > 0)
-        showToast(`已将 ${uploaded.length} 个素材放入画布`);
+        showToast(`已将 ${uploaded.length} 个素材放入画布`, "success");
     },
     [assets, handleUpload, placeAssetsOnCanvas, showToast],
   );
@@ -4039,12 +4219,35 @@ function CanvasShell() {
     });
     if (!position) return;
     setConnectionMenu(null);
+    setNodeMenu(null);
     setCanvasMenu({
       x: Math.min(Math.max(12, event.clientX), window.innerWidth - 196),
       y: Math.min(Math.max(62, event.clientY), window.innerHeight - 272),
       position,
     });
   }, []);
+
+  const openNodeMenu = useCallback(
+    (event: MouseEvent | ReactMouseEvent, node: CanvasNode) => {
+      event.preventDefault();
+      setConnectionMenu(null);
+      setCanvasMenu(null);
+      selectCanvasNode(node.id);
+      const nodeType = node.data.nodeType;
+      setNodeMenu({
+        x: Math.min(Math.max(12, event.clientX), window.innerWidth - 200),
+        y: Math.min(Math.max(62, event.clientY), window.innerHeight - 240),
+        nodeId: node.id,
+        label:
+          typeof node.data.label === "string" && node.data.label
+            ? node.data.label
+            : "节点",
+        runnable:
+          nodeType === "image-generation" || nodeType === "video-generation",
+      });
+    },
+    [selectCanvasNode],
+  );
 
   function exportProject() {
     const payload = JSON.stringify(
@@ -4142,9 +4345,12 @@ function CanvasShell() {
       setSelectedId(null);
       setSelectedDrawingIds(new Set());
       if (importedTitle) setTitle(importedTitle);
-      showToast("项目已导入并保存");
+      showToast("项目已导入并保存", "success");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "项目导入失败");
+      showToast(
+        error instanceof Error ? error.message : "项目导入失败",
+        "error",
+      );
     }
   }
 
@@ -4197,16 +4403,35 @@ function CanvasShell() {
           >
             <Settings2 size={15} />
           </button>
-          <span className="pill save-state">
-            <span className={`node-status ${busy ? "running" : "succeeded"}`} />
-            {busy ? "任务运行中" : "已保存"}
+          <span
+            className={`pill save-state ${busy ? "is-running" : `is-${saveState}`}`}
+            title={
+              busy
+                ? "有生成任务正在运行"
+                : saveState === "error"
+                  ? "上次保存失败，修改仍保留在浏览器中"
+                  : "画布自动保存状态"
+            }
+          >
+            <span
+              className={`node-status ${
+                busy
+                  ? "running"
+                  : saveState === "error"
+                    ? "failed"
+                    : saveState === "saved"
+                      ? "succeeded"
+                      : "running"
+              }`}
+            />
+            {busy ? "任务运行中" : SAVE_STATE_LABEL[saveState]}
           </span>
           <button
             className="icon-button"
             type="button"
             onClick={undo}
             aria-label="撤销"
-            title="撤销"
+            title="撤销 (Ctrl+Z)"
           >
             <Undo2 size={14} />
           </button>
@@ -4215,9 +4440,18 @@ function CanvasShell() {
             type="button"
             onClick={redo}
             aria-label="重做"
-            title="重做"
+            title="重做 (Ctrl+Y)"
           >
             <Redo2 size={14} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="键盘快捷键"
+            title="键盘快捷键 (?)"
+          >
+            <Keyboard size={14} />
           </button>
           <input
             ref={importInput}
@@ -4264,10 +4498,11 @@ function CanvasShell() {
               role="menuitem"
               onClick={() => {
                 setProjectMenuOpen(false);
-                if (canvasId) void saveGraph(canvasId, nodes, edges, viewport);
+                void saveNow().then(() => showToast("画布已保存", "success"));
               }}
             >
               <RefreshCw size={14} /> 保存画布
+              <span className="project-menu-hint">Ctrl+S</span>
             </button>
             <button
               type="button"
@@ -4450,10 +4685,14 @@ function CanvasShell() {
             onConnectEnd={onConnectEnd}
             isValidConnection={isValidConnection}
             onPaneContextMenu={openCanvasMenu}
+            onNodeContextMenu={openNodeMenu}
             onPaneClick={() => {
               setConnectionMenu(null);
               setCanvasMenu(null);
+              setNodeMenu(null);
             }}
+            onNodeClick={() => setNodeMenu(null)}
+            onMoveStart={() => setNodeMenu(null)}
             onInit={(instance) => {
               reactFlowRef.current = instance;
               instance.setViewport(viewport);
@@ -4509,6 +4748,38 @@ function CanvasShell() {
               <span>放入画布</span>
             </div>
           ) : null}
+          {nodes.length === 0 && !dropActive ? (
+            <div className="canvas-empty-state">
+              <h2>画布是空的</h2>
+              <p>从这里开始，或者直接把图片、视频拖进画布。</p>
+              <div className="canvas-empty-actions">
+                <button
+                  className="button primary small"
+                  type="button"
+                  onClick={() => addNewNode("image-generation")}
+                >
+                  <WandSparkles size={13} /> 新建图片生成
+                </button>
+                <button
+                  className="button small"
+                  type="button"
+                  onClick={() => addNewNode("video-generation")}
+                >
+                  <Video size={13} /> 新建视频生成
+                </button>
+                <button
+                  className="button small"
+                  type="button"
+                  onClick={() => addNewNode("prompt")}
+                >
+                  <Type size={13} /> 新建 Prompt
+                </button>
+              </div>
+              <p className="canvas-empty-hint">
+                在画布空白处点右键也能新建节点；按 <kbd>?</kbd> 查看全部快捷键。
+              </p>
+            </div>
+          ) : null}
           {canvasMenu ? (
             <div
               className="connection-menu canvas-create-menu"
@@ -4555,6 +4826,79 @@ function CanvasShell() {
                 onClick={() => insertNodeAt("preview", canvasMenu.position)}
               >
                 <FolderOpen size={13} /> 结果预览
+              </button>
+            </div>
+          ) : null}
+          {nodeMenu ? (
+            <div
+              className="connection-menu node-context-menu"
+              style={{ left: nodeMenu.x, top: nodeMenu.y }}
+              role="menu"
+              aria-label={`${nodeMenu.label} 的操作`}
+            >
+              <span>{nodeMenu.label}</span>
+              {nodeMenu.runnable ? (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setNodeMenu(null);
+                      void runNode(nodeMenu.nodeId, "node");
+                    }}
+                  >
+                    <Play size={13} /> 运行此节点
+                    <span className="menu-hint">Ctrl+Enter</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setNodeMenu(null);
+                      void runNode(nodeMenu.nodeId, "downstream");
+                    }}
+                  >
+                    <Play size={13} /> 运行下游
+                    <span className="menu-hint">Ctrl+Shift+Enter</span>
+                  </button>
+                  <div className="connection-menu-divider" />
+                </>
+              ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setNodeMenu(null);
+                  copySelectedNodes();
+                }}
+              >
+                <Copy size={13} /> 复制
+                <span className="menu-hint">Ctrl+C</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setNodeMenu(null);
+                  duplicateSelectedNodes();
+                }}
+              >
+                <CopyPlus size={13} /> 原地复制
+                <span className="menu-hint">Ctrl+D</span>
+              </button>
+              <div className="connection-menu-divider" />
+              <button
+                className="danger"
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  const id = nodeMenu.nodeId;
+                  setNodeMenu(null);
+                  deleteNode(id);
+                }}
+              >
+                <Trash2 size={13} /> 删除节点
+                <span className="menu-hint">Delete</span>
               </button>
             </div>
           ) : null}
@@ -4962,9 +5306,33 @@ function CanvasShell() {
             : undefined
         }
       />
+      <ShortcutsModal
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+      />
       {toast ? (
-        <div className="toast" role="status" aria-live="polite">
-          {toast}
+        <div
+          key={toast.id}
+          className={`toast toast-${toast.tone}`}
+          role={toast.tone === "error" ? "alert" : "status"}
+          aria-live={toast.tone === "error" ? "assertive" : "polite"}
+        >
+          {toast.tone === "success" ? (
+            <CircleCheck aria-hidden="true" size={15} />
+          ) : toast.tone === "error" ? (
+            <CircleAlert aria-hidden="true" size={15} />
+          ) : (
+            <Info aria-hidden="true" size={15} />
+          )}
+          <span className="toast-text">{toast.message}</span>
+          <button
+            className="toast-close"
+            type="button"
+            onClick={dismissToast}
+            aria-label="关闭提示"
+          >
+            <X size={13} />
+          </button>
         </div>
       ) : null}
     </div>
