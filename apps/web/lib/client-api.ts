@@ -332,7 +332,9 @@ export async function fetchRuns(canvasId: string): Promise<RunSnapshot[]> {
 }
 
 export async function fetchConnections(): Promise<ProviderConnectionView[]> {
-  const response = await fetch("/api/providers", { cache: "no-store" });
+  const response = await fetch(`/api/providers?fresh=${Date.now()}`, {
+    cache: "no-store",
+  });
   if (!response.ok) throw new Error("无法读取供应商连接");
   return response.json() as Promise<ProviderConnectionView[]>;
 }
@@ -373,7 +375,7 @@ export async function testConnection(id: string): Promise<string> {
 
 export async function fetchModels(id: string): Promise<ModelDescriptor[]> {
   const response = await fetch(
-    `/api/providers/${encodeURIComponent(id)}/models`,
+    `/api/providers/${encodeURIComponent(id)}/models?fresh=${Date.now()}`,
     { cache: "no-store" },
   );
   if (!response.ok)

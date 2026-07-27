@@ -14,7 +14,7 @@ describe("model parameter helpers", () => {
     const video = parameterDescriptorsFor("video-generation", "runway");
 
     expect(parametersWithDefaults(image)).toMatchObject({
-      size: "1024x1024",
+      aspect_ratio: "auto",
       quality: "auto",
       n: 1,
     });

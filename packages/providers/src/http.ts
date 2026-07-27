@@ -42,6 +42,8 @@ export class ProviderHttpError extends Error {
 export interface ProviderFetchOptions {
   phase: ProviderRequestPhase;
   timeoutMs?: number;
+  /** Explicitly allow an exact loopback host for a user-managed local gateway. */
+  allowLoopback?: boolean;
   /** Upper bound for the response body. Defaults are suitable for provider task metadata. */
   maxResponseBytes?: number;
   /** Set only when the remote endpoint honors this request's idempotency key. */
@@ -151,7 +153,10 @@ function isBlockedAddress(address: string): boolean {
  * cloud metadata endpoints. RFC-reserved `.test` names are used by injected
  * fetch implementations in tests and are intentionally exempt from DNS lookup.
  */
-export async function assertSafeProviderEndpoint(url: string): Promise<void> {
+export async function assertSafeProviderEndpoint(
+  url: string,
+  options: { allowLoopback?: boolean } = {},
+): Promise<void> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -173,6 +178,11 @@ export async function assertSafeProviderEndpoint(url: string): Promise<void> {
 
   const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
   if (isReservedTestHost(hostname)) return;
+  if (
+    options.allowLoopback === true &&
+    (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1")
+  )
+    return;
   if (
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
@@ -267,8 +277,7 @@ export function providerTransportErrorCode(error: unknown): string | undefined {
       return undefined;
     seen.add(current);
     const record = current as Record<string, unknown>;
-    if (typeof record["code"] === "string")
-      return record["code"].toUpperCase();
+    if (typeof record["code"] === "string") return record["code"].toUpperCase();
     current = record["cause"];
   }
   return undefined;
@@ -319,7 +328,10 @@ export async function fetchProviderJson<T>(
   options: ProviderFetchOptions,
 ): Promise<T> {
   try {
-    await assertSafeProviderEndpoint(url);
+    await assertSafeProviderEndpoint(
+      url,
+      options.allowLoopback ? { allowLoopback: true } : {},
+    );
   } catch (error) {
     throw new ProviderHttpError("Provider endpoint is not allowed", {
       kind: "invalid_request",
@@ -425,7 +437,10 @@ export async function fetchProviderBytes(
   options: Omit<ProviderFetchOptions, "allowEmpty">,
 ): Promise<{ data: Uint8Array; mimeType?: string }> {
   try {
-    await assertSafeProviderEndpoint(url);
+    await assertSafeProviderEndpoint(
+      url,
+      options.allowLoopback ? { allowLoopback: true } : {},
+    );
   } catch (error) {
     throw new ProviderHttpError("Provider endpoint is not allowed", {
       kind: "invalid_request",

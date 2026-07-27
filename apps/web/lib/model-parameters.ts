@@ -8,17 +8,34 @@ import type { GenerationNodeType } from "./graph-ui";
 
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
   {
+    key: "aspect_ratio",
+    label: "画面比例",
+    control: "select",
+    valueType: "string",
+    default: "auto",
+    options: [
+      { label: "自动（提示词优先，其次参考图）", value: "auto" },
+      { label: "方形 1:1", value: "1:1" },
+      { label: "横向 16:9", value: "16:9" },
+      { label: "竖向 9:16", value: "9:16" },
+      { label: "横向 4:3", value: "4:3" },
+      { label: "竖向 3:4", value: "3:4" },
+    ],
+    description:
+      "自动模式优先读取提示词中的比例；提示词没有明确比例时跟随第一张参考图",
+  },
+  {
     key: "size",
-    label: "尺寸",
+    label: "精确尺寸",
     control: "text",
     valueType: "string",
-    default: "1024x1024",
-    placeholder: "1024x1024",
+    placeholder: "例如 1024x1024（可选）",
     options: [
       { label: "方形 1024 x 1024", value: "1024x1024" },
       { label: "横向 1536 x 1024", value: "1536x1024" },
       { label: "竖向 1024 x 1536", value: "1024x1536" },
     ],
+    description: "填写精确尺寸后，不再发送画面比例",
   },
   {
     key: "quality",

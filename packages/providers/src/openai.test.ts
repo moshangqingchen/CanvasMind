@@ -94,6 +94,65 @@ describe("OpenAIImageAdapter", () => {
     });
   });
 
+  it("maps aspect ratios to valid sizes and only sends compression for lossy formats", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        data: [{ b64_json: Buffer.from("result").toString("base64") }],
+      }),
+    ) as unknown as typeof fetch;
+    const adapter = new OpenAIImageAdapter(
+      new StaticConnectionResolver([
+        {
+          id: "openai",
+          provider: "openai",
+          apiKey: "sk-test",
+          baseUrl: "https://openai.test/v1",
+        },
+      ]),
+      { fetch: fetchMock },
+    );
+
+    await adapter.submit({
+      connectionId: "openai",
+      operation: "image.generate",
+      model: "gpt-image-2",
+      prompt: "A wide cinematic scene",
+      idempotencyKey: "aspect-ratio",
+      parameters: {
+        aspect_ratio: "16:9",
+        output_format: "png",
+        output_compression: 50,
+      },
+    });
+    const pngBody = JSON.parse(
+      String(vi.mocked(fetchMock).mock.calls[0]?.[1]?.body),
+    );
+    expect(pngBody).toMatchObject({ size: "1360x768", output_format: "png" });
+    expect(pngBody).not.toHaveProperty("aspect_ratio");
+    expect(pngBody).not.toHaveProperty("output_compression");
+
+    await adapter.submit({
+      connectionId: "openai",
+      operation: "image.generate",
+      model: "gpt-image-2",
+      prompt: "A square product photo",
+      idempotencyKey: "lossy-compression",
+      parameters: {
+        aspect_ratio: "1:1",
+        output_format: "webp",
+        output_compression: 72,
+      },
+    });
+    const webpBody = JSON.parse(
+      String(vi.mocked(fetchMock).mock.calls[1]?.[1]?.body),
+    );
+    expect(webpBody).toMatchObject({
+      size: "1024x1024",
+      output_format: "webp",
+      output_compression: 72,
+    });
+  });
+
   it("labels encoded and URL outputs using their actual or requested format", async () => {
     const adapter = new OpenAIImageAdapter(new StaticConnectionResolver());
     const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0x01]);
@@ -277,7 +336,6 @@ describe("OpenAIImageAdapter", () => {
         "invalid_quality",
         "unsupported_background",
         "invalid_moderation",
-        "compression_requires_lossy_format",
       ]),
     );
   });

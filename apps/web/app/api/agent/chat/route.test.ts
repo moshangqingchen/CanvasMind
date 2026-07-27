@@ -34,6 +34,22 @@ const connection = {
   },
 };
 
+const personalConnection = {
+  id: "personal-gpt-chat",
+  name: "个人Gpt · 导演台对话",
+  provider: "openai",
+  encryptedSecret: encryptSecret("agt-personal-test", masterKey),
+  config: {
+    supplierKey: "个人Gpt",
+    usage: "agent",
+    modelGroup: "导演台对话",
+    baseUrl: "http://localhost:18082/v1",
+    defaultModel: "gpt-5.6-sol",
+    allowedModels: ["gpt-5.6-sol", "gpt-5.4"],
+    protocol: "responses",
+  },
+};
+
 function request(model = "gpt-5.6-sol") {
   return new Request("http://localhost/api/agent/chat", {
     method: "POST",
@@ -100,6 +116,51 @@ beforeEach(() => {
 });
 
 describe("agent chat route", () => {
+  it("uses a custom OpenAI-compatible Responses connection", async () => {
+    mocks.repository.getConnection.mockResolvedValue(personalConnection);
+    mocks.fetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output: [
+            {
+              type: "message",
+              content: [{ type: "output_text", text: "个人 GPT 已连接。" }],
+            },
+          ],
+          usage: { input_tokens: 7, output_tokens: 5, total_tokens: 12 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      message: { role: "assistant", content: "个人 GPT 已连接。" },
+      model: "gpt-5.6-sol",
+      group: "导演台对话",
+      usage: { promptTokens: 7, completionTokens: 5, totalTokens: 12 },
+    });
+    const [url, init] = mocks.fetch.mock.calls[0]!;
+    expect(url).toBe("http://localhost:18082/v1/responses");
+    expect((init as RequestInit).headers).toMatchObject({
+      authorization: "Bearer agt-personal-test",
+    });
+    const body = JSON.parse(String((init as RequestInit).body)) as {
+      model: string;
+      input: Array<{ role: string }>;
+    };
+    expect(body.model).toBe("gpt-5.6-sol");
+    expect(body.input.at(-1)?.role).toBe("user");
+  });
+
+  it("rejects models outside a custom connection allowlist", async () => {
+    mocks.repository.getConnection.mockResolvedValue(personalConnection);
+    const response = await POST(request("gpt-image-2"));
+    expect(response.status).toBe(422);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
   it("uses only the selected director group key and returns assistant text", async () => {
     mocks.fetch.mockResolvedValue(
       new Response(
@@ -162,7 +223,9 @@ describe("agent chat route", () => {
     mocks.fetch
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify({ error: { message: "chat payload is not supported" } }),
+          JSON.stringify({
+            error: { message: "chat payload is not supported" },
+          }),
           { status: 400, headers: { "content-type": "application/json" } },
         ),
       )

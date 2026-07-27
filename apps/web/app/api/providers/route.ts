@@ -19,6 +19,7 @@ export async function GET() {
     (await repository.listConnections()).map((connection) =>
       maskConnection(connection),
     ),
+    { headers: { "Cache-Control": "no-store" } },
   );
 }
 

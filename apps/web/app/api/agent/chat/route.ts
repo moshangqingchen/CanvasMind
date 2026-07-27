@@ -1,4 +1,4 @@
-import { decryptSecret } from "@super-canvas/providers";
+import { decryptSecret, joinUrl } from "@super-canvas/providers";
 import {
   AgentChatRequestSchema,
   parseJsonRequest,
@@ -11,8 +11,6 @@ import {
 import { requireServerMasterKey } from "../../../../lib/master-key";
 import { jsonError, repository } from "../../../../lib/server";
 
-const CHAT_ENDPOINT = `${CANGYUAN_IMAGE_BASE_URL}/v1/chat/completions`;
-const RESPONSES_ENDPOINT = `${CANGYUAN_IMAGE_BASE_URL}/v1/responses`;
 const CHAT_TIMEOUT_MS = 120_000;
 const MAX_UPSTREAM_ERROR_LENGTH = 600;
 
@@ -99,8 +97,9 @@ function tokenUsage(payload: unknown) {
     typeof usage[key] === "number" && Number.isFinite(usage[key])
       ? usage[key]
       : undefined;
-  const promptTokens = number("prompt_tokens");
-  const completionTokens = number("completion_tokens");
+  const promptTokens = number("prompt_tokens") ?? number("input_tokens");
+  const completionTokens =
+    number("completion_tokens") ?? number("output_tokens");
   const totalTokens = number("total_tokens");
   if (
     promptTokens === undefined &&
@@ -177,6 +176,7 @@ async function readUpstreamDetail(response: Response): Promise<string | null> {
 function upstreamError(
   status: number,
   detail?: string | null,
+  providerName = "对话供应商",
 ): { message: string; status: number } {
   const suffix = detail ? ` 上游原因：${detail}` : "";
   if (status === 401 || status === 403)
@@ -191,11 +191,11 @@ function upstreamError(
     };
   if (status >= 500)
     return {
-      message: `沧元对话上游暂时不可用（HTTP ${status}），请稍后重试。${suffix}`,
+      message: `${providerName}上游暂时不可用（HTTP ${status}），请稍后重试。${suffix}`,
       status: 502,
     };
   return {
-    message: `沧元拒绝了当前对话请求（HTTP ${status}）。${suffix || " 请检查模型参数或输入格式。"}`,
+    message: `${providerName}拒绝了当前对话请求（HTTP ${status}）。${suffix || " 请检查模型参数或输入格式。"}`,
     status: 422,
   };
 }
@@ -248,8 +248,15 @@ function responseRequestBody(
   };
 }
 
-function shouldTryResponses(status: number, model: string): boolean {
+function shouldTryAlternateProtocol(status: number, model: string): boolean {
   return /^gpt-/iu.test(model) && [400, 404, 405, 415, 422].includes(status);
+}
+
+function configuredStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) =>
+    typeof item === "string" && item.trim() ? [item.trim()] : [],
+  );
 }
 
 export async function POST(request: Request) {
@@ -258,11 +265,10 @@ export async function POST(request: Request) {
 
   const connection = await repository.getConnection(parsed.data.connectionId);
   if (!connection) return jsonError("导演台 API 连接不存在", 404);
-  if (
-    connection.config.preset !== CANGYUAN_IMAGE_PRESET_ID ||
-    connection.config.usage !== "agent"
-  )
+  if (connection.config.usage !== "agent")
     return jsonError("所选连接不是右侧导演台的独立对话连接", 422);
+
+  const isCangyuan = connection.config.preset === CANGYUAN_IMAGE_PRESET_ID;
 
   const groupId =
     typeof connection.config.modelGroup === "string"
@@ -270,18 +276,42 @@ export async function POST(request: Request) {
       : "";
   if (!groupId) return jsonError("导演台连接缺少模型群组", 422);
 
-  const catalog = await loadCangyuanCatalog();
-  const group = catalog.marketplaceGroups.find((item) => item.id === groupId);
-  if (!group && catalog.source === "fallback")
-    return jsonError("沧元实时模型目录暂不可用，无法安全校验导演台模型", 503);
-  const model = group?.models.find(
-    (item) => item.id === parsed.data.model && item.capability === "chat",
-  );
-  if (!model)
-    return jsonError(
-      "所选模型不是当前导演台群组中的对话模型，请刷新后重选",
-      422,
+  if (isCangyuan) {
+    const catalog = await loadCangyuanCatalog();
+    const group = catalog.marketplaceGroups.find((item) => item.id === groupId);
+    if (!group && catalog.source === "fallback")
+      return jsonError("沧元实时模型目录暂不可用，无法安全校验导演台模型", 503);
+    const validModel = group?.models.some(
+      (item) => item.id === parsed.data.model && item.capability === "chat",
     );
+    if (!validModel)
+      return jsonError(
+        "所选模型不是当前导演台群组中的对话模型，请刷新后重选",
+        422,
+      );
+  } else {
+    const allowedModels = configuredStrings(connection.config.allowedModels);
+    if (allowedModels.length > 0 && !allowedModels.includes(parsed.data.model))
+      return jsonError("所选模型不在当前个人 GPT 连接的允许列表中", 422);
+  }
+
+  const configuredBaseUrl =
+    typeof connection.config.baseUrl === "string"
+      ? connection.config.baseUrl.trim()
+      : "";
+  const apiBaseUrl = isCangyuan
+    ? joinUrl(CANGYUAN_IMAGE_BASE_URL, "/v1")
+    : configuredBaseUrl;
+  if (!apiBaseUrl) return jsonError("导演台连接缺少 API Base URL", 422);
+  const chatEndpoint = joinUrl(apiBaseUrl, "/chat/completions");
+  const responsesEndpoint = joinUrl(apiBaseUrl, "/responses");
+  const providerName =
+    typeof connection.config.supplierKey === "string" &&
+    connection.config.supplierKey.trim()
+      ? connection.config.supplierKey.trim()
+      : isCangyuan
+        ? "沧元"
+        : connection.name;
 
   if (!connection.encryptedSecret)
     return jsonError("当前导演台群组尚未配置 API Key", 409);
@@ -311,71 +341,91 @@ export async function POST(request: Request) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
   try {
-    let response = await fetch(CHAT_ENDPOINT, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: model.id,
-        messages,
-        stream: false,
-        ...(parsed.data.reasoningEffort
-          ? { reasoning_effort: parsed.data.reasoningEffort }
-          : {}),
-      }),
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const chatStatus = response.status;
-      const chatDetail = await readUpstreamDetail(response);
-      if (!shouldTryResponses(chatStatus, model.id)) {
-        const error = upstreamError(chatStatus, chatDetail);
-        return jsonError(error.message, error.status);
-      }
-      response = await fetch(RESPONSES_ENDPOINT, {
+    const requestChat = () =>
+      fetch(chatEndpoint, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: parsed.data.model,
+          messages,
+          stream: false,
+          ...(parsed.data.reasoningEffort
+            ? { reasoning_effort: parsed.data.reasoningEffort }
+            : {}),
+        }),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    const requestResponses = () =>
+      fetch(responsesEndpoint, {
         method: "POST",
         headers: {
           authorization: `Bearer ${apiKey}`,
           "content-type": "application/json",
         },
         body: JSON.stringify(
-          responseRequestBody(model.id, messages, parsed.data.reasoningEffort),
+          responseRequestBody(
+            parsed.data.model,
+            messages,
+            parsed.data.reasoningEffort,
+          ),
         ),
         cache: "no-store",
         signal: controller.signal,
       });
+    const responsesFirst =
+      !isCangyuan && connection.config.protocol !== "chat-completions";
+    let response = responsesFirst
+      ? await requestResponses()
+      : await requestChat();
+    if (!response.ok) {
+      const firstStatus = response.status;
+      const firstDetail = await readUpstreamDetail(response);
+      if (!shouldTryAlternateProtocol(firstStatus, parsed.data.model)) {
+        const error = upstreamError(firstStatus, firstDetail, providerName);
+        return jsonError(error.message, error.status);
+      }
+      response = responsesFirst
+        ? await requestChat()
+        : await requestResponses();
       if (!response.ok) {
-        const responsesDetail = await readUpstreamDetail(response);
+        const secondDetail = await readUpstreamDetail(response);
         const combinedDetail = [
-          chatDetail ? `Chat Completions：${chatDetail}` : "",
-          responsesDetail ? `Responses：${responsesDetail}` : "",
+          firstDetail
+            ? `${responsesFirst ? "Responses" : "Chat Completions"}：${firstDetail}`
+            : "",
+          secondDetail
+            ? `${responsesFirst ? "Chat Completions" : "Responses"}：${secondDetail}`
+            : "",
         ]
           .filter(Boolean)
           .join("；");
         const error = upstreamError(
           response.status,
-          combinedDetail || responsesDetail || chatDetail,
+          combinedDetail || secondDetail || firstDetail,
+          providerName,
         );
         return jsonError(error.message, error.status);
       }
     }
     const payload = (await response.json()) as unknown;
     const content = responsesAssistantContent(payload);
-    if (!content) return jsonError("沧元对话接口没有返回可显示的助手文本", 502);
+    if (!content)
+      return jsonError(`${providerName}接口没有返回可显示的助手文本`, 502);
     const usage = tokenUsage(payload);
     return Response.json({
       message: { role: "assistant", content },
-      model: model.id,
+      model: parsed.data.model,
       group: groupId,
       ...(usage ? { usage } : {}),
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError")
       return jsonError("导演台对话请求超时，请稍后重试", 504);
-    return jsonError("无法连接沧元对话接口，请检查网络后重试", 502);
+    return jsonError(`无法连接${providerName}接口，请检查网络后重试`, 502);
   } finally {
     clearTimeout(timeout);
   }

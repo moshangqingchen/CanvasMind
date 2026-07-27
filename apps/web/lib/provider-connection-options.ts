@@ -12,6 +12,9 @@ const supplierLabels: Record<string, string> = {
 export function providerConnectionSupplierKey(
   connection: ProviderConnectionView,
 ): string {
+  const configuredSupplier = connection.config.supplierKey;
+  if (typeof configuredSupplier === "string" && configuredSupplier.trim())
+    return configuredSupplier.trim();
   return isCangyuanImagePreset(connection.config.preset)
     ? "cangyuan"
     : connection.provider;

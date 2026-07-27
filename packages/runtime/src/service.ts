@@ -1632,8 +1632,17 @@ export class RunService {
       if (autoAspectKey) {
         const inferredRatio =
           aspectRatioFromPrompt(prompt) ?? referenceAspectRatio(graph, assets);
-        if (inferredRatio) parameters[autoAspectKey] = inferredRatio;
-        else delete parameters[autoAspectKey];
+        if (inferredRatio) {
+          if (autoAspectKey === "size" && providerName === "openai") {
+            // Older saved OpenAI nodes used size=auto. Preserve the same
+            // prompt/reference precedence through the adapter's ratio mapping
+            // instead of sending an invalid value such as size="16:9".
+            delete parameters.size;
+            parameters.aspect_ratio = inferredRatio;
+          } else {
+            parameters[autoAspectKey] = inferredRatio;
+          }
+        } else delete parameters[autoAspectKey];
       }
     }
     const request: NormalizedRequest = {

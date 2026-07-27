@@ -1984,6 +1984,17 @@ circle.canvas-drawing-selection-outline {
 .parameter-field {
   min-width: 0;
 }
+.parameter-field.is-disabled label {
+  color: #667085;
+}
+.parameter-field input:disabled,
+.parameter-field select:disabled {
+  cursor: not-allowed;
+  border-color: #293142;
+  background: #151a25;
+  color: #667085;
+  opacity: 0.72;
+}
 .parameter-dimensions {
   grid-column: 1 / -1;
 }

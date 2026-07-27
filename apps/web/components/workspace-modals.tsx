@@ -569,7 +569,10 @@ export function SettingsModal({
     setApiKey("");
     setBaseUrl("");
     setDefaultModel("");
-    setPreservedConfig({});
+    const builtInSupplier = ["openai", "runway", "rest", "fake"].includes(
+      supplierKey,
+    );
+    setPreservedConfig(supplierKey && !builtInSupplier ? { supplierKey } : {});
     setConnectorJson(JSON.stringify(defaultRestConfig.connector, null, 2));
     setMessage(null);
 
@@ -578,7 +581,12 @@ export function SettingsModal({
       return;
     }
 
-    const nextProvider = supplierKey || "openai";
+    const nextProvider = builtInSupplier
+      ? supplierKey
+      : (connections.find(
+          (connection) =>
+            providerConnectionSupplierKey(connection) === supplierKey,
+        )?.provider ?? "openai");
     setPresetId(null);
     setProvider(nextProvider);
     setModelGroup(CANGYUAN_IMAGE_GROUP);
@@ -615,6 +623,11 @@ export function SettingsModal({
             ].includes(key),
         ),
       );
+      const preservedModelGroup =
+        typeof preservedConfig.modelGroup === "string" &&
+        preservedConfig.modelGroup.trim()
+          ? preservedConfig.modelGroup.trim()
+          : "";
       const saved = await saveConnection({
         id: selectedId ?? undefined,
         name,
@@ -625,7 +638,11 @@ export function SettingsModal({
           ...(baseUrl ? { baseUrl } : {}),
           ...(defaultModel.trim() ? { defaultModel: defaultModel.trim() } : {}),
           ...(presetId ? { preset: presetId } : {}),
-          ...(presetId === CANGYUAN_IMAGE_PRESET_ID ? { modelGroup } : {}),
+          ...(presetId === CANGYUAN_IMAGE_PRESET_ID
+            ? { modelGroup }
+            : preservedModelGroup
+              ? { modelGroup: preservedModelGroup }
+              : {}),
           ...(connector ? { connector } : {}),
         },
       });

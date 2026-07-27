@@ -132,22 +132,39 @@ function ParameterControl({
   descriptor,
   parameters,
   onChange,
+  disabledReason,
+  hasAspectRatioControl,
 }: {
   nodeId: string;
   descriptor: ModelParameterDescriptor;
   parameters: Record<string, unknown>;
   onChange: (parameters: Record<string, unknown>) => void;
+  disabledReason?: string;
+  hasAspectRatioControl?: boolean;
 }) {
   const id = controlId(nodeId, descriptor.key);
-  const value = parameters[descriptor.key] ?? descriptor.default ?? "";
+  const value =
+    descriptor.key === "aspect_ratio" &&
+    parameters.aspect_ratio === undefined &&
+    parameters.size !== undefined
+      ? ""
+      : (parameters[descriptor.key] ?? descriptor.default ?? "");
   const update = (raw: string | boolean) => {
     const nextValue = coerceParameterInput(descriptor, raw);
     const next = setParameterValue(parameters, descriptor.key, nextValue);
-    if (nextValue !== undefined && descriptor.key === "size") {
-      delete next.aspect_ratio;
+    if (descriptor.key === "size") {
+      if (nextValue !== undefined) delete next.aspect_ratio;
+      else if (hasAspectRatioControl) next.aspect_ratio = "auto";
     }
     if (nextValue !== undefined && descriptor.key === "aspect_ratio") {
       delete next.size;
+    }
+    if (
+      descriptor.key === "output_format" &&
+      nextValue !== "jpeg" &&
+      nextValue !== "webp"
+    ) {
+      delete next.output_compression;
     }
     onChange(next);
   };
@@ -183,17 +200,25 @@ function ParameterControl({
   }
 
   return (
-    <div className="field parameter-field">
-      <label htmlFor={id} title={descriptor.description}>
+    <div
+      className={`field parameter-field${disabledReason ? " is-disabled" : ""}`}
+    >
+      <label htmlFor={id} title={disabledReason ?? descriptor.description}>
         {descriptor.label}
       </label>
       {descriptor.control === "select" ? (
         <select
           id={id}
           value={String(value)}
+          disabled={Boolean(disabledReason)}
+          title={disabledReason}
           onChange={(event) => update(event.target.value)}
         >
-          <option value="">API 默认</option>
+          <option value="">
+            {descriptor.key === "aspect_ratio" && parameters.size !== undefined
+              ? "按精确尺寸"
+              : "API 默认"}
+          </option>
           {(descriptor.options ?? []).map((option) => (
             <option key={String(option.value)} value={String(option.value)}>
               {option.label}
@@ -209,6 +234,8 @@ function ParameterControl({
             min={descriptor.min}
             max={descriptor.max}
             step={descriptor.step}
+            disabled={Boolean(disabledReason)}
+            title={disabledReason}
             list={descriptor.options?.length ? `${id}-options` : undefined}
             placeholder={descriptor.placeholder}
             onChange={(event) => update(event.target.value)}
@@ -242,6 +269,16 @@ export function NodeParameterFields({
     [model, nodeType, provider],
   );
   const parameterJson = JSON.stringify(parameters, null, 2);
+  const outputFormat = String(
+    parameters.output_format ??
+      descriptors.find((descriptor) => descriptor.key === "output_format")
+        ?.default ??
+      "png",
+  ).toLowerCase();
+  const compressionEnabled = outputFormat === "jpeg" || outputFormat === "webp";
+  const hasAspectRatioControl = descriptors.some(
+    (descriptor) => descriptor.key === "aspect_ratio",
+  );
 
   return (
     <>
@@ -253,6 +290,12 @@ export function NodeParameterFields({
             descriptor={descriptor}
             parameters={parameters}
             onChange={onChange}
+            hasAspectRatioControl={hasAspectRatioControl}
+            disabledReason={
+              descriptor.key === "output_compression" && !compressionEnabled
+                ? "PNG 是无损格式，不支持设置压缩率；请选择 JPEG 或 WebP"
+                : undefined
+            }
           />
         ))}
       </div>

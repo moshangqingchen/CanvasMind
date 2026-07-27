@@ -99,6 +99,31 @@ describe("provider HTTP submission safety", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("allows only an explicitly opted-in exact loopback gateway", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    await expect(
+      fetchProviderJson(
+        fetchImpl,
+        "http://localhost:18082/v1/models",
+        {},
+        { phase: "connect", allowLoopback: true },
+      ),
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      fetchProviderJson(
+        fetchImpl,
+        "http://10.0.0.8/v1/models",
+        {},
+        { phase: "connect", allowLoopback: true },
+      ),
+    ).rejects.toMatchObject({ details: { kind: "invalid_request" } });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps provider.test mocks working and disables redirects", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {

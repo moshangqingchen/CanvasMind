@@ -69,18 +69,37 @@ const MAX_EDIT_IMAGE_BYTES = 50 * 1024 * 1024;
 
 const IMAGE_PARAMETER_DESCRIPTORS: readonly ModelParameterDescriptor[] = [
   {
+    key: "aspect_ratio",
+    label: "画面比例",
+    control: "select",
+    valueType: "string",
+    default: "auto",
+    options: [
+      { label: "自动（提示词优先，其次参考图）", value: "auto" },
+      { label: "方形 1:1", value: "1:1" },
+      { label: "横向 16:9", value: "16:9" },
+      { label: "竖向 9:16", value: "9:16" },
+      { label: "横向 4:3", value: "4:3" },
+      { label: "竖向 3:4", value: "3:4" },
+      { label: "横向 3:2", value: "3:2" },
+      { label: "竖向 2:3", value: "2:3" },
+    ],
+    description:
+      "自动模式优先读取提示词中的比例；提示词没有明确比例时跟随第一张参考图",
+    operations: ["image.generate", "image.edit"],
+  },
+  {
     key: "size",
-    label: "尺寸",
+    label: "精确尺寸",
     control: "text",
     valueType: "string",
-    default: "1024x1024",
-    placeholder: "1024x1024",
+    placeholder: "例如 1024x1024（可选）",
     options: [
-      { label: "自动", value: "auto" },
       { label: "方形 1024 x 1024", value: "1024x1024" },
       { label: "横向 1536 x 1024", value: "1536x1024" },
       { label: "竖向 1024 x 1536", value: "1024x1536" },
     ],
+    description: "填写精确尺寸后，不再发送画面比例",
     operations: ["image.generate", "image.edit"],
   },
   {
@@ -126,10 +145,10 @@ const IMAGE_PARAMETER_DESCRIPTORS: readonly ModelParameterDescriptor[] = [
     label: "压缩率",
     control: "number",
     valueType: "integer",
-    default: 100,
     min: 0,
     max: 100,
     step: 1,
+    placeholder: "100",
     description: "仅 JPEG 与 WebP 使用",
     operations: ["image.generate", "image.edit"],
   },
@@ -179,8 +198,49 @@ const IMAGE_MODELS: readonly ModelDescriptor[] = [
   },
 ];
 
+function aspectRatioValue(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = /^(\d+(?:\.\d+)?)\s*[:/x]\s*(\d+(?:\.\d+)?)$/iu.exec(
+    value.trim(),
+  );
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width > 0 && height > 0 ? width / height : undefined;
+}
+
+function sizeFromAspectRatio(
+  value: unknown,
+  model: string,
+): string | undefined {
+  if (value === "auto") return "auto";
+  const ratio = aspectRatioValue(value);
+  if (!ratio) return undefined;
+
+  if (!/^gpt-image-2(?:-|$)/u.test(model)) {
+    if (ratio > 1.1) return "1536x1024";
+    if (ratio < 0.9) return "1024x1536";
+    return "1024x1024";
+  }
+
+  // GPT Image 2 accepts flexible dimensions. Keep the result near one
+  // megapixel, align both edges to 16 px, and honor its 3:1 ratio limit.
+  const boundedRatio = Math.min(3, Math.max(1 / 3, ratio));
+  const targetPixels = 1024 * 1024;
+  const width = Math.max(
+    16,
+    Math.round(Math.sqrt(targetPixels * boundedRatio) / 16) * 16,
+  );
+  const height = Math.max(
+    16,
+    Math.round(Math.sqrt(targetPixels / boundedRatio) / 16) * 16,
+  );
+  return `${width}x${height}`;
+}
+
 function imageParameters(
   parameters: Readonly<Record<string, unknown>> | undefined,
+  model: string,
 ) {
   if (!parameters) return {};
   const permitted = [
@@ -193,11 +253,23 @@ function imageParameters(
     "size",
     "user",
   ] as const;
-  return Object.fromEntries(
+  const outputFormat =
+    imageFormat(parameters["output_format"])?.format ?? "png";
+  const result = Object.fromEntries(
     permitted.flatMap((key) =>
-      parameters[key] === undefined ? [] : [[key, parameters[key]]],
+      parameters[key] === undefined ||
+      (key === "output_compression" &&
+        outputFormat !== "jpeg" &&
+        outputFormat !== "webp")
+        ? []
+        : [[key, parameters[key]]],
     ),
   );
+  if (result.size === undefined) {
+    const inferredSize = sizeFromAspectRatio(parameters["aspect_ratio"], model);
+    if (inferredSize) result.size = inferredSize;
+  }
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -224,6 +296,10 @@ function configuredDefaultModel(
     ? stringSetting(nestedConfig, "defaultModel")
     : undefined;
   return direct ?? nested ?? fallback;
+}
+
+function allowLoopbackGateway(connection: ResolvedProviderConnection): boolean {
+  return connection.settings?.["allowLocalhost"] === true;
 }
 
 function imageFormat(value: unknown): ImageFormatDescriptor | undefined {
@@ -334,7 +410,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       this.fetchImpl,
       joinUrl(connection.baseUrl ?? DEFAULT_BASE_URL, "/models"),
       { method: "GET", headers },
-      { phase: "connect", timeoutMs: this.requestTimeoutMs },
+      {
+        phase: "connect",
+        timeoutMs: this.requestTimeoutMs,
+        allowLoopback: allowLoopbackGateway(connection),
+      },
     );
   }
 
@@ -348,7 +428,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       this.fetchImpl,
       joinUrl(connection.baseUrl ?? DEFAULT_BASE_URL, "/models"),
       { method: "GET", headers },
-      { phase: "connect", timeoutMs: this.requestTimeoutMs },
+      {
+        phase: "connect",
+        timeoutMs: this.requestTimeoutMs,
+        allowLoopback: allowLoopbackGateway(connection),
+      },
     );
     const ids = new Set(
       (response.data ?? [])
@@ -537,6 +621,17 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         });
       }
     }
+    const aspectRatio = request.parameters?.["aspect_ratio"];
+    if (
+      aspectRatio !== undefined &&
+      aspectRatio !== "auto" &&
+      aspectRatioValue(aspectRatio) === undefined
+    )
+      issues.push({
+        path: "parameters.aspect_ratio",
+        code: "invalid_aspect_ratio",
+        message: "OpenAI aspect_ratio must be auto or WIDTH:HEIGHT",
+      });
     const resolvedModel =
       request.model ??
       (resolvedConnection
@@ -583,17 +678,6 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         code: "invalid_moderation",
         message: "OpenAI moderation must be auto or low",
       });
-    if (
-      outputCompression !== undefined &&
-      imageFormat(outputFormat)?.format !== "jpeg" &&
-      imageFormat(outputFormat)?.format !== "webp"
-    )
-      issues.push({
-        path: "parameters.output_compression",
-        code: "compression_requires_lossy_format",
-        message:
-          "OpenAI output_compression requires jpeg or webp output_format",
-      });
     if (request.model !== undefined && request.model.trim().length === 0) {
       issues.push({
         path: "model",
@@ -627,7 +711,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       form.set("model", model);
       form.set("prompt", request.prompt);
       for (const [key, value] of Object.entries(
-        imageParameters(request.parameters),
+        imageParameters(request.parameters, model),
       )) {
         form.set(key, String(value));
       }
@@ -654,6 +738,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           // image endpoint does not provide a documented replay guarantee.
           // Treat a lost response as ambiguous rather than auto-resubmitting.
           idempotent: false,
+          allowLoopback: allowLoopbackGateway(connection),
         },
       );
     } else {
@@ -667,13 +752,14 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           body: JSON.stringify({
             model,
             prompt: request.prompt,
-            ...imageParameters(request.parameters),
+            ...imageParameters(request.parameters, model),
           }),
         },
         {
           phase: "submit",
           timeoutMs: this.requestTimeoutMs,
           idempotent: false,
+          allowLoopback: allowLoopbackGateway(connection),
         },
       );
     }

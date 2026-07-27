@@ -43,6 +43,18 @@ describe("provider connection navigation", () => {
     expect(providerConnectionGroup(item)).toBe("默认群组");
   });
 
+  it("groups custom OpenAI-compatible connections under their configured supplier", () => {
+    const item = connection("openai", {
+      supplierKey: "个人Gpt",
+      modelGroup: "导演台对话",
+      usage: "agent",
+    });
+
+    expect(providerConnectionSupplierKey(item)).toBe("个人Gpt");
+    expect(providerSupplierLabel("个人Gpt")).toBe("个人Gpt");
+    expect(providerConnectionGroup(item)).toBe("导演台对话");
+  });
+
   it("keeps director connections separate from legacy canvas connections", () => {
     const item = connection("rest", {
       preset: "cangyuan-gpt-image-2",

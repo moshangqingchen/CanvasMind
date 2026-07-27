@@ -295,7 +295,9 @@ function GenerationNodeBody({
         ]
           .filter(Boolean)
           .join(" · ")
-      : [parameters.size, parameters.quality].filter(Boolean).join(" · ");
+      : [parameters.aspect_ratio ?? parameters.size, parameters.quality]
+          .filter(Boolean)
+          .join(" · ");
   const running = ["queued", "submitting", "running", "archiving"].includes(
     data.status ?? "",
   );
