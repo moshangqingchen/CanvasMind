@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import {
   Background,
@@ -109,6 +110,7 @@ import {
   renderDrawingStrokesToPng,
   translateDrawingStrokes,
   type DrawingTool,
+  zoomViewportAtPoint,
 } from "../lib/drawing";
 import { localizeRunError } from "../lib/error-localization";
 import {
@@ -1855,6 +1857,34 @@ function CanvasShell() {
         y: event.clientY,
       }) ?? null,
     [],
+  );
+
+  const onDrawingWheel = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (event.deltaY === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (drawingInteractionRef.current) return;
+      const instance = reactFlowRef.current;
+      if (!instance) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const point = {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      };
+      const deltaScale =
+        event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? bounds.height : 1;
+      const current = instance.getViewport();
+      const targetZoom =
+        current.zoom * Math.exp(-event.deltaY * deltaScale * 0.0015);
+      const nextViewport = zoomViewportAtPoint(current, point, targetZoom);
+      if (nextViewport === current) return;
+      void instance.setViewport(nextViewport, { duration: 0 });
+      setViewport(nextViewport);
+      const state = useCanvasStore.getState();
+      scheduleSave(state.nodes, state.edges, nextViewport, state.drawings);
+    },
+    [scheduleSave, setViewport],
   );
 
   const onDrawingPointerDown = useCallback(
@@ -4894,6 +4924,7 @@ function CanvasShell() {
               onPointerMove={onDrawingPointerMove}
               onPointerUp={(event) => finishDrawingInteraction(event)}
               onPointerCancel={(event) => finishDrawingInteraction(event, true)}
+              onWheel={onDrawingWheel}
               onContextMenu={(event) => event.preventDefault()}
             />
           ) : null}

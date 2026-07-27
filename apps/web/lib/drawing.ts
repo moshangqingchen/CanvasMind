@@ -10,6 +10,30 @@ export interface DrawingRect {
   maxY: number;
 }
 
+export interface DrawingViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export function zoomViewportAtPoint(
+  viewport: DrawingViewport,
+  point: CanvasDrawingPoint,
+  targetZoom: number,
+  minZoom = 0.5,
+  maxZoom = 2,
+): DrawingViewport {
+  const zoom = Math.max(minZoom, Math.min(maxZoom, targetZoom));
+  if (zoom === viewport.zoom) return viewport;
+  const flowX = (point.x - viewport.x) / viewport.zoom;
+  const flowY = (point.y - viewport.y) / viewport.zoom;
+  return {
+    x: point.x - flowX * zoom,
+    y: point.y - flowY * zoom,
+    zoom,
+  };
+}
+
 export type DrawingTool =
   "freehand" | "rectangle" | "ellipse" | "line" | "arrow";
 

@@ -7,6 +7,7 @@ import {
   hitTestDrawingStrokes,
   normalizeDrawingRect,
   translateDrawingStrokes,
+  zoomViewportAtPoint,
 } from "./drawing";
 import type { CanvasDrawingStroke } from "../components/types";
 
@@ -111,5 +112,20 @@ describe("canvas drawing helpers", () => {
     expect(arrow[0]).toEqual({ x: 0, y: 0 });
     expect(arrow[1]).toEqual({ x: 100, y: 0 });
     expect(arrow[3]).toEqual({ x: 100, y: 0 });
+  });
+
+  it("zooms around the cursor without moving the pointed canvas position", () => {
+    const point = { x: 320, y: 180 };
+    const current = { x: 80, y: 30, zoom: 1 };
+    const next = zoomViewportAtPoint(current, point, 1.5);
+    expect(next).toEqual({ x: -40, y: -45, zoom: 1.5 });
+    expect((point.x - next.x) / next.zoom).toBe(
+      (point.x - current.x) / current.zoom,
+    );
+    expect((point.y - next.y) / next.zoom).toBe(
+      (point.y - current.y) / current.zoom,
+    );
+    expect(zoomViewportAtPoint(current, point, 99).zoom).toBe(2);
+    expect(zoomViewportAtPoint(current, point, 0.01).zoom).toBe(0.5);
   });
 });
