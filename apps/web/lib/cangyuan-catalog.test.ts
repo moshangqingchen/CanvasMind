@@ -130,9 +130,7 @@ describe("Cangyuan live catalog", () => {
     expect(
       catalog.groups["全模型-无claude/gpt"].map((model) => model.id),
     ).toEqual(["gpt-image-2", "veo-3-1"]);
-    expect(catalog.groups.VIDEO.map((model) => model.id)).toEqual([
-      "veo-3-1",
-    ]);
+    expect(catalog.groups.VIDEO.map((model) => model.id)).toEqual(["veo-3-1"]);
     expect(catalog.groups["备用image线路"]).toEqual([
       expect.objectContaining({
         id: "new-image-model",
@@ -158,8 +156,7 @@ describe("Cangyuan live catalog", () => {
             expect.objectContaining({
               id: "gpt-5.4",
               capability: "chat",
-              priceLabel:
-                "输入 ¥0.1875/1M · 输出 ¥1.125/1M · 缓存 ¥0.0188/1M",
+              priceLabel: "输入 ¥0.1875/1M · 输出 ¥1.125/1M · 缓存 ¥0.0188/1M",
             }),
           ],
         }),
@@ -300,7 +297,7 @@ describe("Cangyuan live catalog", () => {
     expect(
       model?.parameters?.find((parameter) => parameter.key === "aspect_ratio")
         ?.options?.[0],
-    ).toEqual({ label: "自动（跟随参考图）", value: "auto" });
+    ).toEqual({ label: "自动（提示词优先）", value: "auto" });
     expect(
       model?.parameters?.find((parameter) => parameter.key === "aspect_ratio")
         ?.default,

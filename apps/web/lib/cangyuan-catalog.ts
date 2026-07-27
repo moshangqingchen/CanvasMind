@@ -143,7 +143,8 @@ function marketplaceCapability(
   record: PricingRecord,
 ): CangyuanMarketplaceModel["capability"] {
   const tags = pricingTags(record.tags);
-  if (isRecord(record.video_ui_params) || tags.includes("video")) return "video";
+  if (isRecord(record.video_ui_params) || tags.includes("video"))
+    return "video";
   if (
     isRecord(record.image_ui_params) ||
     record.request_unit === "image" ||
@@ -159,7 +160,8 @@ function marketplacePriceLabel(
   groupRatio: number,
 ): { priceLabel: string; billingLabel: string } {
   const modelRatio =
-    typeof record.model_ratio === "number" && Number.isFinite(record.model_ratio)
+    typeof record.model_ratio === "number" &&
+    Number.isFinite(record.model_ratio)
       ? record.model_ratio
       : null;
   const completionRatio =
@@ -168,7 +170,8 @@ function marketplacePriceLabel(
       ? record.completion_ratio
       : 1;
   const cacheRatio =
-    typeof record.cache_ratio === "number" && Number.isFinite(record.cache_ratio)
+    typeof record.cache_ratio === "number" &&
+    Number.isFinite(record.cache_ratio)
       ? record.cache_ratio
       : null;
   if (record.quota_type === 0 && modelRatio !== null) {
@@ -184,10 +187,7 @@ function marketplacePriceLabel(
     };
   }
   const price = formatPrice(record.model_price);
-  const unit = priceUnit(
-    record,
-    marketplaceCapability(record) === "video",
-  );
+  const unit = priceUnit(record, marketplaceCapability(record) === "video");
   return {
     priceLabel: price ? `¥${price}/${unit}` : "价格以模型广场为准",
     billingLabel:
@@ -253,10 +253,7 @@ function imageRatioOptions(value: unknown): ModelParameterOption[] {
   const options = parameterOptions(value).filter(
     (option) => option.value !== "auto",
   );
-  return [
-    { label: "自动（跟随参考图）", value: "auto" },
-    ...options,
-  ];
+  return [{ label: "自动（提示词优先）", value: "auto" }, ...options];
 }
 
 function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
@@ -271,11 +268,8 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
       label: "画面比例",
       control: options.length > 0 ? "select" : "text",
       valueType: "string",
-      description:
-        "自动模式有参考图时跟随参考图；没有参考图时交给模型依据提示词判断",
-      ...(options.length > 0
-        ? { default: "auto", options }
-        : {}),
+      description: "自动模式优先依据提示词判断；提示词没有明确比例时跟随参考图",
+      ...(options.length > 0 ? { default: "auto", options } : {}),
       operations: IMAGE_OPERATIONS,
     });
   }
@@ -872,7 +866,8 @@ function fallbackSnapshot(): CangyuanCatalogSnapshot {
       )
         ? "video"
         : "image",
-      priceLabel: model.name.match(/（(¥[^）]+)）$/u)?.[1] ?? "价格以模型广场为准",
+      priceLabel:
+        model.name.match(/（(¥[^）]+)）$/u)?.[1] ?? "价格以模型广场为准",
       billingLabel: "按请求计费",
       tags: [],
       endpointTypes: [],

@@ -48,6 +48,7 @@ import {
   artifactDownloadMaxBytes,
   downloadRemoteArtifact,
 } from "./remote-download.js";
+import { aspectRatioFromPrompt, aspectRatioString } from "./aspect-ratio.js";
 
 interface NodeData extends Record<string, unknown> {
   provider?: string;
@@ -137,31 +138,6 @@ function hasPromptText(parts: readonly PromptPart[]): boolean {
   return parts.some(
     (part) => part.type === "text" && part.text.trim().length > 0,
   );
-}
-
-function greatestCommonDivisor(left: number, right: number): number {
-  let a = Math.abs(Math.trunc(left));
-  let b = Math.abs(Math.trunc(right));
-  while (b > 0) [a, b] = [b, a % b];
-  return a || 1;
-}
-
-function aspectRatioString(value: number): string | undefined {
-  if (!Number.isFinite(value) || value <= 0) return undefined;
-  let bestWidth = 1;
-  let bestHeight = 1;
-  let bestError = Number.POSITIVE_INFINITY;
-  for (let height = 1; height <= 100; height += 1) {
-    const width = Math.max(1, Math.round(value * height));
-    const error = Math.abs(width / height - value);
-    if (error < bestError) {
-      bestWidth = width;
-      bestHeight = height;
-      bestError = error;
-    }
-  }
-  const divisor = greatestCommonDivisor(bestWidth, bestHeight);
-  return `${bestWidth / divisor}:${bestHeight / divisor}`;
 }
 
 function referenceAspectRatio(
@@ -1639,25 +1615,32 @@ export class RunService {
     const parameters = {
       ...((data.parameters as Record<string, unknown> | undefined) ?? {}),
     };
-    if (
-      semanticType(node) === "image-generation" &&
-      parameters.aspect_ratio === "auto"
-    ) {
-      const inferredRatio = referenceAspectRatio(graph, assets);
-      if (inferredRatio) parameters.aspect_ratio = inferredRatio;
-      else delete parameters.aspect_ratio;
+    const prompt = renderPromptParts(parts, {
+      resolveAsset: (id) => {
+        const index = assets.findIndex((asset) => asset.id === id);
+        return index < 0 ? "" : `[参考素材 ${index + 1}]`;
+      },
+      unresolvedAsset: "empty",
+    });
+    if (semanticType(node) === "image-generation") {
+      const autoAspectKey =
+        parameters.aspect_ratio === "auto"
+          ? "aspect_ratio"
+          : parameters.size === "auto"
+            ? "size"
+            : undefined;
+      if (autoAspectKey) {
+        const inferredRatio =
+          aspectRatioFromPrompt(prompt) ?? referenceAspectRatio(graph, assets);
+        if (inferredRatio) parameters[autoAspectKey] = inferredRatio;
+        else delete parameters[autoAspectKey];
+      }
     }
     const request: NormalizedRequest = {
       connectionId,
       operation,
       model,
-      prompt: renderPromptParts(parts, {
-        resolveAsset: (id) => {
-          const index = assets.findIndex((asset) => asset.id === id);
-          return index < 0 ? "" : `[参考素材 ${index + 1}]`;
-        },
-        unresolvedAsset: "empty",
-      }),
+      prompt,
       assets,
       parameters,
       idempotencyKey: `${runId}:${nodeRunId}`,

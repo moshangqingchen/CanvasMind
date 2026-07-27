@@ -57,7 +57,7 @@ const BASIC_SIZE_OPTIONS: readonly ModelParameterOption[] = [
   { label: "1:1", value: "1:1" },
   { label: "3:2", value: "3:2" },
   { label: "2:3", value: "2:3" },
-  { label: "自动（跟随参考图）", value: "auto" },
+  { label: "自动（提示词优先）", value: "auto" },
 ];
 
 const BANANA_RATIO_OPTIONS: readonly ModelParameterOption[] = [
@@ -66,11 +66,11 @@ const BANANA_RATIO_OPTIONS: readonly ModelParameterOption[] = [
   { label: "9:16", value: "9:16" },
   { label: "4:3", value: "4:3" },
   { label: "3:4", value: "3:4" },
-  { label: "自动（跟随参考图）", value: "auto" },
+  { label: "自动（提示词优先）", value: "auto" },
 ];
 
 const GPT_FIXED_RATIO_OPTIONS: readonly ModelParameterOption[] = [
-  { label: "自动（跟随参考图）", value: "auto" },
+  { label: "自动（提示词优先）", value: "auto" },
   { label: "1:1", value: "1:1" },
   { label: "5:4", value: "5:4" },
   { label: "7:6", value: "7:6" },
@@ -85,7 +85,7 @@ const GPT_FIXED_RATIO_OPTIONS: readonly ModelParameterOption[] = [
 ];
 
 const NANO_PRO_RATIO_OPTIONS: readonly ModelParameterOption[] = [
-  { label: "自动（跟随参考图）", value: "auto" },
+  { label: "自动（提示词优先）", value: "auto" },
   { label: "1:1", value: "1:1" },
   { label: "5:4", value: "5:4" },
   { label: "9:16", value: "9:16" },
@@ -99,7 +99,7 @@ const NANO_PRO_RATIO_OPTIONS: readonly ModelParameterOption[] = [
 ];
 
 const NANO_2_RATIO_OPTIONS: readonly ModelParameterOption[] = [
-  { label: "自动（跟随参考图）", value: "auto" },
+  { label: "自动（提示词优先）", value: "auto" },
   { label: "1:1", value: "1:1" },
   { label: "4:3", value: "4:3" },
   { label: "3:4", value: "3:4" },
@@ -118,8 +118,7 @@ const sizeParameter = (defaultValue = "auto"): ModelParameterDescriptor => ({
   valueType: "string",
   default: defaultValue,
   options: BASIC_SIZE_OPTIONS,
-  description:
-    "自动模式有参考图时跟随参考图；没有参考图时交给模型依据提示词判断",
+  description: "自动模式优先依据提示词判断；提示词没有明确比例时跟随参考图",
   operations: IMAGE_OPERATIONS,
 });
 
@@ -133,8 +132,7 @@ const aspectRatioParameter = (
   valueType: "string",
   default: defaultValue,
   options,
-  description:
-    "自动模式有参考图时跟随参考图；没有参考图时交给模型依据提示词判断",
+  description: "自动模式优先依据提示词判断；提示词没有明确比例时跟随参考图",
   operations: IMAGE_OPERATIONS,
 });
 
