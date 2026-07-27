@@ -29,7 +29,7 @@ const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ["Ctrl", "Y"], label: "重做" },
       { keys: ["Ctrl", "C"], label: "复制选中节点" },
       { keys: ["Ctrl", "V"], label: "粘贴节点" },
-      { keys: ["Ctrl", "D"], label: "原地复制选中节点" },
+      { keys: ["Ctrl", "D"], label: "紧邻复制选中节点" },
       { keys: ["Ctrl", "A"], label: "选中全部节点" },
       { keys: ["Delete"], label: "删除选中的节点、连线或涂鸦" },
       { keys: ["Ctrl", "S"], label: "立即保存画布" },

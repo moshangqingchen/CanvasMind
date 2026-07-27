@@ -699,6 +699,66 @@ test.describe("超级画布完整验收", () => {
     await expect(restoredEditor).toContainText("新增节点中的可保存提示词");
   });
 
+  test("复制粘贴节点时紧邻源节点并向下避让", async ({ page, request }) => {
+    const canvas = await getJson<CanvasResponse>(request, "/api/canvas");
+    const response = await request.put(`/api/canvas/${canvas.id}`, {
+      data: {
+        title: "E2E 紧邻粘贴",
+        graph: {
+          schemaVersion: 1,
+          nodes: [
+            {
+              id: "paste-source",
+              type: "workflow",
+              position: { x: 100, y: 180 },
+              style: { width: 420, height: 210 },
+              data: {
+                nodeType: "image-generation",
+                label: "复制源节点",
+                provider: "fake",
+                connectionId: "fake-default",
+                model: "fake-image-v1",
+                inputs: [
+                  { id: "prompt", kind: "text", label: "Prompt" },
+                ],
+                outputs: [{ id: "images", kind: "image", label: "图片" }],
+                parameters: { size: "1024x1024", quality: "auto" },
+              },
+            },
+          ],
+          edges: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        },
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+
+    await page.goto("/");
+    const source = page.locator(
+      '.react-flow__node[data-id="paste-source"]',
+    );
+    await expect(source).toBeVisible();
+    await source.locator(".node-head").click();
+    await page.keyboard.press("ControlOrMeta+C");
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(page.locator(".react-flow__node")).toHaveCount(2);
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(page.locator(".react-flow__node")).toHaveCount(3);
+
+    await expect
+      .poll(async () => {
+        const saved = await savedCanvas(page);
+        return saved.graph.nodes
+          .filter((node) => node.id !== "paste-source")
+          .map((node) => node.position)
+          .sort((left, right) => left.y - right.y);
+      })
+      .toEqual([
+        { x: 544, y: 180 },
+        { x: 544, y: 406 },
+      ]);
+  });
+
   test("空白处右键新建图片节点，并可视化调整生成参数", async ({
     page,
     request,

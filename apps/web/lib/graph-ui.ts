@@ -183,10 +183,15 @@ export function closestAvailableResultPosition(
   source: PositionedCanvasRect,
   result: { width: number; height: number },
   occupied: readonly PositionedCanvasRect[],
-  options: { sourceGap?: number; collisionGap?: number } = {},
+  options: {
+    sourceGap?: number;
+    collisionGap?: number;
+    verticalDirection?: "nearest" | "down";
+  } = {},
 ): { x: number; y: number } {
   const sourceGap = options.sourceGap ?? 24;
   const collisionGap = options.collisionGap ?? 16;
+  const verticalDirection = options.verticalDirection ?? "nearest";
   const x = source.position.x + source.width + sourceGap;
   const preferredY = source.position.y;
 
@@ -199,8 +204,10 @@ export function closestAvailableResultPosition(
   });
   const candidateYs = new Set([preferredY]);
   for (const node of horizontallyRelevant) {
-    candidateYs.add(node.position.y + node.height + collisionGap);
-    candidateYs.add(node.position.y - result.height - collisionGap);
+    const below = node.position.y + node.height + collisionGap;
+    if (below >= preferredY) candidateYs.add(below);
+    if (verticalDirection === "nearest")
+      candidateYs.add(node.position.y - result.height - collisionGap);
   }
 
   const overlapsAt = (y: number) =>

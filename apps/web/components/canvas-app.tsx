@@ -446,6 +446,26 @@ function nodeDimensions(node: CanvasNode): { width: number; height: number } {
   };
 }
 
+function nodeGroupBounds(nodes: readonly CanvasNode[]): {
+  position: { x: number; y: number };
+  width: number;
+  height: number;
+} {
+  const left = Math.min(...nodes.map((node) => node.position.x));
+  const top = Math.min(...nodes.map((node) => node.position.y));
+  const right = Math.max(
+    ...nodes.map((node) => node.position.x + nodeDimensions(node).width),
+  );
+  const bottom = Math.max(
+    ...nodes.map((node) => node.position.y + nodeDimensions(node).height),
+  );
+  return {
+    position: { x: left, y: top },
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
 function linkedAssetsForNode(
   nodeId: string,
   nodes: readonly CanvasNode[],
@@ -1393,7 +1413,6 @@ function CanvasShell() {
   const nodeClipboardRef = useRef<{
     nodes: CanvasNode[];
     edges: CanvasEdge[];
-    pasteCount: number;
   } | null>(null);
   const historyRef = useRef<{
     past: CanvasDocument[];
@@ -2467,7 +2486,6 @@ function CanvasShell() {
             selectedIds.has(edge.source) && selectedIds.has(edge.target),
         ),
       ),
-      pasteCount: 0,
     };
     showToast(`已复制 ${selected.length} 个节点`, "success");
     return true;
@@ -2476,9 +2494,26 @@ function CanvasShell() {
   const pasteCopiedNodes = useCallback((): boolean => {
     const clipboard = nodeClipboardRef.current;
     if (!clipboard || clipboard.nodes.length === 0) return false;
+    const state = useCanvasStore.getState();
     checkpoint(true);
-    clipboard.pasteCount += 1;
-    const offset = 36 * clipboard.pasteCount;
+    const copiedBounds = nodeGroupBounds(clipboard.nodes);
+    const pastePosition = closestAvailableResultPosition(
+      {
+        id: "clipboard-source-group",
+        ...copiedBounds,
+      },
+      { width: copiedBounds.width, height: copiedBounds.height },
+      state.nodes.map((node) => ({
+        id: node.id,
+        position: node.position,
+        ...nodeDimensions(node),
+      })),
+      { verticalDirection: "down" },
+    );
+    const offset = {
+      x: pastePosition.x - copiedBounds.position.x,
+      y: pastePosition.y - copiedBounds.position.y,
+    };
     const idMap = new Map(
       clipboard.nodes.map((node) => [node.id, crypto.randomUUID()] as const),
     );
@@ -2495,8 +2530,8 @@ function CanvasShell() {
         selected: true,
         dragging: false,
         position: {
-          x: node.position.x + offset,
-          y: node.position.y + offset,
+          x: node.position.x + offset.x,
+          y: node.position.y + offset.y,
         },
         data: {
           ...node.data,
@@ -2511,7 +2546,6 @@ function CanvasShell() {
       target: idMap.get(edge.target)!,
       selected: false,
     }));
-    const state = useCanvasStore.getState();
     const nextNodes = [
       ...state.nodes.map((node) =>
         node.selected ? { ...node, selected: false } : node,
@@ -5064,7 +5098,7 @@ function CanvasShell() {
                   duplicateSelectedNodes();
                 }}
               >
-                <CopyPlus size={13} /> 原地复制
+                <CopyPlus size={13} /> 紧邻复制
                 <span className="menu-hint">Ctrl+D</span>
               </button>
               <div className="connection-menu-divider" />

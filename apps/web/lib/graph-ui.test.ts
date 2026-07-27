@@ -77,6 +77,36 @@ describe("canvas graph UI helpers", () => {
     ).toEqual({ x: 534, y: 410 });
   });
 
+  it("stacks pasted groups downward when the adjacent slot is occupied", () => {
+    const source = {
+      id: "copied-group",
+      position: { x: 100, y: 180 },
+      width: 420,
+      height: 210,
+    };
+    expect(
+      closestAvailableResultPosition(
+        source,
+        { width: 420, height: 210 },
+        [
+          {
+            id: "first-paste",
+            position: { x: 544, y: 180 },
+            width: 420,
+            height: 210,
+          },
+          {
+            id: "second-paste",
+            position: { x: 544, y: 406 },
+            width: 420,
+            height: 210,
+          },
+        ],
+        { verticalDirection: "down" },
+      ),
+    ).toEqual({ x: 544, y: 632 });
+  });
+
   it("only exposes blank-canvas targets with compatible port kinds", () => {
     expect(getAutoConnectionTargetHandle("text", "image-generation")).toBe(
       "prompt",
