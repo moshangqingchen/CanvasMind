@@ -125,7 +125,7 @@ describe("canvas drawing helpers", () => {
     expect((point.y - next.y) / next.zoom).toBe(
       (point.y - current.y) / current.zoom,
     );
-    expect(zoomViewportAtPoint(current, point, 99).zoom).toBe(2);
-    expect(zoomViewportAtPoint(current, point, 0.01).zoom).toBe(0.5);
+    expect(zoomViewportAtPoint(current, point, 99).zoom).toBe(8);
+    expect(zoomViewportAtPoint(current, point, 0.001).zoom).toBe(0.02);
   });
 });

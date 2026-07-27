@@ -103,6 +103,8 @@ import {
 import { LatestTaskQueue } from "../lib/latest-task-queue";
 import { normalizeDraggedMediaFile } from "../lib/dropped-media";
 import {
+  CANVAS_MAX_ZOOM,
+  CANVAS_MIN_ZOOM,
   drawingShapePoints,
   drawingStrokeIntersectsRect,
   hitTestDrawingStrokes,
@@ -2612,7 +2614,12 @@ function CanvasShell() {
       showToast("画布还没有节点");
       return;
     }
-    void instance.fitView({ padding: 0.24, duration: 320 });
+    void instance.fitView({
+      padding: 0.24,
+      minZoom: CANVAS_MIN_ZOOM,
+      maxZoom: CANVAS_MAX_ZOOM,
+      duration: 320,
+    });
   }, [showToast]);
 
   const updateNodeData = useCallback(
@@ -4985,6 +4992,8 @@ function CanvasShell() {
             }}
             onMoveEnd={onMoveEnd}
             fitView={false}
+            minZoom={CANVAS_MIN_ZOOM}
+            maxZoom={CANVAS_MAX_ZOOM}
             panOnDrag={canvasMode === "pan"}
             nodesDraggable={canvasMode === "pan"}
             nodesConnectable={canvasMode === "pan"}
@@ -5005,7 +5014,13 @@ function CanvasShell() {
               selectionStart={drawingSelectionStart}
               selectionEnd={drawingSelectionEnd}
             />
-            <Controls fitViewOptions={{ padding: 0.25 }} />
+            <Controls
+              fitViewOptions={{
+                padding: 0.25,
+                minZoom: CANVAS_MIN_ZOOM,
+                maxZoom: CANVAS_MAX_ZOOM,
+              }}
+            />
             <MiniMap
               nodeColor={(node) =>
                 node.data?.nodeType === "video-generation"

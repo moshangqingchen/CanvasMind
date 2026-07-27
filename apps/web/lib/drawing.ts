@@ -16,12 +16,15 @@ export interface DrawingViewport {
   zoom: number;
 }
 
+export const CANVAS_MIN_ZOOM = 0.02;
+export const CANVAS_MAX_ZOOM = 8;
+
 export function zoomViewportAtPoint(
   viewport: DrawingViewport,
   point: CanvasDrawingPoint,
   targetZoom: number,
-  minZoom = 0.5,
-  maxZoom = 2,
+  minZoom = CANVAS_MIN_ZOOM,
+  maxZoom = CANVAS_MAX_ZOOM,
 ): DrawingViewport {
   const zoom = Math.max(minZoom, Math.min(maxZoom, targetZoom));
   if (zoom === viewport.zoom) return viewport;

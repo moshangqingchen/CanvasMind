@@ -816,6 +816,68 @@ test.describe("超级画布完整验收", () => {
       .toEqual([135]);
   });
 
+  test("超大画布可缩小到完整显示所有远距离节点", async ({ page, request }) => {
+    const canvas = await getJson<CanvasResponse>(request, "/api/canvas");
+    const farGraph: CanvasResponse["graph"] = {
+      schemaVersion: 1,
+      nodes: [
+        {
+          id: "far-left",
+          type: "workflow",
+          position: { x: 0, y: 180 },
+          style: { width: 360, height: 210 },
+          data: {
+            nodeType: "prompt",
+            label: "最左节点",
+            parts: [{ type: "text", text: "左侧" }],
+            outputs: [{ id: "prompt", kind: "text", label: "提示词" }],
+          },
+        },
+        {
+          id: "far-right",
+          type: "workflow",
+          position: { x: 30_000, y: 180 },
+          style: { width: 360, height: 210 },
+          data: {
+            nodeType: "prompt",
+            label: "最右节点",
+            parts: [{ type: "text", text: "右侧" }],
+            outputs: [{ id: "prompt", kind: "text", label: "提示词" }],
+          },
+        },
+      ],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    };
+    const saved = await request.put(`/api/canvas/${canvas.id}`, {
+      data: { title: "E2E 超大画布", graph: farGraph },
+    });
+    expect(saved.ok()).toBeTruthy();
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Fit View" }).click();
+    await expect(page.locator(".react-flow__node")).toHaveCount(2);
+
+    const zoom = await page.locator(".react-flow__viewport").evaluate((node) =>
+      new DOMMatrix(getComputedStyle(node).transform).a,
+    );
+    expect(zoom).toBeGreaterThanOrEqual(0.02);
+    expect(zoom).toBeLessThan(0.05);
+
+    const [flowBounds, leftBounds, rightBounds] = await Promise.all([
+      page.locator(".react-flow").boundingBox(),
+      page.locator('.react-flow__node[data-id="far-left"]').boundingBox(),
+      page.locator('.react-flow__node[data-id="far-right"]').boundingBox(),
+    ]);
+    expect(flowBounds).not.toBeNull();
+    expect(leftBounds).not.toBeNull();
+    expect(rightBounds).not.toBeNull();
+    expect(leftBounds!.x).toBeGreaterThanOrEqual(flowBounds!.x);
+    expect(rightBounds!.x + rightBounds!.width).toBeLessThanOrEqual(
+      flowBounds!.x + flowBounds!.width,
+    );
+  });
+
   test("空白处右键新建图片节点，并可视化调整生成参数", async ({
     page,
     request,
