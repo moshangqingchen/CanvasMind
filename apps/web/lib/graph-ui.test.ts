@@ -3,6 +3,7 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import {
   alignedCanvasRectPositions,
   closestAvailableResultPosition,
+  closestAvailableVerticalPosition,
   getAutoConnectionOptions,
   getAutoConnectionTargetHandle,
   isCanvasHistoryShortcutAllowed,
@@ -138,34 +139,44 @@ describe("canvas graph UI helpers", () => {
     ).toEqual({ x: 534, y: 410 });
   });
 
-  it("stacks pasted groups downward when the adjacent slot is occupied", () => {
-    const source = {
-      id: "copied-group",
+  it("places pasted groups below the currently selected anchor", () => {
+    const anchor = {
+      id: "selected-node",
       position: { x: 100, y: 180 },
       width: 420,
       height: 210,
     };
     expect(
-      closestAvailableResultPosition(
-        source,
+      closestAvailableVerticalPosition(
+        anchor,
         { width: 420, height: 210 },
+        [anchor],
+      ),
+    ).toEqual({ x: 100, y: 406 });
+  });
+
+  it("uses the nearest free side of the selected anchor without overlap", () => {
+    const anchor = {
+      id: "selected-node",
+      position: { x: 300, y: 300 },
+      width: 300,
+      height: 180,
+    };
+    expect(
+      closestAvailableVerticalPosition(
+        anchor,
+        { width: 240, height: 120 },
         [
+          anchor,
           {
-            id: "first-paste",
-            position: { x: 544, y: 180 },
-            width: 420,
-            height: 210,
-          },
-          {
-            id: "second-paste",
-            position: { x: 544, y: 406 },
-            width: 420,
-            height: 210,
+            id: "occupied-below",
+            position: { x: 300, y: 496 },
+            width: 300,
+            height: 180,
           },
         ],
-        { verticalDirection: "down" },
       ),
-    ).toEqual({ x: 544, y: 632 });
+    ).toEqual({ x: 330, y: 164 });
   });
 
   it("only exposes blank-canvas targets with compatible port kinds", () => {

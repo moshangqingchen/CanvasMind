@@ -264,15 +264,10 @@ export function closestAvailableResultPosition(
   source: PositionedCanvasRect,
   result: { width: number; height: number },
   occupied: readonly PositionedCanvasRect[],
-  options: {
-    sourceGap?: number;
-    collisionGap?: number;
-    verticalDirection?: "nearest" | "down";
-  } = {},
+  options: { sourceGap?: number; collisionGap?: number } = {},
 ): { x: number; y: number } {
   const sourceGap = options.sourceGap ?? 24;
   const collisionGap = options.collisionGap ?? 16;
-  const verticalDirection = options.verticalDirection ?? "nearest";
   const x = source.position.x + source.width + sourceGap;
   const preferredY = source.position.y;
 
@@ -285,10 +280,8 @@ export function closestAvailableResultPosition(
   });
   const candidateYs = new Set([preferredY]);
   for (const node of horizontallyRelevant) {
-    const below = node.position.y + node.height + collisionGap;
-    if (below >= preferredY) candidateYs.add(below);
-    if (verticalDirection === "nearest")
-      candidateYs.add(node.position.y - result.height - collisionGap);
+    candidateYs.add(node.position.y + node.height + collisionGap);
+    candidateYs.add(node.position.y - result.height - collisionGap);
   }
 
   const overlapsAt = (y: number) =>
@@ -310,6 +303,54 @@ export function closestAvailableResultPosition(
   });
 
   return { x, y: candidates.find((y) => !overlapsAt(y)) ?? preferredY };
+}
+
+export function closestAvailableVerticalPosition(
+  anchor: PositionedCanvasRect,
+  result: { width: number; height: number },
+  occupied: readonly PositionedCanvasRect[],
+  gap = 16,
+): { x: number; y: number } {
+  const x = anchor.position.x + (anchor.width - result.width) / 2;
+  const belowAnchor = anchor.position.y + anchor.height + gap;
+  const aboveAnchor = anchor.position.y - result.height - gap;
+  const horizontallyRelevant = occupied.filter(
+    (node) =>
+      !(
+        x + result.width + gap <= node.position.x ||
+        x >= node.position.x + node.width + gap
+      ),
+  );
+  const candidateYs = new Set([belowAnchor, aboveAnchor]);
+  for (const node of horizontallyRelevant) {
+    candidateYs.add(node.position.y + node.height + gap);
+    candidateYs.add(node.position.y - result.height - gap);
+  }
+
+  const overlapsAt = (y: number) =>
+    horizontallyRelevant.some(
+      (node) =>
+        !(
+          y + result.height + gap <= node.position.y ||
+          y >= node.position.y + node.height + gap
+        ),
+    );
+  const distanceFromAnchor = (y: number) =>
+    y >= anchor.position.y + anchor.height
+      ? y - (anchor.position.y + anchor.height)
+      : y + result.height <= anchor.position.y
+        ? anchor.position.y - (y + result.height)
+        : Number.POSITIVE_INFINITY;
+  const candidates = Array.from(candidateYs).sort((left, right) => {
+    const distance = distanceFromAnchor(left) - distanceFromAnchor(right);
+    if (Math.abs(distance) > 0.5) return distance;
+    const leftIsBelow = left >= anchor.position.y + anchor.height;
+    const rightIsBelow = right >= anchor.position.y + anchor.height;
+    if (leftIsBelow !== rightIsBelow) return leftIsBelow ? -1 : 1;
+    return left - right;
+  });
+
+  return { x, y: candidates.find((y) => !overlapsAt(y)) ?? belowAnchor };
 }
 
 export function isCanvasShortcutAllowed(

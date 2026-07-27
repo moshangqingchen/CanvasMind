@@ -121,6 +121,7 @@ import {
 import {
   alignedCanvasRectPositions,
   closestAvailableResultPosition,
+  closestAvailableVerticalPosition,
   getAutoConnectionOptions,
   getAutoConnectionTargetHandle,
   isCanvasHistoryShortcutAllowed,
@@ -2500,12 +2501,18 @@ function CanvasShell() {
     const clipboard = nodeClipboardRef.current;
     if (!clipboard || clipboard.nodes.length === 0) return false;
     const state = useCanvasStore.getState();
+    const targetNodes = state.nodes.filter((node) => node.selected);
+    if (targetNodes.length === 0) {
+      showToast("请先选择一个节点作为粘贴位置", "error");
+      return false;
+    }
     checkpoint(true);
     const copiedBounds = nodeGroupBounds(clipboard.nodes);
-    const pastePosition = closestAvailableResultPosition(
+    const targetBounds = nodeGroupBounds(targetNodes);
+    const pastePosition = closestAvailableVerticalPosition(
       {
-        id: "clipboard-source-group",
-        ...copiedBounds,
+        id: "clipboard-target-group",
+        ...targetBounds,
       },
       { width: copiedBounds.width, height: copiedBounds.height },
       state.nodes.map((node) => ({
@@ -2513,7 +2520,6 @@ function CanvasShell() {
         position: node.position,
         ...nodeDimensions(node),
       })),
-      { verticalDirection: "down" },
     );
     const offset = {
       x: pastePosition.x - copiedBounds.position.x,
