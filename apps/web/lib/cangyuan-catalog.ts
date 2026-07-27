@@ -265,15 +265,16 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
   const descriptors: ModelParameterDescriptor[] = [];
   const aspectRatio = isRecord(params.aspectRatio) ? params.aspectRatio : null;
   if (aspectRatio?.enabled === true) {
-    const originalOptions = parameterOptions(aspectRatio.options);
     const options = imageRatioOptions(aspectRatio.options);
     descriptors.push({
       key: "aspect_ratio",
       label: "画面比例",
       control: options.length > 0 ? "select" : "text",
       valueType: "string",
+      description:
+        "自动模式有参考图时跟随参考图；没有参考图时交给模型依据提示词判断",
       ...(options.length > 0
-        ? { default: originalOptions[0]?.value ?? "auto", options }
+        ? { default: "auto", options }
         : {}),
       operations: IMAGE_OPERATIONS,
     });

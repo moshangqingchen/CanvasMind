@@ -58,7 +58,7 @@ const BASIC_SIZE_OPTIONS: readonly ModelParameterOption[] = [
   { label: "1:1", value: "1:1" },
   { label: "3:2", value: "3:2" },
   { label: "2:3", value: "2:3" },
-  { label: "自动", value: "auto" },
+  { label: "自动（跟随参考图）", value: "auto" },
 ];
 
 const BANANA_RATIO_OPTIONS: readonly ModelParameterOption[] = [
@@ -67,7 +67,7 @@ const BANANA_RATIO_OPTIONS: readonly ModelParameterOption[] = [
   { label: "9:16", value: "9:16" },
   { label: "4:3", value: "4:3" },
   { label: "3:4", value: "3:4" },
-  { label: "自动", value: "auto" },
+  { label: "自动（跟随参考图）", value: "auto" },
 ];
 
 const GPT_FIXED_RATIO_OPTIONS: readonly ModelParameterOption[] = [
@@ -112,19 +112,21 @@ const NANO_2_RATIO_OPTIONS: readonly ModelParameterOption[] = [
   { label: "8:1", value: "8:1" },
 ];
 
-const sizeParameter = (defaultValue = "1:1"): ModelParameterDescriptor => ({
+const sizeParameter = (defaultValue = "auto"): ModelParameterDescriptor => ({
   key: "size",
   label: "画面比例",
   control: "select",
   valueType: "string",
   default: defaultValue,
   options: BASIC_SIZE_OPTIONS,
+  description:
+    "自动模式有参考图时跟随参考图；没有参考图时交给模型依据提示词判断",
   operations: IMAGE_OPERATIONS,
 });
 
 const aspectRatioParameter = (
   options: readonly ModelParameterOption[],
-  defaultValue = "16:9",
+  defaultValue = "auto",
 ): ModelParameterDescriptor => ({
   key: "aspect_ratio",
   label: "画面比例",
@@ -132,6 +134,8 @@ const aspectRatioParameter = (
   valueType: "string",
   default: defaultValue,
   options,
+  description:
+    "自动模式有参考图时跟随参考图；没有参考图时交给模型依据提示词判断",
   operations: IMAGE_OPERATIONS,
 });
 
@@ -177,7 +181,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
     operations: IMAGE_OPERATIONS,
     metadata: { fixedOutputCount: 1 },
     parameters: [
-      aspectRatioParameter(GPT_FIXED_RATIO_OPTIONS, "1:1"),
+      aspectRatioParameter(GPT_FIXED_RATIO_OPTIONS),
       dimensionsParameter(),
       {
         key: "quality",
@@ -202,7 +206,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
     operations: IMAGE_OPERATIONS,
     metadata: { fixedOutputCount: 1 },
     parameters: [
-      aspectRatioParameter(GPT_FIXED_RATIO_OPTIONS, "1:1"),
+      aspectRatioParameter(GPT_FIXED_RATIO_OPTIONS),
       dimensionsParameter(),
       {
         key: "quality",

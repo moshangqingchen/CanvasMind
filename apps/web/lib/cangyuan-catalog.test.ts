@@ -302,6 +302,10 @@ describe("Cangyuan live catalog", () => {
         ?.options?.[0],
     ).toEqual({ label: "自动（跟随参考图）", value: "auto" });
     expect(
+      model?.parameters?.find((parameter) => parameter.key === "aspect_ratio")
+        ?.default,
+    ).toBe("auto");
+    expect(
       model?.parameters?.find((parameter) => parameter.key === "size"),
     ).toMatchObject({ control: "dimensions", step: 16, max: 3840 });
     expect(
