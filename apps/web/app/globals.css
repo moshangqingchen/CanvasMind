@@ -2819,6 +2819,39 @@ circle.canvas-drawing-selection-outline {
   color: var(--muted);
   font-size: 10px;
 }
+.generation-history-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 49px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(14, 18, 27, 0.86);
+}
+.generation-history-selection-count {
+  min-width: 70px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+}
+.generation-history-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.generation-history-delete-confirm,
+.generation-history-delete-message {
+  font-size: 10px;
+}
+.generation-history-delete-confirm {
+  color: #ffc4ce;
+}
+.generation-history-delete-message {
+  margin-left: auto;
+  color: var(--muted);
+}
 .generation-history-backdrop.asset-dragging {
   background: rgba(4, 6, 10, 0.18);
   backdrop-filter: blur(1px);
@@ -2843,6 +2876,7 @@ circle.canvas-drawing-selection-outline {
   pointer-events: none;
 }
 .generation-history-grid {
+  position: relative;
   min-height: 0;
   overflow: auto;
   display: grid;
@@ -2852,7 +2886,21 @@ circle.canvas-drawing-selection-outline {
   gap: 12px;
   padding: 16px;
 }
+.generation-history-grid.is-box-selecting {
+  cursor: crosshair;
+  user-select: none;
+}
+.generation-history-selection-box {
+  position: fixed;
+  z-index: 140;
+  border: 1px solid #6ee7c8;
+  border-radius: 5px;
+  background: rgba(72, 211, 179, 0.14);
+  box-shadow: 0 0 0 1px rgba(72, 211, 179, 0.1) inset;
+  pointer-events: none;
+}
 .generation-history-card {
+  position: relative;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2871,6 +2919,38 @@ circle.canvas-drawing-selection-outline {
 .generation-history-card:hover {
   border-color: #596780;
   transform: translateY(-2px);
+}
+.generation-history-card.is-selected {
+  border-color: #61dfc2;
+  box-shadow:
+    0 0 0 2px rgba(77, 220, 187, 0.22),
+    0 10px 24px rgba(0, 0, 0, 0.22);
+}
+.generation-history-select {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 8px;
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 7px;
+  background: rgba(6, 9, 14, 0.76);
+  color: #07110f;
+  opacity: 0.72;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.32);
+}
+.generation-history-card:hover .generation-history-select,
+.generation-history-select:focus-visible,
+.generation-history-select[aria-checked="true"] {
+  opacity: 1;
+}
+.generation-history-select[aria-checked="true"] {
+  border-color: #70e7cc;
+  background: #70e7cc;
 }
 .generation-history-preview {
   width: 100%;

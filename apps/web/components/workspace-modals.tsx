@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Server,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -23,9 +24,15 @@ import {
   fetchRuns,
   saveConnection,
   testConnection,
+  type DeleteAssetsResult,
   type ProviderConnectionView,
   type CangyuanMarketplaceGroupView,
 } from "../lib/client-api";
+import {
+  intersectingSelectionIds,
+  selectionRectBetween,
+  type SelectionRect,
+} from "../lib/generation-history";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import {
   CANGYUAN_ALL_MODELS_GROUP,
@@ -1608,14 +1615,26 @@ export function GenerationHistoryModal({
   onPreview,
   onReuseAsset,
   onDropAsset,
+  onDeleteAssets,
 }: ModalProps & {
   assets: AssetView[];
   onPreview: (asset: AssetView) => void;
   onReuseAsset: (assetId: string) => void;
   onDropAsset: (assetId: string, position: { x: number; y: number }) => void;
+  onDeleteAssets: (assetIds: string[]) => Promise<DeleteAssetsResult>;
 }) {
-  const dialogRef = useDialogFocus(open, onClose);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const cardRefs = useRef(new Map<string, HTMLElement>());
   const [draggingAssetId, setDraggingAssetId] = useState<string | null>(null);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(
+    null,
+  );
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const dragStartRef = useRef<{
     assetId: string;
     pointerId: number;
@@ -1624,17 +1643,64 @@ export function GenerationHistoryModal({
   } | null>(null);
   const dragMovedRef = useRef(false);
   const suppressClickRef = useRef(false);
+  const selectionStartRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    moved: boolean;
+    baseIds: Set<string>;
+  } | null>(null);
   const generatedImages = assets.filter(
     (asset) =>
       asset.kind === "image" && typeof asset.metadata.runId === "string",
   );
+  const handleClose = () => {
+    setSelectedAssetIds(new Set());
+    setSelectionRect(null);
+    setConfirmingDelete(false);
+    setDeleteMessage(null);
+    onClose();
+  };
+  const dialogRef = useDialogFocus(open, handleClose);
+
+  const toggleSelectedAsset = (assetId: string) => {
+    setSelectedAssetIds((current) => {
+      const next = new Set(current);
+      if (next.has(assetId)) next.delete(assetId);
+      else next.add(assetId);
+      return next;
+    });
+    setConfirmingDelete(false);
+    setDeleteMessage(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (selectedAssetIds.size === 0 || deleting) return;
+    setDeleting(true);
+    setDeleteMessage(null);
+    try {
+      const result = await onDeleteAssets(Array.from(selectedAssetIds));
+      setSelectedAssetIds(new Set(result.failedIds));
+      setConfirmingDelete(false);
+      if (result.failedIds.length > 0) {
+        setDeleteMessage(
+          `已删除 ${result.deletedIds.length} 张，${result.failedIds.length} 张删除失败，请重试`,
+        );
+      } else {
+        setDeleteMessage(`已删除 ${result.deletedIds.length} 张历史图片`);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (!open) return null;
   return (
     <div
       className={`modal-backdrop generation-history-backdrop ${draggingAssetId ? "asset-dragging" : ""}`}
       role="presentation"
       onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose();
+        if (event.currentTarget === event.target) handleClose();
       }}
     >
       <section
@@ -1650,13 +1716,13 @@ export function GenerationHistoryModal({
             <span className="eyebrow">生成图片</span>
             <h2>历史生成</h2>
             <small className="generation-history-hint">
-              点击预览，或直接拖到画布
+              点击预览；勾选或在空白处拖动可批量选择
             </small>
           </div>
           <button
             className="icon-button"
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="关闭"
           >
             <X size={17} />
@@ -1667,102 +1733,309 @@ export function GenerationHistoryModal({
             <span>还没有生成过图片</span>
           </div>
         ) : (
-          <div className="generation-history-grid">
-            {generatedImages.map((asset) => (
-              <article className="generation-history-card" key={asset.id}>
+          <>
+            <div className="generation-history-toolbar">
+              <span className="generation-history-selection-count">
+                {selectedAssetIds.size > 0
+                  ? `已选 ${selectedAssetIds.size} 张`
+                  : `共 ${generatedImages.length} 张`}
+              </span>
+              <div className="generation-history-toolbar-actions">
                 <button
-                  className="generation-history-preview"
+                  className="button small"
                   type="button"
-                  onClick={(event) => {
-                    if (suppressClickRef.current) {
-                      event.preventDefault();
-                      suppressClickRef.current = false;
-                      return;
-                    }
-                    onPreview(asset);
-                  }}
-                  aria-label={`预览 ${asset.name}`}
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) return;
-                    suppressClickRef.current = false;
-                    dragMovedRef.current = false;
-                    dragStartRef.current = {
-                      assetId: asset.id,
-                      pointerId: event.pointerId,
-                      x: event.clientX,
-                      y: event.clientY,
-                    };
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                  }}
-                  onPointerMove={(event) => {
-                    const start = dragStartRef.current;
-                    if (!start || start.pointerId !== event.pointerId) return;
-                    const distance = Math.hypot(
-                      event.clientX - start.x,
-                      event.clientY - start.y,
+                  onClick={() => {
+                    setSelectedAssetIds(
+                      new Set(generatedImages.map((asset) => asset.id)),
                     );
-                    if (distance < 7 && !dragMovedRef.current) return;
-                    event.preventDefault();
-                    dragMovedRef.current = true;
-                    setDraggingAssetId(start.assetId);
+                    setConfirmingDelete(false);
+                    setDeleteMessage(null);
                   }}
-                  onPointerUp={(event) => {
-                    const start = dragStartRef.current;
-                    if (!start || start.pointerId !== event.pointerId) return;
-                    if (event.currentTarget.hasPointerCapture(event.pointerId))
-                      event.currentTarget.releasePointerCapture(
-                        event.pointerId,
-                      );
-                    if (dragMovedRef.current) {
-                      event.preventDefault();
-                      suppressClickRef.current = true;
-                      onDropAsset(start.assetId, {
+                  disabled={selectedAssetIds.size === generatedImages.length}
+                >
+                  全选
+                </button>
+                {selectedAssetIds.size > 0 ? (
+                  <button
+                    className="button small"
+                    type="button"
+                    onClick={() => {
+                      setSelectedAssetIds(new Set());
+                      setConfirmingDelete(false);
+                      setDeleteMessage(null);
+                    }}
+                    disabled={deleting}
+                  >
+                    取消选择
+                  </button>
+                ) : null}
+                {confirmingDelete ? (
+                  <>
+                    <span className="generation-history-delete-confirm">
+                      确认永久删除 {selectedAssetIds.size} 张？
+                    </span>
+                    <button
+                      className="button danger small"
+                      type="button"
+                      onClick={() => void handleConfirmDelete()}
+                      disabled={deleting}
+                    >
+                      {deleting ? (
+                        <RefreshCw className="spin" size={13} />
+                      ) : (
+                        <Trash2 size={13} />
+                      )}
+                      确认删除
+                    </button>
+                    <button
+                      className="button small"
+                      type="button"
+                      onClick={() => setConfirmingDelete(false)}
+                      disabled={deleting}
+                    >
+                      返回
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="button danger small"
+                    type="button"
+                    onClick={() => setConfirmingDelete(true)}
+                    disabled={selectedAssetIds.size === 0}
+                  >
+                    <Trash2 size={13} /> 删除所选
+                  </button>
+                )}
+              </div>
+              {deleteMessage ? (
+                <span
+                  className="generation-history-delete-message"
+                  role="status"
+                >
+                  {deleteMessage}
+                </span>
+              ) : null}
+            </div>
+            <div
+              ref={gridRef}
+              className={`generation-history-grid ${selectionRect ? "is-box-selecting" : ""}`}
+              onPointerDown={(event) => {
+                if (event.button !== 0 || event.target !== event.currentTarget)
+                  return;
+                const baseIds =
+                  event.ctrlKey || event.metaKey
+                    ? new Set(selectedAssetIds)
+                    : new Set<string>();
+                selectionStartRef.current = {
+                  pointerId: event.pointerId,
+                  x: event.clientX,
+                  y: event.clientY,
+                  moved: false,
+                  baseIds,
+                };
+                setSelectedAssetIds(baseIds);
+                setConfirmingDelete(false);
+                setDeleteMessage(null);
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                const start = selectionStartRef.current;
+                if (!start || start.pointerId !== event.pointerId) return;
+                if (
+                  !start.moved &&
+                  Math.hypot(event.clientX - start.x, event.clientY - start.y) <
+                    4
+                )
+                  return;
+                start.moved = true;
+                const nextRect = selectionRectBetween(
+                  { x: start.x, y: start.y },
+                  { x: event.clientX, y: event.clientY },
+                );
+                setSelectionRect(nextRect);
+                const matchedIds = intersectingSelectionIds(
+                  nextRect,
+                  generatedImages.flatMap((asset) => {
+                    const card = cardRefs.current.get(asset.id);
+                    if (!card) return [];
+                    const rect = card.getBoundingClientRect();
+                    return [
+                      {
+                        id: asset.id,
+                        rect: {
+                          left: rect.left,
+                          top: rect.top,
+                          right: rect.right,
+                          bottom: rect.bottom,
+                        },
+                      },
+                    ];
+                  }),
+                );
+                setSelectedAssetIds(new Set([...start.baseIds, ...matchedIds]));
+              }}
+              onPointerUp={(event) => {
+                const start = selectionStartRef.current;
+                if (!start || start.pointerId !== event.pointerId) return;
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                selectionStartRef.current = null;
+                setSelectionRect(null);
+              }}
+              onPointerCancel={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                selectionStartRef.current = null;
+                setSelectionRect(null);
+              }}
+            >
+              {generatedImages.map((asset) => (
+                <article
+                  ref={(element) => {
+                    if (element) cardRefs.current.set(asset.id, element);
+                    else cardRefs.current.delete(asset.id);
+                  }}
+                  className={`generation-history-card ${selectedAssetIds.has(asset.id) ? "is-selected" : ""}`}
+                  key={asset.id}
+                >
+                  <button
+                    className="generation-history-select"
+                    type="button"
+                    role="checkbox"
+                    aria-checked={selectedAssetIds.has(asset.id)}
+                    aria-label={`${selectedAssetIds.has(asset.id) ? "取消选择" : "选择"} ${asset.name}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => toggleSelectedAsset(asset.id)}
+                  >
+                    {selectedAssetIds.has(asset.id) ? (
+                      <Check size={14} />
+                    ) : null}
+                  </button>
+                  <button
+                    className="generation-history-preview"
+                    type="button"
+                    onClick={(event) => {
+                      if (suppressClickRef.current) {
+                        event.preventDefault();
+                        suppressClickRef.current = false;
+                        return;
+                      }
+                      if (
+                        selectedAssetIds.size > 0 ||
+                        event.ctrlKey ||
+                        event.metaKey ||
+                        event.shiftKey
+                      ) {
+                        toggleSelectedAsset(asset.id);
+                        return;
+                      }
+                      onPreview(asset);
+                    }}
+                    aria-label={`预览 ${asset.name}`}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      if (
+                        selectedAssetIds.size > 0 ||
+                        event.ctrlKey ||
+                        event.metaKey ||
+                        event.shiftKey
+                      )
+                        return;
+                      suppressClickRef.current = false;
+                      dragMovedRef.current = false;
+                      dragStartRef.current = {
+                        assetId: asset.id,
+                        pointerId: event.pointerId,
                         x: event.clientX,
                         y: event.clientY,
-                      });
-                    }
-                    dragStartRef.current = null;
-                    dragMovedRef.current = false;
-                    setDraggingAssetId(null);
-                  }}
-                  onPointerCancel={(event) => {
-                    if (event.currentTarget.hasPointerCapture(event.pointerId))
-                      event.currentTarget.releasePointerCapture(
-                        event.pointerId,
+                      };
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                    }}
+                    onPointerMove={(event) => {
+                      const start = dragStartRef.current;
+                      if (!start || start.pointerId !== event.pointerId) return;
+                      const distance = Math.hypot(
+                        event.clientX - start.x,
+                        event.clientY - start.y,
                       );
-                    dragStartRef.current = null;
-                    dragMovedRef.current = false;
-                    setDraggingAssetId(null);
-                  }}
-                >
-                  <img
-                    src={`/api/assets/${encodeURIComponent(asset.id)}/preview?size=640`}
-                    alt={asset.name}
-                    loading="lazy"
-                    decoding="async"
-                    draggable={false}
-                  />
-                </button>
-                <footer>
-                  <div>
-                    <strong>{asset.name}</strong>
-                    <small>
-                      {new Date(asset.createdAt).toLocaleString("zh-CN")}
-                    </small>
-                  </div>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={() => onReuseAsset(asset.id)}
-                    aria-label={`放入画布 ${asset.name}`}
-                    title="放入画布"
+                      if (distance < 7 && !dragMovedRef.current) return;
+                      event.preventDefault();
+                      dragMovedRef.current = true;
+                      setDraggingAssetId(start.assetId);
+                    }}
+                    onPointerUp={(event) => {
+                      const start = dragStartRef.current;
+                      if (!start || start.pointerId !== event.pointerId) return;
+                      if (
+                        event.currentTarget.hasPointerCapture(event.pointerId)
+                      )
+                        event.currentTarget.releasePointerCapture(
+                          event.pointerId,
+                        );
+                      if (dragMovedRef.current) {
+                        event.preventDefault();
+                        suppressClickRef.current = true;
+                        onDropAsset(start.assetId, {
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }
+                      dragStartRef.current = null;
+                      dragMovedRef.current = false;
+                      setDraggingAssetId(null);
+                    }}
+                    onPointerCancel={(event) => {
+                      if (
+                        event.currentTarget.hasPointerCapture(event.pointerId)
+                      )
+                        event.currentTarget.releasePointerCapture(
+                          event.pointerId,
+                        );
+                      dragStartRef.current = null;
+                      dragMovedRef.current = false;
+                      setDraggingAssetId(null);
+                    }}
                   >
-                    <Pin size={13} />
+                    <img
+                      src={`/api/assets/${encodeURIComponent(asset.id)}/preview?size=640`}
+                      alt={asset.name}
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                    />
                   </button>
-                </footer>
-              </article>
-            ))}
-          </div>
+                  <footer>
+                    <div>
+                      <strong>{asset.name}</strong>
+                      <small>
+                        {new Date(asset.createdAt).toLocaleString("zh-CN")}
+                      </small>
+                    </div>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => onReuseAsset(asset.id)}
+                      aria-label={`放入画布 ${asset.name}`}
+                      title="放入画布"
+                    >
+                      <Pin size={13} />
+                    </button>
+                  </footer>
+                </article>
+              ))}
+              {selectionRect ? (
+                <div
+                  className="generation-history-selection-box"
+                  style={{
+                    left: selectionRect.left,
+                    top: selectionRect.top,
+                    width: selectionRect.right - selectionRect.left,
+                    height: selectionRect.bottom - selectionRect.top,
+                  }}
+                />
+              ) : null}
+            </div>
+          </>
         )}
       </section>
     </div>

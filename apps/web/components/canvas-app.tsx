@@ -75,6 +75,7 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import {
   createRun,
   claimMaterialDrop,
+  deleteAssets,
   discardMaterialDrop,
   fetchAssets,
   fetchCanvas,
@@ -115,6 +116,7 @@ import {
   zoomViewportAtPoint,
 } from "../lib/drawing";
 import { localizeRunError } from "../lib/error-localization";
+import { removeDeletedAssetsFromGraph } from "../lib/generation-history";
 import {
   directLinkedAssetsForNode,
   linkedMediaLimitText,
@@ -2451,6 +2453,44 @@ function CanvasShell() {
       setSelectedId,
       showToast,
     ],
+  );
+
+  const deleteHistoricalAssets = useCallback(
+    async (assetIds: string[]) => {
+      const result = await deleteAssets(assetIds);
+      if (result.deletedIds.length > 0) {
+        checkpoint(true);
+        const deletedIds = new Set(result.deletedIds);
+        const state = useCanvasStore.getState();
+        const cleaned = removeDeletedAssetsFromGraph(
+          state.nodes,
+          state.edges,
+          deletedIds,
+        );
+        setAssets((current) =>
+          current.filter((asset) => !deletedIds.has(asset.id)),
+        );
+        setNodes(cleaned.nodes);
+        setEdges(cleaned.edges);
+        setSelectedId((current) =>
+          current && cleaned.removedNodeIds.has(current) ? null : current,
+        );
+        setPreviewAsset((current) =>
+          current && deletedIds.has(current.id) ? null : current,
+        );
+        scheduleSave(cleaned.nodes, cleaned.edges);
+      }
+      if (result.failedIds.length > 0) {
+        showToast(
+          `${result.failedIds.length} 张历史图片删除失败，请重试`,
+          "error",
+        );
+      } else if (result.deletedIds.length > 0) {
+        showToast(`已删除 ${result.deletedIds.length} 张历史图片`, "success");
+      }
+      return result;
+    },
+    [checkpoint, scheduleSave, setEdges, setNodes, setSelectedId, showToast],
   );
 
   const deleteNode = useCallback(
@@ -5576,6 +5616,7 @@ function CanvasShell() {
         onClose={() => setHistoryOpen(false)}
         assets={assets}
         onReuseAsset={reuseHistoricalAsset}
+        onDeleteAssets={deleteHistoricalAssets}
         onPreview={(asset) => {
           setHistoryOpen(false);
           setPreviewReturnsToHistory(true);

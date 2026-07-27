@@ -136,6 +136,40 @@ export async function fetchAssets(): Promise<AssetView[]> {
   return response.json() as Promise<AssetView[]>;
 }
 
+export interface DeleteAssetsResult {
+  deletedIds: string[];
+  failedIds: string[];
+}
+
+export async function deleteAssets(
+  assetIds: readonly string[],
+): Promise<DeleteAssetsResult> {
+  const results = await Promise.all(
+    assetIds.map(async (assetId) => {
+      try {
+        const response = await fetch(
+          `/api/assets/${encodeURIComponent(assetId)}`,
+          { method: "DELETE" },
+        );
+        return {
+          assetId,
+          deleted: response.ok || response.status === 404,
+        };
+      } catch {
+        return { assetId, deleted: false };
+      }
+    }),
+  );
+  return {
+    deletedIds: results
+      .filter((result) => result.deleted)
+      .map((result) => result.assetId),
+    failedIds: results
+      .filter((result) => !result.deleted)
+      .map((result) => result.assetId),
+  };
+}
+
 export async function fetchMaterialDrops(): Promise<MaterialDropEventView[]> {
   const response = await fetch("/api/integrations/material-drops", {
     cache: "no-store",
