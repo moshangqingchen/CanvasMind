@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   drawingBounds,
+  drawingShapePoints,
   drawingStrokeIntersectsRect,
   hitTestDrawingStrokes,
   normalizeDrawingRect,
@@ -74,5 +75,41 @@ describe("canvas drawing helpers", () => {
       { x: 135, y: 5 },
     ]);
     expect(moved[1]).toBe(untouched);
+  });
+
+  it("creates closed rectangle and ellipse paths", () => {
+    const rectangle = drawingShapePoints(
+      "rectangle",
+      { x: 10, y: 20 },
+      { x: 90, y: 70 },
+    );
+    expect(rectangle).toEqual([
+      { x: 10, y: 20 },
+      { x: 90, y: 20 },
+      { x: 90, y: 70 },
+      { x: 10, y: 70 },
+      { x: 10, y: 20 },
+    ]);
+    const ellipse = drawingShapePoints(
+      "ellipse",
+      { x: 0, y: 0 },
+      { x: 100, y: 60 },
+    );
+    expect(ellipse).toHaveLength(49);
+    expect(ellipse[0]).toEqual(ellipse.at(-1));
+  });
+
+  it("creates selectable line and arrow paths", () => {
+    expect(
+      drawingShapePoints("line", { x: 0, y: 0 }, { x: 100, y: 0 }),
+    ).toEqual([
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ]);
+    const arrow = drawingShapePoints("arrow", { x: 0, y: 0 }, { x: 100, y: 0 });
+    expect(arrow).toHaveLength(5);
+    expect(arrow[0]).toEqual({ x: 0, y: 0 });
+    expect(arrow[1]).toEqual({ x: 100, y: 0 });
+    expect(arrow[3]).toEqual({ x: 100, y: 0 });
   });
 });

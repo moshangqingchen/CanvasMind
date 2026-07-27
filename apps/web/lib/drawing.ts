@@ -10,6 +10,58 @@ export interface DrawingRect {
   maxY: number;
 }
 
+export type DrawingTool =
+  "freehand" | "rectangle" | "ellipse" | "line" | "arrow";
+
+export function drawingShapePoints(
+  tool: Exclude<DrawingTool, "freehand">,
+  start: CanvasDrawingPoint,
+  end: CanvasDrawingPoint,
+): CanvasDrawingPoint[] {
+  if (tool === "line") return [start, end];
+  if (tool === "rectangle") {
+    return [
+      start,
+      { x: end.x, y: start.y },
+      end,
+      { x: start.x, y: end.y },
+      start,
+    ];
+  }
+  if (tool === "ellipse") {
+    const centerX = (start.x + end.x) / 2;
+    const centerY = (start.y + end.y) / 2;
+    const radiusX = Math.abs(end.x - start.x) / 2;
+    const radiusY = Math.abs(end.y - start.y) / 2;
+    const segments = 48;
+    const points = Array.from({ length: segments }, (_, index) => {
+      const angle = (index / segments) * Math.PI * 2;
+      return {
+        x: centerX + Math.cos(angle) * radiusX,
+        y: centerY + Math.sin(angle) * radiusY,
+      };
+    });
+    return [...points, { ...points[0]! }];
+  }
+
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const length = Math.hypot(deltaX, deltaY);
+  if (length === 0) return [start];
+  const angle = Math.atan2(deltaY, deltaX);
+  const headLength = Math.min(32, Math.max(10, length * 0.24));
+  const spread = Math.PI / 7;
+  const headLeft = {
+    x: end.x - Math.cos(angle - spread) * headLength,
+    y: end.y - Math.sin(angle - spread) * headLength,
+  };
+  const headRight = {
+    x: end.x - Math.cos(angle + spread) * headLength,
+    y: end.y - Math.sin(angle + spread) * headLength,
+  };
+  return [start, end, headLeft, end, headRight];
+}
+
 export function normalizeDrawingRect(
   start: CanvasDrawingPoint,
   end: CanvasDrawingPoint,

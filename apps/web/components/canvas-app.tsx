@@ -28,8 +28,10 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import {
+  ArrowUpRight,
   CircleAlert,
   CircleCheck,
+  Circle,
   Combine,
   Copy,
   CopyPlus,
@@ -43,10 +45,12 @@ import {
   KeyRound,
   MousePointer2,
   MoreHorizontal,
+  Minus,
   Pencil,
   Play,
   RefreshCw,
   Settings2,
+  Square,
   Trash2,
   Type,
   Undo2,
@@ -96,11 +100,13 @@ import {
 import { LatestTaskQueue } from "../lib/latest-task-queue";
 import { normalizeDraggedMediaFile } from "../lib/dropped-media";
 import {
+  drawingShapePoints,
   drawingStrokeIntersectsRect,
   hitTestDrawingStrokes,
   normalizeDrawingRect,
   renderDrawingStrokesToPng,
   translateDrawingStrokes,
+  type DrawingTool,
 } from "../lib/drawing";
 import { localizeRunError } from "../lib/error-localization";
 import {
@@ -190,6 +196,14 @@ const INSPECTOR_MAX_WIDTH = 720;
 const INSPECTOR_WIDTH_STORAGE_KEY = "super-canvas:inspector-width";
 
 type CanvasInteractionMode = "pan" | "draw" | "select-drawing";
+
+const DRAWING_TOOL_LABEL: Record<DrawingTool, string> = {
+  freehand: "画笔自由涂鸦",
+  rectangle: "矩形绘制",
+  ellipse: "椭圆绘制",
+  line: "直线绘制",
+  arrow: "箭头绘制",
+};
 
 type RunScope = "node" | "downstream" | "all";
 
@@ -1281,6 +1295,7 @@ function CanvasShell() {
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [canvasMode, setCanvasMode] = useState<CanvasInteractionMode>("pan");
+  const [drawingTool, setDrawingTool] = useState<DrawingTool>("freehand");
   const [brushColor, setBrushColor] = useState("#f4f1ff");
   const [brushSize, setBrushSize] = useState(8);
   const [activeStroke, setActiveStroke] = useState<CanvasDrawingStroke | null>(
@@ -1327,6 +1342,7 @@ function CanvasShell() {
     mode: "draw" | "select-drawing" | "move-drawing";
     start: CanvasDrawingPoint;
     additive: boolean;
+    tool?: DrawingTool;
     originalDrawings?: CanvasDrawingStroke[];
     movingIds?: Set<string>;
     moved?: boolean;
@@ -1788,6 +1804,14 @@ function CanvasShell() {
     }
   }, []);
 
+  const activateDrawingTool = useCallback(
+    (tool: DrawingTool) => {
+      setDrawingTool(tool);
+      changeCanvasMode("draw");
+    },
+    [changeCanvasMode],
+  );
+
   const drawingPointForEvent = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): CanvasDrawingPoint | null =>
       reactFlowRef.current?.screenToFlowPosition({
@@ -1812,6 +1836,7 @@ function CanvasShell() {
         mode: canvasMode,
         start: point,
         additive,
+        ...(canvasMode === "draw" ? { tool: drawingTool } : {}),
       };
       if (canvasMode === "draw") {
         checkpoint(true);
@@ -1867,6 +1892,7 @@ function CanvasShell() {
       brushSize,
       canvasMode,
       checkpoint,
+      drawingTool,
       drawingPointForEvent,
       selectedDrawingIds,
     ],
@@ -1901,7 +1927,21 @@ function CanvasShell() {
         return;
       }
       const current = activeStrokeRef.current;
-      if (!current || current.points.length >= 4_000) return;
+      if (!current) return;
+      if (interaction.tool && interaction.tool !== "freehand") {
+        const next = {
+          ...current,
+          points: drawingShapePoints(
+            interaction.tool,
+            interaction.start,
+            point,
+          ),
+        };
+        activeStrokeRef.current = next;
+        setActiveStroke(next);
+        return;
+      }
+      if (current.points.length >= 4_000) return;
       const previous = current.points.at(-1)!;
       const zoom = reactFlowRef.current?.getViewport().zoom ?? 1;
       if (Math.hypot(point.x - previous.x, point.y - previous.y) < 1.2 / zoom)
@@ -1940,7 +1980,14 @@ function CanvasShell() {
         const stroke = activeStrokeRef.current;
         activeStrokeRef.current = null;
         setActiveStroke(null);
-        if (!cancelled && stroke) {
+        const end = drawingPointForEvent(event) ?? interaction.start;
+        const zoom = reactFlowRef.current?.getViewport().zoom ?? 1;
+        const shapeTooSmall =
+          interaction.tool !== undefined &&
+          interaction.tool !== "freehand" &&
+          Math.hypot(end.x - interaction.start.x, end.y - interaction.start.y) <
+            3 / zoom;
+        if (!cancelled && !shapeTooSmall && stroke) {
           const state = useCanvasStore.getState();
           const nextDrawings = [...state.drawings, stroke];
           setDrawings(nextDrawings);
@@ -3247,7 +3294,8 @@ function CanvasShell() {
         ] as CanvasInteractionMode | undefined;
         if (modeKey) {
           event.preventDefault();
-          changeCanvasMode(modeKey);
+          if (modeKey === "draw") activateDrawingTool("freehand");
+          else changeCanvasMode(modeKey);
           return;
         }
         if (event.key === "f" || event.key === "F") {
@@ -3381,6 +3429,7 @@ function CanvasShell() {
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, [
+    activateDrawingTool,
     canvasMode,
     changeCanvasMode,
     copySelectedNodes,
@@ -4602,16 +4651,85 @@ function CanvasShell() {
                 <span>抓手</span>
               </button>
               <button
-                className={canvasMode === "draw" ? "active" : ""}
+                className={
+                  canvasMode === "draw" && drawingTool === "freehand"
+                    ? "active"
+                    : ""
+                }
                 type="button"
                 aria-label="画笔模式"
-                aria-pressed={canvasMode === "draw"}
-                title="画笔：在画布上自由涂鸦"
-                onClick={() => changeCanvasMode("draw")}
+                aria-pressed={
+                  canvasMode === "draw" && drawingTool === "freehand"
+                }
+                title="画笔：绘制自由、不规则涂鸦"
+                onClick={() => activateDrawingTool("freehand")}
               >
                 <Pencil size={15} />
                 <span>画笔</span>
               </button>
+              <span className="canvas-drawing-tools-divider" />
+              <span className="canvas-shape-label">形状</span>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "rectangle"
+                    ? "active shape-tool"
+                    : "shape-tool"
+                }
+                type="button"
+                aria-label="矩形工具"
+                aria-pressed={
+                  canvasMode === "draw" && drawingTool === "rectangle"
+                }
+                title="矩形：拖拽绘制矩形"
+                onClick={() => activateDrawingTool("rectangle")}
+              >
+                <Square size={15} />
+              </button>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "ellipse"
+                    ? "active shape-tool"
+                    : "shape-tool"
+                }
+                type="button"
+                aria-label="椭圆工具"
+                aria-pressed={
+                  canvasMode === "draw" && drawingTool === "ellipse"
+                }
+                title="椭圆：拖拽绘制圆形或椭圆"
+                onClick={() => activateDrawingTool("ellipse")}
+              >
+                <Circle size={15} />
+              </button>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "line"
+                    ? "active shape-tool"
+                    : "shape-tool"
+                }
+                type="button"
+                aria-label="直线工具"
+                aria-pressed={canvasMode === "draw" && drawingTool === "line"}
+                title="直线：拖拽绘制直线"
+                onClick={() => activateDrawingTool("line")}
+              >
+                <Minus size={16} />
+              </button>
+              <button
+                className={
+                  canvasMode === "draw" && drawingTool === "arrow"
+                    ? "active shape-tool"
+                    : "shape-tool"
+                }
+                type="button"
+                aria-label="箭头工具"
+                aria-pressed={canvasMode === "draw" && drawingTool === "arrow"}
+                title="箭头：拖拽绘制指向箭头"
+                onClick={() => activateDrawingTool("arrow")}
+              >
+                <ArrowUpRight size={16} />
+              </button>
+              <span className="canvas-drawing-tools-divider" />
               <button
                 className={canvasMode === "select-drawing" ? "active" : ""}
                 type="button"
@@ -4623,7 +4741,6 @@ function CanvasShell() {
                 <MousePointer2 size={15} />
                 <span>选择</span>
               </button>
-              <span className="canvas-drawing-tools-divider" />
               <label className="canvas-brush-color" title="画笔颜色">
                 <span>颜色</span>
                 <input
@@ -4733,7 +4850,9 @@ function CanvasShell() {
               className={`canvas-drawing-input-layer ${canvasMode}`}
               tabIndex={-1}
               aria-label={
-                canvasMode === "draw" ? "画布画笔区域" : "涂鸦选择区域"
+                canvasMode === "draw"
+                  ? `画布${DRAWING_TOOL_LABEL[drawingTool]}区域`
+                  : "涂鸦选择区域"
               }
               onPointerDown={onDrawingPointerDown}
               onPointerMove={onDrawingPointerMove}
