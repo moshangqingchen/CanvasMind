@@ -3582,6 +3582,38 @@ circle.canvas-drawing-selection-outline {
   font-size: 9px;
 }
 
+.agent-new-chat {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid rgba(157, 145, 224, 0.28);
+  border-radius: 8px;
+  background: rgba(38, 42, 62, 0.66);
+  color: #b9b3d9;
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.agent-new-chat:hover:not(:disabled),
+.agent-new-chat:focus-visible {
+  border-color: rgba(181, 167, 255, 0.56);
+  background: rgba(74, 65, 118, 0.54);
+  color: #eeeaff;
+}
+
+.agent-new-chat:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .agent-context {
   display: grid;
   gap: 4px;

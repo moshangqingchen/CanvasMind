@@ -10,6 +10,7 @@ import {
   KeyRound,
   LoaderCircle,
   Paperclip,
+  RotateCcw,
   Send,
   Sparkles,
   X,
@@ -23,6 +24,13 @@ import {
   type CangyuanMarketplaceGroupView,
   type ProviderConnectionView,
 } from "../lib/client-api";
+import {
+  agentApiHistory,
+  agentHistoryStorageKey,
+  legacyAgentHistoryStorageKey,
+  successfulAgentHistory,
+  type AgentHistoryMessage,
+} from "../lib/agent-chat-history";
 import {
   providerConnectionGroup,
   providerConnectionSupplierKey,
@@ -41,14 +49,7 @@ interface AgentDraftRequest {
   assetId?: string;
 }
 
-interface AgentMessage {
-  id: string;
-  role: "assistant" | "user";
-  text: string;
-  error?: boolean;
-  pending?: boolean;
-  streaming?: boolean;
-}
+type AgentMessage = AgentHistoryMessage;
 
 type ReasoningEffort =
   "auto" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -156,13 +157,11 @@ const agentWelcomeMessage: AgentMessage = {
 
 function persistedAgentMessages(canvasId: string): AgentMessage[] {
   try {
-    const raw = window.localStorage.getItem(
-      `super-canvas:agent-history:${canvasId}`,
-    );
+    const raw = window.localStorage.getItem(agentHistoryStorageKey(canvasId));
     if (!raw) return [];
     const value = JSON.parse(raw) as unknown;
     if (!Array.isArray(value)) return [];
-    return value.flatMap((item): AgentMessage[] => {
+    const parsed = value.flatMap((item): AgentMessage[] => {
       if (!item || typeof item !== "object") return [];
       const record = item as Record<string, unknown>;
       if (
@@ -182,6 +181,7 @@ function persistedAgentMessages(canvasId: string): AgentMessage[] {
         },
       ];
     });
+    return successfulAgentHistory(parsed);
   } catch {
     return [];
   }
@@ -241,7 +241,7 @@ export function AgentPanel({
   const [messages, setMessages] = useState<AgentMessage[]>([
     agentWelcomeMessage,
   ]);
-  const [messagesHydrated, setMessagesHydrated] = useState(false);
+  const [hydratedCanvasId, setHydratedCanvasId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const agentConnections = useMemo(
@@ -529,8 +529,13 @@ export function AgentPanel({
   useEffect(() => {
     if (!canvasId) return;
     const restored = persistedAgentMessages(canvasId);
-    if (restored.length > 0) setMessages([agentWelcomeMessage, ...restored]);
-    setMessagesHydrated(true);
+    setMessages([agentWelcomeMessage, ...restored]);
+    setHydratedCanvasId(canvasId);
+    try {
+      window.localStorage.removeItem(legacyAgentHistoryStorageKey(canvasId));
+    } catch {
+      // History remains isolated by the v2 storage key even if cleanup fails.
+    }
   }, [canvasId]);
 
   useEffect(() => {
@@ -582,22 +587,21 @@ export function AgentPanel({
   }, []);
 
   useEffect(() => {
-    if (!canvasId || !messagesHydrated || submitting) return;
+    if (!canvasId || hydratedCanvasId !== canvasId || submitting) return;
     if (messages.some((message) => message.pending || message.streaming))
       return;
     try {
-      const persistable = messages
-        .filter((message) => message.id !== "agent-welcome")
-        .slice(-80)
-        .map(({ id, role, text, error }) => ({ id, role, text, error }));
+      const persistable = successfulAgentHistory(messages).map(
+        ({ id, role, text }) => ({ id, role, text }),
+      );
       window.localStorage.setItem(
-        `super-canvas:agent-history:${canvasId}`,
+        agentHistoryStorageKey(canvasId),
         JSON.stringify(persistable),
       );
     } catch {
       // Local storage can be unavailable in private browsing; chat still works.
     }
-  }, [canvasId, messages, messagesHydrated, submitting]);
+  }, [canvasId, hydratedCanvasId, messages, submitting]);
 
   useEffect(() => {
     let cancelled = false;
@@ -716,16 +720,7 @@ export function AgentPanel({
       text: `正在调用 ${modelId}`,
       pending: true,
     };
-    const history = messages
-      .filter(
-        (message) =>
-          message.id !== "agent-welcome" && !message.error && !message.pending,
-      )
-      .slice(-30)
-      .map((message) => ({
-        role: message.role,
-        content: message.text,
-      }));
+    const history = agentApiHistory(messages);
     setMessages((current) => [
       ...current,
       userMessage,
@@ -773,6 +768,25 @@ export function AgentPanel({
     }
   };
 
+  const startNewConversation = () => {
+    if (submitting) return;
+    if (revealTimerRef.current !== null) {
+      window.clearInterval(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+    setMessages([agentWelcomeMessage]);
+    setDraftState({ requestId: draftRequest?.id ?? null, text: "" });
+    setAttachments([]);
+    setAttachmentError("");
+    reverseAttachmentRequestRef.current = null;
+    try {
+      window.localStorage.removeItem(agentHistoryStorageKey(canvasId));
+      window.localStorage.removeItem(legacyAgentHistoryStorageKey(canvasId));
+    } catch {
+      // Local storage can be unavailable; resetting the visible chat still works.
+    }
+  };
+
   return (
     <div className="agent-panel">
       <header className="agent-panel-head">
@@ -783,6 +797,17 @@ export function AgentPanel({
           <strong>智能体</strong>
           <small>导演台 · 沧元对话模型</small>
         </div>
+        <button
+          type="button"
+          className="agent-new-chat"
+          onClick={startNewConversation}
+          disabled={submitting}
+          title="清空当前对话并开始新对话"
+          aria-label="新对话"
+        >
+          <RotateCcw size={13} />
+          <span>新对话</span>
+        </button>
       </header>
 
       <div className="agent-context">
