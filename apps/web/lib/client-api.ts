@@ -141,25 +141,39 @@ export interface DeleteAssetsResult {
   failedIds: string[];
 }
 
+export const DELETE_ASSET_CONCURRENCY = 4;
+
 export async function deleteAssets(
   assetIds: readonly string[],
 ): Promise<DeleteAssetsResult> {
-  const results = await Promise.all(
-    assetIds.map(async (assetId) => {
-      try {
-        const response = await fetch(
-          `/api/assets/${encodeURIComponent(assetId)}`,
-          { method: "DELETE" },
-        );
-        return {
-          assetId,
-          deleted: response.ok || response.status === 404,
-        };
-      } catch {
-        return { assetId, deleted: false };
-      }
-    }),
+  const uniqueAssetIds = Array.from(new Set(assetIds));
+  const results = new Array<{ assetId: string; deleted: boolean }>(
+    uniqueAssetIds.length,
   );
+  let nextIndex = 0;
+  const workers = Array.from(
+    {
+      length: Math.min(DELETE_ASSET_CONCURRENCY, uniqueAssetIds.length),
+    },
+    async () => {
+      while (nextIndex < uniqueAssetIds.length) {
+        const index = nextIndex++;
+        const assetId = uniqueAssetIds[index]!;
+        let deleted = false;
+        try {
+          const response = await fetch(
+            `/api/assets/${encodeURIComponent(assetId)}`,
+            { method: "DELETE" },
+          );
+          deleted = response.ok || response.status === 404;
+        } catch {
+          deleted = false;
+        }
+        results[index] = { assetId, deleted };
+      }
+    },
+  );
+  await Promise.all(workers);
   return {
     deletedIds: results
       .filter((result) => result.deleted)
