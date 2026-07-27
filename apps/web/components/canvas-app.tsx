@@ -119,6 +119,7 @@ import {
   validateLinkedMediaInputs,
 } from "../lib/linked-media";
 import {
+  closestAvailableResultPosition,
   getAutoConnectionOptions,
   getAutoConnectionTargetHandle,
   isCanvasHistoryShortcutAllowed,
@@ -484,25 +485,19 @@ function generatedResultPosition(
   occupiedNodes: readonly CanvasNode[],
 ): { x: number; y: number } {
   const sourceSize = nodeDimensions(source);
-  const sourceGap = 72;
-  const resultGap = 40;
-  const x = source.position.x + sourceSize.width + sourceGap;
-  let y = source.position.y;
-  for (let attempt = 0; attempt < occupiedNodes.length + 8; attempt += 1) {
-    const overlaps = occupiedNodes.some((node) => {
-      if (node.id === source.id) return false;
-      const size = nodeDimensions(node);
-      return !(
-        x + width + 24 <= node.position.x ||
-        x >= node.position.x + size.width + 24 ||
-        y + height + 24 <= node.position.y ||
-        y >= node.position.y + size.height + 24
-      );
-    });
-    if (!overlaps) return { x, y };
-    y += height + resultGap;
-  }
-  return { x, y };
+  return closestAvailableResultPosition(
+    {
+      id: source.id,
+      position: source.position,
+      ...sourceSize,
+    },
+    { width, height },
+    occupiedNodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      ...nodeDimensions(node),
+    })),
+  );
 }
 
 function layoutGeneratedResults(nodes: CanvasNode[]): CanvasNode[] {

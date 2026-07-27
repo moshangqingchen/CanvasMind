@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import {
+  closestAvailableResultPosition,
   getAutoConnectionOptions,
   getAutoConnectionTargetHandle,
   isCanvasHistoryShortcutAllowed,
@@ -11,6 +12,71 @@ import {
 } from "./graph-ui";
 
 describe("canvas graph UI helpers", () => {
+  it("places generated results tightly beside their source", () => {
+    expect(
+      closestAvailableResultPosition(
+        {
+          id: "source",
+          position: { x: 100, y: 200 },
+          width: 420,
+          height: 210,
+        },
+        { width: 320, height: 300 },
+        [],
+      ),
+    ).toEqual({ x: 544, y: 200 });
+  });
+
+  it("uses the nearest free vertical slot instead of jumping a full card", () => {
+    expect(
+      closestAvailableResultPosition(
+        {
+          id: "source-lower",
+          position: { x: 100, y: 430 },
+          width: 420,
+          height: 210,
+        },
+        { width: 320, height: 300 },
+        [
+          {
+            id: "previous-result",
+            position: { x: 544, y: 150 },
+            width: 320,
+            height: 294,
+          },
+        ],
+      ),
+    ).toEqual({ x: 544, y: 460 });
+  });
+
+  it("keeps multiple generated results in a compact non-overlapping stack", () => {
+    const source = {
+      id: "source",
+      position: { x: 90, y: 180 },
+      width: 420,
+      height: 210,
+    };
+    const first = closestAvailableResultPosition(
+      source,
+      { width: 320, height: 214 },
+      [],
+    );
+    expect(
+      closestAvailableResultPosition(
+        source,
+        { width: 320, height: 214 },
+        [
+          {
+            id: "first-result",
+            position: first,
+            width: 320,
+            height: 214,
+          },
+        ],
+      ),
+    ).toEqual({ x: 534, y: 410 });
+  });
+
   it("only exposes blank-canvas targets with compatible port kinds", () => {
     expect(getAutoConnectionTargetHandle("text", "image-generation")).toBe(
       "prompt",

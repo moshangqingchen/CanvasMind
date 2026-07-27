@@ -172,6 +172,58 @@ export interface CanvasShortcutContext {
   interactiveControl: boolean;
 }
 
+export interface PositionedCanvasRect {
+  id: string;
+  position: { x: number; y: number };
+  width: number;
+  height: number;
+}
+
+export function closestAvailableResultPosition(
+  source: PositionedCanvasRect,
+  result: { width: number; height: number },
+  occupied: readonly PositionedCanvasRect[],
+  options: { sourceGap?: number; collisionGap?: number } = {},
+): { x: number; y: number } {
+  const sourceGap = options.sourceGap ?? 24;
+  const collisionGap = options.collisionGap ?? 16;
+  const x = source.position.x + source.width + sourceGap;
+  const preferredY = source.position.y;
+
+  const horizontallyRelevant = occupied.filter((node) => {
+    if (node.id === source.id) return false;
+    return !(
+      x + result.width + collisionGap <= node.position.x ||
+      x >= node.position.x + node.width + collisionGap
+    );
+  });
+  const candidateYs = new Set([preferredY]);
+  for (const node of horizontallyRelevant) {
+    candidateYs.add(node.position.y + node.height + collisionGap);
+    candidateYs.add(node.position.y - result.height - collisionGap);
+  }
+
+  const overlapsAt = (y: number) =>
+    horizontallyRelevant.some(
+      (node) =>
+        !(
+          y + result.height + collisionGap <= node.position.y ||
+          y >= node.position.y + node.height + collisionGap
+        ),
+    );
+  const candidates = Array.from(candidateYs).sort((left, right) => {
+    const distance =
+      Math.abs(left - preferredY) - Math.abs(right - preferredY);
+    if (Math.abs(distance) > 0.5) return distance;
+    const leftIsBelow = left >= preferredY;
+    const rightIsBelow = right >= preferredY;
+    if (leftIsBelow !== rightIsBelow) return leftIsBelow ? -1 : 1;
+    return left - right;
+  });
+
+  return { x, y: candidates.find((y) => !overlapsAt(y)) ?? preferredY };
+}
+
 export function isCanvasShortcutAllowed(
   context: CanvasShortcutContext,
 ): boolean {

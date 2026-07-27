@@ -1024,6 +1024,18 @@ test.describe("超级画布完整验收", () => {
         sourceNodeId,
         initial.run.id,
       );
+      expect(completedResults.map((node) => node.position.x)).toEqual([
+        90 + 420 + 24,
+        90 + 420 + 24,
+      ]);
+      expect(completedResults[0]?.position.y).toBe(180);
+      const firstResultHeight = Number.parseFloat(
+        String(completedResults[0]?.style?.height),
+      );
+      expect(
+        completedResults[1]!.position.y -
+          (completedResults[0]!.position.y + firstResultHeight),
+      ).toBeCloseTo(16);
       const completedEdges = generatedResultEdgesFor(
         completedCanvas,
         sourceNodeId,
