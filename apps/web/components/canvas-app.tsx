@@ -119,6 +119,7 @@ import {
   validateLinkedMediaInputs,
 } from "../lib/linked-media";
 import {
+  alignedCanvasRectPositions,
   closestAvailableResultPosition,
   getAutoConnectionOptions,
   getAutoConnectionTargetHandle,
@@ -128,6 +129,7 @@ import {
   providerSupportsNodeType,
   shouldPersistNodeChanges,
   type AutoConnectNodeType,
+  type NodeAlignmentAction,
 } from "../lib/graph-ui";
 import {
   modelDescriptorFromConnectionConfig,
@@ -1183,6 +1185,9 @@ const transientNodeDataKeys = new Set([
   "onPrepareReversePrompt",
   "onDelete",
   "onResizeStart",
+  "selectionAlignmentVisible",
+  "selectionCount",
+  "onAlignSelection",
   "onPromptPartsChange",
   "onConnectionChange",
   "onModelChange",
@@ -3562,6 +3567,59 @@ function CanvasShell() {
     });
   }, []);
 
+  const selectedCanvasNodes = useMemo(
+    () => nodes.filter((node) => node.selected),
+    [nodes],
+  );
+  const selectionToolbarAnchorId =
+    selectedCanvasNodes.length >= 2
+      ? selectedCanvasNodes.some((node) => node.id === selectedId)
+        ? selectedId
+        : (selectedCanvasNodes.at(-1)?.id ?? null)
+      : null;
+
+  const alignSelectedNodes = useCallback(
+    (action: NodeAlignmentAction) => {
+      const state = useCanvasStore.getState();
+      const selected = state.nodes.filter((node) => node.selected);
+      if (selected.length < 2) return;
+      if (
+        (action === "distribute-x" || action === "distribute-y") &&
+        selected.length < 3
+      )
+        return;
+
+      checkpoint(true);
+      const positions = alignedCanvasRectPositions(
+        selected.map((node) => ({
+          id: node.id,
+          position: node.position,
+          ...nodeDimensions(node),
+        })),
+        action,
+      );
+      const nextNodes = state.nodes.map((node) => {
+        const position = positions.get(node.id);
+        return position ? { ...node, position } : node;
+      });
+      useCanvasStore.setState({ nodes: nextNodes });
+      graphRef.current = { nodes: nextNodes, edges: state.edges };
+      scheduleSave(nextNodes, state.edges, state.viewport);
+      const labels: Record<NodeAlignmentAction, string> = {
+        left: "左对齐",
+        "center-x": "水平居中",
+        right: "右对齐",
+        top: "上对齐",
+        "center-y": "垂直居中",
+        bottom: "下对齐",
+        "distribute-x": "水平等距分布",
+        "distribute-y": "垂直等距分布",
+      };
+      showToast(`已${labels[action]} ${selected.length} 个节点`, "success");
+    },
+    [checkpoint, scheduleSave, showToast],
+  );
+
   const renderedNodes = useMemo(
     () =>
       nodes.map((node): CanvasNode => {
@@ -3686,6 +3744,13 @@ function CanvasShell() {
             modelOptions,
             generatedPromptText,
             status: statuses.get(node.id),
+            ...(selectionToolbarAnchorId === node.id
+              ? {
+                  selectionAlignmentVisible: true,
+                  selectionCount: selectedCanvasNodes.length,
+                  onAlignSelection: alignSelectedNodes,
+                }
+              : {}),
             onSelect: () => selectCanvasNode(node.id),
             onOpenPreview: (assetId: string) => {
               const asset = assets.find((item) => item.id === assetId);
@@ -3740,7 +3805,10 @@ function CanvasShell() {
       recordLinkedAssetDuration,
       regenerateResult,
       runNode,
+      alignSelectedNodes,
       selectCanvasNode,
+      selectedCanvasNodes.length,
+      selectionToolbarAnchorId,
       statuses,
       updateNodeData,
       updateMediaAspectRatio,

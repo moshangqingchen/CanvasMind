@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import {
+  alignedCanvasRectPositions,
   closestAvailableResultPosition,
   getAutoConnectionOptions,
   getAutoConnectionTargetHandle,
@@ -12,6 +13,66 @@ import {
 } from "./graph-ui";
 
 describe("canvas graph UI helpers", () => {
+  const alignmentRects = [
+    {
+      id: "one",
+      position: { x: 100, y: 80 },
+      width: 200,
+      height: 120,
+    },
+    {
+      id: "two",
+      position: { x: 420, y: 260 },
+      width: 300,
+      height: 180,
+    },
+    {
+      id: "three",
+      position: { x: 780, y: 500 },
+      width: 160,
+      height: 100,
+    },
+  ];
+
+  it("aligns different-sized nodes to selection edges and centers", () => {
+    expect(
+      Array.from(alignedCanvasRectPositions(alignmentRects, "left").values()),
+    ).toEqual([
+      { x: 100, y: 80 },
+      { x: 100, y: 260 },
+      { x: 100, y: 500 },
+    ]);
+    expect(
+      Array.from(
+        alignedCanvasRectPositions(alignmentRects, "center-x").values(),
+      ).map((position) => position.x),
+    ).toEqual([420, 370, 440]);
+    expect(
+      Array.from(
+        alignedCanvasRectPositions(alignmentRects, "bottom").values(),
+      ).map((position) => position.y),
+    ).toEqual([480, 420, 500]);
+  });
+
+  it("distributes nodes evenly without allowing overlap", () => {
+    const overlapping = alignmentRects.map((node, index) => ({
+      ...node,
+      position: { x: 100 + index * 20, y: 80 + index * 20 },
+    }));
+    const horizontal = alignedCanvasRectPositions(
+      overlapping,
+      "distribute-x",
+    );
+    expect(horizontal.get("two")!.x).toBe(316);
+    expect(horizontal.get("three")!.x).toBe(632);
+    const vertical = alignedCanvasRectPositions(
+      overlapping,
+      "distribute-y",
+    );
+    expect(vertical.get("two")!.y).toBe(216);
+    expect(vertical.get("three")!.y).toBe(412);
+  });
+
   it("places generated results tightly beside their source", () => {
     expect(
       closestAvailableResultPosition(

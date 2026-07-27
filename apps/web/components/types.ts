@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeRunStatus, PromptPart } from "@super-canvas/core";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import type { NodeAlignmentAction } from "../lib/graph-ui";
 
 export interface AssetView {
   id: string;
@@ -75,6 +76,9 @@ export interface CanvasNodeData extends Record<string, unknown> {
   onPrepareReversePrompt?: () => void;
   onDelete?: () => void;
   onResizeStart?: () => void;
+  selectionAlignmentVisible?: boolean;
+  selectionCount?: number;
+  onAlignSelection?: (action: NodeAlignmentAction) => void;
   onPromptPartsChange?: (parts: PromptPart[]) => void;
   onConnectionChange?: (connectionId: string) => void;
   onModelChange?: (model: string) => void;

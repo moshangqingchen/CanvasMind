@@ -1007,6 +1007,58 @@ circle.canvas-drawing-selection-outline {
   align-items: stretch;
   gap: 4px;
 }
+
+.selection-alignment-toolbar {
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid rgba(156, 142, 255, 0.42);
+  border-radius: 10px;
+  background: rgba(18, 22, 33, 0.96);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.38),
+    inset 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+}
+
+.selection-alignment-toolbar > span {
+  color: #9ea8bf;
+  font-size: 9px;
+  line-height: 1;
+  text-align: center;
+}
+
+.selection-alignment-toolbar > div {
+  display: grid;
+  grid-template-columns: repeat(4, 28px);
+  gap: 4px;
+}
+
+.selection-alignment-toolbar button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(131, 143, 176, 0.28);
+  border-radius: 7px;
+  background: rgba(35, 41, 58, 0.92);
+  color: #c6cce0;
+  cursor: pointer;
+}
+
+.selection-alignment-toolbar button:hover:not(:disabled),
+.selection-alignment-toolbar button:focus-visible {
+  border-color: rgba(167, 151, 255, 0.72);
+  background: rgba(91, 74, 170, 0.5);
+  color: #fff;
+  outline: none;
+}
+
+.selection-alignment-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.32;
+}
 .node-inline-toolbar button,
 .node-inline-toolbar select {
   min-width: 0;

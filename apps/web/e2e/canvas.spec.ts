@@ -759,6 +759,39 @@ test.describe("超级画布完整验收", () => {
       ]);
   });
 
+  test("多选节点后显示浮动对齐工具并保存位置", async ({ page }) => {
+    await openWorkspace(page);
+    await page.locator(".react-flow").focus();
+    await page.keyboard.press("ControlOrMeta+A");
+
+    const toolbar = page.getByRole("toolbar", { name: "节点对齐工具" });
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar).toContainText("4 个节点");
+    await expect(
+      toolbar.getByRole("button", { name: "水平等距分布" }),
+    ).toBeEnabled();
+
+    await toolbar.getByRole("button", { name: "左对齐" }).click();
+    await expect
+      .poll(async () => {
+        const saved = await savedCanvas(page);
+        return Array.from(
+          new Set(saved.graph.nodes.map((node) => node.position.x)),
+        );
+      })
+      .toEqual([30]);
+
+    await toolbar.getByRole("button", { name: "上对齐" }).click();
+    await expect
+      .poll(async () => {
+        const saved = await savedCanvas(page);
+        return Array.from(
+          new Set(saved.graph.nodes.map((node) => node.position.y)),
+        );
+      })
+      .toEqual([135]);
+  });
+
   test("空白处右键新建图片节点，并可视化调整生成参数", async ({
     page,
     request,

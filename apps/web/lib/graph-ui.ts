@@ -179,6 +179,87 @@ export interface PositionedCanvasRect {
   height: number;
 }
 
+export type NodeAlignmentAction =
+  | "left"
+  | "center-x"
+  | "right"
+  | "top"
+  | "center-y"
+  | "bottom"
+  | "distribute-x"
+  | "distribute-y";
+
+export function alignedCanvasRectPositions(
+  nodes: readonly PositionedCanvasRect[],
+  action: NodeAlignmentAction,
+  minimumGap = 16,
+): Map<string, { x: number; y: number }> {
+  const positions = new Map(
+    nodes.map((node) => [node.id, { ...node.position }] as const),
+  );
+  if (nodes.length < 2) return positions;
+
+  const left = Math.min(...nodes.map((node) => node.position.x));
+  const right = Math.max(
+    ...nodes.map((node) => node.position.x + node.width),
+  );
+  const top = Math.min(...nodes.map((node) => node.position.y));
+  const bottom = Math.max(
+    ...nodes.map((node) => node.position.y + node.height),
+  );
+  const centerX = (left + right) / 2;
+  const centerY = (top + bottom) / 2;
+
+  if (action === "distribute-x" || action === "distribute-y") {
+    if (nodes.length < 3) return positions;
+    const horizontal = action === "distribute-x";
+    const sorted = [...nodes].sort((first, second) =>
+      horizontal
+        ? first.position.x - second.position.x
+        : first.position.y - second.position.y,
+    );
+    const totalSize = sorted.reduce(
+      (sum, node) => sum + (horizontal ? node.width : node.height),
+      0,
+    );
+    const span = horizontal ? right - left : bottom - top;
+    const gap = Math.max(minimumGap, (span - totalSize) / (nodes.length - 1));
+    let cursor = horizontal ? left : top;
+    for (const node of sorted) {
+      const current = positions.get(node.id)!;
+      positions.set(node.id, {
+        x: horizontal ? cursor : current.x,
+        y: horizontal ? current.y : cursor,
+      });
+      cursor += (horizontal ? node.width : node.height) + gap;
+    }
+    return positions;
+  }
+
+  for (const node of nodes) {
+    const current = positions.get(node.id)!;
+    positions.set(node.id, {
+      x:
+        action === "left"
+          ? left
+          : action === "center-x"
+            ? centerX - node.width / 2
+            : action === "right"
+              ? right - node.width
+              : current.x,
+      y:
+        action === "top"
+          ? top
+          : action === "center-y"
+            ? centerY - node.height / 2
+            : action === "bottom"
+              ? bottom - node.height
+              : current.y,
+    });
+  }
+  return positions;
+}
+
 export function closestAvailableResultPosition(
   source: PositionedCanvasRect,
   result: { width: number; height: number },

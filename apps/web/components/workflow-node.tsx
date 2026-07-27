@@ -9,6 +9,14 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalSpaceBetween,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalSpaceBetween,
   CircleAlert,
   Download,
   ExternalLink,
@@ -576,6 +584,98 @@ function WorkflowNodeComponent({
 
   return (
     <>
+      <NodeToolbar
+        isVisible={selected && data.selectionAlignmentVisible === true}
+        position={Position.Right}
+        offset={12}
+      >
+        <div
+          className="selection-alignment-toolbar nodrag nopan nowheel"
+          role="toolbar"
+          aria-label="节点对齐工具"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <span>{data.selectionCount ?? 0} 个节点</span>
+          <div>
+            <button
+              type="button"
+              aria-label="左对齐"
+              title="左对齐"
+              onClick={() => data.onAlignSelection?.("left")}
+            >
+              <AlignStartVertical size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="水平居中"
+              title="水平居中"
+              onClick={() => data.onAlignSelection?.("center-x")}
+            >
+              <AlignCenterVertical size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="右对齐"
+              title="右对齐"
+              onClick={() => data.onAlignSelection?.("right")}
+            >
+              <AlignEndVertical size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="水平等距分布"
+              title={
+                (data.selectionCount ?? 0) >= 3
+                  ? "水平等距分布"
+                  : "至少选择 3 个节点"
+              }
+              disabled={(data.selectionCount ?? 0) < 3}
+              onClick={() => data.onAlignSelection?.("distribute-x")}
+            >
+              <AlignHorizontalSpaceBetween size={14} />
+            </button>
+          </div>
+          <div>
+            <button
+              type="button"
+              aria-label="上对齐"
+              title="上对齐"
+              onClick={() => data.onAlignSelection?.("top")}
+            >
+              <AlignStartHorizontal size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="垂直居中"
+              title="垂直居中"
+              onClick={() => data.onAlignSelection?.("center-y")}
+            >
+              <AlignCenterHorizontal size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="下对齐"
+              title="下对齐"
+              onClick={() => data.onAlignSelection?.("bottom")}
+            >
+              <AlignEndHorizontal size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="垂直等距分布"
+              title={
+                (data.selectionCount ?? 0) >= 3
+                  ? "垂直等距分布"
+                  : "至少选择 3 个节点"
+              }
+              disabled={(data.selectionCount ?? 0) < 3}
+              onClick={() => data.onAlignSelection?.("distribute-y")}
+            >
+              <AlignVerticalSpaceBetween size={14} />
+            </button>
+          </div>
+        </div>
+      </NodeToolbar>
       <NodeToolbar
         isVisible={selected && generatedResult && !generatedPending}
         position={Position.Top}
