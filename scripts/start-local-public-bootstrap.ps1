@@ -9,7 +9,7 @@ $releaseRoot = Join-Path $installRoot "releases"
 if (-not (Test-Path -LiteralPath $activePath)) {
   throw "No installed Super Canvas release was found. Run pnpm public:install first."
 }
-$active = (Get-Content -LiteralPath $activePath -Raw).Trim()
+$active = (Get-Content -LiteralPath $activePath -Raw -Encoding utf8).Trim()
 if (-not $active -or -not (Test-Path -LiteralPath $active)) {
   throw "The active Super Canvas release directory is missing: $active"
 }
