@@ -161,7 +161,7 @@ function Invoke-ReleaseCheck {
   try {
     if ($config.Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Invalid GitHub repository configuration." }
     $url = "https://api.github.com/repos/$($config.Repository)/releases?per_page=30"
-    $releases = @(Invoke-RestMethod -Uri $url -Headers (Get-UpdateHeaders) -TimeoutSec 20)
+    $releases = Invoke-RestMethod -Uri $url -Headers (Get-UpdateHeaders) -TimeoutSec 20
     $currentVersion = Get-ApplicationVersion
     $candidate = $null
     foreach ($release in $releases) {

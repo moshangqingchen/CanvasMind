@@ -19,7 +19,7 @@ $headers = @{
 }
 if ($env:SUPERCANVAS_GITHUB_TOKEN) { $headers.Authorization = "Bearer $($env:SUPERCANVAS_GITHUB_TOKEN.Trim())" }
 
-$releases = @(Invoke-RestMethod -Uri "https://api.github.com/repos/$repository/releases?per_page=30" -Headers $headers -TimeoutSec 30)
+$releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repository/releases?per_page=30" -Headers $headers -TimeoutSec 30
 $candidate = $null
 foreach ($release in $releases) {
   if ($release.draft -or $release.prerelease) { continue }
