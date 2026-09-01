@@ -537,7 +537,16 @@ function Adopt-PrebuiltBuild {
   )
 
   $prebuiltRoot = Join-Path $webRoot ".next"
-  if (-not (Test-Path -LiteralPath (Join-Path $prebuiltRoot "BUILD_ID"))) { return $false }
+  $prebuiltFingerprintPath = Join-Path $prebuiltRoot ".source-fingerprint"
+  if (-not (Test-Path -LiteralPath (Join-Path $prebuiltRoot "BUILD_ID")) -or
+      -not (Test-Path -LiteralPath $prebuiltFingerprintPath)) {
+    return $false
+  }
+  $prebuiltFingerprint = (Get-Content -LiteralPath $prebuiltFingerprintPath -Raw).Trim()
+  if ($prebuiltFingerprint -ne $Fingerprint) {
+    Write-ManagerLog "Ignoring stale prebuilt Next.js output; rebuilding the current source."
+    return $false
+  }
   $slotRoot = Join-Path $webRoot $Slot
   if (Test-Path -LiteralPath $slotRoot) { Remove-Item -LiteralPath $slotRoot -Recurse -Force }
   New-Item -ItemType Directory -Path $slotRoot -Force | Out-Null
