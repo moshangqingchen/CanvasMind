@@ -52,12 +52,18 @@ jobs:
           $stage = Join-Path $env:GITHUB_WORKSPACE ".release-stage"
           if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
           New-Item -ItemType Directory -Path $stage | Out-Null
-          foreach ($name in @("apps", "packages", "scripts", "node_modules")) {
-            Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $name) -Destination $stage -Recurse -Force
-          }
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE "scripts") -Destination $stage -Recurse -Force
           foreach ($name in @("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc")) {
             Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $name) -Destination $stage -Force
           }
+          # A pnpm workspace contains junctions under every app's node_modules.
+          # Copy-Item follows those junctions and can recursively copy the whole
+          # workspace on Windows. pnpm deploy creates an isolated production
+          # tree inside the stage instead.
+          pnpm --filter @super-canvas/web deploy --prod --config.inject-workspace-packages=true (Join-Path $stage "apps\web")
+          if ($LASTEXITCODE -ne 0) { throw "Failed to deploy the web runtime package." }
+          pnpm --filter @super-canvas/worker deploy --prod --config.inject-workspace-packages=true (Join-Path $stage "apps\worker")
+          if ($LASTEXITCODE -ne 0) { throw "Failed to deploy the worker runtime package." }
           Get-ChildItem -LiteralPath $stage -Recurse -Directory -Force |
             Where-Object { $_.Name -in @("data", "storage", "backups", "test-results", "playwright-report", ".next-live-a", ".next-live-b") } |
             Sort-Object FullName -Descending |
