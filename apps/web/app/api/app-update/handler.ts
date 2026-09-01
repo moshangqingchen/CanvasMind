@@ -4,6 +4,7 @@ import {
   writeUpdateCommand,
   type AppUpdateCommandAction,
 } from "../../../lib/app-update";
+import { isLoopbackHost } from "../../../lib/public-auth";
 
 const actions = new Set<AppUpdateCommandAction>([
   "check",
@@ -18,10 +19,25 @@ function isCrossOriginWrite(request: Request): boolean {
   try {
     const requestUrl = new URL(request.url);
     const originUrl = new URL(origin);
-    return (
+    const sameOrigin =
       requestUrl.protocol !== originUrl.protocol ||
-      requestUrl.host !== originUrl.host
-    );
+      requestUrl.host !== originUrl.host;
+    if (!sameOrigin) return false;
+
+    // Cloudflare Tunnel and similar local reverse proxies can expose the app
+    // at PUBLIC_BASE_URL while Next sees the loopback origin internally.
+    // Trust that one configured public origin only for loopback requests.
+    const configuredPublicOrigin = process.env.PUBLIC_BASE_URL
+      ? new URL(process.env.PUBLIC_BASE_URL).origin
+      : "";
+    if (
+      configuredPublicOrigin &&
+      originUrl.origin === configuredPublicOrigin &&
+      isLoopbackHost(requestUrl.hostname)
+    )
+      return false;
+
+    return true;
   } catch {
     return true;
   }

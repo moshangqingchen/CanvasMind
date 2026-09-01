@@ -10,6 +10,7 @@ describe("application update route", () => {
   const originalStatus = process.env.SUPERCANVAS_UPDATE_STATUS_PATH;
   const originalCommand = process.env.SUPERCANVAS_UPDATE_COMMAND_PATH;
   const originalEnabled = process.env.SUPERCANVAS_UPDATE_ENABLED;
+  const originalPublicBaseUrl = process.env.PUBLIC_BASE_URL;
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), "super-canvas-update-route-"));
@@ -25,6 +26,8 @@ describe("application update route", () => {
     else process.env.SUPERCANVAS_UPDATE_COMMAND_PATH = originalCommand;
     if (originalEnabled === undefined) delete process.env.SUPERCANVAS_UPDATE_ENABLED;
     else process.env.SUPERCANVAS_UPDATE_ENABLED = originalEnabled;
+    if (originalPublicBaseUrl === undefined) delete process.env.PUBLIC_BASE_URL;
+    else process.env.PUBLIC_BASE_URL = originalPublicBaseUrl;
     await rm(directory, { recursive: true, force: true });
   });
 
@@ -78,6 +81,21 @@ describe("application update route", () => {
       }),
     );
     expect(response.status).toBe(403);
+  });
+
+  it("allows the configured public origin through a loopback tunnel", async () => {
+    process.env.PUBLIC_BASE_URL = "https://815rongai.com";
+    const response = await POST(
+      new Request("http://127.0.0.1:3210/api/app-update", {
+        method: "POST",
+        body: JSON.stringify({ action: "check" }),
+        headers: {
+          "content-type": "application/json",
+          origin: "https://815rongai.com",
+        },
+      }),
+    );
+    expect(response.status).toBe(202);
   });
 
   it("rejects malformed command versions", async () => {

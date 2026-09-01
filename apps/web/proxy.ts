@@ -57,6 +57,28 @@ const LOCAL_ASSET_BRIDGE_PATHS = new Set([
   "/api/assets/import-source",
 ]);
 
+function isAllowedPublicUpdateBridge(
+  request: NextRequest,
+  host: string,
+  origin: string,
+): boolean {
+  const pathname = request.nextUrl.pathname;
+  if (
+    pathname !== "/api/app-update" &&
+    !pathname.startsWith("/api/app-update/")
+  )
+    return false;
+  if (!isLoopbackHost(host)) return false;
+  try {
+    const publicOrigin = process.env.PUBLIC_BASE_URL
+      ? new URL(process.env.PUBLIC_BASE_URL).origin
+      : "";
+    return Boolean(publicOrigin && new URL(origin).origin === publicOrigin);
+  } catch {
+    return false;
+  }
+}
+
 function isAllowedLocalAssetBridge(
   request: NextRequest,
   host: string,
@@ -90,6 +112,7 @@ function isCrossSiteWrite(request: NextRequest, host: string): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return false;
   if (isAllowedLocalAssetBridge(request, host, origin)) return false;
+  if (isAllowedPublicUpdateBridge(request, host, origin)) return false;
   try {
     return normalizeHostHeader(new URL(origin).host) !== host;
   } catch {

@@ -229,6 +229,32 @@ describe("proxy cross-site write protection", () => {
     ).toBe(403);
   });
 
+  it("allows the configured public app to request updates through loopback", () => {
+    configureAuth();
+    vi.stubEnv("PUBLIC_BASE_URL", "https://815rongai.com");
+
+    expect(
+      passedThrough(
+        proxy(
+          request("/api/app-update", {
+            host: "127.0.0.1:3210",
+            method: "POST",
+            origin: "https://815rongai.com",
+          }),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      proxy(
+        request("/api/app-update", {
+          host: "127.0.0.1:3210",
+          method: "POST",
+          origin: "https://evil.example",
+        }),
+      ).status,
+    ).toBe(403);
+  });
+
   it("does not block reads from another origin", () => {
     configureAuth();
     expect(
