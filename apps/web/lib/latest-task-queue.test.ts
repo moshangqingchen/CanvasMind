@@ -33,4 +33,32 @@ describe("LatestTaskQueue", () => {
     await expect(queue.enqueue("latest")).resolves.toBeUndefined();
     expect(worker).toHaveBeenCalledTimes(2);
   });
+
+  it("serializes a pagehide flush behind an in-flight save and drops the stale debounce", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const events: string[] = [];
+    const queue = new LatestTaskQueue<string>(async (value) => {
+      events.push(`start:${value}`);
+      if (value === "in-flight") await firstGate;
+      events.push(`finish:${value}`);
+    });
+
+    const inFlight = queue.enqueue("in-flight");
+    const debounce = queue.enqueue("stale-debounce");
+    const pagehide = queue.enqueue("pagehide-latest");
+    expect(events).toEqual(["start:in-flight"]);
+
+    releaseFirst?.();
+    await Promise.all([inFlight, debounce, pagehide]);
+
+    expect(events).toEqual([
+      "start:in-flight",
+      "finish:in-flight",
+      "start:pagehide-latest",
+      "finish:pagehide-latest",
+    ]);
+  });
 });

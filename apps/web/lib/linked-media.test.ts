@@ -4,6 +4,8 @@ import type { AssetView, CanvasEdge, CanvasNode } from "../components/types";
 import {
   directLinkedAssetsForNode,
   linkedMediaLimitText,
+  removeDirectLinkedAssetEdges,
+  removeUnavailableAssetMentions,
   validateLinkedMediaInputs,
 } from "./linked-media";
 
@@ -58,6 +60,69 @@ describe("linked generation media", () => {
         (item) => item.id,
       ),
     ).toEqual(["image-1", "video-1", "image-2", "audio-1"]);
+  });
+
+  it("removes only edges that bring the selected asset into the target", () => {
+    const nodes = [
+      node("source-a", {
+        label: "a",
+        assetId: "image-1",
+      }),
+      node("source-b", {
+        label: "b",
+        lastOutputAssetIds: ["image-2"],
+      }),
+      node("target", { label: "target", nodeType: "video-generation" }),
+      node("other-target", {
+        label: "other",
+        nodeType: "video-generation",
+      }),
+    ];
+    const edges: CanvasEdge[] = [
+      { id: "remove", source: "source-a", target: "target" },
+      { id: "keep-other-asset", source: "source-b", target: "target" },
+      { id: "keep-other-target", source: "source-a", target: "other-target" },
+    ];
+
+    expect(
+      removeDirectLinkedAssetEdges("target", "image-1", nodes, edges).map(
+        (edge) => edge.id,
+      ),
+    ).toEqual(["keep-other-asset", "keep-other-target"]);
+  });
+
+  it("removes unavailable mentions while keeping assets reachable by another path", () => {
+    const nodes = [
+      node("source-a", { label: "a", assetId: "image-1" }),
+      node("source-a-copy", { label: "a-copy", assetId: "image-1" }),
+      node("source-b", { label: "b", assetId: "image-2" }),
+      node("target", {
+        label: "target",
+        parts: [
+          { type: "text", text: "参考 " },
+          { type: "asset", assetId: "image-1", role: "reference" },
+          { type: "asset", assetId: "image-1", role: "reference" },
+          { type: "asset", assetId: "image-2", role: "reference" },
+        ],
+      }),
+    ];
+    const remainingEdges: CanvasEdge[] = [
+      { id: "b", source: "source-b", target: "target" },
+    ];
+
+    expect(
+      removeUnavailableAssetMentions(nodes, remainingEdges)[3]?.data.parts,
+    ).toEqual([
+      { type: "text", text: "参考 " },
+      { type: "asset", assetId: "image-2", role: "reference" },
+    ]);
+
+    expect(
+      removeUnavailableAssetMentions(nodes, [
+        ...remainingEdges,
+        { id: "a-copy", source: "source-a-copy", target: "target" },
+      ])[3]?.data.parts,
+    ).toEqual(nodes[3]?.data.parts);
   });
 
   it("reports documented support, count, per-video, and total duration limits", () => {

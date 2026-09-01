@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { appendPriceLabelOnce } from "../lib/model-display";
 import {
   fetchCangyuanMarketplace,
   fetchModels,
@@ -247,7 +248,9 @@ export function AgentPanel({
   const agentConnections = useMemo(
     () =>
       connections.filter(
-        (connection) => providerConnectionUsage(connection) === "agent",
+        (connection) =>
+          providerConnectionUsage(connection) === "agent" ||
+          providerConnectionSupplierKey(connection) === "fake",
       ),
     [connections],
   );
@@ -255,8 +258,8 @@ export function AgentPanel({
     () =>
       Array.from(
         new Set([
-          ...(cangyuanGroups.length > 0 ? ["cangyuan"] : []),
           ...agentConnections.map(providerConnectionSupplierKey),
+          ...(cangyuanGroups.length > 0 ? ["cangyuan"] : []),
         ]),
       ),
     [agentConnections, cangyuanGroups.length],
@@ -957,6 +960,10 @@ export function AgentPanel({
             })
           }
           onKeyDown={(event) => {
+            // Enter confirms an IME candidate while composing Chinese/Japanese
+            // text. Treating that key as submit drops the candidate and sends
+            // an unfinished message.
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               void submitDraft();
@@ -1063,10 +1070,14 @@ export function AgentPanel({
                     ) : null}
                     {models.map((model) => (
                       <option key={model.id} value={model.id}>
-                        {model.name}
-                        {supplier === "cangyuan" && "priceLabel" in model
-                          ? `（${model.priceLabel}）`
-                          : ""}
+                        {appendPriceLabelOnce(
+                          model.name,
+                          supplier === "cangyuan" && "priceLabel" in model
+                            ? model.priceLabel
+                            : "metadata" in model
+                              ? model.metadata?.["priceLabel"]
+                              : undefined,
+                        )}
                       </option>
                     ))}
                   </select>

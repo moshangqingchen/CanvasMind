@@ -129,6 +129,25 @@ function startsWith(bytes: Uint8Array, signature: readonly number[]): boolean {
   return signature.every((value, index) => bytes[index] === value);
 }
 
+function endsWith(bytes: Uint8Array, signature: readonly number[]): boolean {
+  if (bytes.byteLength < signature.length) return false;
+  const offset = bytes.byteLength - signature.length;
+  return signature.every((value, index) => bytes[offset + index] === value);
+}
+
+function indexAfterSignature(
+  bytes: Uint8Array,
+  signature: readonly number[],
+  start = 0,
+): number | null {
+  const lastStart = bytes.byteLength - signature.length;
+  for (let offset = Math.max(0, start); offset <= lastStart; offset += 1) {
+    if (signature.every((value, index) => bytes[offset + index] === value))
+      return offset + signature.length;
+  }
+  return null;
+}
+
 function asciiAt(bytes: Uint8Array, offset: number, value: string): boolean {
   if (offset + value.length > bytes.byteLength) return false;
   for (let index = 0; index < value.length; index += 1) {
@@ -164,12 +183,17 @@ export function detectMediaMimeType(bytes: Uint8Array): string | null {
     (bytes[0] === 0xff && (bytes[1] ?? 0) >= 0xe0)
   )
     return "audio/mpeg";
-  if (asciiAt(bytes, 4, "ftyp"))
-    return asciiAt(bytes, 8, "qt  ")
+  if (asciiAt(bytes, 4, "ftyp")) {
+    const brand = new TextDecoder("ascii").decode(bytes.slice(8, 12));
+    if (new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]).has(brand))
+      return "image/heic";
+    if (brand === "avif" || brand === "avis") return "image/avif";
+    return brand === "qt  "
       ? "video/quicktime"
-      : asciiAt(bytes, 8, "M4A ") || asciiAt(bytes, 8, "M4B ")
+      : brand === "M4A " || brand === "M4B "
         ? "audio/mp4"
         : "video/mp4";
+  }
   if (
     startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3]) &&
     containsAscii(bytes, "webm", 4096)
@@ -195,6 +219,63 @@ export function validateMediaMagic(
     declaredMimeType: declared,
     detectedMimeType: detected,
   };
+}
+
+/**
+ * Returns the complete media payload and removes bytes desktop apps append
+ * after an image's real end marker. WeChat commonly exposes such virtual
+ * files; strict `endsWith` checks incorrectly classify them as truncated.
+ */
+export function completeMediaPayload(
+  bytes: Uint8Array,
+  mimeType: string,
+): Uint8Array | null {
+  switch (normalizeMimeType(mimeType)) {
+    case "image/png": {
+      const end = indexAfterSignature(
+        bytes,
+        [
+          0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60,
+          0x82,
+        ],
+        8,
+      );
+      return end === null ? null : bytes.slice(0, end);
+    }
+    case "image/jpeg": {
+      const end = indexAfterSignature(bytes, [0xff, 0xd9], 2);
+      return end === null ? null : bytes.slice(0, end);
+    }
+    case "image/gif": {
+      if (endsWith(bytes, [0x3b])) return bytes;
+      // A GIF trailer is a single byte and can also occur inside image data.
+      // Accept trailing desktop metadata, but keep the original bytes rather
+      // than risk cutting at a coincidental byte inside a frame.
+      return bytes.lastIndexOf(0x3b) >= 6 ? bytes : null;
+    }
+    case "image/webp": {
+      if (bytes.byteLength < 12) return null;
+      const declaredPayloadBytes =
+        (bytes[4] ?? 0) |
+        ((bytes[5] ?? 0) << 8) |
+        ((bytes[6] ?? 0) << 16) |
+        ((bytes[7] ?? 0) << 24);
+      const expectedBytes = declaredPayloadBytes + 8;
+      return expectedBytes >= 12 && expectedBytes <= bytes.byteLength
+        ? bytes.slice(0, expectedBytes)
+        : null;
+    }
+    default:
+      return bytes;
+  }
+}
+
+/** Detects common image truncation after the full upload body is available. */
+export function validateMediaCompleteness(
+  bytes: Uint8Array,
+  mimeType: string,
+): boolean {
+  return completeMediaPayload(bytes, mimeType) !== null;
 }
 
 export type ParsedByteRange =

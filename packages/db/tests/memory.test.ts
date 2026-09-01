@@ -1,7 +1,55 @@
 import { describe, expect, it } from "vitest";
 import { MemoryRepository } from "../src/memory.js";
+import { CanvasRevisionConflictError } from "../src/types.js";
 
 describe("MemoryRepository", () => {
+  it("atomically rejects a stale canvas revision without changing state", async () => {
+    const repository = new MemoryRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+
+    const attempts = await Promise.allSettled([
+      repository.saveCanvas({
+        id: canvas.id,
+        graph: { version: "first" },
+        expectedRevision: canvas.revision,
+      }),
+      repository.saveCanvas({
+        id: canvas.id,
+        graph: { version: "stale" },
+        expectedRevision: canvas.revision,
+      }),
+    ]);
+
+    expect(attempts.map((attempt) => attempt.status)).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(attempts[1]).toMatchObject({
+      reason: expect.any(CanvasRevisionConflictError),
+    });
+    const conflict = (attempts[1] as PromiseRejectedResult).reason;
+    expect(conflict).toMatchObject({
+      code: "CANVAS_REVISION_CONFLICT",
+      expectedRevision: 0,
+      currentRevision: 1,
+    });
+    await expect(repository.getCanvas(canvas.id)).resolves.toMatchObject({
+      revision: 1,
+      graph: { version: "first" },
+    });
+    await expect(repository.listRevisions(canvas.id)).resolves.toHaveLength(1);
+  });
+
+  it("keeps legacy unguarded canvas saves compatible", async () => {
+    const repository = new MemoryRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+
+    await repository.saveCanvas({ id: canvas.id, graph: { version: 1 } });
+    await expect(
+      repository.saveCanvas({ id: canvas.id, graph: { version: 2 } }),
+    ).resolves.toMatchObject({ revision: 2, graph: { version: 2 } });
+  });
+
   it("stores immutable canvas revisions", async () => {
     const repository = new MemoryRepository();
     const canvas = await repository.ensureDefaultCanvas();
@@ -274,5 +322,126 @@ describe("MemoryRepository", () => {
     await expect(
       repository.findNodeRunByProviderTaskId("same-task-id", "connection-b"),
     ).resolves.toMatchObject({ id: "task-node-b" });
+  });
+
+  it("persists director conversations and guards proposal transitions", async () => {
+    const repository = new MemoryRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveConnection({
+      id: "brain-connection",
+      name: "Director brain",
+      provider: "openai",
+      encryptedSecret: "encrypted",
+      config: {},
+    });
+    await repository.saveDirectorProfile({
+      id: "default",
+      brainConnectionId: "brain-connection",
+      brainModelId: "gpt-director",
+      researchConnectionId: null,
+      config: { maxSearchCalls: 3 },
+    });
+    await repository.createDirectorSession({
+      id: "session-1",
+      canvasId: canvas.id,
+      profileId: "default",
+      title: "Launch film",
+      metadata: {},
+    });
+    const message = await repository.createDirectorMessage({
+      id: "message-1",
+      sessionId: "session-1",
+      role: "user",
+      content: "Create a launch film",
+      metadata: { attachments: [] },
+    });
+    const proposal = await repository.createDirectorProposal({
+      id: "proposal-1",
+      sessionId: "session-1",
+      canvasId: canvas.id,
+      version: 1,
+      status: "awaiting_approval",
+      baseCanvasRevision: canvas.revision,
+      plan: { nodes: ["image"] },
+      quote: { currency: "CNY", maximum: 2 },
+      knowledgeVersion: "knowledge-1",
+      catalogFingerprint: "catalog-1",
+      expiresAt: "2026-08-30T12:15:00.000Z",
+      workflowRunId: null,
+    });
+
+    message.metadata.attachments = ["mutated"];
+    proposal.plan.nodes = ["mutated"];
+    await expect(repository.listDirectorMessages("session-1")).resolves.toEqual(
+      [
+        expect.objectContaining({
+          id: "message-1",
+          metadata: { attachments: [] },
+        }),
+      ],
+    );
+    await expect(
+      repository.getDirectorProposal("proposal-1"),
+    ).resolves.toMatchObject({
+      plan: { nodes: ["image"] },
+    });
+    await expect(
+      repository.updateDirectorProposal(
+        "proposal-1",
+        { status: "approved" },
+        { expectedVersion: 2, expectedStatuses: ["awaiting_approval"] },
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      repository.updateDirectorProposal(
+        "proposal-1",
+        { status: "approved" },
+        { expectedVersion: 1, expectedStatuses: ["awaiting_approval"] },
+      ),
+    ).resolves.toMatchObject({ status: "approved", version: 1 });
+
+    await repository.deleteDirectorSession("session-1");
+    await expect(
+      repository.getDirectorMessage("message-1"),
+    ).resolves.toBeNull();
+    await expect(
+      repository.getDirectorProposal("proposal-1"),
+    ).resolves.toBeNull();
+  });
+
+  it("upgrades version 1 snapshots and preserves selection node ids", async () => {
+    const repository = new MemoryRepository({
+      version: 1,
+      canvases: [],
+      revisions: [],
+      assets: [],
+      connections: [],
+      runs: [],
+      nodeRuns: [],
+      webhookKeys: [],
+    });
+    const canvas = await repository.ensureDefaultCanvas();
+    const run = await repository.createRun({
+      id: "selection-run",
+      canvasId: canvas.id,
+      clientRequestId: "selection-request",
+      scope: "selection",
+      nodeIds: ["image-b", "image-a"],
+      status: "queued",
+      revisionGraph: {},
+    });
+    run.nodeIds?.push("mutated");
+
+    expect(repository.exportSnapshot()).toMatchObject({
+      version: 2,
+      directorProfiles: [],
+      directorSessions: [],
+      directorMessages: [],
+      directorProposals: [],
+    });
+    await expect(repository.getRun("selection-run")).resolves.toMatchObject({
+      scope: "selection",
+      nodeIds: ["image-b", "image-a"],
+    });
   });
 });

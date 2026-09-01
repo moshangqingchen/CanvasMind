@@ -85,6 +85,57 @@ describe("DAG algorithms", () => {
     expect(wouldCreateCycle(dag, "asset", "render")).toBe(false);
     expect(wouldCreateCycle(dag, "asset", "asset")).toBe(true);
   });
+
+  it("does not treat generated result feedback links as workflow cycles", () => {
+    const graph: WorkflowGraph = {
+      nodes: [
+        {
+          id: "source",
+          type: "image-generation",
+          inputs: [
+            { id: "prompt", kind: "text" },
+            { id: "references", kind: "image[]", multiple: true },
+          ],
+          outputs: [{ id: "images", kind: "image" }],
+        },
+        {
+          id: "result",
+          type: "asset-input",
+          data: {
+            generatedResult: true,
+            generatedFromNodeId: "source",
+          },
+          inputs: [{ id: "generated", kind: "image" }],
+          outputs: [{ id: "asset", kind: "image" }],
+        },
+        {
+          id: "downstream",
+          type: "image-generation",
+          inputs: [{ id: "references", kind: "image[]", multiple: true }],
+        },
+      ],
+      edges: [
+        {
+          id: "source-result",
+          source: "source",
+          sourceHandle: "images",
+          target: "result",
+          targetHandle: "generated",
+        },
+        {
+          id: "result-downstream",
+          source: "result",
+          sourceHandle: "asset",
+          target: "downstream",
+          targetHandle: "references",
+        },
+      ],
+    };
+
+    expect(findCycles(graph)).toEqual([]);
+    expect(wouldCreateCycle(graph, "result", "downstream")).toBe(false);
+    expect(validateGraph(graph).valid).toBe(true);
+  });
 });
 
 describe("graph validation", () => {

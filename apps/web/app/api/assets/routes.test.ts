@@ -33,8 +33,14 @@ vi.mock("../../../lib/server", () => ({
 import { GET as getAssetContent } from "./[id]/content/route";
 import { POST as completeUpload } from "./complete/route";
 import { POST as bulkDeleteAssets } from "./bulk-delete/route";
-import { POST as createPresignedUpload } from "./presign/route";
-import { POST as proxyUpload } from "./upload/route";
+import {
+  OPTIONS as presignOptions,
+  POST as createPresignedUpload,
+} from "./presign/route";
+import {
+  OPTIONS as proxyUploadOptions,
+  POST as proxyUpload,
+} from "./upload/route";
 import { createUploadToken } from "../../../lib/upload-token";
 
 const asset = {
@@ -146,6 +152,63 @@ describe("bulk asset deletion route", () => {
 });
 
 describe("asset content route", () => {
+  it("forces a named attachment for explicit downloads", async () => {
+    mocks.repository.getAsset.mockResolvedValueOnce({
+      ...asset,
+      name: "测试/图片",
+      kind: "image",
+      mimeType: "image/png",
+    });
+    mocks.storage.head.mockResolvedValueOnce({
+      size: 10,
+      contentType: "image/png",
+    });
+    mocks.storage.get.mockResolvedValueOnce({
+      bytes: Uint8Array.from({ length: 10 }, (_, index) => index),
+      contentType: "image/png",
+    });
+
+    const response = await getAssetContent(
+      new Request("http://localhost/api/assets/asset-1/content?download=1"),
+      { params: Promise.resolve({ id: "asset-1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("content-disposition")).toContain("attachment");
+    expect(response.headers.get("content-disposition")).toContain(
+      encodeURIComponent("测试-图片.png"),
+    );
+  });
+
+  it("preserves an existing compatible file extension", async () => {
+    mocks.repository.getAsset.mockResolvedValueOnce({
+      ...asset,
+      name: "photo.JPEG",
+      kind: "image",
+      mimeType: "image/jpeg",
+    });
+    mocks.storage.head.mockResolvedValueOnce({
+      size: 10,
+      contentType: "image/jpeg",
+    });
+    mocks.storage.get.mockResolvedValueOnce({
+      bytes: Uint8Array.from({ length: 10 }, (_, index) => index),
+      contentType: "image/jpeg",
+    });
+
+    const response = await getAssetContent(
+      new Request("http://localhost/api/assets/asset-1/content?download=1"),
+      { params: Promise.resolve({ id: "asset-1" }) },
+    );
+
+    expect(response.headers.get("content-disposition")).toContain("photo.JPEG");
+    expect(response.headers.get("content-disposition")).not.toContain(
+      "photo.JPEG.jpg",
+    );
+  });
+
   it("serves a suffix range through storage.getRange without loading the object", async () => {
     const response = await getAssetContent(
       new Request("http://localhost/api/assets/asset-1/content", {
@@ -155,6 +218,7 @@ describe("asset content route", () => {
     );
 
     expect(response.status).toBe(206);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("content-range")).toBe("bytes 7-9/10");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("content-security-policy")).toContain(
@@ -186,6 +250,60 @@ describe("asset content route", () => {
 });
 
 describe("direct upload routes", () => {
+  it("allows the configured public site to prepare a loopback upload", () => {
+    const originalPublicBaseUrl = process.env.PUBLIC_BASE_URL;
+    process.env.PUBLIC_BASE_URL = "https://815rongai.com";
+    try {
+      const response = presignOptions(
+        new Request("http://127.0.0.1:3210/api/assets/presign", {
+          method: "OPTIONS",
+          headers: {
+            origin: "https://815rongai.com",
+            "access-control-request-headers": "content-type",
+            "access-control-request-method": "POST",
+            "access-control-request-private-network": "true",
+          },
+        }),
+      );
+
+      expect(response.status).toBe(204);
+      expect(response.headers.get("access-control-allow-origin")).toBe(
+        "https://815rongai.com",
+      );
+      expect(response.headers.get("access-control-allow-private-network")).toBe(
+        "true",
+      );
+    } finally {
+      if (originalPublicBaseUrl === undefined)
+        delete process.env.PUBLIC_BASE_URL;
+      else process.env.PUBLIC_BASE_URL = originalPublicBaseUrl;
+    }
+  });
+
+  it("assigns an idempotency id to proxy uploads", async () => {
+    const originalPresignPut = mocks.storage.presignPut;
+    Reflect.deleteProperty(mocks.storage, "presignPut");
+    try {
+      const response = await createPresignedUpload(
+        new Request("http://localhost/api/assets/presign", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: "photo.png",
+            mimeType: "image/png",
+            size: 42,
+          }),
+        }),
+      );
+      const payload = (await response.json()) as { mode: string; id: string };
+
+      expect(payload.mode).toBe("proxy");
+      expect(payload.id).toMatch(/^[0-9a-f-]{36}$/u);
+    } finally {
+      Reflect.set(mocks.storage, "presignPut", originalPresignPut);
+    }
+  });
+
   it("passes the expected content length to presignPut", async () => {
     mocks.storage.presignPut.mockResolvedValue("https://storage.test/upload");
     const response = await createPresignedUpload(
@@ -323,11 +441,202 @@ describe("direct upload routes", () => {
 });
 
 describe("proxy upload route", () => {
+  it("allows the configured public site to upload directly to loopback", async () => {
+    const originalPublicBaseUrl = process.env.PUBLIC_BASE_URL;
+    process.env.PUBLIC_BASE_URL = "https://815rongai.com";
+    try {
+      const response = proxyUploadOptions(
+        new Request("http://127.0.0.1:3210/api/assets/upload", {
+          method: "OPTIONS",
+          headers: {
+            origin: "https://815rongai.com",
+            "access-control-request-headers": "content-type",
+            "access-control-request-method": "POST",
+            "access-control-request-private-network": "true",
+          },
+        }),
+      );
+
+      expect(response.status).toBe(204);
+      expect(response.headers.get("access-control-allow-origin")).toBe(
+        "https://815rongai.com",
+      );
+      expect(response.headers.get("access-control-allow-headers")).toBe(
+        "Content-Type",
+      );
+      expect(response.headers.get("access-control-allow-private-network")).toBe(
+        "true",
+      );
+    } finally {
+      if (originalPublicBaseUrl === undefined)
+        delete process.env.PUBLIC_BASE_URL;
+      else process.env.PUBLIC_BASE_URL = originalPublicBaseUrl;
+    }
+  });
+
+  it("does not grant local upload access to unrelated sites", () => {
+    const originalPublicBaseUrl = process.env.PUBLIC_BASE_URL;
+    process.env.PUBLIC_BASE_URL = "https://815rongai.com";
+    try {
+      const response = proxyUploadOptions(
+        new Request("http://127.0.0.1:3210/api/assets/upload", {
+          method: "OPTIONS",
+          headers: { origin: "https://untrusted.example" },
+        }),
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.headers.has("access-control-allow-origin")).toBe(false);
+    } finally {
+      if (originalPublicBaseUrl === undefined)
+        delete process.env.PUBLIC_BASE_URL;
+      else process.env.PUBLIC_BASE_URL = originalPublicBaseUrl;
+    }
+  });
+
   it("rejects an oversized multipart body before parsing it", async () => {
     const response = await proxyUpload(
       new Request("http://localhost/api/assets/upload", {
         method: "POST",
-        headers: { "content-length": String(600 * 1024 * 1024) },
+        headers: {
+          "content-length": String(600 * 1024 * 1024),
+          "content-type": "multipart/form-data; boundary=e2e",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(413);
+  });
+
+  it("accepts a raw browser file body without multipart parsing", async () => {
+    const bytes = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00,
+      0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    const response = await proxyUpload(
+      new Request(
+        "http://localhost/api/assets/upload?name=large-reference.png",
+        {
+          method: "POST",
+          headers: {
+            "content-length": String(bytes.byteLength),
+            "content-type": "image/png",
+          },
+          body: bytes,
+        },
+      ),
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.storage.put).toHaveBeenCalledOnce();
+    expect(mocks.repository.saveAsset).toHaveBeenCalledOnce();
+  });
+
+  it("strips WeChat bytes appended after a complete image", async () => {
+    const completePng = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00,
+      0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    const wechatBytes = Uint8Array.from([...completePng, 9, 8, 7, 6]);
+    const response = await proxyUpload(
+      new Request(
+        "http://localhost/api/assets/upload?name=wechat-reference.png",
+        {
+          method: "POST",
+          headers: {
+            "content-length": String(wechatBytes.byteLength),
+            "content-type": "image/png",
+          },
+          body: wechatBytes,
+        },
+      ),
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.storage.put).toHaveBeenCalledWith(
+      expect.any(String),
+      completePng,
+      "image/png",
+    );
+    expect(mocks.repository.saveAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        size: completePng.byteLength,
+        metadata: expect.objectContaining({
+          originalUploadSize: wechatBytes.byteLength,
+          trimmedTrailingBytes: true,
+          repaired: false,
+        }),
+      }),
+    );
+  });
+
+  it("returns the first asset when the same upload is retried", async () => {
+    const id = "d5916e5d-e4f8-4b14-8d71-7a976768c5e3";
+    const bytes = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00,
+      0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    mocks.repository.getAsset.mockResolvedValueOnce({
+      ...asset,
+      id,
+      name: "wechat.png",
+      kind: "image",
+      mimeType: "image/png",
+      size: bytes.byteLength,
+      storageKey: `assets/${id}/original.png`,
+    });
+
+    const response = await proxyUpload(
+      new Request(
+        `http://localhost/api/assets/upload?name=wechat.png&id=${id}`,
+        {
+          method: "POST",
+          headers: {
+            "content-length": String(bytes.byteLength),
+            "content-type": "image/png",
+          },
+          body: bytes,
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).id).toBe(id);
+    expect(mocks.storage.put).not.toHaveBeenCalled();
+    expect(mocks.repository.saveAsset).not.toHaveBeenCalled();
+  });
+
+  it("rejects a raw upload truncated before the route handler", async () => {
+    const bytes = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    const response = await proxyUpload(
+      new Request("http://localhost/api/assets/upload?name=truncated.png", {
+        method: "POST",
+        headers: {
+          "content-length": String(bytes.byteLength + 100),
+          "content-type": "image/png",
+        },
+        body: bytes,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Upload body was incomplete; please upload the file again",
+    });
+    expect(mocks.storage.put).not.toHaveBeenCalled();
+    expect(mocks.repository.saveAsset).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized raw file bodies before reading them", async () => {
+    const response = await proxyUpload(
+      new Request("http://localhost/api/assets/upload?name=too-large.png", {
+        method: "POST",
+        headers: {
+          "content-length": String(600 * 1024 * 1024),
+          "content-type": "image/png",
+        },
       }),
     );
 

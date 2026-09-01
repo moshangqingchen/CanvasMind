@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 2,
+  "skillPath": ".agents/skills/ai-super-director/SKILL.md",
+  "coreContract": ".agents/skills/ai-super-director/references/core-contract.md",
+  "precedence": [
+    "verified-rights-and-safety",
+    "current-user-intent",
+    "verified-product-delivery-facts",
+    "core-contract",
+    "capability-routing",
+    "task-reference",
+    "legacy-reference"
+  ],
+  "stableMarkers": [
+    "aspect.default=16:9",
+    "aspect.vertical.requires-explicit-intent=required",
+    "weather.precipitation.requires-motivation=required",
+    "cinematic-look.does-not-imply-rain-neon-wet-ground=required",
+    "face-change.does-not-equal-rights-clearance=required",
+    "reference.creative-source.origin-verified=required",
+    "reference.creative-source.ai-generated=forbidden",
+    "reference.generation-benchmark.separate=required",
+    "reference.search.task-conditioned=required",
+    "reference.search.user-specified-ip-keywords=required",
+    "reference.search.excellent-anime-pool=allowed",
+    "reference.search.named-ip.nonexclusive-default=required",
+    "reference.search.exclusive-scope.requires-explicit-intent=required",
+    "dialogue.critical-scene.dual-source-reference=required",
+    "dialogue.critical-scene.classification-derived=required",
+    "dialogue.new-writing.relevant-ab-reference=required",
+    "dialogue.every-line.has-scene-function=required",
+    "dialogue.character-knowledge-action-grounding=required",
+    "dialogue.speaker-swap-test=required",
+    "dialogue.shared-knowledge-exposition=forbidden",
+    "dialogue.generic-ai-cliche=forbidden",
+    "dialogue.content-before-lip-sync-compression=required",
+    "dialogue.output.reference-note=short-after-dialogue",
+    "motion.speed-profile.when-story-critical=required",
+    "motion.speed.target-and-phase=required",
+    "playback.speed.default=real-time",
+    "playback.speed-change.requires-explicit-intent=required",
+    "speed.adjective-alone=insufficient",
+    "fight.reference.dual-visual-track=required",
+    "fight.effective-beat-density=5s",
+    "fight.single-shot-static-clash=forbidden",
+    "fight.multi-shot.default=required",
+    "fight.dynamic-long-take.requires-internal-beats=required",
+    "power-clash.must-evolve=required"
+  ],
+  "referenceUseModes": [
+    "internal-study",
+    "licensed-recreation",
+    "publishable-translation"
+  ],
+  "defaults": {
+    "status": "legacy-reference",
+    "priority": 100,
+    "triggers": [],
+    "requires": [],
+    "supersedes": [],
+    "conflicts": [],
+    "evidenceRequired": []
+  },
+  "overrides": {
+    "2026-06-07-ai-super-director-rights-ethics-compliance-clearance-library": {
+      "status": "active-core",
+      "priority": 1,
+      "triggers": ["existing-ip", "real-person", "voice", "music", "brand", "logo", "commercial-release"],
+      "requires": ["rights-and-provenance-reference"],
+      "conflicts": ["unverified-authorization-assumption"],
+      "evidenceRequired": ["asset-source", "authorization-status", "intended-use"]
+    },
+    "2026-06-07-ai-super-director-ai-trend-radar": {
+      "status": "active-core",
+      "priority": 5,
+      "triggers": ["creative", "story", "ad", "fanwork", "trend", "viral", "platform"],
+      "requires": ["trend-gate-reference", "live-public-browsing", "creative-reference-origin-verification", "task-conditioned-reference-search"],
+      "conflicts": ["memory-only-trend-claim", "ai-generated-creative-reference", "unknown-origin-creative-reference", "user-specified-ip-keyword-erasure"],
+      "evidenceRequired": ["source-url", "captured-at", "evidence-level", "transcript-provenance", "observed-scope", "observed-range-creation-mode", "origin-evidence", "observation-context", "freshness-risk", "rights-risk"]
+    },
+    "2026-07-12-ai-super-director-seedance-latest-natural-realism-baseline": {
+      "status": "active-core",
+      "priority": 5,
+      "triggers": ["video-generation", "seedance", "shot-to-video", "video-prompt", "motion-speed", "playback-speed", "fast-motion"],
+      "requires": ["production-and-generation-reference", "current-account-capability-check", "motion-speed-profile"],
+      "supersedes": [
+        "2026-06-07-ai-super-director-seedance2-ai-shortfilm-generation-quality-gap-radar",
+        "2026-06-07-ai-super-director-seedance2-directing-pov-camera-handbook",
+        "2026-06-07-ai-super-director-seedance2-embodied-camera-pov-cards",
+        "2026-06-07-ai-super-director-seedance2-pov-choreography-matrix"
+      ],
+      "conflicts": ["hard-coded-model-marketing-claim", "preemptive-scale-reduction", "bare-speed-adjective", "implicit-playback-speed-change", "slow-motion-duration-padding", "speed-teleport-substitution"],
+      "evidenceRequired": ["capability-status", "current-account-capability", "dated-official-source", "speed-profile"]
+    },
+    "2026-08-02-ai-super-director-dynamic-creative-divergence-fun-meme-engine": {
+      "status": "active-core",
+      "priority": 10,
+      "triggers": ["creative", "story", "short-film", "short-drama", "ad", "comedy", "fanwork"],
+      "requires": ["creative-routing-reference", "current-platform-evidence"],
+      "supersedes": [
+        "2026-06-07-ai-super-director-one-click-response-kernel",
+        "2026-06-07-ai-super-director-one-line-request-router-output-protocol"
+      ],
+      "conflicts": ["fixed-three-act-template", "single-sample-copy"],
+      "evidenceRequired": ["source-url", "captured-at", "evidence-level"]
+    },
+    "2026-07-12-ai-super-director-complete-visual-storyboard-generation-system": {
+      "status": "active-core",
+      "priority": 10,
+      "triggers": ["storyboard", "shot-board", "keyframe-book", "shot-by-shot-images"],
+      "requires": ["production-and-generation-reference", "character-master", "spatial-axis-board"],
+      "conflicts": ["prompt-only-storyboard-delivery"],
+      "evidenceRequired": ["character-continuity", "timecode-ledger"]
+    },
+    "2026-07-12-ai-super-director-production-authenticity-live-action-animation-pipeline-baseline": {
+      "status": "active-core",
+      "priority": 10,
+      "triggers": ["live-action", "3d-animation", "2d-animation", "hybrid-production"],
+      "requires": ["production-medium-selection"],
+      "conflicts": ["unspecified-production-medium"],
+      "evidenceRequired": ["department-or-pipeline-plan"]
+    },
+    "2026-06-07-ai-super-director-short-drama-conflict-reversal-hook-engine": {
+      "status": "active-task",
+      "priority": 20,
+      "triggers": ["short-drama", "vertical-drama", "reversal", "cliffhanger"],
+      "requires": ["current-platform-evidence", "creative-compass"],
+      "evidenceRequired": ["current-platform-sample"]
+    },
+    "2026-06-07-ai-super-director-creative-ad-product-proof-conversion-engine": {
+      "status": "active-task",
+      "priority": 20,
+      "triggers": ["creative-ad", "product-ad", "conversion", "product-proof"],
+      "requires": ["product-facts", "current-platform-evidence"],
+      "conflicts": ["story-obscures-product-proof"],
+      "evidenceRequired": ["product-fact-profile", "product-fact-source", "current-platform-sample"]
+    },
+    "2026-06-07-ai-super-director-action-fight-vfx-choreography-engine": {
+      "status": "active-task",
+      "priority": 20,
+      "triggers": ["fight", "fight-sequence", "fight-isolated-beat", "duel", "power-clash", "beam-clash", "dynamic-fight-long-take", "chase", "transformation", "finisher", "vfx", "speed-critical-action", "rapid-action", "slow-motion", "speed-ramp"],
+      "requires": ["action-and-fight-direction-reference", "fight-scope-classification", "spatial-baseline", "action-causality", "fight-dual-visual-reference-track", "creative-reference-origin-verification", "task-conditioned-reference-search", "multi-beat-fight-timeline", "camera-progression", "motion-speed-profile"],
+      "conflicts": ["preemptive-scale-reduction", "single-shot-static-clash", "unevolved-power-clash", "decorative-camera-orbit", "repeated-light-burst-as-progression", "b-level-visual-action-inference", "ai-generated-creative-reference", "unknown-origin-creative-reference", "user-specified-ip-keyword-erasure", "bare-speed-adjective", "implicit-playback-speed-change", "slow-motion-duration-padding", "speed-teleport-substitution"],
+      "evidenceRequired": ["fight-reference-set", "observed-range-creation-mode", "origin-evidence", "combat-beat-ledger", "camera-progression-plan", "blocking-or-previs", "speed-profile"]
+    },
+    "2026-08-02-ai-super-director-viral-fanwork-ip-emotional-dialogue-editor": {
+      "status": "active-task",
+      "priority": 20,
+      "triggers": ["story", "plot", "screenplay", "script", "script-rewrite", "scene-writing", "story-with-dialogue", "dialogue", "dialogue-rewrite", "natural-dialogue", "anti-ai-dialogue", "voiceover", "narration", "ad-dialogue", "brand-line", "character-confirmation", "viral-dialogue", "fanwork-dialogue", "emotional-line"],
+      "requires": ["dialogue-and-scene-writing-reference", "derived-scene-classification", "critical-scene-reference-set", "creative-reference-origin-verification", "task-conditioned-reference-search", "character-objective", "relationship-state-before-after", "newly-revealed-facts", "knowledge-boundary", "physical-action", "current-platform-evidence", "rights-and-provenance-reference"],
+      "conflicts": ["metadata-only-dialogue-inference", "metadata-only-performance-analysis", "ai-generated-creative-reference", "unknown-origin-creative-reference", "user-specified-ip-keyword-erasure", "generic-ai-cliche", "shared-knowledge-exposition", "speaker-swappable-dialogue", "dialogue-before-scene-causality"],
+      "evidenceRequired": ["long-form-dialogue-reference", "current-short-form-dialogue-reference", "observed-range-creation-mode", "origin-evidence", "dialogue-scene-contract", "scene-function-types", "relationship-state-before-after", "newly-revealed-facts", "source-url", "published-at", "captured-at", "current-relevance-evidence", "transcript-provenance", "reference-use-mode", "authorization-status"]
+    },
+    "2026-07-03-ai-super-director-fanwork-style-anchor-library": {
+      "status": "active-task",
+      "priority": 20,
+      "triggers": ["visual-fanwork", "shot-recreation", "anime-recreation", "film-recreation", "tv-recreation", "viral-video-recreation", "signature-move", "skill", "iconic-scene"],
+      "requires": ["rights-and-provenance-reference", "reference-use-mode", "task-conditioned-reference-search", "production-medium-selection"],
+      "conflicts": ["face-change-as-clearance", "face-only-clearance", "user-specified-ip-keyword-erasure", "unscoped-direct-inheritance", "unlicensed-high-fidelity-recreation"],
+      "evidenceRequired": ["asset-source", "authorization-status", "release-hold"]
+    },
+    "2026-07-03-ai-super-director-fanwork-style-voice-continuation-engine": {
+      "status": "active-task",
+      "priority": 20,
+      "triggers": ["sound-recreation", "original-audio", "voice-continuation", "signature-sound", "move-sound", "skill-sound", "iconic-scene-audio"],
+      "requires": ["rights-and-provenance-reference", "reference-use-mode", "voice-identity-check"],
+      "conflicts": ["face-change-as-clearance", "face-only-clearance", "unlicensed-identifiable-voice", "unlicensed-high-fidelity-recreation", "unlicensed-original-audio"],
+      "evidenceRequired": ["asset-source", "authorization-status", "identity-detectable", "release-hold"]
+    },
+    "2026-06-07-ai-super-director-camera-language-dictionary": {
+      "status": "active-task",
+      "priority": 30,
+      "triggers": ["camera-language", "camera-movement", "pov", "embodied-camera", "speed-critical-camera", "camera-speed", "camera-acceleration", "camera-deceleration"],
+      "requires": ["viewer-position", "movement-motivation", "motion-speed-profile"],
+      "conflicts": ["bare-speed-adjective", "implicit-playback-speed-change"],
+      "evidenceRequired": ["camera-speed-curve"]
+    },
+    "2026-06-07-ai-super-director-live-performance-emotion-action-directing-library": {
+      "status": "active-task",
+      "priority": 30,
+      "triggers": ["performance", "acting", "subtext", "emotion-direction"],
+      "requires": ["character-objective", "relationship-state"],
+      "evidenceRequired": []
+    },
+    "2026-06-07-ai-super-director-continuity-script-supervisor-prop-character-engine": {
+      "status": "active-task",
+      "priority": 30,
+      "triggers": ["multi-shot", "series", "continuity", "character-consistency"],
+      "requires": ["previous-shot-exit-state"],
+      "evidenceRequired": ["continuity-ledger"]
+    },
+    "2026-06-07-ai-super-director-output-audit-scorecard": {
+      "status": "active-task",
+      "priority": 30,
+      "triggers": ["review", "pre-release-check", "client-review", "quality-audit"],
+      "requires": ["declared-production-medium"],
+      "evidenceRequired": ["deliverable-under-review"]
+    }
+  }
+}

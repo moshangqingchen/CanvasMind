@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   maskConnection,
+  nodeRunRecoveryAction,
   publicRunSnapshot,
   publicRuntimeEvent,
 } from "./server";
@@ -58,6 +59,63 @@ describe("maskConnection", () => {
 });
 
 describe("public run snapshots", () => {
+  it("keeps an interrupted archive recoverable without resubmission", () => {
+    expect(
+      nodeRunRecoveryAction({
+        id: "node-run-archive",
+        workflowRunId: "run-archive",
+        nodeId: "image-archive",
+        status: "archiving",
+        attempt: 1,
+        providerTaskId: "provider-task-archive",
+        inputJson: {
+          providerTask: { status: "succeeded" },
+        },
+        outputAssetIds: [],
+        errorJson: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      }),
+    ).toBe("resume_archive");
+  });
+
+  it("does not offer recovery after the local snapshot retention limit", () => {
+    const snapshot = publicRunSnapshot({
+      run: {
+        id: "expired-run",
+        canvasId: "canvas-1",
+        clientRequestId: "expired-request",
+        scope: "all",
+        status: "needs_attention",
+        revisionGraph: {
+          schemaVersion: 1,
+          nodes: [],
+          edges: [],
+          localRecoveryExpired: true,
+        },
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      },
+      nodes: [
+        {
+          id: "expired-node-run",
+          workflowRunId: "expired-run",
+          nodeId: "image-1",
+          status: "needs_attention",
+          attempt: 1,
+          providerTaskId: "provider-task-1",
+          inputJson: { providerTask: { status: "running" } },
+          outputAssetIds: [],
+          errorJson: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:01.000Z",
+        },
+      ],
+    });
+
+    expect(snapshot?.run.canResume).toBe(false);
+  });
+
   it("omits recovery payloads and provider response material", () => {
     const snapshot = publicRunSnapshot({
       run: {
@@ -82,7 +140,22 @@ describe("public run snapshots", () => {
           attempt: 1,
           providerTaskId: "provider-task-1",
           inputJson: {
+            provider: "weai",
+            supplier: "weai",
+            connectionId: "connection-1",
+            connectionName: "We-AI · Adobe 按次",
+            modelGroup: "生图-openai-adobe-按次",
+            operation: "image.generate",
+            model: "gpt-image-2::4k",
+            prompt: "private prompt",
+            parameters: {
+              size: "2176x3264",
+              quality: "high",
+              n: 1,
+              untrusted: "must-not-be-public",
+            },
             providerTask: {
+              status: "succeeded",
               raw: {
                 headers: { Authorization: "provider-secret" },
                 image: "data:image/png;base64,QUJDREVGRw==",
@@ -95,6 +168,8 @@ describe("public run snapshots", () => {
             type: "请求参数错误",
             code: "invalid_request",
             api: "OpenAI Images API",
+            statusCode: 400,
+            providerMessage: "Unsupported size; token=provider-secret",
             docsUrl:
               "https://platform.openai.com/docs/guides/error-codes/api-errors",
             raw: "data:image/png;base64,QUJDREVGRw==",
@@ -115,6 +190,7 @@ describe("public run snapshots", () => {
         status: "needs_attention",
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:01.000Z",
+        canResume: true,
       },
       nodes: [
         {
@@ -127,8 +203,25 @@ describe("public run snapshots", () => {
             type: "请求参数错误",
             code: "invalid_request",
             api: "OpenAI Images API",
+            statusCode: 400,
+            providerMessage: "Unsupported size; token=[redacted]",
             docsUrl:
               "https://platform.openai.com/docs/guides/error-codes/api-errors",
+          },
+          recoveryAction: "resume_archive",
+          request: {
+            provider: "weai",
+            supplier: "weai",
+            connectionId: "connection-1",
+            connectionName: "We-AI · Adobe 按次",
+            modelGroup: "生图-openai-adobe-按次",
+            operation: "image.generate",
+            model: "gpt-image-2::4k",
+            parameters: {
+              size: "2176x3264",
+              quality: "high",
+              n: 1,
+            },
           },
         },
       ],
@@ -139,6 +232,8 @@ describe("public run snapshots", () => {
     expect(serialized).not.toContain("provider-secret");
     expect(serialized).not.toContain("QUJDREVGRw==");
     expect(serialized).not.toContain("revisionGraph");
+    expect(serialized).not.toContain("private prompt");
+    expect(serialized).not.toContain("must-not-be-public");
   });
 
   it("keeps SSE events to the public status/output subset", () => {

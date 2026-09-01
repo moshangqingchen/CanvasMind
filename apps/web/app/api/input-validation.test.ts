@@ -1,4 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const originalLocalAppData = process.env.LOCALAPPDATA;
 
 const mocks = vi.hoisted(() => ({
   repository: {
@@ -9,11 +14,14 @@ const mocks = vi.hoisted(() => ({
     repository: {
       listRuns: vi.fn(),
       listNodeRuns: vi.fn(),
+      getRun: vi.fn(),
+      getRunByClientRequest: vi.fn(),
     },
     createRun: vi.fn(),
     getRun: vi.fn(),
   },
   saveProviderConnection: vi.fn(),
+  publicRunSnapshot: vi.fn((value: unknown) => value),
 }));
 
 vi.mock("../../lib/server", () => ({
@@ -22,13 +30,14 @@ vi.mock("../../lib/server", () => ({
   saveProviderConnection: mocks.saveProviderConnection,
   maskConnection: vi.fn((value: unknown) => value),
   safeJsonObject: vi.fn((value: unknown) => value),
+  publicRunSnapshot: mocks.publicRunSnapshot,
   jsonError(message: string, status = 400) {
     return Response.json({ error: message }, { status });
   },
 }));
 
 import { POST as createCanvas } from "./canvas/route";
-import { POST as saveProvider } from "./providers/route";
+import { GET as listProviders, POST as saveProvider } from "./providers/route";
 import { GET as listRuns, POST as createRun } from "./runs/route";
 
 function jsonRequest(path: string, body: unknown): Request {
@@ -55,6 +64,15 @@ function graph(): {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The production hot-update manager may legitimately have a drain flag
+  // while this suite runs. Keep ordinary route validation tests isolated from
+  // that machine-wide state; the dedicated drain test sets its own temp path.
+  delete process.env.LOCALAPPDATA;
+});
+
+afterEach(() => {
+  if (originalLocalAppData === undefined) delete process.env.LOCALAPPDATA;
+  else process.env.LOCALAPPDATA = originalLocalAppData;
 });
 
 describe("API route input validation", () => {
@@ -108,6 +126,65 @@ describe("API route input validation", () => {
     expect(mocks.runService.createRun).not.toHaveBeenCalled();
   });
 
+  it("lists saved connections without waiting for unrelated supplier sync", async () => {
+    mocks.repository.listConnections.mockResolvedValue([]);
+
+    const response = await listProviders();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([]);
+    expect(mocks.repository.listConnections).toHaveBeenCalledOnce();
+  });
+
+  it("creates a run without contacting unrelated supplier catalogs", async () => {
+    mocks.runService.createRun.mockResolvedValue({ id: "run-1" });
+    mocks.runService.getRun.mockResolvedValue({
+      run: { id: "run-1", status: "queued" },
+      nodes: [],
+    });
+
+    const response = await createRun(
+      jsonRequest("/api/runs", {
+        canvasId: "canvas",
+        clientRequestId: "request",
+        nodeId: "weai-node",
+        scope: "node",
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.runService.createRun).toHaveBeenCalledWith({
+      canvasId: "canvas",
+      clientRequestId: "request",
+      nodeId: "weai-node",
+      scope: "node",
+    });
+  });
+
+  it("rejects new paid runs while the live service is draining", async () => {
+    const localAppData = await mkdtemp(join(tmpdir(), "super-canvas-drain-"));
+    const drainDirectory = join(localAppData, "SuperCanvas", "logs");
+    await mkdir(drainDirectory, { recursive: true });
+    await writeFile(join(drainDirectory, "web-3210-draining"), "draining");
+    process.env.LOCALAPPDATA = localAppData;
+
+    try {
+      const response = await createRun(
+        jsonRequest("/api/runs", {
+          canvasId: "canvas",
+          clientRequestId: "request",
+          scope: "all",
+        }),
+      );
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get("retry-after")).toBe("5");
+      expect(mocks.runService.createRun).not.toHaveBeenCalled();
+    } finally {
+      await rm(localAppData, { recursive: true, force: true });
+    }
+  });
+
   it("rejects duplicate run query parameters", async () => {
     const response = await listRuns(
       new Request("http://localhost/api/runs?canvasId=one&canvasId=two"),
@@ -115,6 +192,34 @@ describe("API route input validation", () => {
 
     expect(response.status).toBe(400);
     expect(mocks.runService.repository.listRuns).not.toHaveBeenCalled();
+  });
+
+  it("reads only visible runs during canvas status reconciliation", async () => {
+    const run = {
+      id: "visible-run",
+      canvasId: "canvas",
+      clientRequestId: "visible-request",
+      status: "running",
+    };
+    mocks.runService.repository.getRun.mockResolvedValue(run);
+    mocks.runService.repository.getRunByClientRequest.mockResolvedValue(run);
+    mocks.runService.repository.listNodeRuns.mockResolvedValue([]);
+
+    const response = await listRuns(
+      new Request(
+        "http://localhost/api/runs?canvasId=canvas&runIds=visible-run&clientRequestIds=visible-request",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.runService.repository.listRuns).not.toHaveBeenCalled();
+    expect(mocks.runService.repository.getRun).toHaveBeenCalledWith(
+      "visible-run",
+    );
+    expect(
+      mocks.runService.repository.getRunByClientRequest,
+    ).toHaveBeenCalledWith("canvas", "visible-request");
+    expect(mocks.runService.repository.listNodeRuns).toHaveBeenCalledOnce();
   });
 
   it("rejects plaintext credential headers before saving a connection", async () => {

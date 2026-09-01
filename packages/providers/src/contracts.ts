@@ -3,6 +3,36 @@ export type ProviderOperation =
 
 export type ModelParameterValue = string | number | boolean;
 
+export type StructuredPriceKind =
+  | "per-request"
+  | "per-image"
+  | "per-second"
+  | "token"
+  | "tiered";
+
+export interface StructuredPriceTier {
+  id: string;
+  label: string;
+  price: number;
+  dimension?: "quality" | "resolution" | "duration" | "fixed";
+  value?: string | number;
+}
+
+/** Machine-readable billing data. Human-readable price labels are not ranked. */
+export interface StructuredModelPricing {
+  kind: StructuredPriceKind;
+  currency: string;
+  unitAmount?: number;
+  inputPerMillion?: number;
+  outputPerMillion?: number;
+  imageOutputPerMillion?: number;
+  tiers?: readonly StructuredPriceTier[];
+  sourceUrl?: string;
+  checkedAt: string;
+  validUntil?: string;
+  confidence: "exact" | "estimate" | "snapshot";
+}
+
 export interface ModelParameterOption {
   label: string;
   value: ModelParameterValue;
@@ -45,6 +75,7 @@ export interface ModelDescriptor {
   )[];
   outputKinds?: readonly ("text" | "image" | "image[]" | "video" | "video[]")[];
   metadata?: Readonly<Record<string, unknown>>;
+  pricing?: StructuredModelPricing;
   parameters?: readonly ModelParameterDescriptor[];
   description?: string;
   isDefault?: boolean;
@@ -54,6 +85,7 @@ export interface ModelDescriptor {
     maxInputVideos?: number;
     maxInputAudios?: number;
     maxInputAssets?: number;
+    maxOutputImages?: number;
     maxInputVideoDurationSeconds?: number;
     maxTotalInputVideoDurationSeconds?: number;
     maxInputAudioDurationSeconds?: number;
@@ -152,7 +184,7 @@ export interface ProviderAdapter {
   extractOutputs(result: unknown): Promise<RemoteArtifact[]>;
 }
 
-export type ProviderName = "openai" | "runway" | "rest" | "fake";
+export type ProviderName = "openai" | "weai" | "runway" | "rest" | "fake";
 
 export interface ResolvedProviderConnection {
   id: string;

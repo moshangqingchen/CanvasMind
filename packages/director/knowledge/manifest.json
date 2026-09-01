@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "packageName": "ai-super-director",
+  "contentHash": "7cf2e2856327281adb0607bb5d1a0d32b0b36ef0e9cc6240590bf88a7ec576c7",
+  "source": {
+    "path": "D:\\创业\\超级导演",
+    "head": "2b18cac1f4fb3c99f6ff2f83e9860eba77cb9dbf",
+    "dirty": true,
+    "syncedAt": "2026-08-30T06:01:10.224Z"
+  },
+  "skill": {
+    "path": "skill/SKILL.md",
+    "sha256": "477dc003c2f8fc81debd44e15f8bb24a88bd6fe0ca2f86515278091c63515c3e"
+  },
+  "routing": {
+    "path": "routing/capability-routing.json",
+    "sha256": "11cc270245d9ac31aa0158749d9860332e90b6a716a1d04b9f5cf969fb15c38c"
+  },
+  "references": [
+    {
+      "id": "core-contract",
+      "title": "核心导演契约",
+      "path": "references/core-contract.md",
+      "sha256": "a63599553b400ba809cf62db70ad33fd79237fe5fa0fcf6e1fd3ae0a1da95118",
+      "priority": 1,
+      "always": true,
+      "triggers": [
+        "创意",
+        "图片",
+        "视频",
+        "分镜",
+        "故事板"
+      ],
+      "tags": [
+        "core",
+        "safety",
+        "quality"
+      ]
+    },
+    {
+      "id": "trend-gate",
+      "title": "实时趋势与证据门禁",
+      "path": "references/trend-gate.md",
+      "sha256": "c323c97ac4f1955086afe3d87ea25426f781604d621844d7d93c4e8b6d7386b8",
+      "priority": 5,
+      "triggers": [
+        "创意",
+        "剧情",
+        "广告",
+        "热点",
+        "二创",
+        "趋势"
+      ],
+      "tags": [
+        "research",
+        "trend",
+        "evidence"
+      ]
+    },
+    {
+      "id": "creative-routing",
+      "title": "创意路由",
+      "path": "references/creative-routing.md",
+      "sha256": "cae26d70153cb98b4fe6af3c251f39dd37c7a91db80da9b9a4cc6dd8488e2b50",
+      "priority": 10,
+      "triggers": [
+        "创意",
+        "短剧",
+        "广告",
+        "喜剧",
+        "高概念",
+        "改编"
+      ],
+      "tags": [
+        "creative",
+        "story"
+      ]
+    },
+    {
+      "id": "production-and-generation",
+      "title": "制作与生成",
+      "path": "references/production-and-generation.md",
+      "sha256": "fea0a0954ef1fff682383e53f9a1723336ffb399f49bb80a76d73b36aed63ad2",
+      "priority": 10,
+      "triggers": [
+        "生图",
+        "图片",
+        "视频",
+        "故事板",
+        "Seedance",
+        "运镜",
+        "速度"
+      ],
+      "tags": [
+        "image",
+        "video",
+        "production",
+        "generation"
+      ]
+    },
+    {
+      "id": "action-and-fight-direction",
+      "title": "动作与打斗导演",
+      "path": "references/action-and-fight-direction.md",
+      "sha256": "77af12097b8377f7ef0bbaab2067c78945d9d2f4e8c608fedc7e159f8ba1d47b",
+      "priority": 20,
+      "triggers": [
+        "动作",
+        "打斗",
+        "战斗",
+        "决斗",
+        "追逐",
+        "必杀技",
+        "对轰"
+      ],
+      "tags": [
+        "action",
+        "fight",
+        "camera"
+      ]
+    },
+    {
+      "id": "dialogue-and-scene-writing",
+      "title": "自然台词与场次",
+      "path": "references/dialogue-and-scene-writing.md",
+      "sha256": "d9ba8646072bd5252a88e2a0fc145a897687e79f7635683be91bd0e50836baf7",
+      "priority": 20,
+      "triggers": [
+        "剧情",
+        "剧本",
+        "对白",
+        "台词",
+        "旁白",
+        "场次"
+      ],
+      "tags": [
+        "dialogue",
+        "scene",
+        "story"
+      ]
+    },
+    {
+      "id": "rights-and-provenance",
+      "title": "权利与来源",
+      "path": "references/rights-and-provenance.md",
+      "sha256": "73cd90a33e14f50910b39be366bc19a69d8cc2588fdadfcf8e782a2535e64e20",
+      "priority": 20,
+      "triggers": [
+        "IP",
+        "真人",
+        "声音",
+        "歌曲",
+        "品牌",
+        "Logo",
+        "商用",
+        "发布"
+      ],
+      "tags": [
+        "rights",
+        "provenance",
+        "safety"
+      ]
+    },
+    {
+      "id": "video-reference-and-proxy-rerender",
+      "title": "视频参考与代理重渲染",
+      "path": "references/video-reference-and-proxy-rerender.md",
+      "sha256": "0fc3f4135416fb597e18bf15759b9ebdecb6c76446ceb1aad24300cbc034eb59",
+      "priority": 25,
+      "triggers": [
+        "视频参考",
+        "复刻",
+        "白模",
+        "灰模",
+        "深度视频",
+        "重渲染"
+      ],
+      "tags": [
+        "video",
+        "reference",
+        "rerender"
+      ]
+    },
+    {
+      "id": "latest-platform-snapshot",
+      "title": "平台资料快照",
+      "path": "references/latest-platform-snapshot.md",
+      "sha256": "1d79b6f048640c5a88a3c04cee7d5608a38d7f161679cd5d36ee2f297c3c3e0c",
+      "priority": 40,
+      "triggers": [
+        "平台",
+        "热点",
+        "短视频",
+        "趋势"
+      ],
+      "tags": [
+        "platform",
+        "snapshot"
+      ]
+    },
+    {
+      "id": "capability-map",
+      "title": "深度能力索引",
+      "path": "references/capability-map.md",
+      "sha256": "efc968aaf50ef2eb86284fb604e9ca2448d7d22e24c509104156a72d86b1bb79",
+      "priority": 100,
+      "triggers": [
+        "深度",
+        "类型",
+        "能力"
+      ],
+      "tags": [
+        "capability",
+        "index"
+      ]
+    }
+  ]
+}

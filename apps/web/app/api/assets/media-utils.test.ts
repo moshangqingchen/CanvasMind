@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_DIRECT_UPLOAD_BYTES,
+  completeMediaPayload,
   detectMediaMimeType,
   mediaKindForMime,
   parseByteRange,
   sanitizedAssetExtension,
   validateCompletedUpload,
+  validateMediaCompleteness,
   validateMediaMagic,
 } from "./media-utils";
 
@@ -51,6 +53,69 @@ describe("media magic validation", () => {
       valid: false,
       detectedMimeType: "image/png",
     });
+  });
+
+  it("distinguishes HEIC and AVIF images from ordinary MP4 video", () => {
+    expect(
+      detectMediaMimeType(
+        Uint8Array.from([0, 0, 0, 20, ...ascii("ftyp"), ...ascii("heic")]),
+      ),
+    ).toBe("image/heic");
+    expect(
+      detectMediaMimeType(
+        Uint8Array.from([0, 0, 0, 20, ...ascii("ftyp"), ...ascii("avif")]),
+      ),
+    ).toBe("image/avif");
+  });
+
+  it("detects truncated image bodies after upload", () => {
+    const pngEnd = [
+      0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+    expect(
+      validateMediaCompleteness(
+        Uint8Array.from([
+          0x89,
+          0x50,
+          0x4e,
+          0x47,
+          0x0d,
+          0x0a,
+          0x1a,
+          0x0a,
+          ...pngEnd,
+        ]),
+        "image/png",
+      ),
+    ).toBe(true);
+    expect(
+      validateMediaCompleteness(
+        Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        "image/png",
+      ),
+    ).toBe(false);
+  });
+
+  it("removes desktop-app bytes appended after an image end marker", () => {
+    const jpeg = Uint8Array.from([
+      0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9, 9, 8, 7,
+    ]);
+    expect(Array.from(completeMediaPayload(jpeg, "image/jpeg") ?? [])).toEqual(
+      [0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9],
+    );
+
+    const pngEnd = [
+      0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+    const png = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      ...pngEnd,
+      9,
+      8,
+      7,
+    ]);
+    expect(completeMediaPayload(png, "image/png")?.byteLength).toBe(20);
+    expect(validateMediaCompleteness(png, "image/png")).toBe(true);
   });
 
   it("uses canonical extensions and sanitizes unknown extensions", () => {

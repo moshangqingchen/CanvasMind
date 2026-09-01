@@ -8,6 +8,8 @@ import { FakeProviderAdapter, type FakeProviderOptions } from "./fake.js";
 import {
   OpenAIImageAdapter,
   type OpenAIImageAdapterOptions,
+  WeAIImageAdapter,
+  type WeAIImageAdapterOptions,
 } from "./openai.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions } from "./rest.js";
 import { RunwayAdapter, type RunwayAdapterOptions } from "./runway.js";
@@ -15,6 +17,7 @@ import { RunwayAdapter, type RunwayAdapterOptions } from "./runway.js";
 export interface ProviderRegistryOptions {
   fetch?: FetchImplementation;
   openai?: Omit<OpenAIImageAdapterOptions, "fetch">;
+  weai?: Omit<WeAIImageAdapterOptions, "fetch">;
   runway?: Omit<RunwayAdapterOptions, "fetch">;
   rest?: Omit<GenericRestAdapterOptions, "fetch">;
   fake?: FakeProviderOptions;
@@ -67,6 +70,15 @@ export function createDefaultProviderRegistry(
       "openai",
       new OpenAIImageAdapter(connections, {
         ...options.openai,
+        ...(fetchImpl ? { fetch: fetchImpl } : {}),
+      }),
+    );
+  }
+  if (!options.adapters?.weai) {
+    registry.register(
+      "weai",
+      new WeAIImageAdapter(connections, {
+        ...options.weai,
         ...(fetchImpl ? { fetch: fetchImpl } : {}),
       }),
     );

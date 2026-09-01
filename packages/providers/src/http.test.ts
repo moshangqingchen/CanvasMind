@@ -1,8 +1,11 @@
+import { createServer } from "node:http";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
   fetchProviderBytes,
   fetchProviderJson,
+  providerFetch,
   ProviderHttpError,
 } from "./http";
 
@@ -169,5 +172,68 @@ describe("provider HTTP submission safety", () => {
         { phase: "archive", maxResponseBytes: 16 },
       ),
     ).rejects.toMatchObject({ details: { kind: "invalid_response" } });
+  });
+
+  it("preserves multipart bodies when the production undici transport is used", async () => {
+    let receivedContentType = "";
+    let receivedBody = "";
+    const server = createServer((request, response) => {
+      receivedContentType = request.headers["content-type"] ?? "";
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        receivedBody = Buffer.concat(chunks).toString("utf8");
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ ok: true }));
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+
+    const previousNodeEnv = process.env["NODE_ENV"];
+    const previousVitest = process.env["VITEST"];
+    process.env["NODE_ENV"] = "production";
+    delete process.env["VITEST"];
+
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Expected the multipart test server to have a TCP address");
+      }
+
+      const form = new FormData();
+      form.set("model", "gpt-image-2");
+      form.set("prompt", "reference image test");
+      form.append(
+        "image",
+        new Blob([new Uint8Array([0, 1, 2, 3])], { type: "image/png" }),
+        "reference.png",
+      );
+
+      const response = await providerFetch(
+        `http://127.0.0.1:${address.port}/v1/images/edits`,
+        { method: "POST", body: form },
+      );
+
+      expect(response.status).toBe(200);
+      expect(receivedContentType).toMatch(/^multipart\/form-data; boundary=/);
+      expect(receivedBody).toContain('name="model"');
+      expect(receivedBody).toContain("gpt-image-2");
+      expect(receivedBody).toContain('name="prompt"');
+      expect(receivedBody).toContain('name="image"; filename="reference.png"');
+      expect(receivedBody).not.toContain("[object FormData]");
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
+      else process.env["NODE_ENV"] = previousNodeEnv;
+      if (previousVitest === undefined) delete process.env["VITEST"];
+      else process.env["VITEST"] = previousVitest;
+
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 });

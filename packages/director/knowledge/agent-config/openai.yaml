@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI 超级导演"
+  short_description: "实时趋势驱动的短片、自然台词、二创与分镜导演工作流"
+  default_prompt: "使用 $ai-super-director 把这个想法或参考镜头做成人物成立、台词自然、有当前平台依据、可拍可生成的导演方案。"
+
+policy:
+  allow_implicit_invocation: true

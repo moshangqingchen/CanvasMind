@@ -17,6 +17,21 @@ export interface CanvasRevisionRecord {
   createdAt: string;
 }
 
+/** Raised when an optimistic canvas save targets an outdated revision. */
+export class CanvasRevisionConflictError extends Error {
+  readonly code = "CANVAS_REVISION_CONFLICT";
+
+  constructor(
+    readonly expectedRevision: number,
+    readonly currentRevision: number,
+  ) {
+    super(
+      `Canvas revision conflict: expected ${expectedRevision}, current ${currentRevision}`,
+    );
+    this.name = "CanvasRevisionConflictError";
+  }
+}
+
 export interface AssetRecord {
   id: string;
   name: string;
@@ -39,6 +54,69 @@ export interface ProviderConnectionRecord {
   updatedAt: string;
 }
 
+export interface DirectorProfileRecord {
+  id: string;
+  brainConnectionId: string;
+  brainModelId: string;
+  researchConnectionId?: string | null;
+  config: JsonObject;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DirectorSessionRecord {
+  id: string;
+  canvasId: string;
+  profileId?: string | null;
+  title: string;
+  metadata: JsonObject;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DirectorMessageRole = "user" | "assistant" | "system";
+
+export interface DirectorMessageRecord {
+  id: string;
+  sessionId: string;
+  role: DirectorMessageRole;
+  content: string;
+  metadata: JsonObject;
+  createdAt: string;
+}
+
+export type DirectorProposalStatus =
+  | "draft"
+  | "awaiting_approval"
+  | "approved"
+  | "cancelled"
+  | "expired"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+export interface DirectorProposalRecord {
+  id: string;
+  sessionId: string;
+  canvasId: string;
+  version: number;
+  status: DirectorProposalStatus;
+  baseCanvasRevision: number;
+  plan: JsonObject;
+  quote: JsonObject;
+  knowledgeVersion: string;
+  catalogFingerprint: string;
+  expiresAt: string;
+  workflowRunId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DirectorProposalUpdateOptions {
+  expectedVersion?: number;
+  expectedStatuses?: readonly DirectorProposalStatus[];
+}
+
 export type WorkflowStatus =
   | "queued"
   | "running"
@@ -51,8 +129,9 @@ export interface WorkflowRunRecord {
   id: string;
   canvasId: string;
   clientRequestId: string;
-  scope: "node" | "downstream" | "all";
+  scope: "node" | "downstream" | "selection" | "all";
   nodeId?: string | null;
+  nodeIds?: string[] | null;
   status: WorkflowStatus;
   revisionGraph: JsonObject;
   createdAt: string;
@@ -109,6 +188,7 @@ export interface Repository {
     title?: string;
     graph: JsonObject;
     reason?: string;
+    expectedRevision?: number;
   }): Promise<CanvasRecord>;
   listRevisions(canvasId: string): Promise<CanvasRevisionRecord[]>;
   listAssets(): Promise<AssetRecord[]>;
@@ -127,6 +207,49 @@ export interface Repository {
     input: Omit<ProviderConnectionRecord, "createdAt" | "updatedAt">,
   ): Promise<ProviderConnectionRecord>;
   deleteConnection(id: string): Promise<void>;
+  getDirectorProfile(id: string): Promise<DirectorProfileRecord | null>;
+  saveDirectorProfile(
+    input: Omit<DirectorProfileRecord, "createdAt" | "updatedAt">,
+  ): Promise<DirectorProfileRecord>;
+  deleteDirectorProfile(id: string): Promise<void>;
+  createDirectorSession(
+    input: Omit<DirectorSessionRecord, "createdAt" | "updatedAt">,
+  ): Promise<DirectorSessionRecord>;
+  getDirectorSession(id: string): Promise<DirectorSessionRecord | null>;
+  listDirectorSessions(canvasId?: string): Promise<DirectorSessionRecord[]>;
+  updateDirectorSession(
+    id: string,
+    patch: Partial<
+      Pick<DirectorSessionRecord, "title" | "metadata" | "profileId">
+    >,
+  ): Promise<DirectorSessionRecord | null>;
+  deleteDirectorSession(id: string): Promise<void>;
+  createDirectorMessage(
+    input: Omit<DirectorMessageRecord, "createdAt">,
+  ): Promise<DirectorMessageRecord>;
+  getDirectorMessage(id: string): Promise<DirectorMessageRecord | null>;
+  listDirectorMessages(sessionId: string): Promise<DirectorMessageRecord[]>;
+  updateDirectorMessage(
+    id: string,
+    patch: Partial<Pick<DirectorMessageRecord, "content" | "metadata">>,
+  ): Promise<DirectorMessageRecord | null>;
+  deleteDirectorMessage(id: string): Promise<void>;
+  createDirectorProposal(
+    input: Omit<DirectorProposalRecord, "createdAt" | "updatedAt">,
+  ): Promise<DirectorProposalRecord>;
+  getDirectorProposal(id: string): Promise<DirectorProposalRecord | null>;
+  listDirectorProposals(sessionId: string): Promise<DirectorProposalRecord[]>;
+  updateDirectorProposal(
+    id: string,
+    patch: Partial<
+      Omit<
+        DirectorProposalRecord,
+        "id" | "sessionId" | "canvasId" | "createdAt" | "updatedAt"
+      >
+    >,
+    options?: DirectorProposalUpdateOptions,
+  ): Promise<DirectorProposalRecord | null>;
+  deleteDirectorProposal(id: string): Promise<void>;
   getRunByClientRequest(
     canvasId: string,
     clientRequestId: string,

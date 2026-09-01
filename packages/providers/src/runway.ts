@@ -22,6 +22,7 @@ import {
   joinUrl,
   mergeHeaders,
   ProviderHttpError,
+  providerFetch,
   requireApiKey,
 } from "./http.js";
 
@@ -161,7 +162,7 @@ export class RunwayAdapter implements ProviderAdapter {
     private readonly connections: ProviderConnectionResolver,
     options: RunwayAdapterOptions = {},
   ) {
-    this.fetchImpl = options.fetch ?? fetch;
+    this.fetchImpl = options.fetch ?? providerFetch;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
     this.apiVersion = options.apiVersion ?? API_VERSION;
   }

@@ -30,6 +30,33 @@ describe("deleteAssets", () => {
     expect(result).toEqual({ deletedIds: assetIds, failedIds: [] });
   });
 
+  it("splits deletions larger than the API batch limit and aggregates results", async () => {
+    const assetIds = Array.from(
+      { length: 991 },
+      (_, index) => `asset-${index}`,
+    );
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { assetIds: string[] };
+        return Response.json({ deletedIds: body.assetIds, failedIds: [] });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteAssets(assetIds)).resolves.toEqual({
+      deletedIds: assetIds,
+      failedIds: [],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).assetIds,
+    ).toHaveLength(500);
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).assetIds,
+    ).toHaveLength(491);
+  });
+
   it("reports every requested ID as failed when the batch request fails", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 500 }));
     vi.stubGlobal("fetch", fetchMock);

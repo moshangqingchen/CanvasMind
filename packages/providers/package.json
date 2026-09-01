@@ -10,6 +10,21 @@
       "types": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./suppliers": {
+      "types": "./src/suppliers.ts",
+      "import": "./dist/suppliers.js",
+      "default": "./dist/suppliers.js"
+    },
+    "./weai-models": {
+      "types": "./src/weai-models.ts",
+      "import": "./dist/weai-models.js",
+      "default": "./dist/weai-models.js"
+    },
+    "./model-catalog": {
+      "types": "./src/model-catalog.ts",
+      "import": "./dist/model-catalog.js",
+      "default": "./dist/model-catalog.js"
     }
   },
   "files": [
@@ -25,5 +40,8 @@
     "@types/node": "^22.15.29",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "undici": "8.9.0"
   }
 }

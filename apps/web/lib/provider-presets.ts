@@ -9,10 +9,14 @@ export const CANGYUAN_IMAGE_PRESET_ID = "cangyuan-gpt-image-2";
 export const CANGYUAN_IMAGE_LEGACY_4K_PRESET_ID = "cangyuan-gpt-image-2-4k";
 export const CANGYUAN_IMAGE_BASE_URL = "https://ai.cangyuansuanli.cn";
 
+export const WEAI_IMAGE_BASE_URL = "https://asian-acc.we-token.cc/v1";
+export const WEAI_IMAGE_DEFAULT_MODEL = "gpt-image-2";
+
 export const CANGYUAN_IMAGE_GROUP = "IMAGE";
 export const CANGYUAN_VIDEO_GROUP = "VIDEO";
 export const CANGYUAN_ALL_MODELS_GROUP = "全模型-无claude/gpt";
-export const CANGYUAN_BACKUP_IMAGE_GROUP = "备用image线路";
+export const CANGYUAN_BACKUP_IMAGE_GROUP = "IMAGE-备用分组";
+export const CANGYUAN_LEGACY_BACKUP_IMAGE_GROUP = "备用image线路";
 
 export const CANGYUAN_IMAGE_MODEL = "gpt-image-2";
 export const CANGYUAN_CODEX_IMAGE_MODEL = "codex-gpt-image-2-1k";
@@ -46,7 +50,7 @@ export const CANGYUAN_IMAGE_GROUP_OPTIONS: readonly {
     value: CANGYUAN_ALL_MODELS_GROUP,
     label: "全模型-无claude/gpt",
   },
-  { value: CANGYUAN_BACKUP_IMAGE_GROUP, label: "备用image线路" },
+  { value: CANGYUAN_BACKUP_IMAGE_GROUP, label: "IMAGE-备用分组" },
 ];
 
 const IMAGE_OPERATIONS = ["image.generate", "image.edit"] as const;
@@ -82,6 +86,24 @@ const GPT_FIXED_RATIO_OPTIONS: readonly ModelParameterOption[] = [
   { label: "4:5", value: "4:5" },
   { label: "3:4", value: "3:4" },
   { label: "2:3", value: "2:3" },
+];
+
+// Cangyuan GPT Image 4K uses ratio strings at the API boundary. The labels
+// include the corresponding 4K canvas dimensions so the fallback catalog
+// remains as informative as the live marketplace catalog.
+const GPT_4K_RATIO_OPTIONS: readonly ModelParameterOption[] = [
+  { label: "自动（提示词优先）", value: "auto" },
+  { label: "1:1（4K：2160×2160）", value: "1:1" },
+  { label: "5:4（4K：3200×2560）", value: "5:4" },
+  { label: "7:6（4K：3104×2656）", value: "7:6" },
+  { label: "9:16（4K：2160×3840）", value: "9:16" },
+  { label: "21:9（4K：3840×1648）", value: "21:9" },
+  { label: "16:9（4K：3840×2160）", value: "16:9" },
+  { label: "3:2（4K：3264×2176）", value: "3:2" },
+  { label: "4:3（4K：2880×2160）", value: "4:3" },
+  { label: "4:5（4K：2560×3200）", value: "4:5" },
+  { label: "3:4（4K：2160×2880）", value: "3:4" },
+  { label: "2:3（4K：2176×3264）", value: "2:3" },
 ];
 
 const NANO_PRO_RATIO_OPTIONS: readonly ModelParameterOption[] = [
@@ -161,15 +183,32 @@ const countParameter = (max: number): ModelParameterDescriptor => ({
   operations: IMAGE_OPERATIONS,
 });
 
+const backgroundParameter = (): ModelParameterDescriptor => ({
+  key: "background",
+  label: "背景模式",
+  control: "select",
+  valueType: "string",
+  default: "auto",
+  options: [
+    { label: "自动", value: "auto" },
+    { label: "不透明", value: "opaque" },
+    { label: "透明", value: "transparent" },
+  ],
+  description:
+    "透明模式会请求带透明通道的图片；建议提示词同时说明主体独立、无背景",
+  operations: IMAGE_OPERATIONS,
+});
+
 const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
   {
     id: CANGYUAN_IMAGE_MODEL,
     name: "GPT Image 2（¥0.015/张）",
     description: "IMAGE 分组网页生图线路；稳定画幅为 1:1、3:2、2:3、auto",
-    operations: GENERATE_ONLY,
+    operations: IMAGE_OPERATIONS,
+    inputKinds: ["text", "image", "image[]"],
     isDefault: true,
-    parameters: [sizeParameter(), countParameter(10)],
-    limits: { supportedMimeTypes: IMAGE_MIME_TYPES },
+    parameters: [sizeParameter(), backgroundParameter(), countParameter(10)],
+    limits: { maxInputImages: 9, supportedMimeTypes: IMAGE_MIME_TYPES },
   },
   {
     id: CANGYUAN_IMAGE_1K_MODEL,
@@ -185,7 +224,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
         label: "质量",
         control: "select",
         valueType: "string",
-        default: "medium",
+        default: "high",
         options: [
           { label: "低", value: "low" },
           { label: "中", value: "medium" },
@@ -193,6 +232,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
         ],
         operations: IMAGE_OPERATIONS,
       },
+      backgroundParameter(),
     ],
     limits: { maxInputImages: 9, supportedMimeTypes: IMAGE_MIME_TYPES },
   },
@@ -210,7 +250,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
         label: "质量",
         control: "select",
         valueType: "string",
-        default: "medium",
+        default: "high",
         options: [
           { label: "低", value: "low" },
           { label: "中", value: "medium" },
@@ -218,6 +258,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
         ],
         operations: IMAGE_OPERATIONS,
       },
+      backgroundParameter(),
     ],
     limits: { maxInputImages: 9, supportedMimeTypes: IMAGE_MIME_TYPES },
   },
@@ -228,7 +269,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
     operations: IMAGE_OPERATIONS,
     metadata: { fixedOutputCount: 1 },
     parameters: [
-      aspectRatioParameter(GPT_FIXED_RATIO_OPTIONS),
+      aspectRatioParameter(GPT_4K_RATIO_OPTIONS),
       dimensionsParameter(),
       {
         key: "quality",
@@ -243,6 +284,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
         ],
         operations: IMAGE_OPERATIONS,
       },
+      backgroundParameter(),
     ],
     limits: { maxInputImages: 9, supportedMimeTypes: IMAGE_MIME_TYPES },
   },
@@ -482,14 +524,29 @@ export function isCangyuanImageGroup(
   return CANGYUAN_IMAGE_GROUP_OPTIONS.some((option) => option.value === value);
 }
 
+export function normalizeCangyuanImageGroup(
+  value: unknown,
+): CangyuanImageGroup | null {
+  if (value === CANGYUAN_LEGACY_BACKUP_IMAGE_GROUP)
+    return CANGYUAN_BACKUP_IMAGE_GROUP;
+  return isCangyuanImageGroup(value) ? value : null;
+}
+
 export function cangyuanImageConnectorForGroup(
   group: CangyuanImageGroup,
 ): RestConnectorConfig {
-  return structuredClone(
+  const connector = structuredClone(
     group === CANGYUAN_BACKUP_IMAGE_GROUP
       ? CANGYUAN_BACKUP_IMAGE_CONNECTOR
       : CANGYUAN_IMAGE_CONNECTOR,
   );
+  if (
+    group === CANGYUAN_VIDEO_GROUP ||
+    group === CANGYUAN_ALL_MODELS_GROUP
+  ) {
+    connector.assetsRequirePublicUrls = true;
+  }
+  return connector;
 }
 
 export function cangyuanDefaultModelForGroup(

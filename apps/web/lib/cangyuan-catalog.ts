@@ -1,22 +1,31 @@
-import type {
-  ModelDescriptor,
-  ModelParameterDescriptor,
-  ModelParameterOption,
-  RestConnectorConfig,
-  RestModelConnectorOverride,
-  RestRequestMapping,
-} from "@super-canvas/providers";
-import { getRepository, type JsonObject } from "@super-canvas/db";
 import {
+  providerFetch,
+  type ModelDescriptor,
+  type ModelParameterDescriptor,
+  type ModelParameterOption,
+  type RestConnectorConfig,
+  type RestModelConnectorOverride,
+  type RestRequestMapping,
+} from "@super-canvas/providers";
+import {
+  getRepository,
+  type JsonObject,
+  type ProviderConnectionRecord,
+} from "@super-canvas/db";
+import {
+  CANGYUAN_BACKUP_IMAGE_GROUP,
   CANGYUAN_IMAGE_BASE_URL,
   CANGYUAN_IMAGE_PRESET_ID,
   CANGYUAN_IMAGE_GROUP,
+  CANGYUAN_LEGACY_BACKUP_IMAGE_GROUP,
   CANGYUAN_VIDEO_GROUP,
   cangyuanDefaultModelForGroup,
   cangyuanImageConnectorForGroup,
   isCangyuanImageGroup,
+  normalizeCangyuanImageGroup,
   type CangyuanImageGroup,
 } from "./provider-presets";
+import { providerPriceUnit } from "./provider-pricing-unit";
 
 const CATALOG_TTL_MS = 60_000;
 const CATALOG_RETRY_MS = 15_000;
@@ -83,13 +92,26 @@ interface CatalogCache {
   pending?: Promise<CangyuanCatalogSnapshot>;
 }
 
+interface ConnectionCatalogSyncCache {
+  checkedAt?: string;
+  pending?: Promise<void>;
+}
+
 const globalCacheKey = "__superCanvasCangyuanCatalog";
+const globalConnectionSyncKey = "__superCanvasCangyuanConnectionCatalogSync";
 
 function catalogCache(): CatalogCache {
   const scope = globalThis as typeof globalThis & {
     [globalCacheKey]?: CatalogCache;
   };
   return (scope[globalCacheKey] ??= { expiresAt: 0 });
+}
+
+function connectionCatalogSyncCache(): ConnectionCatalogSyncCache {
+  const scope = globalThis as typeof globalThis & {
+    [globalConnectionSyncKey]?: ConnectionCatalogSyncCache;
+  };
+  return (scope[globalConnectionSyncKey] ??= {});
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -191,7 +213,7 @@ function marketplacePriceLabel(
   return {
     priceLabel: price ? `¥${price}/${unit}` : "价格以模型广场为准",
     billingLabel:
-      record.billing_mode === "per_second" ? "按秒计费" : "按请求计费",
+      providerPriceUnit(record) === "second" ? "按秒计费" : "按请求计费",
   };
 }
 
@@ -217,7 +239,7 @@ function marketplaceModelForRecord(
 }
 
 function priceUnit(record: PricingRecord, video = false): string {
-  if (record.billing_mode === "per_second") return "秒";
+  if (providerPriceUnit(record) === "second") return "秒";
   return video ? "次" : "张";
 }
 
@@ -249,11 +271,47 @@ function parameterOptions(value: unknown): ModelParameterOption[] {
   });
 }
 
-function imageRatioOptions(value: unknown): ModelParameterOption[] {
+/**
+ * Cangyuan's GPT Image 4K ratio controls are sent upstream as ratio strings
+ * (for example `1:1`). Keep that value intact, but show the corresponding
+ * practical 4K pixel canvas beside it so users can choose by both ratio and
+ * expected output size. These dimensions stay within the 3840px edge and
+ * ~8.29MP limits documented by the upstream Images API.
+ */
+const GPT_IMAGE_4K_RATIO_PIXELS: Readonly<Record<string, string>> = {
+  "1:1": "2160×2160",
+  "5:4": "3200×2560",
+  "7:6": "3104×2656",
+  "9:16": "2160×3840",
+  "21:9": "3840×1648",
+  "16:9": "3840×2160",
+  "3:2": "3264×2176",
+  "4:3": "2880×2160",
+  "4:5": "2560×3200",
+  "3:4": "2160×2880",
+  "2:3": "2176×3264",
+};
+
+function isGptImage4KModel(modelName: unknown): boolean {
+  return typeof modelName === "string" && /gpt-image.*4k/iu.test(modelName);
+}
+
+function imageRatioOptions(
+  value: unknown,
+  modelName?: unknown,
+): ModelParameterOption[] {
   const options = parameterOptions(value).filter(
     (option) => option.value !== "auto",
   );
-  return [{ label: "自动（提示词优先）", value: "auto" }, ...options];
+  const withPixels = isGptImage4KModel(modelName)
+    ? options.map((option) => {
+        const ratio = String(option.value);
+        const pixels = GPT_IMAGE_4K_RATIO_PIXELS[ratio];
+        if (!pixels || /\d\s*[×x]\s*\d/iu.test(option.label)) return option;
+        return { ...option, label: `${option.label}（4K：${pixels}）` };
+      })
+    : options;
+  return [{ label: "自动（提示词优先）", value: "auto" }, ...withPixels];
 }
 
 function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
@@ -262,7 +320,7 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
   const descriptors: ModelParameterDescriptor[] = [];
   const aspectRatio = isRecord(params.aspectRatio) ? params.aspectRatio : null;
   if (aspectRatio?.enabled === true) {
-    const options = imageRatioOptions(aspectRatio.options);
+    const options = imageRatioOptions(aspectRatio.options, record.model_name);
     descriptors.push({
       key: "aspect_ratio",
       label: "画面比例",
@@ -293,10 +351,9 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
   const quality = isRecord(params.quality) ? params.quality : null;
   if (quality?.enabled === true) {
     const options = parameterOptions(quality.options);
-    const highDefault =
-      typeof record.model_name === "string" &&
-      /4k/iu.test(record.model_name) &&
-      options.some((option) => option.value === "high");
+    const highDefault = options.some(
+      (option) => String(option.value).trim().toLowerCase() === "high",
+    );
     descriptors.push({
       key: "quality",
       label: "分辨率",
@@ -304,6 +361,23 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
       valueType: "string",
       ...(options.length > 0
         ? { default: highDefault ? "high" : options[0]?.value, options }
+        : {}),
+      operations: IMAGE_OPERATIONS,
+    });
+  }
+  const background = isRecord(params.background) ? params.background : null;
+  if (background?.enabled === true) {
+    const options = parameterOptions(background.options);
+    const automatic = options.find((option) => option.value === "auto")?.value;
+    descriptors.push({
+      key: "background",
+      label: "背景模式",
+      control: options.length > 0 ? "select" : "text",
+      valueType: "string",
+      description:
+        "透明模式会请求带透明通道的图片；建议提示词同时说明主体独立、无背景",
+      ...(options.length > 0
+        ? { default: automatic ?? options[0]?.value, options }
         : {}),
       operations: IMAGE_OPERATIONS,
     });
@@ -446,18 +520,61 @@ function inferredVideoParameters(
   return descriptors;
 }
 
-function supportsJsonReferences(record: PricingRecord): boolean {
-  if (!isRecord(record.api_doc) || !isRecord(record.api_doc.modes))
-    return false;
-  return Object.values(record.api_doc.modes).some((mode) => {
-    if (!isRecord(mode) || !Array.isArray(mode.params)) return false;
-    return mode.params.some(
-      (param) =>
-        isRecord(param) &&
-        typeof param.name === "string" &&
-        /(?:images|reference_images|image_urls)/u.test(param.name),
+function documentedImageReferenceParameters(
+  record: PricingRecord,
+): readonly Record<string, unknown>[] {
+  if (!isRecord(record.api_doc)) return [];
+  const collections: unknown[] = [record.api_doc.params];
+  if (isRecord(record.api_doc.modes)) {
+    for (const mode of Object.values(record.api_doc.modes)) {
+      if (isRecord(mode)) collections.push(mode.params);
+    }
+  }
+  return collections.flatMap((params) =>
+    Array.isArray(params) ? params.filter(isRecord) : [],
+  );
+}
+
+function isImageReferenceParameter(name: string): boolean {
+  const normalized = name.trim().toLowerCase().replaceAll("[]", "");
+  return (
+    normalized === "image" ||
+    normalized === "images" ||
+    normalized === "multipart image" ||
+    /(?:image_urls|imageurls|reference_images|referenceimages|image_refs)/u.test(
+      normalized,
+    )
+  );
+}
+
+function supportsImageReferences(record: PricingRecord): boolean {
+  const hasReferenceParameter = documentedImageReferenceParameters(record).some(
+    (param) =>
+      typeof param.name === "string" && isImageReferenceParameter(param.name),
+  );
+  if (hasReferenceParameter) return true;
+  if (!isRecord(record.api_doc)) return false;
+  return /\/images\/edits(?:\b|\/)/iu.test(JSON.stringify(record.api_doc));
+}
+
+function imageReferenceLimit(record: PricingRecord): number | undefined {
+  const ui = isRecord(record.image_ui_params) ? record.image_ui_params : {};
+  const limits = isRecord(ui.referenceLimits) ? ui.referenceLimits : {};
+  if (typeof limits.images === "number" && limits.images > 0)
+    return limits.images;
+  for (const param of documentedImageReferenceParameters(record)) {
+    if (
+      typeof param.name !== "string" ||
+      !isImageReferenceParameter(param.name) ||
+      typeof param.description !== "string"
+    )
+      continue;
+    const match = /(?:最多|上限|不超过|≤)\s*(\d+)\s*张/u.exec(
+      param.description,
     );
-  });
+    if (match?.[1]) return Number(match[1]);
+  }
+  return supportsImageReferences(record) ? 9 : undefined;
 }
 
 function isImagePricingRecord(record: PricingRecord): boolean {
@@ -479,6 +596,10 @@ function isVideoPricingRecord(record: PricingRecord): boolean {
 
 function videoReferenceMetadata(record: PricingRecord) {
   const ui = isRecord(record.video_ui_params) ? record.video_ui_params : {};
+  const uiParams = isRecord(ui.params) ? ui.params : {};
+  const frameInputs = isRecord(uiParams.frameInputs)
+    ? uiParams.frameInputs
+    : {};
   const limits = isRecord(ui.referenceLimits) ? ui.referenceLimits : {};
   const doc = isRecord(record.api_doc) ? record.api_doc : {};
   const request = isRecord(doc.request_json) ? doc.request_json : {};
@@ -551,7 +672,12 @@ function videoReferenceMetadata(record: PricingRecord) {
         ? audioLimits.maxDurationMs / 1000
         : undefined,
     supportsFirstLastFrames:
-      documented.has("first_image_url") && documented.has("last_image_url"),
+      frameInputs.enabled === true ||
+      (documented.has("first_image_url") && documented.has("last_image_url")) ||
+      [...documented].some(
+        (name) =>
+          name.includes("first_image_url") && name.includes("last_image_url"),
+      ),
     requiresInputVideo:
       (typeof ui.validationKey === "string" &&
         ui.validationKey.includes("v2v")) ||
@@ -650,11 +776,23 @@ function imageDescriptorForRecord(
     return null;
   const id = record.model_name.trim();
   const known = knownModels.get(id);
+  const supportsReferences = supportsImageReferences(record);
+  const maxInputImages = imageReferenceLimit(record);
   if (known) {
     const parameters = inferredParameters(record);
     return {
       ...structuredClone(known),
       name: nameWithLivePrice(known, record),
+      ...(supportsReferences
+        ? {
+            operations: IMAGE_OPERATIONS,
+            inputKinds: ["text", "image", "image[]"] as const,
+            limits: {
+              ...known.limits,
+              ...(maxInputImages !== undefined ? { maxInputImages } : {}),
+            },
+          }
+        : {}),
       ...(parameters.length > 0 ? { parameters } : {}),
       ...(typeof record.description === "string" && record.description.trim()
         ? { description: record.description.trim() }
@@ -669,12 +807,13 @@ function imageDescriptorForRecord(
     ...(typeof record.description === "string" && record.description.trim()
       ? { description: record.description.trim() }
       : {}),
-    operations: supportsJsonReferences(record)
-      ? IMAGE_OPERATIONS
-      : GENERATE_ONLY,
+    operations: supportsReferences ? IMAGE_OPERATIONS : GENERATE_ONLY,
+    ...(supportsReferences
+      ? { inputKinds: ["text", "image", "image[]"] as const }
+      : {}),
     ...(parameters.length > 0 ? { parameters } : {}),
     limits: {
-      ...(supportsJsonReferences(record) ? { maxInputImages: 9 } : {}),
+      ...(maxInputImages !== undefined ? { maxInputImages } : {}),
       supportedMimeTypes: IMAGE_MIME_TYPES,
     },
   };
@@ -683,6 +822,7 @@ function imageDescriptorForRecord(
 export function cangyuanCatalogFromPricing(
   payload: PricingPayload,
 ): CangyuanCatalogSnapshot {
+  const checkedAt = new Date().toISOString();
   if (!Array.isArray(payload.data)) throw new Error("沧元模型广场数据格式无效");
   const pricingRecords = payload.data.filter(isRecord) as PricingRecord[];
   const knownModels = new Map<string, ModelDescriptor>();
@@ -690,7 +830,7 @@ export function cangyuanCatalogFromPricing(
     CANGYUAN_IMAGE_GROUP,
     CANGYUAN_VIDEO_GROUP,
     "全模型-无claude/gpt",
-    "备用image线路",
+    CANGYUAN_BACKUP_IMAGE_GROUP,
   ] as const) {
     for (const model of cangyuanImageConnectorForGroup(group).models ?? []) {
       knownModels.set(model.id, model);
@@ -700,7 +840,7 @@ export function cangyuanCatalogFromPricing(
     IMAGE: [],
     VIDEO: [],
     "全模型-无claude/gpt": [],
-    备用image线路: [],
+    [CANGYUAN_BACKUP_IMAGE_GROUP]: [],
   };
 
   for (const record of pricingRecords) {
@@ -710,8 +850,38 @@ export function cangyuanCatalogFromPricing(
         ? imageDescriptorForRecord(record, knownModels)
         : null;
     if (!descriptor) continue;
-    for (const group of stringArray(record.enable_groups)) {
-      if (isCangyuanImageGroup(group)) groups[group].push(descriptor);
+    for (const rawGroup of stringArray(record.enable_groups)) {
+      const group = normalizeCangyuanImageGroup(rawGroup);
+      if (group) {
+        const rawPrice =
+          typeof record.model_price === "number" &&
+          Number.isFinite(record.model_price) &&
+          record.model_price >= 0
+            ? record.model_price
+            : undefined;
+        const ratios = numberRecord(payload.group_ratio);
+        const ratio = ratios[group] ?? ratios[rawGroup] ?? 1;
+        const perSecond = providerPriceUnit(record) === "second";
+        groups[group].push({
+          ...descriptor,
+          ...(rawPrice === undefined
+            ? {}
+            : {
+                pricing: {
+                  kind: perSecond
+                    ? "per-second"
+                    : isImagePricingRecord(record)
+                      ? "per-image"
+                      : "per-request",
+                  currency: "CNY",
+                  unitAmount: rawPrice * ratio,
+                  sourceUrl: `${CANGYUAN_IMAGE_BASE_URL}/api/pricing`,
+                  checkedAt,
+                  confidence: "exact",
+                } as const,
+              }),
+        });
+      }
     }
   }
   for (const group of Object.keys(groups) as CangyuanImageGroup[]) {
@@ -719,17 +889,28 @@ export function cangyuanCatalogFromPricing(
   }
   const ratios = numberRecord(payload.group_ratio);
   const descriptions = stringRecord(payload.usable_group);
-  const groupIds = new Set([
-    ...Object.keys(ratios),
-    ...Object.keys(descriptions),
-    ...pricingRecords.flatMap((record) => stringArray(record.enable_groups)),
-  ]);
+  const groupIds = new Set(
+    [
+      ...Object.keys(ratios),
+      ...Object.keys(descriptions),
+      ...pricingRecords.flatMap((record) => stringArray(record.enable_groups)),
+    ].map((group) => normalizeCangyuanImageGroup(group) ?? group),
+  );
   const marketplaceGroups = [...groupIds]
     .sort((left, right) => left.localeCompare(right, "zh-CN"))
     .map((group): CangyuanMarketplaceGroup => {
-      const ratio = ratios[group] ?? 1;
+      const legacyGroup =
+        group === CANGYUAN_BACKUP_IMAGE_GROUP
+          ? CANGYUAN_LEGACY_BACKUP_IMAGE_GROUP
+          : group;
+      const ratio = ratios[group] ?? ratios[legacyGroup] ?? 1;
       const models = pricingRecords
-        .filter((record) => stringArray(record.enable_groups).includes(group))
+        .filter((record) =>
+          stringArray(record.enable_groups).some(
+            (candidate) =>
+              (normalizeCangyuanImageGroup(candidate) ?? candidate) === group,
+          ),
+        )
         .flatMap((record) => {
           const model = marketplaceModelForRecord(record, ratio);
           return model ? [model] : [];
@@ -737,14 +918,14 @@ export function cangyuanCatalogFromPricing(
         .sort((left, right) => left.id.localeCompare(right.id));
       return {
         id: group,
-        description: descriptions[group] ?? "",
+        description: descriptions[group] ?? descriptions[legacyGroup] ?? "",
         ratio,
         canvasSupported: isCangyuanImageGroup(group),
         models,
       };
     });
   return {
-    checkedAt: new Date().toISOString(),
+    checkedAt,
     source: "live",
     groups,
     marketplaceGroups,
@@ -880,8 +1061,9 @@ function fallbackSnapshot(): CangyuanCatalogSnapshot {
       IMAGE: [...imageModels, ...fallbackVideos],
       VIDEO: videoModels,
       "全模型-无claude/gpt": [...allModels, ...fallbackVideos],
-      备用image线路: [
-        ...(cangyuanImageConnectorForGroup("备用image线路").models ?? []),
+      [CANGYUAN_BACKUP_IMAGE_GROUP]: [
+        ...(cangyuanImageConnectorForGroup(CANGYUAN_BACKUP_IMAGE_GROUP)
+          .models ?? []),
       ],
     },
     marketplaceGroups: [
@@ -892,8 +1074,9 @@ function fallbackSnapshot(): CangyuanCatalogSnapshot {
         ...fallbackVideos,
       ]),
       fallbackMarketplaceGroup(
-        "备用image线路",
-        cangyuanImageConnectorForGroup("备用image线路").models ?? [],
+        CANGYUAN_BACKUP_IMAGE_GROUP,
+        cangyuanImageConnectorForGroup(CANGYUAN_BACKUP_IMAGE_GROUP).models ??
+          [],
       ),
     ],
   };
@@ -1002,7 +1185,10 @@ export async function loadCangyuanCatalog(options?: {
     return cache.snapshot;
   if (cache.pending) return cache.pending;
 
-  const fetchImpl = options?.fetch ?? fetch;
+  // Server-side catalog requests must use the same proxy-aware transport as
+  // provider calls; the native fetch path can resolve supplier domains to the
+  // sandbox/test address range and silently force a stale fallback snapshot.
+  const fetchImpl = options?.fetch ?? providerFetch;
   cache.pending = (async () => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS);
@@ -1037,22 +1223,157 @@ export async function loadCangyuanCatalog(options?: {
   return cache.pending;
 }
 
-function connectorWithModels(
+export function cangyuanConnectorForModels(
   group: CangyuanImageGroup,
   models: readonly ModelDescriptor[],
 ): RestConnectorConfig {
   const connector = cangyuanImageConnectorForGroup(group);
-  const modelOverrides = Object.fromEntries(
-    models.flatMap((model) => {
-      if (!model.operations.some((operation) => operation.startsWith("video.")))
-        return [];
-      return [[model.id, videoTransportForModel(model)]];
-    }),
+  const includesVideoModels = models.some((model) =>
+    model.operations.some((operation) => operation.startsWith("video.")),
   );
+  const modelOverrides: Record<string, RestModelConnectorOverride> = {};
+  for (const model of models) {
+    if (model.operations.some((operation) => operation.startsWith("video.")))
+      modelOverrides[model.id] = videoTransportForModel(model);
+    else if (
+      /^(?:gpt-image-2(?:-(?:1k|2k|4k))?|nano-banana(?:-pro)?-(?:1k|2k|4k)|nano-banana2-(?:1k|2k|4k))$/iu.test(
+        model.id,
+      ) &&
+      model.operations.includes("image.edit")
+    )
+      modelOverrides[model.id] = standardImageTransportForModel(model);
+  }
   return {
     ...connector,
+    ...(includesVideoModels ? { assetsRequirePublicUrls: true } : {}),
     models: structuredClone(models),
     ...(Object.keys(modelOverrides).length > 0 ? { modelOverrides } : {}),
+  };
+}
+
+function standardImageMappingsForModel(
+  model: ModelDescriptor,
+): RestRequestMapping[] {
+  const supported = new Set((model.parameters ?? []).map((item) => item.key));
+  return [
+    { target: "/model", source: { kind: "request", path: "$.model" } },
+    { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
+    // GPT Image 2's current API accepts ratios through `size` (for example
+    // `size: "1:1"`), and the same contract is used by the current Banana
+    // SKUs. The canvas intentionally keeps the provider-neutral
+    // `aspect_ratio` parameter, so translate it here instead of forwarding the
+    // now-unsupported field upstream. An explicit WxH `size` wins when present.
+    {
+      target: "/size",
+      source: { kind: "request", path: "$.parameters.aspect_ratio" },
+      omitIfUndefined: true,
+      omitValues: ["auto"],
+    },
+    ...(supported.has("size")
+      ? [
+          {
+            target: "/size",
+            source: { kind: "request" as const, path: "$.parameters.size" },
+            omitIfUndefined: true,
+            omitValues: ["auto"],
+          },
+        ]
+      : []),
+    ...["quality", "background", "n"].flatMap((key): RestRequestMapping[] =>
+      supported.has(key)
+        ? [
+            {
+              target: `/${key}`,
+              source: { kind: "request", path: `$.parameters.${key}` },
+              omitIfUndefined: true,
+            },
+          ]
+        : [],
+    ),
+    {
+      target: "/response_format",
+      source: { kind: "literal", value: "url" },
+    },
+  ];
+}
+
+function standardImageTransportForModel(
+  model: ModelDescriptor,
+): RestModelConnectorOverride {
+  const mappings = standardImageMappingsForModel(model);
+  return {
+    pollIntervalMs: 5_000,
+    submit: {
+      path: "/v1/images/generations",
+      method: "POST",
+      bodyMode: "json",
+      headers: { Connection: "close" },
+      template: { async: true, n: 1 },
+      mappings,
+      response: {
+        taskIdPath: "$.id",
+        statusPath: "$.status",
+        errorPath: "$.error.message",
+        progressPath: "$.progress",
+      },
+    },
+    poll: {
+      path: "/v1/images/generations/{taskId}",
+      method: "GET",
+      bodyMode: "none",
+      headers: { Connection: "close" },
+      response: {
+        taskIdPath: "$.id",
+        statusPath: "$.status",
+        errorPath: "$.error.message",
+        progressPath: "$.progress",
+      },
+    },
+    output: {
+      path: "$.data",
+      kind: "image",
+      urlPath: "url",
+      base64Path: "b64_json",
+      defaultMimeType: "image/png",
+    },
+    operationOverrides: {
+      "image.edit": {
+        pollIntervalMs: 5_000,
+        submit: {
+          // Cangyuan's verified reference-image contract uses the async
+          // generations endpoint with a JSON `images` array. The gateway's
+          // multipart /edits route currently drops the model field and
+          // responds with "model is required", even when the form contains it.
+          path: "/v1/images/generations",
+          method: "POST",
+          bodyMode: "json",
+          headers: { Connection: "close" },
+          template: { async: true, n: 1 },
+          mappings: [
+            ...mappings,
+            assetMapping("/images", "image"),
+          ],
+          response: {
+            taskIdPath: "$.id",
+            statusPath: "$.status",
+            errorPath: "$.error.message",
+            progressPath: "$.progress",
+          },
+        },
+        poll: {
+          path: "/v1/images/generations/{taskId}",
+          method: "GET",
+          bodyMode: "none",
+          headers: { Connection: "close" },
+          response: {
+            taskIdPath: "$.id",
+            statusPath: "$.status",
+            errorPath: "$.error.message",
+            progressPath: "$.progress",
+          },
+        },
+      },
+    },
   };
 }
 
@@ -1073,6 +1394,17 @@ const videoParameterMappings: readonly RestRequestMapping[] = [
     omitIfUndefined: true,
   })),
 ];
+
+function videoParameterMappingsForModel(
+  model: ModelDescriptor,
+): RestRequestMapping[] {
+  const supported = new Set((model.parameters ?? []).map((item) => item.key));
+  return videoParameterMappings.filter((mapping) => {
+    if (mapping.source.kind !== "request") return true;
+    const match = /^\$\.parameters\.([^.[\]]+)$/u.exec(mapping.source.path);
+    return !match?.[1] || supported.has(match[1]);
+  });
+}
 
 function assetMapping(
   target: string,
@@ -1099,11 +1431,11 @@ function videoTransportForModel(
     typeof metadata.payloadBuilder === "string"
       ? metadata.payloadBuilder
       : "chat-video";
-  const mappings: RestRequestMapping[] = [...videoParameterMappings];
+  const mappings = videoParameterMappingsForModel(model);
 
   if (model.id.startsWith("grok-video")) {
     mappings.push(
-      assetMapping("/image_urls", "image"),
+      assetMapping("/reference_image_urls", "image"),
       assetMapping("/video_url", "video", { select: "first" }),
     );
   } else if (payloadBuilder === "omni-v2v") {
@@ -1113,26 +1445,9 @@ function videoTransportForModel(
     );
   } else if (payloadBuilder === "omni-frame") {
     mappings.push(
-      assetMapping("/image_url", "image", {
-        role: "reference",
-        select: "first",
-      }),
-      assetMapping("/first_image_url", "image", {
-        role: "firstFrame",
-        select: "first",
-      }),
-      assetMapping("/last_image_url", "image", {
-        role: "lastFrame",
-        select: "first",
-      }),
-    );
-  } else if (model.id.startsWith("seedance-")) {
-    mappings.push(
       assetMapping("/reference_image_urls", "image", {
         excludeRoles: ["firstFrame", "lastFrame"],
       }),
-      assetMapping("/reference_videos", "video"),
-      assetMapping("/reference_audios", "audio"),
       assetMapping("/first_image_url", "image", {
         role: "firstFrame",
         select: "first",
@@ -1166,6 +1481,30 @@ function videoTransportForModel(
         select: "first",
       }),
     );
+  } else if (payloadBuilder === "seedance-flat") {
+    if ((model.limits?.maxInputImages ?? 0) > 0) {
+      mappings.push(
+        assetMapping("/reference_image_urls", "image", {
+          excludeRoles: ["firstFrame", "lastFrame"],
+        }),
+      );
+    }
+    if ((model.limits?.maxInputVideos ?? 0) > 0)
+      mappings.push(assetMapping("/reference_videos", "video"));
+    if ((model.limits?.maxInputAudios ?? 0) > 0)
+      mappings.push(assetMapping("/reference_audios", "audio"));
+    if (metadata.supportsFirstLastFrames === true) {
+      mappings.push(
+        assetMapping("/first_image_url", "image", {
+          role: "firstFrame",
+          select: "first",
+        }),
+        assetMapping("/last_image_url", "image", {
+          role: "lastFrame",
+          select: "first",
+        }),
+      );
+    }
   } else {
     if (typeof metadata.referenceMode === "string") {
       mappings.push({
@@ -1178,7 +1517,7 @@ function videoTransportForModel(
 
   const grok = model.id.startsWith("grok-video");
   const omni = payloadBuilder === "omni-v2v" || payloadBuilder === "omni-frame";
-  const seedance = model.id.startsWith("seedance-");
+  const seedance = payloadBuilder === "seedance-flat";
   return {
     pollIntervalMs: 5_000,
     submit: {
@@ -1234,38 +1573,83 @@ function videoTransportForModel(
   };
 }
 
-export async function syncCangyuanConnection(id: string) {
-  const repository = getRepository();
-  const connection = await repository.getConnection(id);
+async function syncCangyuanConnectionFromCatalog(
+  connection: ProviderConnectionRecord | null,
+  catalog: CangyuanCatalogSnapshot,
+) {
   if (!connection || connection.config.preset !== CANGYUAN_IMAGE_PRESET_ID)
     return connection;
-  if (
-    connection.config.usage === "agent" ||
-    !isCangyuanImageGroup(connection.config.modelGroup)
-  )
-    return connection;
-  const group = connection.config.modelGroup;
-  const catalog = await loadCangyuanCatalog();
+  if (connection.config.usage === "agent") return connection;
+  const group = normalizeCangyuanImageGroup(connection.config.modelGroup);
+  if (!group) return connection;
   const models = catalog.groups[group];
   if (models.length === 0) return connection;
+  // A live marketplace is an availability/price source, not an instruction to
+  // delete models a user already configured. Keep saved descriptors and
+  // transport overrides that are temporarily absent from the live response so
+  // existing canvas nodes remain executable and the selected default remains
+  // stable across a refresh.
+  const savedConnector = isRecord(connection.config.connector)
+    ? connection.config.connector
+    : {};
+  const savedModels = Array.isArray(savedConnector.models)
+    ? savedConnector.models.filter(isRecord)
+    : [];
+  const liveById = new Map(models.map((model) => [model.id, model]));
+  const mergedModels: ModelDescriptor[] = [];
+  const seen = new Set<string>();
+  for (const saved of savedModels) {
+    const id = typeof saved.id === "string" ? saved.id.trim() : "";
+    if (!id || seen.has(id)) continue;
+    const live = liveById.get(id);
+    mergedModels.push(
+      (live ? { ...saved, ...live } : saved) as unknown as ModelDescriptor,
+    );
+    seen.add(id);
+  }
+  for (const model of models) {
+    if (seen.has(model.id)) continue;
+    mergedModels.push(model);
+    seen.add(model.id);
+  }
   const configuredDefault =
     typeof connection.config.defaultModel === "string"
-      ? connection.config.defaultModel
-      : cangyuanDefaultModelForGroup(group);
-  const defaultModel = models.some((model) => model.id === configuredDefault)
-    ? configuredDefault
-    : (models.find((model) => model.isDefault)?.id ?? models[0]!.id);
+      ? connection.config.defaultModel.trim()
+      : "";
+  const defaultModel =
+    configuredDefault ||
+    mergedModels.find((model) => model.isDefault)?.id ||
+    mergedModels[0]!.id ||
+    cangyuanDefaultModelForGroup(group);
+  const generatedConnector = cangyuanConnectorForModels(
+    group,
+    mergedModels,
+  ) as unknown as Record<string, unknown>;
+  const savedOverrides = isRecord(savedConnector.modelOverrides)
+    ? savedConnector.modelOverrides
+    : {};
+  const generatedOverrides = isRecord(generatedConnector.modelOverrides)
+    ? generatedConnector.modelOverrides
+    : {};
   const config: JsonObject = {
     ...connection.config,
     modelGroup: group,
     defaultModel,
-    connector: connectorWithModels(group, models) as unknown as JsonObject,
+    connector: {
+      ...savedConnector,
+      ...generatedConnector,
+      models: mergedModels as unknown as JsonObject[],
+      modelOverrides: {
+        ...savedOverrides,
+        ...generatedOverrides,
+      },
+    } as unknown as JsonObject,
     catalogCheckedAt: catalog.checkedAt,
     catalogSource: catalog.source,
   };
   if (JSON.stringify(connection.config) === JSON.stringify(config))
     return connection;
-  return repository.saveConnection({
+  return getRepository().saveConnection({
     id: connection.id,
     name: connection.name,
     provider: connection.provider,
@@ -1274,7 +1658,18 @@ export async function syncCangyuanConnection(id: string) {
   });
 }
 
-export async function syncAllCangyuanConnections() {
+export async function syncCangyuanConnection(id: string) {
+  const repository = getRepository();
+  const [connection, catalog] = await Promise.all([
+    repository.getConnection(id),
+    loadCangyuanCatalog(),
+  ]);
+  return syncCangyuanConnectionFromCatalog(connection, catalog);
+}
+
+async function syncAllCangyuanConnectionsFromCatalog(
+  catalog: CangyuanCatalogSnapshot,
+) {
   const repository = getRepository();
   const connections = await repository.listConnections();
   return Promise.all(
@@ -1282,6 +1677,35 @@ export async function syncAllCangyuanConnections() {
       .filter(
         (connection) => connection.config.preset === CANGYUAN_IMAGE_PRESET_ID,
       )
-      .map((connection) => syncCangyuanConnection(connection.id)),
+      .map((connection) =>
+        syncCangyuanConnectionFromCatalog(connection, catalog),
+      ),
   );
+}
+
+export async function syncAllCangyuanConnections() {
+  return syncAllCangyuanConnectionsFromCatalog(await loadCangyuanCatalog());
+}
+
+/**
+ * Keeps every saved Cangyuan group on the same snapshot returned to the
+ * canvas. Without this, an older local model list can repeatedly fight the
+ * live marketplace list and make a controlled model selector jump.
+ */
+export async function loadSyncedCangyuanCatalog(options?: { force?: boolean }) {
+  const catalog = await loadCangyuanCatalog({ force: options?.force });
+  const cache = connectionCatalogSyncCache();
+  if (cache.pending) await cache.pending;
+  if (cache.checkedAt === catalog.checkedAt) return catalog;
+
+  const pending = syncAllCangyuanConnectionsFromCatalog(catalog).then(() => {
+    cache.checkedAt = catalog.checkedAt;
+  });
+  cache.pending = pending;
+  try {
+    await pending;
+  } finally {
+    if (cache.pending === pending) cache.pending = undefined;
+  }
+  return catalog;
 }

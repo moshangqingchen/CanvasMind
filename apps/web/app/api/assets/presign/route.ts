@@ -13,7 +13,45 @@ import {
   sanitizedAssetExtension,
 } from "../media-utils";
 
-export async function POST(request: Request) {
+function localPresignAccessHeaders(request: Request): Headers {
+  const headers = new Headers({
+    vary: "Origin, Access-Control-Request-Private-Network",
+  });
+  const origin = request.headers.get("origin");
+  let allowedOrigin: string | undefined;
+  try {
+    allowedOrigin = process.env.PUBLIC_BASE_URL
+      ? new URL(process.env.PUBLIC_BASE_URL).origin
+      : undefined;
+  } catch {
+    allowedOrigin = undefined;
+  }
+  if (!origin || origin !== allowedOrigin) return headers;
+  headers.set("access-control-allow-origin", origin);
+  headers.set("access-control-allow-methods", "POST, OPTIONS");
+  headers.set("access-control-allow-headers", "Content-Type");
+  headers.set("access-control-max-age", "600");
+  headers.set("cross-origin-resource-policy", "cross-origin");
+  if (request.headers.get("access-control-request-private-network") === "true")
+    headers.set("access-control-allow-private-network", "true");
+  return headers;
+}
+
+function applyLocalPresignAccess(request: Request, response: Response) {
+  for (const [name, value] of localPresignAccessHeaders(request))
+    response.headers.set(name, value);
+  return response;
+}
+
+export function OPTIONS(request: Request) {
+  const headers = localPresignAccessHeaders(request);
+  return new Response(null, {
+    status: headers.has("access-control-allow-origin") ? 204 : 403,
+    headers,
+  });
+}
+
+async function handlePresign(request: Request) {
   const parsed = await readJsonBody(request, MAX_SMALL_JSON_BODY_BYTES);
   if (!parsed.success) return parsed.response;
   const body = (
@@ -37,7 +75,7 @@ export async function POST(request: Request) {
 
   const mimeType = normalizeMimeType(body.mimeType);
   if (!mediaKindForMime(mimeType))
-    return jsonError("Only image and video uploads are supported");
+    return jsonError("Only image, audio, and video uploads are supported");
   if (!Number.isSafeInteger(body.size) || body.size <= 0)
     return jsonError("File size must be a positive integer");
 
@@ -52,7 +90,8 @@ export async function POST(request: Request) {
         : "File size cannot exceed 500 MB",
       413,
     );
-  if (!storage.presignPut) return Response.json({ mode: "proxy" });
+  if (!storage.presignPut)
+    return Response.json({ mode: "proxy", id: randomUUID() });
 
   const id = randomUUID();
   const extension = sanitizedAssetExtension(body.name, mimeType);
@@ -76,4 +115,8 @@ export async function POST(request: Request) {
       expiresInSeconds: 600,
     }),
   });
+}
+
+export async function POST(request: Request) {
+  return applyLocalPresignAccess(request, await handlePresign(request));
 }

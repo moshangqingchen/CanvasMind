@@ -1,7 +1,9 @@
 import type { ObjectStorage } from "@super-canvas/storage";
 import sharp from "sharp";
 
-const PREVIEW_SIZES = [160, 640, 1200] as const;
+// Keep ordinary canvas thumbnails light, but allow the selected result to load
+// enough pixels for close inspection without downloading every original PNG.
+export const ASSET_PREVIEW_SIZES = [160, 640, 1200, 2400, 3840] as const;
 const globalKey = "__superCanvasPreviewJobs";
 
 type PreviewAsset = {
@@ -24,8 +26,8 @@ export function normalizePreviewSize(value: string | null) {
   const requested = Number(value);
   if (!Number.isFinite(requested)) return 640;
   return (
-    PREVIEW_SIZES.find((size) => requested <= size) ??
-    PREVIEW_SIZES[PREVIEW_SIZES.length - 1]
+    ASSET_PREVIEW_SIZES.find((size) => requested <= size) ??
+    ASSET_PREVIEW_SIZES[ASSET_PREVIEW_SIZES.length - 1]
   );
 }
 
@@ -50,7 +52,7 @@ export async function getOrCreateAssetPreview(
 
   const job = (async () => {
     let source: Awaited<ReturnType<ObjectStorage["get"]>> = null;
-    for (const largerSize of PREVIEW_SIZES) {
+    for (const largerSize of ASSET_PREVIEW_SIZES) {
       if (largerSize <= size) continue;
       source = await storage.get(assetPreviewKey(asset.id, largerSize));
       if (source) break;
@@ -69,7 +71,11 @@ export async function getOrCreateAssetPreview(
         fit: "inside",
         withoutEnlargement: true,
       })
-      .webp({ quality: 80, effort: 4, smartSubsample: true })
+      .webp({
+        quality: size >= 2400 ? 92 : 80,
+        effort: 4,
+        smartSubsample: true,
+      })
       .toBuffer();
     const bytes = new Uint8Array(preview);
     await storage.put(key, bytes, "image/webp");

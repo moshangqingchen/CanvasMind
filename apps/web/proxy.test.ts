@@ -10,6 +10,7 @@ beforeEach(() => {
   vi.stubEnv("SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN", "");
   vi.stubEnv("SUPERCANVAS_PUBLIC_AUTH_TRUSTED_HOSTS", "");
   vi.stubEnv("SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK", "");
+  vi.stubEnv("PUBLIC_BASE_URL", "");
 });
 
 afterEach(() => {
@@ -80,6 +81,25 @@ describe("proxy auth gate", () => {
     expect(proxy(request("/", { host: "localhost" })).status).toBe(307);
   });
 
+  it("lets an authenticated health probe through when loopback login is required", () => {
+    configureAuth();
+    vi.stubEnv("SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK", "false");
+
+    expect(proxy(request("/api/health", { host: "127.0.0.1" })).status).toBe(
+      401,
+    );
+    expect(
+      passedThrough(
+        proxy(
+          request("/api/health", {
+            host: "127.0.0.1",
+            session: SESSION_TOKEN,
+          }),
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("accepts a valid session cookie on a protected host", () => {
     configureAuth();
     expect(passedThrough(proxy(request("/", { session: SESSION_TOKEN })))).toBe(
@@ -92,7 +112,7 @@ describe("proxy auth gate", () => {
     expect(proxy(request("/", { session: "not-the-token" })).status).toBe(307);
   });
 
-  it("keeps the login page and provider webhooks reachable", () => {
+  it("keeps login, signed provider assets, and webhooks reachable", () => {
     configureAuth();
     expect(passedThrough(proxy(request("/login")))).toBe(true);
     expect(
@@ -103,6 +123,11 @@ describe("proxy auth gate", () => {
     expect(
       passedThrough(
         proxy(request("/api/webhooks/rest/connection-1", { method: "POST" })),
+      ),
+    ).toBe(true);
+    expect(
+      passedThrough(
+        proxy(request("/api/provider-assets/asset-1?token=signed")),
       ),
     ).toBe(true);
   });
@@ -134,6 +159,74 @@ describe("proxy cross-site write protection", () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it("allows only the configured public app to bridge asset imports to loopback", () => {
+    configureAuth();
+    vi.stubEnv("PUBLIC_BASE_URL", "https://815rongai.com");
+
+    expect(
+      passedThrough(
+        proxy(
+          request("/api/assets/upload?name=image.png", {
+            host: "127.0.0.1:3210",
+            method: "POST",
+            origin: "https://815rongai.com",
+          }),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      proxy(
+        request("/api/assets/upload?name=image.png", {
+          host: "127.0.0.1:3210",
+          method: "POST",
+          origin: "https://evil.example",
+        }),
+      ).status,
+    ).toBe(403);
+
+    expect(
+      passedThrough(
+        proxy(
+          request("/api/assets/import-source", {
+            host: "127.0.0.1:3210",
+            method: "POST",
+            origin: "https://815rongai.com",
+          }),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      proxy(
+        request("/api/assets/import-source", {
+          host: "127.0.0.1:3210",
+          method: "POST",
+          origin: "https://evil.example",
+        }),
+      ).status,
+    ).toBe(403);
+
+    expect(
+      passedThrough(
+        proxy(
+          request("/api/assets/presign", {
+            host: "127.0.0.1:3210",
+            method: "POST",
+            origin: "https://815rongai.com",
+          }),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      proxy(
+        request("/api/assets/presign", {
+          host: "127.0.0.1:3210",
+          method: "POST",
+          origin: "https://evil.example",
+        }),
+      ).status,
+    ).toBe(403);
   });
 
   it("does not block reads from another origin", () => {

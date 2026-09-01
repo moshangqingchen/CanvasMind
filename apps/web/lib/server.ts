@@ -6,6 +6,7 @@ import {
 } from "@super-canvas/providers";
 import {
   getRepository,
+  isRunRecoveryExpired,
   type JsonObject,
   type NodeRunRecord,
   type WorkflowRunRecord,
@@ -23,7 +24,14 @@ export const runService = getRunService();
 const inlineRecoveryKey = "__superCanvasInlineRecovery";
 
 function startInlineRecovery(): void {
-  if (process.env.RUN_IN_PROCESS === "false" || process.env.REDIS_URL) return;
+  if (
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST ||
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.RUN_IN_PROCESS === "false" ||
+    process.env.REDIS_URL
+  )
+    return;
   const scope = globalThis as typeof globalThis & {
     [inlineRecoveryKey]?: Promise<void>;
   };
@@ -68,6 +76,7 @@ export interface PublicRunSnapshot {
     status: WorkflowRunRecord["status"];
     createdAt: string;
     updatedAt: string;
+    canResume: boolean;
   };
   nodes: Array<{
     id: string;
@@ -75,7 +84,20 @@ export interface PublicRunSnapshot {
     status: NodeRunRecord["status"];
     outputAssetIds: string[];
     errorJson: PublicRunError | null;
+    recoveryAction?: "retry" | "resume_poll" | "resume_archive";
+    request?: PublicRunRequest;
   }>;
+}
+
+export interface PublicRunRequest {
+  provider?: string;
+  supplier?: string;
+  connectionId?: string;
+  connectionName?: string;
+  modelGroup?: string;
+  operation?: string;
+  model?: string;
+  parameters?: Record<string, string | number | boolean>;
 }
 
 export interface PublicRunError {
@@ -83,6 +105,8 @@ export interface PublicRunError {
   type?: string;
   code?: string;
   api?: string;
+  statusCode?: number;
+  providerMessage?: string;
   docsUrl?: string;
 }
 
@@ -101,18 +125,119 @@ function publicError(
       : undefined;
   const docsUrl =
     typeof value.docsUrl === "string" &&
-    /^https:\/\/(?:platform\.openai\.com|developers\.openai\.com|docs\.dev\.runwayml\.com)\//u.test(
+    /^https:\/\/(?:platform\.openai\.com|developers\.openai\.com|docs\.dev\.runwayml\.com|docs\.we-ai\.cc)\//u.test(
       value.docsUrl,
     )
       ? value.docsUrl.slice(0, 1_024)
+      : undefined;
+  const statusCode =
+    typeof value.statusCode === "number" &&
+    Number.isInteger(value.statusCode) &&
+    value.statusCode >= 100 &&
+    value.statusCode <= 599
+      ? value.statusCode
+      : undefined;
+  const providerMessage =
+    typeof value.providerMessage === "string"
+      ? redactPublicText(value.providerMessage).slice(0, 2_048)
       : undefined;
   return {
     message,
     ...(detail("type") ? { type: detail("type") } : {}),
     ...(detail("code") ? { code: detail("code") } : {}),
     ...(detail("api") ? { api: detail("api") } : {}),
+    ...(statusCode === undefined ? {} : { statusCode }),
+    ...(providerMessage ? { providerMessage } : {}),
     ...(docsUrl ? { docsUrl } : {}),
   };
+}
+
+const PUBLIC_RUN_PARAMETER_KEYS = new Set([
+  "size",
+  "quality",
+  "n",
+  "aspect_ratio",
+  "aspectRatio",
+  "image_size",
+  "output_format",
+  "duration",
+  "resolution",
+  "ratio",
+  "width",
+  "height",
+  "fps",
+]);
+
+function publicRunRequest(input: JsonObject): PublicRunRequest | null {
+  const text = (key: string) => {
+    const value = input[key];
+    return typeof value === "string"
+      ? redactPublicText(value).slice(0, 256)
+      : undefined;
+  };
+  const rawParameters = input.parameters;
+  const parameters: Record<string, string | number | boolean> = {};
+  if (
+    rawParameters &&
+    typeof rawParameters === "object" &&
+    !Array.isArray(rawParameters)
+  ) {
+    for (const [key, value] of Object.entries(rawParameters)) {
+      if (!PUBLIC_RUN_PARAMETER_KEYS.has(key)) continue;
+      if (typeof value === "string") {
+        parameters[key] = redactPublicText(value).slice(0, 256);
+      } else if (typeof value === "boolean") {
+        parameters[key] = value;
+      } else if (typeof value === "number" && Number.isFinite(value)) {
+        parameters[key] = value;
+      }
+    }
+  }
+  const request: PublicRunRequest = {
+    ...(text("provider") ? { provider: text("provider") } : {}),
+    ...(text("supplier") ? { supplier: text("supplier") } : {}),
+    ...(text("connectionId") ? { connectionId: text("connectionId") } : {}),
+    ...(text("connectionName")
+      ? { connectionName: text("connectionName") }
+      : {}),
+    ...(text("modelGroup") ? { modelGroup: text("modelGroup") } : {}),
+    ...(text("operation") ? { operation: text("operation") } : {}),
+    ...(text("model") ? { model: text("model") } : {}),
+    ...(Object.keys(parameters).length > 0 ? { parameters } : {}),
+  };
+  return Object.keys(request).length > 0 ? request : null;
+}
+
+export function nodeRunRecoveryAction(
+  node: NodeRunRecord,
+): "retry" | "resume_poll" | "resume_archive" | undefined {
+  if (node.status === "failed" && !node.providerTaskId) return "retry";
+  if (
+    !["needs_attention", "archiving"].includes(node.status) ||
+    !node.providerTaskId
+  )
+    return undefined;
+  const storedTask = node.inputJson.providerTask;
+  const storedStatus =
+    storedTask && typeof storedTask === "object" && !Array.isArray(storedTask)
+      ? (storedTask as JsonObject).status
+      : undefined;
+  return storedStatus === "succeeded" ? "resume_archive" : "resume_poll";
+}
+
+function canResumeRun(
+  run: WorkflowRunRecord,
+  nodes: readonly NodeRunRecord[],
+): boolean {
+  if (isRunRecoveryExpired(run)) return false;
+  let resumable = false;
+  for (const node of nodes) {
+    if (node.status === "needs_attention") {
+      if (!node.providerTaskId) return false;
+    }
+    if (nodeRunRecoveryAction(node)) resumable = true;
+  }
+  return resumable;
 }
 
 export function publicRunSnapshot(
@@ -132,16 +257,23 @@ export function publicRunSnapshot(
       status: snapshot.run.status,
       createdAt: snapshot.run.createdAt,
       updatedAt: snapshot.run.updatedAt,
+      canResume: canResumeRun(snapshot.run, snapshot.nodes),
     },
-    nodes: snapshot.nodes.map((node) => ({
-      id: node.id,
-      nodeId: node.nodeId,
-      status: node.status,
-      outputAssetIds: node.outputAssetIds.filter(
-        (assetId): assetId is string => typeof assetId === "string",
-      ),
-      errorJson: publicError(node.errorJson),
-    })),
+    nodes: snapshot.nodes.map((node) => {
+      const request = publicRunRequest(node.inputJson);
+      const recoveryAction = nodeRunRecoveryAction(node);
+      return {
+        id: node.id,
+        nodeId: node.nodeId,
+        status: node.status,
+        outputAssetIds: node.outputAssetIds.filter(
+          (assetId): assetId is string => typeof assetId === "string",
+        ),
+        errorJson: publicError(node.errorJson),
+        ...(recoveryAction ? { recoveryAction } : {}),
+        ...(request ? { request } : {}),
+      };
+    }),
   };
 }
 

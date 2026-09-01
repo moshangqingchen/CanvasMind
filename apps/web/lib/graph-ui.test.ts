@@ -6,11 +6,15 @@ import {
   closestAvailableVerticalPosition,
   getAutoConnectionOptions,
   getAutoConnectionTargetHandle,
+  hasSelectedBrowserText,
   isCanvasHistoryShortcutAllowed,
   isCanvasShortcutAllowed,
+  modelCanvasUnavailableReason,
   modelSupportsNodeType,
+  preferredCanvasLayoutDirection,
   providerSupportsNodeType,
   shouldPersistNodeChanges,
+  tidyCanvasRectPositions,
 } from "./graph-ui";
 
 describe("canvas graph UI helpers", () => {
@@ -60,18 +64,187 @@ describe("canvas graph UI helpers", () => {
       ...node,
       position: { x: 100 + index * 20, y: 80 + index * 20 },
     }));
-    const horizontal = alignedCanvasRectPositions(
-      overlapping,
-      "distribute-x",
-    );
+    const horizontal = alignedCanvasRectPositions(overlapping, "distribute-x");
     expect(horizontal.get("two")!.x).toBe(316);
     expect(horizontal.get("three")!.x).toBe(632);
-    const vertical = alignedCanvasRectPositions(
-      overlapping,
-      "distribute-y",
-    );
+    const vertical = alignedCanvasRectPositions(overlapping, "distribute-y");
     expect(vertical.get("two")!.y).toBe(216);
     expect(vertical.get("three")!.y).toBe(412);
+  });
+
+  it("lays out generated results as a grid between connected workflow layers", () => {
+    const nodes = [
+      {
+        id: "prompt",
+        position: { x: 680, y: 520 },
+        width: 300,
+        height: 140,
+      },
+      {
+        id: "source",
+        position: { x: 120, y: 100 },
+        width: 420,
+        height: 210,
+      },
+      ...Array.from({ length: 4 }, (_, index) => ({
+        id: `result-${index}`,
+        position: { x: 40 + index * 17, y: 20 + index * 29 },
+        width: 200,
+        height: 150,
+        generatedFromNodeId: "source",
+      })),
+      {
+        id: "target",
+        position: { x: 60, y: 900 },
+        width: 320,
+        height: 180,
+      },
+    ];
+    const edges = [
+      { source: "prompt", target: "source" },
+      { source: "source", target: "result-0" },
+      { source: "result-0", target: "target" },
+    ];
+
+    const horizontal = tidyCanvasRectPositions(nodes, edges, "horizontal");
+    expect(horizontal.get("source")!.x).toBeLessThan(
+      horizontal.get("result-0")!.x,
+    );
+    expect(horizontal.get("result-0")!.y).toBe(horizontal.get("result-1")!.y);
+    expect(horizontal.get("result-0")!.x).toBe(horizontal.get("result-2")!.x);
+    expect(
+      horizontal.get("result-1")!.x - (horizontal.get("result-0")!.x + 200),
+    ).toBe(24);
+    expect(horizontal.get("result-2")!.y).toBeGreaterThan(
+      horizontal.get("result-0")!.y,
+    );
+    expect(
+      horizontal.get("result-2")!.y - (horizontal.get("result-0")!.y + 150),
+    ).toBe(24);
+    expect(horizontal.get("source")!.y + 210 / 2).toBe(
+      (horizontal.get("result-0")!.y + horizontal.get("result-2")!.y + 150) / 2,
+    );
+    expect(horizontal.get("target")!.x).toBeGreaterThan(
+      horizontal.get("result-1")!.x + 200,
+    );
+
+    const vertical = tidyCanvasRectPositions(nodes, edges, "vertical");
+    expect(vertical.get("source")!.y).toBeLessThan(vertical.get("result-0")!.y);
+    expect(vertical.get("result-0")!.y).toBe(vertical.get("result-1")!.y);
+    expect(vertical.get("result-0")!.x).toBe(vertical.get("result-2")!.x);
+    expect(vertical.get("source")!.x + 420 / 2).toBe(
+      (vertical.get("result-0")!.x + vertical.get("result-1")!.x + 200) / 2,
+    );
+    expect(vertical.get("target")!.y).toBeGreaterThan(
+      vertical.get("result-2")!.y + 150,
+    );
+  });
+
+  it("keeps connected workflows together before packing unrelated groups", () => {
+    const nodes = [
+      { id: "a-input", position: { x: 40, y: 60 }, width: 180, height: 120 },
+      {
+        id: "a-generate",
+        position: { x: 520, y: 80 },
+        width: 260,
+        height: 160,
+      },
+      {
+        id: "a-result",
+        position: { x: 900, y: 40 },
+        width: 220,
+        height: 180,
+        generatedFromNodeId: "a-generate",
+      },
+      {
+        id: "b-input",
+        position: { x: 80, y: 780 },
+        width: 200,
+        height: 150,
+      },
+      {
+        id: "b-generate",
+        position: { x: 640, y: 760 },
+        width: 280,
+        height: 180,
+      },
+      {
+        id: "standalone",
+        position: { x: 1_400, y: 1_100 },
+        width: 240,
+        height: 200,
+      },
+    ];
+    const arranged = tidyCanvasRectPositions(
+      nodes,
+      [
+        { source: "a-input", target: "a-generate" },
+        { source: "a-generate", target: "a-result" },
+        { source: "b-input", target: "b-generate" },
+      ],
+      "horizontal",
+      { componentGap: 200, maxComponentColumns: 2 },
+    );
+    const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+    const bounds = (ids: string[]) => {
+      const items = ids.map((id) => ({
+        ...arranged.get(id)!,
+        width: nodeById.get(id)!.width,
+        height: nodeById.get(id)!.height,
+      }));
+      const left = Math.min(...items.map((item) => item.x));
+      const top = Math.min(...items.map((item) => item.y));
+      const right = Math.max(...items.map((item) => item.x + item.width));
+      const bottom = Math.max(...items.map((item) => item.y + item.height));
+      return { left, top, right, bottom };
+    };
+    const overlaps = (
+      left: ReturnType<typeof bounds>,
+      right: ReturnType<typeof bounds>,
+    ) =>
+      !(
+        left.right <= right.left ||
+        right.right <= left.left ||
+        left.bottom <= right.top ||
+        right.bottom <= left.top
+      );
+
+    const aBounds = bounds(["a-input", "a-generate", "a-result"]);
+    const bBounds = bounds(["b-input", "b-generate"]);
+    const standaloneBounds = bounds(["standalone"]);
+    expect(arranged.get("a-generate")!.x).toBeGreaterThan(
+      arranged.get("a-input")!.x,
+    );
+    expect(arranged.get("a-result")!.x).toBeGreaterThan(
+      arranged.get("a-generate")!.x,
+    );
+    expect(arranged.get("b-generate")!.x).toBeGreaterThan(
+      arranged.get("b-input")!.x,
+    );
+    expect(overlaps(aBounds, bBounds)).toBe(false);
+    expect(overlaps(aBounds, standaloneBounds)).toBe(false);
+    expect(overlaps(bBounds, standaloneBounds)).toBe(false);
+    expect(aBounds.top).toBe(bBounds.top);
+    expect(aBounds.left).toBe(standaloneBounds.left);
+  });
+
+  it("preserves the canvas's dominant horizontal or vertical flow", () => {
+    const horizontalNodes = [
+      { id: "a", position: { x: 0, y: 0 }, width: 200, height: 120 },
+      { id: "b", position: { x: 800, y: 40 }, width: 200, height: 120 },
+    ];
+    const verticalNodes = [
+      { id: "a", position: { x: 0, y: 0 }, width: 200, height: 120 },
+      { id: "b", position: { x: 30, y: 800 }, width: 200, height: 120 },
+    ];
+    const edges = [{ source: "a", target: "b" }];
+
+    expect(preferredCanvasLayoutDirection(horizontalNodes, edges)).toBe(
+      "horizontal",
+    );
+    expect(preferredCanvasLayoutDirection(verticalNodes, edges)).toBe(
+      "vertical",
+    );
   });
 
   it("places generated results tightly beside their source", () => {
@@ -124,18 +297,14 @@ describe("canvas graph UI helpers", () => {
       [],
     );
     expect(
-      closestAvailableResultPosition(
-        source,
-        { width: 320, height: 214 },
-        [
-          {
-            id: "first-result",
-            position: first,
-            width: 320,
-            height: 214,
-          },
-        ],
-      ),
+      closestAvailableResultPosition(source, { width: 320, height: 214 }, [
+        {
+          id: "first-result",
+          position: first,
+          width: 320,
+          height: 214,
+        },
+      ]),
     ).toEqual({ x: 534, y: 410 });
   });
 
@@ -147,11 +316,9 @@ describe("canvas graph UI helpers", () => {
       height: 210,
     };
     expect(
-      closestAvailableVerticalPosition(
+      closestAvailableVerticalPosition(anchor, { width: 420, height: 210 }, [
         anchor,
-        { width: 420, height: 210 },
-        [anchor],
-      ),
+      ]),
     ).toEqual({ x: 100, y: 406 });
   });
 
@@ -163,19 +330,15 @@ describe("canvas graph UI helpers", () => {
       height: 180,
     };
     expect(
-      closestAvailableVerticalPosition(
+      closestAvailableVerticalPosition(anchor, { width: 240, height: 120 }, [
         anchor,
-        { width: 240, height: 120 },
-        [
-          anchor,
-          {
-            id: "occupied-below",
-            position: { x: 300, y: 496 },
-            width: 300,
-            height: 180,
-          },
-        ],
-      ),
+        {
+          id: "occupied-below",
+          position: { x: 300, y: 496 },
+          width: 300,
+          height: 180,
+        },
+      ]),
     ).toEqual({ x: 330, y: 164 });
   });
 
@@ -212,6 +375,8 @@ describe("canvas graph UI helpers", () => {
   it("filters providers by the operations a generation node can execute", () => {
     expect(providerSupportsNodeType("openai", "image-generation")).toBe(true);
     expect(providerSupportsNodeType("openai", "video-generation")).toBe(false);
+    expect(providerSupportsNodeType("weai", "image-generation")).toBe(true);
+    expect(providerSupportsNodeType("weai", "video-generation")).toBe(false);
     expect(providerSupportsNodeType("runway", "video-generation")).toBe(true);
     expect(providerSupportsNodeType("runway", "image-generation")).toBe(false);
     expect(providerSupportsNodeType("rest", "image-generation")).toBe(true);
@@ -237,6 +402,20 @@ describe("canvas graph UI helpers", () => {
     expect(modelSupportsNodeType(imageModel, "video-generation")).toBe(false);
     expect(modelSupportsNodeType(videoModel, "video-generation")).toBe(true);
     expect(modelSupportsNodeType(unknownModel, "image-generation")).toBe(true);
+  });
+
+  it("identifies scanned display-only models without hiding their reason", () => {
+    expect(
+      modelCanvasUnavailableReason({
+        metadata: {
+          canvasRunnable: false,
+          canvasUnavailableReason: "协议未验证",
+        },
+      }),
+    ).toBe("协议未验证");
+    expect(
+      modelCanvasUnavailableReason({ metadata: { canvasRunnable: true } }),
+    ).toBe(null);
   });
 
   it("requires a selected node and canvas context for shortcuts", () => {
@@ -302,10 +481,47 @@ describe("canvas graph UI helpers", () => {
     ).toBe(false);
   });
 
-  it("persists position, resize, and removal node changes", () => {
+  it("leaves copy events to the browser when document text is selected", () => {
+    expect(
+      hasSelectedBrowserText({
+        rangeCount: 1,
+        isCollapsed: false,
+        toString: () => "selected prompt text",
+      }),
+    ).toBe(true);
+    expect(
+      hasSelectedBrowserText({
+        rangeCount: 1,
+        isCollapsed: true,
+        toString: () => "",
+      }),
+    ).toBe(false);
+    expect(hasSelectedBrowserText(null)).toBe(false);
+  });
+
+  it("persists only interactive position, resize, and removal node changes", () => {
     expect(shouldPersistNodeChanges([{ type: "select" }])).toBe(false);
-    expect(shouldPersistNodeChanges([{ type: "position" }])).toBe(true);
-    expect(shouldPersistNodeChanges([{ type: "dimensions" }])).toBe(true);
+    expect(shouldPersistNodeChanges([{ type: "position" }])).toBe(false);
+    expect(shouldPersistNodeChanges([{ type: "dimensions" }])).toBe(false);
+    expect(
+      shouldPersistNodeChanges([{ type: "position", dragging: true }]),
+    ).toBe(true);
+    expect(
+      shouldPersistNodeChanges([{ type: "position", dragging: false }]),
+    ).toBe(true);
+    expect(
+      shouldPersistNodeChanges([{ type: "dimensions", resizing: true }]),
+    ).toBe(true);
+    expect(
+      shouldPersistNodeChanges([{ type: "dimensions", resizing: false }]),
+    ).toBe(true);
     expect(shouldPersistNodeChanges([{ type: "remove" }])).toBe(true);
+    expect(
+      shouldPersistNodeChanges([
+        { type: "position" },
+        { type: "dimensions" },
+        { type: "select" },
+      ]),
+    ).toBe(false);
   });
 });

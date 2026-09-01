@@ -4,6 +4,11 @@ import type {
   AssetRecord,
   CanvasRecord,
   CanvasRevisionRecord,
+  DirectorMessageRecord,
+  DirectorProfileRecord,
+  DirectorProposalRecord,
+  DirectorProposalUpdateOptions,
+  DirectorSessionRecord,
   JsonObject,
   NodeRunRecord,
   ProviderConnectionRecord,
@@ -12,6 +17,7 @@ import type {
   WebhookEventRecord,
   WorkflowRunRecord,
 } from "./types.js";
+import { CanvasRevisionConflictError } from "./types.js";
 
 const iso = (value: Date | string | undefined): string =>
   value instanceof Date
@@ -108,17 +114,55 @@ export class PostgresRepository implements Repository {
     title?: string;
     graph: JsonObject;
     reason?: string;
+    expectedRevision?: number;
   }): Promise<CanvasRecord> {
     await this.ensureReady();
     const timestamp = new Date();
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const result = await client.query(
-        `INSERT INTO canvas(id,title,graph,revision,created_at,updated_at) VALUES($1,$2,$3::jsonb,1,$4,$4)
-        ON CONFLICT(id) DO UPDATE SET title=COALESCE($2,canvas.title), graph=$3::jsonb, revision=canvas.revision+1, updated_at=$4 RETURNING *`,
-        [input.id, input.title ?? "未命名画布", json(input.graph), timestamp],
-      );
+      const values = [
+        input.id,
+        input.title ?? "未命名画布",
+        json(input.graph),
+        timestamp,
+      ];
+      const result =
+        input.expectedRevision === undefined
+          ? await client.query(
+              `INSERT INTO canvas(id,title,graph,revision,created_at,updated_at) VALUES($1,$2,$3::jsonb,1,$4,$4)
+              ON CONFLICT(id) DO UPDATE SET title=COALESCE($2,canvas.title), graph=$3::jsonb, revision=canvas.revision+1, updated_at=$4 RETURNING *`,
+              values,
+            )
+          : await client.query(
+              `WITH updated AS (
+                UPDATE canvas
+                SET title=COALESCE($2,canvas.title), graph=$3::jsonb,
+                    revision=canvas.revision+1, updated_at=$4
+                WHERE id=$1 AND revision=$5
+                RETURNING *
+              ), inserted AS (
+                INSERT INTO canvas(id,title,graph,revision,created_at,updated_at)
+                SELECT $1,$2,$3::jsonb,1,$4,$4
+                WHERE $5=0 AND NOT EXISTS (SELECT 1 FROM canvas WHERE id=$1)
+                ON CONFLICT(id) DO NOTHING
+                RETURNING *
+              )
+              SELECT * FROM updated
+              UNION ALL
+              SELECT * FROM inserted`,
+              [...values, input.expectedRevision],
+            );
+      if (!result.rows[0] && input.expectedRevision !== undefined) {
+        const current = await client.query(
+          "SELECT revision FROM canvas WHERE id=$1",
+          [input.id],
+        );
+        throw new CanvasRevisionConflictError(
+          input.expectedRevision,
+          Number(current.rows[0]?.revision ?? 0),
+        );
+      }
       const record = this.canvasRow(result.rows[0]);
       await client.query(
         "INSERT INTO canvas_revision(id,canvas_id,graph,reason,created_at) VALUES($1,$2,$3::jsonb,$4,$5)",
@@ -281,6 +325,377 @@ export class PostgresRepository implements Repository {
     await this.pool.query("DELETE FROM provider_connection WHERE id=$1", [id]);
   }
 
+  private directorProfileRow(
+    row: Record<string, unknown>,
+  ): DirectorProfileRecord {
+    return {
+      id: String(row.id),
+      brainConnectionId: String(row.brain_connection_id),
+      brainModelId: String(row.brain_model_id),
+      researchConnectionId: row.research_connection_id as string | null,
+      config: parse<JsonObject>(row.config, {}),
+      createdAt: iso(row.created_at as Date),
+      updatedAt: iso(row.updated_at as Date),
+    };
+  }
+
+  async getDirectorProfile(id: string): Promise<DirectorProfileRecord | null> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "SELECT * FROM director_profile WHERE id=$1",
+      [id],
+    );
+    return result.rows[0] ? this.directorProfileRow(result.rows[0]) : null;
+  }
+
+  async saveDirectorProfile(
+    input: Omit<DirectorProfileRecord, "createdAt" | "updatedAt">,
+  ): Promise<DirectorProfileRecord> {
+    await this.ensureReady();
+    const timestamp = new Date();
+    const result = await this.pool.query(
+      `INSERT INTO director_profile(id,brain_connection_id,brain_model_id,research_connection_id,config,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5::jsonb,$6,$6)
+       ON CONFLICT(id) DO UPDATE
+       SET brain_connection_id=$2,brain_model_id=$3,research_connection_id=$4,config=$5::jsonb,updated_at=$6
+       RETURNING *`,
+      [
+        input.id,
+        input.brainConnectionId,
+        input.brainModelId,
+        input.researchConnectionId ?? null,
+        json(input.config),
+        timestamp,
+      ],
+    );
+    return this.directorProfileRow(result.rows[0]);
+  }
+
+  async deleteDirectorProfile(id: string): Promise<void> {
+    await this.ensureReady();
+    await this.pool.query("DELETE FROM director_profile WHERE id=$1", [id]);
+  }
+
+  private directorSessionRow(
+    row: Record<string, unknown>,
+  ): DirectorSessionRecord {
+    return {
+      id: String(row.id),
+      canvasId: String(row.canvas_id),
+      profileId: row.profile_id as string | null,
+      title: String(row.title),
+      metadata: parse<JsonObject>(row.metadata, {}),
+      createdAt: iso(row.created_at as Date),
+      updatedAt: iso(row.updated_at as Date),
+    };
+  }
+
+  async createDirectorSession(
+    input: Omit<DirectorSessionRecord, "createdAt" | "updatedAt">,
+  ): Promise<DirectorSessionRecord> {
+    await this.ensureReady();
+    const timestamp = new Date();
+    const result = await this.pool.query(
+      `INSERT INTO director_session(id,canvas_id,profile_id,title,metadata,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5::jsonb,$6,$6) RETURNING *`,
+      [
+        input.id,
+        input.canvasId,
+        input.profileId ?? null,
+        input.title,
+        json(input.metadata),
+        timestamp,
+      ],
+    );
+    return this.directorSessionRow(result.rows[0]);
+  }
+
+  async getDirectorSession(id: string): Promise<DirectorSessionRecord | null> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "SELECT * FROM director_session WHERE id=$1",
+      [id],
+    );
+    return result.rows[0] ? this.directorSessionRow(result.rows[0]) : null;
+  }
+
+  async listDirectorSessions(
+    canvasId?: string,
+  ): Promise<DirectorSessionRecord[]> {
+    await this.ensureReady();
+    const result = canvasId
+      ? await this.pool.query(
+          "SELECT * FROM director_session WHERE canvas_id=$1 ORDER BY updated_at DESC",
+          [canvasId],
+        )
+      : await this.pool.query(
+          "SELECT * FROM director_session ORDER BY updated_at DESC",
+        );
+    return result.rows.map((row) => this.directorSessionRow(row));
+  }
+
+  async updateDirectorSession(
+    id: string,
+    patch: Partial<
+      Pick<DirectorSessionRecord, "title" | "metadata" | "profileId">
+    >,
+  ): Promise<DirectorSessionRecord | null> {
+    await this.ensureReady();
+    const values: unknown[] = [id];
+    const sets: string[] = [];
+    const add = (column: string, value: unknown, jsonb = false) => {
+      values.push(value);
+      sets.push(`${column}=$${values.length}${jsonb ? "::jsonb" : ""}`);
+    };
+    if (patch.title !== undefined) add("title", patch.title);
+    if (patch.metadata !== undefined)
+      add("metadata", json(patch.metadata), true);
+    if (patch.profileId !== undefined) add("profile_id", patch.profileId);
+    if (sets.length === 0) return this.getDirectorSession(id);
+    sets.push("updated_at=now()");
+    const result = await this.pool.query(
+      `UPDATE director_session SET ${sets.join(",")} WHERE id=$1 RETURNING *`,
+      values,
+    );
+    return result.rows[0] ? this.directorSessionRow(result.rows[0]) : null;
+  }
+
+  async deleteDirectorSession(id: string): Promise<void> {
+    await this.ensureReady();
+    await this.pool.query("DELETE FROM director_session WHERE id=$1", [id]);
+  }
+
+  private directorMessageRow(
+    row: Record<string, unknown>,
+  ): DirectorMessageRecord {
+    return {
+      id: String(row.id),
+      sessionId: String(row.session_id),
+      role: row.role as DirectorMessageRecord["role"],
+      content: String(row.content),
+      metadata: parse<JsonObject>(row.metadata, {}),
+      createdAt: iso(row.created_at as Date),
+    };
+  }
+
+  private async touchDirectorSession(id: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE director_session SET updated_at=now() WHERE id=$1",
+      [id],
+    );
+  }
+
+  async createDirectorMessage(
+    input: Omit<DirectorMessageRecord, "createdAt">,
+  ): Promise<DirectorMessageRecord> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      `INSERT INTO director_message(id,session_id,role,content,metadata,created_at)
+       VALUES($1,$2,$3,$4,$5::jsonb,$6) RETURNING *`,
+      [
+        input.id,
+        input.sessionId,
+        input.role,
+        input.content,
+        json(input.metadata),
+        new Date(),
+      ],
+    );
+    await this.touchDirectorSession(input.sessionId);
+    return this.directorMessageRow(result.rows[0]);
+  }
+
+  async getDirectorMessage(id: string): Promise<DirectorMessageRecord | null> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "SELECT * FROM director_message WHERE id=$1",
+      [id],
+    );
+    return result.rows[0] ? this.directorMessageRow(result.rows[0]) : null;
+  }
+
+  async listDirectorMessages(
+    sessionId: string,
+  ): Promise<DirectorMessageRecord[]> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "SELECT * FROM director_message WHERE session_id=$1 ORDER BY created_at,id",
+      [sessionId],
+    );
+    return result.rows.map((row) => this.directorMessageRow(row));
+  }
+
+  async updateDirectorMessage(
+    id: string,
+    patch: Partial<Pick<DirectorMessageRecord, "content" | "metadata">>,
+  ): Promise<DirectorMessageRecord | null> {
+    await this.ensureReady();
+    const values: unknown[] = [id];
+    const sets: string[] = [];
+    if (patch.content !== undefined) {
+      values.push(patch.content);
+      sets.push(`content=$${values.length}`);
+    }
+    if (patch.metadata !== undefined) {
+      values.push(json(patch.metadata));
+      sets.push(`metadata=$${values.length}::jsonb`);
+    }
+    if (sets.length === 0) return this.getDirectorMessage(id);
+    const result = await this.pool.query(
+      `UPDATE director_message SET ${sets.join(",")} WHERE id=$1 RETURNING *`,
+      values,
+    );
+    if (!result.rows[0]) return null;
+    const record = this.directorMessageRow(result.rows[0]);
+    await this.touchDirectorSession(record.sessionId);
+    return record;
+  }
+
+  async deleteDirectorMessage(id: string): Promise<void> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "DELETE FROM director_message WHERE id=$1 RETURNING session_id",
+      [id],
+    );
+    if (result.rows[0])
+      await this.touchDirectorSession(String(result.rows[0].session_id));
+  }
+
+  private directorProposalRow(
+    row: Record<string, unknown>,
+  ): DirectorProposalRecord {
+    return {
+      id: String(row.id),
+      sessionId: String(row.session_id),
+      canvasId: String(row.canvas_id),
+      version: Number(row.version),
+      status: row.status as DirectorProposalRecord["status"],
+      baseCanvasRevision: Number(row.base_canvas_revision),
+      plan: parse<JsonObject>(row.plan, {}),
+      quote: parse<JsonObject>(row.quote, {}),
+      knowledgeVersion: String(row.knowledge_version),
+      catalogFingerprint: String(row.catalog_fingerprint),
+      expiresAt: iso(row.expires_at as Date),
+      workflowRunId: row.workflow_run_id as string | null,
+      createdAt: iso(row.created_at as Date),
+      updatedAt: iso(row.updated_at as Date),
+    };
+  }
+
+  async createDirectorProposal(
+    input: Omit<DirectorProposalRecord, "createdAt" | "updatedAt">,
+  ): Promise<DirectorProposalRecord> {
+    await this.ensureReady();
+    const timestamp = new Date();
+    const result = await this.pool.query(
+      `INSERT INTO director_proposal(id,session_id,canvas_id,version,status,base_canvas_revision,plan,quote,knowledge_version,catalog_fingerprint,expires_at,workflow_run_id,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13,$13) RETURNING *`,
+      [
+        input.id,
+        input.sessionId,
+        input.canvasId,
+        input.version,
+        input.status,
+        input.baseCanvasRevision,
+        json(input.plan),
+        json(input.quote),
+        input.knowledgeVersion,
+        input.catalogFingerprint,
+        input.expiresAt,
+        input.workflowRunId ?? null,
+        timestamp,
+      ],
+    );
+    await this.touchDirectorSession(input.sessionId);
+    return this.directorProposalRow(result.rows[0]);
+  }
+
+  async getDirectorProposal(
+    id: string,
+  ): Promise<DirectorProposalRecord | null> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "SELECT * FROM director_proposal WHERE id=$1",
+      [id],
+    );
+    return result.rows[0] ? this.directorProposalRow(result.rows[0]) : null;
+  }
+
+  async listDirectorProposals(
+    sessionId: string,
+  ): Promise<DirectorProposalRecord[]> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "SELECT * FROM director_proposal WHERE session_id=$1 ORDER BY created_at DESC",
+      [sessionId],
+    );
+    return result.rows.map((row) => this.directorProposalRow(row));
+  }
+
+  async updateDirectorProposal(
+    id: string,
+    patch: Partial<
+      Omit<
+        DirectorProposalRecord,
+        "id" | "sessionId" | "canvasId" | "createdAt" | "updatedAt"
+      >
+    >,
+    options: DirectorProposalUpdateOptions = {},
+  ): Promise<DirectorProposalRecord | null> {
+    await this.ensureReady();
+    if (options.expectedStatuses?.length === 0) return null;
+    const values: unknown[] = [id];
+    const sets: string[] = [];
+    const add = (column: string, value: unknown, jsonb = false) => {
+      values.push(value);
+      sets.push(`${column}=$${values.length}${jsonb ? "::jsonb" : ""}`);
+    };
+    if (patch.version !== undefined) add("version", patch.version);
+    if (patch.status !== undefined) add("status", patch.status);
+    if (patch.baseCanvasRevision !== undefined)
+      add("base_canvas_revision", patch.baseCanvasRevision);
+    if (patch.plan !== undefined) add("plan", json(patch.plan), true);
+    if (patch.quote !== undefined) add("quote", json(patch.quote), true);
+    if (patch.knowledgeVersion !== undefined)
+      add("knowledge_version", patch.knowledgeVersion);
+    if (patch.catalogFingerprint !== undefined)
+      add("catalog_fingerprint", patch.catalogFingerprint);
+    if (patch.expiresAt !== undefined) add("expires_at", patch.expiresAt);
+    if (patch.workflowRunId !== undefined)
+      add("workflow_run_id", patch.workflowRunId);
+    if (sets.length === 0) return this.getDirectorProposal(id);
+    sets.push("updated_at=now()");
+    const conditions = ["id=$1"];
+    if (options.expectedVersion !== undefined) {
+      values.push(options.expectedVersion);
+      conditions.push(`version=$${values.length}`);
+    }
+    if (options.expectedStatuses !== undefined) {
+      values.push([...options.expectedStatuses]);
+      conditions.push(`status=ANY($${values.length}::text[])`);
+    }
+    const result = await this.pool.query(
+      `UPDATE director_proposal SET ${sets.join(",")} WHERE ${conditions.join(
+        " AND ",
+      )} RETURNING *`,
+      values,
+    );
+    if (!result.rows[0]) return null;
+    const record = this.directorProposalRow(result.rows[0]);
+    await this.touchDirectorSession(record.sessionId);
+    return record;
+  }
+
+  async deleteDirectorProposal(id: string): Promise<void> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "DELETE FROM director_proposal WHERE id=$1 RETURNING session_id",
+      [id],
+    );
+    if (result.rows[0])
+      await this.touchDirectorSession(String(result.rows[0].session_id));
+  }
+
   private runRow(row: Record<string, unknown>): WorkflowRunRecord {
     return {
       id: String(row.id),
@@ -288,6 +703,7 @@ export class PostgresRepository implements Repository {
       clientRequestId: String(row.client_request_id),
       scope: row.scope as WorkflowRunRecord["scope"],
       nodeId: row.node_id as string | null,
+      nodeIds: parse<string[]>(row.node_ids, []),
       status: row.status as WorkflowRunRecord["status"],
       revisionGraph: parse<JsonObject>(row.revision_graph, {}),
       createdAt: iso(row.created_at as Date),
@@ -311,8 +727,8 @@ export class PostgresRepository implements Repository {
     await this.ensureReady();
     const timestamp = new Date();
     const result = await this.pool.query(
-      `INSERT INTO workflow_run(id,canvas_id,client_request_id,scope,node_id,status,revision_graph,created_at,updated_at)
-       VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$8)
+      `INSERT INTO workflow_run(id,canvas_id,client_request_id,scope,node_id,node_ids,status,revision_graph,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$9)
        ON CONFLICT(canvas_id,client_request_id) DO UPDATE
        SET client_request_id=workflow_run.client_request_id
        RETURNING *`,
@@ -322,6 +738,7 @@ export class PostgresRepository implements Repository {
         input.clientRequestId,
         input.scope,
         input.nodeId ?? null,
+        json(input.nodeIds ?? []),
         input.status,
         json(input.revisionGraph),
         timestamp,

@@ -2,12 +2,18 @@ import { type NextRequest, NextResponse } from "next/server";
 import {
   constantTimeEqual,
   getPublicAuthConfig,
+  isLoopbackHost,
   isTrustedHost,
   normalizeHostHeader,
   PUBLIC_AUTH_COOKIE,
 } from "./lib/public-auth";
 
-const PUBLIC_PATH_PREFIXES = ["/_next/", "/api/public-auth/", "/api/webhooks/"];
+const PUBLIC_PATH_PREFIXES = [
+  "/_next/",
+  "/api/public-auth/",
+  "/api/provider-assets/",
+  "/api/webhooks/",
+];
 /** Provider callbacks carry no Origin and authenticate with their own HMAC. */
 const CSRF_EXEMPT_PREFIXES = ["/api/webhooks/"];
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -45,6 +51,29 @@ function authRequired() {
   );
 }
 
+const LOCAL_ASSET_BRIDGE_PATHS = new Set([
+  "/api/assets/presign",
+  "/api/assets/upload",
+  "/api/assets/import-source",
+]);
+
+function isAllowedLocalAssetBridge(
+  request: NextRequest,
+  host: string,
+  origin: string,
+): boolean {
+  if (!LOCAL_ASSET_BRIDGE_PATHS.has(request.nextUrl.pathname)) return false;
+  if (!isLoopbackHost(host)) return false;
+  try {
+    const publicOrigin = process.env.PUBLIC_BASE_URL
+      ? new URL(process.env.PUBLIC_BASE_URL).origin
+      : "";
+    return Boolean(publicOrigin && new URL(origin).origin === publicOrigin);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Rejects cross-site state-changing calls that would otherwise ride the session
  * cookie. Requests without an Origin header (curl, provider callbacks, tests)
@@ -60,6 +89,7 @@ function isCrossSiteWrite(request: NextRequest, host: string): boolean {
 
   const origin = request.headers.get("origin");
   if (!origin) return false;
+  if (isAllowedLocalAssetBridge(request, host, origin)) return false;
   try {
     return normalizeHostHeader(new URL(origin).host) !== host;
   } catch {

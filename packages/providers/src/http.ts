@@ -1,6 +1,12 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
+import {
+  fetch as undiciFetch,
+  FormData as UndiciFormData,
+  ProxyAgent,
+} from "undici";
+
 import type {
   FetchImplementation,
   ProviderAssetInput,
@@ -53,6 +59,99 @@ export interface ProviderFetchOptions {
 
 const DEFAULT_JSON_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_BINARY_RESPONSE_BYTES = 200 * 1024 * 1024;
+
+let providerProxyUrl = "";
+let providerProxy: ProxyAgent | undefined;
+
+/**
+ * Resolve the proxy at request time instead of module-load time. Next.js can
+ * initialize the provider bundle before the local launcher has finished
+ * loading `.local-public.env`; a one-time lookup would then silently fall
+ * back to a direct connection (which commonly fails with EACCES on TUN/Fake-IP
+ * networks).
+ */
+function currentProviderProxy(): ProxyAgent | undefined {
+  const configured =
+    process.env["PROVIDER_HTTP_PROXY"]?.trim() ||
+    process.env["HTTPS_PROXY"]?.trim() ||
+    process.env["HTTP_PROXY"]?.trim() ||
+    "";
+  if (configured === providerProxyUrl) return providerProxy;
+  providerProxyUrl = configured;
+  if (!configured) {
+    providerProxy = undefined;
+    return undefined;
+  }
+  try {
+    providerProxy = new ProxyAgent(configured);
+  } catch {
+    providerProxy = undefined;
+  }
+  return providerProxy;
+}
+
+/**
+ * Provider requests must use the same local proxy as the browser on machines
+ * with a TUN/Fake-IP adapter. A caller can still inject a fetch implementation
+ * in tests or for a provider-specific transport.
+ */
+const undiciProviderFetch = undiciFetch as unknown as FetchImplementation;
+
+/**
+ * Node's built-in fetch and the npm `undici` package each have their own
+ * FormData implementation. A FormData object created by one implementation
+ * is serialized as `[object FormData]` by the other instead of multipart
+ * form-data. Keep the call sites on the platform FormData API, then convert
+ * it at the transport boundary before using the npm undici client.
+ */
+function normalizeProviderRequestInit(
+  init: RequestInit | undefined,
+): RequestInit | undefined {
+  if (!init?.body || typeof globalThis.FormData !== "function") return init;
+
+  const body = init.body;
+  if (
+    !(body instanceof globalThis.FormData) ||
+    body instanceof UndiciFormData
+  ) {
+    return init;
+  }
+
+  const form = new UndiciFormData();
+  for (const [name, value] of body.entries()) {
+    if (typeof value === "string") {
+      form.append(name, value);
+      continue;
+    }
+
+    const filename =
+      typeof value.name === "string" && value.name.trim()
+        ? value.name
+        : "blob";
+    form.append(name, value, filename);
+  }
+
+  return { ...init, body: form as unknown as BodyInit };
+}
+
+export const providerFetch: FetchImplementation = (input, init) => {
+  // Keep test-injected/global fetch semantics unchanged. Production requests
+  // use the npm undici client so the configured ProxyAgent remains supported.
+  if (process.env["NODE_ENV"] === "test" || process.env["VITEST"] === "true") {
+    return fetch(input, init);
+  }
+
+  const normalizedInit = normalizeProviderRequestInit(init);
+  const proxy = currentProviderProxy();
+  return undiciProviderFetch(
+    input,
+    proxy === undefined
+      ? normalizedInit
+      : ({ ...normalizedInit, dispatcher: proxy } as RequestInit & {
+          dispatcher: ProxyAgent;
+        }),
+  );
+};
 
 class ProviderResponseTooLargeError extends Error {
   public constructor(public readonly maxBytes: number) {
@@ -399,6 +498,14 @@ export async function fetchProviderJson<T>(
           response.status,
         ),
         status: response.status,
+        ...(error instanceof ProviderResponseTooLargeError
+          ? {
+              responseBody: {
+                code: "response_too_large",
+                message: error.message,
+              },
+            }
+          : {}),
         cause: error,
       });
     }
@@ -426,6 +533,11 @@ export async function fetchProviderJson<T>(
         options.phase,
         response.status,
       ),
+      status: response.status,
+      responseBody: {
+        code: "empty_response",
+        message: "Provider returned an empty response",
+      },
     });
   }
   return body as T;

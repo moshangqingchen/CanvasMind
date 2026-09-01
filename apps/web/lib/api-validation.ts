@@ -80,12 +80,19 @@ export const UpdateCanvasRequestSchema = z
   .object({
     title: CanvasTitleSchema.optional(),
     graph: CanvasGraphSchema,
+    expectedRevision: z.number().int().nonnegative().safe().optional(),
   })
   .strict();
 
 export { CreateRunRequestSchema };
 
-export const ProviderKindSchema = z.enum(["openai", "runway", "rest", "fake"]);
+export const ProviderKindSchema = z.enum([
+  "openai",
+  "weai",
+  "runway",
+  "rest",
+  "fake",
+]);
 
 interface JsonInspectionState {
   readonly seen: WeakSet<object>;
@@ -323,6 +330,8 @@ export const AgentChatRequestSchema = z
 export const RunsQuerySchema = z
   .object({
     canvasId: IdentifierSchema.optional(),
+    runIds: z.string().max(6_500).optional(),
+    clientRequestIds: z.string().max(6_500).optional(),
   })
   .strict();
 

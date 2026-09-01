@@ -79,9 +79,17 @@ export async function POST(request: Request) {
 
   recordLoginSuccess(key);
   const response = NextResponse.json({ ok: true }, { headers: NO_STORE });
+  const forwardedProto = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  const requestProtocol = new URL(request.url).protocol;
+  const isSecureRequest =
+    forwardedProto === "https" || requestProtocol === "https:";
   response.cookies.set(PUBLIC_AUTH_COOKIE, config.sessionToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && isSecureRequest,
     // "lax" keeps inbound links working; cross-site writes are blocked by the
     // Origin check in proxy.ts rather than by the cookie policy alone.
     sameSite: "lax",

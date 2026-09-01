@@ -19,9 +19,11 @@ import {
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
+  ViewportPortal,
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  useUpdateNodeInternals,
   type Connection,
   type OnConnectStart,
   type OnConnect,
@@ -29,6 +31,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import {
+  Archive,
   ArrowUpRight,
   CircleAlert,
   CircleCheck,
@@ -44,6 +47,7 @@ import {
   Image as ImageIcon,
   Keyboard,
   KeyRound,
+  LayoutGrid,
   MousePointer2,
   MoreHorizontal,
   Minus,
@@ -63,30 +67,38 @@ import {
 } from "lucide-react";
 import {
   arePortKindsCompatible,
-  validateGraph,
   wouldCreateCycle,
-  WorkflowGraphSchema,
   renderPromptParts,
   type NodeRunStatus,
   type PortKind,
   type PromptPart,
 } from "@super-canvas/core";
+import type { DirectorGraphPatch } from "@super-canvas/director";
+import type { DirectorApproveResult } from "../lib/director-contracts";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { appendPriceLabelOnce } from "../lib/model-display";
 import {
   createRun,
   claimMaterialDrop,
+  canvasErrorMessage,
   deleteAssets,
   discardMaterialDrop,
   fetchAssets,
   fetchCanvas,
   fetchCangyuanCatalog,
   fetchConnections,
+  getCachedModels,
+  invalidateModelCache,
   fetchModels,
   fetchMaterialDrops,
   fetchRun,
-  fetchRuns,
+  fetchVisibleRuns,
+  importDroppedMediaSources,
+  resumeRun,
   saveCanvas,
   uploadAsset,
+  CanvasSaveConflictError,
+  type CanvasResponse,
   type ProviderConnectionView,
 } from "../lib/client-api";
 import {
@@ -95,6 +107,12 @@ import {
   isCangyuanImageGroup,
   isCangyuanImagePreset,
 } from "../lib/provider-presets";
+import { chentuFallbackImageDescriptor } from "../lib/chentu-catalog";
+import { CHENTU_PRESET_ID } from "../lib/chentu-presets";
+import {
+  FRIMODEL_PRESET_ID,
+  friModelFallbackImageDescriptor,
+} from "../lib/frimodel-presets";
 import {
   providerConnectionGroup,
   providerConnectionSupplierKey,
@@ -102,7 +120,26 @@ import {
   providerSupplierLabel,
 } from "../lib/provider-connection-options";
 import { LatestTaskQueue } from "../lib/latest-task-queue";
-import { normalizeDraggedMediaFile } from "../lib/dropped-media";
+import {
+  applyPendingNodeConfigurations,
+  clearPersistedNodeConfigurations,
+  journalNodeConfiguration,
+  readPendingNodeConfigurations,
+  type PendingNodeConfiguration,
+} from "../lib/node-configuration-journal";
+import {
+  droppedMediaUrlsFromStrings,
+  filesFromDroppedMediaUrls,
+  mapWithConcurrency,
+  normalizeClipboardImageFile,
+  prepareImportableMediaFile,
+  preferNamedClipboardImages,
+} from "../lib/dropped-media";
+import {
+  filterEdgesToKnownPorts,
+  hasEdgeForNodePair,
+  keepLatestEdgePerNodePair,
+} from "../lib/canvas-connections";
 import {
   CANVAS_MAX_ZOOM,
   CANVAS_MIN_ZOOM,
@@ -116,10 +153,26 @@ import {
   zoomViewportAtPoint,
 } from "../lib/drawing";
 import { localizeRunError } from "../lib/error-localization";
+import { removeUnreturnedGeneratedResults } from "../lib/generated-result-sync";
+import {
+  collectReferencedAssetIds,
+  createPortableProjectPackage,
+  prepareProjectImport,
+  PROJECT_JSON_FORMAT,
+  PROJECT_PACKAGE_EXTENSION,
+  uploadPreparedPackageAssets,
+  type PreparedProjectImport,
+} from "../lib/project-transfer";
 import { removeDeletedAssetsFromGraph } from "../lib/generation-history";
+import {
+  isPendingGeneratedResultStatus,
+  shouldMarkPendingRunMissing,
+} from "../lib/pending-run-reconciliation";
 import {
   directLinkedAssetsForNode,
   linkedMediaLimitText,
+  removeDirectLinkedAssetEdges,
+  removeUnavailableAssetMentions,
   validateLinkedMediaInputs,
 } from "../lib/linked-media";
 import {
@@ -128,29 +181,48 @@ import {
   closestAvailableVerticalPosition,
   getAutoConnectionOptions,
   getAutoConnectionTargetHandle,
+  hasSelectedBrowserText,
   isCanvasHistoryShortcutAllowed,
   isCanvasShortcutAllowed,
+  modelCanvasUnavailableReason,
   modelSupportsNodeType,
+  preferredCanvasLayoutDirection,
   providerSupportsNodeType,
   shouldPersistNodeChanges,
+  tidyCanvasRectPositions,
   type AutoConnectNodeType,
   type NodeAlignmentAction,
 } from "../lib/graph-ui";
 import {
-  modelDescriptorFromConnectionConfig,
+  modelDescriptorForSavedSelection,
+  modelDescriptorForSavedSelectionOrDefault,
+  modelDescriptorListsEqual,
   modelDescriptorsFromConnectionConfig,
+  normalizedParametersForModel,
   parameterDescriptorsFor,
   parametersWithDefaults,
 } from "../lib/model-parameters";
-import { AgentPanel, type AgentDraftRequest } from "./agent-panel";
+import {
+  weAiCanvasModelDescriptors,
+  weAiCanvasModelDescriptorsFromSavedScan,
+  weAiSizePresetForTier,
+} from "../lib/weai-catalog";
+import {
+  SuperDirectorPanel,
+  type AgentDraftRequest,
+} from "./super-director-panel";
+import { AgentPanel } from "./agent-panel";
+import { CanvasSaveConflictModal } from "./canvas-save-conflict-modal";
 import { DrawingLayer } from "./drawing-layer";
 import { NodeParameterFields } from "./node-parameter-fields";
+import { ProjectImportModal } from "./project-import-modal";
 import { ShortcutsModal } from "./shortcuts-modal";
 import { useCanvasStore } from "./canvas-store";
 import { WorkflowNode } from "./workflow-node";
 import {
   AssetPreviewModal,
   GenerationHistoryModal,
+  RunHistoryModal,
   SettingsModal,
 } from "./workspace-modals";
 import type {
@@ -174,18 +246,30 @@ interface ToastMessage {
 }
 
 /** Reflects the autosave pipeline so the top bar can stop guessing. */
-type SaveState = "saved" | "pending" | "saving" | "error";
+type SaveState = "saved" | "pending" | "saving" | "error" | "conflict";
+
+type CanvasInitializationState =
+  | { status: "loading" }
+  | { status: "ready" }
+  | { status: "error"; message: string };
+
+type InspectorMode = "node" | "agent";
 
 const SAVE_STATE_LABEL: Record<SaveState, string> = {
   saved: "已保存",
   pending: "待保存",
   saving: "保存中",
   error: "保存失败",
+  conflict: "保存冲突",
 };
 
 const nodeTypes = { workflow: WorkflowNode };
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "超级画布";
+const DIRECTOR_FEATURE_ENABLED =
+  process.env.NEXT_PUBLIC_DIRECTOR_ENABLED !== "false";
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
+const NODE_CLIPBOARD_TYPE = "application/x-super-canvas-nodes";
+const CANVAS_INITIALIZATION_TIMEOUT_MS = 20_000;
 const terminalRunStatuses = new Set([
   "succeeded",
   "failed",
@@ -202,7 +286,7 @@ const terminalGeneratedResultStatuses = new Set<NodeRunStatus>([
 const GENERATED_RESULT_INPUT_HANDLE = "generated";
 const GENERATED_RESULT_EDGE_PREFIX = "edge-generated-";
 const MATERIAL_DROP_LEASE_STORAGE_KEY = "super-canvas:material-drop-consumer";
-const INSPECTOR_MIN_WIDTH = 280;
+const INSPECTOR_MIN_WIDTH = 300;
 const INSPECTOR_DEFAULT_WIDTH = 300;
 const INSPECTOR_MAX_WIDTH = 720;
 const INSPECTOR_WIDTH_STORAGE_KEY = "super-canvas:inspector-width";
@@ -222,11 +306,10 @@ type RunScope = "node" | "downstream" | "all";
 interface RunRequestKey {
   nodeId: string | undefined;
   scope: RunScope;
-  retryResultNodeId?: string;
 }
 
 function runRequestKey(request: RunRequestKey): string {
-  return `${request.scope}:${request.nodeId ?? "all"}:${request.retryResultNodeId ?? "new"}`;
+  return `${request.scope}:${request.nodeId ?? "all"}`;
 }
 
 function clampInspectorWidth(width: number): number {
@@ -267,6 +350,77 @@ interface CanvasSaveRequest {
   canvasId: string;
   graph: CanvasDocument;
   title: string;
+  keepalive?: boolean;
+  expectedRevision?: number;
+  pendingNodeConfigurations?: PendingNodeConfiguration[];
+}
+
+interface CanvasSaveConflictState {
+  expectedRevision: number;
+  currentRevision: number;
+  message: string;
+}
+
+interface CanvasViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export function canvasViewportsEqual(
+  left: CanvasViewport,
+  right: CanvasViewport,
+  epsilon = 0.000_001,
+): boolean {
+  return (
+    Math.abs(left.x - right.x) <= epsilon &&
+    Math.abs(left.y - right.y) <= epsilon &&
+    Math.abs(left.zoom - right.zoom) <= epsilon
+  );
+}
+
+export async function persistCanvasSaveRequest(
+  request: CanvasSaveRequest,
+): Promise<CanvasResponse> {
+  if (!request.keepalive) {
+    return saveCanvas(
+      request.canvasId,
+      request.graph,
+      request.title,
+      request.expectedRevision,
+    );
+  }
+
+  const response = await fetch(
+    `/api/canvas/${encodeURIComponent(request.canvasId)}`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        graph: request.graph,
+        title: request.title,
+        expectedRevision: request.expectedRevision,
+      }),
+      keepalive: true,
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as
+    | (Partial<CanvasResponse> & {
+        error?: string;
+        code?: string;
+        currentRevision?: number;
+        issues?: unknown;
+      })
+    | null;
+  if (response.status === 409 && payload?.code === "CANVAS_REVISION_CONFLICT") {
+    throw new CanvasSaveConflictError(
+      payload.currentRevision ?? request.expectedRevision ?? 0,
+      payload.error,
+    );
+  }
+  if (!response.ok)
+    throw new Error(canvasErrorMessage(payload, "画布保存失败"));
+  return payload as CanvasResponse;
 }
 
 const port = (
@@ -324,7 +478,7 @@ function createNode(
         port("references", "image[]", "参考图", false, true),
       ],
       outputs: [port("images", "image", "图片")],
-      parameters: { size: "1024x1024", quality: "auto", n: 1 },
+      parameters: { size: "1024x1024", quality: "high", n: 1 },
     });
   if (type === "video-generation")
     Object.assign(base, {
@@ -404,6 +558,172 @@ function createAssetInputNode(
   return node;
 }
 
+interface PendingAssetImport {
+  file: File;
+  node: CanvasNode;
+  nodeId: string;
+  previewUrl?: string;
+}
+
+export interface PendingNativeDrop {
+  nodeId: string;
+  createdAt: number;
+}
+
+const NATIVE_DROP_DEDUPE_WINDOW_MS = 8_000;
+
+export function nativeDropContentKey(input: {
+  name: string;
+  size: number;
+}): string {
+  return JSON.stringify([input.name, input.size]);
+}
+
+export function filesForNativeDrop(
+  fileListFiles: readonly File[],
+  itemFiles: readonly File[],
+): File[] {
+  // `DataTransfer.files` and `DataTransfer.items` usually expose the same
+  // files as separate File objects. Prefer the canonical file list so two
+  // genuinely distinct files with identical metadata are not collapsed.
+  return [...(fileListFiles.length > 0 ? fileListFiles : itemFiles)];
+}
+
+interface NativeDropFileHandle {
+  kind: string;
+  getFile?: () => Promise<File>;
+}
+
+interface NativeDropFileEntry {
+  isFile: boolean;
+  file: (
+    success: (file: File) => void,
+    failure?: (error: DOMException) => void,
+  ) => void;
+}
+
+type ExtendedNativeDropItem = DataTransferItem & {
+  getAsFileSystemHandle?: () => Promise<NativeDropFileHandle | null>;
+  webkitGetAsEntry?: () => NativeDropFileEntry | null;
+};
+
+function fileFromNativeDropEntry(
+  entry: NativeDropFileEntry | null,
+): Promise<File | null> {
+  if (!entry?.isFile) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      entry.file(resolve, () => resolve(null));
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Chromium can expose files dragged from desktop applications through three
+ * different surfaces. WeChat and other Electron apps sometimes leave the
+ * classic FileList empty while still exposing a File System Access handle or
+ * a legacy FileEntry, so try all of them while the drop permission is active.
+ */
+export async function filesFromNativeDrop(
+  fileListFiles: readonly File[],
+  transferItems: readonly DataTransferItem[],
+): Promise<File[]> {
+  if (fileListFiles.length > 0) return [...fileListFiles];
+
+  const fileItems = transferItems.filter((item) => item.kind === "file");
+  const pending = fileItems.map((rawItem) => {
+    const item = rawItem as ExtendedNativeDropItem;
+    const direct = item.getAsFile();
+    if (direct) return { direct, handle: null, entry: null };
+
+    let handle: Promise<NativeDropFileHandle | null> | null = null;
+    try {
+      handle = item.getAsFileSystemHandle?.() ?? null;
+    } catch {
+      handle = null;
+    }
+
+    let entry: NativeDropFileEntry | null = null;
+    try {
+      entry =
+        (
+          rawItem as unknown as {
+            webkitGetAsEntry?: () => NativeDropFileEntry | null;
+          }
+        ).webkitGetAsEntry?.() ?? null;
+    } catch {
+      entry = null;
+    }
+    return { direct: null, handle, entry };
+  });
+
+  const files = await Promise.all(
+    pending.map(async ({ direct, handle, entry }) => {
+      if (direct) return direct;
+      if (handle) {
+        try {
+          const resolved = await handle;
+          if (resolved?.kind === "file" && resolved.getFile)
+            return await resolved.getFile();
+        } catch {
+          // Fall through to the older FileEntry API below.
+        }
+      }
+      return fileFromNativeDropEntry(entry);
+    }),
+  );
+  return files.filter((file): file is File => Boolean(file));
+}
+
+export function availablePendingNativeDrop(
+  entries: readonly PendingNativeDrop[],
+  unavailableNodeIds: ReadonlySet<string>,
+  now: number,
+): PendingNativeDrop | undefined {
+  return entries.find(
+    (entry) =>
+      now - entry.createdAt < NATIVE_DROP_DEDUPE_WINDOW_MS &&
+      !unavailableNodeIds.has(entry.nodeId),
+  );
+}
+
+function createPendingAssetInputNode(
+  file: File,
+  position: { x: number; y: number },
+  index: number,
+): { node: CanvasNode; previewUrl?: string } {
+  const kind = file.type.startsWith("video/")
+    ? "video"
+    : file.type.startsWith("audio/")
+      ? "audio"
+      : "image";
+  const previewUrl =
+    (kind === "image" || kind === "video") &&
+    typeof URL.createObjectURL === "function"
+      ? URL.createObjectURL(file)
+      : undefined;
+  const node = createNode("asset-input", position, index);
+  node.id = `pending-import-${crypto.randomUUID()}`;
+  node.data = {
+    ...node.data,
+    label: file.name || "剪贴板素材",
+    description: "素材已放入画布，正在后台导入…",
+    assetKind: kind,
+    pendingImport: true,
+    ...(previewUrl ? { pendingPreviewUrl: previewUrl } : {}),
+    outputs: [
+      port(
+        "asset",
+        kind,
+        kind === "video" ? "视频" : kind === "audio" ? "音频" : "图片",
+      ),
+    ],
+  };
+  return { node, ...(previewUrl ? { previewUrl } : {}) };
+}
+
 function positiveDimension(...values: unknown[]): number | undefined {
   for (const value of values) {
     const parsed = typeof value === "number" ? value : Number(value);
@@ -473,38 +793,6 @@ function nodeGroupBounds(nodes: readonly CanvasNode[]): {
   };
 }
 
-function linkedAssetsForNode(
-  nodeId: string,
-  nodes: readonly CanvasNode[],
-  edges: readonly CanvasEdge[],
-  assets: readonly AssetView[],
-): AssetView[] {
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const upstream = new Set<string>();
-  const queue = [nodeId];
-  while (queue.length > 0) {
-    const target = queue.shift();
-    if (!target) continue;
-    for (const edge of edges) {
-      if (edge.target !== target || upstream.has(edge.source)) continue;
-      upstream.add(edge.source);
-      queue.push(edge.source);
-    }
-  }
-
-  const assetIds = new Set<string>();
-  for (const upstreamId of upstream) {
-    const data = nodeById.get(upstreamId)?.data;
-    if (!data) continue;
-    if (typeof data.assetId === "string") assetIds.add(data.assetId);
-    for (const assetId of data.lastOutputAssetIds ?? []) assetIds.add(assetId);
-    for (const part of data.parts ?? []) {
-      if (part.type === "asset") assetIds.add(part.assetId);
-    }
-  }
-  return assets.filter((asset) => assetIds.has(asset.id));
-}
-
 function generatedResultPosition(
   source: CanvasNode,
   width: number,
@@ -525,50 +813,6 @@ function generatedResultPosition(
       ...nodeDimensions(node),
     })),
   );
-}
-
-function layoutGeneratedResults(nodes: CanvasNode[]): CanvasNode[] {
-  const sources = new Map(nodes.map((node) => [node.id, node]));
-  const generated = nodes
-    .filter(
-      (node) =>
-        node.data.generatedResult === true &&
-        typeof node.data.generatedFromNodeId === "string",
-    )
-    .sort(
-      (left, right) =>
-        (left.data.generatedFromNodeId ?? "").localeCompare(
-          right.data.generatedFromNodeId ?? "",
-        ) ||
-        (left.data.generatedOutputIndex ?? 0) -
-          (right.data.generatedOutputIndex ?? 0),
-    );
-  if (generated.length === 0) return nodes;
-
-  const occupied = nodes.filter((node) => node.data.generatedResult !== true);
-  let changed = false;
-  const next = nodes.map((node) => {
-    if (node.data.generatedResult !== true) return node;
-    const sourceId = node.data.generatedFromNodeId;
-    const source = sourceId ? sources.get(sourceId) : undefined;
-    if (!source) return node;
-    const size = nodeDimensions(node);
-    const position = generatedResultPosition(
-      source,
-      size.width,
-      size.height,
-      occupied,
-    );
-    occupied.push({ ...node, position });
-    if (
-      Math.abs(node.position.x - position.x) < 0.5 &&
-      Math.abs(node.position.y - position.y) < 0.5
-    )
-      return node;
-    changed = true;
-    return { ...node, position };
-  });
-  return changed ? next : nodes;
 }
 
 function createGeneratedResultNode(
@@ -678,6 +922,9 @@ function generatedResultEdge(
     targetHandle: GENERATED_RESULT_INPUT_HANDLE,
     type: "smoothstep",
     animated,
+    selectable: false,
+    deletable: false,
+    focusable: false,
   };
 }
 
@@ -692,7 +939,10 @@ function sameGeneratedResultEdge(
     current.target === expected.target &&
     current.targetHandle === expected.targetHandle &&
     current.type === expected.type &&
-    current.animated === expected.animated
+    current.animated === expected.animated &&
+    current.selectable === expected.selectable &&
+    current.deletable === expected.deletable &&
+    current.focusable === expected.focusable
   );
 }
 
@@ -752,8 +1002,11 @@ function syncGeneratedResultEdges(
 function generatedOutputCount(
   source: CanvasNode,
   archivedOutputCount: number,
+  frozenRequestedCount?: unknown,
 ): number {
-  const configured = Number(source.data.parameters?.n ?? 1);
+  const configured = Number(
+    frozenRequestedCount ?? source.data.parameters?.n ?? 1,
+  );
   const requested =
     Number.isFinite(configured) && configured > 0
       ? Math.min(10, Math.max(1, Math.trunc(configured)))
@@ -765,8 +1018,9 @@ function generatedResultError(
   status: NodeRunStatus,
   error: RunErrorDetails | null | undefined,
   provider?: string,
+  supplier?: string,
 ): string | RunErrorDetails | undefined {
-  const localized = localizeRunError(error, { provider });
+  const localized = localizeRunError(error, { provider, supplier });
   if (localized) return localized;
   if (status === "failed") return "生成失败";
   if (status === "cancelled") return "生成已取消";
@@ -786,7 +1040,11 @@ function sameRunError(
     left.type === right.type &&
     left.code === right.code &&
     left.api === right.api &&
-    left.docsUrl === right.docsUrl
+    left.statusCode === right.statusCode &&
+    left.providerMessage === right.providerMessage &&
+    left.docsUrl === right.docsUrl &&
+    left.actionUrl === right.actionUrl &&
+    left.actionLabel === right.actionLabel
   );
 }
 
@@ -827,6 +1085,37 @@ function generationNodesForRun(
       (node.data.nodeType === "image-generation" ||
         node.data.nodeType === "video-generation"),
   );
+}
+
+function pendingAssetReferencesForRun(
+  nodes: readonly CanvasNode[],
+  edges: readonly CanvasEdge[],
+  nodeId: string | undefined,
+  scope: "node" | "downstream" | "all",
+): CanvasNode[] {
+  const generationIds = new Set(
+    generationNodesForRun(nodes, edges, nodeId, scope).map((node) => node.id),
+  );
+  if (generationIds.size === 0) return [];
+  const pendingIds = new Set(
+    nodes
+      .filter(
+        (node) =>
+          node.data.nodeType === "asset-input" &&
+          node.data.pendingImport === true,
+      )
+      .map((node) => node.id),
+  );
+  if (pendingIds.size === 0) return [];
+  const sourceIds = new Set(
+    edges
+      .filter(
+        (edge) =>
+          generationIds.has(edge.target) && pendingIds.has(edge.source),
+      )
+      .map((edge) => edge.source),
+  );
+  return nodes.filter((node) => sourceIds.has(node.id));
 }
 
 function promptPartsFromNode(node: CanvasNode | undefined): PromptPart[] {
@@ -870,41 +1159,40 @@ function createPendingGeneratedResults(
 ): CanvasNode[] {
   const additions: CanvasNode[] = [];
   let changed = false;
-  const nextNodes = [...nodes];
+  let nextNodes = [...nodes];
   const sources = generationNodesForRun(nodes, edges, nodeId, scope);
+  const retryTarget = retryResultNodeId
+    ? nodes.find(
+        (node) =>
+          node.id === retryResultNodeId &&
+          node.data.generatedResult === true &&
+          node.data.generatedStatus === "failed",
+      )
+    : undefined;
+  const retryRunId = retryTarget?.data.generatedFromRunId;
 
-  if (retryResultNodeId) {
-    const retryIndex = nextNodes.findIndex(
-      (node) =>
-        node.id === retryResultNodeId &&
-        node.data.generatedResult === true &&
-        sources.some((source) => source.id === node.data.generatedFromNodeId),
+  if (!retryTarget) {
+    const sourceIds = new Set(sources.map((source) => source.id));
+    const outputCounts = new Map(
+      sources.map((source) => [source.id, generatedOutputCount(source, 0)]),
     );
-    if (retryIndex >= 0) {
-      const retryResult = nextNodes[retryIndex]!;
-      const retrySource = sources.find(
-        (source) => source.id === retryResult.data.generatedFromNodeId,
+    const retained = nextNodes.filter((node) => {
+      if (
+        node.data.generatedResult !== true ||
+        node.data.generatedStatus !== "failed" ||
+        node.data.assetId !== undefined ||
+        !sourceIds.has(node.data.generatedFromNodeId ?? "") ||
+        typeof node.data.generatedOutputIndex !== "number"
+      )
+        return true;
+      const outputCount = outputCounts.get(node.data.generatedFromNodeId!);
+      return (
+        outputCount === undefined ||
+        node.data.generatedOutputIndex < outputCount
       );
-      nextNodes[retryIndex] = {
-        ...retryResult,
-        data: {
-          ...retryResult.data,
-          assetId: undefined,
-          generatedStatus: "queued",
-          generatedError: undefined,
-          generatedFromRunId: undefined,
-          generatedPendingRequestId: requestId,
-          ...(retrySource
-            ? {
-                generatedPromptParts: generationPromptParts(
-                  retrySource,
-                  nodes,
-                  edges,
-                ),
-              }
-            : {}),
-        },
-      };
+    });
+    if (retained.length !== nextNodes.length) {
+      nextNodes = retained;
       changed = true;
     }
   }
@@ -939,6 +1227,39 @@ function createPendingGeneratedResults(
         continue;
       }
 
+      const reusableIndex = retryTarget
+        ? nextNodes.findIndex(
+            (node) =>
+              node.data.generatedResult === true &&
+              node.data.generatedStatus === "failed" &&
+              node.data.generatedFromNodeId === source.id &&
+              node.data.generatedOutputIndex === outputIndex &&
+              (node.id === retryTarget.id ||
+                (retryRunId !== undefined &&
+                  node.data.generatedFromRunId === retryRunId)),
+          )
+        : -1;
+      if (reusableIndex >= 0) {
+        const reusable = nextNodes[reusableIndex]!;
+        nextNodes[reusableIndex] = {
+          ...reusable,
+          data: {
+            ...reusable.data,
+            assetId: undefined,
+            generatedStatus: "queued",
+            generatedError: undefined,
+            generatedFromRunId: undefined,
+            generatedPendingRequestId: requestId,
+            generatedCreatedAt: new Date().toISOString(),
+            generatedPromptParts: structuredClone(
+              generationPromptParts(source, nodes, edges),
+            ),
+          },
+        };
+        changed = true;
+        continue;
+      }
+
       const pendingNode = createGeneratedResultNode(
         source,
         `pending-${requestId}`,
@@ -952,6 +1273,7 @@ function createPendingGeneratedResults(
       );
       pendingNode.data.generatedFromRunId = undefined;
       pendingNode.data.generatedPendingRequestId = requestId;
+      pendingNode.data.generatedCreatedAt = new Date().toISOString();
       additions.push(pendingNode);
       changed = true;
     }
@@ -969,16 +1291,58 @@ function defaultModelForConnection(
     : undefined;
 }
 
+function verifiedWeAiModelDescriptorsForConnection(
+  connection: ProviderConnectionView,
+): ModelDescriptor[] {
+  if (
+    connection.provider === "weai" &&
+    providerConnectionSupplierKey(connection) === "weai"
+  ) {
+    return weAiCanvasModelDescriptors(
+      providerConnectionGroup(connection),
+      connection.config.protocol,
+      connection.config.defaultModel,
+    );
+  }
+  return [];
+}
+
+function connectionRequiresAuthoritativeModelScan(
+  connection: ProviderConnectionView,
+): boolean {
+  return (
+    verifiedWeAiModelDescriptorsForConnection(connection).length > 0 ||
+    connection.config.preset === "cyberafei-api" ||
+    connection.config.preset === CHENTU_PRESET_ID ||
+    connection.config.preset === FRIMODEL_PRESET_ID
+  );
+}
+
+function modelDescriptorsForConnection(
+  connection: ProviderConnectionView,
+): ModelDescriptor[] {
+  if (
+    connection.provider === "weai" &&
+    providerConnectionSupplierKey(connection) === "weai"
+  ) {
+    const saved = weAiCanvasModelDescriptorsFromSavedScan(connection.config);
+    if (saved) return saved;
+  }
+  const verified = verifiedWeAiModelDescriptorsForConnection(connection);
+  if (verified.length > 0) return verified;
+  return modelDescriptorsFromConnectionConfig(connection.config);
+}
+
 function modelForConnectionAndNode(
   connection: ProviderConnectionView,
   nodeType: "image-generation" | "video-generation",
   preferredId?: string,
 ): ModelDescriptor | null {
-  const compatible = modelDescriptorsFromConnectionConfig(
-    connection.config,
-  ).filter((model) => modelSupportsNodeType(model, nodeType));
+  const compatible = modelDescriptorsForConnection(connection).filter((model) =>
+    modelSupportsNodeType(model, nodeType),
+  );
   return (
-    compatible.find((model) => model.id === preferredId) ??
+    modelDescriptorForSavedSelection(compatible, preferredId) ??
     compatible.find((model) => model.isDefault) ??
     compatible[0] ??
     null
@@ -1071,7 +1435,44 @@ function generationInputsForModel(
   model: ModelDescriptor | null | undefined,
   fallback: CanvasNodeData["inputs"],
 ): CanvasNodeData["inputs"] {
-  if (nodeType === "image-generation" || !model) return fallback;
+  if (nodeType === "image-generation") {
+    const existing = [...(fallback ?? [])];
+    // Image nodes created by older canvas versions may have only a Prompt
+    // input. Restore the canonical reference port whenever the selected model
+    // advertises image editing/reference support, so old edges remain usable.
+    const supportsReferences =
+      !model ||
+      (model.limits?.maxInputImages !== undefined
+        ? model.limits.maxInputImages > 0
+        : model.operations?.includes("image.edit") === true ||
+          model.inputKinds?.some(
+            (kind) => kind === "image" || kind === "image[]",
+          ) === true);
+    if (!supportsReferences)
+      return existing.filter((input) => input.id !== "references");
+    if (existing.length === 0)
+      return [
+        port("prompt", "text", "Prompt", false),
+        port("references", "image[]", "参考图", false, true),
+      ];
+    if (!existing.some((input) => input.id === "references"))
+      existing.push(port("references", "image[]", "参考图", false, true));
+    return existing;
+  }
+  if (!model) return fallback;
+  const hasDeclaredMediaLimits = [
+    model.limits?.maxInputImages,
+    model.limits?.maxInputVideos,
+    model.limits?.maxInputAudios,
+  ].some((value) => value !== undefined);
+  const hasDeclaredReferenceMode =
+    model.metadata?.referenceMode !== undefined ||
+    model.metadata?.supportsFirstLastFrames !== undefined;
+  // Some built-in and legacy model descriptors intentionally omit media
+  // capability metadata. In that case the saved ports are the authoritative
+  // contract; treating an unknown limit as zero would silently remove existing
+  // first-frame/reference connections from the canvas.
+  if (!hasDeclaredMediaLimits && !hasDeclaredReferenceMode) return fallback;
   const inputs = [port("prompt", "text", "Prompt", false)];
   const maxImages = model.limits?.maxInputImages ?? 0;
   const maxVideos = model.limits?.maxInputVideos ?? 0;
@@ -1097,10 +1498,213 @@ function generationInputsForModel(
   return inputs;
 }
 
+function generationInputsEqual(
+  left: CanvasNodeData["inputs"],
+  right: CanvasNodeData["inputs"],
+): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((input, index) => {
+    const other = right[index];
+    return (
+      input.id === other?.id &&
+      input.kind === other.kind &&
+      input.label === other.label &&
+      input.required === other.required &&
+      input.multiple === other.multiple
+    );
+  });
+}
+
+function ensureGenerationNodeInputs(nodes: CanvasNode[]): CanvasNode[] {
+  let changed = false;
+  const next = nodes.map((node) => {
+    const nodeType = node.data.nodeType;
+    if (nodeType !== "image-generation" && nodeType !== "video-generation")
+      return node;
+    const inputs = generationInputsForModel(nodeType, null, node.data.inputs);
+    if (generationInputsEqual(node.data.inputs, inputs)) return node;
+    changed = true;
+    return { ...node, data: { ...node.data, inputs } };
+  });
+  return changed ? next : nodes;
+}
+
+/**
+ * Model discovery is allowed to migrate an obsolete model ID, but it must not
+ * rewrite an explicit, still-valid selection. A catalog refresh can change
+ * defaults or temporarily return a different parameter schema; applying those
+ * defaults here made a saved node change merely because it was selected after
+ * a page reload.
+ */
+export function modelDiscoveryMigrationPatch(
+  nodeType: "image-generation" | "video-generation",
+  data: CanvasNodeData,
+  provider: string,
+  model: ModelDescriptor,
+): Partial<CanvasNodeData> | null {
+  const normalizedInputs = generationInputsForModel(
+    nodeType,
+    model,
+    data.inputs,
+  );
+  if (data.model === model.id && data.provider === provider) {
+    return generationInputsEqual(data.inputs, normalizedInputs)
+      ? null
+      : { inputs: normalizedInputs };
+  }
+
+  const currentParameters =
+    (data.parameters as Readonly<Record<string, unknown>> | undefined) ?? {};
+  const migratedParameters = { ...currentParameters };
+  const isFixedQualityAdobeModel =
+    model.metadata?.modelGroup === "生图-openai-adobe-按次" &&
+    typeof model.metadata?.fixedQuality === "string";
+  if (isFixedQualityAdobeModel) delete migratedParameters.quality;
+
+  return {
+    provider,
+    model: model.id,
+    inputs: normalizedInputs,
+    parameters: parametersWithDefaults(
+      parameterDescriptorsFor(nodeType, provider, model),
+      migratedParameters,
+    ),
+  };
+}
+
+function parameterValuesEqual(
+  left: Readonly<Record<string, unknown>>,
+  right: Readonly<Record<string, unknown>>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(right, key) &&
+        Object.is(left[key], right[key]),
+    )
+  );
+}
+
+/** Migrates obsolete Adobe virtual-resolution IDs to real We-AI model IDs. */
+function migrateSavedWeAiAdobeNodes(
+  nodes: CanvasNode[],
+  connections: readonly ProviderConnectionView[],
+): CanvasNode[] {
+  const connectionsById = new Map(
+    connections.map((connection) => [connection.id, connection] as const),
+  );
+  let changed = false;
+  const migrated = nodes.map((node) => {
+    const nodeType = node.data.nodeType;
+    if (nodeType !== "image-generation" && nodeType !== "video-generation")
+      return node;
+    const connectionId = node.data.connectionId;
+    const connection =
+      typeof connectionId === "string"
+        ? connectionsById.get(connectionId)
+        : undefined;
+    if (
+      !connection ||
+      connection.provider !== "weai" ||
+      providerConnectionSupplierKey(connection) !== "weai" ||
+      providerConnectionGroup(connection) !== "生图-openai-adobe-按次"
+    ) {
+      return node;
+    }
+    const compatible = modelDescriptorsForConnection(connection).filter(
+      (model) => modelSupportsNodeType(model, nodeType),
+    );
+    if (compatible.length === 0) return node;
+    const currentParameters =
+      (node.data.parameters as Readonly<Record<string, unknown>> | undefined) ??
+      {};
+    const savedModel = node.data.model;
+    const legacyVariant =
+      typeof savedModel === "string"
+        ? /^gpt-image-2(?:-(low|medium|high))?::(1k|2k|4k)$/iu.exec(
+            savedModel.trim(),
+          )
+        : null;
+    const alreadyReal = compatible.some(
+      (candidate) => candidate.id === savedModel,
+    );
+    if (alreadyReal && currentParameters.quality === undefined) return node;
+
+    const model =
+      modelDescriptorForSavedSelection(
+        compatible,
+        savedModel,
+        currentParameters,
+      ) ??
+      compatible.find((candidate) => candidate.isDefault) ??
+      compatible[0]!;
+
+    const migratedParameters = { ...currentParameters };
+    // The fixed quality now lives exclusively in the real model ID.
+    delete migratedParameters.quality;
+    const savedSize = migratedParameters.size;
+    if (
+      legacyVariant?.[2] &&
+      (typeof savedSize !== "string" || savedSize.trim() === "auto")
+    ) {
+      const size = weAiSizePresetForTier(
+        model,
+        legacyVariant[2].toLowerCase() as "1k" | "2k" | "4k",
+        migratedParameters.aspect_ratio,
+      );
+      if (size) {
+        migratedParameters.size = size;
+        // `size` is the documented Images API request parameter.  Keeping an
+        // old UI-only aspect ratio beside it can produce conflicting output.
+        delete migratedParameters.aspect_ratio;
+      }
+    }
+
+    const normalizedParameters = parametersWithDefaults(
+      parameterDescriptorsFor(nodeType, connection.provider, model),
+      migratedParameters,
+    );
+    if (
+      typeof migratedParameters.size === "string" &&
+      migratedParameters.size !== "auto"
+    ) {
+      delete normalizedParameters.aspect_ratio;
+    }
+    if (
+      node.data.provider === connection.provider &&
+      node.data.model === model.id &&
+      parameterValuesEqual(currentParameters, normalizedParameters)
+    ) {
+      return node;
+    }
+    changed = true;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        provider: connection.provider,
+        model: model.id,
+        inputs: generationInputsForModel(nodeType, model, node.data.inputs),
+        parameters: normalizedParameters,
+      },
+    };
+  });
+  return changed ? migrated : nodes;
+}
+
 function modelOptionsForNode(
   node: CanvasNode,
   connections: readonly ProviderConnectionView[],
-  listed: { connectionId: string; items: readonly ModelDescriptor[] },
+  listed: {
+    connectionId: string;
+    items: readonly ModelDescriptor[];
+    authoritative?: boolean;
+    loading?: boolean;
+  },
 ): ModelDescriptor[] {
   const nodeType = node.data.nodeType;
   if (nodeType !== "image-generation" && nodeType !== "video-generation")
@@ -1121,17 +1725,120 @@ function modelOptionsForNode(
     (candidate) => candidate.id === node.data.connectionId,
   );
   const configured = connection
-    ? modelDescriptorsFromConnectionConfig(connection.config).filter((model) =>
+    ? modelDescriptorsForConnection(connection).filter((model) =>
         modelSupportsNodeType(model, nodeType),
       )
     : [];
+  const requiresAuthoritativeScan = Boolean(
+    connection && connectionRequiresAuthoritativeModelScan(connection),
+  );
+  const hasSavedWeAiScan = Boolean(
+    connection &&
+    connection.provider === "weai" &&
+    weAiCanvasModelDescriptorsFromSavedScan(connection.config) !== null,
+  );
   if (listed.connectionId === node.data.connectionId) {
     const compatible = listed.items.filter((model) =>
       modelSupportsNodeType(model, nodeType),
     );
-    if (compatible.length > 0) return [...compatible];
+    if (
+      compatible.length > 0 ||
+      (listed.authoritative &&
+        !(
+          listed.loading &&
+          (connection?.config.preset === CHENTU_PRESET_ID ||
+            connection?.config.preset === FRIMODEL_PRESET_ID)
+        )) ||
+      (connection &&
+        verifiedWeAiModelDescriptorsForConnection(connection).length > 0)
+    )
+      return [...compatible];
+  }
+  if (requiresAuthoritativeScan) {
+    if (hasSavedWeAiScan) return configured;
+    const keyedImageScanPending = Boolean(
+      connection &&
+      (connection.config.preset === CHENTU_PRESET_ID ||
+        connection.config.preset === FRIMODEL_PRESET_ID) &&
+      (listed.connectionId !== node.data.connectionId || listed.loading),
+    );
+    if (keyedImageScanPending && nodeType === "image-generation" && connection) {
+      const selectedModel =
+        typeof node.data.model === "string" && node.data.model.trim()
+          ? node.data.model.trim()
+          : defaultModelForConnection(connection);
+      const fallback =
+        connection.config.preset === CHENTU_PRESET_ID
+          ? selectedModel
+            ? chentuFallbackImageDescriptor(
+                selectedModel,
+                providerConnectionGroup(connection),
+              )
+            : undefined
+          : selectedModel
+            ? friModelFallbackImageDescriptor(
+                selectedModel,
+                providerConnectionGroup(connection),
+              )
+            : undefined;
+      return fallback ? [fallback] : [];
+    }
+    return [];
   }
   return configured;
+}
+
+function normalizeGenerationNodeForRun(
+  node: CanvasNode,
+  connections: readonly ProviderConnectionView[],
+  listed: {
+    connectionId: string;
+    items: readonly ModelDescriptor[];
+    authoritative?: boolean;
+    loading?: boolean;
+  },
+): CanvasNode {
+  const nodeType = node.data.nodeType;
+  if (nodeType !== "image-generation" && nodeType !== "video-generation")
+    return node;
+  const connection = connections.find(
+    (candidate) => candidate.id === node.data.connectionId,
+  );
+  const options = modelOptionsForNode(node, connections, listed);
+  const model = options.find((candidate) => candidate.id === node.data.model);
+  const current =
+    (node.data.parameters as Readonly<Record<string, unknown>> | undefined) ??
+    {};
+  const normalized = normalizedParametersForModel(
+    nodeType,
+    node.data.provider ?? "fake",
+    model,
+    current,
+  );
+  // Keep the pending-result count aligned with supplier capabilities even
+  // while a live model scan is still loading. Without this fallback an old
+  // node can briefly retain `n > 1` and render phantom failed slots before
+  // the server has a chance to normalize or reject it.
+  if (nodeType === "image-generation") {
+    const supplier = connection
+      ? providerConnectionSupplierKey(connection)
+      : undefined;
+    const group = connection ? providerConnectionGroup(connection) : undefined;
+    const singleOutput =
+      supplier === "frimodel" ||
+      supplier === "cyberafei" ||
+      supplier === "mikoto" ||
+      (supplier === "chentu" && group !== "image2官key");
+    if (singleOutput) delete normalized.n;
+  }
+  if (parameterValuesEqual(current, normalized)) return node;
+  return {
+    ...node,
+    data: {
+      ...node.data,
+      parameters: normalized,
+    },
+  };
 }
 
 function starterGraph(): CanvasDocument {
@@ -1185,6 +1892,7 @@ function starterGraph(): CanvasDocument {
 const transientNodeDataKeys = new Set([
   "onRun",
   "onRegenerate",
+  "onRecoverResult",
   "onSelect",
   "onOpenPreview",
   "onPrepareReversePrompt",
@@ -1199,6 +1907,7 @@ const transientNodeDataKeys = new Set([
   "onParametersChange",
   "onMediaAspectRatio",
   "onLinkedAssetDuration",
+  "onRemoveLinkedAsset",
   "onOpenApiSettings",
   "generatedPromptText",
   "connectionOptions",
@@ -1227,6 +1936,39 @@ function serializableNode(node: CanvasNode): CanvasNode {
   };
 }
 
+const generatedResultIdentityKeys: readonly (keyof CanvasNodeData)[] = [
+  "generatedResult",
+  "generatedStatus",
+  "generatedError",
+  "generatedFromNodeId",
+  "generatedFromRunId",
+  "generatedProvider",
+  "generatedSupplier",
+  "generatedConnectionId",
+  "generatedConnectionName",
+  "generatedGroup",
+  "generatedModel",
+  "generatedParameters",
+  "generatedCreatedAt",
+  "generatedPromptParts",
+  "generatedPromptText",
+  "generatedPendingRequestId",
+  "generatedOutputIndex",
+  "generatedRecoveryAction",
+];
+
+function copyableCanvasNode(node: CanvasNode): CanvasNode | null {
+  const copy = serializableNode(node);
+  if (copy.data.generatedResult !== true) return copy;
+  if (!copy.data.assetId) return null;
+
+  const data = { ...copy.data };
+  for (const key of generatedResultIdentityKeys) delete data[key];
+  data.inputs = [];
+  data.label = data.assetKind === "video" ? "固定视频" : "固定图片";
+  return { ...copy, data };
+}
+
 function serializableGraph(
   nodes: readonly CanvasNode[],
   edges: readonly CanvasEdge[],
@@ -1234,16 +1976,21 @@ function serializableGraph(
   drawings: readonly CanvasDrawingStroke[] = useCanvasStore.getState().drawings,
 ): CanvasDocument {
   const persistedNodes = nodes.filter(
-    (node) => node.data.pendingImport !== true,
+    (node) =>
+      node.data.pendingImport !== true && node.data.directorDraft !== true,
   );
   const persistedNodeIds = new Set(persistedNodes.map((node) => node.id));
-  return {
-    schemaVersion: 1,
-    nodes: persistedNodes.map(serializableNode),
-    edges: edges.filter(
+  const persistedEdges = filterEdgesToKnownPorts(
+    persistedNodes,
+    edges.filter(
       (edge) =>
         persistedNodeIds.has(edge.source) && persistedNodeIds.has(edge.target),
     ),
+  );
+  return {
+    schemaVersion: 1,
+    nodes: persistedNodes.map(serializableNode),
+    edges: persistedEdges,
     viewport,
     drawings: drawings.map((stroke) => ({
       ...stroke,
@@ -1252,45 +1999,26 @@ function serializableGraph(
   };
 }
 
-function parseImportedDrawings(value: unknown): CanvasDrawingStroke[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value)) throw new Error("涂鸦数据格式无效");
-  return value.map((item, index) => {
-    if (!item || typeof item !== "object" || Array.isArray(item))
-      throw new Error(`第 ${index + 1} 条涂鸦格式无效`);
-    const stroke = item as Record<string, unknown>;
-    if (
-      typeof stroke.id !== "string" ||
-      !/^#[0-9a-f]{6}$/iu.test(String(stroke.color ?? "")) ||
-      typeof stroke.width !== "number" ||
-      !Number.isFinite(stroke.width) ||
-      stroke.width <= 0 ||
-      stroke.width > 96 ||
-      !Array.isArray(stroke.points) ||
-      stroke.points.length === 0 ||
-      stroke.points.length > 4_000
-    )
-      throw new Error(`第 ${index + 1} 条涂鸦格式无效`);
-    const points = stroke.points.map((point) => {
-      if (!point || typeof point !== "object" || Array.isArray(point))
-        throw new Error(`第 ${index + 1} 条涂鸦坐标无效`);
-      const candidate = point as Record<string, unknown>;
-      if (
-        typeof candidate.x !== "number" ||
-        !Number.isFinite(candidate.x) ||
-        typeof candidate.y !== "number" ||
-        !Number.isFinite(candidate.y)
-      )
-        throw new Error(`第 ${index + 1} 条涂鸦坐标无效`);
-      return { x: candidate.x, y: candidate.y };
-    });
-    return {
-      id: stroke.id,
-      color: String(stroke.color),
-      width: stroke.width,
-      points,
-    };
-  });
+function safeDownloadBaseName(value: string): string {
+  return (
+    value
+      .trim()
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "_")
+      .replace(/[. ]+$/gu, "")
+      .slice(0, 120) || "super-canvas"
+  );
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 function nodePortKind(
@@ -1307,6 +2035,8 @@ function nodePortKind(
 
 function CanvasShell() {
   const [canvasId, setCanvasId] = useState<string | null>(null);
+  const [initialization, setInitialization] =
+    useState<CanvasInitializationState>({ status: "loading" });
   const {
     title,
     nodes,
@@ -1332,26 +2062,56 @@ function CanvasShell() {
   const [connectionModels, setConnectionModels] = useState<{
     connectionId: string;
     items: ModelDescriptor[];
-  }>({ connectionId: "", items: [] });
+    authoritative?: boolean;
+    loading?: boolean;
+  }>({
+    connectionId: "",
+    items: [],
+    authoritative: false,
+    loading: false,
+  });
+  const [modelScanRevision, setModelScanRevision] = useState(0);
   const [nodeRunStatuses, setNodeRunStatuses] = useState<
     Map<string, NodeRunStatus>
   >(new Map());
+  const latestNodeRunAt = useRef(new Map<string, string>());
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [saveConflict, setSaveConflict] =
+    useState<CanvasSaveConflictState | null>(null);
+  const [saveConflictOpen, setSaveConflictOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialCangyuanGroup, setSettingsInitialCangyuanGroup] =
     useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [runHistoryOpen, setRunHistoryOpen] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<AssetView | null>(null);
   const [previewReturnsToHistory, setPreviewReturnsToHistory] = useState(false);
   const [agentDraftRequest, setAgentDraftRequest] =
     useState<AgentDraftRequest | null>(null);
+  const [mobileLibraryOpen, setMobileLibraryOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const [inspectorMode, setInspectorMode] = useState<InspectorMode>("node");
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
   const [inspectorResizing, setInspectorResizing] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [pendingProjectImport, setPendingProjectImport] =
+    useState<PreparedProjectImport | null>(null);
+  const [projectImportBusy, setProjectImportBusy] = useState(false);
+  const [projectImportBackup, setProjectImportBackup] = useState(true);
+  const [projectImportProgress, setProjectImportProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
+  const [projectImportError, setProjectImportError] = useState<string | null>(
+    null,
+  );
+  const [portableExportProgress, setPortableExportProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
   const [connectionMenu, setConnectionMenu] =
     useState<ConnectionMenuState | null>(null);
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null);
@@ -1377,6 +2137,12 @@ function CanvasShell() {
     handleId: string;
     kind: PortKind;
   } | null>(null);
+  const connectionStartRef = useRef<{
+    nodeId: string;
+    handleId: string;
+    handleType: "source" | "target";
+    edgeIds: Set<string>;
+  } | null>(null);
   const [modelLoadError, setModelLoadError] = useState<{
     connectionId: string;
     message: string;
@@ -1384,17 +2150,32 @@ function CanvasShell() {
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, CanvasEdge> | null>(
     null,
   );
+  const updateNodeInternals = useUpdateNodeInternals();
+  const portLayoutSignatureRef = useRef("");
   const canvasWrapRef = useRef<HTMLElement | null>(null);
   const recentNativeDropsRef = useRef(new Map<string, number>());
-  const pendingNativeDropsRef = useRef(new Map<string, number>());
+  const pendingNativeDropsRef = useRef(new Map<string, PendingNativeDrop[]>());
+  const bridgeHandledNativeDropsRef = useRef(new Map<string, number>());
+  const pendingPreviewUrlsRef = useRef(new Map<string, string>());
+  const nativeUploadInProgressRef = useRef(new Set<string>());
   const activeBridgeDropsRef = useRef(new Set<string>());
+  const materialDropPollRef = useRef<(() => Promise<void>) | null>(null);
   const materialDropConsumerIdRef = useRef(crypto.randomUUID());
   const initialViewportApplied = useRef(false);
   const toastTimer = useRef<number | null>(null);
   const toastSeq = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSave = useRef<CanvasSaveRequest | null>(null);
+  const conflictedSave = useRef<CanvasSaveRequest | null>(null);
+  const canvasRevision = useRef<number | null>(null);
+  const [canvasRevisionValue, setCanvasRevisionValue] = useState(0);
+  const saveConflictRef = useRef<CanvasSaveConflictState | null>(null);
+  const latestSaveAttempt = useRef(0);
   const eventSources = useRef<Map<string, EventSource>>(new Map());
   const activeRunKeys = useRef(new Set<string>());
+  const submittingRequestIds = useRef(new Set<string>());
+  const activeRunSources = useRef(new Map<string, Set<string>>());
+  const runSubmissionKeys = useRef(new Map<string, string>());
   const inspectorResizeRef = useRef<{
     pointerId: number;
     startX: number;
@@ -1420,6 +2201,9 @@ function CanvasShell() {
     nodes: [],
     edges: [],
   });
+  const groupSelectedNodesRef = useRef<(() => void) | null>(null);
+  const ungroupSelectedNodesRef = useRef<(() => void) | null>(null);
+  const directorPreviewNodeIdsRef = useRef(new Set<string>());
   const nodeClipboardRef = useRef<{
     nodes: CanvasNode[];
     edges: CanvasEdge[];
@@ -1430,15 +2214,70 @@ function CanvasShell() {
     lastAt: number;
   }>({ past: [], future: [], lastAt: 0 });
   const saveQueue = useRef<LatestTaskQueue<CanvasSaveRequest> | null>(null);
-  if (saveQueue.current === null) {
-    saveQueue.current = new LatestTaskQueue(async (request) => {
-      await saveCanvas(request.canvasId, request.graph, request.title);
-    });
-  }
+  const persistQueuedCanvasSave = useCallback(
+    async (request: CanvasSaveRequest) => {
+      const existingConflict = saveConflictRef.current;
+      if (existingConflict) {
+        conflictedSave.current = request;
+        throw new CanvasSaveConflictError(
+          existingConflict.currentRevision,
+          existingConflict.message,
+        );
+      }
+
+      const expectedRevision = canvasRevision.current;
+      if (expectedRevision === null)
+        throw new Error("画布尚未完成初始化，无法保存");
+
+      try {
+        const saved = await persistCanvasSaveRequest({
+          ...request,
+          expectedRevision,
+        });
+        canvasRevision.current = saved.revision;
+        setCanvasRevisionValue(saved.revision);
+        clearPersistedNodeConfigurations(request.pendingNodeConfigurations);
+      } catch (error) {
+        if (error instanceof CanvasSaveConflictError) {
+          const conflict: CanvasSaveConflictState = {
+            expectedRevision,
+            currentRevision: error.currentRevision,
+            message: error.message,
+          };
+          saveConflictRef.current = conflict;
+          conflictedSave.current = request;
+          pendingSave.current = null;
+          if (saveTimer.current) clearTimeout(saveTimer.current);
+          saveTimer.current = null;
+          setSaveConflict(conflict);
+          // Open the modal only for the first conflict. Once the user closes
+          // it, background reconciliation must not keep interrupting them;
+          // the save-status button remains available for manual reopening.
+          if (!existingConflict) setSaveConflictOpen(true);
+          setSaveState("conflict");
+        }
+        throw error;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    saveQueue.current = new LatestTaskQueue(persistQueuedCanvasSave);
+  }, [persistQueuedCanvasSave]);
 
   useEffect(() => {
     graphRef.current = { nodes, edges };
   }, [nodes, edges]);
+
+  useEffect(
+    () => () => {
+      for (const previewUrl of pendingPreviewUrlsRef.current.values())
+        URL.revokeObjectURL(previewUrl);
+      pendingPreviewUrlsRef.current.clear();
+    },
+    [],
+  );
 
   useEffect(() => {
     const stored = Number(
@@ -1619,17 +2458,64 @@ function CanvasShell() {
 
   useEffect(() => {
     const streams = eventSources.current;
+    let active = true;
+    let initializationSettled = false;
+    const failInitialization = (error: unknown) => {
+      if (!active || initializationSettled) return;
+      initializationSettled = true;
+      window.clearTimeout(initializationTimeout);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "无法读取画布";
+      setInitialization({ status: "error", message });
+      showToast(message, "error");
+    };
+    const initializationTimeout = window.setTimeout(
+      () => failInitialization(new Error("画布加载超时，请重新加载页面")),
+      CANVAS_INITIALIZATION_TIMEOUT_MS,
+    );
+
     void (async () => {
       try {
-        const [canvas, list, providerConnections] = await Promise.all([
-          fetchCanvas(),
-          fetchAssets(),
-          fetchConnections(),
-        ]);
+        // Loading optional catalogs must not hold the canvas behind a permanent
+        // loading screen when one provider or the asset store is unavailable.
+        const assetsPromise = fetchAssets();
+        const connectionsPromise = fetchConnections();
+        // Attach rejection handlers before waiting for the critical canvas
+        // request so an unavailable optional endpoint cannot become an
+        // unhandled rejection while the canvas is loading.
+        void assetsPromise.catch(() => undefined);
+        void connectionsPromise.catch(() => undefined);
+        const canvasResult = await Promise.allSettled([fetchCanvas()]);
+        if (!active || initializationSettled) return;
+
+        const canvasOutcome = canvasResult[0];
+        if (canvasOutcome?.status === "rejected") {
+          throw canvasOutcome.reason instanceof Error
+            ? canvasOutcome.reason
+            : new Error("无法读取画布");
+        }
+
+        const canvas = canvasOutcome?.value;
+        if (!canvas) {
+          throw new Error("无法读取画布");
+        }
+
+        // Provider connections are optional during the first paint. The
+        // migration only affects legacy model IDs and can run when the catalog
+        // arrives without preventing the saved graph from becoming interactive.
+        const providerConnections: ProviderConnectionView[] = [];
+        canvasRevision.current = canvas.revision;
+        setCanvasRevisionValue(canvas.revision);
+        saveConflictRef.current = null;
+        conflictedSave.current = null;
+        setSaveConflict(null);
+        setSaveConflictOpen(false);
         setCanvasId(canvas.id);
         setTitle(canvas.title);
-        setAssets(list);
-        setConnections(providerConnections);
+        setAssets([]);
+        setConnections([]);
         const graph = canvas.graph.nodes?.length
           ? canvas.graph
           : starterGraph();
@@ -1637,52 +2523,183 @@ function CanvasShell() {
           ...node,
           type: "workflow" as const,
         }));
-        const graphNodes = layoutGeneratedResults(
-          ensureGeneratedResultInputs(typedNodes),
+        const migratedNodes = migrateSavedWeAiAdobeNodes(
+          typedNodes,
+          providerConnections,
         );
-        const graphEdges = syncGeneratedResultEdges(graphNodes, graph.edges);
+        const pendingNodeConfigurations =
+          readPendingNodeConfigurations().filter(
+            (entry) => entry.canvasId === canvas.id,
+          );
+        const journaledNodes = applyPendingNodeConfigurations(
+          migratedNodes,
+          canvas.id,
+          pendingNodeConfigurations,
+        );
+        const graphNodes = ensureGeneratedResultInputs(
+          ensureGenerationNodeInputs(journaledNodes),
+        );
+        const syncedGraphEdges = syncGeneratedResultEdges(
+          graphNodes,
+          graph.edges,
+        );
+        const graphEdges = filterEdgesToKnownPorts(
+          graphNodes,
+          keepLatestEdgePerNodePair(syncedGraphEdges),
+        );
         const graphDrawings = graph.drawings ?? [];
+        const graphViewport = graph.viewport ?? { x: 0, y: 0, zoom: 0.85 };
         const graphWasReconciled =
-          graphNodes !== typedNodes || graphEdges !== graph.edges;
+          graphNodes !== typedNodes ||
+          journaledNodes !== migratedNodes ||
+          graphEdges !== graph.edges;
         setNodes(graphNodes);
         setEdges(graphEdges);
         setDrawings(graphDrawings);
-        setViewport(graph.viewport ?? { x: 0, y: 0, zoom: 0.85 });
-        if (!canvas.graph.nodes?.length || graphWasReconciled)
+        setViewport(graphViewport);
+        initializationSettled = true;
+        window.clearTimeout(initializationTimeout);
+        setInitialization({ status: "ready" });
+
+        void assetsPromise
+          .then((loadedAssets) => {
+            if (active) setAssets(loadedAssets);
+          })
+          .catch((error: unknown) => {
+            if (active)
+              showToast(
+                `${error instanceof Error ? error.message : "素材库读取失败"}，画布仍可继续编辑`,
+                "error",
+              );
+          });
+        void connectionsPromise
+          .then((loadedConnections) => {
+            if (!active) return;
+            setConnections(loadedConnections);
+            setNodes((current) => {
+              const migrated = migrateSavedWeAiAdobeNodes(
+                current,
+                loadedConnections,
+              );
+              const next =
+                migrated === current
+                  ? current
+                  : ensureGeneratedResultInputs(
+                      ensureGenerationNodeInputs(migrated),
+                    );
+              if (next !== current) {
+                const state = useCanvasStore.getState();
+                const nextEdges = filterEdgesToKnownPorts(next, state.edges);
+                if (nextEdges.length !== state.edges.length)
+                  useCanvasStore.setState({ edges: nextEdges });
+              }
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (active)
+              showToast(
+                `${error instanceof Error ? error.message : "API 连接读取失败"}，画布仍可继续编辑`,
+                "error",
+              );
+          });
+
+        if (!canvas.graph.nodes?.length || graphWasReconciled) {
+          const initialSaveAttempt = (latestSaveAttempt.current += 1);
+          pendingSave.current = {
+            canvasId: canvas.id,
+            title: canvas.title,
+            graph: serializableGraph(
+              graphNodes,
+              graphEdges,
+              graphViewport,
+              graphDrawings,
+            ),
+            pendingNodeConfigurations,
+          };
+          setSaveState("pending");
           saveTimer.current = setTimeout(() => {
             saveTimer.current = null;
+            if (!active) return;
+            const request = pendingSave.current;
+            pendingSave.current = null;
+            if (!request) return;
+            setSaveState("saving");
             void saveQueue.current
-              ?.enqueue({
-                canvasId: canvas.id,
-                title: canvas.title,
-                graph: serializableGraph(
-                  graphNodes,
-                  graphEdges,
-                  graph.viewport ?? { x: 0, y: 0, zoom: 0.85 },
-                  graphDrawings,
-                ),
+              ?.enqueue(request)
+              .then(() => {
+                if (active && initialSaveAttempt === latestSaveAttempt.current)
+                  setSaveState((current) =>
+                    current === "saving" ? "saved" : current,
+                  );
               })
-              .catch((error: unknown) =>
+              .catch((error: unknown) => {
+                if (!active || initialSaveAttempt !== latestSaveAttempt.current)
+                  return;
+                setSaveState(
+                  error instanceof CanvasSaveConflictError
+                    ? "conflict"
+                    : "error",
+                );
                 showToast(
                   error instanceof Error ? error.message : "画布保存失败",
                   "error",
-                ),
-              );
+                );
+              });
           }, 200);
+        }
       } catch (error) {
-        showToast(
-          error instanceof Error ? error.message : "初始化失败",
-          "error",
-        );
+        failInitialization(error);
+      } finally {
+        // Every path through initialization must clear the deadline. If a
+        // future refactor returns without settling, fail closed instead of
+        // leaving the page's loading state forever.
+        window.clearTimeout(initializationTimeout);
+        if (active && !initializationSettled)
+          failInitialization(new Error("画布初始化未完成，请重新加载页面"));
       }
     })();
     return () => {
+      active = false;
+      window.clearTimeout(initializationTimeout);
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingSave.current = null;
       for (const stream of streams.values()) stream.close();
       streams.clear();
-      if (saveTimer.current) clearTimeout(saveTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const saveRequest = useCallback(
+    async (request: CanvasSaveRequest, reportError = true) => {
+      const attempt = (latestSaveAttempt.current += 1);
+      setSaveState("saving");
+      try {
+        await saveQueue.current?.enqueue(request);
+        // Only the newest request may publish completion. An older in-flight
+        // save can finish after a manual flush has already queued newer data.
+        if (attempt === latestSaveAttempt.current)
+          setSaveState((current) => (current === "saving" ? "saved" : current));
+      } catch (error) {
+        if (attempt === latestSaveAttempt.current) {
+          const conflict = error instanceof CanvasSaveConflictError;
+          setSaveState(conflict ? "conflict" : "error");
+          if (reportError)
+            showToast(
+              conflict
+                ? "检测到其他窗口更新，自动保存已暂停"
+                : error instanceof Error
+                  ? error.message
+                  : "画布保存失败",
+              "error",
+            );
+        }
+        throw error;
+      }
+    },
+    [showToast],
+  );
 
   const saveGraph = useCallback(
     async (
@@ -1691,31 +2708,35 @@ function CanvasShell() {
       nextEdges: CanvasEdge[],
       nextViewport = useCanvasStore.getState().viewport,
       nextDrawings = useCanvasStore.getState().drawings,
+      pendingNodeConfigurations?: PendingNodeConfiguration[],
     ) => {
-      setSaveState("saving");
-      try {
-        await saveQueue.current?.enqueue({
-          canvasId: id,
-          graph: serializableGraph(
-            nextNodes,
-            nextEdges,
-            nextViewport,
-            nextDrawings,
-          ),
-          title: useCanvasStore.getState().title,
-        });
-        // A newer edit may have queued another save while this one was in
-        // flight; only the last writer clears the indicator.
-        setSaveState((current) => (current === "saving" ? "saved" : current));
-      } catch (error) {
-        setSaveState("error");
-        showToast(
-          error instanceof Error ? error.message : "画布保存失败",
-          "error",
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingSave.current = null;
+      const request: CanvasSaveRequest = {
+        canvasId: id,
+        graph: serializableGraph(
+          nextNodes,
+          nextEdges,
+          nextViewport,
+          nextDrawings,
+        ),
+        title: useCanvasStore.getState().title,
+        pendingNodeConfigurations,
+      };
+      const conflict = saveConflictRef.current;
+      if (conflict) {
+        conflictedSave.current = request;
+        latestSaveAttempt.current += 1;
+        setSaveState("conflict");
+        throw new CanvasSaveConflictError(
+          conflict.currentRevision,
+          conflict.message,
         );
       }
+      await saveRequest(request);
     },
-    [showToast],
+    [saveRequest],
   );
 
   const scheduleSave = useCallback(
@@ -1727,19 +2748,33 @@ function CanvasShell() {
     ) => {
       if (!canvasId) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      setSaveState("pending");
-      saveTimer.current = setTimeout(() => {
-        saveTimer.current = null;
-        void saveGraph(
-          canvasId,
+      latestSaveAttempt.current += 1;
+      const request: CanvasSaveRequest = {
+        canvasId,
+        graph: serializableGraph(
           nextNodes,
           nextEdges,
           nextViewport,
           nextDrawings,
-        );
+        ),
+        title: useCanvasStore.getState().title,
+      };
+      if (saveConflictRef.current) {
+        pendingSave.current = null;
+        conflictedSave.current = request;
+        setSaveState("conflict");
+        return;
+      }
+      pendingSave.current = request;
+      setSaveState("pending");
+      saveTimer.current = setTimeout(() => {
+        saveTimer.current = null;
+        const request = pendingSave.current;
+        pendingSave.current = null;
+        if (request) void saveRequest(request).catch(() => undefined);
       }, 650);
     },
-    [canvasId, saveGraph],
+    [canvasId, saveRequest],
   );
 
   /** Flushes the debounced autosave immediately (Ctrl/Cmd+S, project menu). */
@@ -1749,6 +2784,7 @@ function CanvasShell() {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
+    pendingSave.current = null;
     const state = useCanvasStore.getState();
     await saveGraph(
       canvasId,
@@ -1758,6 +2794,32 @@ function CanvasShell() {
       state.drawings,
     );
   }, [canvasId, saveGraph]);
+
+  useEffect(() => {
+    const flushPendingSave = () => {
+      if (saveConflictRef.current) {
+        pendingSave.current = null;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        return;
+      }
+      const request = pendingSave.current;
+      if (!request) return;
+      pendingSave.current = null;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      // keepalive gives the request a chance to complete while the page is
+      // being hidden. The same serialized queue preserves write order.
+      void saveRequest({ ...request, keepalive: true }, false).catch(
+        () => undefined,
+      );
+    };
+    window.addEventListener("pagehide", flushPendingSave);
+    return () => {
+      window.removeEventListener("pagehide", flushPendingSave);
+      flushPendingSave();
+    };
+  }, [saveRequest]);
 
   const checkpoint = useCallback(
     (force = false) => {
@@ -1780,15 +2842,18 @@ function CanvasShell() {
 
   const restoreSnapshot = useCallback(
     (snapshot: CanvasDocument) => {
-      const nextNodes = layoutGeneratedResults(
-        ensureGeneratedResultInputs(
+      const nextNodes = ensureGeneratedResultInputs(
+        ensureGenerationNodeInputs(
           snapshot.nodes.map((node) => ({
             ...node,
             type: "workflow" as const,
           })),
         ),
       );
-      const nextEdges = syncGeneratedResultEdges(nextNodes, snapshot.edges);
+      const nextEdges = filterEdgesToKnownPorts(
+        nextNodes,
+        syncGeneratedResultEdges(nextNodes, snapshot.edges),
+      );
       setNodes(nextNodes);
       setEdges(nextEdges);
       const nextDrawings = snapshot.drawings ?? [];
@@ -2134,9 +3199,11 @@ function CanvasShell() {
         return node.data.inputs;
       const options = modelOptionsForNode(node, connections, connectionModels);
       const model =
-        options.find((candidate) => candidate.id === node.data.model) ??
-        options[0] ??
-        null;
+        modelDescriptorForSavedSelectionOrDefault(
+          options,
+          node.data.model,
+          node.data.parameters as Readonly<Record<string, unknown>> | undefined,
+        ) ?? null;
       return generationInputsForModel(nodeType, model, node.data.inputs);
     },
     [connectionModels, connections],
@@ -2188,13 +3255,28 @@ function CanvasShell() {
           reason: "这条连线会形成循环，画布只支持无环工作流",
         };
       }
+      if (hasEdgeForNodePair(edges, connection.source, connection.target)) {
+        return {
+          valid: false,
+          source,
+          target,
+          sourceKind,
+          targetKind,
+          targetPort,
+          reason: "同一图片只能连接目标节点的一个接口",
+        };
+      }
       if (
         targetPort &&
         !targetPort.multiple &&
         edges.some(
           (edge) =>
             edge.target === connection.target &&
-            edge.targetHandle === connection.targetHandle,
+            edge.targetHandle === connection.targetHandle &&
+            !(
+              edge.source === connection.source &&
+              edge.target === connection.target
+            ),
         )
       ) {
         return {
@@ -2228,31 +3310,53 @@ function CanvasShell() {
         showToast(check.reason);
         return;
       }
+      const current = useCanvasStore.getState();
+      if (
+        hasEdgeForNodePair(current.edges, connection.source, connection.target)
+      ) {
+        showToast("同一图片只能连接目标节点的一个接口");
+        return;
+      }
       checkpoint(true);
-      const nextEdges = addEdge(
-        {
-          ...connection,
-          id: `edge-${crypto.randomUUID().slice(0, 8)}`,
-          type: "smoothstep",
-        },
-        edges,
+      const nextEdges = keepLatestEdgePerNodePair(
+        addEdge(
+          {
+            ...connection,
+            id: `edge-${crypto.randomUUID().slice(0, 8)}`,
+            type: "smoothstep",
+          },
+          current.edges,
+        ),
       );
       setEdges(nextEdges);
-      scheduleSave(nodes, nextEdges);
+      scheduleSave(current.nodes, nextEdges);
     },
-    [
-      checkpoint,
-      connectionCheck,
-      edges,
-      nodes,
-      scheduleSave,
-      setEdges,
-      showToast,
-    ],
+    [checkpoint, connectionCheck, scheduleSave, setEdges, showToast],
   );
 
   const onConnectStart: OnConnectStart = useCallback(
     (_event, params) => {
+      if (params.nodeId && params.handleId && params.handleType) {
+        const edgeIds = new Set(
+          edges
+            .filter((edge) =>
+              params.handleType === "source"
+                ? edge.source === params.nodeId &&
+                  edge.sourceHandle === params.handleId
+                : edge.target === params.nodeId &&
+                  edge.targetHandle === params.handleId,
+            )
+            .map((edge) => edge.id),
+        );
+        connectionStartRef.current = {
+          nodeId: params.nodeId,
+          handleId: params.handleId,
+          handleType: params.handleType,
+          edgeIds,
+        };
+      } else {
+        connectionStartRef.current = null;
+      }
       if (
         params.handleType !== "source" ||
         !params.nodeId ||
@@ -2275,12 +3379,24 @@ function CanvasShell() {
         kind,
       });
     },
-    [nodes],
+    [edges, nodes],
   );
 
   const onConnectEnd: OnConnectEnd = useCallback((event, state) => {
+    const connectionStart = connectionStartRef.current;
+    connectionStartRef.current = null;
     setConnectingFrom(null);
     if (!state.fromNode || !state.fromHandle || state.toNode) return;
+
+    if (connectionStart && connectionStart.edgeIds.size > 0) {
+      // Releasing a drag from a connected handle on empty canvas is a
+      // cancelled connection attempt, not an explicit disconnect action.
+      // Deletion remains available through edge selection + Delete.
+      setConnectionMenu(null);
+      return;
+    }
+
+    if (state.fromHandle.type !== "source") return;
     const source = state.fromNode as unknown as CanvasNode;
     const kind = nodePortKind(source, state.fromHandle.id, "source");
     if (!kind) return;
@@ -2398,6 +3514,8 @@ function CanvasShell() {
         return next;
       });
       setSelectedId(node.id);
+      if (window.matchMedia("(max-width: 1100px)").matches)
+        setMobileInspectorOpen(true);
       setCanvasMenu(null);
       setConnectionMenu(null);
       return node;
@@ -2437,7 +3555,7 @@ function CanvasShell() {
       };
       setNodes((current) => {
         const next = [...current, node];
-        scheduleSave(next, edges);
+        scheduleSave(next, useCanvasStore.getState().edges);
         return next;
       });
       setSelectedId(node.id);
@@ -2446,7 +3564,6 @@ function CanvasShell() {
     [
       assets,
       checkpoint,
-      edges,
       nodes.length,
       scheduleSave,
       setNodes,
@@ -2498,21 +3615,25 @@ function CanvasShell() {
       const removedIds = new Set(Array.isArray(ids) ? ids : [ids]);
       if (removedIds.size === 0) return;
       checkpoint(true);
-      setNodes((current) => {
-        const next = current.filter((node) => !removedIds.has(node.id));
-        const nextEdges = edges.filter(
-          (edge) =>
-            !removedIds.has(edge.source) && !removedIds.has(edge.target),
-        );
-        setEdges(nextEdges);
-        scheduleSave(next, nextEdges);
-        return next;
-      });
+      const state = useCanvasStore.getState();
+      const remainingNodes = state.nodes.filter(
+        (node) => !removedIds.has(node.id),
+      );
+      const nextEdges = state.edges.filter(
+        (edge) => !removedIds.has(edge.source) && !removedIds.has(edge.target),
+      );
+      const nextNodes = removeUnavailableAssetMentions(
+        remainingNodes,
+        nextEdges,
+      );
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      scheduleSave(nextNodes, nextEdges);
       setSelectedId((current) =>
         current && removedIds.has(current) ? null : current,
       );
     },
-    [edges, scheduleSave, setEdges, setNodes, setSelectedId, checkpoint],
+    [scheduleSave, setEdges, setNodes, setSelectedId, checkpoint],
   );
 
   const copySelectedNodes = useCallback((): boolean => {
@@ -2525,17 +3646,38 @@ function CanvasShell() {
           ? state.nodes.filter((node) => node.id === state.selectedId)
           : [];
     if (selected.length === 0) return false;
-    const selectedIds = new Set(selected.map((node) => node.id));
+    const copyable = selected
+      .map(copyableCanvasNode)
+      .filter((node): node is CanvasNode => node !== null);
+    if (copyable.length === 0) {
+      showToast("未完成的生成结果不能复制，请先核对或删除该结果", "error");
+      return false;
+    }
+    const selectedIds = new Set(copyable.map((node) => node.id));
+    const detachedResultIds = new Set(
+      selected
+        .filter((node) => node.data.generatedResult === true)
+        .map((node) => node.id),
+    );
     nodeClipboardRef.current = {
-      nodes: structuredClone(selected.map(serializableNode)),
+      nodes: structuredClone(copyable),
       edges: structuredClone(
         state.edges.filter(
           (edge) =>
-            selectedIds.has(edge.source) && selectedIds.has(edge.target),
+            selectedIds.has(edge.source) &&
+            selectedIds.has(edge.target) &&
+            !detachedResultIds.has(edge.target) &&
+            !edge.id.startsWith(GENERATED_RESULT_EDGE_PREFIX),
         ),
       ),
     };
-    showToast(`已复制 ${selected.length} 个节点`, "success");
+    const fixedCount = detachedResultIds.size;
+    showToast(
+      fixedCount > 0
+        ? `已复制 ${copyable.length} 个节点，生成结果已转为固定素材`
+        : `已复制 ${copyable.length} 个节点`,
+      "success",
+    );
     return true;
   }, [showToast]);
 
@@ -2570,6 +3712,15 @@ function CanvasShell() {
     const idMap = new Map(
       clipboard.nodes.map((node) => [node.id, crypto.randomUUID()] as const),
     );
+    const groupIdMap = new Map(
+      Array.from(
+        new Set(
+          clipboard.nodes
+            .map((node) => node.data.canvasGroupId)
+            .filter((groupId): groupId is string => Boolean(groupId)),
+        ),
+      ).map((groupId) => [groupId, `canvas-group-${crypto.randomUUID().slice(0, 8)}`] as const),
+    );
     const pastedNodes = structuredClone(clipboard.nodes).map((node) => {
       const id = idMap.get(node.id)!;
       const generatedFromNodeId =
@@ -2589,6 +3740,13 @@ function CanvasShell() {
         data: {
           ...node.data,
           ...(generatedFromNodeId ? { generatedFromNodeId } : {}),
+          ...(node.data.canvasGroupId
+            ? {
+                canvasGroupId:
+                  groupIdMap.get(node.data.canvasGroupId) ??
+                  node.data.canvasGroupId,
+              }
+            : {}),
         },
       } satisfies CanvasNode;
     });
@@ -2663,17 +3821,43 @@ function CanvasShell() {
   }, [showToast]);
 
   const updateNodeData = useCallback(
-    (id: string, patch: Partial<CanvasNodeData>) => {
+    (
+      id: string,
+      patch: Partial<CanvasNodeData>,
+      options?: { persistImmediately?: boolean },
+    ) => {
       checkpoint();
-      setNodes((current) => {
-        const next = current.map((node) =>
-          node.id === id ? { ...node, data: { ...node.data, ...patch } } : node,
-        );
-        scheduleSave(next, edges);
-        return next;
-      });
+      const state = useCanvasStore.getState();
+      const next = state.nodes.map((node) =>
+        node.id === id ? { ...node, data: { ...node.data, ...patch } } : node,
+      );
+      const nextEdges = filterEdgesToKnownPorts(next, state.edges);
+      setNodes(next);
+      if (nextEdges.length !== state.edges.length) setEdges(nextEdges);
+      // Async model discovery can finish after an edge was added. Always pair
+      // the node patch with the store's latest edges so that save cannot erase
+      // a newer connection through a stale React closure.
+      // Explicit connection/model choices also bypass the debounce. They are
+      // small, atomic configuration changes and must survive an immediate
+      // refresh together with the parameters derived from the chosen model.
+      if (options?.persistImmediately && canvasId) {
+        const updatedNode = next.find((node) => node.id === id);
+        const pendingNodeConfigurations = updatedNode
+          ? journalNodeConfiguration(canvasId, updatedNode)
+          : undefined;
+        void saveGraph(
+          canvasId,
+          next,
+          nextEdges,
+          state.viewport,
+          state.drawings,
+          pendingNodeConfigurations,
+        ).catch(() => undefined);
+        return;
+      }
+      scheduleSave(next, nextEdges);
     },
-    [edges, scheduleSave, setNodes, checkpoint],
+    [canvasId, checkpoint, saveGraph, scheduleSave, setEdges, setNodes],
   );
 
   const changeNodeConnection = useCallback(
@@ -2688,15 +3872,21 @@ function CanvasShell() {
       )
         return;
       if (connectionId === "fake-default") {
-        updateNodeData(nodeId, {
-          provider: "fake",
-          connectionId,
-          model:
-            nodeType === "video-generation" ? "fake-video-v1" : "fake-image-v1",
-          parameters: parametersWithDefaults(
-            parameterDescriptorsFor(nodeType, "fake", null),
-          ),
-        });
+        updateNodeData(
+          nodeId,
+          {
+            provider: "fake",
+            connectionId,
+            model:
+              nodeType === "video-generation"
+                ? "fake-video-v1"
+                : "fake-image-v1",
+            parameters: parametersWithDefaults(
+              parameterDescriptorsFor(nodeType, "fake", null),
+            ),
+          },
+          { persistImmediately: true },
+        );
         return;
       }
       const connection = connections.find((item) => item.id === connectionId);
@@ -2706,23 +3896,27 @@ function CanvasShell() {
         nodeType,
         defaultModelForConnection(connection),
       );
-      updateNodeData(nodeId, {
-        provider: connection.provider,
-        connectionId: connection.id,
-        model: configuredModel?.id,
-        inputs: generationInputsForModel(
-          nodeType,
-          configuredModel,
-          node.data.inputs,
-        ),
-        parameters: parametersWithDefaults(
-          parameterDescriptorsFor(
+      updateNodeData(
+        nodeId,
+        {
+          provider: connection.provider,
+          connectionId: connection.id,
+          model: configuredModel?.id,
+          inputs: generationInputsForModel(
             nodeType,
-            connection.provider,
             configuredModel,
+            node.data.inputs,
           ),
-        ),
-      });
+          parameters: parametersWithDefaults(
+            parameterDescriptorsFor(
+              nodeType,
+              connection.provider,
+              configuredModel,
+            ),
+          ),
+        },
+        { persistImmediately: true },
+      );
     },
     [connections, updateNodeData],
   );
@@ -2746,34 +3940,57 @@ function CanvasShell() {
           ? connectionModels.items.find((model) => model.id === modelId)
           : undefined;
       const configuredModel = connection
-        ? modelDescriptorFromConnectionConfig(connection.config, modelId)
+        ? modelDescriptorsForConnection(connection).find(
+            (model) => model.id === modelId,
+          )
         : null;
+      const nextModel = listedModel ?? configuredModel;
+      const currentModel = connection
+        ? modelDescriptorsForConnection(connection).find(
+            (model) => model.id === node.data.model,
+          )
+        : undefined;
       const currentParameters = {
         ...((node.data.parameters as Record<string, unknown> | undefined) ??
           {}),
       };
-      if (nodeType === "image-generation") {
+      const keepsWeAiGroupParameters =
+        connection?.provider === "weai" &&
+        typeof currentModel?.metadata?.modelGroup === "string" &&
+        currentModel.metadata.modelGroup === nextModel?.metadata?.modelGroup;
+      if (nodeType === "image-generation" && !keepsWeAiGroupParameters) {
         delete currentParameters.size;
+        delete currentParameters.size_tier;
         delete currentParameters.aspect_ratio;
-        delete currentParameters.quality;
+        const qualityDescriptor = nextModel?.parameters?.find(
+          (parameter) => parameter.key === "quality",
+        );
+        const keepsCurrentQuality = qualityDescriptor?.options?.some(
+          (option) => String(option.value) === currentParameters.quality,
+        );
+        if (!keepsCurrentQuality) delete currentParameters.quality;
         delete currentParameters.n;
       }
-      updateNodeData(nodeId, {
-        model: modelId,
-        inputs: generationInputsForModel(
-          nodeType,
-          listedModel ?? configuredModel,
-          node.data.inputs,
-        ),
-        parameters: parametersWithDefaults(
-          parameterDescriptorsFor(
+      updateNodeData(
+        nodeId,
+        {
+          model: modelId,
+          inputs: generationInputsForModel(
             nodeType,
-            node.data.provider ?? "fake",
-            listedModel ?? configuredModel,
+            nextModel,
+            node.data.inputs,
           ),
-          currentParameters,
-        ),
-      });
+          parameters: parametersWithDefaults(
+            parameterDescriptorsFor(
+              nodeType,
+              node.data.provider ?? "fake",
+              nextModel,
+            ),
+            currentParameters,
+          ),
+        },
+        { persistImmediately: true },
+      );
     },
     [connectionModels, connections, updateNodeData],
   );
@@ -2808,27 +4025,53 @@ function CanvasShell() {
             data: { ...node.data, mediaAspectRatio: ratio },
           };
         });
-        if (changed) scheduleSave(next, edges);
+        if (changed) scheduleSave(next, useCanvasStore.getState().edges);
         return changed ? next : current;
       });
     },
-    [edges, scheduleSave, setNodes],
+    [scheduleSave, setNodes],
   );
 
   const applyRunSnapshot = useCallback(
     (snapshot: RunSnapshot, pendingRequestId?: string) => {
+      const rejectedConnections = new Set(
+        snapshot.nodes.flatMap((node) =>
+          node.request?.provider === "weai" &&
+          typeof node.request.connectionId === "string" &&
+          /Unknown model:/iu.test(node.errorJson?.providerMessage ?? "")
+            ? [node.request.connectionId]
+            : [],
+        ),
+      );
+      if (rejectedConnections.size > 0) {
+        for (const connectionId of rejectedConnections)
+          invalidateModelCache(connectionId);
+        setModelScanRevision((current) => current + 1);
+      }
       setNodeRunStatuses((current) => {
         const next = new Map(current);
-        for (const node of snapshot.nodes)
+        for (const node of snapshot.nodes) {
+          const latestAt = latestNodeRunAt.current.get(node.nodeId);
+          if (latestAt && latestAt > snapshot.run.createdAt) continue;
+          latestNodeRunAt.current.set(node.nodeId, snapshot.run.createdAt);
           next.set(node.nodeId, node.status as NodeRunStatus);
+        }
         return next;
       });
       const state = useCanvasStore.getState();
-      const normalizedNodes = ensureGeneratedResultInputs(state.nodes);
+      const normalizedNodes = ensureGeneratedResultInputs(
+        ensureGenerationNodeInputs(state.nodes),
+      );
       let changed = normalizedNodes !== state.nodes;
       let nextNodes = normalizedNodes.map((node) => {
         const nodeRun = snapshot.nodes.find((item) => item.nodeId === node.id);
         if (!nodeRun?.outputAssetIds.length) return node;
+        if (
+          node.data.lastOutputCreatedAt &&
+          node.data.lastOutputCreatedAt > snapshot.run.createdAt
+        ) {
+          return node;
+        }
         const outputIdsChanged =
           node.data.lastOutputAssetIds?.length !==
             nodeRun.outputAssetIds.length ||
@@ -2842,7 +4085,12 @@ function CanvasShell() {
             : node.data.nodeType === "image-generation"
               ? "image"
               : node.data.assetKind;
-        if (!outputIdsChanged && node.data.assetKind === nextAssetKind)
+        if (
+          !outputIdsChanged &&
+          node.data.assetKind === nextAssetKind &&
+          node.data.lastOutputRunId === snapshot.run.id &&
+          node.data.lastOutputCreatedAt === snapshot.run.createdAt
+        )
           return node;
         changed = true;
         return {
@@ -2850,6 +4098,8 @@ function CanvasShell() {
           data: {
             ...node.data,
             lastOutputAssetIds: nodeRun.outputAssetIds,
+            lastOutputRunId: snapshot.run.id,
+            lastOutputCreatedAt: snapshot.run.createdAt,
             assetKind: nextAssetKind,
           },
         };
@@ -2867,6 +4117,39 @@ function CanvasShell() {
               : null;
         if (!source || !kind) continue;
         const status = nodeRun.status as NodeRunStatus;
+        const runRequest = nodeRun.request;
+        const sourceConnectionId =
+          runRequest?.connectionId ?? source.data.connectionId;
+        const sourceConnection = connections.find(
+          (connection) => connection.id === sourceConnectionId,
+        );
+        const sourceProvider = runRequest?.provider ?? source.data.provider;
+        const sourceSupplier =
+          runRequest?.supplier ??
+          (sourceConnection
+            ? providerConnectionSupplierKey(sourceConnection)
+            : undefined);
+        const provenance = {
+          generatedProvider: sourceProvider,
+          generatedSupplier: sourceSupplier,
+          generatedConnectionId: sourceConnectionId,
+          generatedConnectionName:
+            runRequest?.connectionName ?? sourceConnection?.name,
+          generatedGroup:
+            runRequest?.modelGroup ??
+            (sourceConnection
+              ? providerConnectionGroup(sourceConnection)
+              : undefined),
+          generatedModel: runRequest?.model,
+          generatedParameters: runRequest?.parameters
+            ? structuredClone(runRequest.parameters)
+            : undefined,
+          generatedCreatedAt: snapshot.run.createdAt,
+          generatedRecoveryAction: nodeRun.recoveryAction,
+        };
+        const serializedProvenanceParameters = JSON.stringify(
+          provenance.generatedParameters ?? null,
+        );
         const trackedOutputCount = nextNodes.reduce((count, node) => {
           const belongsToRun =
             node.data.generatedResult === true &&
@@ -2882,7 +4165,11 @@ function CanvasShell() {
         const outputCount =
           trackedOutputCount > 0
             ? Math.max(trackedOutputCount, nodeRun.outputAssetIds.length)
-            : generatedOutputCount(source, nodeRun.outputAssetIds.length);
+            : generatedOutputCount(
+                source,
+                nodeRun.outputAssetIds.length,
+                runRequest?.parameters?.n,
+              );
         const materialized = new Set(
           source.data.materializedOutputAssetIds ?? [],
         );
@@ -2897,9 +4184,8 @@ function CanvasShell() {
             status === "succeeded" && !assetId
               ? { message: "供应商未返回该结果" }
               : nodeRun.errorJson,
-            typeof source.data.provider === "string"
-              ? source.data.provider
-              : undefined,
+            typeof sourceProvider === "string" ? sourceProvider : undefined,
+            sourceSupplier,
           );
           const matchesOutput = (node: CanvasNode) =>
             node.data.generatedResult === true &&
@@ -2916,7 +4202,19 @@ function CanvasShell() {
               node.data.assetId === nextAssetId &&
               node.data.assetKind === kind &&
               node.data.generatedFromRunId === snapshot.run.id &&
-              node.data.generatedProvider === source.data.provider &&
+              node.data.generatedProvider === provenance.generatedProvider &&
+              node.data.generatedSupplier === provenance.generatedSupplier &&
+              node.data.generatedConnectionId ===
+                provenance.generatedConnectionId &&
+              node.data.generatedConnectionName ===
+                provenance.generatedConnectionName &&
+              node.data.generatedGroup === provenance.generatedGroup &&
+              node.data.generatedModel === provenance.generatedModel &&
+              JSON.stringify(node.data.generatedParameters ?? null) ===
+                serializedProvenanceParameters &&
+              node.data.generatedCreatedAt === provenance.generatedCreatedAt &&
+              node.data.generatedRecoveryAction ===
+                provenance.generatedRecoveryAction &&
               node.data.generatedPendingRequestId === undefined
             ) {
               return node;
@@ -2931,9 +4229,7 @@ function CanvasShell() {
                 generatedStatus: slotStatus,
                 generatedError: error,
                 generatedFromRunId: snapshot.run.id,
-                ...(typeof source.data.provider === "string"
-                  ? { generatedProvider: source.data.provider }
-                  : {}),
+                ...provenance,
                 generatedPendingRequestId: undefined,
               },
             };
@@ -2951,19 +4247,19 @@ function CanvasShell() {
                 additions[additionIndex]!,
               );
             } else if (!assetId || !materialized.has(assetId)) {
-              additions.push(
-                createGeneratedResultNode(
-                  source,
-                  snapshot.run.id,
-                  kind,
-                  outputIndex,
-                  slotStatus,
-                  assetId,
-                  error,
-                  [...nextNodes, ...additions],
-                  generationPromptParts(source, nextNodes, state.edges),
-                ),
+              const addition = createGeneratedResultNode(
+                source,
+                snapshot.run.id,
+                kind,
+                outputIndex,
+                slotStatus,
+                assetId,
+                error,
+                [...nextNodes, ...additions],
+                generationPromptParts(source, nextNodes, state.edges),
               );
+              addition.data = { ...addition.data, ...provenance };
+              additions.push(addition);
               changed = true;
             }
           }
@@ -2971,6 +4267,28 @@ function CanvasShell() {
           if (assetId && !materialized.has(assetId)) {
             materialized.add(assetId);
             materializedChanged = true;
+            changed = true;
+          }
+        }
+        if (
+          status === "succeeded" &&
+          nodeRun.outputAssetIds.length > 0 &&
+          outputCount > nodeRun.outputAssetIds.length
+        ) {
+          const trimmed = removeUnreturnedGeneratedResults(
+            nextNodes,
+            additions,
+            source.id,
+            snapshot.run.id,
+            pendingRequestId,
+            nodeRun.outputAssetIds.length,
+          );
+          if (
+            trimmed.nodes.length !== nextNodes.length ||
+            trimmed.additions.length !== additions.length
+          ) {
+            nextNodes = trimmed.nodes;
+            additions.splice(0, additions.length, ...trimmed.additions);
             changed = true;
           }
         }
@@ -2993,35 +4311,50 @@ function CanvasShell() {
         });
       }
       if (additions.length > 0) nextNodes = [...nextNodes, ...additions];
-      const nextEdges = syncGeneratedResultEdges(nextNodes, state.edges);
+      const nextEdges = filterEdgesToKnownPorts(
+        nextNodes,
+        syncGeneratedResultEdges(nextNodes, state.edges),
+      );
       if (nextEdges !== state.edges) changed = true;
       if (!changed) return;
       useCanvasStore.setState({ nodes: nextNodes, edges: nextEdges });
       graphRef.current = { nodes: nextNodes, edges: nextEdges };
       scheduleSave(nextNodes, nextEdges, state.viewport);
     },
-    [scheduleSave],
+    [connections, scheduleSave],
   );
 
   const stopRunSubscription = useCallback((runId?: string) => {
     if (runId) {
       eventSources.current.get(runId)?.close();
       eventSources.current.delete(runId);
+      const submissionKey = runSubmissionKeys.current.get(runId);
+      if (submissionKey) {
+        runSubmissionKeys.current.delete(runId);
+        activeRunKeys.current.delete(submissionKey);
+        activeRunSources.current.delete(submissionKey);
+      }
     } else {
       for (const stream of eventSources.current.values()) stream.close();
       eventSources.current.clear();
+      for (const submissionKey of runSubmissionKeys.current.values()) {
+        activeRunKeys.current.delete(submissionKey);
+        activeRunSources.current.delete(submissionKey);
+      }
+      runSubmissionKeys.current.clear();
     }
     setBusy(activeRunKeys.current.size > 0 || eventSources.current.size > 0);
   }, []);
 
   const subscribeToRun = useCallback(
-    (runId: string) => {
+    (runId: string, submissionKey?: string) => {
       stopRunSubscription(runId);
       setBusy(true);
       const stream = new EventSource(
         `/api/runs/${encodeURIComponent(runId)}/events`,
       );
       eventSources.current.set(runId, stream);
+      if (submissionKey) runSubmissionKeys.current.set(runId, submissionKey);
       let refreshing = false;
       let refreshAgain = false;
       const isActive = () => eventSources.current.get(runId) === stream;
@@ -3069,9 +4402,44 @@ function CanvasShell() {
         return;
       }
       reconciling = true;
-      void fetchRuns(canvasId)
+      const stateBeforeFetch = useCanvasStore.getState();
+      const visibleRunIdsBeforeFetch = stateBeforeFetch.nodes.flatMap((node) =>
+        node.data.generatedResult === true &&
+        typeof node.data.generatedFromRunId === "string"
+          ? [node.data.generatedFromRunId]
+          : [],
+      );
+      const visibleRequestIdsBeforeFetch = stateBeforeFetch.nodes.flatMap(
+        (node) => {
+          if (
+            node.data.generatedResult !== true ||
+            !isPendingGeneratedResultStatus(node.data.generatedStatus) ||
+            typeof node.data.generatedPendingRequestId !== "string"
+          )
+            return [];
+          return [node.data.generatedPendingRequestId];
+        },
+      );
+      const submittingAtFetchStart = new Set(submittingRequestIds.current);
+      // An empty graph has no run state to reconcile. Calling `/api/runs`
+      // without identifiers falls back to the complete run history, which can
+      // be very large and used to make a fresh canvas look frozen on startup.
+      if (
+        visibleRunIdsBeforeFetch.length === 0 &&
+        visibleRequestIdsBeforeFetch.length === 0 &&
+        eventSources.current.size === 0
+      ) {
+        reconciling = false;
+        reconcileAgain = false;
+        return;
+      }
+      void fetchVisibleRuns(
+        canvasId,
+        visibleRunIdsBeforeFetch,
+        visibleRequestIdsBeforeFetch,
+      )
         .then((runs) => {
-          if (cancelled || runs.length === 0) return;
+          if (cancelled) return;
           const state = useCanvasStore.getState();
           const visibleRunIds = new Set(
             state.nodes.flatMap((node) =>
@@ -3084,17 +4452,90 @@ function CanvasShell() {
           const visibleRequestIds = new Set(
             state.nodes.flatMap((node) =>
               node.data.generatedResult === true &&
+              isPendingGeneratedResultStatus(node.data.generatedStatus) &&
               typeof node.data.generatedPendingRequestId === "string"
                 ? [node.data.generatedPendingRequestId]
                 : [],
             ),
           );
           const visibleSnapshots = runs.filter(
-            (snapshot, index) =>
-              index === 0 ||
+            (snapshot) =>
               visibleRunIds.has(snapshot.run.id) ||
               visibleRequestIds.has(snapshot.run.clientRequestId ?? ""),
           );
+          const matchedRequestIds = new Set(
+            runs.flatMap((snapshot) =>
+              typeof snapshot.run.clientRequestId === "string"
+                ? [snapshot.run.clientRequestId]
+                : [],
+            ),
+          );
+          const orphanedRequestIds = new Set(
+            [...visibleRequestIds].filter((requestId) => {
+              const pendingNode = state.nodes.find(
+                (node) =>
+                  node.data.generatedResult === true &&
+                  node.data.generatedPendingRequestId === requestId,
+              );
+              return shouldMarkPendingRunMissing({
+                requestId,
+                generatedCreatedAt: pendingNode?.data.generatedCreatedAt,
+                matchedRequestIds,
+                submittingAtFetchStart,
+                submittingNow: submittingRequestIds.current,
+              });
+            }),
+          );
+          if (orphanedRequestIds.size > 0) {
+            let orphanedChanged = false;
+            const recoveredNodes = state.nodes.map((node) => {
+              const requestId = node.data.generatedPendingRequestId;
+              if (
+                typeof requestId !== "string" ||
+                !orphanedRequestIds.has(requestId)
+              ) {
+                return node;
+              }
+              orphanedChanged = true;
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  generatedStatus: "failed" as const,
+                  // A missing local submission is terminal. Keeping the
+                  // request id makes the five-second reconciliation loop
+                  // treat the same failed placeholder as pending forever and
+                  // schedule an identical autosave on every pass.
+                  generatedPendingRequestId: undefined,
+                  generatedError: {
+                    message:
+                      "本地没有找到对应运行，任务未提交到供应商，不会继续生成或扣费。可以点击再次运行。",
+                    type: "local_submission_missing",
+                    code: "LOCAL_RUN_NOT_CREATED",
+                  },
+                },
+              };
+            });
+            if (orphanedChanged) {
+              const recoveredEdges = syncGeneratedResultEdges(
+                recoveredNodes,
+                state.edges,
+              );
+              useCanvasStore.setState({
+                nodes: recoveredNodes,
+                edges: recoveredEdges,
+              });
+              graphRef.current = {
+                nodes: recoveredNodes,
+                edges: recoveredEdges,
+              };
+              scheduleSave(recoveredNodes, recoveredEdges, state.viewport);
+            }
+          }
+          // Only reconcile runs that already have a materialized result or a
+          // live placeholder in this graph. Historical runs are kept in the
+          // history modal; materializing the newest historical run here would
+          // resurrect stale results after a reset or a concurrent edit.
           // Apply oldest first so every visible placeholder is reconciled while
           // the newest run remains the status shown in the bottom bar. Passing
           // the client request id is essential after a reload: placeholders do
@@ -3134,11 +4575,12 @@ function CanvasShell() {
     const reconcilePending = window.setInterval(() => {
       const hasPendingResult = useCanvasStore
         .getState()
-        .nodes.some(
-          (node) =>
-            node.data.generatedResult === true &&
-            typeof node.data.generatedPendingRequestId === "string",
-        );
+          .nodes.some(
+            (node) =>
+              node.data.generatedResult === true &&
+              isPendingGeneratedResultStatus(node.data.generatedStatus) &&
+              typeof node.data.generatedPendingRequestId === "string",
+          );
       if (hasPendingResult || eventSources.current.size > 0) reconcileRuns();
     }, 5_000);
 
@@ -3152,7 +4594,13 @@ function CanvasShell() {
       document.removeEventListener("visibilitychange", reconcileIfVisible);
       stopRunSubscription();
     };
-  }, [applyRunSnapshot, canvasId, stopRunSubscription, subscribeToRun]);
+  }, [
+    applyRunSnapshot,
+    canvasId,
+    scheduleSave,
+    stopRunSubscription,
+    subscribeToRun,
+  ]);
 
   const validateRunMediaInputs = useCallback(
     async (
@@ -3166,7 +4614,9 @@ function CanvasShell() {
         nodeId,
         scope,
       );
+      const cyberScans = new Map<string, Promise<ModelDescriptor[]>>();
       for (const node of candidates) {
+        let freshlyScannedModels: ModelDescriptor[] | null = null;
         if (node.data.provider !== "fake") {
           const connectionId =
             typeof node.data.connectionId === "string"
@@ -3185,16 +4635,41 @@ function CanvasShell() {
               : "当前";
             return `${node.data.label}：${group} 群组的 API Key 未配置或不可用，请先在 API 设置中填写该群组自己的 Key`;
           }
+          if (connection.config.preset === "cyberafei-api") {
+            let scan = cyberScans.get(connection.id);
+            if (!scan) {
+              scan = fetchModels(connection.id);
+              cyberScans.set(connection.id, scan);
+            }
+            try {
+              freshlyScannedModels = await scan;
+            } catch (error) {
+              return `${node.data.label}：赛博阿飞分组模型扫描失败，已停止本次付费提交（${
+                error instanceof Error ? error.message : "请稍后重试"
+              }）`;
+            }
+            if (freshlyScannedModels.length === 0)
+              return `${node.data.label}：当前赛博阿飞分组 Key 未扫描到可运行模型，已停止本次付费提交`;
+            if (
+              typeof node.data.model === "string" &&
+              node.data.model.trim() &&
+              !freshlyScannedModels.some(
+                (model) => model.id === node.data.model,
+              )
+            )
+              return `${node.data.label}：模型 ${node.data.model} 不在当前分组 Key 的最新扫描结果中，已停止本次付费提交`;
+          }
         }
-        const options = modelOptionsForNode(
-          node,
-          connections,
-          connectionModels,
-        );
+        const options =
+          freshlyScannedModels ??
+          modelOptionsForNode(node, connections, connectionModels);
         const model =
-          options.find((candidate) => candidate.id === node.data.model) ??
-          options[0] ??
-          null;
+          modelDescriptorForSavedSelectionOrDefault(
+            options,
+            node.data.model,
+            node.data.parameters as
+              Readonly<Record<string, unknown>> | undefined,
+          ) ?? null;
         const linked = directLinkedAssetsForNode(
           node.id,
           state.nodes,
@@ -3257,15 +4732,74 @@ function CanvasShell() {
       const runRequest: RunRequestKey = {
         nodeId,
         scope,
-        ...(retryResultNodeId ? { retryResultNodeId } : {}),
       };
+      const currentState = useCanvasStore.getState();
+      const sourceIds = new Set(
+        generationNodesForRun(
+          currentState.nodes,
+          currentState.edges,
+          nodeId,
+          scope,
+        ).map((source) => source.id),
+      );
+      const pendingReferences = pendingAssetReferencesForRun(
+        currentState.nodes,
+        currentState.edges,
+        nodeId,
+        scope,
+      );
+      if (pendingReferences.length > 0) {
+        showToast("参考素材仍在导入，请等待素材导入完成后再运行");
+        return;
+      }
       const submissionKey = runRequestKey(runRequest);
-      if (activeRunKeys.current.has(submissionKey)) {
-        showToast("这个任务已经在提交，请勿重复点击");
+      const overlapsActiveSubmission = [
+        ...activeRunSources.current.values(),
+      ].some((activeSources) =>
+        [...sourceIds].some((sourceId) => activeSources.has(sourceId)),
+      );
+      const hasVisibleActiveRun = currentState.nodes.some(
+        (node) =>
+          node.data.generatedResult === true &&
+          typeof node.data.generatedFromNodeId === "string" &&
+          sourceIds.has(node.data.generatedFromNodeId) &&
+          [
+            "blocked",
+            "queued",
+            "submitting",
+            "running",
+            "archiving",
+            "cancel_requested",
+          ].includes(String(node.data.generatedStatus)),
+      );
+      if (
+        activeRunKeys.current.has(submissionKey) ||
+        overlapsActiveSubmission ||
+        hasVisibleActiveRun
+      ) {
+        showToast("这个生成节点已有任务在运行，请等待完成后再提交");
+        return;
+      }
+      const unresolvedCount = currentState.nodes.filter(
+        (node) =>
+          node.data.generatedResult === true &&
+          node.data.generatedStatus === "needs_attention" &&
+          typeof node.data.generatedFromNodeId === "string" &&
+          sourceIds.has(node.data.generatedFromNodeId),
+      ).length;
+      if (
+        unresolvedCount > 0 &&
+        !window.confirm(
+          `当前范围还有 ${unresolvedCount} 个“提交结果未知”的付费任务，供应商可能已经接单或扣费。\n\n请先在供应商后台核对。只有确认不需要追回这些任务时，才继续创建新的付费运行。\n\n确认已经核对并继续吗？`,
+        )
+      ) {
+        showToast("已取消提交，请先核对供应商任务与扣费记录");
         return;
       }
       activeRunKeys.current.add(submissionKey);
+      activeRunSources.current.set(submissionKey, sourceIds);
       setBusy(true);
+      let holdSubmissionUntilTerminal = false;
       try {
         const mediaValidationError = await validateRunMediaInputs(
           nodeId,
@@ -3276,20 +4810,44 @@ function CanvasShell() {
           return;
         }
         const requestId = crypto.randomUUID();
+        submittingRequestIds.current.add(requestId);
+        let submissionAttempted = false;
         try {
           if (saveTimer.current) {
             clearTimeout(saveTimer.current);
             saveTimer.current = null;
           }
+          pendingSave.current = null;
           const state = useCanvasStore.getState();
-          const savePromise = saveQueue.current?.enqueue({
-            canvasId,
-            graph: serializableGraph(state.nodes, state.edges, state.viewport),
-            title: state.title,
-          });
-          const pendingNodes = createPendingGeneratedResults(
-            state.nodes,
+          const normalizedNodes = state.nodes.map((node) =>
+            sourceIds.has(node.id)
+              ? normalizeGenerationNodeForRun(
+                  node,
+                  connections,
+                  connectionModels,
+                )
+              : node,
+          );
+          const normalizedEdges = filterEdgesToKnownPorts(
+            normalizedNodes,
             state.edges,
+          );
+          const savePromise = saveRequest(
+            {
+              canvasId,
+              graph: serializableGraph(
+                normalizedNodes,
+                normalizedEdges,
+                state.viewport,
+                state.drawings,
+              ),
+              title: state.title,
+            },
+            false,
+          );
+          const pendingNodes = createPendingGeneratedResults(
+            normalizedNodes,
+            normalizedEdges,
             nodeId,
             scope,
             requestId,
@@ -3297,7 +4855,7 @@ function CanvasShell() {
           );
           const pendingEdges = syncGeneratedResultEdges(
             pendingNodes,
-            state.edges,
+            normalizedEdges,
           );
           if (pendingNodes !== state.nodes || pendingEdges !== state.edges) {
             useCanvasStore.setState({
@@ -3307,6 +4865,7 @@ function CanvasShell() {
             graphRef.current = { nodes: pendingNodes, edges: pendingEdges };
           }
           await savePromise;
+          submissionAttempted = true;
           const snapshot = await createRun({
             canvasId,
             clientRequestId: requestId,
@@ -3318,10 +4877,15 @@ function CanvasShell() {
             void refreshAssets();
           } else {
             showToast("任务已提交，正在等待 API 服务商返回", "success");
-            subscribeToRun(snapshot.run.id);
+            subscribeToRun(snapshot.run.id, submissionKey);
+            holdSubmissionUntilTerminal = true;
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : "运行失败";
+          const submissionUnknown =
+            submissionAttempted &&
+            (error instanceof TypeError ||
+              (error instanceof DOMException && error.name === "AbortError"));
           const state = useCanvasStore.getState();
           let pendingChanged = false;
           const failedNodes = state.nodes.map((node) => {
@@ -3331,8 +4895,21 @@ function CanvasShell() {
               ...node,
               data: {
                 ...node.data,
-                generatedStatus: "failed" as const,
-                generatedError: message,
+                generatedStatus: submissionUnknown
+                  ? ("needs_attention" as const)
+                  : ("failed" as const),
+                generatedError: submissionUnknown
+                  ? {
+                      message:
+                        "提交运行时连接中断，无法确认服务端是否已创建任务。请先在运行记录或供应商后台核对，避免重复扣费。",
+                      type: "network_connection_error",
+                      code: "SUBMISSION_RESULT_UNKNOWN",
+                      providerMessage: message,
+                    }
+                  : message,
+                ...(submissionUnknown
+                  ? {}
+                  : { generatedPendingRequestId: undefined }),
               },
             };
           });
@@ -3348,10 +4925,19 @@ function CanvasShell() {
             graphRef.current = { nodes: failedNodes, edges: failedEdges };
             scheduleSave(failedNodes, failedEdges, state.viewport);
           }
-          showToast(message);
+          showToast(
+            submissionUnknown
+              ? "提交结果未知，请先核对运行记录，暂勿重复生成"
+              : message,
+          );
+        } finally {
+          submittingRequestIds.current.delete(requestId);
         }
       } finally {
-        activeRunKeys.current.delete(submissionKey);
+        if (!holdSubmissionUntilTerminal) {
+          activeRunKeys.current.delete(submissionKey);
+          activeRunSources.current.delete(submissionKey);
+        }
         setBusy(
           activeRunKeys.current.size > 0 || eventSources.current.size > 0,
         );
@@ -3363,8 +4949,11 @@ function CanvasShell() {
       showToast,
       applyRunSnapshot,
       subscribeToRun,
+      saveRequest,
       scheduleSave,
       validateRunMediaInputs,
+      connectionModels,
+      connections,
     ],
   );
 
@@ -3388,6 +4977,7 @@ function CanvasShell() {
   );
 
   useEffect(() => {
+    if (initialization.status !== "ready") return;
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setShortcutsOpen(false);
@@ -3426,6 +5016,21 @@ function CanvasShell() {
         modalOpen,
         interactiveControl,
       });
+      const plainHelpKey =
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        (event.key === "?" ||
+          (event.key === "/" && event.shiftKey) ||
+          event.key === "F1");
+      // The help dialog is the only modal that may handle its own plain-key
+      // shortcut. Other dialogs keep exclusive keyboard focus.
+      if (plainHelpKey && !editing && (!modalOpen || shortcutsOpen)) {
+        event.preventDefault();
+        setShortcutsOpen((open) => !open);
+        return;
+      }
+
       // Plain-key canvas shortcuts must never fire while typing or in a dialog.
       // A focused button is fine: digits and "F" are not activation keys, and
       // clicking any node control would otherwise disable these shortcuts.
@@ -3436,11 +5041,6 @@ function CanvasShell() {
         !event.ctrlKey &&
         !event.altKey;
 
-      if (bareKeyAllowed && (event.key === "?" || event.key === "F1")) {
-        event.preventDefault();
-        setShortcutsOpen(true);
-        return;
-      }
       if (bareKeyAllowed && !event.shiftKey) {
         const modeKey = { "1": "pan", "2": "draw", "3": "select-drawing" }[
           event.key
@@ -3482,20 +5082,22 @@ function CanvasShell() {
         !modalOpen &&
         !interactiveControl
       ) {
-        const selectedEdges = useCanvasStore
-          .getState()
-          .edges.filter((edge) => edge.selected);
+        const state = useCanvasStore.getState();
+        const selectedEdges = state.edges.filter((edge) => edge.selected);
         if (selectedEdges.length > 0) {
           event.preventDefault();
           checkpoint(true);
           const selectedEdgeIds = new Set(selectedEdges.map((edge) => edge.id));
-          setEdges((current) => {
-            const next = current.filter(
-              (edge) => !selectedEdgeIds.has(edge.id),
-            );
-            scheduleSave(nodes, next);
-            return next;
-          });
+          const nextEdges = state.edges.filter(
+            (edge) => !selectedEdgeIds.has(edge.id),
+          );
+          const nextNodes = removeUnavailableAssetMentions(
+            state.nodes,
+            nextEdges,
+          );
+          setNodes(nextNodes);
+          setEdges(nextEdges);
+          scheduleSave(nextNodes, nextEdges);
           showToast(`已断开 ${selectedEdges.length} 条连线`);
           return;
         }
@@ -3520,40 +5122,54 @@ function CanvasShell() {
       }
       if (!(event.metaKey || event.ctrlKey)) return;
       const key = event.key.toLowerCase();
+      if (key === "g" && !editing && !modalOpen && !interactiveControl) {
+        event.preventDefault();
+        const state = useCanvasStore.getState();
+        const selected = state.nodes.filter((node) => node.selected);
+        const groupId = selected[0]?.data.canvasGroupId;
+        const fullGroupSelected = Boolean(
+          groupId &&
+            selected.every((node) => node.data.canvasGroupId === groupId) &&
+            state.nodes.filter((node) => node.data.canvasGroupId === groupId)
+              .length === selected.length,
+        );
+        if (event.shiftKey) ungroupSelectedNodesRef.current?.();
+        else if (fullGroupSelected) showToast("所选节点已经在同一分组中");
+        else groupSelectedNodesRef.current?.();
+        return;
+      }
       const historyShortcutAllowed = isCanvasHistoryShortcutAllowed({
         editing,
         modalOpen,
         interactiveControl,
       });
-      const currentSelectedId = useCanvasStore.getState().selectedId;
-      const clipboardShortcutAllowed =
+      const duplicateShortcutAllowed =
         !editing &&
         !inPromptEditor &&
         !modalOpen &&
         !interactiveControl &&
-        (key === "v"
-          ? nodeClipboardRef.current !== null
-          : Boolean(currentSelectedId));
-      if ((key === "c" || key === "v") && clipboardShortcutAllowed) {
-        const handled = key === "c" ? copySelectedNodes() : pasteCopiedNodes();
-        if (handled) event.preventDefault();
-        return;
-      }
-      if (key === "d" && clipboardShortcutAllowed) {
+        Boolean(useCanvasStore.getState().selectedId);
+      if (key === "d" && duplicateShortcutAllowed) {
         // Overrides the browser bookmark shortcut only when a node is selected.
         if (duplicateSelectedNodes()) event.preventDefault();
         return;
       }
       if (key === "s" && !editing && !modalOpen) {
         event.preventDefault();
-        void saveNow().then(() => showToast("画布已保存", "success"));
+        void saveNow()
+          .then(() => showToast("画布已保存", "success"))
+          .catch(() => undefined);
         return;
       }
       if (key === "a" && !editing && !modalOpen && !interactiveControl) {
         if (selectAllNodes()) event.preventDefault();
         return;
       }
-      if (key === "/" || (key === "?" && !editing)) {
+      if (
+        (key === "/" || key === "?") &&
+        !editing &&
+        (!modalOpen || shortcutsOpen)
+      ) {
         event.preventDefault();
         setShortcutsOpen((open) => !open);
         return;
@@ -3585,14 +5201,13 @@ function CanvasShell() {
     activateDrawingTool,
     canvasMode,
     changeCanvasMode,
-    copySelectedNodes,
     checkpoint,
     deleteNode,
     deleteSelectedDrawings,
     duplicateSelectedNodes,
     fitViewToCanvas,
+    initialization.status,
     nodes,
-    pasteCopiedNodes,
     redo,
     runNode,
     saveNow,
@@ -3600,30 +5215,136 @@ function CanvasShell() {
     selectAllNodes,
     selectedDrawingIds,
     selectedId,
+    shortcutsOpen,
     setEdges,
+    setNodes,
     showToast,
     undo,
   ]);
 
-  const selectCanvasNode = useCallback((nodeId: string) => {
+  useEffect(() => {
+    const handler = (event: ClipboardEvent) => {
+      if (event.defaultPrevented || !event.clipboardData) return;
+      const target =
+        event.target instanceof Element ? (event.target as HTMLElement) : null;
+      const editing = Boolean(
+        target?.closest("input, textarea, select, [contenteditable='true']"),
+      );
+      const modalOpen = Boolean(
+        document.querySelector(
+          '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu',
+        ),
+      );
+      const interactiveControl = Boolean(
+        target?.closest(
+          "button, a, [role='menuitem'], .project-menu-backdrop, .mobile-backdrop",
+        ),
+      );
+      if (editing || modalOpen || interactiveControl) return;
+      if (hasSelectedBrowserText(window.getSelection())) return;
+      if (!copySelectedNodes()) return;
+      event.clipboardData.setData(NODE_CLIPBOARD_TYPE, "1");
+      event.preventDefault();
+    };
+    window.addEventListener("copy", handler, true);
+    return () => window.removeEventListener("copy", handler, true);
+  }, [copySelectedNodes]);
+
+  const selectCanvasNode = useCallback((nodeId: string, additive = false) => {
+    let selectionRemains = false;
     useCanvasStore.setState((state) => {
-      let changed = state.selectedId !== nodeId;
-      const nextNodes = state.nodes.map((node) => {
-        const selected = node.id === nodeId;
-        if (node.selected === selected) return node;
-        changed = true;
-        return { ...node, selected };
-      });
-      return changed
-        ? { nodes: nextNodes, selectedId: nodeId }
-        : { selectedId: nodeId };
+      const target = state.nodes.find((node) => node.id === nodeId);
+      if (!target) return {};
+
+      if (!additive) {
+        let changed = state.selectedId !== nodeId;
+        const nextNodes = state.nodes.map((node) => {
+          const selected = node.id === nodeId;
+          if (node.selected === selected) return node;
+          changed = true;
+          return { ...node, selected };
+        });
+        selectionRemains = true;
+        // Pointer events from controls inside a selected node must not publish
+        // the same selection again. Doing so re-renders the React Flow node
+        // between pointerdown and click, which closes native select popups and
+        // makes the model panel appear to flicker.
+        return changed ? { nodes: nextNodes, selectedId: nodeId } : state;
+      }
+
+      const willSelect = target.selected !== true;
+      const nextNodes = state.nodes.map((node) =>
+        node.id === nodeId ? { ...node, selected: willSelect } : node,
+      );
+      let fallbackId: string | null = null;
+      for (let index = nextNodes.length - 1; index >= 0; index -= 1) {
+        if (!nextNodes[index]?.selected) continue;
+        fallbackId = nextNodes[index]!.id;
+        break;
+      }
+      const currentPrimaryStillSelected = nextNodes.some(
+        (node) => node.id === state.selectedId && node.selected,
+      );
+      const nextSelectedId = willSelect
+        ? nodeId
+        : currentPrimaryStillSelected
+          ? state.selectedId
+          : fallbackId;
+      selectionRemains = nextSelectedId !== null;
+      return { nodes: nextNodes, selectedId: nextSelectedId };
     });
+    if (window.matchMedia("(max-width: 1100px)").matches) {
+      setMobileInspectorOpen(selectionRemains);
+    }
   }, []);
 
   const selectedCanvasNodes = useMemo(
     () => nodes.filter((node) => node.selected),
     [nodes],
   );
+  const canvasGroups = useMemo(() => {
+    const grouped = new Map<string, CanvasNode[]>();
+    for (const node of nodes) {
+      const groupId = node.data.canvasGroupId;
+      if (!groupId) continue;
+      const members = grouped.get(groupId) ?? [];
+      members.push(node);
+      grouped.set(groupId, members);
+    }
+    return Array.from(grouped, ([id, members]) => {
+      const bounds = nodeGroupBounds(members);
+      const padding = 26;
+      return {
+        id,
+        label: members[0]?.data.canvasGroupLabel ?? "节点组",
+        color: members[0]?.data.canvasGroupColor ?? "#9b8cff",
+        count: members.length,
+        position: {
+          x: bounds.position.x - padding,
+          y: bounds.position.y - padding - 26,
+        },
+        width: bounds.width + padding * 2,
+        height: bounds.height + padding * 2 + 26,
+      };
+    });
+  }, [nodes]);
+  const selectedHasGroup = selectedCanvasNodes.some(
+    (node) => Boolean(node.data.canvasGroupId),
+  );
+  const displayedEdges = useMemo(() => {
+    if (selectedCanvasNodes.length === 0) return edges;
+    const selectedNodeIds = new Set(selectedCanvasNodes.map((node) => node.id));
+    return edges.map((edge) =>
+      selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target)
+        ? {
+            ...edge,
+            className: [edge.className, "edge-connected-to-selection"]
+              .filter(Boolean)
+              .join(" "),
+          }
+        : edge,
+    );
+  }, [edges, selectedCanvasNodes]);
   const selectionToolbarAnchorId =
     selectedCanvasNodes.length >= 2
       ? selectedCanvasNodes.some((node) => node.id === selectedId)
@@ -3673,235 +5394,676 @@ function CanvasShell() {
     [checkpoint, scheduleSave, showToast],
   );
 
-  const renderedNodes = useMemo(
-    () =>
-      nodes.map((node): CanvasNode => {
-        const nodeType = node.data.nodeType;
-        const generationType =
-          nodeType === "image-generation" || nodeType === "video-generation"
-            ? nodeType
-            : null;
-        const nodeConnectionCandidates = generationType
-          ? connections.filter(
-              (connection) =>
-                providerConnectionUsage(connection) === "canvas" &&
-                providerSupportsNodeType(connection.provider, generationType),
-            )
-          : [];
-        const modelOptions = modelOptionsForNode(
-          node,
-          connections,
-          connectionModels,
-        );
-        const effectiveModel =
-          modelOptions.find((model) => model.id === node.data.model) ??
-          modelOptions[0] ??
-          null;
-        const linkedAssets = generationType
-          ? directLinkedAssetsForNode(node.id, nodes, edges, assets)
-          : [];
-        const compatibleInputIds =
-          connectingFrom && node.id !== connectingFrom.nodeId
-            ? (effectiveInputsForNode(node) ?? [])
-                .filter(
-                  (input) =>
-                    connectionCheck({
-                      source: connectingFrom.nodeId,
-                      sourceHandle: connectingFrom.handleId,
-                      target: node.id,
-                      targetHandle: input.id,
-                    }).valid,
-                )
-                .map((input) => input.id)
-            : [];
-        const generatedPromptText =
-          node.data.generatedResult === true
-            ? renderPromptParts(
-                node.data.generatedPromptParts ??
-                  (() => {
-                    const source = nodes.find(
-                      (item) => item.id === node.data.generatedFromNodeId,
-                    );
-                    return source
-                      ? generationPromptParts(source, nodes, edges)
-                      : [];
-                  })(),
-                {
-                  resolveAsset: (assetId) => {
-                    const asset = assets.find((item) => item.id === assetId);
-                    return asset ? `@${asset.name}` : `@${assetId}`;
-                  },
-                },
-              ).trim()
-            : undefined;
-        return {
+  const groupSelectedNodes = useCallback(() => {
+    const state = useCanvasStore.getState();
+    const selected = state.nodes.filter((node) => node.selected);
+    if (selected.length < 2) {
+      showToast("至少选择两个节点才能打组");
+      return;
+    }
+    const existingLabels = new Set(
+      state.nodes
+        .map((node) => node.data.canvasGroupLabel)
+        .filter((label): label is string => Boolean(label)),
+    );
+    let groupNumber = existingLabels.size + 1;
+    while (existingLabels.has(`分组 ${groupNumber}`)) groupNumber += 1;
+    const colors = ["#9b8cff", "#5de2c2", "#74b8ff", "#f2c66d", "#ff7f98"];
+    const groupId = `canvas-group-${crypto.randomUUID().slice(0, 8)}`;
+    const groupLabel = `分组 ${groupNumber}`;
+    const groupColor = colors[(groupNumber - 1) % colors.length] ?? colors[0];
+    const selectedIds = new Set(selected.map((node) => node.id));
+    const nextNodes = state.nodes.map((node) =>
+      selectedIds.has(node.id)
+        ? {
+            ...node,
+            data: { ...node.data, canvasGroupId: groupId, canvasGroupLabel: groupLabel, canvasGroupColor: groupColor },
+          }
+        : node,
+    );
+    checkpoint(true);
+    setNodes(nextNodes);
+    graphRef.current = { nodes: nextNodes, edges: state.edges };
+    scheduleSave(nextNodes, state.edges, state.viewport);
+    showToast(`已将 ${selected.length} 个节点放入${groupLabel}`, "success");
+  }, [checkpoint, scheduleSave, setNodes, showToast]);
+
+  const ungroupSelectedNodes = useCallback(() => {
+    const state = useCanvasStore.getState();
+    const groupIds = new Set(
+      state.nodes
+        .filter((node) => node.selected && node.data.canvasGroupId)
+        .map((node) => node.data.canvasGroupId),
+    );
+    if (groupIds.size === 0) {
+      showToast("请选择一个已打组的节点");
+      return;
+    }
+    const nextNodes = state.nodes.map((node) => {
+      if (!node.data.canvasGroupId || !groupIds.has(node.data.canvasGroupId))
+        return node;
+      const nextData = { ...node.data };
+      delete nextData.canvasGroupId;
+      delete nextData.canvasGroupLabel;
+      delete nextData.canvasGroupColor;
+      return { ...node, data: nextData };
+    });
+    checkpoint(true);
+    setNodes(nextNodes);
+    graphRef.current = { nodes: nextNodes, edges: state.edges };
+    scheduleSave(nextNodes, state.edges, state.viewport);
+    showToast(`已解组 ${groupIds.size} 个节点组`, "success");
+  }, [checkpoint, scheduleSave, setNodes, showToast]);
+
+  const selectCanvasGroup = useCallback(
+    (groupId: string) => {
+      const state = useCanvasStore.getState();
+      const members = state.nodes.filter(
+        (node) => node.data.canvasGroupId === groupId,
+      );
+      if (members.length === 0) return;
+      const selectedId = members.at(-1)?.id ?? null;
+      useCanvasStore.setState({
+        selectedId,
+        nodes: state.nodes.map((node) => ({
           ...node,
-          data: {
-            ...node.data,
-            ...(generationType
-              ? {
-                  inputs: generationInputsForModel(
-                    generationType,
-                    effectiveModel,
-                    node.data.inputs,
-                  ),
-                }
-              : {}),
-            assets,
-            mentionAssets: linkedAssetsForNode(node.id, nodes, edges, assets),
+          selected: node.data.canvasGroupId === groupId,
+        })),
+      });
+      if (window.matchMedia("(max-width: 1100px)").matches)
+        setMobileInspectorOpen(true);
+    },
+    [],
+  );
+  useEffect(() => {
+    groupSelectedNodesRef.current = groupSelectedNodes;
+    ungroupSelectedNodesRef.current = ungroupSelectedNodes;
+  }, [groupSelectedNodes, ungroupSelectedNodes]);
+
+  const tidyCanvasLayout = useCallback(() => {
+    const state = useCanvasStore.getState();
+    if (state.nodes.length < 2) {
+      showToast("至少需要两个节点才能整理");
+      return;
+    }
+    const layoutNodes = state.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      ...nodeDimensions(node),
+      ...(node.data.generatedResult === true &&
+      typeof node.data.generatedFromNodeId === "string"
+        ? { generatedFromNodeId: node.data.generatedFromNodeId }
+        : {}),
+      ...(node.data.canvasGroupId
+        ? { canvasGroupId: node.data.canvasGroupId }
+        : {}),
+    }));
+    const layoutEdges = state.edges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+    }));
+    const direction = preferredCanvasLayoutDirection(layoutNodes, layoutEdges);
+    const positions = tidyCanvasRectPositions(
+      layoutNodes,
+      layoutEdges,
+      direction,
+      { layerGap: 104, nodeGap: 44, resultGap: 28, resultGridGap: 16, componentGap: 96, maxComponentColumns: 4 },
+    );
+    let changed = false;
+    const nextNodes = state.nodes.map((node) => {
+      const position = positions.get(node.id);
+      if (
+        !position ||
+        (Math.abs(position.x - node.position.x) < 0.5 &&
+          Math.abs(position.y - node.position.y) < 0.5)
+      )
+        return node;
+      changed = true;
+      return { ...node, position };
+    });
+    if (!changed) {
+      showToast("画布已经很整齐了");
+      return;
+    }
+
+    checkpoint(true);
+    useCanvasStore.setState({ nodes: nextNodes });
+    graphRef.current = { nodes: nextNodes, edges: state.edges };
+    scheduleSave(nextNodes, state.edges, state.viewport);
+    window.requestAnimationFrame(() => {
+      void reactFlowRef.current?.fitView({
+        padding: 0.18,
+        minZoom: CANVAS_MIN_ZOOM,
+        maxZoom: CANVAS_MAX_ZOOM,
+        duration: 320,
+      });
+    });
+    showToast(
+      `已按关联分组并${direction === "horizontal" ? "横向" : "纵向"}整理 ${nextNodes.length} 个节点`,
+      "success",
+    );
+  }, [checkpoint, scheduleSave, showToast]);
+
+  const applyDirectorPreviewPatch = useCallback(
+    (patch: DirectorGraphPatch | null) => {
+      const state = useCanvasStore.getState();
+      const previousIds = directorPreviewNodeIdsRef.current;
+      const baseNodes = state.nodes.filter((node) => !previousIds.has(node.id));
+      const baseNodeIds = new Set(baseNodes.map((node) => node.id));
+      const baseEdges = state.edges.filter(
+        (edge) => baseNodeIds.has(edge.source) && baseNodeIds.has(edge.target),
+      );
+
+      if (!patch) {
+        directorPreviewNodeIdsRef.current = new Set();
+        useCanvasStore.setState({ nodes: baseNodes, edges: baseEdges });
+        graphRef.current = { nodes: baseNodes, edges: baseEdges };
+        return;
+      }
+
+      const previewNodes = patch.nodes.map((node): CanvasNode => ({
+        ...(node as unknown as CanvasNode),
+        type: "workflow",
+        draggable: false,
+        selectable: false,
+        deletable: false,
+        connectable: false,
+        data: {
+          ...(node.data as CanvasNodeData),
+          directorDraft: true,
+        },
+      }));
+      const previewEdges = patch.edges.map((edge): CanvasEdge => ({
+        ...(edge as unknown as CanvasEdge),
+        animated: true,
+        selectable: false,
+        style: {
+          stroke: "rgba(69, 200, 173, 0.72)",
+          strokeDasharray: "7 6",
+        },
+      }));
+      directorPreviewNodeIdsRef.current = new Set(
+        previewNodes.map((node) => node.id),
+      );
+      const nextNodes = [...baseNodes, ...previewNodes];
+      const nextEdges = [...baseEdges, ...previewEdges];
+      useCanvasStore.setState({ nodes: nextNodes, edges: nextEdges });
+      graphRef.current = { nodes: nextNodes, edges: nextEdges };
+    },
+    [],
+  );
+
+  const applyDirectorApproval = useCallback(
+    async (result: DirectorApproveResult) => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingSave.current = null;
+      directorPreviewNodeIdsRef.current = new Set();
+
+      const document = result.canvas.graph as unknown as CanvasDocument;
+      const approvedNodes = ensureGeneratedResultInputs(
+        ensureGenerationNodeInputs(
+          document.nodes.map((node) => ({
+            ...node,
+            type: "workflow" as const,
+            data: { ...node.data, directorDraft: false },
+          })),
+        ),
+      );
+      const approvedEdges = filterEdgesToKnownPorts(
+        approvedNodes,
+        keepLatestEdgePerNodePair(document.edges),
+      );
+      const approvedViewport =
+        document.viewport ?? useCanvasStore.getState().viewport;
+      canvasRevision.current = result.canvas.revision;
+      setCanvasRevisionValue(result.canvas.revision);
+      saveConflictRef.current = null;
+      conflictedSave.current = null;
+      setSaveConflict(null);
+      setSaveConflictOpen(false);
+      setSaveState("saved");
+      useCanvasStore.setState({
+        title: result.canvas.title,
+        nodes: approvedNodes,
+        edges: approvedEdges,
+        drawings: document.drawings ?? [],
+        viewport: approvedViewport,
+        selectedId: null,
+      });
+      graphRef.current = { nodes: approvedNodes, edges: approvedEdges };
+
+      const snapshot = result.run as RunSnapshot | null;
+      if (!snapshot?.run?.id) return;
+      applyRunSnapshot(snapshot, snapshot.run.clientRequestId);
+      if (terminalRunStatuses.has(snapshot.run.status)) {
+        await refreshAssets();
+      } else {
+        subscribeToRun(snapshot.run.id);
+      }
+    },
+    [applyRunSnapshot, refreshAssets, subscribeToRun],
+  );
+
+  const renderedNodes = useMemo(() => {
+    const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+    const assetById = new Map(
+      assets.map((asset) => [asset.id, asset] as const),
+    );
+    const incomingEdges = new Map<string, CanvasEdge[]>();
+    for (const edge of edges) {
+      const incoming = incomingEdges.get(edge.target);
+      if (incoming) incoming.push(edge);
+      else incomingEdges.set(edge.target, [edge]);
+    }
+    const directAssetsForNode = (nodeId: string) => {
+      const seen = new Set<string>();
+      const linked: AssetView[] = [];
+      for (const edge of incomingEdges.get(nodeId) ?? []) {
+        const source = nodeById.get(edge.source);
+        if (!source) continue;
+        const ids = [
+          ...(typeof source.data.assetId === "string"
+            ? [source.data.assetId]
+            : []),
+          ...(source.data.lastOutputAssetIds ?? []),
+        ];
+        for (const id of ids) {
+          if (seen.has(id)) continue;
+          const asset = assetById.get(id);
+          if (!asset || asset.kind === "text") continue;
+          seen.add(id);
+          linked.push(asset);
+        }
+      }
+      return linked;
+    };
+    const mentionAssetsForNode = (nodeId: string) => {
+      const upstream = new Set<string>();
+      const queue = [nodeId];
+      while (queue.length > 0) {
+        const target = queue.shift();
+        if (!target) continue;
+        for (const edge of incomingEdges.get(target) ?? []) {
+          if (upstream.has(edge.source)) continue;
+          upstream.add(edge.source);
+          queue.push(edge.source);
+        }
+      }
+      const assetIds = new Set<string>();
+      for (const upstreamId of upstream) {
+        const data = nodeById.get(upstreamId)?.data;
+        if (!data) continue;
+        if (typeof data.assetId === "string") assetIds.add(data.assetId);
+        for (const assetId of data.lastOutputAssetIds ?? [])
+          assetIds.add(assetId);
+        for (const part of data.parts ?? []) {
+          if (part.type === "asset") assetIds.add(part.assetId);
+        }
+      }
+      return assets.filter((asset) => assetIds.has(asset.id));
+    };
+
+    return nodes.map((node): CanvasNode => {
+      const nodeType = node.data.nodeType;
+      const generationType =
+        nodeType === "image-generation" || nodeType === "video-generation"
+          ? nodeType
+          : null;
+      const nodeConnectionCandidates = generationType
+        ? connections.filter(
+            (connection) =>
+              providerConnectionUsage(connection) === "canvas" &&
+              providerSupportsNodeType(connection.provider, generationType),
+          )
+        : [];
+      const modelOptions = modelOptionsForNode(
+        node,
+        connections,
+        connectionModels,
+      );
+      const effectiveModel =
+        modelDescriptorForSavedSelectionOrDefault(
+          modelOptions,
+          node.data.model,
+          node.data.parameters as Readonly<Record<string, unknown>> | undefined,
+        ) ?? null;
+      const linkedAssets = generationType ? directAssetsForNode(node.id) : [];
+      const compatibleInputIds =
+        connectingFrom && node.id !== connectingFrom.nodeId
+          ? (effectiveInputsForNode(node) ?? [])
+              .filter(
+                (input) =>
+                  connectionCheck({
+                    source: connectingFrom.nodeId,
+                    sourceHandle: connectingFrom.handleId,
+                    target: node.id,
+                    targetHandle: input.id,
+                  }).valid,
+              )
+              .map((input) => input.id)
+          : [];
+      const generatedPromptText =
+        node.data.generatedResult === true
+          ? renderPromptParts(
+              node.data.generatedPromptParts ??
+                (() => {
+                  const source = node.data.generatedFromNodeId
+                    ? nodeById.get(node.data.generatedFromNodeId)
+                    : undefined;
+                  return source
+                    ? generationPromptParts(source, nodes, edges)
+                    : [];
+                })(),
+              {
+                resolveAsset: (assetId) => {
+                  const asset = assetById.get(assetId);
+                  return asset ? `@${asset.name}` : `@${assetId}`;
+                },
+              },
+            ).trim()
+          : undefined;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          ...(generationType
+            ? {
+                inputs: generationInputsForModel(
+                  generationType,
+                  effectiveModel,
+                  node.data.inputs,
+                ),
+              }
+            : {}),
+          assets,
+          mentionAssets: mentionAssetsForNode(node.id),
+          linkedAssets,
+          linkedAssetDurations,
+          linkedAssetWarnings: validateLinkedMediaInputs(
+            effectiveModel,
             linkedAssets,
             linkedAssetDurations,
-            linkedAssetWarnings: validateLinkedMediaInputs(
-              effectiveModel,
-              linkedAssets,
-              linkedAssetDurations,
-              durationReadFailures,
-            ),
-            linkedAssetLimitText: linkedMediaLimitText(
-              effectiveModel,
-              linkedAssets,
-            ),
-            connectionPreviewActive: Boolean(connectingFrom),
-            connectionHighlight:
-              connectingFrom?.nodeId === node.id
-                ? "source"
-                : compatibleInputIds.length > 0
-                  ? "compatible"
-                  : undefined,
-            compatibleInputIds,
-            connectionOptions: [
-              ...(node.data.provider === "fake"
-                ? [
-                    {
-                      id: "fake-default",
-                      name: "Fake（离线演示）",
-                      provider: "fake",
-                      supplier: "fake",
-                      supplierLabel: "Fake（离线演示）",
-                      group: "默认群组",
-                    },
-                  ]
-                : []),
-              ...nodeConnectionCandidates.map((connection) => ({
-                id: connection.id,
-                name: connection.name,
-                provider: connection.provider,
-                supplier: providerConnectionSupplierKey(connection),
-                supplierLabel: providerSupplierLabel(
-                  providerConnectionSupplierKey(connection),
-                ),
-                group: providerConnectionGroup(connection),
-                available: connectionIsConfigured(connection),
-              })),
-            ],
-            modelOptions,
-            generatedPromptText,
-            status: statuses.get(node.id),
-            ...(selectionToolbarAnchorId === node.id
-              ? {
-                  selectionAlignmentVisible: true,
-                  selectionCount: selectedCanvasNodes.length,
-                  onAlignSelection: alignSelectedNodes,
-                }
-              : {}),
-            onSelect: () => selectCanvasNode(node.id),
-            onOpenPreview: (assetId: string) => {
-              const asset = assets.find((item) => item.id === assetId);
-              if (!asset) return;
-              setPreviewReturnsToHistory(false);
-              setPreviewAsset(asset);
-            },
-            onPrepareReversePrompt: () => {
-              selectCanvasNode(node.id);
-              setAgentDraftRequest({
-                id: crypto.randomUUID(),
-                ...(node.data.assetId ? { assetId: node.data.assetId } : {}),
-                text: `请分析当前${node.data.assetKind === "video" ? "视频" : "图片"}，反推一份可复现画面主体、构图、风格、光线和细节的完整生成提示词。`,
-              });
-            },
-            onRun: () => void runNode(node.id),
-            onRegenerate:
-              node.data.generatedResult === true
-                ? () => regenerateResult(node.id)
+            durationReadFailures,
+          ),
+          linkedAssetLimitText: linkedMediaLimitText(
+            effectiveModel,
+            linkedAssets,
+          ),
+          connectionPreviewActive: Boolean(connectingFrom),
+          connectionHighlight:
+            connectingFrom?.nodeId === node.id
+              ? "source"
+              : compatibleInputIds.length > 0
+                ? "compatible"
                 : undefined,
-            onDelete: () => deleteNode(node.id),
-            onResizeStart: () => checkpoint(true),
-            onPromptPartsChange: (parts: PromptPart[]) =>
-              updateNodeData(node.id, { parts }),
-            onConnectionChange: (connectionId: string) =>
-              changeNodeConnection(node.id, connectionId),
-            onModelChange: (model: string) => changeNodeModel(node.id, model),
-            onParametersChange: (parameters: Record<string, unknown>) =>
-              updateNodeData(node.id, { parameters }),
-            onMediaAspectRatio: (ratio: number) =>
-              updateMediaAspectRatio(node.id, ratio),
-            onLinkedAssetDuration: recordLinkedAssetDuration,
-            onOpenApiSettings: () => setSettingsOpen(true),
+          compatibleInputIds,
+          connectionOptions: [
+            ...(node.data.provider === "fake"
+              ? [
+                  {
+                    id: "fake-default",
+                    name: "Fake（离线演示）",
+                    provider: "fake",
+                    supplier: "fake",
+                    supplierLabel: "Fake（离线演示）",
+                    group: "默认群组",
+                  },
+                ]
+              : []),
+            ...nodeConnectionCandidates.map((connection) => ({
+              id: connection.id,
+              name: connection.name,
+              provider: connection.provider,
+              supplier: providerConnectionSupplierKey(connection),
+              supplierLabel: providerSupplierLabel(
+                providerConnectionSupplierKey(connection),
+              ),
+              group: providerConnectionGroup(connection),
+              available: connectionIsConfigured(connection),
+            })),
+          ],
+          modelOptions,
+          modelOptionsAuthoritative: Boolean(
+            generationType &&
+            ((connectionModels.connectionId === node.data.connectionId &&
+              connectionModels.authoritative) ||
+              connections.some(
+                (connection) =>
+                  connection.id === node.data.connectionId &&
+                  connectionRequiresAuthoritativeModelScan(connection),
+              )),
+          ),
+          modelOptionsLoading: Boolean(
+            generationType &&
+            connections.some(
+              (connection) =>
+                connection.id === node.data.connectionId &&
+                connectionRequiresAuthoritativeModelScan(connection) &&
+                !(
+                  connection.provider === "weai" &&
+                  weAiCanvasModelDescriptorsFromSavedScan(connection.config) !==
+                    null
+                ),
+            ) &&
+            (connectionModels.connectionId !== node.data.connectionId ||
+              connectionModels.loading),
+          ),
+          modelOptionsError: Boolean(
+            generationType &&
+            modelLoadError?.connectionId === node.data.connectionId &&
+            !connectionModels.loading,
+          ),
+          generatedPromptText,
+          status: statuses.get(node.id),
+          ...(selectionToolbarAnchorId === node.id
+            ? {
+                selectionAlignmentVisible: true,
+                selectionCount: selectedCanvasNodes.length,
+                onAlignSelection: alignSelectedNodes,
+              }
+            : {}),
+          onSelect: (additive = false) => selectCanvasNode(node.id, additive),
+          onOpenPreview: (assetId: string) => {
+            const asset = assetById.get(assetId);
+            if (!asset) return;
+            setPreviewReturnsToHistory(false);
+            setPreviewAsset(asset);
           },
-        };
-      }),
-    [
-      assets,
-      changeNodeConnection,
-      changeNodeModel,
-      checkpoint,
-      connectionCheck,
-      connectingFrom,
-      connectionModels,
-      connections,
-      edges,
-      effectiveInputsForNode,
-      deleteNode,
-      durationReadFailures,
-      nodes,
-      linkedAssetDurations,
-      recordLinkedAssetDuration,
-      regenerateResult,
-      runNode,
-      alignSelectedNodes,
-      selectCanvasNode,
-      selectedCanvasNodes.length,
-      selectionToolbarAnchorId,
-      statuses,
-      updateNodeData,
-      updateMediaAspectRatio,
-    ],
+          onPrepareReversePrompt: () => {
+            selectCanvasNode(node.id);
+            setInspectorMode("agent");
+            setAgentDraftRequest({
+              id: crypto.randomUUID(),
+              ...(node.data.assetId ? { assetId: node.data.assetId } : {}),
+              text: `请分析当前${node.data.assetKind === "video" ? "视频" : "图片"}，反推一份可复现画面主体、构图、风格、光线和细节的完整生成提示词。`,
+            });
+          },
+          onRun: () => void runNode(node.id),
+          onRegenerate:
+            node.data.generatedResult === true
+              ? () => regenerateResult(node.id)
+              : undefined,
+          onRecoverResult:
+            node.data.generatedResult === true &&
+            (node.data.generatedRecoveryAction === "resume_poll" ||
+              node.data.generatedRecoveryAction === "resume_archive") &&
+            typeof node.data.generatedFromRunId === "string"
+              ? async () => {
+                  const runId = node.data.generatedFromRunId!;
+                  showToast(
+                    node.data.generatedRecoveryAction === "resume_poll"
+                      ? "正在恢复查询现有供应商任务，不会重新提交或扣费…"
+                      : "正在从已完成的供应商任务取回结果，不会再次提交或扣费…",
+                  );
+                  try {
+                    const snapshot = await resumeRun(runId);
+                    applyRunSnapshot(snapshot, snapshot.run.clientRequestId);
+                    if (terminalRunStatuses.has(snapshot.run.status)) {
+                      await refreshAssets();
+                    } else {
+                      subscribeToRun(snapshot.run.id);
+                    }
+                  } catch (error) {
+                    showToast(
+                      error instanceof Error
+                        ? error.message
+                        : "结果取回失败，请稍后重试",
+                      "error",
+                    );
+                    throw error;
+                  }
+                }
+              : undefined,
+          onDelete: () => deleteNode(node.id),
+          onResizeStart: () => checkpoint(true),
+          onPromptPartsChange: (parts: PromptPart[]) =>
+            updateNodeData(node.id, { parts }),
+          onConnectionChange: (connectionId: string) =>
+            changeNodeConnection(node.id, connectionId),
+          onModelChange: (model: string) => changeNodeModel(node.id, model),
+          onParametersChange: (parameters: Record<string, unknown>) =>
+            updateNodeData(node.id, { parameters }),
+          onMediaAspectRatio: (ratio: number) =>
+            updateMediaAspectRatio(node.id, ratio),
+          onLinkedAssetDuration: recordLinkedAssetDuration,
+          onRemoveLinkedAsset: (assetId: string) => {
+            const state = useCanvasStore.getState();
+            const nextEdges = removeDirectLinkedAssetEdges(
+              node.id,
+              assetId,
+              state.nodes,
+              state.edges,
+            );
+            if (nextEdges.length === state.edges.length) return;
+            const nextNodes = removeUnavailableAssetMentions(
+              state.nodes,
+              nextEdges,
+            );
+            checkpoint(true);
+            setNodes(nextNodes);
+            setEdges(nextEdges);
+            scheduleSave(nextNodes, nextEdges);
+          },
+          onOpenApiSettings: () => setSettingsOpen(true),
+        },
+      };
+    });
+  }, [
+    assets,
+    changeNodeConnection,
+    changeNodeModel,
+    checkpoint,
+    connectionCheck,
+    connectingFrom,
+    connectionModels,
+    connections,
+    edges,
+    effectiveInputsForNode,
+    deleteNode,
+    durationReadFailures,
+    nodes,
+    linkedAssetDurations,
+    modelLoadError,
+    recordLinkedAssetDuration,
+    applyRunSnapshot,
+    refreshAssets,
+    regenerateResult,
+    runNode,
+    scheduleSave,
+    setEdges,
+    setNodes,
+    showToast,
+    subscribeToRun,
+    alignSelectedNodes,
+    selectCanvasNode,
+    selectedCanvasNodes.length,
+    selectionToolbarAnchorId,
+    statuses,
+    updateNodeData,
+    updateMediaAspectRatio,
+  ]);
+
+  const portLayoutSignature = useMemo(
+    () =>
+      renderedNodes
+        .map((node) => {
+          const inputs = (node.data.inputs ?? [])
+            .map((port) => `${port.id}:${port.kind}`)
+            .join(",");
+          const outputs = (node.data.outputs ?? [])
+            .map((port) => `${port.id}:${port.kind}`)
+            .join(",");
+          return `${node.id}:${node.width ?? ""}:${node.height ?? ""}:${inputs}:${outputs}`;
+        })
+        .join("|"),
+    [renderedNodes],
   );
+
+  useEffect(() => {
+    if (portLayoutSignatureRef.current === portLayoutSignature) return;
+    portLayoutSignatureRef.current = portLayoutSignature;
+    for (const node of renderedNodes) updateNodeInternals(node.id);
+  }, [portLayoutSignature, renderedNodes, updateNodeInternals]);
 
   const onNodesChangeWrapped = useCallback(
     (changes: Parameters<typeof applyNodeChanges<CanvasNode>>[0]) => {
       const selected = changes.find(
         (change) => change.type === "select" && change.selected,
       );
-      if (selected?.type === "select") {
-        setSelectedId(selected.id);
-      }
-      setNodes((current) => {
-        const next = applyNodeChanges(changes, current);
-        if (shouldPersistNodeChanges(changes)) scheduleSave(next, edges);
-        return next;
+      const selectionMayChange = changes.some(
+        (change) => change.type === "select" || change.type === "remove",
+      );
+      let nodesToPersist: CanvasNode[] | null = null;
+      useCanvasStore.setState((state) => {
+        const next = applyNodeChanges(changes, state.nodes);
+        if (shouldPersistNodeChanges(changes)) nodesToPersist = next;
+        if (!selectionMayChange) return { nodes: next };
+
+        const primaryStillSelected = next.some(
+          (node) => node.id === state.selectedId && node.selected,
+        );
+        const fallbackSelectedId = [...next]
+          .reverse()
+          .find((node) => node.selected)?.id;
+        const nextSelectedId =
+          selected?.type === "select"
+            ? selected.id
+            : primaryStillSelected
+              ? state.selectedId
+              : (fallbackSelectedId ?? null);
+        return { nodes: next, selectedId: nextSelectedId };
       });
+      if (nodesToPersist)
+        scheduleSave(nodesToPersist, useCanvasStore.getState().edges);
     },
-    [edges, setNodes, scheduleSave, setSelectedId],
+    [scheduleSave],
   );
   const onEdgesChangeWrapped = useCallback(
     (changes: Parameters<typeof applyEdgeChanges<CanvasEdge>>[0]) => {
-      if (changes.some((change) => change.type === "remove")) checkpoint(true);
-      setEdges((current) => {
-        const next = applyEdgeChanges(changes, current);
-        if (changes.some((change) => change.type === "remove"))
-          scheduleSave(nodes, next);
-        return next;
-      });
+      const removesEdge = changes.some((change) => change.type === "remove");
+      if (!removesEdge) {
+        setEdges((current) => applyEdgeChanges(changes, current));
+        return;
+      }
+      checkpoint(true);
+      const state = useCanvasStore.getState();
+      const nextEdges = applyEdgeChanges(changes, state.edges);
+      const nextNodes = removeUnavailableAssetMentions(state.nodes, nextEdges);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      scheduleSave(nextNodes, nextEdges);
     },
-    [checkpoint, nodes, scheduleSave, setEdges],
+    [checkpoint, scheduleSave, setEdges, setNodes],
   );
   const onMoveEnd = useCallback(
     (_: unknown, nextViewport: { x: number; y: number; zoom: number }) => {
+      const state = useCanvasStore.getState();
+      if (canvasViewportsEqual(state.viewport, nextViewport)) return;
       setViewport(nextViewport);
-      scheduleSave(nodes, edges, nextViewport);
+      scheduleSave(state.nodes, state.edges, nextViewport, state.drawings);
     },
-    [edges, nodes, scheduleSave, setViewport],
+    [scheduleSave, setViewport],
   );
 
   const selectedConnectionId =
@@ -3914,76 +6076,276 @@ function CanvasShell() {
   const selectedConnectionConfigured = selectedConnectionRecord
     ? connectionIsConfigured(selectedConnectionRecord)
     : false;
+
+  // Marketplace prices are supplier-owned data. Keep the canvas selector in
+  // sync when the tab regains focus (for example after refreshing a supplier's
+  // model-plaza page) and at the same cadence as the client model cache.
+  useEffect(() => {
+    if (!selectedConnectionRecord || !selectedConnectionId) return;
+    const supplier = providerConnectionSupplierKey(selectedConnectionRecord);
+    const marketplaceSuppliers = new Set([
+      "cangyuan",
+      "cyberafei",
+      "chentu",
+      "miaowu",
+      "weai",
+    ]);
+    if (!marketplaceSuppliers.has(supplier)) return;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      invalidateModelCache(selectedConnectionId);
+      setModelScanRevision((current) => current + 1);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const interval = window.setInterval(refresh, 60_000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(interval);
+    };
+  }, [selectedConnectionId, selectedConnectionRecord]);
+
   useEffect(() => {
     if (!selectedConnectionId || selectedConnectionId === "fake-default")
       return;
     const selectedConnection = connections.find(
       (connection) => connection.id === selectedConnectionId,
     );
+    if (!selectedConnection) return;
+    let cancelled = false;
+    const requiresLiveWeAiScan =
+      verifiedWeAiModelDescriptorsForConnection(selectedConnection).length > 0;
+    const requiresLiveCyberAfeiScan =
+      selectedConnection.config.preset === "cyberafei-api";
+    const requiresLiveChentuScan =
+      selectedConnection.config.preset === CHENTU_PRESET_ID;
+    const requiresLiveFriModelScan =
+      selectedConnection.config.preset === FRIMODEL_PRESET_ID;
+    const requiresAuthoritativeScan =
+      connectionRequiresAuthoritativeModelScan(selectedConnection);
+    const savedWeAiItems = requiresLiveWeAiScan
+      ? weAiCanvasModelDescriptorsFromSavedScan(selectedConnection.config)
+      : null;
+    const cachedItems = requiresAuthoritativeScan
+      ? getCachedModels(selectedConnectionId)
+      : undefined;
+    if (
+      requiresAuthoritativeScan &&
+      cachedItems === undefined &&
+      savedWeAiItems === null
+    ) {
+      void Promise.resolve().then(() => {
+        if (cancelled) return;
+        setConnectionModels({
+          connectionId: selectedConnectionId,
+          items: [],
+          authoritative: true,
+          loading: true,
+        });
+        setModelLoadError(null);
+      });
+    }
+    const localItems =
+      cachedItems ??
+      savedWeAiItems ??
+      (requiresAuthoritativeScan
+        ? []
+        : modelDescriptorsForConnection(selectedConnection));
+    const applyModels = (items: readonly ModelDescriptor[]) => {
+      if (cancelled) return;
+      setConnectionModels((current) => {
+        if (
+          current.connectionId === selectedConnectionId &&
+          Boolean(current.authoritative) === requiresAuthoritativeScan &&
+          current.loading === false &&
+          modelDescriptorListsEqual(current.items, items)
+        ) {
+          return current;
+        }
+        return {
+          connectionId: selectedConnectionId,
+          items: [...items],
+          authoritative: requiresAuthoritativeScan,
+          loading: false,
+        };
+      });
+      const currentNode = useCanvasStore
+        .getState()
+        .nodes.find((node) => node.id === selectedId);
+      const nodeType = currentNode?.data.nodeType;
+      if (
+        !currentNode ||
+        (nodeType !== "image-generation" && nodeType !== "video-generation")
+      )
+        return;
+      const compatible = items.filter((model) =>
+        modelSupportsNodeType(model, nodeType),
+      );
+      if (compatible.length === 0) {
+        setModelLoadError(
+          requiresLiveCyberAfeiScan
+            ? {
+                connectionId: selectedConnectionId,
+                message:
+                  "赛博阿飞分组扫描完成：当前 Key 没有可运行的图片或视频模型，已隐藏旧模型",
+              }
+            : requiresLiveWeAiScan
+              ? {
+                  connectionId: selectedConnectionId,
+                  message:
+                    "We-AI 实时扫描完成：当前群组没有可用图片模型，已隐藏本地旧模型",
+                }
+              : requiresLiveChentuScan
+                ? {
+                    connectionId: selectedConnectionId,
+                    message:
+                      "辰途实时扫描完成：当前 Key 没有可运行的图片或视频模型，已隐藏本地旧模型",
+                  }
+                : requiresLiveFriModelScan
+                  ? {
+                      connectionId: selectedConnectionId,
+                      message:
+                        "FriModel 实时扫描完成：当前 Key 没有可运行的图片模型，已隐藏本地旧模型",
+                    }
+                : null,
+        );
+        return;
+      }
+      setModelLoadError(null);
+      const runnableCompatible = compatible.filter(
+        (model) => modelCanvasUnavailableReason(model) === null,
+      );
+      if (runnableCompatible.length === 0) {
+        setModelLoadError({
+          connectionId: selectedConnectionId,
+          message: requiresLiveCyberAfeiScan
+            ? "赛博阿飞已扫描到相关模型，但当前都没有已验证的画布协议；模型会显示为禁用且不会提交扣费"
+            : requiresLiveChentuScan
+              ? "辰途已扫描到相关模型，但当前都没有已验证的画布协议；模型会显示为禁用且不会提交扣费"
+              : requiresLiveFriModelScan
+                ? "FriModel 已扫描到相关模型，但当前都没有可运行的图片协议；模型会显示为禁用且不会提交扣费"
+              : "当前连接没有可运行的模型",
+        });
+        return;
+      }
+      const selectedUnavailable = compatible.find(
+        (model) =>
+          model.id === currentNode.data.model &&
+          modelCanvasUnavailableReason(model) !== null,
+      );
+      if (selectedUnavailable) {
+        setModelLoadError({
+          connectionId: selectedConnectionId,
+          message: `${selectedUnavailable.id} 已由当前 Key 扫描到，但${modelCanvasUnavailableReason(selectedUnavailable)}，不会自动提交`,
+        });
+        return;
+      }
+      const hasExactModel = runnableCompatible.some(
+        (model) => model.id === currentNode.data.model,
+      );
+      if (
+        (requiresLiveCyberAfeiScan ||
+          requiresLiveChentuScan ||
+          requiresLiveFriModelScan) &&
+        typeof currentNode.data.model === "string" &&
+        currentNode.data.model.trim() &&
+        !hasExactModel
+      ) {
+        setModelLoadError({
+          connectionId: selectedConnectionId,
+          message: `${currentNode.data.model} 不在当前 Key 的最新扫描结果中，已禁止自动换模`,
+        });
+        return;
+      }
+      const currentParameters =
+        (currentNode.data.parameters as
+          Readonly<Record<string, unknown>> | undefined) ?? {};
+      const model = modelDescriptorForSavedSelectionOrDefault(
+        runnableCompatible,
+        currentNode.data.model,
+        currentParameters,
+      );
+      if (!model) {
+        if (requiresAuthoritativeScan) {
+          setModelLoadError({
+            connectionId: selectedConnectionId,
+            message: `${currentNode.data.model} 不在最新模型目录中，已保留当前选择，不会自动换模`,
+          });
+        }
+        return;
+      }
+      const migration = modelDiscoveryMigrationPatch(
+        nodeType,
+        currentNode.data,
+        selectedConnection.provider,
+        model,
+      );
+      if (migration) updateNodeData(currentNode.id, migration);
+    };
+    if (
+      localItems.length > 0 ||
+      cachedItems !== undefined ||
+      savedWeAiItems !== null
+    )
+      applyModels(localItems);
     const modelRequest =
-      selectedConnection &&
       isCangyuanImagePreset(selectedConnection.config.preset) &&
       isCangyuanImageGroup(selectedConnection.config.modelGroup)
         ? fetchCangyuanCatalog(selectedConnection.config.modelGroup).then(
             (catalog) => catalog.models,
           )
         : fetchModels(selectedConnectionId);
-    let cancelled = false;
     void modelRequest
       .then((items) => {
-        if (!cancelled) {
-          setConnectionModels({ connectionId: selectedConnectionId, items });
-          setModelLoadError(null);
-          const currentNode = useCanvasStore
-            .getState()
-            .nodes.find((node) => node.id === selectedId);
-          const nodeType = currentNode?.data.nodeType;
-          if (
-            currentNode &&
-            (nodeType === "image-generation" || nodeType === "video-generation")
-          ) {
-            const compatible = items.filter((model) =>
-              modelSupportsNodeType(model, nodeType),
-            );
-            if (
-              compatible.length > 0 &&
-              !compatible.some((model) => model.id === currentNode.data.model)
-            ) {
-              const model = compatible[0]!;
-              updateNodeData(currentNode.id, {
-                model: model.id,
-                inputs: generationInputsForModel(
-                  nodeType,
-                  model,
-                  currentNode.data.inputs,
-                ),
-                parameters: parametersWithDefaults(
-                  parameterDescriptorsFor(
-                    nodeType,
-                    currentNode.data.provider ?? "rest",
-                    model,
-                  ),
-                ),
-              });
-            }
-          }
-        }
+        applyModels(items);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        setConnectionModels({ connectionId: selectedConnectionId, items: [] });
+        if (!requiresAuthoritativeScan && localItems.length > 0) return;
+        setConnectionModels({
+          connectionId: selectedConnectionId,
+          items: [],
+          authoritative: requiresAuthoritativeScan,
+          loading: false,
+        });
         setModelLoadError({
           connectionId: selectedConnectionId,
-          message: error instanceof Error ? error.message : "模型列表读取失败",
+          message:
+            error instanceof Error
+              ? error.message
+              : requiresLiveCyberAfeiScan
+                ? "赛博阿飞实时模型扫描失败，已隐藏本地旧模型"
+                : requiresLiveWeAiScan
+                  ? "We-AI 实时模型扫描失败"
+                : requiresLiveChentuScan
+                  ? "辰途实时模型扫描失败，已隐藏本地旧模型"
+                  : requiresLiveFriModelScan
+                    ? "FriModel 实时模型扫描失败，已隐藏本地旧模型"
+                  : "模型列表读取失败",
         });
       });
     return () => {
       cancelled = true;
     };
-  }, [connections, selectedConnectionId, selectedId, updateNodeData]);
+  }, [
+    connections,
+    modelScanRevision,
+    selectedConnectionId,
+    selectedId,
+    updateNodeData,
+  ]);
 
   const selectedData = selectedNode?.data;
-  const showLegacyInspector = false;
+  const effectiveInspectorMode: InspectorMode = DIRECTOR_FEATURE_ENABLED
+    ? "agent"
+    : inspectorMode === "node" && selectedNode
+      ? "node"
+      : "agent";
+  const showNodeInspector = effectiveInspectorMode === "node";
   const selectedGeneratedStatus =
     typeof selectedData?.generatedStatus === "string"
       ? selectedData.generatedStatus
@@ -4028,46 +6390,36 @@ function CanvasShell() {
     );
   }, [connections, generationNodeType]);
   const availableModels = useMemo(() => {
-    if (!selectedData || !generationNodeType) return [];
-    if (selectedData.provider === "fake") {
-      return [
-        {
-          id:
-            selectedData.nodeType === "video-generation"
-              ? "fake-video-v1"
-              : "fake-image-v1",
-          name: "Fake",
-          operations:
-            selectedData.nodeType === "video-generation"
-              ? (["video.generate", "video.image-to-video"] as const)
-              : (["image.generate", "image.edit"] as const),
-        },
-      ];
-    }
-    const listed =
-      connectionModels.connectionId === selectedConnectionId
-        ? connectionModels.items.filter((model) =>
-            modelSupportsNodeType(model, generationNodeType),
-          )
-        : [];
-    if (listed.length > 0) return listed;
-    const connection = connections.find(
-      (candidate) => candidate.id === selectedConnectionId,
-    );
-    return connection
-      ? modelDescriptorsFromConnectionConfig(connection.config).filter(
-          (model) => modelSupportsNodeType(model, generationNodeType),
-        )
-      : [];
+    if (!selectedNode || !selectedData || !generationNodeType) return [];
+    return modelOptionsForNode(selectedNode, connections, connectionModels);
   }, [
     connectionModels,
     generationNodeType,
-    selectedConnectionId,
     selectedData,
+    selectedNode,
     connections,
   ]);
   const selectedModel = availableModels.find(
     (model) => model.id === selectedData?.model,
+  );
+  const selectedModelListAuthoritative = Boolean(
+    selectedConnectionId &&
+    ((connectionModels.connectionId === selectedConnectionId &&
+      connectionModels.authoritative) ||
+      (selectedConnectionRecord &&
+        connectionRequiresAuthoritativeModelScan(selectedConnectionRecord))),
+  );
+  const selectedModelListLoading = Boolean(
+    selectedConnectionId &&
+    selectedConnectionRecord &&
+    connectionRequiresAuthoritativeModelScan(selectedConnectionRecord) &&
+    (connectionModels.connectionId !== selectedConnectionId ||
+      connectionModels.loading),
+  );
+  const selectedModelListFailed = Boolean(
+    selectedConnectionId &&
+    modelLoadError?.connectionId === selectedConnectionId &&
+    !selectedModelListLoading,
   );
   const connectionSourceKind = connectionMenu?.sourceKind;
   const connectionOptions = useMemo(
@@ -4103,8 +6455,173 @@ function CanvasShell() {
     [checkpoint, scheduleSave, setNodes, setSelectedId],
   );
 
+  const handleUpload = useCallback(
+    async (file: File, announceSuccess = true) => {
+      try {
+        const importable = await prepareImportableMediaFile(file);
+        if (!importable) throw new Error("图片、视频或音频格式不受支持");
+        if (importable !== file)
+          showToast(`已自动转换为可导入格式：${importable.name}`, "success");
+        const asset = await uploadAsset(importable);
+        setAssets((current) => [
+          asset,
+          ...current.filter((item) => item.id !== asset.id),
+        ]);
+        if (announceSuccess) showToast("素材已加入素材库", "success");
+        return asset;
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "上传失败", "error");
+        return null;
+      }
+    },
+    [showToast],
+  );
+
+  const prepareFilesForImport = useCallback(
+    async (files: readonly File[]) => {
+      const prepared = await mapWithConcurrency(files, 2, async (file) => {
+        try {
+          const importable = await prepareImportableMediaFile(file);
+          if (!importable) {
+            showToast(`不支持的素材格式：${file.name}`, "error");
+            return null;
+          }
+          if (importable !== file)
+            showToast(`已自动转换为可导入格式：${importable.name}`, "success");
+          return importable;
+        } catch (error) {
+          showToast(
+            error instanceof Error ? error.message : `${file.name} 转换失败`,
+            "error",
+          );
+          return null;
+        }
+      });
+      return prepared.filter((file): file is File => Boolean(file));
+    },
+    [showToast],
+  );
+
+  const revokePendingPreview = useCallback((nodeId: string) => {
+    const previewUrl = pendingPreviewUrlsRef.current.get(nodeId);
+    if (!previewUrl) return;
+    pendingPreviewUrlsRef.current.delete(nodeId);
+    URL.revokeObjectURL(previewUrl);
+  }, []);
+
+  const unregisterPendingNativeDrop = useCallback(
+    (contentKey: string, nodeId: string) => {
+      const entries = pendingNativeDropsRef.current.get(contentKey);
+      if (!entries) return;
+      const remaining = entries.filter((entry) => entry.nodeId !== nodeId);
+      if (remaining.length > 0)
+        pendingNativeDropsRef.current.set(contentKey, remaining);
+      else pendingNativeDropsRef.current.delete(contentKey);
+    },
+    [],
+  );
+
+  const beginPendingAssetImports = useCallback(
+    (files: readonly File[], position: { x: number; y: number }) => {
+      if (files.length === 0) return [];
+      checkpoint(true);
+      const state = useCanvasStore.getState();
+      const pending = files.map((file, index): PendingAssetImport => {
+        const created = createPendingAssetInputNode(
+          file,
+          { x: position.x + index * 28, y: position.y + index * 36 },
+          state.nodes.length + index,
+        );
+        if (created.previewUrl)
+          pendingPreviewUrlsRef.current.set(
+            created.node.id,
+            created.previewUrl,
+          );
+        return {
+          file,
+          node: created.node,
+          nodeId: created.node.id,
+          ...(created.previewUrl ? { previewUrl: created.previewUrl } : {}),
+        };
+      });
+      const additions = pending.map((item) => item.node);
+      const nextNodes = [...state.nodes, ...additions];
+      useCanvasStore.setState({
+        nodes: nextNodes,
+        selectedId: additions.at(-1)?.id ?? null,
+      });
+      graphRef.current = { nodes: nextNodes, edges: state.edges };
+      return pending;
+    },
+    [checkpoint],
+  );
+
+  const completePendingAssetImport = useCallback(
+    (nodeId: string, asset: AssetView) => {
+      const state = useCanvasStore.getState();
+      const pendingNode = state.nodes.find((node) => node.id === nodeId);
+      if (!pendingNode) {
+        revokePendingPreview(nodeId);
+        return false;
+      }
+      const completed = createAssetInputNode(
+        asset,
+        pendingNode.position,
+        state.nodes.indexOf(pendingNode),
+      );
+      const nextNodes = state.nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...completed,
+              id: nodeId,
+              position: node.position,
+              ...(node.style ? { style: node.style } : {}),
+            }
+          : node,
+      );
+      useCanvasStore.setState({ nodes: nextNodes });
+      graphRef.current = { nodes: nextNodes, edges: state.edges };
+      revokePendingPreview(nodeId);
+      scheduleSave(nextNodes, state.edges, state.viewport);
+      return true;
+    },
+    [revokePendingPreview, scheduleSave],
+  );
+
+  const failPendingAssetImport = useCallback(
+    (nodeId: string) => {
+      const state = useCanvasStore.getState();
+      const nextNodes = state.nodes.filter((node) => node.id !== nodeId);
+      if (nextNodes.length !== state.nodes.length) {
+        useCanvasStore.setState({
+          nodes: nextNodes,
+          selectedId: state.selectedId === nodeId ? null : state.selectedId,
+        });
+        graphRef.current = { nodes: nextNodes, edges: state.edges };
+      }
+      revokePendingPreview(nodeId);
+    },
+    [revokePendingPreview],
+  );
+
+  const uploadPendingAssetImports = useCallback(
+    async (pending: readonly PendingAssetImport[]) => {
+      const results = await mapWithConcurrency(pending, 3, async (item) => {
+        const asset = await handleUpload(item.file, false);
+        if (!asset) {
+          failPendingAssetImport(item.nodeId);
+          return false;
+        }
+        completePendingAssetImport(item.nodeId, asset);
+        return true;
+      });
+      return results.filter(Boolean).length;
+    },
+    [completePendingAssetImport, failPendingAssetImport, handleUpload],
+  );
+
   useEffect(() => {
-    if (!canvasId) return;
+    if (!canvasId || initialization.status !== "ready") return;
     let disposed = false;
     let polling = false;
     const consumerId = materialDropConsumerIdRef.current;
@@ -4150,13 +6667,41 @@ function CanvasShell() {
           if (disposed) break;
           // Only the foreground canvas should consume a desktop drag. This also
           // prevents another open canvas tab from claiming the same bridge event.
-          const recentKey = `${drop.name}:${drop.size}`;
-          const pendingNativeAt =
-            pendingNativeDropsRef.current.get(recentKey) ?? 0;
-          if (Date.now() - pendingNativeAt < 8_000)
-            pendingNativeDropsRef.current.delete(recentKey);
-          const recentAt = recentNativeDropsRef.current.get(recentKey) ?? 0;
-          if (Date.now() - recentAt < 8_000) {
+          const contentKey = nativeDropContentKey(drop);
+          const now = Date.now();
+          const unavailableNodeIds = new Set([
+            ...nativeUploadInProgressRef.current,
+            ...activeBridgeDropsRef.current,
+          ]);
+          const registeredEntries =
+            pendingNativeDropsRef.current.get(contentKey) ?? [];
+          const currentNodeIds = new Set(
+            useCanvasStore.getState().nodes.map((node) => node.id),
+          );
+          const liveEntries = registeredEntries.filter(
+            (entry) =>
+              currentNodeIds.has(entry.nodeId) &&
+              (now - entry.createdAt < NATIVE_DROP_DEDUPE_WINDOW_MS ||
+                unavailableNodeIds.has(entry.nodeId)),
+          );
+          if (liveEntries.length > 0)
+            pendingNativeDropsRef.current.set(contentKey, liveEntries);
+          else pendingNativeDropsRef.current.delete(contentKey);
+          const pendingEntry = availablePendingNativeDrop(
+            liveEntries,
+            unavailableNodeIds,
+            now,
+          );
+          if (
+            !pendingEntry &&
+            liveEntries.some((entry) => unavailableNodeIds.has(entry.nodeId))
+          ) {
+            await discardMaterialDrop(drop.id);
+            continue;
+          }
+          const pendingNodeId = pendingEntry?.nodeId;
+          const recentAt = recentNativeDropsRef.current.get(contentKey) ?? 0;
+          if (!pendingEntry && now - recentAt < NATIVE_DROP_DEDUPE_WINDOW_MS) {
             await discardMaterialDrop(drop.id);
             continue;
           }
@@ -4192,49 +6737,67 @@ function CanvasShell() {
             clientX = rect.left + rect.width / 2;
             clientY = rect.top + rect.height / 2;
           }
-          const position = flow.screenToFlowPosition({
-            x: clientX,
-            y: clientY,
-          });
+          const existingPendingNode = pendingNodeId
+            ? useCanvasStore
+                .getState()
+                .nodes.find((node) => node.id === pendingNodeId)
+            : undefined;
+          const position =
+            existingPendingNode?.position ??
+            flow.screenToFlowPosition({
+              x: clientX,
+              y: clientY,
+            });
           const pendingKind = drop.mimeType.startsWith("video/")
             ? "video"
             : drop.mimeType.startsWith("audio/")
               ? "audio"
               : "image";
-          const optimisticNode = createNode(
-            "asset-input",
-            position,
-            useCanvasStore.getState().nodes.length,
-          );
-          optimisticNode.id = `material-drop-${drop.id}`;
-          optimisticNode.data = {
-            ...optimisticNode.data,
-            label: drop.name,
-            description: "正在从素材管理导入原始文件…",
-            assetKind: pendingKind,
-            pendingImport: true,
-            pendingPreviewUrl:
-              drop.previewAvailable && pendingKind === "image"
-                ? `/api/integrations/material-drops?preview=${encodeURIComponent(drop.id)}`
-                : undefined,
-            outputs: [
-              port(
-                "asset",
-                pendingKind,
-                pendingKind === "video"
-                  ? "视频"
-                  : pendingKind === "audio"
-                    ? "音频"
-                    : "图片",
-              ),
-            ],
-          };
-          checkpoint(true);
-          const beforeImport = useCanvasStore.getState();
-          setNodes([...beforeImport.nodes, optimisticNode]);
-          setSelectedId(optimisticNode.id);
-          activeBridgeDropsRef.current.add(recentKey);
-          showToast(`正在导入：${drop.name}`);
+          const optimisticNode =
+            existingPendingNode ??
+            (() => {
+              const node = createNode(
+                "asset-input",
+                position,
+                useCanvasStore.getState().nodes.length,
+              );
+              node.id = `material-drop-${drop.id}`;
+              node.data = {
+                ...node.data,
+                label: drop.name,
+                description: "素材已放入画布，正在从素材管理导入…",
+                assetKind: pendingKind,
+                pendingImport: true,
+                pendingPreviewUrl:
+                  drop.previewAvailable && pendingKind === "image"
+                    ? `/api/integrations/material-drops?preview=${encodeURIComponent(drop.id)}`
+                    : undefined,
+                outputs: [
+                  port(
+                    "asset",
+                    pendingKind,
+                    pendingKind === "video"
+                      ? "视频"
+                      : pendingKind === "audio"
+                        ? "音频"
+                        : "图片",
+                  ),
+                ],
+              };
+              return node;
+            })();
+          if (!existingPendingNode) {
+            checkpoint(true);
+            const state = useCanvasStore.getState();
+            const nextNodes = [...state.nodes, optimisticNode];
+            useCanvasStore.setState({
+              nodes: nextNodes,
+              selectedId: optimisticNode.id,
+            });
+            graphRef.current = { nodes: nextNodes, edges: state.edges };
+          }
+          activeBridgeDropsRef.current.add(optimisticNode.id);
+          showToast(`正在后台导入：${drop.name}`);
 
           try {
             const asset = await claimMaterialDrop(drop.id);
@@ -4242,40 +6805,45 @@ function CanvasShell() {
               asset,
               ...current.filter((item) => item.id !== asset.id),
             ]);
-            recentNativeDropsRef.current.set(recentKey, Date.now());
-            const completedTemplate = createAssetInputNode(
-              asset,
-              optimisticNode.position,
-              beforeImport.nodes.length,
-            );
-            const completedState = useCanvasStore.getState();
-            const nextNodes = completedState.nodes.map((node) =>
-              node.id === optimisticNode.id
-                ? {
-                    ...completedTemplate,
-                    id: optimisticNode.id,
-                    position: node.position,
-                  }
-                : node,
-            );
-            setNodes(nextNodes);
-            scheduleSave(nextNodes, completedState.edges);
+            const handledAt = Date.now();
+            recentNativeDropsRef.current.set(contentKey, handledAt);
+            if (pendingEntry) {
+              bridgeHandledNativeDropsRef.current.set(
+                optimisticNode.id,
+                handledAt,
+              );
+              unregisterPendingNativeDrop(contentKey, optimisticNode.id);
+            }
+            completePendingAssetImport(optimisticNode.id, asset);
             showToast(
               canUseDropPoint
                 ? `已从素材管理拖入：${asset.name}`
                 : `已从素材管理拖入：${asset.name}（已放到画布中央）`,
             );
           } catch (error) {
-            const failedState = useCanvasStore.getState();
-            setNodes(
-              failedState.nodes.filter((node) => node.id !== optimisticNode.id),
-            );
-            showToast(
-              error instanceof Error ? error.message : "素材管理拖入失败",
-              "error",
-            );
+            if (existingPendingNode) {
+              useCanvasStore.setState((state) => ({
+                nodes: state.nodes.map((node) =>
+                  node.id === optimisticNode.id
+                    ? {
+                        ...node,
+                        data: {
+                          ...node.data,
+                          description: "本地桥接未完成，正在改用浏览器上传…",
+                        },
+                      }
+                    : node,
+                ),
+              }));
+            } else {
+              failPendingAssetImport(optimisticNode.id);
+              showToast(
+                error instanceof Error ? error.message : "素材管理拖入失败",
+                "error",
+              );
+            }
           } finally {
-            activeBridgeDropsRef.current.delete(recentKey);
+            activeBridgeDropsRef.current.delete(optimisticNode.id);
           }
         }
         const cutoff = Date.now() - 12_000;
@@ -4292,11 +6860,19 @@ function CanvasShell() {
         polling = false;
       }
     };
+    materialDropPollRef.current = pollMaterialDrops;
     void pollMaterialDrops();
-    const timer = window.setInterval(() => void pollMaterialDrops(), 250);
+    // Desktop bridge drops do not need a four-requests-per-second idle loop.
+    // A 750 ms foreground poll still feels immediate while cutting idle API
+    // traffic by two thirds.
+    const timer = window.setInterval(() => void pollMaterialDrops(), 750);
+    window.addEventListener("focus", pollMaterialDrops);
     return () => {
       disposed = true;
+      if (materialDropPollRef.current === pollMaterialDrops)
+        materialDropPollRef.current = null;
       window.clearInterval(timer);
+      window.removeEventListener("focus", pollMaterialDrops);
       try {
         const current = JSON.parse(
           window.localStorage.getItem(MATERIAL_DROP_LEASE_STORAGE_KEY) ??
@@ -4308,25 +6884,106 @@ function CanvasShell() {
         // Ignore unavailable storage during teardown.
       }
     };
-  }, [canvasId, checkpoint, scheduleSave, setNodes, setSelectedId, showToast]);
+  }, [
+    canvasId,
+    checkpoint,
+    completePendingAssetImport,
+    failPendingAssetImport,
+    initialization.status,
+    showToast,
+    unregisterPendingNativeDrop,
+  ]);
 
-  const handleUpload = useCallback(
-    async (file: File) => {
-      try {
-        const asset = await uploadAsset(file);
-        setAssets((current) => [
-          asset,
-          ...current.filter((item) => item.id !== asset.id),
-        ]);
-        showToast("素材已加入素材库", "success");
-        return asset;
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : "上传失败", "error");
-        return null;
-      }
+  const pasteExternalImages = useCallback(
+    async (files: File[]) => {
+      const flow = reactFlowRef.current;
+      if (!flow || files.length === 0) return;
+      const importableFiles = await prepareFilesForImport(files);
+      if (importableFiles.length === 0) return;
+      const bounds = canvasWrapRef.current?.getBoundingClientRect();
+      const position = flow.screenToFlowPosition({
+        x: bounds ? bounds.left + bounds.width / 2 : window.innerWidth / 2,
+        y: bounds ? bounds.top + bounds.height / 2 : window.innerHeight / 2,
+      });
+      showToast(
+        importableFiles.length === 1
+          ? "剪贴板图片已放入画布，正在后台导入…"
+          : `已放入 ${importableFiles.length} 张剪贴板图片，正在并行导入…`,
+      );
+      const pending = beginPendingAssetImports(importableFiles, position);
+      const completed = await uploadPendingAssetImports(pending);
+      if (completed > 0)
+        showToast(`已完成 ${completed} 张剪贴板图片导入`, "success");
     },
-    [showToast],
+    [
+      beginPendingAssetImports,
+      prepareFilesForImport,
+      showToast,
+      uploadPendingAssetImports,
+    ],
   );
+
+  useEffect(() => {
+    if (initialization.status !== "ready") return;
+    const handler = (event: ClipboardEvent) => {
+      if (event.defaultPrevented || !event.clipboardData) return;
+      const target =
+        event.target instanceof Element ? (event.target as HTMLElement) : null;
+      const editing = Boolean(
+        target?.closest("input, textarea, select, [contenteditable='true']"),
+      );
+      const modalOpen = Boolean(
+        document.querySelector(
+          '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu',
+        ),
+      );
+      const interactiveControl = Boolean(
+        target?.closest(
+          "button, a, [role='menuitem'], .project-menu-backdrop, .mobile-backdrop",
+        ),
+      );
+      if (editing || modalOpen || interactiveControl) return;
+
+      const rawFiles = [
+        ...Array.from(event.clipboardData.files),
+        ...Array.from(event.clipboardData.items)
+          .filter((item) => item.kind === "file")
+          .map((item) => item.getAsFile())
+          .filter((file): file is File => Boolean(file)),
+      ];
+      const uniqueFiles = new Map<string, File>();
+      for (const file of rawFiles)
+        uniqueFiles.set(
+          `${file.name}:${file.size}:${file.type}:${file.lastModified}`,
+          file,
+        );
+      const candidates = Array.from(uniqueFiles.values());
+      const images = preferNamedClipboardImages(
+        candidates
+          .map((file, index) => normalizeClipboardImageFile(file, index))
+          .filter((file): file is File => Boolean(file)),
+      );
+
+      if (images.length > 0) {
+        event.preventDefault();
+        void pasteExternalImages(images);
+        return;
+      }
+      if (candidates.some((file) => file.type.startsWith("image/"))) {
+        event.preventDefault();
+        showToast("剪贴板中的图片格式不受支持，请复制 PNG、JPG、WebP 或 GIF");
+        return;
+      }
+      if (
+        event.clipboardData.getData(NODE_CLIPBOARD_TYPE) === "1" &&
+        nodeClipboardRef.current &&
+        pasteCopiedNodes()
+      )
+        event.preventDefault();
+    };
+    window.addEventListener("paste", handler, true);
+    return () => window.removeEventListener("paste", handler, true);
+  }, [initialization.status, pasteCopiedNodes, pasteExternalImages, showToast]);
 
   const mergeSelectedDrawings = useCallback(async () => {
     if (selectedDrawingIds.size === 0 || mergingDrawings) return;
@@ -4424,56 +7081,201 @@ function CanvasShell() {
         return;
       }
 
-      const itemFiles = Array.from(event.dataTransfer.items)
-        .filter((item) => item.kind === "file")
-        .map((item) => item.getAsFile())
-        .filter((file): file is File => Boolean(file));
-      const uniqueFiles = new Map<string, File>();
-      for (const file of [
-        ...Array.from(event.dataTransfer.files),
-        ...itemFiles,
-      ])
-        uniqueFiles.set(`${file.name}:${file.size}:${file.lastModified}`, file);
-      const files = Array.from(uniqueFiles.values())
-        .map(normalizeDraggedMediaFile)
-        .filter((file): file is File => Boolean(file));
-      if (files.length === 0) {
+      const stringPayloads = Array.from(event.dataTransfer.types).flatMap(
+        (type) => {
+          try {
+            const data = event.dataTransfer.getData(type);
+            return data ? [{ type, data }] : [];
+          } catch {
+            return [];
+          }
+        },
+      );
+      const droppedSources = droppedMediaUrlsFromStrings(stringPayloads);
+      let files = await prepareFilesForImport(
+        await filesFromNativeDrop(
+          Array.from(event.dataTransfer.files),
+          Array.from(event.dataTransfer.items),
+        ),
+      );
+      let downloadedAssets: AssetView[] = [];
+      let sourceFailures: Array<{ index: number; message: string }> = [];
+      if (files.length === 0 && droppedSources.length > 0) {
+        const inlineSources = droppedSources.filter((source) =>
+          source.startsWith("data:"),
+        );
+        const downloadableSources = droppedSources.filter(
+          (source) => !source.startsWith("data:"),
+        );
+        if (inlineSources.length > 0)
+          files = await prepareFilesForImport(
+            await filesFromDroppedMediaUrls(inlineSources),
+          );
+        if (downloadableSources.length > 0) {
+          showToast("正在下载微信/网页拖入的素材…");
+          try {
+            const imported =
+              await importDroppedMediaSources(downloadableSources);
+            downloadedAssets = imported.assets;
+            sourceFailures = imported.failures;
+          } catch (error) {
+            sourceFailures = [
+              {
+                index: 0,
+                message:
+                  error instanceof Error ? error.message : "拖入素材下载失败",
+              },
+            ];
+          }
+        }
+      }
+      if (files.length === 0 && downloadedAssets.length === 0) {
         showToast(
-          "没有读取到可导入文件，请从素材卡右下角的“拖出原文件”按钮拖入",
+          sourceFailures[0]?.message ??
+            "微信未提供可读取的文件或下载地址；请先点开原图再拖入",
+          "error",
         );
         return;
       }
-      const pendingKeys = files.map((file) => `${file.name}:${file.size}`);
-      for (const key of pendingKeys)
-        pendingNativeDropsRef.current.set(key, Date.now());
-      // Electron also emits a native file drop. Give its local bridge one short
-      // polling window to claim the same file before falling back to uploading
-      // the full original through the public origin.
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 550));
-      const uploaded: AssetView[] = [];
-      for (const file of files) {
-        const dropKey = `${file.name}:${file.size}`;
-        const bridgeHandledAt = recentNativeDropsRef.current.get(dropKey) ?? 0;
-        if (
-          !pendingNativeDropsRef.current.has(dropKey) ||
-          activeBridgeDropsRef.current.has(dropKey) ||
-          Date.now() - bridgeHandledAt < 8_000
-        ) {
-          pendingNativeDropsRef.current.delete(dropKey);
-          continue;
+      if (downloadedAssets.length > 0) {
+        setAssets((current) => [
+          ...downloadedAssets,
+          ...current.filter(
+            (item) => !downloadedAssets.some((asset) => asset.id === item.id),
+          ),
+        ]);
+        placeAssetsOnCanvas(downloadedAssets, position);
+      }
+      if (files.length === 0) {
+        showToast(
+          sourceFailures.length > 0
+            ? `已导入 ${downloadedAssets.length} 个素材，${sourceFailures.length} 个下载失败：${sourceFailures[0]?.message}`
+            : `已下载并导入 ${downloadedAssets.length} 个素材`,
+          "success",
+        );
+        return;
+      }
+      const filePosition = {
+        x: position.x + downloadedAssets.length * 28,
+        y: position.y + downloadedAssets.length * 36,
+      };
+      const pending = beginPendingAssetImports(files, filePosition);
+      const registeredAt = Date.now();
+      for (const item of pending) {
+        const contentKey = nativeDropContentKey(item.file);
+        const entries = pendingNativeDropsRef.current.get(contentKey) ?? [];
+        pendingNativeDropsRef.current.set(contentKey, [
+          ...entries,
+          { nodeId: item.nodeId, createdAt: registeredAt },
+        ]);
+      }
+      showToast(
+        files.length === 1
+          ? "素材已放入画布，正在后台导入…"
+          : `已放入 ${files.length} 个素材，正在并行导入…`,
+      );
+
+      // Ask the local material bridge immediately and once more after its
+      // event has had a moment to arrive. This replaces the old unconditional
+      // 550ms pause while still preventing duplicate imports from Electron.
+      void materialDropPollRef.current?.();
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 80));
+      await materialDropPollRef.current?.();
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+      await materialDropPollRef.current?.();
+
+      const results = await mapWithConcurrency(pending, 3, async (item) => {
+        const contentKey = nativeDropContentKey(item.file);
+        const bridgeDeadline = Date.now() + 15_000;
+        while (
+          activeBridgeDropsRef.current.has(item.nodeId) &&
+          Date.now() < bridgeDeadline
+        )
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+        if (activeBridgeDropsRef.current.has(item.nodeId)) return false;
+        const bridgeHandledAt =
+          bridgeHandledNativeDropsRef.current.get(item.nodeId) ?? 0;
+        if (Date.now() - bridgeHandledAt < NATIVE_DROP_DEDUPE_WINDOW_MS) {
+          bridgeHandledNativeDropsRef.current.delete(item.nodeId);
+          unregisterPendingNativeDrop(contentKey, item.nodeId);
+          return true;
         }
-        pendingNativeDropsRef.current.delete(dropKey);
-        const asset = await handleUpload(file);
-        if (asset) {
-          uploaded.push(asset);
-          recentNativeDropsRef.current.set(dropKey, Date.now());
+        nativeUploadInProgressRef.current.add(item.nodeId);
+        try {
+          const asset = await handleUpload(item.file, false);
+          if (!asset) {
+            failPendingAssetImport(item.nodeId);
+            return false;
+          }
+          recentNativeDropsRef.current.set(contentKey, Date.now());
+          completePendingAssetImport(item.nodeId, asset);
+          return true;
+        } finally {
+          nativeUploadInProgressRef.current.delete(item.nodeId);
+          bridgeHandledNativeDropsRef.current.delete(item.nodeId);
+          unregisterPendingNativeDrop(contentKey, item.nodeId);
+        }
+      });
+      const completed = results.filter(Boolean).length;
+      // Some Electron/WeChat builds expose a non-empty virtual File whose
+      // bytes cannot actually be read. If that upload failed, retry the text
+      // URL/cache-path payload through the downloader instead of asking the
+      // user to save the media manually.
+      if (completed === 0 && downloadedAssets.length === 0) {
+        const fallbackSources = droppedSources.filter(
+          (source) => !source.startsWith("data:"),
+        );
+        if (fallbackSources.length > 0) {
+          showToast("正在重试下载微信拖入的素材…");
+          try {
+            const imported = await importDroppedMediaSources(fallbackSources);
+            downloadedAssets = imported.assets;
+            sourceFailures = imported.failures;
+            if (downloadedAssets.length > 0) {
+              setAssets((current) => [
+                ...downloadedAssets,
+                ...current.filter(
+                  (item) =>
+                    !downloadedAssets.some((asset) => asset.id === item.id),
+                ),
+              ]);
+              placeAssetsOnCanvas(downloadedAssets, position);
+            }
+          } catch (error) {
+            sourceFailures = [
+              {
+                index: 0,
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "微信拖入素材下载失败",
+              },
+            ];
+          }
         }
       }
-      placeAssetsOnCanvas(uploaded, position);
-      if (uploaded.length > 0)
-        showToast(`已将 ${uploaded.length} 个素材放入画布`, "success");
+      const totalCompleted = completed + downloadedAssets.length;
+      if (totalCompleted > 0)
+        showToast(
+          sourceFailures.length > 0
+            ? `已完成 ${totalCompleted} 个素材导入，${sourceFailures.length} 个下载失败`
+            : `已完成 ${totalCompleted} 个素材导入`,
+          "success",
+        );
+      else if (sourceFailures.length > 0)
+        showToast(sourceFailures[0]?.message ?? "素材导入失败", "error");
     },
-    [assets, handleUpload, placeAssetsOnCanvas, showToast],
+    [
+      assets,
+      beginPendingAssetImports,
+      completePendingAssetImport,
+      failPendingAssetImport,
+      handleUpload,
+      placeAssetsOnCanvas,
+      prepareFilesForImport,
+      showToast,
+      unregisterPendingNativeDrop,
+    ],
   );
 
   const openCanvasMenu = useCallback((event: MouseEvent | ReactMouseEvent) => {
@@ -4514,85 +7316,153 @@ function CanvasShell() {
     [selectCanvasNode],
   );
 
-  function exportProject() {
+  function exportProject(useConflictedSnapshot = false) {
+    const conflictSnapshot = useConflictedSnapshot
+      ? conflictedSave.current
+      : null;
+    const projectTitle =
+      conflictSnapshot?.title?.trim() || title.trim() || "超级画布项目";
     const payload = JSON.stringify(
       {
-        title,
+        format: PROJECT_JSON_FORMAT,
+        version: 1,
+        title: projectTitle,
         exportedAt: new Date().toISOString(),
-        graph: serializableGraph(nodes, edges, viewport),
+        graph:
+          conflictSnapshot?.graph ??
+          serializableGraph(nodes, edges, viewport, drawings),
       },
       null,
       2,
     );
-    const url = URL.createObjectURL(
+    downloadBlob(
       new Blob([payload], { type: "application/json" }),
+      `${safeDownloadBaseName(projectTitle)}.canvas.json`,
     );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${title || "super-canvas"}.canvas.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  }
+
+  async function exportPortableProject() {
+    if (portableExportProgress) return;
+    const projectTitle = title.trim() || "超级画布项目";
+    const graph = serializableGraph(nodes, edges, viewport, drawings);
+    const total = collectReferencedAssetIds(graph).length;
+    setPortableExportProgress({ completed: 0, total });
+    try {
+      const archive = await createPortableProjectPackage({
+        title: projectTitle,
+        graph,
+        assets,
+        onProgress: (completed, progressTotal) =>
+          setPortableExportProgress({ completed, total: progressTotal }),
+      });
+      downloadBlob(
+        archive,
+        `${safeDownloadBaseName(projectTitle)}${PROJECT_PACKAGE_EXTENSION}`,
+      );
+      showToast(
+        total > 0 ? `完整项目包已导出（${total} 个素材）` : "完整项目包已导出",
+        "success",
+      );
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "完整项目包导出失败",
+        "error",
+      );
+    } finally {
+      setPortableExportProgress(null);
+      setProjectMenuOpen(false);
+    }
   }
 
   async function importProject(file: File) {
+    if (busy) {
+      showToast("有生成任务正在运行，请等待任务结束后再导入项目", "error");
+      return;
+    }
+    setProjectImportBusy(true);
+    setProjectImportError(null);
     try {
-      const parsed = JSON.parse(await file.text()) as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-        throw new Error("文件不是有效的画布项目");
-      const root = parsed as Record<string, unknown>;
-      const rawGraph =
-        root.graph &&
-        typeof root.graph === "object" &&
-        !Array.isArray(root.graph)
-          ? (root.graph as Record<string, unknown>)
-          : root;
-      const graphShape = WorkflowGraphSchema.safeParse({
-        nodes: rawGraph.nodes,
-        edges: rawGraph.edges,
+      const prepared = await prepareProjectImport({
+        file,
+        fallbackTitle: title || "超级画布项目",
+        fallbackViewport: viewport,
+        availableAssetIds: new Set(assets.map((asset) => asset.id)),
       });
-      if (!graphShape.success) throw new Error("文件中的节点或连线结构无效");
-      const graphValidation = validateGraph(graphShape.data, {
-        checkPorts: true,
-        checkRequiredInputs: false,
+      setPendingProjectImport(prepared);
+      setProjectImportBackup(true);
+      setProjectImportProgress(null);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "项目文件预检失败",
+        "error",
+      );
+    } finally {
+      setProjectImportBusy(false);
+    }
+  }
+
+  async function confirmProjectImport() {
+    const prepared = pendingProjectImport;
+    if (!prepared || projectImportBusy) return;
+    if (!canvasId) {
+      setProjectImportError("画布尚未初始化，无法导入");
+      return;
+    }
+    if (busy) {
+      setProjectImportError("有生成任务正在运行，请等待任务结束后再导入项目");
+      return;
+    }
+
+    const uploadedForRollback: AssetView[] = [];
+    setProjectImportBusy(true);
+    setProjectImportError(null);
+    setProjectImportProgress(
+      prepared.source === "package"
+        ? { completed: 0, total: prepared.packageAssets.length }
+        : null,
+    );
+    try {
+      if (projectImportBackup) exportProject();
+      const materialized = await uploadPreparedPackageAssets({
+        prepared,
+        upload: async (assetFile) => {
+          const uploaded = await uploadAsset(assetFile);
+          uploadedForRollback.push(uploaded);
+          setAssets((current) => [
+            uploaded,
+            ...current.filter((asset) => asset.id !== uploaded.id),
+          ]);
+          return uploaded;
+        },
+        onProgress: (completed, totalCount) =>
+          setProjectImportProgress({ completed, total: totalCount }),
       });
-      if (!graphValidation.valid)
-        throw new Error(
-          graphValidation.errors.map((issue) => issue.message).join("；"),
-        );
-      const rawViewport = rawGraph.viewport as
-        { x?: unknown; y?: unknown; zoom?: unknown } | undefined;
-      const importedViewport =
-        rawViewport &&
-        typeof rawViewport.x === "number" &&
-        Number.isFinite(rawViewport.x) &&
-        typeof rawViewport.y === "number" &&
-        Number.isFinite(rawViewport.y) &&
-        typeof rawViewport.zoom === "number" &&
-        Number.isFinite(rawViewport.zoom)
-          ? { x: rawViewport.x, y: rawViewport.y, zoom: rawViewport.zoom }
-          : viewport;
-      const importedTitle =
-        typeof root.title === "string" ? root.title.trim() : title;
-      const importedDrawings = parseImportedDrawings(rawGraph.drawings);
-      checkpoint(true);
-      const nextNodes = layoutGeneratedResults(
-        ensureGeneratedResultInputs(
-          (graphShape.data.nodes as unknown as CanvasNode[]).map((node) => ({
+      const importedGraph = materialized.graph;
+      const importedViewport = importedGraph.viewport ?? viewport;
+      const importedDrawings = importedGraph.drawings ?? [];
+      const nextNodes = ensureGeneratedResultInputs(
+        ensureGenerationNodeInputs(
+          (importedGraph.nodes as CanvasNode[]).map((node) => ({
             ...node,
             type: "workflow" as const,
           })),
         ),
       );
-      const nextEdges = syncGeneratedResultEdges(
+      const nextEdges = filterEdgesToKnownPorts(
         nextNodes,
-        graphShape.data.edges as unknown as CanvasEdge[],
+        keepLatestEdgePerNodePair(
+          syncGeneratedResultEdges(
+            nextNodes,
+            importedGraph.edges as CanvasEdge[],
+          ),
+        ),
       );
-      if (canvasId) {
-        if (saveTimer.current) {
-          clearTimeout(saveTimer.current);
-          saveTimer.current = null;
-        }
-        await saveQueue.current?.enqueue({
+
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingSave.current = null;
+      await saveRequest(
+        {
           canvasId,
           graph: serializableGraph(
             nextNodes,
@@ -4600,23 +7470,97 @@ function CanvasShell() {
             importedViewport,
             importedDrawings,
           ),
-          title: importedTitle,
-        });
-      }
+          title: prepared.title,
+        },
+        false,
+      );
+
+      checkpoint(true);
       setNodes(nextNodes);
       setEdges(nextEdges);
       setDrawings(importedDrawings);
       setViewport(importedViewport);
+      setTitle(prepared.title);
       setSelectedId(null);
       setSelectedDrawingIds(new Set());
-      if (importedTitle) setTitle(importedTitle);
-      showToast("项目已导入并保存", "success");
-    } catch (error) {
+      graphRef.current = { nodes: nextNodes, edges: nextEdges };
+      reactFlowRef.current?.setViewport(importedViewport);
+      setPendingProjectImport(null);
+      setProjectImportProgress(null);
+      if (prepared.source === "package") void refreshAssets();
       showToast(
-        error instanceof Error ? error.message : "项目导入失败",
-        "error",
+        prepared.source === "package"
+          ? `完整项目已导入（${materialized.uploadedAssets.length} 个素材）`
+          : "项目结构已导入并保存",
+        "success",
       );
+    } catch (error) {
+      let cleanupFailed = 0;
+      if (uploadedForRollback.length > 0) {
+        const cleanup = await deleteAssets(
+          uploadedForRollback.map((asset) => asset.id),
+        );
+        cleanupFailed = cleanup.failedIds.length;
+        const deleted = new Set(cleanup.deletedIds);
+        if (deleted.size > 0)
+          setAssets((current) =>
+            current.filter((asset) => !deleted.has(asset.id)),
+          );
+      }
+      const message = error instanceof Error ? error.message : "项目导入失败";
+      setProjectImportError(
+        cleanupFailed > 0
+          ? `${message}；另有 ${cleanupFailed} 个临时上传素材清理失败，请在素材库中手动删除`
+          : message,
+      );
+    } finally {
+      setProjectImportBusy(false);
+      setProjectImportProgress(null);
     }
+  }
+
+  if (initialization.status !== "ready") {
+    const failed = initialization.status === "error";
+    return (
+      <div className="shell" aria-busy={!failed}>
+        <header className="topbar">
+          <div className="brand">
+            <span className="brand-mark">✦</span>
+            <span>{APP_NAME}</span>
+          </div>
+        </header>
+        <main
+          className="workspace"
+          style={{ gridTemplateColumns: "minmax(0, 1fr)" }}
+        >
+          <section className="canvas-wrap">
+            <div
+              className="canvas-empty-state"
+              role={failed ? "alert" : "status"}
+              aria-live="polite"
+            >
+              <h2>{failed ? "画布加载失败" : "正在加载画布…"}</h2>
+              <p>
+                {failed
+                  ? initialization.message
+                  : "正在读取已保存的节点、连线和视图，请稍候。"}
+              </p>
+              {failed ? (
+                <div className="canvas-empty-actions">
+                  <button
+                    className="button primary small"
+                    type="button"
+                    onClick={() => window.location.reload()}
+                  >
+                    <RefreshCw size={13} /> 重新加载
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -4657,32 +7601,49 @@ function CanvasShell() {
         </nav>
         <div className="top-actions">
           <button
+            className="icon-button library-toggle"
+            type="button"
+            onClick={() => setMobileLibraryOpen(true)}
+            aria-label="打开节点与素材库"
+            title="节点与素材库"
+          >
+            <FolderOpen size={15} />
+          </button>
+          <button
             className="icon-button inspector-toggle"
             type="button"
-            onClick={() =>
-              selectedId
-                ? setMobileInspectorOpen(true)
-                : showToast("请先选择节点")
-            }
-            aria-label="打开节点参数"
+            onClick={() => {
+              setInspectorMode(selectedId ? "node" : "agent");
+              setMobileInspectorOpen(true);
+            }}
+            aria-label="打开参数与导演台"
+            title="参数与导演台"
           >
             <Settings2 size={15} />
           </button>
-          <span
+          <button
+            type="button"
             className={`pill save-state ${busy ? "is-running" : `is-${saveState}`}`}
+            disabled={!saveConflict}
+            onClick={() => {
+              if (saveConflict) setSaveConflictOpen(true);
+            }}
+            aria-label={saveConflict ? "处理画布保存冲突" : "画布自动保存状态"}
             title={
               busy
                 ? "有生成任务正在运行"
-                : saveState === "error"
-                  ? "上次保存失败，修改仍保留在浏览器中"
-                  : "画布自动保存状态"
+                : saveState === "conflict"
+                  ? "画布已在其他窗口更新；点击处理保存冲突"
+                  : saveState === "error"
+                    ? "上次保存失败，修改仍保留在浏览器中"
+                    : "画布自动保存状态"
             }
           >
             <span
               className={`node-status ${
                 busy
                   ? "running"
-                  : saveState === "error"
+                  : saveState === "error" || saveState === "conflict"
                     ? "failed"
                     : saveState === "saved"
                       ? "succeeded"
@@ -4690,7 +7651,7 @@ function CanvasShell() {
               }`}
             />
             {busy ? "任务运行中" : SAVE_STATE_LABEL[saveState]}
-          </span>
+          </button>
           <button
             className="icon-button"
             type="button"
@@ -4721,7 +7682,8 @@ function CanvasShell() {
           <input
             ref={importInput}
             type="file"
-            accept="application/json,.json"
+            accept={`application/json,application/zip,.json,${PROJECT_PACKAGE_EXTENSION}`}
+            disabled={projectImportBusy || busy}
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -4763,7 +7725,9 @@ function CanvasShell() {
               role="menuitem"
               onClick={() => {
                 setProjectMenuOpen(false);
-                void saveNow().then(() => showToast("画布已保存", "success"));
+                void saveNow()
+                  .then(() => showToast("画布已保存", "success"))
+                  .catch(() => undefined);
               }}
             >
               <RefreshCw size={14} /> 保存画布
@@ -4772,22 +7736,50 @@ function CanvasShell() {
             <button
               type="button"
               role="menuitem"
+              aria-label="导出结构 JSON"
               onClick={() => {
                 setProjectMenuOpen(false);
                 exportProject();
               }}
             >
-              <Download size={14} /> 导出项目
+              <Download size={14} /> 导出结构 JSON
+              <span className="project-menu-hint">JSON</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={portableExportProgress !== null}
+              onClick={() => {
+                void exportPortableProject();
+              }}
+            >
+              <Archive size={14} />
+              {portableExportProgress
+                ? portableExportProgress.total > 0
+                  ? `正在打包 ${portableExportProgress.completed}/${portableExportProgress.total}`
+                  : "正在打包…"
+                : "导出完整项目包（含素材）"}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={projectImportBusy || busy}
+              onClick={() => {
+                setProjectMenuOpen(false);
+                importInput.current?.click();
+              }}
+            >
+              <Upload size={14} /> 导入 JSON / 完整项目包
             </button>
             <button
               type="button"
               role="menuitem"
               onClick={() => {
                 setProjectMenuOpen(false);
-                importInput.current?.click();
+                setRunHistoryOpen(true);
               }}
             >
-              <Upload size={14} /> 导入项目
+              <History size={14} /> 运行历史
             </button>
             <div className="project-menu-divider" />
             <button
@@ -4804,7 +7796,10 @@ function CanvasShell() {
                 setDrawings([]);
                 setSelectedId(null);
                 setSelectedDrawingIds(new Set());
-                if (canvasId) void saveGraph(canvasId, [], [], viewport, []);
+                if (canvasId)
+                  void saveGraph(canvasId, [], [], viewport, []).catch(
+                    () => undefined,
+                  );
               }}
             >
               <Trash2 size={14} /> 清空画布
@@ -4820,14 +7815,144 @@ function CanvasShell() {
           } as CSSProperties
         }
       >
-        {mobileInspectorOpen ? (
+        {mobileInspectorOpen || mobileLibraryOpen ? (
           <button
             className="mobile-backdrop"
             type="button"
             aria-label="关闭面板"
-            onClick={() => setMobileInspectorOpen(false)}
+            onClick={() => {
+              setMobileInspectorOpen(false);
+              setMobileLibraryOpen(false);
+            }}
           />
         ) : null}
+        <aside className={`sidebar ${mobileLibraryOpen ? "mobile-open" : ""}`}>
+          <button
+            className="icon-button mobile-panel-close mobile-only"
+            type="button"
+            onClick={() => setMobileLibraryOpen(false)}
+            aria-label="关闭素材库"
+          >
+            <X size={15} />
+          </button>
+          <div className="section-title">节点库</div>
+          <div className="node-menu">
+            <button
+              type="button"
+              onClick={() => {
+                addNewNode("image-generation");
+                setMobileLibraryOpen(false);
+              }}
+            >
+              <span className="icon">
+                <ImageIcon size={14} />
+              </span>
+              <strong>图片生成</strong>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                addNewNode("video-generation");
+                setMobileLibraryOpen(false);
+              }}
+            >
+              <span className="icon">
+                <Video size={14} />
+              </span>
+              <strong>视频生成</strong>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                addNewNode("prompt");
+                setMobileLibraryOpen(false);
+              }}
+            >
+              <span className="icon">
+                <Type size={14} />
+              </span>
+              <strong>Prompt</strong>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                addNewNode("preview");
+                setMobileLibraryOpen(false);
+              }}
+            >
+              <span className="icon">
+                <FolderOpen size={14} />
+              </span>
+              <strong>结果预览</strong>
+            </button>
+          </div>
+          <div className="sidebar-divider" />
+          <div className="section-title asset-section-title">
+            <span>素材库</span>
+            <span className="section-count">{assets.length}</span>
+          </div>
+          <label className="upload-label">
+            <Upload size={14} />
+            <span>上传图片、视频或音频</span>
+            <input
+              type="file"
+              accept="image/*,video/*,audio/*"
+              multiple
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                void Promise.all(files.map((file) => handleUpload(file)));
+              }}
+            />
+          </label>
+          <div className="asset-list">
+            {assets.length === 0 ? (
+              <span className="field-note">暂无素材，可上传或拖入画布。</span>
+            ) : (
+              assets.map((asset) => (
+                <button
+                  className="asset-row"
+                  type="button"
+                  key={asset.id}
+                  onClick={() => {
+                    const bounds =
+                      canvasWrapRef.current?.getBoundingClientRect();
+                    const position = reactFlowRef.current?.screenToFlowPosition(
+                      {
+                        x: bounds
+                          ? bounds.left + bounds.width / 2
+                          : window.innerWidth / 2,
+                        y: bounds
+                          ? bounds.top + bounds.height / 2
+                          : window.innerHeight / 2,
+                      },
+                    );
+                    if (position) placeAssetsOnCanvas([asset], position);
+                    setMobileLibraryOpen(false);
+                  }}
+                  title="放入画布"
+                >
+                  <span className="asset-thumb">
+                    {asset.kind === "image" ? (
+                      <img
+                        src={`/api/assets/${encodeURIComponent(asset.id)}/preview?size=160`}
+                        alt=""
+                      />
+                    ) : asset.kind === "video" ? (
+                      <Video size={15} />
+                    ) : (
+                      <FolderOpen size={15} />
+                    )}
+                  </span>
+                  <span className="asset-meta">
+                    <span className="asset-name">{asset.name}</span>
+                    <span className="asset-kind">{asset.kind}</span>
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </aside>
         <section
           ref={canvasWrapRef}
           className={`canvas-wrap ${dropActive ? "drop-active" : ""}`}
@@ -4848,6 +7973,40 @@ function CanvasShell() {
                 disabled={nodes.length === 0 || busy}
               >
                 <Play size={13} /> 运行全部
+              </button>
+              <button
+                className="button small canvas-tidy-button"
+                type="button"
+                onClick={tidyCanvasLayout}
+                disabled={nodes.length < 2}
+                aria-label="一键整理画布"
+                title="先整理每组相连的工作流，再整齐排列互不相连的工作流"
+              >
+                <LayoutGrid size={13} />
+                <span>一键整理</span>
+              </button>
+              <button
+                className="button small canvas-group-button"
+                type="button"
+                onClick={
+                  selectedHasGroup
+                    ? ungroupSelectedNodes
+                    : groupSelectedNodes
+                }
+                disabled={
+                  selectedHasGroup
+                    ? false
+                    : selectedCanvasNodes.length < 2
+                }
+                aria-label={selectedHasGroup ? "解组所选节点" : "将所选节点打组"}
+                title={
+                  selectedHasGroup
+                    ? "解组所选节点（Ctrl+Shift+G）"
+                    : "将至少两个所选节点放入一个视觉分组（Ctrl+G）"
+                }
+              >
+                <Combine size={13} />
+                <span>{selectedHasGroup ? "解组" : "打组"}</span>
               </button>
             </div>
             <div
@@ -5000,7 +8159,7 @@ function CanvasShell() {
           </div>
           <ReactFlow
             nodes={renderedNodes}
-            edges={edges}
+            edges={displayedEdges}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChangeWrapped}
             onEdgesChange={onEdgesChangeWrapped}
@@ -5020,6 +8179,19 @@ function CanvasShell() {
             onPaneContextMenu={openCanvasMenu}
             onNodeContextMenu={openNodeMenu}
             onPaneClick={() => {
+              useCanvasStore.setState((state) => {
+                const hasSelectedNodes = state.nodes.some(
+                  (node) => node.selected,
+                );
+                if (!hasSelectedNodes && state.selectedId === null) return {};
+                return {
+                  selectedId: null,
+                  nodes: state.nodes.map((node) =>
+                    node.selected ? { ...node, selected: false } : node,
+                  ),
+                };
+              });
+              setMobileInspectorOpen(false);
               setConnectionMenu(null);
               setCanvasMenu(null);
               setNodeMenu(null);
@@ -5046,6 +8218,55 @@ function CanvasShell() {
             deleteKeyCode={null}
             proOptions={{ hideAttribution: true }}
           >
+            <ViewportPortal>
+              <div className="canvas-group-layer" aria-label="节点分组">
+                {canvasGroups.map((group) => (
+                  <div
+                    className="canvas-node-group"
+                    key={group.id}
+                    style={{
+                      left: group.position.x,
+                      top: group.position.y,
+                      width: group.width,
+                      height: group.height,
+                      "--group-accent": group.color,
+                    } as CSSProperties}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => selectCanvasGroup(group.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        selectCanvasGroup(group.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    title="点击选择整个节点组"
+                  >
+                    <span className="canvas-node-group-header">
+                      <span className="canvas-node-group-title">
+                        <Combine size={13} />
+                        <strong>{group.label}</strong>
+                        <small>{group.count} 个节点</small>
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`解组${group.label}`}
+                        title="解组"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          selectCanvasGroup(group.id);
+                          window.setTimeout(() => ungroupSelectedNodes(), 0);
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </ViewportPortal>
             <Background gap={22} size={1} color="#2d3650" />
             <DrawingLayer
               drawings={drawings}
@@ -5095,7 +8316,7 @@ function CanvasShell() {
           {nodes.length === 0 && !dropActive ? (
             <div className="canvas-empty-state">
               <h2>画布是空的</h2>
-              <p>从这里开始，或者直接把图片、视频拖进画布。</p>
+              <p>从这里开始，或者直接把图片、视频或音频拖进画布。</p>
               <div className="canvas-empty-actions">
                 <button
                   className="button primary small"
@@ -5284,13 +8505,13 @@ function CanvasShell() {
           <div
             className="inspector-resize-handle"
             role="separator"
-            aria-label="调整智能体面板宽度"
+            aria-label="调整右侧面板宽度"
             aria-orientation="vertical"
             aria-valuemin={INSPECTOR_MIN_WIDTH}
             aria-valuemax={INSPECTOR_MAX_WIDTH}
             aria-valuenow={inspectorWidth}
             aria-valuetext={`${inspectorWidth} 像素`}
-            title="左右拖动调整智能体面板宽度"
+            title="左右拖动调整右侧面板宽度"
             tabIndex={0}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
@@ -5320,12 +8541,46 @@ function CanvasShell() {
             className="icon-button mobile-panel-close mobile-only"
             type="button"
             onClick={() => setMobileInspectorOpen(false)}
-            aria-label="关闭"
+            aria-label="关闭参数与导演台"
           >
             <X size={15} />
           </button>
-          {showLegacyInspector && selectedNode && selectedData ? (
-            <>
+          {!DIRECTOR_FEATURE_ENABLED ? (
+            <div
+              className="inspector-mode-tabs"
+              role="tablist"
+              aria-label="右侧工作面板"
+            >
+            <button
+              className={`inspector-mode-tab ${effectiveInspectorMode === "node" ? "active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={effectiveInspectorMode === "node"}
+              aria-controls="inspector-node-panel"
+              disabled={!selectedNode}
+              onClick={() => setInspectorMode("node")}
+              title={selectedNode ? "编辑当前节点参数" : "请先选择一个节点"}
+            >
+              <Settings2 size={13} /> 节点参数
+            </button>
+            <button
+              className={`inspector-mode-tab ${effectiveInspectorMode === "agent" ? "active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={effectiveInspectorMode === "agent"}
+              aria-controls="inspector-agent-panel"
+              onClick={() => setInspectorMode("agent")}
+            >
+              <WandSparkles size={13} /> 导演台
+            </button>
+            </div>
+          ) : null}
+          {showNodeInspector && selectedNode && selectedData ? (
+            <div
+              className="inspector-mode-content is-node"
+              id="inspector-node-panel"
+              role="tabpanel"
+            >
               <h2>{selectedData.label}</h2>
               <div className="field">
                 <label htmlFor={`node-name-${selectedNode.id}`}>节点名称</label>
@@ -5485,20 +8740,65 @@ function CanvasShell() {
                       <label htmlFor={`node-model-${selectedNode.id}`}>
                         模型
                       </label>
-                      <input
-                        id={`node-model-${selectedNode.id}`}
-                        list={`models-${selectedNode.id}`}
-                        value={selectedData.model ?? ""}
-                        onChange={(event) =>
-                          changeNodeModel(selectedNode.id, event.target.value)
-                        }
-                        placeholder="自动"
-                      />
-                      {availableModels.length > 0 ? (
+                      {selectedModelListAuthoritative ? (
+                        <select
+                          id={`node-model-${selectedNode.id}`}
+                          value={selectedData.model ?? ""}
+                          onChange={(event) =>
+                            changeNodeModel(selectedNode.id, event.target.value)
+                          }
+                        >
+                          <option value="">自动模型</option>
+                          {selectedData.model && !selectedModel ? (
+                            <option value={selectedData.model} disabled>
+                              {selectedData.model}
+                              {selectedModelListLoading
+                                ? "（正在扫描模型…）"
+                                : selectedModelListFailed
+                                  ? "（模型扫描失败，暂不可用）"
+                                  : "（当前扫描不可用）"}
+                            </option>
+                          ) : null}
+                          {availableModels.map((model) => {
+                            const unavailableReason =
+                              modelCanvasUnavailableReason(model);
+                            return (
+                              <option
+                                key={model.id}
+                                value={model.id}
+                                disabled={unavailableReason !== null}
+                              >
+                                {appendPriceLabelOnce(
+                                  model.name,
+                                  model.metadata?.["priceLabel"],
+                                )}
+                                {unavailableReason
+                                  ? `（不可运行：${unavailableReason}）`
+                                  : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      ) : (
+                        <input
+                          id={`node-model-${selectedNode.id}`}
+                          list={`models-${selectedNode.id}`}
+                          value={selectedData.model ?? ""}
+                          onChange={(event) =>
+                            changeNodeModel(selectedNode.id, event.target.value)
+                          }
+                          placeholder="自动"
+                        />
+                      )}
+                      {!selectedModelListAuthoritative &&
+                      availableModels.length > 0 ? (
                         <datalist id={`models-${selectedNode.id}`}>
                           {availableModels.map((model) => (
                             <option key={model.id} value={model.id}>
-                              {model.name}
+                              {appendPriceLabelOnce(
+                                model.name,
+                                model.metadata?.["priceLabel"],
+                              )}
                             </option>
                           ))}
                         </datalist>
@@ -5520,7 +8820,14 @@ function CanvasShell() {
                   ) : null}
                   {modelLoadError?.connectionId === selectedConnectionId ? (
                     <div className="field-note" role="status">
-                      {modelLoadError.message}；可直接填写模型 ID
+                      {modelLoadError.message}
+                      {selectedModelListAuthoritative ||
+                      (selectedConnectionRecord &&
+                        connectionRequiresAuthoritativeModelScan(
+                          selectedConnectionRecord,
+                        ))
+                        ? "。不可用模型不会进入选择列表"
+                        : "；可直接填写模型 ID"}
                     </div>
                   ) : null}
                   <NodeParameterFields
@@ -5583,23 +8890,75 @@ function CanvasShell() {
                   </button>
                 </div>
               ) : null}
-            </>
+            </div>
           ) : (
-            <AgentPanel
-              connections={connections}
-              assets={assets}
-              canvasId={canvasId ?? ""}
-              selectedNode={selectedNode}
-              selectedPrompt={selectedGeneratedPrompt}
-              draftRequest={agentDraftRequest}
-              onManageApi={(group) => {
-                setSettingsInitialCangyuanGroup(group ?? null);
-                setSettingsOpen(true);
-              }}
-            />
+            <div
+              className="inspector-mode-content is-agent"
+              id="inspector-agent-panel"
+              role="tabpanel"
+            >
+              {DIRECTOR_FEATURE_ENABLED ? (
+                <SuperDirectorPanel
+                  connections={connections}
+                  assets={assets}
+                  canvasId={canvasId ?? ""}
+                  selectedNode={selectedNode}
+                  selectedPrompt={selectedGeneratedPrompt}
+                  draftRequest={agentDraftRequest}
+                  canvasRevision={canvasRevisionValue}
+                  viewport={viewport}
+                  onPreviewPatch={(patch) => applyDirectorPreviewPatch(patch)}
+                  onApproved={applyDirectorApproval}
+                  onManageApi={() => {
+                    setSettingsInitialCangyuanGroup(null);
+                    setSettingsOpen(true);
+                  }}
+                />
+              ) : (
+                <AgentPanel
+                  connections={connections}
+                  assets={assets}
+                  canvasId={canvasId ?? ""}
+                  selectedNode={selectedNode}
+                  selectedPrompt={selectedGeneratedPrompt}
+                  draftRequest={agentDraftRequest}
+                  onManageApi={(group) => {
+                    setSettingsInitialCangyuanGroup(group ?? null);
+                    setSettingsOpen(true);
+                  }}
+                />
+              )}
+            </div>
           )}
         </aside>
       </main>
+      {saveConflict ? (
+        <CanvasSaveConflictModal
+          open={saveConflictOpen}
+          currentRevision={saveConflict.currentRevision}
+          onClose={() => setSaveConflictOpen(false)}
+          onExport={() => exportProject(true)}
+          onReload={() => {
+            if (saveTimer.current) clearTimeout(saveTimer.current);
+            saveTimer.current = null;
+            pendingSave.current = null;
+            if (canvasId) {
+              const localConfigurations = readPendingNodeConfigurations().filter(
+                (entry) => entry.canvasId === canvasId,
+              );
+              clearPersistedNodeConfigurations(localConfigurations);
+            }
+            // Invalidate callbacks from a save that was already in flight;
+            // the reload must start from the server snapshot only.
+            latestSaveAttempt.current += 1;
+            saveConflictRef.current = null;
+            conflictedSave.current = null;
+            setSaveConflict(null);
+            setSaveConflictOpen(false);
+            window.location.reload();
+          }}
+        />
+      ) : null}
       <SettingsModal
         open={settingsOpen}
         initialCangyuanGroup={settingsInitialCangyuanGroup}
@@ -5611,6 +8970,23 @@ function CanvasShell() {
             .catch(() => undefined);
         }}
       />
+      {pendingProjectImport ? (
+        <ProjectImportModal
+          prepared={pendingProjectImport}
+          busy={projectImportBusy}
+          backupCurrent={projectImportBackup}
+          progress={projectImportProgress}
+          error={projectImportError}
+          onBackupCurrentChange={setProjectImportBackup}
+          onCancel={() => {
+            if (projectImportBusy) return;
+            setPendingProjectImport(null);
+            setProjectImportError(null);
+            setProjectImportProgress(null);
+          }}
+          onConfirm={() => void confirmProjectImport()}
+        />
+      ) : null}
       <GenerationHistoryModal
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
@@ -5632,6 +9008,18 @@ function CanvasShell() {
           }
           placeAssetsOnCanvas([asset], flowPosition);
           setHistoryOpen(false);
+        }}
+      />
+      <RunHistoryModal
+        open={runHistoryOpen}
+        onClose={() => setRunHistoryOpen(false)}
+        canvasId={canvasId}
+        onReuseAsset={reuseHistoricalAsset}
+        onResumeRun={async (runId) => {
+          const snapshot = await resumeRun(runId);
+          applyRunSnapshot(snapshot, snapshot.run.clientRequestId);
+          if (!terminalRunStatuses.has(snapshot.run.status))
+            subscribeToRun(snapshot.run.id);
         }}
       />
       <AssetPreviewModal

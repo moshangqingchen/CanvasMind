@@ -15,7 +15,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL,
-    channel: "chrome",
+    channel: process.env.PLAYWRIGHT_CHANNEL ?? "chrome",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",

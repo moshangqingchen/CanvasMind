@@ -41,6 +41,10 @@ describe("upload intent tokens", () => {
   it("refuses a public fallback key in production", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("MASTER_KEY", "");
+    vi.stubEnv(
+      "SUPERCANVAS_ENV_FILE",
+      "Z:\\super-canvas-test-missing\\.local-public.env",
+    );
 
     expect(() => createUploadToken(intent)).toThrow(
       "MASTER_KEY is required for upload intent signing",

@@ -1,3 +1,5 @@
+name: supercanvas
+
 services:
   postgres:
     image: postgres:16.4-alpine
@@ -116,6 +118,13 @@ services:
       S3_FORCE_PATH_STYLE: "true"
       MASTER_KEY: ${MASTER_KEY:?MASTER_KEY is required}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      SUPERCANVAS_PUBLIC_AUTH_USER: "${SUPERCANVAS_PUBLIC_AUTH_USER:-}"
+      SUPERCANVAS_PUBLIC_AUTH_PASSWORD: "${SUPERCANVAS_PUBLIC_AUTH_PASSWORD:-}"
+      SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN: "${SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN:-}"
+      SUPERCANVAS_PUBLIC_AUTH_TRUSTED_HOSTS: "${SUPERCANVAS_PUBLIC_AUTH_TRUSTED_HOSTS:-}"
+      SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK: "${SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK:-}"
+      WEAI_DIRECT_LOCAL_ADDRESS: "${WEAI_DIRECT_LOCAL_ADDRESS:-}"
+      WEAI_DIRECT_DNS_SERVERS: "${WEAI_DIRECT_DNS_SERVERS:-223.5.5.5,119.29.29.29}"
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
     healthcheck:
@@ -124,7 +133,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+          "const token=process.env.SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN||'';const headers=token?{cookie:'super_canvas_session='+token}:{};fetch('http://127.0.0.1:3000/api/health',{headers}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
         ]
       interval: 10s
       timeout: 5s
@@ -159,6 +168,9 @@ services:
       S3_BUCKET: ${S3_BUCKET:-supercanvas}
       S3_FORCE_PATH_STYLE: "true"
       MASTER_KEY: ${MASTER_KEY:?MASTER_KEY is required}
+      WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-2}"
+      WEAI_DIRECT_LOCAL_ADDRESS: "${WEAI_DIRECT_LOCAL_ADDRESS:-}"
+      WEAI_DIRECT_DNS_SERVERS: "${WEAI_DIRECT_DNS_SERVERS:-223.5.5.5,119.29.29.29}"
 
 volumes:
   supercanvas-postgres:

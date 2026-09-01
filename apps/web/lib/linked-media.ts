@@ -3,6 +3,13 @@ import type { AssetView, CanvasEdge, CanvasNode } from "../components/types";
 
 export type MediaDurationMap = Readonly<Record<string, number>>;
 
+function nodeAssetIds(node: CanvasNode): string[] {
+  return [
+    ...(typeof node.data.assetId === "string" ? [node.data.assetId] : []),
+    ...(node.data.lastOutputAssetIds ?? []),
+  ];
+}
+
 /** Collect only media produced by nodes with an edge directly into targetId. */
 export function directLinkedAssetsForNode(
   targetId: string,
@@ -19,10 +26,7 @@ export function directLinkedAssetsForNode(
     if (edge.target !== targetId) continue;
     const source = nodeById.get(edge.source);
     if (!source) continue;
-    const ids = [
-      ...(typeof source.data.assetId === "string" ? [source.data.assetId] : []),
-      ...(source.data.lastOutputAssetIds ?? []),
-    ];
+    const ids = nodeAssetIds(source);
     for (const id of ids) {
       if (seen.has(id)) continue;
       const asset = assetById.get(id);
@@ -32,6 +36,84 @@ export function directLinkedAssetsForNode(
     }
   }
   return linked;
+}
+
+/** Remove every direct edge that brings one asset into the target node. */
+export function removeDirectLinkedAssetEdges(
+  targetId: string,
+  assetId: string,
+  nodes: readonly CanvasNode[],
+  edges: readonly CanvasEdge[],
+): CanvasEdge[] {
+  const sourceIds = new Set(
+    nodes
+      .filter((node) => nodeAssetIds(node).includes(assetId))
+      .map((node) => node.id),
+  );
+  if (sourceIds.size === 0) return [...edges];
+  return edges.filter(
+    (edge) => !(edge.target === targetId && sourceIds.has(edge.source)),
+  );
+}
+
+function upstreamAssetIdsForNode(
+  targetId: string,
+  nodes: readonly CanvasNode[],
+  edges: readonly CanvasEdge[],
+): Set<string> {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const incoming = new Map<string, CanvasEdge[]>();
+  for (const edge of edges) {
+    const targetEdges = incoming.get(edge.target);
+    if (targetEdges) targetEdges.push(edge);
+    else incoming.set(edge.target, [edge]);
+  }
+
+  const upstream = new Set<string>();
+  const queue = [targetId];
+  while (queue.length > 0) {
+    const target = queue.shift();
+    if (!target) continue;
+    for (const edge of incoming.get(target) ?? []) {
+      if (upstream.has(edge.source)) continue;
+      upstream.add(edge.source);
+      queue.push(edge.source);
+    }
+  }
+
+  const assetIds = new Set<string>();
+  for (const nodeId of upstream) {
+    const source = nodeById.get(nodeId);
+    if (!source) continue;
+    for (const assetId of nodeAssetIds(source)) assetIds.add(assetId);
+  }
+  return assetIds;
+}
+
+/** Drop prompt mentions whose assets are no longer reachable upstream. */
+export function removeUnavailableAssetMentions(
+  nodes: readonly CanvasNode[],
+  edges: readonly CanvasEdge[],
+): CanvasNode[] {
+  return nodes.map((node) => {
+    const parts = node.data.parts;
+    if (!parts?.some((part) => part.type === "asset")) return node;
+    const availableAssetIds = upstreamAssetIdsForNode(node.id, nodes, edges);
+    const nextParts = parts.filter(
+      (part) => part.type !== "asset" || availableAssetIds.has(part.assetId),
+    );
+    if (nextParts.length === parts.length) return node;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        parts:
+          nextParts.length > 0
+            ? nextParts
+            : [{ type: "text" as const, text: "" }],
+      },
+    };
+  });
 }
 
 function mediaCount(

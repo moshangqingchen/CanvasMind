@@ -8,6 +8,7 @@ import type {
   ProviderAdapter,
   ProviderAssetInput,
   ProviderConnectionResolver,
+  ProviderOperation,
   ProviderTask,
   ProviderTaskStatus,
   RemoteArtifact,
@@ -24,6 +25,7 @@ import {
   assetToBlob,
   fetchProviderJson,
   mergeHeaders,
+  providerFetch,
   requireApiKey,
 } from "./http.js";
 import {
@@ -40,9 +42,30 @@ export type RestSource =
       assetKind?: ProviderAssetInput["kind"];
       role?: ProviderAssetInput["role"];
       excludeRoles?: readonly NonNullable<ProviderAssetInput["role"]>[];
-      select?: "all" | "first";
+      select?: "all" | "first" | "firstIfOnly" | "allIfMultiple" | "firstOrAll";
+      /** Skip the first N matching assets before applying `select`. */
+      offset?: number;
+      /** Optional provider-native JSON encoding for selected assets. */
+      encoding?: "default" | "gemini-part";
     }
-  | { kind: "assetMode"; frameValue: string; referenceValue: string }
+  | {
+      /** Build one OpenAI-style user message from the prompt and input images. */
+      kind: "openaiMessages";
+      detail?: "auto" | "low" | "high";
+    }
+  | {
+      /** Derive the standard WxH string from video resolution and orientation. */
+      kind: "videoDimensions";
+      resolutionPath: string;
+      aspectRatioPath: string;
+    }
+  | {
+      kind: "assetMode";
+      frameValue: string;
+      referenceValue: string;
+      /** Use referenceValue only when at least this many images are supplied. */
+      referenceThreshold?: number;
+    }
   | { kind: "literal"; value: unknown };
 
 export interface RestRequestMapping {
@@ -51,12 +74,19 @@ export interface RestRequestMapping {
   source: RestSource;
   omitIfUndefined?: boolean;
   omitIfEmpty?: boolean;
+  /** Primitive sentinel values that should be omitted instead of sent upstream. */
+  omitValues?: readonly (string | number | boolean | null)[];
+  /** Optional primitive coercion applied after the source value is resolved. */
+  coerce?: "string" | "number" | "boolean";
 }
 
 export interface RestResponseMapping {
   taskIdPath?: string;
+  taskIdFallbackPaths?: readonly string[];
   statusPath?: string;
+  statusFallbackPaths?: readonly string[];
   errorPath?: string;
+  errorFallbackPaths?: readonly string[];
   progressPath?: string;
 }
 
@@ -80,7 +110,11 @@ export interface RestOutputMapping {
   kind: ArtifactKind;
   /** Relative JSONPaths used when selected outputs are objects. */
   urlPath?: string;
+  /** Alternative relative JSONPaths for URL-shaped provider variants. */
+  urlFallbackPaths?: readonly string[];
   base64Path?: string;
+  /** Alternative relative JSONPaths for base64-shaped provider variants. */
+  base64FallbackPaths?: readonly string[];
   mimeTypePath?: string;
   filenamePath?: string;
   defaultMimeType?: string;
@@ -117,10 +151,16 @@ export interface RestConnectorConfig {
   pollIntervalMs?: number;
   /** Absolute request URLs must match this exact hostname list. */
   allowedHosts?: readonly string[];
+  /** Convert canvas inputs to short-lived public http(s) URLs before submit. */
+  assetsRequirePublicUrls?: boolean;
   allowInsecureHttp?: boolean;
   webhook?: RestWebhookConfig;
   /** Transport differences for model families sharing one connection. */
   modelOverrides?: Readonly<Record<string, RestModelConnectorOverride>>;
+  /** Transport differences between generate/edit operations sharing a model. */
+  operationOverrides?: Partial<
+    Readonly<Record<ProviderOperation, RestModelConnectorOverride>>
+  >;
 }
 
 export interface RestModelConnectorOverride {
@@ -130,6 +170,10 @@ export interface RestModelConnectorOverride {
   output?: RestOutputMapping;
   statusMap?: Readonly<Record<string, ProviderTaskStatus>>;
   pollIntervalMs?: number;
+  /** Model-specific transport differences between generate/edit operations. */
+  operationOverrides?: Partial<
+    Readonly<Record<ProviderOperation, RestModelConnectorOverride>>
+  >;
 }
 
 interface RestTaskEnvelope {
@@ -144,6 +188,28 @@ export interface GenericRestAdapterOptions {
   requestTimeoutMs?: number;
   /** Optional fixed config; otherwise connection.settings.connector is used. */
   config?: RestConnectorConfig;
+}
+
+const IMAGE_JSON_ENVELOPE_BYTES = 2 * 1024 * 1024;
+const IMAGE_JSON_BYTES_PER_BASE64_OUTPUT = 48 * 1024 * 1024;
+
+function imageJsonMaxResponseBytes(
+  config: RestConnectorConfig,
+  parameters: Readonly<Record<string, unknown>> | undefined,
+): number | undefined {
+  const returnsBase64 = Boolean(
+    config.output.base64Path || config.output.base64FallbackPaths?.length,
+  );
+  if (config.output.kind !== "image" || !returnsBase64) return undefined;
+  const requested = parameters?.["n"];
+  const count =
+    typeof requested === "number" &&
+    Number.isSafeInteger(requested) &&
+    requested >= 1 &&
+    requested <= 10
+      ? requested
+      : 1;
+  return IMAGE_JSON_ENVELOPE_BYTES + IMAGE_JSON_BYTES_PER_BASE64_OUTPUT * count;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -239,6 +305,21 @@ function assertRequestDefinition(
         throw new Error(`${label}.mappings[${index}].${key} must be boolean`);
       }
     }
+    if (
+      mapping.omitValues !== undefined &&
+      (!Array.isArray(mapping.omitValues) ||
+        mapping.omitValues.some(
+          (item) =>
+            item !== null &&
+            typeof item !== "string" &&
+            typeof item !== "boolean" &&
+            (typeof item !== "number" || !Number.isFinite(item)),
+        ))
+    ) {
+      throw new Error(
+        `${label}.mappings[${index}].omitValues must contain only JSON primitive values`,
+      );
+    }
     if (mapping.source.kind === "request" || mapping.source.kind === "task") {
       if (
         typeof mapping.source.path !== "string" ||
@@ -262,9 +343,22 @@ function assertRequestDefinition(
       if (
         mapping.source.select !== undefined &&
         mapping.source.select !== "all" &&
-        mapping.source.select !== "first"
+        mapping.source.select !== "first" &&
+        mapping.source.select !== "firstIfOnly" &&
+        mapping.source.select !== "allIfMultiple" &&
+        mapping.source.select !== "firstOrAll"
       ) {
         throw new Error(`${label}.mappings[${index}].source.select is invalid`);
+      }
+      if (
+        mapping.source.offset !== undefined &&
+        (typeof mapping.source.offset !== "number" ||
+          !Number.isSafeInteger(mapping.source.offset) ||
+          mapping.source.offset < 0)
+      ) {
+        throw new Error(
+          `${label}.mappings[${index}].source.offset must be a non-negative integer`,
+        );
       }
       if (
         mapping.source.excludeRoles !== undefined &&
@@ -272,6 +366,15 @@ function assertRequestDefinition(
       ) {
         throw new Error(
           `${label}.mappings[${index}].source.excludeRoles must be an array`,
+        );
+      }
+      if (
+        mapping.source.encoding !== undefined &&
+        mapping.source.encoding !== "default" &&
+        mapping.source.encoding !== "gemini-part"
+      ) {
+        throw new Error(
+          `${label}.mappings[${index}].source.encoding is invalid`,
         );
       }
     } else if (mapping.source.kind === "assetMode") {
@@ -283,6 +386,36 @@ function assertRequestDefinition(
           `${label}.mappings[${index}].source asset mode values must be strings`,
         );
       }
+      if (
+        mapping.source.referenceThreshold !== undefined &&
+        (typeof mapping.source.referenceThreshold !== "number" ||
+          !Number.isInteger(mapping.source.referenceThreshold) ||
+          mapping.source.referenceThreshold < 1)
+      ) {
+        throw new Error(
+          `${label}.mappings[${index}].source.referenceThreshold must be a positive integer`,
+        );
+      }
+    } else if (mapping.source.kind === "openaiMessages") {
+      if (
+        mapping.source.detail !== undefined &&
+        mapping.source.detail !== "auto" &&
+        mapping.source.detail !== "low" &&
+        mapping.source.detail !== "high"
+      ) {
+        throw new Error(`${label}.mappings[${index}].source.detail is invalid`);
+      }
+    } else if (mapping.source.kind === "videoDimensions") {
+      for (const key of ["resolutionPath", "aspectRatioPath"] as const) {
+        if (
+          typeof mapping.source[key] !== "string" ||
+          !mapping.source[key].startsWith("$")
+        ) {
+          throw new Error(
+            `${label}.mappings[${index}].source.${key} must be a JSONPath`,
+          );
+        }
+      }
     } else if (mapping.source.kind === "literal") {
       if (!Object.hasOwn(mapping.source, "value")) {
         throw new Error(
@@ -291,6 +424,14 @@ function assertRequestDefinition(
       }
     } else {
       throw new Error(`${label}.mappings[${index}].source.kind is invalid`);
+    }
+    if (
+      mapping.coerce !== undefined &&
+      mapping.coerce !== "string" &&
+      mapping.coerce !== "number" &&
+      mapping.coerce !== "boolean"
+    ) {
+      throw new Error(`${label}.mappings[${index}].coerce is invalid`);
     }
   }
   if (value.response !== undefined && !isRecord(value.response)) {
@@ -309,6 +450,36 @@ function assertRequestDefinition(
     ) {
       throw new Error(`${label}.response.${key} must be a JSONPath`);
     }
+  }
+  if (
+    value.response !== undefined &&
+    value.response.taskIdFallbackPaths !== undefined &&
+    (!Array.isArray(value.response.taskIdFallbackPaths) ||
+      value.response.taskIdFallbackPaths.some(
+        (path) => typeof path !== "string",
+      ))
+  ) {
+    throw new Error(`${label}.response.taskIdFallbackPaths must be JSONPaths`);
+  }
+  if (
+    value.response !== undefined &&
+    value.response.errorFallbackPaths !== undefined &&
+    (!Array.isArray(value.response.errorFallbackPaths) ||
+      value.response.errorFallbackPaths.some(
+        (path) => typeof path !== "string",
+      ))
+  ) {
+    throw new Error(`${label}.response.errorFallbackPaths must be JSONPaths`);
+  }
+  if (
+    value.response !== undefined &&
+    value.response.statusFallbackPaths !== undefined &&
+    (!Array.isArray(value.response.statusFallbackPaths) ||
+      value.response.statusFallbackPaths.some(
+        (path) => typeof path !== "string",
+      ))
+  ) {
+    throw new Error(`${label}.response.statusFallbackPaths must be JSONPaths`);
   }
 }
 
@@ -329,6 +500,15 @@ function assertConfig(value: unknown): asserts value is RestConnectorConfig {
       value.output.fallbackPaths.some((path) => typeof path !== "string"))
   ) {
     throw new Error("REST connector output.fallbackPaths must be JSONPaths");
+  }
+  for (const key of ["urlFallbackPaths", "base64FallbackPaths"] as const) {
+    if (
+      value.output[key] !== undefined &&
+      (!Array.isArray(value.output[key]) ||
+        value.output[key].some((path) => typeof path !== "string"))
+    ) {
+      throw new Error(`REST connector output.${key} must be JSONPaths`);
+    }
   }
   if (value.output.kind !== "image" && value.output.kind !== "video") {
     throw new Error("REST connector output.kind must be image or video");
@@ -390,6 +570,12 @@ function assertConfig(value: unknown): asserts value is RestConnectorConfig {
     throw new Error("REST connector allowedHosts must be an array of strings");
   }
   if (
+    value.assetsRequirePublicUrls !== undefined &&
+    typeof value.assetsRequirePublicUrls !== "boolean"
+  ) {
+    throw new Error("REST connector assetsRequirePublicUrls must be boolean");
+  }
+  if (
     value.pollIntervalMs !== undefined &&
     (typeof value.pollIntervalMs !== "number" ||
       !Number.isInteger(value.pollIntervalMs) ||
@@ -435,7 +621,49 @@ function assertConfig(value: unknown): asserts value is RestConnectorConfig {
           `REST connector modelOverrides.${model}.output is invalid`,
         );
       }
+      if (override.operationOverrides !== undefined) {
+        assertOperationOverrides(
+          override.operationOverrides,
+          `modelOverrides.${model}.operationOverrides`,
+        );
+      }
     }
+  }
+  if (value.operationOverrides !== undefined) {
+    assertOperationOverrides(value.operationOverrides, "operationOverrides");
+  }
+}
+
+function assertOperationOverrides(
+  value: unknown,
+  label: string,
+): asserts value is Partial<
+  Readonly<Record<ProviderOperation, RestModelConnectorOverride>>
+> {
+  if (!isRecord(value))
+    throw new Error(`REST connector ${label} must be an object`);
+  const operations = new Set<ProviderOperation>([
+    "image.generate",
+    "image.edit",
+    "video.generate",
+    "video.image-to-video",
+  ]);
+  for (const [operation, override] of Object.entries(value)) {
+    if (!operations.has(operation as ProviderOperation) || !isRecord(override))
+      throw new Error(`REST connector ${label}.${operation} is invalid`);
+    if (override.submit !== undefined)
+      assertRequestDefinition(override.submit, `${label}.${operation}.submit`);
+    if (override.poll !== undefined)
+      assertRequestDefinition(override.poll, `${label}.${operation}.poll`);
+    if (override.cancel !== undefined)
+      assertRequestDefinition(override.cancel, `${label}.${operation}.cancel`);
+    if (
+      override.output !== undefined &&
+      (!isRecord(override.output) ||
+        typeof override.output.path !== "string" ||
+        (override.output.kind !== "image" && override.output.kind !== "video"))
+    )
+      throw new Error(`REST connector ${label}.${operation}.output is invalid`);
   }
 }
 
@@ -464,17 +692,119 @@ function sourceValue(
         (source.role === undefined || asset.role === source.role) &&
         !(source.excludeRoles ?? []).includes(asset.role ?? "reference"),
     );
-    return source.select === "first" ? assets[0] : assets;
+    const selectedAssets =
+      source.offset === undefined ? assets : assets.slice(source.offset);
+    const encode = (asset: ProviderAssetInput): unknown => {
+      if (source.encoding !== "gemini-part") return asset;
+      if (asset.data) {
+        return {
+          inline_data: {
+            mime_type: asset.mimeType,
+            data: Buffer.from(asset.data).toString("base64"),
+          },
+        };
+      }
+      const encoded = assetAsUrl(asset);
+      if (!encoded)
+        throw new Error(`Asset ${asset.id} has neither bytes nor a URL`);
+      const dataUri = /^data:([^;,]+);base64,(.+)$/su.exec(encoded);
+      if (dataUri) {
+        return {
+          inline_data: {
+            mime_type: dataUri[1] || asset.mimeType,
+            data: dataUri[2],
+          },
+        };
+      }
+      return {
+        file_data: {
+          mime_type: asset.mimeType,
+          file_uri: encoded,
+        },
+      };
+    };
+    if (source.select === "first")
+      return selectedAssets[0] ? encode(selectedAssets[0]) : undefined;
+    if (source.select === "firstIfOnly")
+      return selectedAssets.length === 1 ? encode(selectedAssets[0]!) : undefined;
+    if (source.select === "allIfMultiple")
+      return selectedAssets.length > 1 ? selectedAssets.map(encode) : undefined;
+    if (source.select === "firstOrAll")
+      return selectedAssets.length === 1
+        ? encode(selectedAssets[0]!)
+        : selectedAssets.length > 1
+          ? selectedAssets.map(encode)
+          : undefined;
+    return selectedAssets.map(encode);
   }
   if (source.kind === "assetMode") {
-    const hasFrame = (request?.assets ?? []).some(
+    const assets = request?.assets ?? [];
+    const hasFrame = assets.some(
       (asset) => asset.role === "firstFrame" || asset.role === "lastFrame",
     );
-    return hasFrame ? source.frameValue : source.referenceValue;
+    if (hasFrame) return source.frameValue;
+    if (source.referenceThreshold !== undefined) {
+      const imageCount = assets.filter(
+        (asset) => asset.kind === "image",
+      ).length;
+      return imageCount >= source.referenceThreshold
+        ? source.referenceValue
+        : source.frameValue;
+    }
+    return source.referenceValue;
+  }
+  if (source.kind === "openaiMessages") {
+    const prompt = request?.prompt ?? "";
+    const images = (request?.assets ?? []).filter(
+      (asset) => asset.kind === "image",
+    );
+    if (images.length === 0) return [{ role: "user", content: prompt }];
+    return [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          ...images.map((asset) => {
+            const url = assetAsUrl(asset);
+            if (!url)
+              throw new Error(`Asset ${asset.id} has neither bytes nor a URL`);
+            return {
+              type: "image_url",
+              image_url: { url, detail: source.detail ?? "high" },
+            };
+          }),
+        ],
+      },
+    ];
+  }
+  if (source.kind === "videoDimensions") {
+    const resolution = request
+      ? readJsonPath(request, source.resolutionPath)
+      : undefined;
+    const aspectRatio = request
+      ? readJsonPath(request, source.aspectRatioPath)
+      : undefined;
+    const sizes: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+      "720p": { "16:9": "1280x720", "9:16": "720x1280" },
+      "1080p": { "16:9": "1920x1080", "9:16": "1080x1920" },
+    };
+    return typeof resolution === "string" && typeof aspectRatio === "string"
+      ? sizes[resolution]?.[aspectRatio]
+      : undefined;
   }
   if (source.kind === "request")
     return request ? readJsonPath(request, source.path) : undefined;
   return task ? readJsonPath(task, source.path) : undefined;
+}
+
+function coerceMappingValue(
+  value: unknown,
+  coerce: RestRequestMapping["coerce"],
+): unknown {
+  if (value === undefined || coerce === undefined) return value;
+  if (coerce === "string") return String(value);
+  if (coerce === "number") return Number(value);
+  return Boolean(value);
 }
 
 function normalizeStatus(
@@ -515,6 +845,20 @@ function normalizeStatus(
   }
 }
 
+function responseValue(
+  payload: unknown,
+  primaryPath: string | undefined,
+  fallbackPaths: readonly string[] = [],
+): unknown {
+  for (const path of primaryPath
+    ? [primaryPath, ...fallbackPaths]
+    : fallbackPaths) {
+    const value = readJsonPath(payload, path);
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
 function normalizeProgress(value: unknown): number | undefined {
   if (typeof value === "string" && value.trim().endsWith("%")) {
     const percent = Number(value.trim().slice(0, -1));
@@ -526,6 +870,62 @@ function normalizeProgress(value: unknown): number | undefined {
   if (!Number.isFinite(numeric)) return undefined;
   const normalized = numeric > 1 && numeric <= 100 ? numeric / 100 : numeric;
   return Math.max(0, Math.min(1, normalized));
+}
+
+function numericAspectRatio(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = /^\s*(\d+(?:\.\d+)?)\s*[:：/／]\s*(\d+(?:\.\d+)?)\s*$/u.exec(
+    value,
+  );
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  )
+    return undefined;
+  return width / height;
+}
+
+/** Snap a prompt/reference-derived ratio to the selected model's API enum. */
+function withNearestSupportedAspectRatio(
+  request: NormalizedRequest,
+  config: RestConnectorConfig,
+): NormalizedRequest {
+  const requested = request.parameters?.["aspect_ratio"];
+  const requestedRatio = numericAspectRatio(requested);
+  if (requestedRatio === undefined) return request;
+  const model = config.models?.find(
+    (candidate) => candidate.id === request.model,
+  );
+  const descriptor = model?.parameters?.find(
+    (parameter) =>
+      parameter.key === "aspect_ratio" &&
+      (!parameter.operations ||
+        parameter.operations.includes(request.operation)),
+  );
+  const candidates = (descriptor?.options ?? []).flatMap((option) => {
+    const ratio = numericAspectRatio(option.value);
+    return typeof option.value === "string" && ratio !== undefined
+      ? [{ value: option.value, ratio }]
+      : [];
+  });
+  if (candidates.length === 0) return request;
+  const nearest = candidates.reduce((best, candidate) => {
+    const bestDistance = Math.abs(Math.log(best.ratio / requestedRatio));
+    const candidateDistance = Math.abs(
+      Math.log(candidate.ratio / requestedRatio),
+    );
+    return candidateDistance < bestDistance ? candidate : best;
+  });
+  if (nearest.value === requested) return request;
+  return {
+    ...request,
+    parameters: { ...request.parameters, aspect_ratio: nearest.value },
+  };
 }
 
 function relativePath(root: unknown, path: string | undefined): unknown {
@@ -551,7 +951,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     private readonly connections: ProviderConnectionResolver,
     options: GenericRestAdapterOptions = {},
   ) {
-    this.fetchImpl = options.fetch ?? fetch;
+    this.fetchImpl = options.fetch ?? providerFetch;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
     this.fixedConfig = options.config;
   }
@@ -559,23 +959,52 @@ export class GenericRestAdapter implements ProviderAdapter {
   private configFrom(
     connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>,
     model?: string,
+    operation?: ProviderOperation,
   ): RestConnectorConfig {
     const value = this.fixedConfig ?? connection.settings?.["connector"];
     assertConfig(value);
     const base = cloneJsonValue(value);
-    const override = model ? base.modelOverrides?.[model] : undefined;
-    if (!override) return base;
-    return {
-      ...base,
-      ...(override.submit ? { submit: override.submit } : {}),
-      ...(override.poll ? { poll: override.poll } : {}),
-      ...(override.cancel ? { cancel: override.cancel } : {}),
-      ...(override.output ? { output: override.output } : {}),
-      ...(override.statusMap ? { statusMap: override.statusMap } : {}),
-      ...(override.pollIntervalMs !== undefined
-        ? { pollIntervalMs: override.pollIntervalMs }
-        : {}),
-    };
+    const applyOverride = (
+      config: RestConnectorConfig,
+      override: RestModelConnectorOverride | undefined,
+    ): RestConnectorConfig =>
+      override
+        ? {
+            ...config,
+            ...(override.submit ? { submit: override.submit } : {}),
+            ...(override.poll ? { poll: override.poll } : {}),
+            ...(override.cancel ? { cancel: override.cancel } : {}),
+            ...(override.output ? { output: override.output } : {}),
+            ...(override.statusMap ? { statusMap: override.statusMap } : {}),
+            ...(override.pollIntervalMs !== undefined
+              ? { pollIntervalMs: override.pollIntervalMs }
+              : {}),
+          }
+        : config;
+    const modelConfig = applyOverride(
+      base,
+      model ? base.modelOverrides?.[model] : undefined,
+    );
+    const operationConfig = applyOverride(
+      modelConfig,
+      operation ? base.operationOverrides?.[operation] : undefined,
+    );
+    const modelOperationOverride =
+      model && operation
+        ? base.modelOverrides?.[model]?.operationOverrides?.[operation]
+        : undefined;
+    return applyOverride(operationConfig, modelOperationOverride);
+  }
+
+  private timeoutFor(
+    connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>,
+  ): number {
+    const configured = connection.settings?.["requestTimeoutMs"];
+    return typeof configured === "number" &&
+      Number.isFinite(configured) &&
+      configured > 0
+      ? configured
+      : this.requestTimeoutMs;
   }
 
   private resolveUrl(
@@ -666,7 +1095,12 @@ export class GenericRestAdapter implements ProviderAdapter {
     if (mode === "none") return undefined;
     let value: unknown = cloneJsonValue(definition.template ?? {});
     for (const mapping of definition.mappings ?? []) {
-      const mapped = sourceValue(mapping.source, request, task);
+      const mapped = coerceMappingValue(
+        sourceValue(mapping.source, request, task),
+        mapping.coerce,
+      );
+      if (mapping.omitValues?.some((value) => Object.is(value, mapped)))
+        continue;
       if (mapped === undefined && mapping.omitIfUndefined === true) continue;
       if (
         mapping.omitIfEmpty === true &&
@@ -734,6 +1168,10 @@ export class GenericRestAdapter implements ProviderAdapter {
     const bodyMode =
       definition.bodyMode ??
       (method === "GET" || method === "DELETE" ? "none" : "json");
+    const maxResponseBytes =
+      phase === "submit" || phase === "poll"
+        ? imageJsonMaxResponseBytes(config, request?.parameters)
+        : undefined;
     if (bodyMode === "json" && body !== undefined) {
       headers.set("content-type", "application/json");
     } else if (bodyMode === "multipart") {
@@ -752,7 +1190,8 @@ export class GenericRestAdapter implements ProviderAdapter {
       },
       {
         phase,
-        timeoutMs: this.requestTimeoutMs,
+        timeoutMs: this.timeoutFor(connection),
+        ...(maxResponseBytes === undefined ? {} : { maxResponseBytes }),
         idempotent: definition.idempotent === true,
         allowEmpty: phase === "cancel",
       },
@@ -790,7 +1229,11 @@ export class GenericRestAdapter implements ProviderAdapter {
     try {
       const connection = await this.connections.resolve(request.connectionId);
       const baseConfig = this.configFrom(connection);
-      const config = this.configFrom(connection, request.model);
+      const config = this.configFrom(
+        connection,
+        request.model,
+        request.operation,
+      );
       const configuredModel = baseConfig.models?.find(
         (model) => model.id === request.model,
       );
@@ -819,6 +1262,17 @@ export class GenericRestAdapter implements ProviderAdapter {
         const audioCount =
           request.assets?.filter((asset) => asset.kind === "audio").length ?? 0;
         const limits = configuredModel.limits;
+        if (
+          request.operation === "image.edit" &&
+          configuredModel.operations.includes(request.operation) &&
+          imageCount === 0
+        ) {
+          issues.push({
+            path: "assets",
+            code: "missing_image",
+            message: `${configuredModel.name} requires an input image for image editing`,
+          });
+        }
         if (
           limits?.maxInputImages !== undefined &&
           imageCount > limits.maxInputImages
@@ -890,7 +1344,7 @@ export class GenericRestAdapter implements ProviderAdapter {
               (asset) =>
                 asset.role !== "firstFrame" && asset.role !== "lastFrame",
             ) ?? [];
-          if (firstFrames.length > 0 !== lastFrames.length > 0) {
+          if (lastFrames.length > 0 && firstFrames.length === 0) {
             issues.push({
               path: "assets",
               code: "incomplete_frame_pair",
@@ -899,7 +1353,8 @@ export class GenericRestAdapter implements ProviderAdapter {
           }
           if (
             (firstFrames.length > 0 || lastFrames.length > 0) &&
-            references.length > 0
+            references.length > 0 &&
+            configuredModel.metadata?.allowFrameMediaMix !== true
           ) {
             issues.push({
               path: "assets",
@@ -942,7 +1397,11 @@ export class GenericRestAdapter implements ProviderAdapter {
           throw new Error(`${label} endpoint is invalid: ${message}`);
         }
       }
-      if (config.submit.response?.taskIdPath && !config.poll) {
+      if (
+        (config.submit.response?.taskIdPath ||
+          config.submit.response?.taskIdFallbackPaths?.length) &&
+        !config.poll
+      ) {
         throw new Error(
           "REST connector maps an asynchronous task id but does not define a poll endpoint",
         );
@@ -950,7 +1409,11 @@ export class GenericRestAdapter implements ProviderAdapter {
       validatePath(config.output.path);
       for (const path of config.output.fallbackPaths ?? []) validatePath(path);
       validatePath(config.output.urlPath, true);
+      for (const path of config.output.urlFallbackPaths ?? [])
+        validatePath(path, true);
       validatePath(config.output.base64Path, true);
+      for (const path of config.output.base64FallbackPaths ?? [])
+        validatePath(path, true);
       validatePath(config.output.mimeTypePath, true);
       validatePath(config.output.filenamePath, true);
       for (const definition of [
@@ -961,8 +1424,14 @@ export class GenericRestAdapter implements ProviderAdapter {
       ]) {
         if (!definition?.response) continue;
         validatePath(definition.response.taskIdPath);
+        for (const path of definition.response.taskIdFallbackPaths ?? [])
+          validatePath(path);
         validatePath(definition.response.statusPath);
+        for (const path of definition.response.statusFallbackPaths ?? [])
+          validatePath(path);
         validatePath(definition.response.errorPath);
+        for (const path of definition.response.errorFallbackPaths ?? [])
+          validatePath(path);
         validatePath(definition.response.progressPath);
       }
       // Build the request during preflight so unsafe paths and missing mappings
@@ -984,24 +1453,29 @@ export class GenericRestAdapter implements ProviderAdapter {
   public async submit(request: NormalizedRequest): Promise<ProviderTask> {
     assertValidResult(await this.validate(request));
     const connection = await this.connections.resolve(request.connectionId);
-    const config = this.configFrom(connection, request.model);
+    const config = this.configFrom(
+      connection,
+      request.model,
+      request.operation,
+    );
+    const outboundRequest = withNearestSupportedAspectRatio(request, config);
     const remote = await this.execute(
       connection,
       config,
       config.submit,
       "submit",
-      request,
+      outboundRequest,
     );
     const mapping = config.submit.response;
-    const rawTaskId = mapping?.taskIdPath
-      ? readJsonPath(remote, mapping.taskIdPath)
+    const rawTaskId = mapping
+      ? responseValue(remote, mapping.taskIdPath, mapping.taskIdFallbackPaths)
       : undefined;
     const providerTaskId =
       typeof rawTaskId === "string" || typeof rawTaskId === "number"
         ? String(rawTaskId)
         : `rest:sync:${request.idempotencyKey}`;
-    const rawStatus = mapping?.statusPath
-      ? readJsonPath(remote, mapping.statusPath)
+    const rawStatus = mapping
+      ? responseValue(remote, mapping.statusPath, mapping.statusFallbackPaths)
       : undefined;
     const fallback: ProviderTaskStatus =
       rawTaskId === undefined ? "succeeded" : "running";
@@ -1021,8 +1495,12 @@ export class GenericRestAdapter implements ProviderAdapter {
         : { pollAfterMs: config.pollIntervalMs }),
       result: envelope,
     };
-    if (status === "failed" && mapping?.errorPath) {
-      const error = readJsonPath(remote, mapping.errorPath);
+    if (status === "failed" && mapping) {
+      const error = responseValue(
+        remote,
+        mapping.errorPath,
+        mapping.errorFallbackPaths,
+      );
       if (error !== undefined) result.error = String(error);
     }
     return result;
@@ -1043,8 +1521,8 @@ export class GenericRestAdapter implements ProviderAdapter {
       task,
     );
     const mapping = envelope.config.poll.response;
-    const rawStatus = mapping?.statusPath
-      ? readJsonPath(remote, mapping.statusPath)
+    const rawStatus = mapping
+      ? responseValue(remote, mapping.statusPath, mapping.statusFallbackPaths)
       : undefined;
     const status = normalizeStatus(rawStatus, envelope.config, "running");
     const state: NormalizedTaskState = {
@@ -1062,8 +1540,12 @@ export class GenericRestAdapter implements ProviderAdapter {
       );
       if (progress !== undefined) state.progress = progress;
     }
-    if (status === "failed" && mapping?.errorPath) {
-      const error = readJsonPath(remote, mapping.errorPath);
+    if (status === "failed" && mapping) {
+      const error = responseValue(
+        remote,
+        mapping.errorPath,
+        mapping.errorFallbackPaths,
+      );
       if (error !== undefined) state.error = String(error);
     }
     return state;
@@ -1198,8 +1680,18 @@ export class GenericRestAdapter implements ProviderAdapter {
         ];
       }
       if (!isRecord(value)) return [];
-      const url = relativePath(value, config.output.urlPath ?? "url");
-      const base64 = relativePath(value, config.output.base64Path);
+      const url = [
+        config.output.urlPath ?? "url",
+        ...(config.output.urlFallbackPaths ?? []),
+      ]
+        .map((path) => relativePath(value, path))
+        .find((item) => item !== undefined && item !== null && item !== "");
+      const base64 = [
+        ...(config.output.base64Path ? [config.output.base64Path] : []),
+        ...(config.output.base64FallbackPaths ?? []),
+      ]
+        .map((path) => relativePath(value, path))
+        .find((item) => item !== undefined && item !== null && item !== "");
       const mimeType = relativePath(value, config.output.mimeTypePath);
       const filename = relativePath(value, config.output.filenamePath);
       if (typeof url === "string") {
@@ -1217,15 +1709,28 @@ export class GenericRestAdapter implements ProviderAdapter {
         ];
       }
       if (typeof base64 === "string") {
+        const dataUri = /data:([^;,\s]+);base64,([A-Za-z0-9+/=\r\n]+)/u.exec(
+          base64,
+        );
+        const compact = base64.replace(/\s+/gu, "");
+        const rawBase64 = /^[A-Za-z0-9+/]+={0,2}$/u.test(compact)
+          ? compact
+          : /(?:^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{10000,}={0,2})(?:$|[^A-Za-z0-9+/=])/u.exec(
+              base64,
+            )?.[1];
+        const encoded = dataUri?.[2] ?? rawBase64;
+        if (!encoded) return [];
         return [
           {
             kind: config.output.kind,
-            data: new Uint8Array(Buffer.from(base64, "base64")),
+            data: new Uint8Array(Buffer.from(encoded, "base64")),
             ...(typeof mimeType === "string"
               ? { mimeType }
-              : config.output.defaultMimeType
-                ? { mimeType: config.output.defaultMimeType }
-                : {}),
+              : dataUri?.[1]
+                ? { mimeType: dataUri[1] }
+                : config.output.defaultMimeType
+                  ? { mimeType: config.output.defaultMimeType }
+                  : {}),
             ...(typeof filename === "string" ? { filename } : {}),
           },
         ];

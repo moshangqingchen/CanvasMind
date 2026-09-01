@@ -6,6 +6,7 @@ import {
   selectRunNodeIds,
   validateGraph,
   type PromptPart,
+  type RunScope,
   type WorkflowGraph,
   type WorkflowNode,
 } from "@super-canvas/core";
@@ -14,29 +15,34 @@ import type {
   JsonObject,
   NodeRunRecord,
   NodeRunUpdateOptions,
+  ProviderConnectionRecord,
   WorkflowRunRecord,
 } from "@super-canvas/db";
-import { getRepository } from "@super-canvas/db";
+import { getRepository, isRunRecoveryExpired } from "@super-canvas/db";
 import {
   decryptSecret,
   FakeProviderAdapter,
   GenericRestAdapter,
   OPENAI_DEFAULT_IMAGE_MODEL,
   OpenAIImageAdapter,
+  WEAI_GEMINI_DEFAULT_IMAGE_MODEL,
+  WEAI_DEFAULT_IMAGE_MODEL,
+  WeAIImageAdapter,
   presentProviderError,
+  createProviderAssetToken,
   ProviderHttpError,
   RunwayAdapter,
   RUNWAY_DEFAULT_VIDEO_MODEL,
   type NormalizedRequest,
   type ProviderAdapter,
   type ProviderAssetInput,
+  type ProviderErrorContext,
   type ProviderErrorPresentation,
   type ProviderOperation,
   type ProviderConnectionResolver,
   type ProviderTask,
   type RemoteArtifact,
   type ResolvedProviderConnection,
-  StaticConnectionResolver,
 } from "@super-canvas/providers";
 import { getObjectStorage, type ObjectStorage } from "@super-canvas/storage";
 import {
@@ -48,7 +54,21 @@ import {
   artifactDownloadMaxBytes,
   downloadRemoteArtifact,
 } from "./remote-download.js";
-import { aspectRatioFromPrompt, aspectRatioString } from "./aspect-ratio.js";
+import {
+  aspectRatioFromPrompt,
+  aspectRatioString,
+  cyberAfei4KSizeForAspectRatio,
+  cyberAfei4KValidSize,
+  chentuResolutionTier,
+  chentuSizeForResolutionTier,
+  customImageSizeForAspectRatio,
+  dimensionsFromPrompt,
+  friModelSizeForResolutionTier,
+  gptImage4KSizeForAspectRatio,
+  mikotoSizeForResolutionTier,
+  weAiResolutionTier,
+  weAiSizeForResolutionTier,
+} from "./aspect-ratio.js";
 
 interface NodeData extends Record<string, unknown> {
   provider?: string;
@@ -61,6 +81,15 @@ interface NodeData extends Record<string, unknown> {
   assetKind?: "image" | "video" | "audio";
   parameters?: Record<string, unknown>;
   fakeScenario?: string;
+  __runtimeConnection?: FrozenProviderConnection;
+}
+
+interface FrozenProviderConnection {
+  id: string;
+  name: string;
+  provider: string;
+  encryptedSecret?: string | null;
+  config: JsonObject;
 }
 
 interface OutputValue {
@@ -82,6 +111,176 @@ interface RuntimeOptions {
   retryBaseDelayMs?: number;
   executionMode?: "inline" | "queue";
   enqueueRun?: (runId: string) => Promise<void>;
+}
+
+const WEAI_RUNTIME_MODELS_BY_GROUP: Readonly<
+  Record<string, readonly string[]>
+> = {
+  "生图-openai-adobe-token计费": ["gpt-image-2"],
+  gemini香蕉: ["gemini-3.1-flash-image", "gemini-3-pro-image"],
+  "AZURE-openai": ["gpt-image-2"],
+  "生图-openai-adobe-按次": [
+    "gpt-image-2-low",
+    "gpt-image-2-medium",
+    "gpt-image-2-high",
+  ],
+  "生图-openai-codex-token计费": ["gpt-image-2"],
+  "生图-openai-adobe-按次-返回url": ["gpt-image-2"],
+};
+
+const WEAI_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  "gemini-3-pro-image-preview": "gemini-3-pro-image",
+  "gemini-3.1-flash-image-preview": "gemini-3.1-flash-image",
+};
+
+const WEAI_ADOBE_PER_REQUEST_GROUP = "生图-openai-adobe-按次";
+const WEAI_UNKNOWN_MODEL_QUARANTINE_THRESHOLD = 3;
+
+function connectionConfigString(
+  config: JsonObject | undefined,
+  key: string,
+): string | undefined {
+  const nested = isRecord(config?.config) ? config.config : undefined;
+  return [config?.[key], nested?.[key]]
+    .find(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0,
+    )
+    ?.trim();
+}
+
+function weAiDefaultModel(group?: string): string {
+  if (group === "gemini香蕉") return WEAI_GEMINI_DEFAULT_IMAGE_MODEL;
+  if (group === WEAI_ADOBE_PER_REQUEST_GROUP) return "gpt-image-2-low";
+  return WEAI_DEFAULT_IMAGE_MODEL;
+}
+
+function normalizeWeAiModel(
+  group: string | undefined,
+  requestedModel: string | undefined,
+  parameters?: Readonly<Record<string, unknown>>,
+): string {
+  const requested = requestedModel?.trim();
+  const legacy = requested
+    ? /^gpt-image-2(?:-(low|medium|high))?::(?:1k|2k|4k)$/iu.exec(requested)
+    : null;
+
+  if (group === WEAI_ADOBE_PER_REQUEST_GROUP) {
+    if (requested && WEAI_RUNTIME_MODELS_BY_GROUP[group]?.includes(requested)) {
+      return requested;
+    }
+    const parameterQuality =
+      typeof parameters?.quality === "string"
+        ? parameters.quality.trim().toLowerCase()
+        : undefined;
+    const quality =
+      legacy?.[1]?.toLowerCase() ??
+      (["low", "medium", "high"].includes(parameterQuality ?? "")
+        ? parameterQuality
+        : "low");
+    return `gpt-image-2-${quality}`;
+  }
+
+  const withoutLegacyTier = legacy ? "gpt-image-2" : requested;
+  const canonical = withoutLegacyTier
+    ? (WEAI_MODEL_ALIASES[withoutLegacyTier] ?? withoutLegacyTier)
+    : undefined;
+  const allowed = group ? WEAI_RUNTIME_MODELS_BY_GROUP[group] : undefined;
+  if (canonical && (!allowed || allowed.includes(canonical))) return canonical;
+  return weAiDefaultModel(group);
+}
+
+function normalizeWeAiParameters(
+  parameters: Readonly<Record<string, unknown>> | undefined,
+  requestedModel: string | undefined,
+  group: string | undefined,
+): Record<string, unknown> {
+  const normalized = { ...(parameters ?? {}) };
+  const legacy = requestedModel
+    ? /^gpt-image-2(?:-(?:low|medium|high))?::(1k|2k|4k)$/iu.exec(
+        requestedModel.trim(),
+      )
+    : null;
+  if (
+    legacy?.[1] &&
+    (typeof normalized.size !== "string" ||
+      normalized.size.trim().toLowerCase() === "auto")
+  ) {
+    normalized.size =
+      legacy[1].toLowerCase() === "1k"
+        ? "1024x1024"
+        : legacy[1].toLowerCase() === "2k"
+          ? "2048x2048"
+          : "2160x2160";
+  }
+  if (group === WEAI_ADOBE_PER_REQUEST_GROUP) delete normalized.quality;
+  return normalized;
+}
+
+function normalizeChentuParameters(
+  parameters: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> {
+  const normalized = { ...(parameters ?? {}) };
+  // Older canvas snapshots could store the resolution tier in `quality`
+  // (for example quality=4K). 辰途 uses `size` for pixels; forwarding that
+  // legacy value makes 1K/2K models reject the request upstream.
+  if (
+    typeof normalized.quality === "string" &&
+    /^(?:1k|2k|4k)$/iu.test(normalized.quality.trim())
+  )
+    delete normalized.quality;
+  return normalized;
+}
+
+function normalizeRestImageBatchParameter(
+  parameters: Readonly<Record<string, unknown>> | undefined,
+  model: string | undefined,
+  connectionConfig: JsonObject | undefined,
+): Record<string, unknown> {
+  const normalized = { ...(parameters ?? {}) };
+  const connector = isRecord(connectionConfig?.connector)
+    ? connectionConfig.connector
+    : undefined;
+  const models = Array.isArray(connector?.models) ? connector.models : [];
+  const descriptor = models.find(
+    (candidate) => isRecord(candidate) && candidate.id === model,
+  );
+  const metadata = isRecord(descriptor?.metadata)
+    ? descriptor.metadata
+    : undefined;
+  const countDescriptor = Array.isArray(descriptor?.parameters)
+    ? descriptor.parameters.find(
+        (parameter: unknown) =>
+          isRecord(parameter) &&
+          parameter.key === "n" &&
+          (!Array.isArray(parameter.operations) ||
+            parameter.operations.some(
+              (operation) =>
+                operation === "image.generate" || operation === "image.edit",
+            )),
+      )
+    : undefined;
+  const maximum = Number(countDescriptor?.max);
+  if (
+    metadata?.fixedOutputCount === 1 ||
+    !countDescriptor ||
+    !Number.isFinite(maximum) ||
+    maximum <= 1
+  ) {
+    const requested = Number(normalized.n);
+    if (Number.isFinite(requested) && requested <= 1) normalized.n = 1;
+    else delete normalized.n;
+    return normalized;
+  }
+  const minimum = Number.isFinite(Number(countDescriptor.min))
+    ? Math.ceil(Number(countDescriptor.min))
+    : 1;
+  const requested = Number(normalized.n);
+  const count = Number.isFinite(requested)
+    ? Math.trunc(requested)
+    : Number(countDescriptor.default ?? minimum);
+  normalized.n = Math.min(Math.floor(maximum), Math.max(minimum, count));
+  return normalized;
 }
 
 const delay = (ms: number) =>
@@ -106,6 +305,18 @@ async function retryOperation<T>(operation: () => Promise<T>): Promise<T> {
   }
   throw lastError;
 }
+
+function shouldRefreshRemoteArtifact(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /Provider output download failed with HTTP (?:403|404|410)\b/u.test(
+      message,
+    ) ||
+    /(?:timed out|timeout|aborted|ECONNRESET|EPIPE|socket hang up|network)/iu.test(
+      message,
+    )
+  );
+}
 const timestamp = () => new Date().toISOString();
 const asGraph = (value: JsonObject): WorkflowGraph =>
   value as unknown as WorkflowGraph;
@@ -117,6 +328,96 @@ const semanticType = (node: WorkflowNode): string =>
     : node.type;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+function ratioValue(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = /^(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)$/u.exec(
+    value.trim(),
+  );
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width > 0 && height > 0 ? width / height : undefined;
+}
+
+/** Resolves a connector-declared K-size option before using supplier tables. */
+function connectorSizeForResolutionTier(
+  connectionConfig: JsonObject | undefined,
+  model: string | undefined,
+  tierValue: unknown,
+  aspectRatio?: string,
+): string | undefined {
+  const tier = weAiResolutionTier(tierValue);
+  if (!tier || !model || !isRecord(connectionConfig?.connector))
+    return undefined;
+  const models = Array.isArray(connectionConfig.connector.models)
+    ? connectionConfig.connector.models
+    : [];
+  const descriptor = models.find(
+    (candidate) => isRecord(candidate) && candidate.id === model,
+  );
+  const parameters =
+    isRecord(descriptor) && Array.isArray(descriptor.parameters)
+      ? descriptor.parameters
+      : [];
+  const sizeDescriptor = parameters.find(
+    (candidate) => isRecord(candidate) && candidate.key === "size",
+  );
+  const options =
+    isRecord(sizeDescriptor) && Array.isArray(sizeDescriptor.options)
+      ? sizeDescriptor.options
+      : [];
+  const supportsCustomDimensions =
+    isRecord(sizeDescriptor) && sizeDescriptor.control === "dimensions";
+  const candidates = options.flatMap((option) => {
+    if (!isRecord(option) || typeof option.value !== "string") return [];
+    const label = typeof option.label === "string" ? option.label : "";
+    if (!new RegExp(`^${tier}\\b`, "iu").test(label)) return [];
+    if (option.value.trim().toLowerCase() === "auto") return [];
+    const labelRatio = /(?<!\d)(\d{1,3})\s*[:：/]\s*(\d{1,3})(?!\d)/u.exec(
+      label,
+    );
+    const valueMatch = /^(\d+)x(\d+)$/iu.exec(option.value.trim());
+    const ratio = labelRatio
+      ? Number(labelRatio[1]) / Number(labelRatio[2])
+      : valueMatch
+        ? Number(valueMatch[1]) / Number(valueMatch[2])
+        : undefined;
+    return ratio && Number.isFinite(ratio)
+      ? [{ ratio, size: option.value.trim() }]
+      : [];
+  });
+  if (candidates.length === 0) return undefined;
+  const requested = ratioValue(aspectRatio);
+  if (!requested) return candidates[0]?.size;
+  const nearest = candidates.reduce((best, candidate) => {
+    const bestDistance = Math.abs(Math.log(best.ratio / requested));
+    const candidateDistance = Math.abs(Math.log(candidate.ratio / requested));
+    return candidateDistance < bestDistance ? candidate : best;
+  });
+  const nearestDistance = Math.abs(Math.log(nearest.ratio / requested));
+  if (!supportsCustomDimensions || nearestDistance <= 1e-6)
+    return nearest.size;
+
+  const descriptorMax =
+    isRecord(sizeDescriptor) && typeof sizeDescriptor.max === "number"
+      ? sizeDescriptor.max
+      : undefined;
+  const maxEdge = Math.max(
+    16,
+    descriptorMax ?? Math.max(...candidates.map((candidate) => {
+      const [width, height] = candidate.size.split("x").map(Number);
+      return Math.max(width ?? 0, height ?? 0);
+    })),
+  );
+  const maxPixels = Math.max(
+    ...candidates.map((candidate) => {
+      const [width, height] = candidate.size.split("x").map(Number);
+      return (width ?? 0) * (height ?? 0);
+    }),
+  );
+  return customImageSizeForAspectRatio(aspectRatio, { maxEdge, maxPixels });
+}
 
 function promptPartsFromNodeData(data: NodeData): PromptPart[] {
   const value = data.parts ?? data.prompt;
@@ -243,6 +544,15 @@ function providerTaskJson(task: ProviderTask): JsonObject {
   ) as JsonObject;
 }
 
+function compactCompletedInput(input: JsonObject): JsonObject {
+  // The provider task can contain multi-megabyte base64/byte responses needed
+  // only while polling or retrying archival. Once the output is durably
+  // archived, the provider task id column and normalized request fields are
+  // sufficient for history and audit purposes.
+  const { providerTask: _providerTask, ...completed } = input;
+  return completed;
+}
+
 function operationFor(
   node: WorkflowNode,
   hasImage: boolean,
@@ -278,13 +588,105 @@ function masterKeyForRuntime(): string | undefined {
     : "local-development-master-key";
 }
 
+function connectorRequiresPublicAssetUrls(
+  config: JsonObject | undefined,
+): boolean {
+  const connector = config?.connector;
+  return (
+    typeof connector === "object" &&
+    connector !== null &&
+    !Array.isArray(connector) &&
+    (connector as Record<string, unknown>).assetsRequirePublicUrls === true
+  );
+}
+
+function providerAssetUrl(assetId: string): string {
+  const publicBaseUrl = process.env.PUBLIC_BASE_URL;
+  const secret = masterKeyForRuntime();
+  if (!publicBaseUrl || !secret) {
+    throw new Error(
+      "该供应商的参考素材必须使用公网 URL；请先配置 PUBLIC_BASE_URL 和 MASTER_KEY",
+    );
+  }
+  let url: URL;
+  try {
+    url = new URL(
+      `/api/provider-assets/${encodeURIComponent(assetId)}`,
+      publicBaseUrl,
+    );
+  } catch {
+    throw new Error("PUBLIC_BASE_URL 不是有效的公网 http(s) 地址");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:")
+    throw new Error("PUBLIC_BASE_URL 必须是 http(s) 地址");
+  url.searchParams.set("token", createProviderAssetToken({ assetId, secret }));
+  return url.toString();
+}
+
+function freezeConnection(
+  record: ProviderConnectionRecord,
+): FrozenProviderConnection {
+  return {
+    id: record.id,
+    name: record.name,
+    provider: record.provider,
+    encryptedSecret: record.encryptedSecret ?? null,
+    config: structuredClone(record.config),
+  };
+}
+
+function frozenConnectionFromUnknown(
+  value: unknown,
+): FrozenProviderConnection | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.provider !== "string" ||
+    !isRecord(value.config) ||
+    (value.encryptedSecret !== undefined &&
+      value.encryptedSecret !== null &&
+      typeof value.encryptedSecret !== "string")
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    provider: value.provider,
+    encryptedSecret: value.encryptedSecret ?? null,
+    config: structuredClone(value.config),
+  };
+}
+
+function frozenConnectionsFromGraph(
+  graph: WorkflowGraph,
+): ReadonlyMap<string, FrozenProviderConnection> {
+  const snapshots = new Map<string, FrozenProviderConnection>();
+  for (const node of graph.nodes) {
+    const snapshot = frozenConnectionFromUnknown(
+      nodeData(node).__runtimeConnection,
+    );
+    if (snapshot) snapshots.set(snapshot.id, snapshot);
+  }
+  return snapshots;
+}
+
 class RepoConnectionResolver implements ProviderConnectionResolver {
-  constructor(private readonly repository: Repository) {}
+  constructor(
+    private readonly repository: Repository,
+    private readonly frozenConnections: ReadonlyMap<
+      string,
+      FrozenProviderConnection
+    > = new Map(),
+  ) {}
 
   async resolve(connectionId: string): Promise<ResolvedProviderConnection> {
     if (connectionId === "fake-default")
       return { id: connectionId, provider: "fake", apiKey: "fake" };
-    const record = await this.repository.getConnection(connectionId);
+    const record =
+      this.frozenConnections.get(connectionId) ??
+      (await this.repository.getConnection(connectionId));
     if (!record) throw new Error(`找不到供应商连接：${connectionId}`);
     const encrypted = record.encryptedSecret;
     const masterKey = masterKeyForRuntime();
@@ -331,12 +733,16 @@ export class RunService {
     this.enqueueRunOverride = options.enqueueRun;
   }
 
-  public adapters(): Map<string, ProviderAdapter> {
-    const resolver = new RepoConnectionResolver(this.repository);
+  public adapters(
+    resolver: ProviderConnectionResolver = new RepoConnectionResolver(
+      this.repository,
+    ),
+  ): Map<string, ProviderAdapter> {
     const fake = new FakeProviderAdapter(resolver);
     return new Map<string, ProviderAdapter>([
       ["fake", fake],
       ["openai", new OpenAIImageAdapter(resolver)],
+      ["weai", new WeAIImageAdapter(resolver)],
       ["runway", new RunwayAdapter(resolver)],
       ["rest", new GenericRestAdapter(resolver)],
     ]);
@@ -347,21 +753,29 @@ export class RunService {
     connectionId: string,
     nodeType: string,
     explicit?: string,
+    parameters?: Readonly<Record<string, unknown>>,
+    frozenConnection?: FrozenProviderConnection | null,
   ): Promise<string | undefined> {
-    if (explicit?.trim()) return explicit.trim();
+    const explicitModel = explicit?.trim();
+    if (provider !== "weai" && explicitModel) return explicitModel;
     if (provider === "fake")
       return nodeType === "video-generation"
         ? "fake-video-v1"
         : "fake-image-v1";
 
-    const connection = await this.repository.getConnection(connectionId);
+    const connection =
+      frozenConnection ?? (await this.repository.getConnection(connectionId));
     const config = connection?.config;
-    const nested = isRecord(config?.config) ? config.config : undefined;
-    const configured = [config?.defaultModel, nested?.defaultModel].find(
-      (value): value is string =>
-        typeof value === "string" && value.trim().length > 0,
-    );
-    if (configured) return configured.trim();
+    const modelGroup = connectionConfigString(config, "modelGroup");
+    const configured = connectionConfigString(config, "defaultModel");
+    if (provider === "weai") {
+      return normalizeWeAiModel(
+        modelGroup,
+        explicitModel ?? configured,
+        parameters,
+      );
+    }
+    if (configured) return configured;
     if (provider === "openai") return OPENAI_DEFAULT_IMAGE_MODEL;
     if (provider === "runway") return RUNWAY_DEFAULT_VIDEO_MODEL;
     if (provider === "rest") {
@@ -378,6 +792,10 @@ export class RunService {
 
   private async freezeModels(graph: WorkflowGraph): Promise<WorkflowGraph> {
     const frozen = structuredClone(graph);
+    const connections = new Map<
+      string,
+      Promise<ProviderConnectionRecord | null>
+    >();
     await Promise.all(
       frozen.nodes.map(async (node) => {
         const data = nodeData(node);
@@ -389,13 +807,35 @@ export class RunService {
           typeof data.connectionId === "string"
             ? data.connectionId
             : "fake-default";
+        let connection: ProviderConnectionRecord | null = null;
+        if (connectionId !== "fake-default") {
+          let pending = connections.get(connectionId);
+          if (!pending) {
+            pending = this.repository.getConnection(connectionId);
+            connections.set(connectionId, pending);
+          }
+          connection = await pending;
+          if (connection)
+            data.__runtimeConnection = freezeConnection(connection);
+        }
+        const requestedModel =
+          typeof data.model === "string" ? data.model : undefined;
         const model = await this.configuredModel(
           provider,
           connectionId,
           type,
-          typeof data.model === "string" ? data.model : undefined,
+          requestedModel,
+          data.parameters,
+          connection ? freezeConnection(connection) : null,
         );
         if (model) data.model = model;
+        if (provider === "weai") {
+          data.parameters = normalizeWeAiParameters(
+            data.parameters,
+            requestedModel,
+            connectionConfigString(connection?.config, "modelGroup"),
+          );
+        }
       }),
     );
     return frozen;
@@ -481,7 +921,12 @@ export class RunService {
   private async ensureNodeRuns(run: WorkflowRunRecord): Promise<void> {
     if (run.status !== "queued" && run.status !== "running") return;
     const graph = asGraph(run.revisionGraph);
-    const nodeIds = selectRunNodeIds(graph, run.scope, run.nodeId ?? undefined);
+    const nodeIds = selectRunNodeIds(
+      graph,
+      run.scope,
+      run.nodeId ?? undefined,
+      run.nodeIds ?? undefined,
+    );
     const selected = new Set(nodeIds);
     const existingNodeRuns = await this.repository.listNodeRuns(run.id);
     const existingByNodeId = new Map(
@@ -495,12 +940,24 @@ export class RunService {
     for (const id of nodeIds) {
       const existing = existingByNodeId.get(id);
       const snapshot = historicalInputs.get(id) ?? {};
+      const approvalPolicy =
+        run.scope === "selection"
+          ? { paidRetryPolicy: "approval-required" }
+          : {};
       if (existing) {
         // Preserve provider/task fields on retries while filling snapshots for
         // runs created by older versions of the service.
-        if (existing.inputJson.historicalInputs === undefined) {
+        if (
+          existing.inputJson.historicalInputs === undefined ||
+          (run.scope === "selection" &&
+            existing.inputJson.paidRetryPolicy !== "approval-required")
+        ) {
           await this.repository.updateNodeRun(existing.id, {
-            inputJson: { ...existing.inputJson, historicalInputs: snapshot },
+            inputJson: {
+              ...existing.inputJson,
+              historicalInputs: snapshot,
+              ...approvalPolicy,
+            },
           });
         }
       } else {
@@ -511,7 +968,7 @@ export class RunService {
           status: "queued",
           attempt: 0,
           providerTaskId: null,
-          inputJson: { historicalInputs: snapshot },
+          inputJson: { historicalInputs: snapshot, ...approvalPolicy },
           outputAssetIds: [],
           errorJson: null,
         });
@@ -522,8 +979,9 @@ export class RunService {
   async createRun(input: {
     canvasId: string;
     clientRequestId: string;
-    scope: "node" | "downstream" | "all";
+    scope: RunScope;
     nodeId?: string;
+    nodeIds?: readonly string[];
   }): Promise<WorkflowRunRecord> {
     let run = await this.repository.getRunByClientRequest(
       input.canvasId,
@@ -541,7 +999,12 @@ export class RunService {
         throw new Error(
           validation.errors.map((error) => error.message).join("; "),
         );
-      const nodeIds = selectRunNodeIds(graph, input.scope, input.nodeId);
+      const nodeIds = selectRunNodeIds(
+        graph,
+        input.scope,
+        input.nodeId,
+        input.nodeIds,
+      );
       const selected = new Set(nodeIds);
       const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
       const missingRequiredInputs = validateGraph(graph, {
@@ -568,6 +1031,7 @@ export class RunService {
         clientRequestId: input.clientRequestId,
         scope: input.scope,
         nodeId: input.nodeId ?? null,
+        nodeIds: input.scope === "selection" ? [...nodeIds] : null,
         status: "queued",
         revisionGraph: graph as unknown as JsonObject,
       });
@@ -578,6 +1042,7 @@ export class RunService {
       asGraph(run.revisionGraph),
       run.scope,
       run.nodeId ?? undefined,
+      run.nodeIds ?? undefined,
     );
     await this.ensureNodeRuns(run);
     this.publish({
@@ -669,7 +1134,12 @@ export class RunService {
     if (!run || run.status !== "cancelled") return;
     const graph = asGraph(run.revisionGraph);
     const nodeMap = new Map(graph.nodes.map((node) => [node.id, node]));
-    const adapters = this.adapters();
+    const adapters = this.adapters(
+      new RepoConnectionResolver(
+        this.repository,
+        frozenConnectionsFromGraph(graph),
+      ),
+    );
     const nodeRuns = await this.repository.listNodeRuns(runId);
     for (const nodeRun of nodeRuns) {
       if (nodeRun.status !== "cancel_requested") continue;
@@ -734,11 +1204,29 @@ export class RunService {
     if (!["failed", "needs_attention"].includes(run.status)) {
       throw new Error(`运行状态 ${run.status} 不支持恢复`);
     }
+    if (isRunRecoveryExpired(run)) {
+      throw new Error(
+        "该运行已超过本地恢复历史保留上限；错误记录仍保留，请从当前画布重新运行",
+      );
+    }
 
     const nodeRuns = await this.repository.listNodeRuns(runId);
+    if (
+      run.scope === "selection" &&
+      nodeRuns.some(
+        (nodeRun) => nodeRun.status === "failed" && !nodeRun.providerTaskId,
+      )
+    ) {
+      throw new Error(
+        "导演方案的付费调用失败后必须重新报价并确认，不能直接重试",
+      );
+    }
     const retryNodeIds = new Set<string>();
     for (const nodeRun of nodeRuns) {
-      if (nodeRun.status === "needs_attention") {
+      if (
+        nodeRun.status === "needs_attention" ||
+        (run.status === "needs_attention" && nodeRun.status === "archiving")
+      ) {
         if (!nodeRun.providerTaskId) {
           throw new Error(
             `节点 ${nodeRun.nodeId} 没有可恢复的供应商任务 ID；请人工核对后新建运行`,
@@ -1050,6 +1538,7 @@ export class RunService {
       graph,
       run.scope,
       run.nodeId ?? undefined,
+      run.nodeIds ?? undefined,
     );
     const nodeRunByNodeId = new Map(
       nodeRuns.map((nodeRun) => [nodeRun.nodeId, nodeRun]),
@@ -1059,7 +1548,12 @@ export class RunService {
     const statuses = new Map(
       nodeRuns.map((nodeRun) => [nodeRun.nodeId, nodeRun.status]),
     );
-    const adapters = this.adapters();
+    const adapters = this.adapters(
+      new RepoConnectionResolver(
+        this.repository,
+        frozenConnectionsFromGraph(graph),
+      ),
+    );
     let overall: WorkflowRunRecord["status"] = "succeeded";
 
     for (const nodeRun of nodeRuns) {
@@ -1261,9 +1755,16 @@ export class RunService {
         if (currentRun?.status === "cancelled") {
           throw new CancelledError("运行已取消");
         }
+        const completedNode = await this.repository.getNodeRun(nodeRun.id);
+        await this.restoreSuccessfulProviderModel(
+          completedNode ?? claimed,
+        ).catch(() => undefined);
         await this.updateNodeRunOrCancel(runId, nodeRun.id, {
           status: "succeeded",
           outputAssetIds: output.assetIds ?? [],
+          inputJson: compactCompletedInput(
+            completedNode?.inputJson ?? claimed.inputJson,
+          ),
         });
         outputs.set(nodeId, output);
         statuses.set(nodeId, "succeeded");
@@ -1278,6 +1779,14 @@ export class RunService {
           this.repository.getRun(runId),
           this.repository.getNodeRun(nodeRun.id),
         ]);
+        await this.quarantineUnknownProviderModel(
+          error,
+          authoritativeNode ?? nodeRun,
+        ).catch(() => undefined);
+        await this.recordCyberAfeiCapabilityDenial(
+          error,
+          authoritativeNode ?? nodeRun,
+        ).catch(() => undefined);
         const cancellationWon =
           authoritativeRun?.status === "cancelled" ||
           authoritativeNode?.status === "cancel_requested" ||
@@ -1289,7 +1798,11 @@ export class RunService {
               ? "needs_attention"
               : "failed";
         overall = combineRunStatus(overall, nodeOutcome);
-        const providerFailure = providerFailureFor(error, node, nodeRun);
+        const providerFailure = providerFailureFor(
+          error,
+          node,
+          authoritativeNode ?? nodeRun,
+        );
         const message =
           providerFailure?.message ??
           (error instanceof Error ? error.message : String(error));
@@ -1303,7 +1816,14 @@ export class RunService {
           nodeRun.id,
           {
             status: nodeStatus,
-            errorJson: providerFailure ? { ...providerFailure } : { message },
+            errorJson: providerFailure
+              ? { ...providerFailure }
+              : {
+                  message,
+                  ...(error instanceof NeedsAttentionError && error.code
+                    ? { code: error.code }
+                    : {}),
+                },
           },
         );
         const effectiveStatus =
@@ -1435,12 +1955,235 @@ export class RunService {
     );
   }
 
+  private async quarantineUnknownProviderModel(
+    error: unknown,
+    nodeRun: NodeRunRecord,
+  ): Promise<void> {
+    if (nodeRun.inputJson.provider !== "weai") return;
+    const connectionId = nodeRun.inputJson.connectionId;
+    const requestedModel = nodeRun.inputJson.model;
+    if (typeof connectionId !== "string" || typeof requestedModel !== "string")
+      return;
+    const rejectedModel = unknownModelFromProviderError(error);
+    if (rejectedModel !== requestedModel) return;
+
+    const connection = await this.repository.getConnection(connectionId);
+    if (!connection || connection.provider !== "weai") return;
+    const detectedAt = new Date().toISOString();
+    const configuredFailures = connection.config.modelAvailabilityFailures;
+    const existingFailures = Array.isArray(configuredFailures)
+      ? configuredFailures.filter((value): value is JsonObject =>
+          isRecord(value),
+        )
+      : [];
+    const previousFailure = existingFailures.find(
+      (value) =>
+        value.id === requestedModel && value.reason === "unknown_model",
+    );
+    const previousCount =
+      typeof previousFailure?.consecutiveFailures === "number" &&
+      Number.isSafeInteger(previousFailure.consecutiveFailures) &&
+      previousFailure.consecutiveFailures > 0
+        ? previousFailure.consecutiveFailures
+        : 0;
+    const consecutiveFailures = previousCount + 1;
+    const modelAvailabilityFailures: JsonObject[] = [
+      ...existingFailures.filter((value) => value.id !== requestedModel),
+      {
+        id: requestedModel,
+        reason: "unknown_model",
+        consecutiveFailures,
+        firstDetectedAt:
+          typeof previousFailure?.firstDetectedAt === "string"
+            ? previousFailure.firstDetectedAt
+            : detectedAt,
+        lastDetectedAt: detectedAt,
+      },
+    ];
+    const nextConfig: JsonObject = {
+      ...connection.config,
+      modelAvailabilityFailures,
+    };
+
+    // A single route miss is not authoritative for We-AI. The authenticated
+    // model plaza and /models endpoint can still list the model while one
+    // generation gateway temporarily returns "Unknown model". Only hide it
+    // after three consecutive generation rejections; any successful call
+    // below restores it immediately.
+    if (consecutiveFailures < WEAI_UNKNOWN_MODEL_QUARANTINE_THRESHOLD) {
+      await this.repository.saveConnection({
+        id: connection.id,
+        name: connection.name,
+        provider: connection.provider,
+        encryptedSecret: connection.encryptedSecret,
+        config: nextConfig,
+      });
+      return;
+    }
+
+    const configuredUnavailable = connection.config.unavailableModels;
+    const existingUnavailable = Array.isArray(configuredUnavailable)
+      ? configuredUnavailable.filter((value): value is JsonObject =>
+          isRecord(value),
+        )
+      : [];
+    const unavailableModels: JsonObject[] = [
+      ...existingUnavailable.filter((value) => value.id !== requestedModel),
+      {
+        id: requestedModel,
+        reason: "unknown_model",
+        consecutiveFailures,
+        detectedAt,
+      },
+    ];
+    const scannedModelIds = Array.isArray(connection.config.scannedModelIds)
+      ? connection.config.scannedModelIds.flatMap((value) =>
+          typeof value === "string" &&
+          value.trim() &&
+          value.trim() !== requestedModel
+            ? [value.trim()]
+            : [],
+        )
+      : null;
+    await this.repository.saveConnection({
+      id: connection.id,
+      name: connection.name,
+      provider: connection.provider,
+      encryptedSecret: connection.encryptedSecret,
+      config: {
+        ...nextConfig,
+        unavailableModels,
+        ...(scannedModelIds
+          ? {
+              scannedModelIds,
+              modelScanStatus: scannedModelIds.length > 0 ? "live" : "empty",
+            }
+          : {}),
+      },
+    });
+  }
+
+  private async restoreSuccessfulProviderModel(
+    nodeRun: NodeRunRecord,
+  ): Promise<void> {
+    if (nodeRun.inputJson.provider !== "weai") return;
+    const connectionId = nodeRun.inputJson.connectionId;
+    const model = nodeRun.inputJson.model;
+    if (typeof connectionId !== "string" || typeof model !== "string") return;
+
+    const connection = await this.repository.getConnection(connectionId);
+    if (!connection || connection.provider !== "weai") return;
+    const nextConfig: JsonObject = { ...connection.config };
+    let changed = false;
+
+    for (const field of [
+      "modelAvailabilityFailures",
+      "unavailableModels",
+    ] as const) {
+      const configured = connection.config[field];
+      if (!Array.isArray(configured)) continue;
+      const retained = configured.filter(
+        (value) => !isRecord(value) || value.id !== model,
+      );
+      if (retained.length === configured.length) continue;
+      changed = true;
+      if (retained.length > 0) nextConfig[field] = retained;
+      else delete nextConfig[field];
+    }
+
+    if (Array.isArray(connection.config.scannedModelIds)) {
+      const scannedModelIds = [
+        ...new Set([
+          ...connection.config.scannedModelIds.flatMap((value) =>
+            typeof value === "string" && value.trim() ? [value.trim()] : [],
+          ),
+          model,
+        ]),
+      ];
+      if (
+        scannedModelIds.length !== connection.config.scannedModelIds.length ||
+        !connection.config.scannedModelIds.includes(model)
+      ) {
+        nextConfig.scannedModelIds = scannedModelIds;
+        nextConfig.modelScanStatus = "live";
+        changed = true;
+      }
+    }
+
+    if (!changed) return;
+    await this.repository.saveConnection({
+      id: connection.id,
+      name: connection.name,
+      provider: connection.provider,
+      encryptedSecret: connection.encryptedSecret,
+      config: nextConfig,
+    });
+  }
+
+  private async recordCyberAfeiCapabilityDenial(
+    error: unknown,
+    nodeRun: NodeRunRecord,
+  ): Promise<void> {
+    if (nodeRun.inputJson.supplier !== "cyberafei") return;
+    const connectionId = nodeRun.inputJson.connectionId;
+    const requestedModel = nodeRun.inputJson.model;
+    const operation = nodeRun.inputJson.operation;
+    if (
+      typeof connectionId !== "string" ||
+      typeof requestedModel !== "string" ||
+      typeof operation !== "string"
+    )
+      return;
+    const capability = operation.startsWith("image.")
+      ? "image"
+      : operation.startsWith("video.")
+        ? "video"
+        : null;
+    if (!capability) return;
+    const providerMessage = cyberAfeiCapabilityDenialFromProviderError(
+      error,
+      capability,
+    );
+    if (!providerMessage) return;
+
+    const connection = await this.repository.getConnection(connectionId);
+    if (
+      !connection ||
+      connection.provider !== "rest" ||
+      connection.config.preset !== "cyberafei-api"
+    )
+      return;
+    const configured = connection.config.capabilityBlocks;
+    const existing = Array.isArray(configured)
+      ? configured.filter((value): value is JsonObject => isRecord(value))
+      : [];
+    const capabilityBlocks: JsonObject[] = [
+      ...existing.filter((value) => value.capability !== capability),
+      {
+        capability,
+        reason: "group_permission_denied",
+        detectedAt: new Date().toISOString(),
+        providerMessage,
+        model: requestedModel,
+      },
+    ];
+    await this.repository.saveConnection({
+      id: connection.id,
+      name: connection.name,
+      provider: connection.provider,
+      encryptedSecret: connection.encryptedSecret,
+      config: { ...connection.config, capabilityBlocks },
+    });
+  }
+
   private async submitWithRetry(
     adapter: ProviderAdapter,
     request: NormalizedRequest,
     nodeRun: NodeRunRecord,
   ): Promise<ProviderTask> {
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const maximumAttempts =
+      nodeRun.inputJson.paidRetryPolicy === "approval-required" ? 1 : 3;
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       try {
         return await adapter.submit(request);
       } catch (error) {
@@ -1448,7 +2191,8 @@ export class RunService {
           if (error.details.submissionMayHaveOccurred) {
             throw new NeedsAttentionError(error.message, { cause: error });
           }
-          if (!error.details.retryable || attempt === 3) throw error;
+          if (!error.details.retryable || attempt === maximumAttempts)
+            throw error;
           await this.repository.updateNodeRun(nodeRun.id, {
             attempt: nodeRun.attempt + attempt,
           });
@@ -1582,12 +2326,6 @@ export class RunService {
         filename: asset.name,
       });
     }
-    const operation = operationFor(
-      node,
-      values.some((value) => value.kind === "image") ||
-        assets.some((asset) => asset.kind === "image"),
-    );
-    if (!operation) throw new Error(`不支持的节点类型: ${semanticType(node)}`);
     const providerName =
       typeof nodeRun.inputJson.provider === "string"
         ? nodeRun.inputJson.provider
@@ -1602,19 +2340,105 @@ export class RunService {
         : typeof data.connectionId === "string"
           ? data.connectionId
           : "fake-default";
-    const model = await this.configuredModel(
-      providerName,
-      connectionId,
-      semanticType(node),
+    const frozenConnection = frozenConnectionFromUnknown(
+      data.__runtimeConnection,
+    );
+    const connectionRecord =
+      connectionId === "fake-default"
+        ? null
+        : (frozenConnection ??
+          (await this.repository.getConnection(connectionId)));
+    const connectionConfig = connectionRecord?.config;
+    if (
+      assets.length > 0 &&
+      connectorRequiresPublicAssetUrls(connectionConfig)
+    ) {
+      for (const asset of assets) asset.url = providerAssetUrl(asset.id);
+    }
+    const modelGroup = connectionConfigString(connectionConfig, "modelGroup");
+    const connectionName = connectionRecord?.name.trim() || undefined;
+    const configuredSupplier = connectionRecord?.config.supplierKey;
+    const supplier =
+      typeof configuredSupplier === "string" && configuredSupplier.trim()
+        ? configuredSupplier.trim()
+        : providerName;
+    const configuredSupplierWebsite =
+      connectionRecord?.config.supplierWebsiteUrl;
+    const supplierWebsiteUrl =
+      typeof configuredSupplierWebsite === "string" &&
+      configuredSupplierWebsite.startsWith("https://")
+        ? configuredSupplierWebsite
+        : undefined;
+    const requestedModel =
       typeof nodeRun.inputJson.model === "string"
         ? nodeRun.inputJson.model
         : typeof data.model === "string"
           ? data.model
-          : undefined,
+          : undefined;
+    const rawParameters =
+      (data.parameters as Record<string, unknown> | undefined) ?? {};
+    const model = await this.configuredModel(
+      providerName,
+      connectionId,
+      semanticType(node),
+      requestedModel,
+      rawParameters,
+      frozenConnection,
     );
-    const parameters = {
-      ...((data.parameters as Record<string, unknown> | undefined) ?? {}),
+    const isCyberAfeiFlexible4K =
+      supplier === "cyberafei" &&
+      (model === "gpt-image-2-4K" || model === "gpt-image-4K");
+    const isCangyuanGptImage4K =
+      /^gpt-image-2-4k$/iu.test(model ?? "") &&
+      (supplier === "cangyuan" ||
+        connectionConfigString(connectionConfig, "preset") ===
+          "cangyuan-gpt-image-2" ||
+        /cangyuansuanli\.cn/iu.test(
+          connectionConfigString(connectionConfig, "baseUrl") ?? "",
+        ));
+    const operation = operationFor(
+      node,
+      values.some((value) => value.kind === "image") ||
+        assets.some((asset) => asset.kind === "image"),
+    );
+    if (!operation) throw new Error(`不支持的节点类型: ${semanticType(node)}`);
+    if (
+      supplier === "chentu" &&
+      operation === "image.edit" &&
+      assets.some((asset) => asset.kind === "image")
+    ) {
+      // 辰途文档推荐图生图使用 image_url。为本地素材生成短期签名 URL，
+      // 让辰途服务端直接下载真实图片，避免部分渠道把 multipart image
+      // 字节误当成 JSON 后返回 invalid character 400。
+      for (const asset of assets) {
+        if (asset.kind !== "image" || asset.url) continue;
+        try {
+          asset.url = providerAssetUrl(asset.id);
+        } catch {
+          // If a local/dev runtime has no public base URL, retain the bytes;
+          // the Chentu adapter still supports its documented file fallback.
+        }
+      }
+    }
+    const providerErrorContext: ProviderErrorContext = {
+      provider: providerName,
+      operation,
+      supplier,
+      ...(supplierWebsiteUrl ? { supplierWebsiteUrl } : {}),
     };
+    let parameters =
+      providerName === "weai"
+        ? normalizeWeAiParameters(rawParameters, requestedModel, modelGroup)
+        : supplier === "chentu"
+          ? normalizeChentuParameters(rawParameters)
+          : { ...rawParameters };
+    if (providerName === "rest" && semanticType(node) === "image-generation") {
+      parameters = normalizeRestImageBatchParameter(
+        parameters,
+        model,
+        connectionConfig,
+      );
+    }
     const prompt = renderPromptParts(parts, {
       resolveAsset: (id) => {
         const index = assets.findIndex((asset) => asset.id === id);
@@ -1623,26 +2447,165 @@ export class RunService {
       unresolvedAsset: "empty",
     });
     if (semanticType(node) === "image-generation") {
+      const selectedWeAiTier =
+        providerName === "weai"
+          ? weAiResolutionTier(parameters.size_tier)
+          : undefined;
+      const isChentuFlexibleSizeModel =
+        supplier === "chentu" &&
+        typeof model === "string" &&
+        /自由传参/iu.test(model);
+      const selectedChentuTier = isChentuFlexibleSizeModel
+        ? chentuResolutionTier(parameters.size_tier)
+        : undefined;
+      const selectedFriModelTier =
+        supplier === "frimodel"
+          ? weAiResolutionTier(parameters.size_tier)
+          : undefined;
+      const selectedMikotoTier =
+        supplier === "mikoto"
+          ? weAiResolutionTier(parameters.size_tier)
+          : undefined;
+      const selectedConnectorTier =
+        providerName === "rest" && supplier !== "cyberafei"
+          ? weAiResolutionTier(parameters.size_tier)
+          : undefined;
+      const selectedResolutionTier =
+        selectedWeAiTier ??
+        selectedChentuTier ??
+        selectedFriModelTier ??
+        selectedMikotoTier ??
+        selectedConnectorTier;
       const autoAspectKey =
         parameters.aspect_ratio === "auto"
           ? "aspect_ratio"
           : parameters.size === "auto"
             ? "size"
             : undefined;
-      if (autoAspectKey) {
-        const inferredRatio =
-          aspectRatioFromPrompt(prompt) ?? referenceAspectRatio(graph, assets);
-        if (inferredRatio) {
-          if (autoAspectKey === "size" && providerName === "openai") {
+      const inferredRatio =
+        autoAspectKey || selectedResolutionTier
+          ? (aspectRatioFromPrompt(prompt) ??
+            referenceAspectRatio(graph, assets))
+          : undefined;
+      if (isCangyuanGptImage4K) {
+        // The Cangyuan 4K SKU accepts ratios, but an explicit 4K canvas is
+        // required when automatic sizing is selected. Keep a user-entered
+        // WxH size untouched; otherwise resolve the selected/prompt ratio to
+        // the corresponding documented 4K dimensions.
+        const explicitSize =
+          typeof parameters.size === "string" &&
+          /^\d+x\d+$/iu.test(parameters.size.trim())
+            ? parameters.size.trim()
+            : undefined;
+        const selectedRatio =
+          parameters.aspect_ratio === "auto" || parameters.size === "auto"
+            ? inferredRatio
+            : typeof parameters.aspect_ratio === "string"
+              ? parameters.aspect_ratio
+              : inferredRatio;
+        parameters.size =
+          explicitSize ?? gptImage4KSizeForAspectRatio(selectedRatio);
+        delete parameters.aspect_ratio;
+      } else if (
+        isCyberAfeiFlexible4K &&
+        (parameters.size === undefined || parameters.size === "auto")
+      ) {
+        // Cyber Afei's paid GPT Image 4K aliases require explicit pixels even
+        // when the saved canvas only retained an aspect-ratio control.
+        const explicit = dimensionsFromPrompt(prompt);
+        const explicitParts = explicit?.split("x").map(Number);
+        const explicitAllowed =
+          explicitParts?.length === 2 &&
+          explicitParts.every(
+            (edge) => Number.isInteger(edge) && edge >= 16 && edge <= 4961,
+          ) &&
+          Math.max(...explicitParts) / Math.min(...explicitParts) <= 3;
+        const selectedRatio =
+          parameters.aspect_ratio === "auto"
+            ? inferredRatio
+            : typeof parameters.aspect_ratio === "string"
+              ? parameters.aspect_ratio
+              : inferredRatio;
+        const automaticSize = explicitAllowed
+          ? explicit
+          : selectedRatio
+            ? cyberAfei4KSizeForAspectRatio(selectedRatio)
+            : undefined;
+        if (automaticSize) parameters.size = automaticSize;
+        else delete parameters.size;
+        delete parameters.aspect_ratio;
+      } else if (
+        selectedResolutionTier &&
+        (parameters.size === undefined || parameters.size === "auto")
+      ) {
+        const connectorSize =
+          selectedConnectorTier &&
+          connectorSizeForResolutionTier(
+            connectionConfig,
+            model,
+            selectedConnectorTier,
+            inferredRatio,
+          );
+        parameters.size =
+          connectorSize ??
+          (selectedWeAiTier
+            ? weAiSizeForResolutionTier(selectedWeAiTier, inferredRatio)
+            : selectedChentuTier
+              ? chentuSizeForResolutionTier(selectedChentuTier, inferredRatio)
+              : selectedFriModelTier
+                ? friModelSizeForResolutionTier(
+                    selectedFriModelTier,
+                    inferredRatio,
+                  )
+                : selectedMikotoTier
+                  ? mikotoSizeForResolutionTier(
+                      selectedMikotoTier,
+                      inferredRatio,
+                    )
+                  : undefined);
+        delete parameters.aspect_ratio;
+      } else if (autoAspectKey) {
+        const resolvedRatio = inferredRatio;
+        if (isChentuFlexibleSizeModel && !selectedChentuTier) {
+          // The free-parameter 辰途 route can choose its own dimensions from
+          // the prompt. Do not turn automatic mode into a fixed 1K size.
+          delete parameters.size;
+          delete parameters.aspect_ratio;
+        } else if (resolvedRatio) {
+          if (
+            autoAspectKey === "size" &&
+            (providerName === "openai" || providerName === "weai")
+          ) {
             // Older saved OpenAI nodes used size=auto. Preserve the same
             // prompt/reference precedence through the adapter's ratio mapping
             // instead of sending an invalid value such as size="16:9".
             delete parameters.size;
-            parameters.aspect_ratio = inferredRatio;
+            parameters.aspect_ratio = resolvedRatio;
           } else {
-            parameters[autoAspectKey] = inferredRatio;
+            parameters[autoAspectKey] = resolvedRatio;
+            if (
+              autoAspectKey === "aspect_ratio" &&
+              parameters.size === "auto" &&
+              (providerName === "openai" || providerName === "weai")
+            ) {
+              delete parameters.size;
+            }
           }
         } else delete parameters[autoAspectKey];
+      }
+      delete parameters.size_tier;
+      if (
+        isCyberAfeiFlexible4K &&
+        typeof parameters.size === "string" &&
+        parameters.size !== "auto"
+      ) {
+        const normalizedSize = cyberAfei4KValidSize(parameters.size);
+        if (!normalizedSize)
+          throw new ProviderTaskFailedError(
+            "目标尺寸不符合 GPT Image 2 要求：宽高比不能超过 3:1，且尺寸必须能按 16 像素对齐。",
+            providerErrorContext,
+          );
+        parameters.size = normalizedSize;
       }
     }
     const request: NormalizedRequest = {
@@ -1657,14 +2620,18 @@ export class RunService {
     };
     const validation = await adapter.validate(request);
     if (!validation.valid)
-      throw new ProviderTaskFailedError(
-        validation.issues.map((issue) => issue.message).join("; "),
-        { provider: providerName, operation },
+      throw new ProviderRequestValidationError(
+        validation.issues,
+        providerErrorContext,
       );
     const inputJson: JsonObject = {
       ...nodeRun.inputJson,
       provider: providerName,
+      supplier,
+      ...(supplierWebsiteUrl ? { supplierWebsiteUrl } : {}),
       connectionId,
+      ...(connectionName ? { connectionName } : {}),
+      ...(modelGroup ? { modelGroup } : {}),
       operation,
       model: request.model ?? null,
       prompt: request.prompt,
@@ -1762,28 +2729,32 @@ export class RunService {
           (providerName === "fake" ? 250 : 1_500),
       );
       state = await this.pollWithRetry(adapter, state);
-      try {
-        await this.updateNodeRunOrCancel(runId, nodeRunId, {
-          status: state.status === "succeeded" ? "archiving" : "running",
-          inputJson: { ...inputJson, providerTask: providerTaskJson(state) },
-        });
-      } catch (error) {
-        if (error instanceof CancelledError) {
-          try {
-            await adapter.cancel?.(state);
-          } catch {
-            // Cancellation reconciliation owns subsequent retries.
+      // The provider task id is durably stored immediately after submission.
+      // Avoid rewriting the entire local JSON database for every 1.5-second
+      // running poll; only terminal provider state needs another checkpoint.
+      if (state.status !== "running" && state.status !== "queued") {
+        try {
+          await this.updateNodeRunOrCancel(runId, nodeRunId, {
+            status: state.status === "succeeded" ? "archiving" : "running",
+            inputJson: { ...inputJson, providerTask: providerTaskJson(state) },
+          });
+        } catch (error) {
+          if (error instanceof CancelledError) {
+            try {
+              await adapter.cancel?.(state);
+            } catch {
+              // Cancellation reconciliation owns subsequent retries.
+            }
           }
+          throw error;
         }
-        throw error;
       }
     }
     if (state.status === "cancelled")
       throw new CancelledError("供应商已取消任务");
     if (state.status === "failed")
       throw new ProviderTaskFailedError(state.error ?? "供应商生成失败", {
-        provider: providerName,
-        operation,
+        ...providerErrorContext,
       });
     if (state.status === "running" || state.status === "queued")
       throw new NeedsAttentionError(
@@ -1804,18 +2775,67 @@ export class RunService {
       const message = error instanceof Error ? error.message : String(error);
       throw new NeedsAttentionError(
         `供应商任务已完成，但结果解析失败：${message}`,
+        { code: "artifact_extract_failed", cause: error },
       );
     }
     if (artifacts.length === 0)
-      throw new NeedsAttentionError("供应商任务已完成，但没有返回可归档的结果");
-    const ids: string[] = [];
+      throw new NeedsAttentionError(
+        "供应商任务已完成，但没有返回可归档的结果",
+        {
+          code: "artifact_output_missing",
+        },
+      );
+    const archiveArtifacts = async (
+      candidates: readonly RemoteArtifact[],
+    ): Promise<string[]> => {
+      const archivedIds: string[] = [];
+      for (const [index, artifact] of candidates.entries()) {
+        archivedIds.push(
+          await this.archiveArtifact(artifact, runId, node.id, index),
+        );
+      }
+      return archivedIds;
+    };
+    let ids: string[];
     try {
-      for (const [index, artifact] of artifacts.entries())
-        ids.push(await this.archiveArtifact(artifact, runId, node.id, index));
+      ids = await archiveArtifacts(artifacts);
     } catch (error) {
+      // Result URLs can expire or their CDN connection can stall between the
+      // provider's succeeded state and local archival. Re-polling the existing
+      // provider task may return a fresh route and never creates or charges for
+      // a second generation task.
+      if (shouldRefreshRemoteArtifact(error) && adapter.poll) {
+        try {
+          const refreshed = await retryOperation(() => adapter.poll!(state));
+          if (refreshed.status === "succeeded") {
+            state = refreshed;
+            await this.updateNodeRunOrCancel(runId, nodeRunId, {
+              status: "archiving",
+              inputJson: {
+                ...inputJson,
+                providerTask: providerTaskJson(refreshed),
+              },
+            });
+            const refreshedArtifacts = await adapter.extractOutputs(
+              refreshed.result,
+            );
+            if (refreshedArtifacts.length > 0) {
+              ids = await archiveArtifacts(refreshedArtifacts);
+              return {
+                kind: operation.startsWith("video") ? "video" : "image",
+                assetIds: ids,
+              };
+            }
+          }
+        } catch {
+          // Preserve the original archive error below. It identifies the phase
+          // that needs attention more accurately than a refresh failure.
+        }
+      }
       const message = error instanceof Error ? error.message : String(error);
       throw new NeedsAttentionError(
         `供应商任务已完成，但输出归档失败：${message}`,
+        { code: "artifact_archive_failed", cause: error },
       );
     }
     return {
@@ -1892,11 +2912,66 @@ export class RunService {
   }
 }
 
+function unknownModelFromProviderError(error: unknown): string | undefined {
+  let current = error;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (current instanceof ProviderHttpError) {
+      if (current.details.status !== 400) return undefined;
+      const body = current.details.responseBody;
+      const text =
+        typeof body === "string"
+          ? body
+          : body === undefined
+            ? ""
+            : JSON.stringify(body);
+      return /Unknown model:\s*([A-Za-z0-9._:-]+)/iu.exec(text)?.[1];
+    }
+    if (typeof current !== "object" || current === null || seen.has(current))
+      return undefined;
+    seen.add(current);
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+function cyberAfeiCapabilityDenialFromProviderError(
+  error: unknown,
+  capability: "image" | "video",
+): string | undefined {
+  let current = error;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (current instanceof ProviderHttpError) {
+      if (current.details.status !== 403) return undefined;
+      const body = current.details.responseBody;
+      const text =
+        typeof body === "string"
+          ? body
+          : body === undefined
+            ? ""
+            : JSON.stringify(body);
+      const pattern =
+        capability === "image"
+          ? /Image generation is not enabled for this group/iu
+          : /Video generation is not enabled for this group/iu;
+      return pattern.exec(text)?.[0];
+    }
+    if (typeof current !== "object" || current === null || seen.has(current))
+      return undefined;
+    seen.add(current);
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 function providerFailureFor(
   error: unknown,
   node: WorkflowNode,
   nodeRun: NodeRunRecord,
 ): ProviderErrorPresentation | undefined {
+  if (error instanceof ProviderRequestValidationError)
+    return error.presentation;
   if (error instanceof ProviderTaskFailedError) return error.presentation;
   const source =
     error instanceof NeedsAttentionError && error.cause !== undefined
@@ -1918,19 +2993,52 @@ function providerFailureFor(
     rawOperation === "video.image-to-video"
       ? (rawOperation as ProviderOperation)
       : undefined;
+  const supplier =
+    typeof nodeRun.inputJson.supplier === "string"
+      ? nodeRun.inputJson.supplier
+      : undefined;
+  const supplierWebsiteUrl =
+    typeof nodeRun.inputJson.supplierWebsiteUrl === "string"
+      ? nodeRun.inputJson.supplierWebsiteUrl
+      : undefined;
   return presentProviderError(source, {
     provider,
     ...(operation ? { operation } : {}),
+    ...(supplier ? { supplier } : {}),
+    ...(supplierWebsiteUrl ? { supplierWebsiteUrl } : {}),
   });
+}
+
+class ProviderRequestValidationError extends Error {
+  public readonly presentation: ProviderErrorPresentation;
+
+  public constructor(
+    issues: readonly { code?: string; message: string }[],
+    context: ProviderErrorContext,
+  ) {
+    const detail =
+      issues
+        .map((issue) => issue.message)
+        .filter(Boolean)
+        .join("; ") || "请求参数不符合模型要求";
+    const base = presentProviderError(detail, context);
+    const presentation: ProviderErrorPresentation = {
+      ...base,
+      message: `请求未提交：${detail}`,
+      type: "请求参数错误",
+      code: issues[0]?.code || "invalid_request",
+      providerMessage: detail,
+    };
+    super(presentation.message);
+    this.name = "ProviderRequestValidationError";
+    this.presentation = presentation;
+  }
 }
 
 class ProviderTaskFailedError extends Error {
   public readonly presentation: ProviderErrorPresentation;
 
-  public constructor(
-    rawError: unknown,
-    context: { provider: string; operation?: ProviderOperation },
-  ) {
+  public constructor(rawError: unknown, context: ProviderErrorContext) {
     const presentation = presentProviderError(rawError, context);
     super(presentation.message);
     this.name = "ProviderTaskFailedError";
@@ -1939,8 +3047,15 @@ class ProviderTaskFailedError extends Error {
 }
 
 class NeedsAttentionError extends Error {
-  public constructor(message: string, options?: ErrorOptions) {
+  public readonly code?: string;
+
+  public constructor(
+    message: string,
+    options?: ErrorOptions & { code?: string },
+  ) {
     super(message, options);
+    this.name = "NeedsAttentionError";
+    this.code = options?.code;
   }
 }
 class CancelledError extends Error {}

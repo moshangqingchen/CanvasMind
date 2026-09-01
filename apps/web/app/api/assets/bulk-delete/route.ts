@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { jsonError, repository, storage } from "../../../../lib/server";
+import { deleteStoredAssetObjects } from "../../../../lib/asset-cleanup";
 
 const requestSchema = z.object({
   assetIds: z.array(z.string().trim().min(1).max(200)).min(1).max(500),
@@ -37,7 +38,9 @@ export async function POST(request: Request) {
       while (nextIndex < assets.length) {
         const asset = assets[nextIndex++]!;
         try {
-          await storage.delete?.(asset.storageKey);
+          const cleanup = await deleteStoredAssetObjects(storage, asset);
+          if (cleanup.failedKeys.length > 0)
+            storageCleanupFailedIds.push(asset.id);
         } catch {
           storageCleanupFailedIds.push(asset.id);
         }

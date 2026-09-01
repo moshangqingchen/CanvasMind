@@ -86,7 +86,7 @@ const FAKE_IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
     label: "质量",
     control: "select",
     valueType: "string",
-    default: "auto",
+    default: "high",
     options: [
       { label: "自动", value: "auto" },
       { label: "低", value: "low" },

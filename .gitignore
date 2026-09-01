@@ -10,14 +10,20 @@ coverage/
 .env
 .env.*
 !.env.example
-storage/
-data/
-backups/
+# Runtime data belongs to applications or the repository root. Keep package
+# source directories such as packages/storage visible to Git.
+/storage/
+/data/
+/backups/
+/apps/*/storage/
+/apps/*/data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 playwright-report/
 test-results/
+apps/web/test-results-mention/
+apps/web/.active-live-slot
 
 # local secrets & tool artifacts
 .claude/
@@ -25,6 +31,8 @@ test-results/
 *.tsbuildinfo
 .codex-temp/
 .codex-logs/
+.codex-temp-*.json
+/apps/web/canvas-*.png
 .agents/
 _to_delete/
 /ui-vertical-v6.png

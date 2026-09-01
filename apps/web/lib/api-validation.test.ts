@@ -7,6 +7,7 @@ import {
   CreateRunRequestSchema,
   ProviderConnectionRequestSchema,
   RunsQuerySchema,
+  UpdateCanvasRequestSchema,
   graphValidationError,
   parseJsonRequest,
   readJsonBody,
@@ -85,6 +86,24 @@ describe("canvas API validation", () => {
       CreateCanvasRequestSchema.safeParse({ graph: graph(), admin: true })
         .success,
     ).toBe(false);
+  });
+
+  it("accepts only a non-negative safe integer canvas revision guard", () => {
+    expect(
+      UpdateCanvasRequestSchema.safeParse({
+        graph: graph(),
+        expectedRevision: 12,
+      }).success,
+    ).toBe(true);
+    expect(
+      UpdateCanvasRequestSchema.safeParse({ graph: graph() }).success,
+    ).toBe(true);
+    for (const expectedRevision of [-1, 1.5, "1", Number.MAX_VALUE]) {
+      expect(
+        UpdateCanvasRequestSchema.safeParse({ graph: graph(), expectedRevision })
+          .success,
+      ).toBe(false);
+    }
   });
 
   it("validates ports declared inside React Flow node data", () => {
@@ -239,7 +258,7 @@ describe("run API validation", () => {
 });
 
 describe("provider API validation", () => {
-  it.each(["openai", "runway", "rest", "fake"])(
+  it.each(["openai", "weai", "runway", "rest", "fake"])(
     "accepts the supported %s provider",
     (provider) => {
       expect(

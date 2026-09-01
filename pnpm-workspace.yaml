@@ -6,3 +6,6 @@ allowBuilds:
   msgpackr-extract: true
   sharp: true
   unrs-resolver: true
+overrides:
+  "next@16.2.12>postcss": 8.5.26
+  "next@16.2.12>sharp": 0.35.3

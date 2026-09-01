@@ -79,7 +79,8 @@ export async function POST(request: Request) {
 
   const declaredMimeType = normalizeMimeType(body.mimeType);
   const kind = mediaKindForMime(declaredMimeType);
-  if (!kind) return jsonError("Only image and video uploads are supported");
+  if (!kind)
+    return jsonError("Only image, audio, and video uploads are supported");
   if (
     !verifyUploadToken(body.uploadToken, {
       id: body.id,
@@ -152,7 +153,7 @@ export async function POST(request: Request) {
     metadata: { source: "direct-upload" },
   });
   if (asset.kind === "image") {
-    void getOrCreateAssetPreview(storage, asset, 1200)
+    void getOrCreateAssetPreview(storage, asset, 640)
       .then(() => getOrCreateAssetPreview(storage, asset, 160))
       .catch(() => undefined);
   }

@@ -19,8 +19,13 @@ import type {
 const byText = (left: string, right: string): number =>
   left.localeCompare(right);
 
+interface ConnectivityNode {
+  readonly id: string;
+  readonly data?: unknown;
+}
+
 interface ConnectivityGraph {
-  readonly nodes: readonly { readonly id: string }[];
+  readonly nodes: readonly ConnectivityNode[];
   readonly edges: readonly WorkflowEdge[];
 }
 
@@ -44,7 +49,7 @@ export class InvalidGraphError extends Error {
   }
 }
 
-function makeNodeMap<TNode extends WorkflowNode>(
+function makeNodeMap<TNode extends { readonly id: string }>(
   nodes: readonly TNode[],
 ): Map<string, TNode> {
   const map = new Map<string, TNode>();
@@ -60,6 +65,7 @@ function buildAdjacency(
   graph: ConnectivityGraph,
 ): ReadonlyMap<string, readonly string[]> {
   const nodeIds = new Set(graph.nodes.map((node) => node.id));
+  const nodeMap = makeNodeMap(graph.nodes);
   const adjacencySets = new Map<string, Set<string>>();
 
   for (const nodeId of nodeIds) {
@@ -68,6 +74,10 @@ function buildAdjacency(
 
   for (const edge of graph.edges) {
     if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
+      const target = nodeMap.get(edge.target);
+      if (generatedResultFeedbackTarget(target) === edge.source) {
+        continue;
+      }
       adjacencySets.get(edge.source)?.add(edge.target);
     }
   }
@@ -78,6 +88,20 @@ function buildAdjacency(
       [...targets].sort(byText),
     ]),
   );
+}
+
+function generatedResultFeedbackTarget(
+  node: ConnectivityNode | undefined,
+): string | null {
+  const data = node?.data;
+  if (typeof data !== "object" || data === null) return null;
+  const generatedResult = (data as Record<string, unknown>)["generatedResult"];
+  const generatedFromNodeId = (data as Record<string, unknown>)[
+    "generatedFromNodeId"
+  ];
+  return generatedResult === true && typeof generatedFromNodeId === "string"
+    ? generatedFromNodeId
+    : null;
 }
 
 function canonicalizeCycle(path: readonly string[]): readonly string[] {
@@ -460,10 +484,24 @@ export function selectRunNodeIds(
   graph: WorkflowGraph,
   scope: RunScope,
   nodeId?: string,
+  nodeIds?: readonly string[],
 ): readonly string[] {
   const nodeMap = makeNodeMap(graph.nodes);
   if (scope === "all") {
     return topologicalSort(graph);
+  }
+
+  if (scope === "selection") {
+    if (nodeIds === undefined || nodeIds.length === 0) {
+      throw new TypeError("nodeIds is required for selection scope");
+    }
+    const selected = new Set(nodeIds);
+    for (const selectedNodeId of selected) {
+      if (!nodeMap.has(selectedNodeId)) {
+        throw new RangeError(`Unknown workflow node: ${selectedNodeId}`);
+      }
+    }
+    return topologicalSort(graph).filter((id) => selected.has(id));
   }
 
   if (nodeId === undefined) {
@@ -502,11 +540,12 @@ export function selectRunSubgraph<
   graph: WorkflowGraph<TNode, TEdge>,
   scope: RunScope,
   nodeId?: string,
+  nodeIds?: readonly string[],
 ): RunSubgraph<TNode, TEdge> {
-  const nodeIds = selectRunNodeIds(graph, scope, nodeId);
-  const selected = new Set(nodeIds);
+  const selectedNodeIds = selectRunNodeIds(graph, scope, nodeId, nodeIds);
+  const selected = new Set(selectedNodeIds);
   const nodeMap = makeNodeMap(graph.nodes);
-  const nodes = nodeIds
+  const nodes = selectedNodeIds
     .map((id) => nodeMap.get(id))
     .filter((node): node is TNode => node !== undefined);
   const edges = graph.edges
@@ -515,7 +554,7 @@ export function selectRunSubgraph<
     .sort((left, right) => byText(left.id, right.id));
 
   return {
-    nodeIds,
+    nodeIds: selectedNodeIds,
     edgeIds: edges.map((edge) => edge.id),
     nodes,
     edges,

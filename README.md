@@ -10,11 +10,12 @@
 - 文本、图片、图片数组、视频、视频数组、音频、音频数组端口；连线时检查类型、数量和环路。
 - Tiptap 结构化 `@素材`，保存不可变 `assetId` 和引用角色，不依赖素材 URL 或名称。
 - 单节点运行、下游运行和整张画布运行；节点右键可直接运行、复制、原地复制和删除。
-- 自动保存并在顶栏显示真实保存状态、撤销/重做、项目 JSON 导入/导出、运行历史和结果版本保留。
+- 自动保存并在顶栏显示真实保存状态、撤销/重做、结构 JSON 与含素材完整项目包导入/导出、运行历史和结果版本保留。
 - 画布画笔图层：自由涂鸦、框选、拖动，并可把选中笔画合并成图片素材节点。
-- 右侧「导演台」智能体面板：接入沧元对话模型，可携带选中生成结果的提示词上下文多轮对话。
+- 右侧「超级导演」智能体：固定一个 GPT、Claude、Grok、Gemini 或 OpenAI-compatible 导演大脑，按需求研究、规划并比较图片/视频模型；所有媒体生成调用先给出方案和最高费用，确认后才写入并运行画布。
 - 素材管理拖入桥接：从外部素材管理器拖动文件到画布即可登记为素材节点。
-- OpenAI 图片、Runway 视频、沧元算力图像、通用 REST 和 Fake Provider。
+- OpenAI 图片、We-AI 图片、Runway 视频、喵呜视频、沧元算力图像、赛博阿飞、辰途、MikotoPro、FriModel、通用 REST 和 Fake Provider。
+- 沧元、赛博阿飞、辰途、喵呜实时抓取模型广场目录与价格；五家国内网关另按当前 Key 实时扫描可调用模型，设置面板提供“刷新目录”按钮，已下架或无权限的模型在付费提交前拦截。
 - PostgreSQL 运行快照、客户端幂等 ID、Worker 恢复、取消、轮询、SSE 状态和输出归档。
 - API Key 仅在服务端解密使用，数据库保存 AES-256-GCM 密文，浏览器只看到掩码。
 - 可选的单账号登录：配置后所有主机名都需要会话，登录接口有失败限流，写接口有跨站 Origin 校验。
@@ -30,9 +31,9 @@ pnpm install
 pnpm dev
 ```
 
-打开 <http://localhost:3210>。这个模式不要求 Docker：未设置环境变量时使用进程内数据库、本地文件存储、进程内执行器和 Fake Provider。
+打开 <http://localhost:3210>。这个模式不要求 Docker：未设置环境变量时使用本地 JSON 数据库、本地文件存储、进程内执行器和 Fake Provider。画布、素材索引、连接和运行历史默认保存在 `apps/web/data/super-canvas.json`，素材文件默认保存在 `apps/web/storage`，重启 Web 进程不会丢失。
 
-> 体验模式中的画布、素材索引、连接和运行历史会在 Web 进程重启后丢失，只适合开发和试用。要保留数据，请使用下面的完整自托管模式。
+> 本地模式适合单机使用和开发。正式公网部署、多人共享或需要独立数据库备份时，请使用下面的完整自托管模式。
 
 ## Docker 自托管
 
@@ -51,7 +52,6 @@ node -e "console.log('base64:' + require('node:crypto').randomBytes(32).toString
 ```powershell
 docker compose up -d --build
 docker compose ps
-Invoke-RestMethod http://localhost:3000/api/health
 ```
 
 打开 <http://localhost:3000>。一次性的 `migrate` 服务会先应用 Drizzle migrations，成功后 Web 和 Worker 才启动。查看日志：
@@ -87,12 +87,44 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 ## 基本工作流
 
-1. 在左侧素材库上传图片或视频。使用 MinIO/S3 时，浏览器通过 10 分钟有效的预签名 URL 直传；预签名响应还带有绑定素材 ID、对象键、大小和 MIME 的短期 upload intent token，确认接口会再次校验对象头和文件魔数；本地存储时自动退回 Web 代理上传。
+1. 在左侧素材库上传图片、视频或音频。使用 MinIO/S3 时，浏览器通过 10 分钟有效的预签名 URL 直传；预签名响应还带有绑定素材 ID、对象键、大小和 MIME 的短期 upload intent token，确认接口会再次校验对象头和文件魔数；本地存储时自动退回 Web 代理上传。
 2. 添加“素材输入”节点并选定素材，或添加 Prompt 节点，在编辑器输入 `@` 选择素材。Mention 可标记为参考素材、首帧或尾帧。
 3. 从输出端口拖到兼容输入端口。拖到画布空白处会出现兼容节点菜单；不兼容端口、重复单输入和环路会被拒绝。
-4. 添加图片或视频生成节点，在右侧选择供应商、连接、模型，并填写参数 JSON。
+4. 添加图片或视频生成节点，在右侧“节点参数”中选择供应商、连接、模型与参数；也可以切换到“超级导演”，直接用自然语言让导演研究、规划和报价。
 5. 选择节点后运行当前节点或运行下游。范围外的上游会复用最近一次成功输出；没有可用输出时会在调用付费 API 前失败。
 6. 也可在画布工具栏选择“运行全部”。生成结果自动进入素材库；历史记录中的任一输出可固定成不可变素材输入节点继续复用。
+
+## 超级导演
+
+`NEXT_PUBLIC_DIRECTOR_ENABLED` 是前端构建开关，默认启用：变量未设置或不是精确的 `false` 时都会显示超级导演。只有确实需要回退旧导演台时，才在执行 `pnpm dev` 或 `pnpm build` 的环境中设置 `NEXT_PUBLIC_DIRECTOR_ENABLED=false`，然后重启开发服务或重新构建前端。
+
+首次使用按以下顺序配置：
+
+1. 在“设置 → 导演大脑”中直接新建一个独立导演连接并保存 API Key，也可选择之前已经创建的 `usage: agent` 连接。它与画布生成连接分开，可使用 OpenAI Responses、OpenAI Chat Completions、Anthropic Messages / Claude、xAI Responses / Grok、Google Gemini `generateContent` 或通用 OpenAI-compatible 协议。
+2. 打开“设置 → 导演大脑”，选择固定的导演连接、模型 ID、接口协议和模型实际支持的能力。这里保存的只是导演 profile 对连接的引用，不会改写该连接的密钥、Base URL、模型目录或默认生成参数。
+3. 需要实时研究时，可另外创建并选择 Tavily 研究连接。导演模型声明支持原生搜索时优先使用原生搜索；否则才使用 Tavily。研究结果会保留来源 URL、抓取时间和证据等级。
+
+发送消息只授权导演大脑进行本轮文本推理和有限研究；这一步可能产生导演模型或搜索服务自身的 token/搜索费用，但**不授权任何图片或视频生成**。需求明确后，系统会展示工作流变化、逐次媒体调用、供应商、连接、模型、参数、数量、原币价格、人民币估算、价格时间和排除原因。只有点击“确认并生成”后，幽灵节点才会持久化到画布并执行整批媒体调用。
+
+- 方案默认 15 分钟过期。模型、参数、数量、价格或画布 revision 变化时必须重新报价并再次确认。
+- 未知、过期或无法换算的价格不参与“自动最便宜”排序；没有可比较候选时必须手动选择。
+- 系统不会自动进行付费重试或切换到付费备用模型。提交结果不确定时进入 `needs_attention`，再次提交前必须重新确认。
+- 取消待确认方案不会写入画布，也不会发起媒体生成调用。
+- 导演读取画布供应商连接和模型目录进行比价时使用只读探测；这些扫描不会持久化回供应商连接。连接的编辑、测试和目录刷新仍只由“供应商与密钥”界面显式执行。
+
+导演规则运行时只读取仓库内的 `packages/director/knowledge` 快照，不依赖外部“超级导演”目录。维护者可显式同步新的规则源：
+
+```powershell
+pnpm director:sync -- --source "D:\path\to\超级导演"
+```
+
+同步默认拒绝含未提交改动的源工作树。首次导入也不例外；只有明确接受 dirty 快照时才使用 `--allow-dirty`：
+
+```powershell
+pnpm director:sync -- --source "D:\path\to\超级导演" --allow-dirty
+```
+
+每次同步都会更新 `packages/director/knowledge/manifest.json`，记录源 commit、dirty 状态、同步时间、整体内容哈希和逐文件 SHA-256。提交快照前应审核该清单和知识文件 diff；后续同步继续默认拒绝 dirty 源。
 
 常用快捷键（应用内按 `?` 或 `Ctrl+/` 可随时打开这张表）：
 
@@ -113,11 +145,29 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 输入框和 Prompt 编辑器内不会触发画布快捷键。
 
-“导出”只导出画布结构和参数，不包含素材文件、运行历史、供应商密钥或数据库 revision，因此不能替代系统备份。
+### 项目迁移与备份
+
+右上角项目菜单提供两种格式：
+
+- “导出项目”生成轻量 `.canvas.json`，只保存经过限额校验的节点、连线、视图和涂鸦。素材仍按当前实例的 `assetId` 引用，适合在同一素材库中制作模板。
+- “导出完整项目包”生成 `.supercanvas`，会打包画布实际引用的图片、视频和音频，并在导入时上传为新素材、自动改写引用，适合跨实例迁移。压缩包及解压后内容上限均为 512 MB。
+
+导入会先显示节点、连线、涂鸦、素材缺失等预检结果，不会直接覆盖当前画布；默认会先下载当前画布的 JSON 备份。只有素材齐全的完整项目包才允许继续，且新画布成功保存前不会替换界面；中途上传的素材会尽量自动回滚。
+
+两种格式都不包含运行历史、供应商密钥、数据库 revision 或未被画布引用的素材，因此不能替代系统级备份。完整备份与恢复请参阅 `docs/self-hosting.md`。
 
 ## 供应商连接
 
 在右上角“设置”中新建连接，保存后先执行“测试连接”，再在生成节点中选择该连接。API Key 不应写入画布参数、项目 JSON、浏览器代码或 Connector 模板。
+
+所有内置供应商共用一套实时目录机制：
+
+- 沧元、赛博阿飞、辰途、喵呜有机器可读的模型广场，模型、分组和价格实时抓取（60 秒缓存，失败时退回最近成功目录或内置兜底）。
+- 赛博阿飞、辰途、喵呜、MikotoPro、FriModel 另外用当前 Key 调用免费的 `/v1/models` 实时扫描；哪个模型能用以扫描结果为准，被移出分组、分组停用或下架的模型会标记为不可用，并在付费提交前被拦截。
+- MikotoPro 与 FriModel 的官网价格不可机器读取，价格采用内置快照并标注“快照”；Key 可见但快照未收录的模型显示“价格以平台为准”。
+- 设置面板每个分组提供“刷新目录”按钮，随时强制重新拉取模型广场与 Key 扫描结果；“测试连接”同样只调用免费端点，不发起付费生成请求。
+- 通用 OpenAI 兼容/REST 连接也会按当前连接的 `/models` 或 `/v1/models` 响应扫描模型、文档分组和价格字段；扫描结果、默认模型和最近检查时间只写入该连接，并在设置页显示实时模型、价格与分组摘要。
+- 每条连接都有稳定的供应商命名空间。已有连接不能改绑到其他供应商；切换供应商必须新建连接，避免沿用旧的加密密钥、模型目录或扫描状态。
 
 ### Fake
 
@@ -141,6 +191,26 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 }
 ```
 
+### We-AI 图片
+
+- 供应商选择 `We-AI（图片生成 / 图片编辑）`，填入 We-AI API Key；默认使用亚太入口 `https://asian-acc.we-token.cc/v1`。
+- 设置页展示当前模型广场的 6 个图片分组、倍率和价格；模型广场负责“目录与计价”，专属路由文档负责“是否可调用”。只在广场出现、但未被当前分组路由承诺的模型会标为只读，不能设为画布默认。
+- CODEX、Adobe Token、Azure 与 Adobe 按次使用 OpenAI Images 端点：文生图为 `/v1/images/generations` JSON，改图为 `/v1/images/edits` multipart；参考图最多 16 张。CODEX 固定 `gpt-image-2` 与 `n=1`，Adobe Token/Azure 最多 10 张。
+- `生图-openai-adobe-按次` 在画布中只展示 `GPT Image 2 1K/2K/4K` 三个分辨率模型，LOW、MEDIUM、HIGH 画质与 `$0.03/$0.07/$0.10 每次`价格单独选择；适配器据此调用对应的 `gpt-image-2-low/medium/high` 后缀模型。该兼容通道只发送文档建议的 `model/prompt/size/n`，不会附带 `quality`、`output_format` 或 `output_compression`。
+- `生图-openai-adobe-按次-返回url` 是独立分组，使用普通 `gpt-image-2`，通过 `quality` 选择 LOW/MEDIUM/HIGH，并强制请求 URL 响应；不能与前一分组的后缀模型规则混用。
+- Gemini 香蕉新连接默认使用 OpenAI 兼容 `/v1/images/generations`、`/v1/images/edits`，也可切换到 Google 原生 `/v1beta/models/{model}:generateContent`。兼容协议使用 `size=1K/2K/4K` 与 `aspectRatio`；原生协议使用 `generationConfig.imageConfig.imageSize=512/1K/2K/4K` 与 `aspectRatio`，两套参数不会混用。Gemini 固定 `n=1`，最多 14 张参考图、单张不超过 20 MB。
+- GPT Image 2 的 `size` 始终作为独立请求参数发送。Adobe 按次线路按所选 K 档提交精确尺寸；4K 提供 1:1、16:9、9:16、4:3、3:4、3:2、2:3、21:9 八种预设。为满足 We-AI 宽高都必须是 16 像素倍数的约束，3:2 / 2:3 使用 `3264x2176` / `2176x3264`，21:9 使用 `3840x1648`。其他可自定义尺寸的线路同样强制宽高按 16 像素对齐。
+- 输出解析同时兼容 `b64_json`、带 `data:image/...;base64,` 前缀的数据、URL，以及 Gemini 原生 `inlineData`；同步请求超时按 We-AI 建议设置为 30 分钟。
+
+推荐从以下参数开始：
+
+```json
+{
+  "size": "2048x1152",
+  "n": 1
+}
+```
+
 ### 沧元算力图像 API
 
 - 供应商选择 `沧元算力`，填写 API Key，再选择模型广场中的供应分组。
@@ -151,6 +221,25 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 - 模型目录每 60 秒重新检查沧元主页、文档入口和模型广场；模型新增、移组、下架或改价会自动同步。上游暂时不可用时使用最近一次成功目录，首次检查失败时使用内置兜底目录。
 - 运行前严格校验模型仍属于该连接的当前分组；已被移出或下架的旧节点会在请求发出前停止，避免错误扣费。
 - 接入或更新模型前必须重新核对沧元算力主页、模型广场与对应单模型 API 文档；模型广场决定当前可用模型、价格和分组，单模型文档决定请求参数。
+
+### MikotoPro 图片与视频 API
+
+- 供应商选择 `MikotoPro`，单独填写 MikotoPro API Key；默认 Base URL 为 `https://api.mikoto.vip`。
+- MikotoPro 按官方接入文档分成 `OpenAI 图片`、`Gemini 原生图片`、`Seedance 视频`、`Kling 视频` 四个独立连接分组；每个分组单独保存连接、API Key、默认模型和参数协议。2K/4K 是图片尺寸参数，不是单独供应商组。
+- 图片模型 `gpt-image-2` 使用 MikotoPro 异步 Images API，支持文生图、图片编辑、URL/base64 输出和常用 1K/2K/4K 尺寸。
+- Seedance 视频模型使用 `/v1/videos` 创建任务并轮询 `/v1/videos/{id}`；当前内置 `seedance-2.0-1080p`、`seedance-2.0-720p`、`seedance-fast-480p`、`seedance-fast-720p`，时长范围为 4–15 秒。
+- Kling 视频同样使用异步 `/v1/videos`，但作为独立密钥分组接入；内置 `kling-video` 和 `kling-omni-video`，画布会自动生成文档要求的 `messages`、`seconds`、`extra_body` 与 `frame`/`element` 参数，只需选择 5/10/15 秒、16:9/9:16 和 720p/1080p。
+- Gemini 原生图片使用 `/v1beta/models/{MODEL}:generateContent`，模型为 `gemini-3.1-flash-image-preview` 和 `gemini-3-pro-image-preview`，鉴权按文档使用 `x-goog-api-key`。
+- MikotoPro 连接在界面上独立归类，不与 OpenAI、通用 REST、沧元或其他供应商共用连接配置；模型和 Key 只保存在 MikotoPro 连接中。
+- MikotoPro 文档未提供公开价格目录，价格采用内置快照；模型可用性通过当前分组 Key 的免费 `/v1/models` 端点实时扫描，“测试连接”和“刷新目录”都会执行该扫描并在分组停用（403）时明确报错，不会发起可能扣费的生成请求。快照中 Key 扫描不到的模型会标记“暂不可调用”，付费提交前也会被拦截。
+
+### 喵呜 OpenAI Videos API
+
+- 供应商选择 `喵呜 API（视频）`，填写喵呜 API Key；默认 Base URL 为 `https://api.miaowuai.store`。
+- 按 OpenAI Videos 文档使用 `POST /v1/videos` 创建任务，并轮询 `GET /v1/videos/{id}`；请求只发送 `model`、`prompt`、`seconds`、`ratio`、`resolution`、`image_urls`、`video_urls` 和 `audio_urls`。
+- 模型列表与价格实时抓取喵呜模型广场（`/api/pricing`，60 秒缓存），并与当前 Key 的 `/v1/models` 实时扫描合并：广场有价但 Key 无权限的模型会被移出可调用列表，Key 可见但广场未标价的（如 vip 专属线路）保留调用并显示“价格以平台为准”。人民币价格按平台 ¥7/$1 折算。上游不可用时退回 2026-08-17 内置快照。
+- 喵呜不接受文件字段或 `data:` URL。使用参考图片、视频或音频时，画布会生成带 24 小时时效签名的只读公网素材地址；因此必须配置同一服务可被公网访问的 `PUBLIC_BASE_URL` 和稳定的 `MASTER_KEY`。纯文生视频不依赖该素材出口。
+- 文档没有提供无扣费鉴权端点，“测试连接”只验证连接配置与密钥可正常解密，不会发起付费生成请求。
 
 ### Runway 视频
 
@@ -240,18 +329,45 @@ pnpm --filter @super-canvas/web e2e
 
 Playwright 默认在独立的 <http://localhost:3211> 启停生产测试服务，执行 E2E 前需要先完成生产构建；也可用 `PLAYWRIGHT_BASE_URL` 指向外部服务。Docker 镜像分别提供 `web`、`worker` 和迁移所用的 `base` target。
 
+维护命令：
+
+```powershell
+pnpm clean                 # 清理可重新生成的构建与测试缓存
+pnpm clean:deep            # 额外清理依赖目录，之后需要重新 pnpm install
+pnpm gc:storage            # 只读检查孤儿素材，不会删除文件
+pnpm gc:storage:apply      # 实际删除；必须先停服务并备份 data/storage
+```
+
+`gc:storage:apply` 不属于日常清理命令。确认 dry-run 清单无误并完成备份前，不要执行。
+
 仓库结构：
 
 ```text
 apps/web          Next.js 画布和 HTTP API
 apps/worker       BullMQ Worker
 packages/core     图、端口、Prompt、状态机与重试规则
-packages/db       Drizzle schema、内存/PostgreSQL Repository
+packages/db       Drizzle schema、本地 JSON/PostgreSQL Repository
 packages/providers Provider Adapter 与密钥加密
 packages/runtime  DAG 运行、恢复、归档与事件
 packages/storage  本地文件和 S3/MinIO 存储
 infra/minio       本地直传 CORS 配置
 ```
+
+## Windows 本地常驻与自动更新
+
+完成上面的 `pnpm install` 后，运行以下命令会在 3210 端口启动带进程守护的本地服务：
+
+```powershell
+pnpm public:watch
+```
+
+首次运行会先构建密钥迁移工具、生成 `.local-public.env` 和本地 JSON 数据库；已有配置项会原样保留，只补齐缺失的本地默认项和空的 `MASTER_KEY`。脚本不再写入固定公网域名；如需反向代理，请自行设置 `PUBLIC_BASE_URL` 和登录变量。只有确实迁移旧开发主密钥加密的连接时才会在 `backups` 中留下备份。
+
+管理器会监听 Web 运行代码、共享 packages 源码、项目依赖配置和 `.local-public.env`。文件停止变化 2 秒后，它会在备用 `.next-live-*` 目录完成生产构建；只有构建成功且源码在构建期间未再次变化时，才会停止旧进程并使用新进程接管 3210 端口。构建失败时保留当前可用服务，修改源码后自动重试。`apps/web/data`、`apps/web/storage`、测试文件和构建产物不参与监听，因此画布自动保存和素材写入不会触发服务重启。
+
+本地 JSON 持久化会合并并发快照写入，避免自动保存排队持有多份完整数据库。每个画布保留最近 20 条失败或待处理运行的完整恢复快照；更早的运行记录、状态、错误和输出仍保留，但不再允许从旧快照恢复。管理器默认给 Web 进程设置 2048 MB 堆上限，必要时可通过 `SUPERCANVAS_NODE_MAX_OLD_SPACE_MB` 调整；进程异常退出后会自动重启。
+
+该常驻管理器依赖 Windows PowerShell、`Get-NetTCPConnection`、CIM 和 Windows 命名互斥体，只支持 Windows。macOS/Linux 请使用 `pnpm dev` 或 Docker Compose。Windows 当前用户的登录自启动项可调用同一个 `scripts/start-local-public-managed.ps1`；重复启动的实例会作为热备等待，主管理器退出后自动接管。
 
 `apps/web/proxy.ts` 是 Next.js 的请求前置层，负责登录门禁、跨站写请求拦截和安全响应头；对应的用例在 `apps/web/proxy.test.ts`。
 

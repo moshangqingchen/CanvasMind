@@ -25,6 +25,7 @@ import {
   CANGYUAN_NANO_BANANA_PRO_1K_MODEL,
   CANGYUAN_NANO_BANANA_PRO_2K_MODEL,
   CANGYUAN_NANO_BANANA_PRO_4K_MODEL,
+  CANGYUAN_VIDEO_GROUP,
   cangyuanDefaultModelForGroup,
   cangyuanImageConnectionConfig,
   cangyuanImageConnectorForGroup,
@@ -60,6 +61,15 @@ describe("provider presets", () => {
       CANGYUAN_NANO_BANANA_2_4K_MODEL,
     ]);
     expect(
+      CANGYUAN_IMAGE_CONNECTOR.models?.find(
+        (model) => model.id === CANGYUAN_IMAGE_MODEL,
+      ),
+    ).toMatchObject({
+      operations: ["image.generate", "image.edit"],
+      inputKinds: ["text", "image", "image[]"],
+      limits: { maxInputImages: 9 },
+    });
+    expect(
       CANGYUAN_BACKUP_IMAGE_CONNECTOR.models?.map((model) => model.id),
     ).toEqual([
       CANGYUAN_CODEX_IMAGE_MODEL,
@@ -91,6 +101,16 @@ describe("provider presets", () => {
       CANGYUAN_NANO_BANANA_2_2K_MODEL,
       CANGYUAN_NANO_BANANA_2_4K_MODEL,
     ]);
+
+    const modelById = (id: string) =>
+      CANGYUAN_IMAGE_CONNECTOR.models?.find((model) => model.id === id);
+    const ratioOptions = (id: string) =>
+      modelById(id)?.parameters?.find((parameter) => parameter.key === "aspect_ratio")
+        ?.options;
+    expect(ratioOptions(CANGYUAN_IMAGE_1K_MODEL)?.find((option) => option.value === "16:9")?.label).toBe("16:9");
+    expect(ratioOptions(CANGYUAN_IMAGE_2K_MODEL)?.find((option) => option.value === "16:9")?.label).toBe("16:9");
+    expect(ratioOptions(CANGYUAN_IMAGE_4K_MODEL)?.find((option) => option.value === "16:9")?.label).toBe("16:9（4K：3840×2160）");
+    expect(ratioOptions(CANGYUAN_IMAGE_4K_MODEL)?.find((option) => option.value === "16:9")?.value).toBe("16:9");
   });
 
   it("builds a group-scoped connection config", () => {
@@ -106,6 +126,19 @@ describe("provider presets", () => {
       CANGYUAN_BANANA_PRO_4K_MODEL,
     ]);
     expect(isCangyuanImagePreset("cangyuan-gpt-image-2-4k")).toBe(true);
+
+    expect(
+      cangyuanImageConnectionConfig(CANGYUAN_VIDEO_GROUP).connector
+        .assetsRequirePublicUrls,
+    ).toBe(true);
+    expect(
+      cangyuanImageConnectionConfig(CANGYUAN_ALL_MODELS_GROUP).connector
+        .assetsRequirePublicUrls,
+    ).toBe(true);
+    expect(
+      cangyuanImageConnectionConfig(CANGYUAN_IMAGE_GROUP).connector
+        .assetsRequirePublicUrls,
+    ).toBeUndefined();
   });
 
   it("submits IMAGE group generation asynchronously and polls the result", async () => {

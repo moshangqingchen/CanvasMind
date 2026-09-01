@@ -2,6 +2,8 @@ node_modules
 **/node_modules
 .next
 **/.next
+.next-*
+**/.next-*
 dist
 **/dist
 .git
@@ -9,8 +11,10 @@ dist
 .env.*
 !.env.example
 backups
-storage
-data
+/storage
+/data
+/apps/*/storage
+/apps/*/data
 coverage
 test-results
 playwright-report

@@ -11,6 +11,7 @@ describe("ProviderRegistry", () => {
     expect(await registry.forConnection("fake-connection")).toBe(
       registry.get("fake"),
     );
+    expect(registry.get("weai")).toBeDefined();
   });
 
   it("allows an application-specific adapter to override a built-in", () => {

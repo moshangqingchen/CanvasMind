@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Handle,
   NodeResizer,
@@ -38,8 +39,15 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { renderPromptParts } from "@super-canvas/core";
+import {
+  assetDownloadPath,
+  downloadAssetPreferLocal,
+} from "../lib/asset-download";
 import { localizeRunError } from "../lib/error-localization";
+import { modelCanvasUnavailableReason } from "../lib/graph-ui";
+import { appendPriceLabelOnce } from "../lib/model-display";
 import { NodeParameterFields } from "./node-parameter-fields";
+import { shouldReselectNodeFromConfigPointer } from "../lib/node-config-pointer";
 import { PromptEditor } from "./prompt-editor";
 import type { CanvasNode, CanvasNodeData, RunErrorDetails } from "./types";
 
@@ -86,6 +94,48 @@ function formatMediaDuration(seconds: number | undefined): string | null {
   return `${seconds >= 10 ? seconds.toFixed(0) : seconds.toFixed(1)}s`;
 }
 
+function generatedResultProvenance(data: CanvasNodeData): string | null {
+  const parameters = data.generatedParameters ?? {};
+  const connection =
+    data.generatedGroup ??
+    data.generatedConnectionName?.replace(/^.+?\s*·\s*/u, "");
+  const sizeValue = parameters.size ?? parameters.image_size;
+  const size =
+    typeof sizeValue === "string" ? sizeValue.replace(/x/giu, "×") : null;
+  const ratioValue = parameters.aspect_ratio ?? parameters.aspectRatio;
+  const ratio = typeof ratioValue === "string" ? ratioValue : null;
+  const qualityValue =
+    parameters.quality ??
+    (typeof data.generatedModel === "string"
+      ? /^gpt-image-2-(low|medium|high)$/u.exec(data.generatedModel)?.[1]
+      : undefined);
+  const quality =
+    typeof qualityValue === "string" ? qualityValue.toUpperCase() : null;
+  let time: string | null = null;
+  if (data.generatedCreatedAt) {
+    const date = new Date(data.generatedCreatedAt);
+    if (!Number.isNaN(date.getTime())) {
+      const twoDigits = (value: number) => String(value).padStart(2, "0");
+      time = `${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())} ${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}:${twoDigits(date.getSeconds())}`;
+    }
+  }
+  const runTag = data.generatedFromRunId
+    ? `#${data.generatedFromRunId.slice(0, 8)}`
+    : data.generatedPendingRequestId
+      ? `#${data.generatedPendingRequestId.slice(0, 8)}`
+      : null;
+  const parts = [
+    runTag,
+    time,
+    connection,
+    data.generatedModel,
+    size,
+    ratio && ratio !== size ? ratio : null,
+    quality,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 function LinkedAssetStrip({ data }: { data: CanvasNodeData }) {
   const linked = data.linkedAssets ?? [];
   if (linked.length === 0) return null;
@@ -126,6 +176,20 @@ function LinkedAssetStrip({ data }: { data: CanvasNodeData }) {
               draggable
               onDragStart={(event) => handleAssetDragStart(event, asset.id)}
             >
+              <button
+                type="button"
+                className="node-linked-asset-remove nodrag nopan"
+                aria-label={`移除素材 ${asset.name} 并断开连线`}
+                title="移除素材并断开连线"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  data.onRemoveLinkedAsset?.(asset.id);
+                }}
+              >
+                <X size={10} strokeWidth={2.4} />
+              </button>
               <div
                 className={`node-linked-asset-preview ${asset.kind === "image" ? "previewable-image" : ""}`}
                 onDoubleClick={(event) => {
@@ -238,6 +302,14 @@ function GenerationNodeBody({
   data: CanvasNodeData;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const settingsPanelRef = useRef<HTMLElement | null>(null);
+  const [settingsPosition, setSettingsPosition] = useState({
+    top: 16,
+    left: 16,
+    width: 420,
+    maxHeight: 600,
+  });
   const nodeType =
     data.nodeType === "video-generation"
       ? "video-generation"
@@ -280,171 +352,256 @@ function GenerationNodeBody({
   if (
     data.model &&
     modelOptions.length === 0 &&
+    !data.modelOptionsAuthoritative &&
+    !data.modelOptionsLoading &&
     !modelOptions.some((model) => model.id === data.model)
   ) {
     modelOptions.unshift({ id: data.model, name: data.model, operations: [] });
   }
   const selectedModel = modelOptions.find((model) => model.id === data.model);
   const modelName = selectedModel?.name ?? data.model ?? "自动模型";
+  const parameterControlsUnavailable =
+    selectedModel?.metadata?.parameterControlsUnavailable === true;
   const summary =
     nodeType === "video-generation"
-      ? [
-          parameters.duration ? `${parameters.duration}s` : null,
-          parameters.aspect_ratio ?? parameters.ratio,
-          parameters.resolution,
+      ? parameterControlsUnavailable
+        ? ""
+        : [
+            parameters.duration ? `${parameters.duration}s` : null,
+            parameters.aspect_ratio ?? parameters.ratio,
+            parameters.resolution,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+      : [
+          parameters.size_tier,
+          parameters.size === "auto" && parameters.size_tier
+            ? "自动比例"
+            : (parameters.aspect_ratio ?? parameters.size),
+          parameters.quality,
         ]
-          .filter(Boolean)
-          .join(" · ")
-      : [parameters.aspect_ratio ?? parameters.size, parameters.quality]
           .filter(Boolean)
           .join(" · ");
   const running = ["queued", "submitting", "running", "archiving"].includes(
     data.status ?? "",
   );
 
-  const selectNode = () => data.onSelect?.();
+  const selectNode = (event?: { ctrlKey: boolean; metaKey: boolean }) =>
+    data.onSelect?.(Boolean(event?.ctrlKey || event?.metaKey));
   const commitPromptBeforeRun = () => {
-    // The editor keeps the latest transaction locally until blur. Commit it
-    // explicitly so clicking Run immediately after typing cannot submit the
-    // previous (possibly empty) prompt.
+    // The editor batches updates briefly for smooth typing. Blur commits the
+    // latest transaction immediately so Run cannot submit stale prompt text.
     const active = document.activeElement;
     if (active instanceof HTMLElement && active.closest(".tiptap-prompt")) {
       active.blur();
     }
   };
 
+  useLayoutEffect(() => {
+    if (!settingsOpen || typeof window === "undefined") return;
+
+    const updateSettingsPosition = () => {
+      const trigger = settingsTriggerRef.current;
+      const panel = settingsPanelRef.current;
+      if (!trigger || !panel) return;
+      const triggerRect = trigger.getBoundingClientRect();
+      const viewportPadding = 12;
+      const viewportTop = 68;
+      const width = Math.min(420, window.innerWidth - viewportPadding * 2);
+      const maxHeight = Math.max(
+        220,
+        window.innerHeight - viewportTop - viewportPadding * 2,
+      );
+      const panelHeight = Math.min(
+        panel.getBoundingClientRect().height,
+        maxHeight,
+      );
+      const left = Math.min(
+        Math.max(viewportPadding, triggerRect.left),
+        Math.max(viewportPadding, window.innerWidth - width - viewportPadding),
+      );
+      const belowTop = triggerRect.bottom + 10;
+      const aboveTop = triggerRect.top - panelHeight - 10;
+      const top =
+        belowTop + panelHeight <= window.innerHeight - viewportPadding
+          ? belowTop
+          : Math.max(viewportTop, aboveTop);
+      setSettingsPosition({ top, left, width, maxHeight });
+    };
+
+    updateSettingsPosition();
+    window.addEventListener("resize", updateSettingsPosition);
+    window.addEventListener("scroll", updateSettingsPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateSettingsPosition);
+      window.removeEventListener("scroll", updateSettingsPosition, true);
+    };
+  }, [settingsOpen]);
+
+  const settingsPopover = settingsOpen ? (
+    <section
+      ref={settingsPanelRef}
+      className="node-config-popover node-config-popover-portal nodrag nowheel nopan"
+      role="dialog"
+      aria-label={`${data.label} 模型与参数`}
+      style={settingsPosition}
+      onPointerDown={(event) => {
+        const target =
+          event.target instanceof Element ? event.target : null;
+        if (!shouldReselectNodeFromConfigPointer(target)) {
+          event.stopPropagation();
+          return;
+        }
+        selectNode(event);
+      }}
+    >
+      <header>
+        <div>
+          <strong>模型与参数</strong>
+          <div className="node-config-provider-selectors">
+            <label className="node-config-provider-header">
+              <span>供应商</span>
+              <select
+                aria-label={`${data.label} 供应商`}
+                value={currentSupplier}
+                onChange={(event) => {
+                  const next = connectionOptions.find(
+                    (connection) => connection.supplier === event.target.value,
+                  );
+                  const available = connectionOptions.find(
+                    (connection) =>
+                      connection.supplier === event.target.value &&
+                      connection.available !== false,
+                  );
+                  if (available ?? next)
+                    data.onConnectionChange?.((available ?? next)!.id);
+                }}
+              >
+                {supplierOptions.map(([supplier, label]) => (
+                  <option key={supplier} value={supplier}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="node-config-provider-header">
+              <span>群组</span>
+              <select
+                aria-label={`${data.label} 模型群组`}
+                value={currentGroup}
+                onChange={(event) => {
+                  const next = connectionOptions.find(
+                    (connection) =>
+                      connection.supplier === currentSupplier &&
+                      connection.group === event.target.value &&
+                      connection.available !== false,
+                  );
+                  if (next) data.onConnectionChange?.(next.id);
+                }}
+              >
+                {groupOptions.map((connection) => (
+                  <option
+                    key={connection.group}
+                    value={connection.group}
+                    disabled={connection.available === false}
+                  >
+                    {connection.group}
+                    {connection.available === false ? "（密钥不可用）" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label="关闭模型与参数面板"
+          onClick={() => setSettingsOpen(false)}
+        >
+          <X size={14} />
+        </button>
+      </header>
+      <div className="node-config-popover-body">
+        <button
+          className="node-config-manage-api"
+          type="button"
+          onClick={() => {
+            setSettingsOpen(false);
+            data.onOpenApiSettings?.();
+          }}
+        >
+          <ExternalLink size={12} /> 管理供应商与密钥
+        </button>
+        {currentConnectionOption?.available === false ? (
+          <div className="node-config-connection-warning" role="status">
+            当前实际连接是 {currentConnectionOption.group}
+            ，但该分组密钥不可用。 请重新配置或选择其他可用分组。
+          </div>
+        ) : null}
+        <label className="node-config-model-field">
+          <span>模型</span>
+          <select
+            aria-label={`${data.label} 模型`}
+            value={data.model ?? ""}
+            onChange={(event) => data.onModelChange?.(event.target.value)}
+          >
+            <option value="">自动模型</option>
+            {data.model && !selectedModel ? (
+              <option value={data.model} disabled>
+                {data.model}
+                {data.modelOptionsLoading
+                  ? "（正在扫描模型…）"
+                  : data.modelOptionsError
+                    ? "（模型扫描失败，暂不可用）"
+                    : data.modelOptionsAuthoritative
+                      ? "（当前扫描不可用）"
+                      : "（正在同步模型目录…）"}
+              </option>
+            ) : null}
+            {modelOptions.map((model) => {
+              const unavailableReason = modelCanvasUnavailableReason(model);
+              return (
+                <option
+                  key={model.id}
+                  value={model.id}
+                  disabled={unavailableReason !== null}
+                >
+                  {appendPriceLabelOnce(model.name, model.metadata?.["priceLabel"])}
+                  {unavailableReason ? `（不可运行：${unavailableReason}）` : ""}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+        <NodeParameterFields
+          nodeId={nodeId}
+          nodeType={nodeType}
+          provider={data.provider ?? "fake"}
+          model={selectedModel ?? null}
+          parameters={parameters}
+          showAdvanced={false}
+          onChange={(nextParameters) =>
+            data.onParametersChange?.(nextParameters)
+          }
+        />
+      </div>
+    </section>
+  ) : null;
+
   return (
     <div
       className={`node-generation-body ${(data.linkedAssets?.length ?? 0) > 0 ? "has-linked-assets" : ""}`}
     >
-      {settingsOpen ? (
-        <div className="node-config-popover-anchor nodrag nowheel nopan">
-          <section
-            className="node-config-popover nodrag nowheel nopan"
-            role="dialog"
-            aria-label={`${data.label} 模型与参数`}
-            onPointerDown={selectNode}
-          >
-            <header>
-              <div>
-                <strong>模型与参数</strong>
-                <div className="node-config-provider-selectors">
-                  <label className="node-config-provider-header">
-                    <span>供应商</span>
-                    <select
-                      aria-label={`${data.label} 供应商`}
-                      value={currentSupplier}
-                      onChange={(event) => {
-                        const next = connectionOptions.find(
-                          (connection) =>
-                            connection.supplier === event.target.value,
-                        );
-                        const available = connectionOptions.find(
-                          (connection) =>
-                            connection.supplier === event.target.value &&
-                            connection.available !== false,
-                        );
-                        if (available ?? next)
-                          data.onConnectionChange?.((available ?? next)!.id);
-                      }}
-                    >
-                      {supplierOptions.map(([supplier, label]) => (
-                        <option key={supplier} value={supplier}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="node-config-provider-header">
-                    <span>群组</span>
-                    <select
-                      aria-label={`${data.label} 模型群组`}
-                      value={currentGroup}
-                      onChange={(event) => {
-                        const next = connectionOptions.find(
-                          (connection) =>
-                            connection.supplier === currentSupplier &&
-                            connection.group === event.target.value &&
-                            connection.available !== false,
-                        );
-                        if (next) data.onConnectionChange?.(next.id);
-                      }}
-                    >
-                      {groupOptions.map((connection) => (
-                        <option
-                          key={connection.group}
-                          value={connection.group}
-                          disabled={connection.available === false}
-                        >
-                          {connection.group}
-                          {connection.available === false
-                            ? "（密钥不可用）"
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </div>
-              <button
-                type="button"
-                aria-label="关闭模型与参数面板"
-                onClick={() => setSettingsOpen(false)}
-              >
-                <X size={14} />
-              </button>
-            </header>
-            <div className="node-config-popover-body">
-              <button
-                className="node-config-manage-api"
-                type="button"
-                onClick={() => {
-                  setSettingsOpen(false);
-                  data.onOpenApiSettings?.();
-                }}
-              >
-                <ExternalLink size={12} /> 管理供应商与密钥
-              </button>
-              {currentConnectionOption?.available === false ? (
-                <div className="node-config-connection-warning" role="status">
-                  当前实际连接是 {currentConnectionOption.group}
-                  ，但该分组密钥不可用。 请重新配置或选择其他可用分组。
-                </div>
-              ) : null}
-              <label className="node-config-model-field">
-                <span>模型</span>
-                <select
-                  aria-label={`${data.label} 模型`}
-                  value={data.model ?? ""}
-                  onChange={(event) => data.onModelChange?.(event.target.value)}
-                >
-                  <option value="">自动模型</option>
-                  {modelOptions.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <NodeParameterFields
-                nodeId={nodeId}
-                nodeType={nodeType}
-                provider={data.provider ?? "fake"}
-                model={selectedModel ?? null}
-                parameters={parameters}
-                showAdvanced={false}
-                onChange={(nextParameters) =>
-                  data.onParametersChange?.(nextParameters)
-                }
-              />
-            </div>
-          </section>
-        </div>
-      ) : null}
+      {typeof document !== "undefined" && settingsPopover
+        ? createPortal(settingsPopover, document.body)
+        : null}
       <LinkedAssetStrip data={data} />
       <div
         className="node-inline-editor nodrag nowheel nopan"
-        onPointerDown={(event) => event.stopPropagation()}
+        onPointerDownCapture={selectNode}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+        }}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           event.stopPropagation();
@@ -465,16 +622,19 @@ function GenerationNodeBody({
 
       <div
         className="node-inline-toolbar nodrag nowheel nopan"
-        onPointerDown={selectNode}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          selectNode(event);
+        }}
       >
         <button
           className="node-config-summary"
+          ref={settingsTriggerRef}
           type="button"
           aria-label={`打开 ${data.label} 模型与参数`}
           title="打开模型与参数面板"
           onClick={(event) => {
             event.stopPropagation();
-            selectNode();
             setSettingsOpen((open) => !open);
           }}
         >
@@ -518,29 +678,29 @@ function GenerationNodeBody({
   );
 }
 
-function WorkflowNodeComponent({
-  id,
-  data,
-  selected,
-}: NodeProps<CanvasNode>) {
+function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
+  const selectNode = (event?: { ctrlKey: boolean; metaKey: boolean }) =>
+    data.onSelect?.(Boolean(event?.ctrlKey || event?.metaKey));
   const [mediaZoom, setMediaZoom] = useState(1);
   const [resultPromptOpen, setResultPromptOpen] = useState(false);
+  const [recoveringResult, setRecoveringResult] = useState(false);
   const node = { id, type: data.nodeType ?? "custom", data } as CanvasNode;
   const inputAsset = data.assets?.find((asset) => asset.id === data.assetId);
   const outputIds = data.lastOutputAssetIds ?? [];
   const firstOutput = outputIds[0];
   const outputAsset = data.assets?.find((asset) => asset.id === firstOutput);
   const outputKind = outputAsset?.kind ?? data.assetKind;
+  const generatedPreviewSize = selected ? 3840 : 1200;
   const previewUrl = firstOutput
     ? outputKind === "image"
-      ? `/api/assets/${encodeURIComponent(firstOutput)}/preview?size=1200`
+      ? `/api/assets/${encodeURIComponent(firstOutput)}/preview?size=${generatedPreviewSize}`
       : `/api/assets/${encodeURIComponent(firstOutput)}/content`
     : null;
   const inputPreviewUrl =
     data.pendingPreviewUrl ??
     (data.assetId
       ? (inputAsset?.kind ?? data.assetKind) === "image"
-        ? `/api/assets/${encodeURIComponent(data.assetId)}/preview?size=${data.generatedResult === true ? 1200 : 640}`
+        ? `/api/assets/${encodeURIComponent(data.assetId)}/preview?size=${data.generatedResult === true ? generatedPreviewSize : selected ? 640 : 160}`
         : `/api/assets/${encodeURIComponent(data.assetId)}/content`
       : null);
   const generationNode =
@@ -574,13 +734,25 @@ function WorkflowNodeComponent({
     "cancel_requested",
   ].includes(generatedStatus);
   const generatedCancelled = generatedStatus === "cancelled";
-  const generatedFailed = ["failed", "needs_attention"].includes(
-    generatedStatus,
-  );
+  const generatedNeedsAttention = generatedStatus === "needs_attention";
+  const generatedArchiveRecoverable =
+    generatedNeedsAttention &&
+    data.generatedRecoveryAction === "resume_archive";
+  const generatedRecoveryAvailable =
+    generatedNeedsAttention &&
+    (data.generatedRecoveryAction === "resume_poll" ||
+      data.generatedRecoveryAction === "resume_archive");
+  const generatedFailed = generatedStatus === "failed";
+  const generatedProblem = generatedFailed || generatedNeedsAttention;
   const generatedErrorDetails = localizeRunError(data.generatedError, {
     provider: data.generatedProvider,
+    supplier: data.generatedSupplier,
   }) as RunErrorDetails | null;
   const generatedError = generatedErrorDetails?.message ?? null;
+  const generatedProvenance = generatedResult
+    ? generatedResultProvenance(data)
+    : null;
+  const generatedProvenanceLabel = generatedProvenance ? "来源" : null;
   const updateMediaZoom = (next: number) =>
     setMediaZoom(Math.min(3, Math.max(0.5, Number(next.toFixed(2)))));
 
@@ -680,8 +852,8 @@ function WorkflowNodeComponent({
       </NodeToolbar>
       <NodeToolbar
         isVisible={selected && generatedResult && !generatedPending}
-        position={Position.Top}
-        offset={9}
+        position={Position.Bottom}
+        offset={12}
       >
         <div className="generated-result-actions-wrap nodrag nopan nowheel">
           <div
@@ -690,13 +862,67 @@ function WorkflowNodeComponent({
             aria-label="生成结果操作"
             onPointerDown={(event) => event.stopPropagation()}
           >
+            {generatedStatus === "succeeded" &&
+            data.assetKind === "image" &&
+            inputPreviewUrl &&
+            !fakeResult ? (
+              <div
+                className="generated-result-zoom"
+                role="group"
+                aria-label="图片缩放"
+              >
+                <button
+                  type="button"
+                  aria-label="缩小图片"
+                  title="缩小"
+                  disabled={mediaZoom <= 0.5}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    updateMediaZoom(mediaZoom - 0.25);
+                  }}
+                >
+                  <ZoomOut size={14} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="还原图片缩放"
+                  title="还原"
+                  disabled={mediaZoom === 1}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    updateMediaZoom(1);
+                  }}
+                >
+                  <RotateCcw size={13} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="放大图片"
+                  title="放大"
+                  disabled={mediaZoom >= 3}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    updateMediaZoom(mediaZoom + 0.25);
+                  }}
+                >
+                  <ZoomIn size={14} />
+                </button>
+              </div>
+            ) : null}
             {data.assetId ? (
               <a
-                href={`/api/assets/${encodeURIComponent(data.assetId)}/content`}
+                href={assetDownloadPath(data.assetId)}
                 download={inputAsset?.name ?? true}
                 aria-label={`下载 ${data.label}`}
                 title="下载结果"
-                onClick={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void downloadAssetPreferLocal(
+                    data.assetId!,
+                    inputAsset?.name,
+                  );
+                }}
               >
                 <Download size={13} />
                 <span>下载</span>
@@ -748,19 +974,23 @@ function WorkflowNodeComponent({
                 : 230
         }
         minHeight={generatedResult ? 72 : generationNode ? 150 : 140}
-        keepAspectRatio={generatedResult}
+        keepAspectRatio={
+          generatedResult && !generatedProblem && !generatedCancelled
+        }
         onResizeStart={() => data.onResizeStart?.()}
       />
       <div
         className={`node-card ${selected ? "selected" : ""} ${generatedResult ? "generated-result-node" : ""}`}
         data-node-type={data.nodeType}
+        data-pending-import={data.pendingImport || undefined}
+        data-director-draft={data.directorDraft || undefined}
         data-connection-highlight={data.connectionHighlight}
         data-generated-result={generatedResult || undefined}
         data-generated-status={generatedResult ? generatedStatus : undefined}
         data-media-zoom={generatedResult ? mediaZoom : undefined}
         onClick={(event) => {
           event.stopPropagation();
-          data.onSelect?.();
+          selectNode(event);
         }}
       >
         <PortHandles node={node} direction="input" />
@@ -784,7 +1014,10 @@ function WorkflowNodeComponent({
           {data.nodeType === "prompt" ? (
             <div
               className="node-inline-editor prompt-node-editor nodrag nowheel nopan"
-              onPointerDown={(event) => event.stopPropagation()}
+              onPointerDownCapture={selectNode}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
               onClick={(event) => event.stopPropagation()}
               onKeyDown={(event) => {
                 event.stopPropagation();
@@ -829,7 +1062,7 @@ function WorkflowNodeComponent({
                 >
                   {generatedPending ||
                   (!inputPreviewUrl &&
-                    !generatedFailed &&
+                    !generatedProblem &&
                     !generatedCancelled) ? (
                     <div
                       className="generated-result-state pending"
@@ -847,17 +1080,52 @@ function WorkflowNodeComponent({
                             ? "正在取消"
                             : "正在生成"}
                       </strong>
+                      {generatedProvenance ? (
+                        <small
+                          className="generated-result-provenance-state"
+                          title={generatedProvenance}
+                        >
+                          {generatedProvenance}
+                        </small>
+                      ) : null}
                     </div>
-                  ) : generatedFailed || generatedCancelled ? (
+                  ) : generatedProblem || generatedCancelled ? (
                     <div
-                      className={`generated-result-state ${generatedCancelled ? "cancelled" : "failed"}`}
+                      className={`generated-result-state ${
+                        generatedCancelled
+                          ? "cancelled"
+                          : generatedNeedsAttention
+                            ? "needs-attention"
+                            : "failed"
+                      }`}
                       role="status"
                     >
                       <CircleAlert size={23} />
                       <strong>
-                        {generatedCancelled ? "生成已取消" : "生成失败"}
+                        {generatedCancelled
+                          ? "生成已取消"
+                          : generatedArchiveRecoverable
+                            ? "生成成功，结果待取回"
+                            : generatedNeedsAttention
+                              ? "提交结果未知"
+                              : "生成失败"}
                       </strong>
+                      {generatedProvenance ? (
+                        <small
+                          className="generated-result-provenance-state"
+                          title={generatedProvenance}
+                        >
+                          {generatedProvenance}
+                        </small>
+                      ) : null}
                       {generatedError ? <span>{generatedError}</span> : null}
+                      {generatedNeedsAttention ? (
+                        <small className="generated-result-attention-note">
+                          {generatedArchiveRecoverable
+                            ? "供应商已经完成生成。取回只会下载现有结果，不会重新提交或再次扣费。"
+                            : "供应商可能已经收到任务。请先核对任务和扣费记录，确认未提交后再从源节点运行。"}
+                        </small>
+                      ) : null}
                       {generatedErrorDetails?.type ||
                       generatedErrorDetails?.code ? (
                         <small className="generated-result-error-meta">
@@ -878,6 +1146,34 @@ function WorkflowNodeComponent({
                           接入 API：{generatedErrorDetails.api}
                         </small>
                       ) : null}
+                      {generatedErrorDetails?.statusCode ||
+                      generatedErrorDetails?.providerMessage ? (
+                        <small className="generated-result-error-upstream">
+                          {generatedErrorDetails.statusCode
+                            ? `HTTP ${generatedErrorDetails.statusCode}`
+                            : null}
+                          {generatedErrorDetails.statusCode &&
+                          generatedErrorDetails.providerMessage
+                            ? " · "
+                            : null}
+                          {generatedErrorDetails.providerMessage
+                            ? `上游：${generatedErrorDetails.providerMessage}`
+                            : null}
+                        </small>
+                      ) : null}
+                      {generatedErrorDetails?.actionUrl ? (
+                        <a
+                          className="generated-result-error-doc generated-result-error-action nodrag nopan"
+                          href={generatedErrorDetails.actionUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onPointerDown={(event) => event.stopPropagation()}
+                        >
+                          <ExternalLink size={10} />
+                          {generatedErrorDetails.actionLabel ??
+                            "前往供应商官网"}
+                        </a>
+                      ) : null}
                       {generatedErrorDetails?.docsUrl ? (
                         <a
                           className="generated-result-error-doc nodrag nopan"
@@ -893,14 +1189,50 @@ function WorkflowNodeComponent({
                         <button
                           className="generated-result-retry nodrag nopan"
                           type="button"
-                          aria-label={`重新生成 ${data.label}`}
+                          aria-label={`再次运行 ${data.label}，原地替换失败结果`}
+                          title="在当前卡片中重新生成"
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
                             event.stopPropagation();
                             data.onRegenerate?.();
                           }}
                         >
-                          <RotateCcw size={11} /> 重新生成
+                          <RotateCcw size={11} /> 再次运行
+                        </button>
+                      ) : null}
+                      {generatedRecoveryAvailable && data.onRecoverResult ? (
+                        <button
+                          className="generated-result-retry nodrag nopan"
+                          type="button"
+                          disabled={recoveringResult}
+                          aria-label={`${data.generatedRecoveryAction === "resume_poll" ? "恢复查询" : "取回"} ${data.label} 的现有任务`}
+                          title={
+                            data.generatedRecoveryAction === "resume_poll"
+                              ? "继续查询现有供应商任务，不会重新提交或再次扣费"
+                              : "从现有供应商任务取回结果，不会再次扣费"
+                          }
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={async (event) => {
+                            event.stopPropagation();
+                            setRecoveringResult(true);
+                            try {
+                              await data.onRecoverResult?.();
+                            } finally {
+                              setRecoveringResult(false);
+                            }
+                          }}
+                        >
+                          <RotateCcw
+                            className={recoveringResult ? "spin" : ""}
+                            size={11}
+                          />{" "}
+                          {recoveringResult
+                            ? data.generatedRecoveryAction === "resume_poll"
+                              ? "查询中"
+                              : "取回中"
+                            : data.generatedRecoveryAction === "resume_poll"
+                              ? "恢复查询"
+                              : "取回结果"}
                         </button>
                       ) : null}
                     </div>
@@ -943,56 +1275,17 @@ function WorkflowNodeComponent({
                       {data.assetKind === "video" ? "视频结果" : "图片结果"}
                     </span>
                   )}
+                  {generatedProvenance &&
+                  generatedStatus === "succeeded" &&
+                  inputPreviewUrl ? (
+                    <small
+                      className="generated-result-provenance-overlay"
+                      title={generatedProvenance}
+                    >
+                      {generatedProvenanceLabel}
+                    </small>
+                  ) : null}
                 </div>
-                {selected &&
-                generatedStatus === "succeeded" &&
-                data.assetKind === "image" &&
-                inputPreviewUrl &&
-                !fakeResult ? (
-                  <div
-                    className="generated-result-zoom nodrag nopan nowheel"
-                    role="toolbar"
-                    aria-label="图片缩放"
-                    onPointerDown={(event) => event.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      aria-label="缩小图片"
-                      title="缩小"
-                      disabled={mediaZoom <= 0.5}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        updateMediaZoom(mediaZoom - 0.25);
-                      }}
-                    >
-                      <ZoomOut size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="还原图片缩放"
-                      title="还原"
-                      disabled={mediaZoom === 1}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        updateMediaZoom(1);
-                      }}
-                    >
-                      <RotateCcw size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="放大图片"
-                      title="放大"
-                      disabled={mediaZoom >= 3}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        updateMediaZoom(mediaZoom + 0.25);
-                      }}
-                    >
-                      <ZoomIn size={14} />
-                    </button>
-                  </div>
-                ) : null}
                 {!generatedPending ? (
                   <button
                     className="generated-result-delete nodrag nopan"
@@ -1035,7 +1328,9 @@ function WorkflowNodeComponent({
                   }}
                 />
               </div>
-            ) : inputPreviewUrl && inputAsset?.kind === "video" ? (
+            ) : inputPreviewUrl &&
+              (inputAsset?.kind === "video" ||
+                (data.pendingImport && data.assetKind === "video")) ? (
               <div
                 className={`node-preview asset-node-preview video-cover ${selected ? "active" : ""}`}
                 draggable={Boolean(data.assetId)}
@@ -1057,7 +1352,7 @@ function WorkflowNodeComponent({
                 />
               </div>
             ) : (
-              <div>{data.assetId ? "素材已就绪" : "拖入图片或视频"}</div>
+              <div>{data.assetId ? "素材已就绪" : "拖入图片、视频或音频"}</div>
             )
           ) : null}
 

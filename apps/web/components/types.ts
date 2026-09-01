@@ -19,7 +19,11 @@ export interface RunErrorDetails {
   type?: string;
   code?: string;
   api?: string;
+  statusCode?: number;
+  providerMessage?: string;
   docsUrl?: string;
+  actionUrl?: string;
+  actionLabel?: string;
 }
 
 export interface CanvasDrawingPoint {
@@ -51,27 +55,41 @@ export interface CanvasNodeData extends Record<string, unknown> {
   assetKind?: "image" | "video" | "audio";
   pendingImport?: boolean;
   pendingPreviewUrl?: string;
+  directorDraft?: boolean;
+  directorCallId?: string;
+  directorProposalId?: string;
   generatedResult?: boolean;
   generatedStatus?: NodeRunStatus;
   generatedError?: string | RunErrorDetails;
   generatedFromNodeId?: string;
   generatedFromRunId?: string;
   generatedProvider?: string;
+  generatedSupplier?: string;
+  generatedConnectionId?: string;
+  generatedConnectionName?: string;
+  generatedGroup?: string;
+  generatedModel?: string;
+  generatedParameters?: Record<string, string | number | boolean>;
+  generatedCreatedAt?: string;
   generatedPromptParts?: PromptPart[];
   generatedPromptText?: string;
   generatedPendingRequestId?: string;
   generatedOutputIndex?: number;
+  generatedRecoveryAction?: "retry" | "resume_poll" | "resume_archive";
   mediaAspectRatio?: number;
   provider?: string;
   connectionId?: string;
   model?: string;
   parameters?: Record<string, unknown>;
   lastOutputAssetIds?: string[];
+  lastOutputRunId?: string;
+  lastOutputCreatedAt?: string;
   materializedOutputAssetIds?: string[];
   status?: string;
   onRun?: () => void;
   onRegenerate?: () => void;
-  onSelect?: () => void;
+  onRecoverResult?: () => Promise<void>;
+  onSelect?: (additive?: boolean) => void;
   onOpenPreview?: (assetId: string) => void;
   onPrepareReversePrompt?: () => void;
   onDelete?: () => void;
@@ -85,6 +103,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   onParametersChange?: (parameters: Record<string, unknown>) => void;
   onMediaAspectRatio?: (ratio: number) => void;
   onLinkedAssetDuration?: (assetId: string, seconds: number) => void;
+  onRemoveLinkedAsset?: (assetId: string) => void;
   onOpenApiSettings?: () => void;
   connectionOptions?: Array<{
     id: string;
@@ -96,6 +115,9 @@ export interface CanvasNodeData extends Record<string, unknown> {
     available?: boolean;
   }>;
   modelOptions?: ModelDescriptor[];
+  modelOptionsAuthoritative?: boolean;
+  modelOptionsLoading?: boolean;
+  modelOptionsError?: boolean;
   assets?: AssetView[];
   mentionAssets?: AssetView[];
   linkedAssets?: AssetView[];
@@ -105,6 +127,10 @@ export interface CanvasNodeData extends Record<string, unknown> {
   connectionPreviewActive?: boolean;
   connectionHighlight?: "source" | "compatible";
   compatibleInputIds?: string[];
+  /** Visual-only canvas grouping metadata. It never changes graph execution. */
+  canvasGroupId?: string;
+  canvasGroupLabel?: string;
+  canvasGroupColor?: string;
 }
 
 export type CanvasNode = Node<CanvasNodeData>;
@@ -128,12 +154,24 @@ export interface RunSnapshot {
     nodeId?: string | null;
     createdAt: string;
     updatedAt?: string;
+    canResume?: boolean;
   };
   nodes: Array<{
     id: string;
     nodeId: string;
     status: string;
     outputAssetIds: string[];
+    recoveryAction?: "retry" | "resume_poll" | "resume_archive";
     errorJson?: RunErrorDetails | null;
+    request?: {
+      provider?: string;
+      supplier?: string;
+      connectionId?: string;
+      connectionName?: string;
+      modelGroup?: string;
+      operation?: string;
+      model?: string;
+      parameters?: Record<string, string | number | boolean>;
+    };
   }>;
 }

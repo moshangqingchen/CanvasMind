@@ -10,7 +10,7 @@ export const PORT_KINDS = [
 
 export type PortKind = (typeof PORT_KINDS)[number];
 
-export const RUN_SCOPES = ["node", "downstream", "all"] as const;
+export const RUN_SCOPES = ["node", "downstream", "selection", "all"] as const;
 
 export type RunScope = (typeof RUN_SCOPES)[number];
 
@@ -371,4 +371,5 @@ export interface CreateRunRequest {
   readonly clientRequestId: string;
   readonly scope: RunScope;
   readonly nodeId?: string;
+  readonly nodeIds?: readonly string[];
 }

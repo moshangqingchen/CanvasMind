@@ -5,6 +5,7 @@ import {
   mediaKindForMime,
   normalizeMimeType,
   parseByteRange,
+  sanitizedAssetExtension,
 } from "../../media-utils";
 
 const SECURITY_HEADERS = {
@@ -34,11 +35,51 @@ function contentTypeFor(
   return { contentType: "application/octet-stream", downloadable: true };
 }
 
-function applySecurityHeaders(headers: Headers, downloadable = false): Headers {
+const ACCEPTED_DOWNLOAD_EXTENSIONS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  "image/jpeg": ["jpg", "jpeg"],
+  "video/quicktime": ["mov", "qt"],
+};
+
+function filenameWithExtension(filename: string, contentType: string): string {
+  const cleaned =
+    filename
+      .replace(/[\u0000-\u001f\u007f]/gu, "")
+      .replace(/[<>:"/\\|?*]/gu, "-")
+      .trim() || "download";
+  const extension = sanitizedAssetExtension(cleaned, contentType);
+  const existing = /\.([a-z0-9]{1,10})$/iu.exec(cleaned)?.[1]?.toLowerCase();
+  const accepted = ACCEPTED_DOWNLOAD_EXTENSIONS[
+    normalizeMimeType(contentType)
+  ] ?? [extension];
+  return existing && accepted.includes(existing)
+    ? cleaned
+    : `${cleaned}.${extension}`;
+}
+
+function downloadDisposition(filename: string, contentType: string): string {
+  const encoded = encodeURIComponent(
+    filenameWithExtension(filename, contentType),
+  );
+  return `attachment; filename="download"; filename*=UTF-8''${encoded}`;
+}
+
+function applySecurityHeaders(
+  headers: Headers,
+  downloadable = false,
+  filename?: string,
+  contentType?: string,
+): Headers {
   for (const [name, value] of Object.entries(SECURITY_HEADERS))
     headers.set(name, value);
   if (downloadable) {
-    headers.set("content-disposition", "attachment");
+    headers.set(
+      "content-disposition",
+      filename && contentType
+        ? downloadDisposition(filename, contentType)
+        : "attachment",
+    );
     headers.set("x-download-options", "noopen");
   }
   return headers;
@@ -66,6 +107,8 @@ export async function GET(
   const { id } = await context.params;
   const asset = await repository.getAsset(id);
   if (!asset) return jsonError("Asset does not exist", 404);
+  const forceDownload =
+    new URL(request.url).searchParams.get("download") === "1";
 
   let loadedObject: StoredObject | null | undefined;
   const metadata = storage.head
@@ -111,12 +154,16 @@ export async function GET(
     const headers = applySecurityHeaders(
       new Headers({
         "accept-ranges": "bytes",
-        "cache-control": "public, max-age=31536000, immutable",
+        // This endpoint is authenticated; never let a shared proxy cache a
+        // private asset response and replay it to another requester.
+        "cache-control": "private, no-store",
         "content-length": String(object.bytes.byteLength),
         "content-range": `bytes ${range.start}-${range.end}/${metadata.size}`,
         "content-type": media.contentType,
       }),
-      media.downloadable,
+      media.downloadable || forceDownload,
+      asset.name,
+      media.contentType,
     );
     return new Response(object.bytes as BodyInit, { status: 206, headers });
   }
@@ -131,11 +178,15 @@ export async function GET(
   const headers = applySecurityHeaders(
     new Headers({
       "accept-ranges": "bytes",
-      "cache-control": "public, max-age=31536000, immutable",
+      // This endpoint is authenticated; never let a shared proxy cache a
+      // private asset response and replay it to another requester.
+      "cache-control": "private, no-store",
       "content-length": String(loadedObject.bytes.byteLength),
       "content-type": media.contentType,
     }),
-    media.downloadable,
+    media.downloadable || forceDownload,
+    asset.name,
+    media.contentType,
   );
   return new Response(loadedObject.bytes as BodyInit, { headers });
 }

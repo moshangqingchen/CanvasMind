@@ -345,14 +345,33 @@ export const CreateRunRequestSchema = z
     clientRequestId: identifier,
     scope: RunScopeSchema,
     nodeId: identifier.optional(),
+    nodeIds: z.array(identifier).min(1).max(100).optional(),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.scope !== "all" && value.nodeId === undefined) {
+    if (
+      value.scope !== "all" &&
+      value.scope !== "selection" &&
+      value.nodeId === undefined
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["nodeId"],
         message: `nodeId is required for ${value.scope} scope`,
+      });
+    }
+    if (value.scope === "selection" && value.nodeIds === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["nodeIds"],
+        message: "nodeIds is required for selection scope",
+      });
+    }
+    if (value.scope !== "selection" && value.nodeIds !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["nodeIds"],
+        message: "nodeIds is only accepted for selection scope",
       });
     }
   });

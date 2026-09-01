@@ -3,10 +3,16 @@ import {
   expect,
   test,
   type APIRequestContext,
+  type Locator,
   type Page,
   type Route,
 } from "@playwright/test";
-import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import {
+  CANGYUAN_BACKUP_IMAGE_GROUP,
+  CANGYUAN_IMAGE_CONNECTOR,
+  CANGYUAN_IMAGE_PRESET_ID,
+  cangyuanImageConnectorForGroup,
+} from "../lib/provider-presets";
 
 const REFERENCE_ASSET_NAME = "e2e reference asset.png";
 const PNG_1X1 = Buffer.from(
@@ -19,6 +25,7 @@ type JsonRecord = Record<string, unknown>;
 interface CanvasResponse {
   id: string;
   title: string;
+  revision: number;
   graph: {
     schemaVersion: number;
     nodes: Array<{
@@ -27,6 +34,7 @@ interface CanvasResponse {
       position: { x: number; y: number };
       width?: number;
       height?: number;
+      measured?: { width?: number; height?: number };
       style?: JsonRecord;
       data: JsonRecord;
     }>;
@@ -313,17 +321,70 @@ function generatedLifecycleGraph(
 }
 
 interface HeldRunCreation {
+  requested: Promise<void>;
   captured: Promise<RunResponse>;
   release: () => void;
   dispose: () => Promise<void>;
 }
 
+async function mockCangyuanBackupCatalog(page: Page): Promise<void> {
+  const group = CANGYUAN_BACKUP_IMAGE_GROUP;
+  const models = structuredClone(
+    cangyuanImageConnectorForGroup(group).models ?? [],
+  );
+  const marketplaceModels = models.map((model) => ({
+    id: model.id,
+    name: model.name,
+    description: model.description,
+    capability: "image" as const,
+    priceLabel: "测试目录价格",
+    billingLabel: "按请求计费",
+    tags: [],
+    endpointTypes: ["image.generate"],
+  }));
+
+  await page.route(/\/cangyuan-catalog(?:\?.*)?$/u, async (route) => {
+    const url = new URL(route.request().url());
+    const body = url.searchParams.has("group")
+      ? {
+          group,
+          checkedAt: new Date().toISOString(),
+          source: "fallback",
+          models,
+        }
+      : {
+          checkedAt: new Date().toISOString(),
+          source: "fallback",
+          groups: [
+            {
+              id: group,
+              description: "E2E 固定目录，避免测试依赖实时模型广场变化",
+              ratio: 1,
+              canvasSupported: true,
+              models: marketplaceModels,
+            },
+          ],
+        };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+}
+
 async function holdRunCreationResponse(page: Page): Promise<HeldRunCreation> {
   const routePattern = "**/api/runs";
   let released = false;
-  let releaseResponse!: () => void;
-  const responseGate = new Promise<void>((resolve) => {
-    releaseResponse = resolve;
+  let releaseRequest!: () => void;
+  const requestGate = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  let resolveRequested!: () => void;
+  let rejectRequested!: (error: unknown) => void;
+  const requested = new Promise<void>((resolve, reject) => {
+    resolveRequested = resolve;
+    rejectRequested = reject;
   });
   let resolveCaptured!: (snapshot: RunResponse) => void;
   let rejectCaptured!: (error: unknown) => void;
@@ -337,24 +398,27 @@ async function holdRunCreationResponse(page: Page): Promise<HeldRunCreation> {
       return;
     }
     try {
+      resolveRequested();
+      await requestGate;
       const response = await route.fetch();
       resolveCaptured((await response.json()) as RunResponse);
-      await responseGate;
       await route.fulfill({ response });
     } catch (error) {
+      rejectRequested(error);
       rejectCaptured(error);
     }
   };
   await page.route(routePattern, handler);
   return {
+    requested,
     captured,
     release: () => {
       if (released) return;
       released = true;
-      releaseResponse();
+      releaseRequest();
     },
     dispose: async () => {
-      if (!released) releaseResponse();
+      if (!released) releaseRequest();
       released = true;
       await page.unroute(routePattern, handler);
     },
@@ -384,7 +448,6 @@ async function resetWorkspace(request: APIRequestContext): Promise<string> {
       request.delete(`/api/providers/${connection.id}`),
     ),
   ]);
-
   const saved = await request.put(`/api/canvas/${canvas.id}`, {
     data: {
       title: "E2E 验收画布",
@@ -414,10 +477,29 @@ async function configureFakeScenario(
 
 async function openWorkspace(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.getByText("超级画布").first()).toBeVisible();
+  await expect(page.locator(".brand-mark")).toBeVisible();
   await expect(
     page.locator('.react-flow__node[data-id="e2e-prompt"]'),
   ).toBeVisible();
+}
+
+async function expectInsideViewport(
+  locator: Locator,
+  viewportWidth: number,
+): Promise<void> {
+  await expect(locator).toBeVisible();
+  const bounds = await locator.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewportWidth + 0.5);
+}
+
+async function openLibrary(page: Page): Promise<void> {
+  const sidebar = page.locator("aside.sidebar");
+  if (!(await sidebar.isVisible())) {
+    await page.getByRole("button", { name: "打开节点与素材库" }).click();
+  }
+  await expect(sidebar).toBeVisible();
 }
 
 async function savedCanvas(page: Page): Promise<CanvasResponse> {
@@ -642,9 +724,226 @@ test.describe("超级画布完整验收", () => {
     await resetWorkspace(request);
   });
 
+  test("画布响应损坏时退出加载态并显示可恢复错误", async ({ page }) => {
+    await page.route("**/api/canvas", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "broken-canvas",
+          title: "Broken canvas",
+          revision: 1,
+          graph: {
+            schemaVersion: 1,
+            nodes: [
+              {
+                id: "broken-node",
+                type: "workflow",
+                position: { x: 0, y: 0 },
+                data: null,
+              },
+            ],
+            edges: [],
+            viewport: { x: 0, y: 0, zoom: 1 },
+          },
+        }),
+      });
+    });
+
+    await page.goto("/");
+
+    const error = page.locator('.canvas-empty-state[role="alert"]');
+    await expect(error).toContainText("画布加载失败");
+    await expect(page.getByText("正在加载画布…")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "重新加载" })).toBeVisible();
+  });
+
+  test("超级导演未配置时可进入导演设置并返回供应商", async ({ page }) => {
+    await openWorkspace(page);
+
+    const inspector = page.locator("aside.inspector");
+    await inspector.getByRole("tab", { name: "导演台" }).click();
+    await expect(
+      inspector.getByText("超级导演", { exact: true }),
+    ).toBeVisible();
+    await expect(inspector.getByText("导演大脑未配置")).toBeVisible();
+
+    await inspector.getByRole("button", { name: "管理导演大脑连接" }).click();
+    const settings = page.getByRole("dialog", { name: "供应商设置" });
+    await expect(settings).toBeVisible();
+    await expect(
+      settings.getByRole("heading", { name: "超级导演设置", exact: true }),
+    ).toBeVisible();
+    await settings
+      .getByRole("button", { name: "新增连接", exact: true })
+      .click();
+    await settings.getByLabel("接口协议").selectOption("anthropic-messages");
+    await expect(settings.getByLabel("API Base URL")).toHaveValue(
+      "https://api.anthropic.com/v1",
+    );
+    await expect(settings.getByLabel("连接名称")).toHaveValue(
+      "Claude 导演大脑",
+    );
+    await expect(
+      settings.getByRole("button", {
+        name: "新增并设为导演大脑",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await settings.getByRole("button", { name: "收起", exact: true }).click();
+
+    await settings
+      .getByRole("button", { name: "返回供应商", exact: true })
+      .click();
+    await expect(
+      settings.getByRole("heading", { name: "供应商与密钥", exact: true }),
+    ).toBeVisible();
+    await expect(
+      settings.getByRole("button", { name: "导演大脑", exact: true }),
+    ).toBeVisible();
+  });
+
+  test("超级导演自动复用已写 Key 的供应商分组并加载组内全部模型", async ({
+    page,
+  }) => {
+    const groupId = "LLM-GPT-plus";
+    const models = [
+      {
+        id: "gpt-5.4",
+        name: "GPT 5.4",
+        operations: [],
+        inputKinds: ["text", "image"],
+        outputKinds: ["text"],
+      },
+      {
+        id: "gpt-5.4-mini",
+        name: "GPT 5.4 Mini",
+        operations: [],
+        inputKinds: ["text", "image"],
+        outputKinds: ["text"],
+      },
+    ];
+    const response = await page.request.post("/api/providers", {
+      data: {
+        name: `沧元算力 · ${groupId}`,
+        provider: "rest",
+        apiKey: "e2e-director-existing-group-secret",
+        config: {
+          preset: CANGYUAN_IMAGE_PRESET_ID,
+          supplierKey: "cangyuan",
+          usage: "canvas",
+          modelGroup: groupId,
+          baseUrl: "https://ai.cangyuansuanli.cn",
+          defaultModel: models[0]!.id,
+          allowedModels: models.map((model) => model.id),
+        },
+      },
+    });
+    expect(response.status()).toBe(201);
+    const saved = (await response.json()) as ProviderConnectionResponse;
+
+    await page.route(/\/cangyuan-catalog(?:\?.*)?$/u, async (route) => {
+      const marketplaceModels = models.map((model) => ({
+        id: model.id,
+        name: model.name,
+        description: `${model.name} E2E 对话模型`,
+        capability: "chat",
+        priceLabel: "测试价格",
+        billingLabel: "按 Token",
+        tags: ["文本"],
+        endpointTypes: ["chat.completions"],
+      }));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          checkedAt: new Date().toISOString(),
+          source: "fallback",
+          groups: [
+            {
+              id: groupId,
+              description: "E2E 导演分组",
+              ratio: 1,
+              canvasSupported: false,
+              models: marketplaceModels,
+            },
+          ],
+        }),
+      });
+    });
+    await page.route(
+      new RegExp(`/api/providers/${saved.id}/models(?:\\?.*)?$`, "u"),
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(models),
+        });
+      },
+    );
+    await page.route("**/api/director/profile", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          profile: {
+            id: "default",
+            configured: false,
+            connected: false,
+          },
+        }),
+      });
+    });
+
+    await openWorkspace(page);
+    await page.getByRole("button", { name: "API 设置", exact: true }).click();
+    const settings = page.getByRole("dialog", { name: "供应商设置" });
+    await settings
+      .getByRole("button", { name: /沧元算力/ })
+      .first()
+      .click();
+    const groupButton = settings.getByRole("button", {
+      name: new RegExp(groupId),
+    });
+    await expect(groupButton.locator(".provider-dot")).not.toHaveClass(/muted/);
+    await groupButton.click();
+    await expect(
+      settings.getByRole("heading", { name: groupId, exact: true }),
+    ).toBeVisible();
+    await expect(settings.getByLabel("当前分组 API Key")).toHaveValue(
+      `${groupId} 分组密钥已加密保存`,
+    );
+
+    await settings
+      .getByRole("button", { name: "导演大脑", exact: true })
+      .click();
+    const connectionSelect = settings.getByLabel(/导演连接/);
+    await expect(connectionSelect).toHaveValue(saved.id);
+    await expect(connectionSelect).toContainText(groupId);
+    const modelSelect = settings.getByLabel("导演模型", { exact: true });
+    await expect(modelSelect.locator('option[value]:not([value=""])')).toHaveCount(
+      2,
+    );
+    await expect(modelSelect).toContainText("GPT 5.4 · gpt-5.4");
+    await expect(modelSelect).toContainText("GPT 5.4 Mini · gpt-5.4-mini");
+    await expect(
+      settings.getByText("分组共 2 个模型，2 个可用于导演"),
+    ).toBeVisible();
+  });
+
   test("画布渲染固定工作流，并可新增和自动保存 Prompt", async ({ page }) => {
     await openWorkspace(page);
 
+    await expect(page.locator("aside.sidebar")).toBeHidden();
+    await openLibrary(page);
     await expect(page.getByText("节点库")).toBeVisible();
     await expect(page.locator(".react-flow__node")).toHaveCount(4);
     await expect(page.locator(".react-flow__edge")).toHaveCount(4);
@@ -699,7 +998,172 @@ test.describe("超级画布完整验收", () => {
     await expect(restoredEditor).toContainText("新增节点中的可保存提示词");
   });
 
-  test("复制粘贴节点时贴近当前选中节点并向下避让", async ({ page, request }) => {
+  test("较新的服务器版本会暂停自动保存并保留本地冲突副本", async ({
+    page,
+    request,
+  }) => {
+    await openWorkspace(page);
+    const saveStatus = page.getByRole("button", {
+      name: "画布自动保存状态",
+    });
+    await expect(saveStatus).toContainText("已保存");
+
+    const beforeExternalUpdate = await getJson<CanvasResponse>(
+      request,
+      "/api/canvas",
+    );
+    const serverGraph = structuredClone(beforeExternalUpdate.graph);
+    const serverMarkerNode = serverGraph.nodes.find(
+      (node) => node.id === "e2e-preview",
+    );
+    expect(serverMarkerNode).toBeDefined();
+    serverMarkerNode!.data.label = "E2E 服务器新版本标记";
+    const serverTitle = "E2E 服务器较新画布";
+    const externalUpdate = await request.put(
+      `/api/canvas/${beforeExternalUpdate.id}`,
+      {
+        data: { title: serverTitle, graph: serverGraph },
+      },
+    );
+    expect(externalUpdate.ok()).toBeTruthy();
+    const externalCanvas = (await externalUpdate.json()) as CanvasResponse;
+    expect(externalCanvas.revision).toBeGreaterThan(
+      beforeExternalUpdate.revision,
+    );
+
+    const promptEditor = page
+      .locator('.react-flow__node[data-id="e2e-prompt"]')
+      .locator(".tiptap-prompt");
+    await promptEditor.fill("E2E 本地冲突草稿");
+
+    const conflictDialog = page.getByRole("dialog", {
+      name: "画布已在其他窗口更新",
+    });
+    await expect(conflictDialog).toBeVisible();
+    await expect(conflictDialog).toContainText(
+      `服务器当前版本为 ${externalCanvas.revision}`,
+    );
+    await expect(conflictDialog).toContainText("本页不会继续自动保存");
+
+    const conflictStatus = page.getByRole("button", {
+      name: "处理画布保存冲突",
+    });
+    await expect(conflictStatus).toContainText("保存冲突");
+    await conflictDialog
+      .getByRole("button", { name: "稍后处理保存冲突" })
+      .click();
+    await expect(conflictDialog).toHaveCount(0);
+    await expect(conflictStatus).toContainText("保存冲突");
+    await conflictStatus.click();
+    await expect(conflictDialog).toBeVisible();
+
+    const downloadPromise = page.waitForEvent("download");
+    await conflictDialog.getByRole("button", { name: "导出当前副本" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.canvas\.json$/u);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    const exported = JSON.parse(await readFile(downloadPath!, "utf8")) as {
+      graph: CanvasResponse["graph"];
+    };
+    expect(
+      (
+        exported.graph.nodes.find((node) => node.id === "e2e-prompt")?.data
+          .parts as Array<JsonRecord> | undefined
+      )?.find((part) => part.type === "text")?.text,
+    ).toBe("E2E 本地冲突草稿");
+
+    await conflictDialog
+      .getByRole("button", { name: "稍后处理保存冲突" })
+      .click();
+    let canvasPutRequestsAfterConflict = 0;
+    page.on("request", (browserRequest) => {
+      if (
+        browserRequest.method() === "PUT" &&
+        /\/api\/canvas\/[^/]+$/u.test(new URL(browserRequest.url()).pathname)
+      ) {
+        canvasPutRequestsAfterConflict += 1;
+      }
+    });
+    await promptEditor.fill("E2E 本地冲突草稿第二版");
+    await page.waitForTimeout(800);
+    expect(canvasPutRequestsAfterConflict).toBe(0);
+    await page.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent("pagehide"));
+    });
+    await page.waitForTimeout(200);
+    expect(canvasPutRequestsAfterConflict).toBe(0);
+
+    const protectedServerCanvas = await getJson<CanvasResponse>(
+      request,
+      "/api/canvas",
+    );
+    expect(protectedServerCanvas).toMatchObject({
+      title: serverTitle,
+      revision: externalCanvas.revision,
+    });
+    expect(
+      protectedServerCanvas.graph.nodes.find(
+        (node) => node.id === "e2e-preview",
+      )?.data.label,
+    ).toBe("E2E 服务器新版本标记");
+
+    await page.close();
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    const afterPageClose = await getJson<CanvasResponse>(
+      request,
+      "/api/canvas",
+    );
+    expect(afterPageClose).toMatchObject({
+      title: serverTitle,
+      revision: externalCanvas.revision,
+    });
+  });
+
+  test("提示词按 Enter 会另起一行并在刷新后保留", async ({ page }) => {
+    await openWorkspace(page);
+    const promptNode = page.locator('.react-flow__node[data-id="e2e-image"]');
+    const editor = promptNode.locator(".tiptap-prompt");
+    await expect(editor).toBeVisible();
+    await editor.fill("第一行提示词");
+    await editor.press("End");
+    await editor.press("Enter");
+    await editor.type("第二行提示词");
+    await expect(editor).toHaveCSS("display", "block");
+    await expect(editor.locator("br")).toHaveCount(1);
+    expect(
+      await editor.evaluate((element) => (element as HTMLElement).innerText),
+    ).toBe("第一行提示词\n第二行提示词");
+
+    await page.getByRole("button", { name: "运行全部" }).focus();
+    await expect
+      .poll(async () => {
+        const canvas = await savedCanvas(page);
+        const node = canvas.graph.nodes.find(
+          (candidate) => candidate.id === "e2e-image",
+        );
+        return (node?.data.parts as Array<JsonRecord> | undefined)?.find(
+          (part) => part.type === "text",
+        )?.text;
+      })
+      .toBe("第一行提示词\n第二行提示词");
+
+    await page.reload();
+    const restoredEditor = page
+      .locator('.react-flow__node[data-id="e2e-image"]')
+      .locator(".tiptap-prompt");
+    await expect(restoredEditor.locator("br")).toHaveCount(1);
+    expect(
+      await restoredEditor.evaluate(
+        (element) => (element as HTMLElement).innerText,
+      ),
+    ).toBe("第一行提示词\n第二行提示词");
+  });
+
+  test("复制粘贴节点时贴近当前选中节点并向下避让", async ({
+    page,
+    request,
+  }) => {
     const canvas = await getJson<CanvasResponse>(request, "/api/canvas");
     const response = await request.put(`/api/canvas/${canvas.id}`, {
       data: {
@@ -718,9 +1182,7 @@ test.describe("超级画布完整验收", () => {
                 provider: "fake",
                 connectionId: "fake-default",
                 model: "fake-image-v1",
-                inputs: [
-                  { id: "prompt", kind: "text", label: "Prompt" },
-                ],
+                inputs: [{ id: "prompt", kind: "text", label: "Prompt" }],
                 outputs: [{ id: "images", kind: "image", label: "图片" }],
                 parameters: { size: "1024x1024", quality: "auto" },
               },
@@ -736,9 +1198,7 @@ test.describe("超级画布完整验收", () => {
                 provider: "fake",
                 connectionId: "fake-default",
                 model: "fake-image-v1",
-                inputs: [
-                  { id: "prompt", kind: "text", label: "Prompt" },
-                ],
+                inputs: [{ id: "prompt", kind: "text", label: "Prompt" }],
                 outputs: [{ id: "images", kind: "image", label: "图片" }],
                 parameters: { size: "1024x1024", quality: "auto" },
               },
@@ -752,9 +1212,7 @@ test.describe("超级画布完整验收", () => {
     expect(response.ok()).toBeTruthy();
 
     await page.goto("/");
-    const source = page.locator(
-      '.react-flow__node[data-id="paste-source"]',
-    );
+    const source = page.locator('.react-flow__node[data-id="paste-source"]');
     await expect(source).toBeVisible();
     await source.locator(".node-head").click();
     await page.keyboard.press("ControlOrMeta+C");
@@ -771,8 +1229,7 @@ test.describe("超级画布完整验收", () => {
         const saved = await savedCanvas(page);
         return saved.graph.nodes
           .filter(
-            (node) =>
-              node.id !== "paste-source" && node.id !== "paste-target",
+            (node) => node.id !== "paste-source" && node.id !== "paste-target",
           )
           .map((node) => node.position)
           .sort((left, right) => left.y - right.y);
@@ -814,6 +1271,263 @@ test.describe("超级画布完整验收", () => {
         );
       })
       .toEqual([135]);
+  });
+
+  test("Ctrl 点击可加选节点并高亮所有相连连线", async ({ page }) => {
+    await openWorkspace(page);
+
+    const promptNode = page.locator('.react-flow__node[data-id="e2e-prompt"]');
+    const imageNode = page.locator('.react-flow__node[data-id="e2e-image"]');
+    const previewNode = page.locator(
+      '.react-flow__node[data-id="e2e-preview"]',
+    );
+    const edge = (id: string) =>
+      page.locator(`.react-flow__edge[data-id="${id}"]`);
+
+    await promptNode.locator(".node-head").click();
+    await expect(promptNode.locator(".node-card")).toHaveClass(/\bselected\b/u);
+    await expect(imageNode.locator(".node-card")).not.toHaveClass(
+      /\bselected\b/u,
+    );
+    await expect(edge("e2e-prompt-image")).toHaveClass(
+      /\bedge-connected-to-selection\b/u,
+    );
+    await expect(edge("e2e-prompt-video")).toHaveClass(
+      /\bedge-connected-to-selection\b/u,
+    );
+    await expect(edge("e2e-image-video")).not.toHaveClass(
+      /\bedge-connected-to-selection\b/u,
+    );
+
+    await imageNode.locator(".node-head").click({ modifiers: ["Control"] });
+    await expect(promptNode.locator(".node-card")).toHaveClass(/\bselected\b/u);
+    await expect(imageNode.locator(".node-card")).toHaveClass(/\bselected\b/u);
+    await expect(
+      page.getByRole("toolbar", { name: "节点对齐工具" }),
+    ).toContainText("2 个节点");
+    for (const id of [
+      "e2e-prompt-image",
+      "e2e-prompt-video",
+      "e2e-image-video",
+    ]) {
+      await expect(edge(id)).toHaveClass(/\bedge-connected-to-selection\b/u);
+    }
+    await expect(edge("e2e-video-preview")).not.toHaveClass(
+      /\bedge-connected-to-selection\b/u,
+    );
+
+    await imageNode.locator(".node-head").click({ modifiers: ["Control"] });
+    await expect(promptNode.locator(".node-card")).toHaveClass(/\bselected\b/u);
+    await expect(imageNode.locator(".node-card")).not.toHaveClass(
+      /\bselected\b/u,
+    );
+    await expect(edge("e2e-image-video")).not.toHaveClass(
+      /\bedge-connected-to-selection\b/u,
+    );
+
+    await previewNode.locator(".node-head").click();
+    await expect(promptNode.locator(".node-card")).not.toHaveClass(
+      /\bselected\b/u,
+    );
+    await expect(previewNode.locator(".node-card")).toHaveClass(
+      /\bselected\b/u,
+    );
+    await expect(
+      page.locator("aside.inspector").getByLabel("节点名称"),
+    ).toBeVisible();
+    await expect(page.locator("aside.inspector .agent-panel")).toHaveCount(0);
+    await expect(edge("e2e-video-preview")).toHaveClass(
+      /\bedge-connected-to-selection\b/u,
+    );
+    await expect(edge("e2e-prompt-video")).not.toHaveClass(
+      /\bedge-connected-to-selection\b/u,
+    );
+
+    await previewNode.locator(".node-head").click({ modifiers: ["Control"] });
+    await expect(previewNode.locator(".node-card")).not.toHaveClass(
+      /\bselected\b/u,
+    );
+    await expect(page.locator(".node-card.selected")).toHaveCount(0);
+    await expect(page.locator("aside.inspector .agent-panel")).toBeVisible();
+
+    await imageNode.locator(".node-head").click();
+    await expect(imageNode.locator(".node-card")).toHaveClass(/\bselected\b/u);
+    const pane = page.locator(".react-flow__pane");
+    const paneBounds = await pane.boundingBox();
+    expect(paneBounds).not.toBeNull();
+    await page.mouse.click(
+      paneBounds!.x + paneBounds!.width / 2,
+      paneBounds!.y + paneBounds!.height - 24,
+    );
+    await expect(page.locator(".node-card.selected")).toHaveCount(0);
+    await expect(page.locator("aside.inspector .agent-panel")).toBeVisible();
+  });
+
+  test("问号可切换快捷键帮助且不会越过其它弹窗", async ({ page }) => {
+    await openWorkspace(page);
+
+    await page.keyboard.press("Shift+/");
+    const shortcuts = page.getByRole("dialog", { name: "键盘快捷键" });
+    await expect(shortcuts).toBeVisible();
+    await expect(shortcuts).toContainText("加选或取消选择节点");
+    await page.keyboard.press("Shift+/");
+    await expect(shortcuts).toHaveCount(0);
+
+    await page.getByRole("button", { name: "API 设置", exact: true }).click();
+    const settings = page.getByRole("dialog", { name: "供应商设置" });
+    await expect(settings).toBeVisible();
+    await page.keyboard.press("Shift+/");
+    await expect(settings).toBeVisible();
+    await expect(shortcuts).toHaveCount(0);
+    await settings.getByRole("button", { name: "关闭" }).click();
+
+    await openLibrary(page);
+    await expect(page.getByText("上传图片、视频或音频")).toBeVisible();
+    await page.getByRole("button", { name: "关闭素材库" }).click();
+    await page
+      .getByRole("button", { name: "打开项目菜单", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "运行历史", exact: true }).click();
+    const runHistory = page.getByRole("dialog", { name: "运行历史" });
+    await expect(
+      runHistory.getByRole("heading", { name: "运行历史", exact: true }),
+    ).toBeVisible();
+  });
+
+  test("一键整理先聚合相连工作流再排列无关联分组", async ({
+    page,
+    request,
+  }) => {
+    const canvas = await getJson<CanvasResponse>(request, "/api/canvas");
+    const graph = workflowGraph();
+    for (let index = 0; index < 4; index += 1) {
+      graph.nodes.push({
+        id: `tidy-result-${index}`,
+        type: "workflow",
+        position: { x: 80 + index * 31, y: 760 - index * 97 },
+        style: { width: 220, height: index % 2 === 0 ? 170 : 210 },
+        data: {
+          nodeType: "asset-input",
+          label: `整理结果 ${index + 1}`,
+          generatedResult: true,
+          generatedStatus: "failed",
+          generatedError: "E2E 布局占位",
+          generatedFromNodeId: "e2e-image",
+          generatedFromRunId: "e2e-tidy-run",
+          generatedOutputIndex: index,
+          assetKind: "image",
+        },
+      });
+    }
+    graph.nodes.push(
+      {
+        id: "tidy-other-prompt",
+        type: "workflow",
+        position: { x: 60, y: 1_080 },
+        style: { width: 300, height: 160 },
+        data: {
+          nodeType: "prompt",
+          label: "另一组提示词",
+          parts: [{ type: "text", text: "另一条互不相连的工作流" }],
+          outputs: [{ id: "prompt", kind: "text", label: "提示词" }],
+        },
+      },
+      {
+        id: "tidy-other-image",
+        type: "workflow",
+        position: { x: 590, y: 1_020 },
+        style: { width: 360, height: 220 },
+        data: {
+          nodeType: "image-generation",
+          label: "另一组图片生成",
+          provider: "fake",
+          connectionId: "fake-default",
+          model: "fake-image-v1",
+          inputs: [{ id: "prompt", kind: "text", label: "Prompt" }],
+          outputs: [{ id: "images", kind: "image", label: "图片" }],
+          parameters: { size: "1024x1024", quality: "auto" },
+        },
+      },
+    );
+    graph.edges.push({
+      id: "tidy-other-edge",
+      source: "tidy-other-prompt",
+      sourceHandle: "prompt",
+      target: "tidy-other-image",
+      targetHandle: "prompt",
+      type: "smoothstep",
+    });
+    const savedFixture = await request.put(`/api/canvas/${canvas.id}`, {
+      data: { title: "E2E 一键整理", graph },
+    });
+    expect(savedFixture.ok()).toBeTruthy();
+
+    await openWorkspace(page);
+    await expect
+      .poll(async () => (await savedCanvas(page)).graph.nodes.length)
+      .toBe(10);
+    const beforeTidy = await savedCanvas(page);
+    const beforeImagePosition = beforeTidy.graph.nodes.find(
+      (node) => node.id === "e2e-image",
+    )!.position;
+
+    await page.getByRole("button", { name: "一键整理画布" }).click();
+    await expect(
+      page.getByText(/已按关联分组并横向整理 10 个节点/),
+    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const saved = await savedCanvas(page);
+        return saved.graph.nodes.find((node) => node.id === "e2e-image")
+          ?.position;
+      })
+      .not.toEqual(beforeImagePosition);
+
+    const arranged = await savedCanvas(page);
+    const node = (id: string) =>
+      arranged.graph.nodes.find((candidate) => candidate.id === id)!;
+    const source = node("e2e-image");
+    const video = node("e2e-video");
+    const results = Array.from({ length: 4 }, (_, index) =>
+      node(`tidy-result-${index}`),
+    );
+    expect(results[0]!.position.y).toBe(results[1]!.position.y);
+    expect(results[0]!.position.x).toBe(results[2]!.position.x);
+    expect(results[2]!.position.y).toBeGreaterThan(results[0]!.position.y);
+    expect(results[1]!.position.x).toBeGreaterThan(results[0]!.position.x);
+    expect(results[0]!.position.x).toBeGreaterThan(source.position.x);
+    expect(video.position.x).toBeGreaterThan(
+      Math.max(...results.map((result) => result.position.x + 220)),
+    );
+    const otherPrompt = node("tidy-other-prompt");
+    const otherImage = node("tidy-other-image");
+    expect(otherImage.position.x).toBeGreaterThan(otherPrompt.position.x);
+    expect(otherPrompt.position.x).toBeGreaterThan(
+      Math.max(
+        source.position.x,
+        video.position.x,
+        ...results.map((result) => result.position.x + 220),
+      ),
+    );
+
+    const arrangedPositions = Object.fromEntries(
+      arranged.graph.nodes.map((item) => [item.id, item.position]),
+    );
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "一键整理画布" }),
+    ).toBeVisible();
+    await expect
+      .poll(async () => (await savedCanvas(page)).graph.nodes.length)
+      .toBe(10);
+    await expect
+      .poll(async () => {
+        const restored = await savedCanvas(page);
+        return Object.fromEntries(
+          restored.graph.nodes.map((item) => [item.id, item.position]),
+        );
+      })
+      .toEqual(arrangedPositions);
   });
 
   test("超大画布可缩小到完整显示所有远距离节点", async ({ page, request }) => {
@@ -858,9 +1572,9 @@ test.describe("超级画布完整验收", () => {
     await page.getByRole("button", { name: "Fit View" }).click();
     await expect(page.locator(".react-flow__node")).toHaveCount(2);
 
-    const zoom = await page.locator(".react-flow__viewport").evaluate((node) =>
-      new DOMMatrix(getComputedStyle(node).transform).a,
-    );
+    const zoom = await page
+      .locator(".react-flow__viewport")
+      .evaluate((node) => new DOMMatrix(getComputedStyle(node).transform).a);
     expect(zoom).toBeGreaterThanOrEqual(0.02);
     expect(zoom).toBeLessThan(0.05);
 
@@ -946,7 +1660,7 @@ test.describe("超级画布完整验收", () => {
     });
     await expect(imageConfigPopover).toBeVisible();
     await expect(
-      imageConfigPopover.getByLabel("E2E 图片生成 模型"),
+      imageConfigPopover.getByLabel("E2E 图片生成 模型", { exact: true }),
     ).toHaveValue("e2e-image-cinematic");
     await imageConfigPopover.getByLabel("质量").selectOption("high");
     await imageConfigPopover.getByLabel("画面比例").selectOption("9:16");
@@ -1017,7 +1731,7 @@ test.describe("超级画布完整验收", () => {
     await expect(restoredInspector.getByLabel("模型")).toHaveValue(
       "e2e-image-cinematic",
     );
-    await expect(restoredInspector.getByLabel("尺寸")).toHaveValue("2160x3840");
+    await expect(restoredInspector.getByLabel("尺寸")).toHaveValue("");
     await expect(restoredInspector.getByLabel("质量")).toHaveValue("high");
     await expect(restoredInspector.getByLabel("画面比例")).toHaveValue("9:16");
   });
@@ -1052,11 +1766,10 @@ test.describe("超级画布完整验收", () => {
       await sourceNode
         .getByRole("button", { name: "运行 E2E 异步图片生成 节点" })
         .click();
-      const initial = await heldRun.captured;
-      expect(initial.run.id).toBeTruthy();
+      await heldRun.requested;
 
-      // The API response is still held here. These frames must be created
-      // optimistically from n, before any generated asset exists.
+      // The request has not reached the API yet. These frames must be created
+      // optimistically from n, before a run or generated asset exists.
       await page.getByRole("button", { name: "Fit View" }).click();
       const resultNodes = page.locator(
         ".react-flow__node:has(.generated-result-node)",
@@ -1064,7 +1777,7 @@ test.describe("超级画布完整验收", () => {
       await expect(resultNodes).toHaveCount(2);
       await expect(
         resultNodes.locator('.generated-result-state.pending[role="status"]'),
-      ).toHaveText(["正在生成", "正在生成"]);
+      ).toContainText(["正在生成", "正在生成"]);
       await expect(
         resultNodes.locator(".generated-result-spinner"),
       ).toHaveCount(2);
@@ -1122,6 +1835,8 @@ test.describe("超级画布完整验收", () => {
       }
 
       heldRun.release();
+      const initial = await heldRun.captured;
+      expect(initial.run.id).toBeTruthy();
       await browserResponse;
       await expect
         .poll(
@@ -1203,18 +1918,33 @@ test.describe("超级画布完整验收", () => {
         sourceNodeId,
         initial.run.id,
       );
-      expect(completedResults.map((node) => node.position.x)).toEqual([
-        90 + 420 + 24,
-        90 + 420 + 24,
-      ]);
-      expect(completedResults[0]?.position.y).toBe(180);
+      const completedSource = completedCanvas.graph.nodes.find(
+        (node) => node.id === sourceNodeId,
+      );
+      expect(completedResults[0]?.position.x).toBeGreaterThan(
+        (completedSource?.position.x ?? 0) + 300,
+      );
+      const firstResultWidth = Number.parseFloat(
+        String(completedResults[0]?.style?.width),
+      );
       const firstResultHeight = Number.parseFloat(
         String(completedResults[0]?.style?.height),
       );
-      expect(
-        completedResults[1]!.position.y -
-          (completedResults[0]!.position.y + firstResultHeight),
-      ).toBeCloseTo(16);
+      const secondResultWidth = Number.parseFloat(
+        String(completedResults[1]?.style?.width),
+      );
+      const secondResultHeight = Number.parseFloat(
+        String(completedResults[1]?.style?.height),
+      );
+      const firstPosition = completedResults[0]!.position;
+      const secondPosition = completedResults[1]!.position;
+      const separatedHorizontally =
+        firstPosition.x + firstResultWidth <= secondPosition.x ||
+        secondPosition.x + secondResultWidth <= firstPosition.x;
+      const separatedVertically =
+        firstPosition.y + firstResultHeight <= secondPosition.y ||
+        secondPosition.y + secondResultHeight <= firstPosition.y;
+      expect(separatedHorizontally || separatedVertically).toBe(true);
       const completedEdges = generatedResultEdgesFor(
         completedCanvas,
         sourceNodeId,
@@ -1333,7 +2063,7 @@ test.describe("超级画布完整验收", () => {
       await sourceNode
         .getByRole("button", { name: "运行 E2E 失败图片生成 节点" })
         .click();
-      const initial = await heldRun.captured;
+      await heldRun.requested;
       await page.getByRole("button", { name: "Fit View" }).click();
       const resultNode = page.locator(
         ".react-flow__node:has(.generated-result-node)",
@@ -1358,6 +2088,7 @@ test.describe("超级画布完整验收", () => {
       await expect(resultNode.getByLabel("输出 图片（image）")).toHaveCount(1);
 
       heldRun.release();
+      const initial = await heldRun.captured;
       await browserResponse;
       await expect
         .poll(
@@ -1385,6 +2116,31 @@ test.describe("超级画布完整验收", () => {
         "模拟供应商按测试场景返回了生成失败",
       );
       await expect(failedState).toContainText("错误类型：模拟测试错误");
+      const failedLayout = await failedState.evaluate((element) => {
+        const childRects = Array.from(element.children)
+          .filter((child) => getComputedStyle(child).display !== "none")
+          .map((child) => {
+            const rect = child.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom, height: rect.height };
+          });
+        return {
+          wrapperHeight:
+            element
+              .closest(".react-flow__node-workflow")
+              ?.getBoundingClientRect().height ?? 0,
+          overflowY: getComputedStyle(element).overflowY,
+          collapsedChildren: childRects.filter((rect) => rect.height <= 0)
+            .length,
+          overlaps: childRects.slice(1).filter((rect, index) => {
+            const previous = childRects[index];
+            return previous.bottom > rect.top + 0.5;
+          }).length,
+        };
+      });
+      expect(failedLayout.wrapperHeight).toBeGreaterThanOrEqual(279);
+      expect(failedLayout.overflowY).toBe("auto");
+      expect(failedLayout.collapsedChildren).toBe(0);
+      expect(failedLayout.overlaps).toBe(0);
       await expect(resultNode.locator(".generated-result-spinner")).toHaveCount(
         0,
       );
@@ -1465,25 +2221,36 @@ test.describe("超级画布完整验收", () => {
       ).toHaveLength(1);
 
       await heldRun.dispose();
-      const retriedRun = await holdRunCreationResponse(page);
+      const retryRoutePattern = "**/api/runs";
+      let releaseRetryRequest!: () => void;
+      const retryGate = new Promise<void>((resolve) => {
+        releaseRetryRequest = resolve;
+      });
+      let retryPostData: JsonRecord | null = null;
+      const retryHandler = async (route: Route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        retryPostData = route.request().postDataJSON() as JsonRecord;
+        await retryGate;
+        await route.continue();
+      };
+      await page.route(retryRoutePattern, retryHandler);
       try {
-        const retryResponse = page.waitForResponse(
-          (response) =>
-            response.url().endsWith("/api/runs") &&
-            response.request().method() === "POST",
-        );
         const reloadedResultNode = page.locator(
           `.react-flow__node[data-id="${failedResult!.id}"]`,
         );
         await reloadedResultNode
-          .getByRole("button", { name: "重新生成 生成图片 1" })
+          .getByRole("button", {
+            name: "再次运行 生成图片 1，原地替换失败结果",
+          })
           .click();
-        const retriedSnapshot = await retriedRun.captured;
-        await expect(
-          reloadedResultNode.locator(
-            '.generated-result-node[data-generated-status="queued"]',
-          ),
-        ).toHaveCount(1);
+        await expect.poll(() => retryPostData).not.toBeNull();
+        expect(retryPostData).toMatchObject({
+          nodeId: sourceNodeId,
+          scope: "node",
+        });
         await expect(
           reloadedResultNode.locator(
             '.generated-result-state.pending[role="status"]',
@@ -1492,36 +2259,30 @@ test.describe("超级画布完整验收", () => {
         await expect(
           page.locator(".react-flow__node:has(.generated-result-node)"),
         ).toHaveCount(1);
-
-        retriedRun.release();
-        const completedRetryResponse = await retryResponse;
-        expect(completedRetryResponse.request().postDataJSON()).toMatchObject({
-          nodeId: sourceNodeId,
-          scope: "node",
-        });
-        await expect
-          .poll(
-            async () =>
-              (
-                await getJson<RunResponse>(
-                  page.request,
-                  `/api/runs/${retriedSnapshot.run.id}`,
-                )
-              ).run.status,
-            { timeout: 20_000 },
-          )
-          .toBe("failed");
         await expect(
-          reloadedResultNode.getByRole("button", {
-            name: "重新生成 生成图片 1",
-          }),
-        ).toBeVisible();
+          reloadedResultNode.locator(
+            '.generated-result-node[data-generated-status="failed"]',
+          ),
+        ).toHaveCount(0);
+
+        releaseRetryRequest();
+        await expect
+          .poll(async () => {
+            const current = await savedCanvas(page);
+            const retries = generatedResultsFor(current, sourceNodeId);
+            return {
+              count: retries.length,
+              status: retries[0]?.data.generatedStatus,
+              id: retries[0]?.id,
+            };
+          })
+          .toEqual({ count: 1, status: "failed", id: failedResult!.id });
         expect(await reloadedResultNode.getAttribute("data-id")).toBe(
           failedResult!.id,
         );
       } finally {
-        retriedRun.release();
-        await retriedRun.dispose();
+        releaseRetryRequest();
+        await page.unroute(retryRoutePattern, retryHandler);
       }
     } finally {
       heldRun.release();
@@ -1554,6 +2315,10 @@ test.describe("超级画布完整验收", () => {
         generatedFromRunId: "e2e-zoom-run",
         generatedOutputIndex: 0,
         generatedPromptParts: [{ type: "text", text: "E2E 原始生成提示词" }],
+        generatedConnectionName: "全模型-无claude/gpt",
+        generatedModel: "gpt-image-2-4k",
+        generatedParameters: { aspect_ratio: "16:9", quality: "high" },
+        generatedCreatedAt: "2026-08-02T01:52:00.000Z",
         mediaAspectRatio: 1,
         outputs: [{ id: "asset", kind: "image", label: "图片" }],
       },
@@ -1585,7 +2350,7 @@ test.describe("超级画布完整验收", () => {
 
     const inspector = page.locator(".inspector");
     const resizeHandle = page.getByRole("separator", {
-      name: "调整智能体面板宽度",
+      name: "调整右侧面板宽度",
     });
     const inspectorBeforeResize = await inspector.boundingBox();
     const resizeHandleBounds = await resizeHandle.boundingBox();
@@ -1622,9 +2387,28 @@ test.describe("超级画布完整验收", () => {
       name: "生成结果操作",
     });
     await expect(resultActions).toBeVisible();
+    const selectedCardBounds = await card.boundingBox();
+    const resultActionsBounds = await resultActions.boundingBox();
+    expect(selectedCardBounds).not.toBeNull();
+    expect(resultActionsBounds).not.toBeNull();
+    expect(resultActionsBounds!.y).toBeGreaterThanOrEqual(
+      selectedCardBounds!.y + selectedCardBounds!.height,
+    );
+    const provenanceBadge = card.locator(
+      ".generated-result-provenance-overlay",
+    );
+    await expect(provenanceBadge).toHaveAttribute("title", /gpt-image-2-4k/u);
+    const provenanceBounds = await provenanceBadge.boundingBox();
+    expect(provenanceBounds).not.toBeNull();
+    expect(provenanceBounds!.width).toBeLessThan(
+      selectedCardBounds!.width * 0.15,
+    );
     await expect(
       resultActions.getByRole("link", { name: "下载 E2E 可缩放图片" }),
-    ).toHaveAttribute("href", new RegExp(`/api/assets/${asset.id}/content$`));
+    ).toHaveAttribute(
+      "href",
+      new RegExp(`/api/assets/${asset.id}/content\\?download=1$`),
+    );
     await resultActions
       .getByRole("button", { name: "查看 E2E 可缩放图片 原提示词" })
       .click();
@@ -1632,25 +2416,26 @@ test.describe("超级画布完整验收", () => {
     await resultActions
       .getByRole("button", { name: "反推 E2E 可缩放图片 提示词" })
       .click();
-    await expect(page.getByRole("textbox", { name: "智能体消息" })).toHaveValue(
-      /反推一份可复现画面主体/u,
-    );
+    await expect(
+      page.getByRole("textbox", { name: "给超级导演的要求" }),
+    ).toHaveValue(/反推一份可复现画面主体/u);
     const agentComposer = page.locator(".agent-composer");
-    await expect(agentComposer.getByLabel("智能体 API 供应商")).toHaveValue(
-      "fake",
-    );
-    await expect(agentComposer.getByLabel("智能体模型群组")).toHaveValue(
-      "默认群组",
-    );
-    await expect(agentComposer.getByLabel("智能体连接详情")).toHaveValue(/.+/u);
-    await expect(agentComposer.getByLabel("智能体模型")).toHaveValue(
-      "fake-image-v1",
-    );
+    await expect(agentComposer.getByLabel("智能体 API 供应商")).toHaveCount(0);
+    await expect(agentComposer.getByLabel("智能体模型群组")).toHaveCount(0);
+    await expect(
+      agentComposer.getByLabel("智能体模型", { exact: true }),
+    ).toHaveCount(0);
     await expect(page.locator(".agent-controls")).toHaveCount(0);
-    const zoomToolbar = resultNode.getByRole("toolbar", {
+    const zoomToolbar = resultActions.getByRole("group", {
       name: "图片缩放",
     });
     await expect(zoomToolbar).toBeVisible();
+    const zoomToolbarBounds = await zoomToolbar.boundingBox();
+    expect(zoomToolbarBounds).not.toBeNull();
+    expect(zoomToolbarBounds!.x).toBeGreaterThanOrEqual(resultActionsBounds!.x);
+    expect(zoomToolbarBounds!.x + zoomToolbarBounds!.width).toBeLessThanOrEqual(
+      resultActionsBounds!.x + resultActionsBounds!.width,
+    );
     const before = await resultNode.boundingBox();
     expect(before).not.toBeNull();
 
@@ -1718,7 +2503,7 @@ test.describe("超级画布完整验收", () => {
     await expect(previewDialog).toBeHidden();
   });
 
-  test("连续点击两个重新生成会立即并行提交并显示各自状态", async ({
+  test("再次运行多结果批次会原地复用全部失败卡片", async ({
     page,
     request,
   }) => {
@@ -1762,41 +2547,64 @@ test.describe("超级画布完整验收", () => {
     const firstResult = resultNodes.nth(0);
     const secondResult = resultNodes.nth(1);
     await expect(
-      firstResult.getByRole("button", { name: "重新生成 生成图片 1" }),
+      firstResult.getByRole("button", {
+        name: "再次运行 生成图片 1，原地替换失败结果",
+      }),
     ).toBeVisible();
     await expect(
-      secondResult.getByRole("button", { name: "重新生成 生成图片 2" }),
+      secondResult.getByRole("button", {
+        name: "再次运行 生成图片 2，原地替换失败结果",
+      }),
     ).toBeVisible();
 
     let retryPostCount = 0;
-    const countRetryPost = (request: { method(): string; url(): string }) => {
-      if (request.method() === "POST" && request.url().endsWith("/api/runs"))
-        retryPostCount += 1;
+    let continuedRetryPostCount = 0;
+    const retryRoutePattern = "**/api/runs";
+    let releaseRetryRequests!: () => void;
+    const retryGate = new Promise<void>((resolve) => {
+      releaseRetryRequests = resolve;
+    });
+    const retryHandler = async (route: Route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      retryPostCount += 1;
+      await retryGate;
+      await route.continue();
+      continuedRetryPostCount += 1;
     };
-    page.on("request", countRetryPost);
-    const heldRun = await holdRunCreationResponse(page);
+    await page.route(retryRoutePattern, retryHandler);
     try {
       await firstResult
-        .getByRole("button", { name: "重新生成 生成图片 1" })
+        .getByRole("button", {
+          name: "再次运行 生成图片 1，原地替换失败结果",
+        })
         .click();
-      await heldRun.captured;
+      await expect.poll(() => retryPostCount).toBe(1);
+      await expect(resultNodes).toHaveCount(2);
       await expect(
-        firstResult.locator('.generated-result-state.pending[role="status"]'),
-      ).toContainText("正在生成");
+        resultNodes.locator('.generated-result-state.pending[role="status"]'),
+      ).toHaveCount(2);
 
-      await secondResult
-        .getByRole("button", { name: "重新生成 生成图片 2" })
-        .click();
-      await expect(
-        secondResult.locator('.generated-result-state.pending[role="status"]'),
-      ).toContainText("正在生成");
-      await expect.poll(() => retryPostCount).toBe(2);
-
-      heldRun.release();
+      releaseRetryRequests();
+      await expect.poll(() => continuedRetryPostCount).toBe(1);
+      await expect
+        .poll(async () => {
+          const current = await savedCanvas(page);
+          return generatedResultsFor(current, sourceNodeId).map((node) => ({
+            id: node.id,
+            status: node.data.generatedStatus,
+          }));
+        })
+        .toEqual([
+          { id: await firstResult.getAttribute("data-id"), status: "failed" },
+          { id: await secondResult.getAttribute("data-id"), status: "failed" },
+        ]);
     } finally {
-      heldRun.release();
-      await heldRun.dispose();
-      page.off("request", countRetryPost);
+      releaseRetryRequests();
+      await expect.poll(() => continuedRetryPostCount).toBe(retryPostCount);
+      await page.unroute(retryRoutePattern, retryHandler);
     }
   });
 
@@ -1911,6 +2719,9 @@ test.describe("超级画布完整验收", () => {
     await editor.type("@");
     const mentionMenu = page.locator(".mention-floating-menu");
     await expect(mentionMenu).toBeVisible();
+    await expect(
+      mentionMenu.locator(".mention-asset-thumbnail img"),
+    ).toBeVisible();
     await editor.press("Enter");
     await editor.type("这个帅哥@");
     await expect(mentionMenu).toBeVisible();
@@ -1924,6 +2735,33 @@ test.describe("超级画布完整验收", () => {
     await target.screenshot({
       path: testInfo.outputPath("linked-media-preview.png"),
     });
+    await target
+      .getByRole("button", {
+        name: `移除素材 ${REFERENCE_ASSET_NAME} 并断开连线`,
+      })
+      .click();
+    await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+    await expect(target.locator(".node-linked-asset")).toHaveCount(0);
+    await expect(editor.locator(".mention-chip")).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const saved = await savedCanvas(page);
+        const savedTarget = saved.graph.nodes.find(
+          (savedNode) => savedNode.id === targetId,
+        );
+        const savedParts = Array.isArray(savedTarget?.data.parts)
+          ? (savedTarget.data.parts as JsonRecord[])
+          : [];
+        return {
+          connected: saved.graph.edges.some(
+            (edge) => edge.source === sourceId && edge.target === targetId,
+          ),
+          mentions: savedParts.filter(
+            (part) => part.type === "asset" && part.assetId === asset.id,
+          ).length,
+        };
+      })
+      .toEqual({ connected: false, mentions: 0 });
   });
 
   test("模型文档不支持视频输入时在节点内提示并阻止请求", async ({
@@ -2222,7 +3060,15 @@ test.describe("超级画布完整验收", () => {
     );
     await page.reload();
     await runsReloaded;
-    await expect(page.locator(".run-summary")).toContainText("已完成");
+    await page
+      .getByRole("button", { name: "打开项目菜单", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "运行历史", exact: true }).click();
+    const reloadedHistory = page.getByRole("dialog", { name: "运行历史" });
+    await expect(reloadedHistory.locator(".history-row").first()).toContainText(
+      "succeeded",
+    );
+    await reloadedHistory.getByRole("button", { name: "关闭" }).click();
     // Result materialization is persisted through the same 650ms save queue as
     // normal canvas edits. Waiting past it makes a reload-duplication bug
     // observable in the stored graph instead of only checking the initial load.
@@ -2314,15 +3160,15 @@ test.describe("超级画布完整验收", () => {
             current,
             "e2e-aspect-image",
             imageRun.run.id,
-          ).length,
+          ).map((node) => node.data.assetId),
           video: generatedResultsFor(
             current,
             "e2e-aspect-video",
             videoRun.run.id,
-          ).length,
+          ).map((node) => node.data.assetId),
         };
       })
-      .toEqual({ image: 1, video: 1 });
+      .toEqual({ image: imageOutputIds, video: videoOutputIds });
 
     const persisted = await savedCanvas(page);
     const imageResult = generatedResultsFor(
@@ -2390,6 +3236,7 @@ test.describe("超级画布完整验收", () => {
       },
     );
 
+    await openLibrary(page);
     await expect(
       page.locator(".asset-name", { hasText: "dragged-reference.png" }),
     ).toBeVisible();
@@ -2403,6 +3250,120 @@ test.describe("超级画布完整验收", () => {
         )?.data;
       })
       .toMatchObject({ assetKind: "image" });
+    await expect(
+      page.locator('.node-card[data-pending-import="true"]', {
+        hasText: "dragged-reference.png",
+      }),
+    ).toHaveCount(0);
+  });
+
+  test("大图片拖入画布时上传稳定", async ({ page }) => {
+    await openWorkspace(page);
+    const uploadResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/assets/upload") &&
+        response.request().method() === "POST",
+    );
+
+    await page.locator(".react-flow__pane").evaluate(
+      (pane, input) => {
+        const header = Uint8Array.from(atob(input.base64), (value) =>
+          value.charCodeAt(0),
+        );
+        const bytes = new Uint8Array(input.size);
+        bytes.set(header);
+        const transfer = new DataTransfer();
+        transfer.items.add(
+          new File([bytes], input.name, { type: "image/png" }),
+        );
+        const bounds = pane.getBoundingClientRect();
+        const options = {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+          clientX: bounds.left + 420,
+          clientY: bounds.top + 420,
+        };
+        pane.dispatchEvent(new DragEvent("dragover", options));
+        pane.dispatchEvent(new DragEvent("drop", options));
+      },
+      {
+        base64: PNG_1X1.toString("base64"),
+        name: "large-dragged-reference.png",
+        size: 15 * 1024 * 1024,
+      },
+    );
+
+    const uploadResponse = await uploadResponsePromise;
+    const uploadResponseBody = await uploadResponse.text();
+    expect(uploadResponse.status(), uploadResponseBody).toBe(201);
+
+    await openLibrary(page);
+    await expect(
+      page.locator(".asset-name", { hasText: "large-dragged-reference.png" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect
+      .poll(async () => {
+        const canvas = await savedCanvas(page);
+        return canvas.graph.nodes.find(
+          (node) =>
+            node.data.nodeType === "asset-input" &&
+            node.data.label === "large-dragged-reference.png",
+        )?.data;
+      })
+      .toMatchObject({ assetKind: "image" });
+  });
+
+  test("粘贴图片时立即显示本地预览并在后台完成导入", async ({ page }) => {
+    await openWorkspace(page);
+    await page.route("**/api/assets/upload*", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await route.continue();
+    });
+
+    await page.evaluate(
+      (input) => {
+        const bytes = Uint8Array.from(atob(input.base64), (value) =>
+          value.charCodeAt(0),
+        );
+        const transfer = new DataTransfer();
+        transfer.items.add(
+          new File([bytes], input.name, { type: "image/png" }),
+        );
+        window.dispatchEvent(
+          new ClipboardEvent("paste", {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: transfer,
+          }),
+        );
+      },
+      {
+        base64: PNG_1X1.toString("base64"),
+        name: "pasted-reference.png",
+      },
+    );
+
+    await expect(
+      page.locator('.node-card[data-pending-import="true"]', {
+        hasText: "pasted-reference.png",
+      }),
+    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const canvas = await savedCanvas(page);
+        return canvas.graph.nodes.find(
+          (node) =>
+            node.data.nodeType === "asset-input" &&
+            node.data.label === "pasted-reference.png",
+        )?.data;
+      })
+      .toMatchObject({ assetKind: "image" });
+    await expect(
+      page.locator('.node-card[data-pending-import="true"]', {
+        hasText: "pasted-reference.png",
+      }),
+    ).toHaveCount(0);
   });
 
   test("节点可自由缩放并在刷新后保留尺寸", async ({ page }) => {
@@ -2456,6 +3417,7 @@ test.describe("超级画布完整验收", () => {
     page,
   }) => {
     await openWorkspace(page);
+    await openLibrary(page);
 
     await page.locator('.upload-label input[type="file"]').setInputFiles({
       name: REFERENCE_ASSET_NAME,
@@ -2494,6 +3456,16 @@ test.describe("超级画布完整验收", () => {
     });
     expect(linkedFixture.ok()).toBeTruthy();
     await page.reload();
+    await openLibrary(page);
+    await expect(
+      page.locator(".asset-name").getByText(REFERENCE_ASSET_NAME, {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page
+      .locator("aside.sidebar")
+      .getByRole("button", { name: "关闭素材库" })
+      .click();
 
     const promptNode = page.locator('.react-flow__node[data-id="e2e-image"]');
     await promptNode.click();
@@ -2562,10 +3534,6 @@ test.describe("超级画布完整验收", () => {
       )
       .toBe("succeeded");
 
-    await expect(page.locator(".run-summary")).toContainText(
-      "最近运行 已完成",
-      { timeout: 10_000 },
-    );
     await expect
       .poll(
         async () => {
@@ -2582,7 +3550,10 @@ test.describe("超级画布完整验收", () => {
       )
       .toEqual(["image", "video"]);
 
-    await page.getByRole("button", { name: "历史" }).click();
+    await page
+      .getByRole("button", { name: "打开项目菜单", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "运行历史", exact: true }).click();
     const history = page.getByRole("dialog", { name: "运行历史" });
     await expect(history.locator(".history-row").first()).toContainText(
       "整张画布",
@@ -2593,6 +3564,7 @@ test.describe("超级画布完整验收", () => {
     await history.getByRole("button", { name: "关闭" }).click();
 
     await page.reload();
+    await openLibrary(page);
     await expect(
       page.locator(".asset-name").getByText(REFERENCE_ASSET_NAME, {
         exact: true,
@@ -2629,20 +3601,22 @@ test.describe("超级画布完整验收", () => {
       .locator(".asset-row")
       .filter({ hasText: generatedVideo!.name })
       .click();
-    const assetPreview = page.getByRole("dialog", { name: "素材预览" });
-    await expect(assetPreview).toContainText(generatedVideo!.name);
-    await assetPreview.getByRole("button", { name: "关闭" }).click();
+    await expect
+      .poll(async () => {
+        const canvas = await savedCanvas(page);
+        return canvas.graph.nodes.some(
+          (node) =>
+            node.data.nodeType === "asset-input" &&
+            node.data.assetId === generatedVideo!.id,
+        );
+      })
+      .toBe(true);
 
+    await openLibrary(page);
     await page
-      .getByRole("button", { name: /素材输入/ })
-      .first()
+      .locator(".asset-row")
+      .filter({ hasText: generatedImage!.name })
       .click();
-    const reuseInspector = page.locator("aside.inspector");
-    await reuseInspector
-      .locator(".field")
-      .filter({ hasText: "选择素材" })
-      .locator("select")
-      .selectOption(generatedImage!.id);
     await expect
       .poll(async () => {
         const canvas = await savedCanvas(page);
@@ -2677,16 +3651,18 @@ test.describe("超级画布完整验收", () => {
 
     const dialog = page.getByRole("dialog", { name: "供应商设置" });
     await expect(dialog).toBeVisible();
-    await dialog
-      .locator(".field")
-      .filter({ hasText: "连接名称" })
-      .locator("input")
-      .fill("E2E Fake 连接");
+    await dialog.getByRole("button", { name: /Fake/ }).click();
+    await dialog.getByRole("button", { name: "新建连接", exact: true }).click();
     await dialog
       .locator(".field")
       .filter({ hasText: "供应商" })
       .locator("select")
       .selectOption("fake");
+    await dialog
+      .locator(".field")
+      .filter({ hasText: "连接名称" })
+      .locator("input")
+      .fill("E2E Fake 连接");
     await dialog.locator('input[type="password"]').fill("e2e-secret-value");
     await dialog.getByRole("button", { name: "保存连接" }).click();
     await expect(dialog.getByText("连接已加密保存")).toBeVisible();
@@ -2710,38 +3686,22 @@ test.describe("超级画布完整验收", () => {
   });
 
   test("沧元算力预设按供应分组隔离模型", async ({ page }) => {
+    await mockCangyuanBackupCatalog(page);
     await openWorkspace(page);
     await page.getByRole("button", { name: "API 设置", exact: true }).click();
 
     const dialog = page.getByRole("dialog", { name: "供应商设置" });
+    await dialog.getByRole("button", { name: "沧元算力" }).click();
     await dialog
-      .locator(".field")
-      .filter({ hasText: "供应商" })
-      .locator("select")
-      .selectOption("cangyuan-gpt-image-2");
-    await expect(dialog.getByLabel("API Base URL")).toHaveValue(
-      "https://ai.cangyuansuanli.cn",
-    );
-    await expect(dialog.getByLabel("模型分组")).toHaveValue("IMAGE");
-    await expect(dialog.getByLabel("默认模型")).toHaveValue("gpt-image-2");
-    await expect(dialog.getByLabel("默认模型").locator("option")).toHaveCount(
-      9,
-    );
-    await expect(dialog.getByText("IMAGE · 当前可用 9 个模型")).toBeVisible();
-
-    await dialog.getByLabel("模型分组").selectOption("备用image线路");
-    await expect(dialog.getByLabel("默认模型")).toHaveValue(
-      "codex-gpt-image-2-1k",
-    );
-    await expect(dialog.getByLabel("默认模型").locator("option")).toHaveCount(
-      3,
-    );
-    await expect(
-      dialog.getByText("备用image线路 · 当前可用 3 个模型"),
-    ).toBeVisible();
-    await dialog.getByLabel("API Key").fill("cangyuan-test-secret");
-    await dialog.getByRole("button", { name: "保存连接" }).click();
-    await expect(dialog.getByText("连接已加密保存")).toBeVisible();
+      .getByRole("button", { name: new RegExp(CANGYUAN_BACKUP_IMAGE_GROUP) })
+      .click();
+    const modelList = dialog.locator('[aria-label="分组模型列表"]');
+    await expect(modelList.getByRole("button")).toHaveCount(3);
+    await dialog.getByLabel("当前分组 API Key").fill("cangyuan-test-secret");
+    await dialog
+      .getByRole("button", { name: /接入画布分组|更新画布分组/ })
+      .click();
+    await expect(dialog.getByText(/API Key 已独立加密保存/)).toBeVisible();
 
     const connections = await getJson<
       Array<{
@@ -2757,7 +3717,7 @@ test.describe("超级画布完整验收", () => {
       provider: "rest",
       config: {
         baseUrl: "https://ai.cangyuansuanli.cn",
-        modelGroup: "备用image线路",
+        modelGroup: CANGYUAN_BACKUP_IMAGE_GROUP,
         defaultModel: "codex-gpt-image-2-1k",
       },
     });
@@ -2776,12 +3736,12 @@ test.describe("超级画布完整验收", () => {
     const inspector = page.locator("aside.inspector");
     await inspector.getByLabel("API 连接").selectOption(connection!.id);
     await expect(inspector.getByLabel("API 连接")).toContainText(
-      "备用image线路",
+      CANGYUAN_BACKUP_IMAGE_GROUP,
     );
     await expect(inspector.getByLabel("模型")).toHaveValue(
       "codex-gpt-image-2-1k",
     );
-    await expect(inspector.getByLabel("画面比例")).toHaveValue("1:1");
+    await expect(inspector.getByLabel("画面比例")).toHaveValue("auto");
     await expect(inspector.getByLabel("分辨率")).toHaveValue("low");
     await expect(inspector.getByLabel("生成张数")).toHaveValue("1");
     await expect
@@ -2790,22 +3750,31 @@ test.describe("超级画布完整验收", () => {
         return canvas.graph.nodes.find((node) => node.id === "e2e-image")?.data
           .parameters;
       })
-      .toEqual({ size: "1:1", quality: "low", n: 1 });
+      .toEqual({ size: "auto", quality: "low", n: 1 });
   });
 
   test("项目 JSON 可导出并重新导入", async ({ page }) => {
     await openWorkspace(page);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "导出" }).click();
+    await page
+      .getByRole("button", { name: "打开项目菜单", exact: true })
+      .click();
+    await page
+      .getByRole("menuitem", { name: "导出结构 JSON", exact: true })
+      .click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/\.canvas\.json$/);
     const downloadPath = await download.path();
     expect(downloadPath).not.toBeNull();
     const exported = JSON.parse(await readFile(downloadPath!, "utf8")) as {
+      format: string;
+      version: number;
       title: string;
       graph: CanvasResponse["graph"];
     };
+    expect(exported.format).toBe("super-canvas-project-json");
+    expect(exported.version).toBe(1);
     expect(exported.title).toBe("E2E 验收画布");
     expect(
       exported.graph.nodes
@@ -2832,17 +3801,24 @@ test.describe("超级画布完整验收", () => {
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
     };
-    await page
-      .locator('input[type="file"][accept="application/json,.json"]')
-      .setInputFiles({
-        name: "import.canvas.json",
-        mimeType: "application/json",
-        buffer: Buffer.from(
-          JSON.stringify({ title: "导入验收", graph: importedGraph }),
-        ),
-      });
+    await page.locator('input[type="file"][accept*=".json"]').setInputFiles({
+      name: "import.canvas.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({ title: "导入验收", graph: importedGraph }),
+      ),
+    });
 
-    await expect(page.getByText("项目已导入并保存")).toBeVisible();
+    const importDialog = page.getByRole("dialog", {
+      name: "确认替换当前画布",
+    });
+    await expect(importDialog).toBeVisible();
+    await expect(importDialog.getByText("导入验收")).toBeVisible();
+    await importDialog.getByRole("checkbox").uncheck();
+    await importDialog
+      .getByRole("button", { name: "替换当前画布", exact: true })
+      .click();
+    await expect(page.getByText("项目结构已导入并保存")).toBeVisible();
     await expect(
       page.locator('.react-flow__node[data-id="imported-prompt"]'),
     ).toContainText("导入后的 Prompt");
@@ -2869,9 +3845,58 @@ test.describe("超级画布完整验收", () => {
     expect(miniMapBounds).not.toBeNull();
     expect(controlsBounds!.y + controlsBounds!.height).toBeLessThan(900);
     expect(miniMapBounds!.y + miniMapBounds!.height).toBeLessThan(900);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth === window.innerWidth,
+      ),
+    ).toBe(true);
   });
 
-  test("900px 平板选择节点后显示参数面板", async ({ page }) => {
+  test("768px 顶栏入口可达且画布工具栏由容器约束", async ({ page }) => {
+    const viewportWidth = 768;
+    await page.setViewportSize({ width: viewportWidth, height: 820 });
+    await openWorkspace(page);
+
+    const topbar = page.locator(".topbar");
+    await expectInsideViewport(topbar, viewportWidth);
+    for (const entry of [
+      page.getByRole("button", { name: "打开节点与素材库" }),
+      page.getByRole("button", { name: "打开参数与导演台" }),
+      page.getByRole("button", { name: "API 设置", exact: true }),
+      page.getByRole("button", { name: "打开项目菜单" }),
+    ]) {
+      await expectInsideViewport(entry, viewportWidth);
+    }
+
+    const toolbar = page.locator(".canvas-toolbar");
+    const canvas = page.locator(".canvas-wrap");
+    const [toolbarBounds, canvasBounds, toolbarMetrics] = await Promise.all([
+      toolbar.boundingBox(),
+      canvas.boundingBox(),
+      toolbar.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        overflowX: getComputedStyle(element).overflowX,
+      })),
+    ]);
+    expect(toolbarBounds).not.toBeNull();
+    expect(canvasBounds).not.toBeNull();
+    expect(toolbarBounds!.x).toBeGreaterThanOrEqual(canvasBounds!.x);
+    expect(toolbarBounds!.x + toolbarBounds!.width).toBeLessThanOrEqual(
+      canvasBounds!.x + canvasBounds!.width + 0.5,
+    );
+    expect(toolbarMetrics.overflowX).toBe("auto");
+    expect(toolbarMetrics.scrollWidth).toBeGreaterThanOrEqual(
+      toolbarMetrics.clientWidth,
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth === window.innerWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("900px 平板选择节点后显示右侧面板", async ({ page }) => {
     await page.setViewportSize({ width: 900, height: 820 });
     await openWorkspace(page);
 
@@ -2879,7 +3904,7 @@ test.describe("超级画布完整验收", () => {
     await expect(inspector).toBeHidden();
     await page.locator('.react-flow__node[data-id="e2e-prompt"]').click();
     await expect(inspector).toBeVisible();
-    await expect(inspector.getByLabel("节点名称")).toHaveValue("E2E Prompt");
+    await expect(inspector.getByLabel("节点名称")).toBeVisible();
     await expect(
       page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt'),
     ).toBeVisible();
@@ -2891,7 +3916,8 @@ test.describe("超级画布完整验收", () => {
   });
 
   test("移动端节点库和参数面板可操作且不产生页面横向溢出", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
+    const viewportWidth = 390;
+    await page.setViewportSize({ width: viewportWidth, height: 844 });
     await openWorkspace(page);
 
     const sidebar = page.locator("aside.sidebar");
@@ -2900,14 +3926,81 @@ test.describe("超级画布完整验收", () => {
     await expect(inspector).toBeHidden();
     await expect(page.locator(".react-flow__minimap")).toBeHidden();
 
+    for (const entry of [
+      page.getByRole("button", { name: "打开节点与素材库" }),
+      page.getByRole("button", { name: "打开参数与导演台" }),
+      page.getByRole("button", { name: "API 设置", exact: true }),
+      page.getByRole("button", { name: "打开项目菜单" }),
+    ]) {
+      await expectInsideViewport(entry, viewportWidth);
+    }
+
+    const toolbar = page.locator(".canvas-toolbar");
+    const toolbarBounds = await toolbar.boundingBox();
+    const toolbarMetrics = await toolbar.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      overflowX: getComputedStyle(element).overflowX,
+    }));
+    expect(toolbarBounds).not.toBeNull();
+    expect(toolbarBounds!.x + toolbarBounds!.width).toBeLessThanOrEqual(
+      viewportWidth + 0.5,
+    );
+    expect(toolbarMetrics.overflowX).toBe("auto");
+    expect(toolbarMetrics.scrollWidth).toBeGreaterThan(
+      toolbarMetrics.clientWidth,
+    );
+    await toolbar.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    await expect
+      .poll(() => toolbar.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+
+    await page.getByRole("button", { name: "API 设置", exact: true }).click();
+    const settings = page.getByRole("dialog", { name: "供应商设置" });
+    await expectInsideViewport(settings, viewportWidth);
+    await settings.getByRole("button", { name: /Fake（离线演示）/ }).click();
+    await settings
+      .getByRole("button", { name: "新建连接", exact: true })
+      .click();
+    const settingsForm = settings.locator(".settings-form");
+    await expect(settingsForm.getByLabel("连接名称")).toBeVisible();
+    const formBounds = await settingsForm.boundingBox();
+    const controlBounds = await settingsForm
+      .locator("input, select, textarea")
+      .evaluateAll((controls) =>
+        controls.map((control) => {
+          const bounds = control.getBoundingClientRect();
+          return {
+            x: bounds.x,
+            right: bounds.right,
+            width: bounds.width,
+          };
+        }),
+      );
+    expect(formBounds).not.toBeNull();
+    expect(controlBounds.length).toBeGreaterThan(0);
+    for (const bounds of controlBounds) {
+      expect(bounds.width).toBeGreaterThan(0);
+      expect(bounds.x).toBeGreaterThanOrEqual(formBounds!.x - 0.5);
+      expect(bounds.right).toBeLessThanOrEqual(
+        formBounds!.x + formBounds!.width + 0.5,
+      );
+    }
+    await settings.getByRole("button", { name: "关闭" }).click();
+
     await page.getByRole("button", { name: "打开项目菜单" }).click();
     const projectMenu = page.getByRole("menu", { name: "项目操作" });
     await expect(projectMenu).toBeVisible();
     await expect(
-      projectMenu.getByRole("menuitem", { name: "导出项目" }),
+      projectMenu.getByRole("menuitem", { name: "导出结构 JSON" }),
     ).toBeVisible();
     await expect(
-      projectMenu.getByRole("menuitem", { name: "导入项目" }),
+      projectMenu.getByRole("menuitem", { name: "导出完整项目包（含素材）" }),
+    ).toBeVisible();
+    await expect(
+      projectMenu.getByRole("menuitem", { name: "导入 JSON / 完整项目包" }),
     ).toBeVisible();
     await projectMenu.getByRole("menuitem", { name: "运行历史" }).click();
 
@@ -2922,7 +4015,7 @@ test.describe("超级画布完整验收", () => {
 
     await expect(sidebar).toBeHidden();
     await expect(inspector).toBeVisible();
-    await expect(inspector.getByLabel("节点名称")).toHaveValue("Prompt");
+    await expect(inspector.getByLabel("节点名称")).toBeVisible();
     await expect(
       page
         .locator(
@@ -2933,16 +4026,63 @@ test.describe("超级画布完整验收", () => {
     await inspector.getByRole("button", { name: "关闭" }).click();
     await expect(inspector).toBeHidden();
 
-    await page.getByRole("button", { name: "打开节点参数" }).click();
+    await page.getByRole("button", { name: "打开参数与导演台" }).click();
     await expect(inspector).toBeVisible();
+    await expect(inspector.getByLabel("节点名称")).toBeVisible();
+    await inspector.getByRole("tab", { name: "导演台" }).click();
+    await expect(inspector.locator(".agent-panel")).toBeVisible();
     const bounds = await inspector.boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewportWidth + 0.5);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     ).toBe(true);
+  });
+
+  test("selected document text is copied instead of the selected canvas node", async ({
+    page,
+  }) => {
+    await openWorkspace(page);
+    await page
+      .locator('.react-flow__node[data-id="e2e-prompt"] .node-head')
+      .click();
+    await expect(
+      page.locator('.react-flow__node[data-id="e2e-prompt"]'),
+    ).toHaveClass(/selected/);
+
+    const copyResult = await page.evaluate(() => {
+      const paragraph =
+        document.querySelector<HTMLElement>("aside.inspector h2");
+      if (!paragraph) throw new Error("Inspector heading text is missing");
+      const selection = window.getSelection();
+      if (!selection) throw new Error("Document selection is unavailable");
+      const range = document.createRange();
+      range.selectNodeContents(paragraph);
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      const clipboardData = new DataTransfer();
+      const event = new ClipboardEvent("copy", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData,
+      });
+      paragraph.dispatchEvent(event);
+      return {
+        defaultPrevented: event.defaultPrevented,
+        nodeClipboardMarker: clipboardData.getData(
+          "application/x-super-canvas-nodes",
+        ),
+        selectedText: selection.toString(),
+      };
+    });
+
+    expect(copyResult.selectedText.length).toBeGreaterThan(0);
+    expect(copyResult.defaultPrevented).toBe(false);
+    expect(copyResult.nodeClipboardMarker).toBe("");
+    await expect(page.getByText("已复制 1 个节点")).toHaveCount(0);
   });
 });

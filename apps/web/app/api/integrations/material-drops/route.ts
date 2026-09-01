@@ -37,6 +37,25 @@ interface PendingMaterialDrop {
 const pendingDrops = new Map<string, PendingMaterialDrop>();
 const claimingDrops = new Set<string>();
 
+// These paths belong to the companion material library, outside the Next.js
+// application. Keep Turbopack from treating request-provided filesystem paths
+// as build-time dependencies and tracing the whole project into this route.
+async function realExternalPath(filePath: string): Promise<string> {
+  return realpath(/* turbopackIgnore: true */ filePath);
+}
+
+async function statExternalPath(filePath: string) {
+  return stat(/* turbopackIgnore: true */ filePath);
+}
+
+async function readExternalBytes(filePath: string) {
+  return readFile(/* turbopackIgnore: true */ filePath);
+}
+
+async function readExternalText(filePath: string) {
+  return readFile(/* turbopackIgnore: true */ filePath, "utf8");
+}
+
 function materialLibraryRoot(): string {
   const profile = process.env.USERPROFILE || process.env.HOME || "";
   return path.resolve(
@@ -78,10 +97,11 @@ async function validateBridgeFile(
   filePath: string,
   allowedTopFolders: ReadonlySet<string> = new Set(["assets", "attachments"]),
 ): Promise<string | null> {
+  if (!path.isAbsolute(filePath)) return null;
   try {
     const [root, target] = await Promise.all([
-      realpath(materialLibraryRoot()),
-      realpath(path.resolve(/* turbopackIgnore: true */ filePath)),
+      realExternalPath(materialLibraryRoot()),
+      realExternalPath(filePath),
     ]);
     const relative = path.relative(root, target);
     if (
@@ -124,7 +144,7 @@ export async function POST(request: Request) {
 
   let expectedToken: string;
   try {
-    expectedToken = (await readFile(bridgeTokenPath(), "utf8")).trim();
+    expectedToken = (await readExternalText(bridgeTokenPath())).trim();
   } catch {
     return jsonError("Material bridge is not initialized", 403);
   }
@@ -134,7 +154,7 @@ export async function POST(request: Request) {
   const targetPath = await validateBridgeFile(body.filePath);
   if (!targetPath)
     return jsonError("Material file is outside the library", 403);
-  const fileStat = await stat(targetPath).catch(() => null);
+  const fileStat = await statExternalPath(targetPath).catch(() => null);
   if (
     !fileStat?.isFile() ||
     fileStat.size !== body.size ||
@@ -181,11 +201,11 @@ export async function GET(request: Request) {
       new Set(["thumbnails"]),
     );
     const previewStat = previewPath
-      ? await stat(previewPath).catch(() => null)
+      ? await statExternalPath(previewPath).catch(() => null)
       : null;
     if (!previewPath || !previewStat?.isFile() || previewStat.size > 32_000_000)
       return jsonError("Material preview is unavailable", 404);
-    const bytes = new Uint8Array(await readFile(previewPath));
+    const bytes = new Uint8Array(await readExternalBytes(previewPath));
     const validation = validateMediaMagic(bytes, "image/png");
     if (!validation.valid)
       return jsonError("Material preview is invalid", 415);
@@ -256,7 +276,7 @@ export async function PATCH(request: Request) {
 async function materializePendingDrop(drop: PendingMaterialDrop) {
   const targetPath = await validateBridgeFile(drop.filePath);
   if (!targetPath) return jsonError("Material file is unavailable", 404);
-  const bytes = new Uint8Array(await readFile(targetPath));
+  const bytes = new Uint8Array(await readExternalBytes(targetPath));
   if (bytes.byteLength !== drop.size)
     return jsonError("Material file changed before import", 409);
   const validation = validateMediaMagic(bytes, drop.mimeType);
@@ -270,18 +290,34 @@ async function materializePendingDrop(drop: PendingMaterialDrop) {
   // same media kind, while still rejecting image/video/audio cross-kind data.
   if (!detectedMimeType || !declaredKind || declaredKind !== detectedKind)
     return jsonError("Material content does not match its media type");
-  const mimeType = detectedMimeType;
+  let normalizedBytes = bytes;
+  let mimeType = detectedMimeType;
+  if (mimeType === "image/gif") {
+    try {
+      normalizedBytes = new Uint8Array(
+        await sharp(bytes, { failOn: "error" })
+          .rotate()
+          .png()
+          .toBuffer(),
+      );
+      mimeType = "image/png";
+    } catch {
+      return jsonError("GIF 图片无法转换为 PNG", 415);
+    }
+  }
   const kind = mediaKindForMime(mimeType)!;
   const assetId = randomUUID();
   const extension = sanitizedAssetExtension(drop.name, mimeType);
+  const nameBase = drop.name.replace(/\.[^.]+$/u, "") || "拖入素材";
+  const assetName = `${nameBase}.${extension}`;
   const storageKey = `assets/${assetId}/original.${extension}`;
-  await storage.put(storageKey, bytes, mimeType);
+  await storage.put(storageKey, normalizedBytes, mimeType);
   const asset = await repository.saveAsset({
     id: assetId,
-    name: drop.name,
+    name: assetName,
     kind,
     mimeType,
-    size: bytes.byteLength,
+    size: normalizedBytes.byteLength,
     storageKey,
     metadata: { source: "material-manager-bridge" },
   });
@@ -293,11 +329,11 @@ async function materializePendingDrop(drop: PendingMaterialDrop) {
         new Set(["thumbnails"]),
       );
       const previewStat = previewPath
-        ? await stat(previewPath).catch(() => null)
+        ? await statExternalPath(previewPath).catch(() => null)
         : null;
       if (previewPath && previewStat?.isFile() && previewStat.size <= 32_000_000) {
         try {
-          const source = await readFile(previewPath);
+          const source = await readExternalBytes(previewPath);
           const preview = new Uint8Array(
             await sharp(source, { failOn: "none" })
               .rotate()

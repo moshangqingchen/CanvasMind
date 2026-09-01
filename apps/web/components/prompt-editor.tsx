@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { Editor } from "@tiptap/core";
+import { Editor, Extension } from "@tiptap/core";
 import Mention from "@tiptap/extension-mention";
 import type { JSONContent } from "@tiptap/core";
 import type {
@@ -110,12 +110,29 @@ function suggestionRenderer() {
       const button = document.createElement("button");
       button.type = "button";
       button.className = index === selected ? "active" : "";
-      const chip = document.createElement("span");
-      chip.className = "mention-chip";
-      chip.textContent = "@";
+      const thumbnail = document.createElement("span");
+      thumbnail.className = `mention-asset-thumbnail ${asset.kind}`;
+      thumbnail.setAttribute("aria-hidden", "true");
+      if (asset.kind === "image") {
+        const image = document.createElement("img");
+        image.src = `/api/assets/${encodeURIComponent(asset.id)}/preview?size=160`;
+        image.alt = "";
+        image.loading = "lazy";
+        image.decoding = "async";
+        thumbnail.appendChild(image);
+      } else if (asset.kind === "video") {
+        const video = document.createElement("video");
+        video.src = `/api/assets/${encodeURIComponent(asset.id)}/content`;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        thumbnail.appendChild(video);
+      } else {
+        thumbnail.textContent = asset.kind === "audio" ? "音频" : "文本";
+      }
       const label = document.createElement("span");
       label.textContent = asset.name;
-      button.append(chip, label);
+      button.append(thumbnail, label);
       button.onmousedown = (event) => {
         event.preventDefault();
         props.command({ id: asset.id, label: asset.name, role: "reference" });
@@ -168,6 +185,22 @@ interface AssetMentionAttributes {
   role: "reference" | "firstFrame" | "lastFrame";
 }
 
+const EnterAsHardBreak = Extension.create({
+  name: "enterAsHardBreak",
+  // Run before StarterKit's paragraph shortcut. An open mention menu keeps its
+  // own Enter behavior, otherwise Enter becomes one visible line break that
+  // round-trips through PromptPart text without paragraph loss.
+  priority: 1_000,
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => {
+        if (document.querySelector(".mention-floating-menu")) return false;
+        return this.editor.commands.setHardBreak();
+      },
+    };
+  },
+});
+
 export function PromptEditor({
   parts,
   assets,
@@ -178,15 +211,25 @@ export function PromptEditor({
 }: PromptEditorProps) {
   const onChangeRef = useRef(onChange);
   const pendingPartsRef = useRef<PromptPart[] | null>(null);
+  const flushTimerRef = useRef<number | null>(null);
   const mentionAssetsRef = useRef(mentionAssets);
   const editorRef = useRef<Editor | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const flushPendingParts = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
     const pending = pendingPartsRef.current;
     if (!pending) return;
     pendingPartsRef.current = null;
     onChangeRef.current(pending);
   }, []);
+  const schedulePendingPartsFlush = useCallback(() => {
+    if (flushTimerRef.current !== null)
+      window.clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = window.setTimeout(flushPendingParts, 250);
+  }, [flushPendingParts]);
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
@@ -206,6 +249,7 @@ export function PromptEditor({
           codeBlock: false,
           horizontalRule: false,
         }),
+        EnterAsHardBreak,
         Mention.extend({
           addAttributes() {
             return { ...this.parent?.(), role: { default: "reference" } };
@@ -242,11 +286,13 @@ export function PromptEditor({
       },
       onUpdate: ({ editor: current }) => {
         pendingPartsRef.current = documentToParts(current.getJSON());
+        schedulePendingPartsFlush();
       },
     });
     editorRef.current = editor;
     editor.mount(container);
     return () => {
+      flushPendingParts();
       editor.destroy();
       editorRef.current = null;
     };
