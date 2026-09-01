@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $activeReleaseRoot = $env:SUPERCANVAS_ACTIVE_RELEASE_ROOT
@@ -106,9 +106,19 @@ function Write-UpdateStatus {
     if ($property) { $property.Value = $entry.Value }
     else { $status | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value }
   }
-  $status.formatVersion = 1
-  if (-not $status.currentVersion) { $status.currentVersion = Get-ApplicationVersion }
-  $status.updatedAt = (Get-Date).ToUniversalTime().ToString("o")
+  $formatProperty = $status.PSObject.Properties["formatVersion"]
+  if ($formatProperty) { $formatProperty.Value = 1 }
+  else { $status | Add-Member -NotePropertyName "formatVersion" -NotePropertyValue 1 }
+  $versionProperty = $status.PSObject.Properties["currentVersion"]
+  if (-not $versionProperty) {
+    $status | Add-Member -NotePropertyName "currentVersion" -NotePropertyValue (Get-ApplicationVersion)
+  } elseif (-not $versionProperty.Value) {
+    $versionProperty.Value = Get-ApplicationVersion
+  }
+  $updatedProperty = $status.PSObject.Properties["updatedAt"]
+  $updatedAt = (Get-Date).ToUniversalTime().ToString("o")
+  if ($updatedProperty) { $updatedProperty.Value = $updatedAt }
+  else { $status | Add-Member -NotePropertyName "updatedAt" -NotePropertyValue $updatedAt }
   $temporaryPath = "$updateStatusPath.$PID.tmp"
   [System.IO.File]::WriteAllText($temporaryPath, ($status | ConvertTo-Json -Depth 8), [System.Text.Encoding]::UTF8)
   Move-Item -LiteralPath $temporaryPath -Destination $updateStatusPath -Force
@@ -447,14 +457,8 @@ function Get-RecordedActiveSlot {
 function Resolve-PnpmCommand {
   param([switch]$Optional)
 
-  $pnpm = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
-  if ($pnpm -and $pnpm.Source) {
-    return @{
-      Command = $pnpm.Source
-      PrefixArguments = @()
-    }
-  }
-
+  # Prefer the package manager pinned by package.json. A newer global pnpm can
+  # prompt to replace workspace modules and block the unattended manager.
   $corepackCandidates = @(
     (Join-Path $env:ProgramFiles "nodejs\corepack.cmd"),
     (Get-Command corepack.cmd -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
@@ -465,6 +469,14 @@ function Resolve-PnpmCommand {
     return @{
       Command = $corepack
       PrefixArguments = @("pnpm")
+    }
+  }
+
+  $pnpm = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
+  if ($pnpm -and $pnpm.Source) {
+    return @{
+      Command = $pnpm.Source
+      PrefixArguments = @()
     }
   }
 
@@ -594,6 +606,46 @@ function Rotate-ServerLog {
   Move-Item -LiteralPath $Path -Destination "$Path.$timestamp" -Force
 }
 
+function Get-RuntimeNodePath {
+  param([string]$WebRoot)
+
+  $workspaceRoot = Split-Path -Parent (Split-Path -Parent $WebRoot)
+  $safeRoot = $WebRoot -replace '[^A-Za-z0-9._-]', '_'
+  $runtimeNodePath = Join-Path $env:LOCALAPPDATA "SuperCanvas\node-path\$safeRoot"
+  New-Item -ItemType Directory -Path $runtimeNodePath -Force | Out-Null
+
+  $virtualStores = @(
+    (Join-Path $WebRoot "node_modules\.pnpm")
+    (Join-Path $workspaceRoot "node_modules\.pnpm")
+  ) | Select-Object -Unique
+  foreach ($virtualStore in $virtualStores) {
+    if (-not (Test-Path -LiteralPath $virtualStore)) { continue }
+    foreach ($packageRoot in Get-ChildItem -LiteralPath $virtualStore -Directory -Force) {
+      $dependencyRoot = Join-Path $packageRoot.FullName "node_modules"
+      if (-not (Test-Path -LiteralPath $dependencyRoot)) { continue }
+      foreach ($dependency in Get-ChildItem -LiteralPath $dependencyRoot -Directory -Force) {
+        if ($dependency.Name.StartsWith("@")) {
+          $scopeRoot = Join-Path $runtimeNodePath $dependency.Name
+          New-Item -ItemType Directory -Path $scopeRoot -Force | Out-Null
+          foreach ($scopedDependency in Get-ChildItem -LiteralPath $dependency.FullName -Directory -Force) {
+            $link = Join-Path $scopeRoot $scopedDependency.Name
+            if (-not (Test-Path -LiteralPath $link)) {
+              New-Item -ItemType Junction -Path $link -Target $scopedDependency.FullName -ErrorAction SilentlyContinue | Out-Null
+            }
+          }
+        } else {
+          $link = Join-Path $runtimeNodePath $dependency.Name
+          if (-not (Test-Path -LiteralPath $link)) {
+            New-Item -ItemType Junction -Path $link -Target $dependency.FullName -ErrorAction SilentlyContinue | Out-Null
+          }
+        }
+      }
+    }
+  }
+
+  return $runtimeNodePath
+}
+
 function Wait-ForActiveRunDrain {
   if (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
     return
@@ -662,8 +714,13 @@ function Start-LiveServer {
 
     $quotedNextScript = '"' + $NextScript + '"'
     $previousNodeOptions = $env:NODE_OPTIONS
+    $previousNodePath = $env:NODE_PATH
     try {
       $env:NODE_OPTIONS = Get-ServerNodeOptions
+      # Next's traced external modules need the workspace dependency graph at
+      # runtime; keep it available when starting from a live build slot.
+      $runtimeNodePath = Get-RuntimeNodePath -WebRoot $webRoot
+      $env:NODE_PATH = @($runtimeNodePath, (Join-Path $webRoot "node_modules")) -join [System.IO.Path]::PathSeparator
       $serverProcess = Start-Process `
         -FilePath $NodeCommand `
         -ArgumentList @($quotedNextScript, "start", "-p", "$port") `
@@ -674,6 +731,7 @@ function Start-LiveServer {
         -PassThru
     } finally {
       $env:NODE_OPTIONS = $previousNodeOptions
+      $env:NODE_PATH = $previousNodePath
     }
 
     for ($attempt = 0; $attempt -lt 30; $attempt += 1) {

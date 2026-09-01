@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $installRoot = (Resolve-Path $PSScriptRoot).Path
 $activePath = Join-Path $installRoot "active-release.txt"
