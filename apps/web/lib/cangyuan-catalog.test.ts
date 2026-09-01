@@ -765,12 +765,13 @@ describe("Cangyuan live catalog", () => {
     expect(targets("minimax-h3-2k")).toEqual(
       expect.arrayContaining([
         "/reference_image_urls",
+        "/reference_videos",
         "/reference_audios",
         "/first_image_url",
         "/last_image_url",
       ]),
     );
-    expect(targets("minimax-h3-2k")).not.toContain("/reference_videos");
+    expect(targets("minimax-h3-2k")).not.toContain("/images");
   });
 
   it("checks the homepage, docs, and pricing endpoint before publishing", async () => {
@@ -924,5 +925,119 @@ describe("Cangyuan live catalog", () => {
         (mapping) => mapping.target,
       ),
     ).toContain("/quality");
+  });
+
+  it("maps Wan 3.0 and Seedance 2.0 1080p reference fields separately", () => {
+    const catalog = cangyuanCatalogFromPricing({
+      data: [
+        {
+          model_name: "wan3.0-15s",
+          model_price: 1.99,
+          tags: "video,wan",
+          enable_groups: ["VIDEO"],
+          video_ui_params: {
+            payloadBuilder: "wan3-flat",
+            params: {
+              duration: { enabled: true, min: 4, max: 15 },
+              ratio: { enabled: true, options: [{ label: "横屏", value: "16:9" }] },
+              resolution: {
+                enabled: true,
+                options: [{ label: "720p", value: "720p" }],
+              },
+            },
+            referenceLimits: { images: 10, videos: 5, audios: 5 },
+          },
+          api_doc: {
+            params: [
+              { name: "reference_image_urls" },
+              { name: "reference_videos" },
+              { name: "reference_audios" },
+            ],
+          },
+        },
+        {
+          model_name: "seedance-2.0-1080p",
+          model_price: 4.9,
+          tags: "video,seedance",
+          enable_groups: ["VIDEO"],
+          video_ui_params: {
+            payloadBuilder: "seedance-reference-urls",
+            params: {
+              duration: { enabled: true, numericOptions: [4, 8, 15] },
+              ratio: { enabled: true, options: [{ label: "横屏", value: "16:9" }] },
+              generateAudio: { enabled: true },
+            },
+            referenceLimits: { images: 5, videos: 3, audios: 3 },
+          },
+          api_doc: {
+            params: [
+              { name: "image_url" },
+              { name: "reference_image_urls" },
+              { name: "reference_videos" },
+              { name: "reference_audios" },
+              { name: "generate_audio" },
+            ],
+          },
+        },
+      ],
+    });
+    const connector = cangyuanConnectorForModels("VIDEO", catalog.groups.VIDEO);
+    const targets = (model: string) =>
+      connector.modelOverrides?.[model]?.submit?.mappings?.map(
+        (mapping) => mapping.target,
+      ) ?? [];
+
+    expect(targets("wan3.0-15s")).toEqual(
+      expect.arrayContaining([
+        "/reference_image_urls",
+        "/reference_videos",
+        "/reference_audios",
+      ]),
+    );
+    expect(targets("seedance-2.0-1080p")).toEqual(
+      expect.arrayContaining([
+        "/image_url",
+        "/reference_image_urls",
+        "/reference_videos",
+        "/reference_audios",
+      ]),
+    );
+    expect(targets("seedance-2.0-1080p")).not.toContain("/resolution");
+  });
+
+  it("keeps Midjourney ratio-only even when a stale pixel-size field is present", () => {
+    const connector = cangyuanConnectorForModels("IMAGE", [
+      {
+        id: "midjourney-8.2-2k",
+        name: "Midjourney 8.2 2K",
+        operations: ["image.generate"],
+        parameters: [
+          {
+            key: "aspect_ratio",
+            label: "画面比例",
+            control: "select",
+            valueType: "string",
+            options: [{ label: "16:9", value: "16:9" }],
+          },
+          {
+            key: "size",
+            label: "精确尺寸",
+            control: "dimensions",
+            valueType: "string",
+          },
+        ],
+      },
+    ]);
+    const mappings = connector.modelOverrides?.["midjourney-8.2-2k"]?.submit
+      ?.mappings;
+    expect(mappings?.map((mapping) => mapping.target)).toContain("/size");
+    expect(
+      mappings?.some(
+        (mapping) =>
+          mapping.target === "/size" &&
+          mapping.source.kind === "request" &&
+          mapping.source.path === "$.parameters.size",
+      ),
+    ).toBe(false);
   });
 });

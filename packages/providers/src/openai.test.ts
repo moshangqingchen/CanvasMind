@@ -933,6 +933,38 @@ describe("OpenAIImageAdapter", () => {
     expect(freeValid.issues).toEqual([]);
   });
 
+  it("accepts a 辰途 Base64 response larger than the URL envelope limit", async () => {
+    const largeBase64 = Buffer.alloc(9 * 1024 * 1024, 7).toString("base64");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/images/generations"))
+        return jsonResponse({ data: [{ b64_json: largeBase64 }] });
+      throw new Error(`unexpected 辰途 endpoint: ${String(input)}`);
+    }) as unknown as typeof fetch;
+    const adapter = new OpenAIImageAdapter(
+      new StaticConnectionResolver([
+        {
+          id: "chentu-large-base64",
+          provider: "openai",
+          apiKey: "sk-chentu",
+          baseUrl: "https://tu.988236.xyz/v1",
+          settings: { supplierKey: "chentu" },
+        },
+      ]),
+      { fetch: fetchMock },
+    );
+
+    await expect(
+      adapter.submit({
+        connectionId: "chentu-large-base64",
+        operation: "image.generate",
+        model: "gpt-image-2-4k",
+        prompt: "A 4K test image",
+        idempotencyKey: "chentu-large-base64",
+        parameters: { size: "3840x2160", response_format: "url" },
+      }),
+    ).resolves.toMatchObject({ status: "succeeded" });
+  });
+
   it("maps aspect ratios to valid sizes and only sends compression for lossy formats", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

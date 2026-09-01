@@ -167,8 +167,14 @@ const WEAI_GEMINI_MAX_INPUT_IMAGE_BYTES = 20 * 1024 * 1024;
 function imageJsonMaxResponseBytes(
   parameters: Readonly<Record<string, unknown>> | undefined,
   returnsUrl: boolean,
+  supplierKey?: string,
 ): number {
-  if (returnsUrl) return IMAGE_URL_JSON_MAX_RESPONSE_BYTES;
+  // The 辰途 gateway is documented as URL-capable, but some model groups
+  // still return a Base64 payload even when response_format=url is requested.
+  // Use the normal Base64 budget for that supplier instead of the smaller URL
+  // envelope limit, so successful 4K results are not rejected locally.
+  if (returnsUrl && supplierKey !== "chentu")
+    return IMAGE_URL_JSON_MAX_RESPONSE_BYTES;
   const requested = parameters?.["n"];
   const count =
     typeof requested === "number" &&
@@ -3405,6 +3411,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const maxResponseBytes = imageJsonMaxResponseBytes(
       effectiveParameters,
       returnsUrl,
+      supplierKey,
     );
     const acceptsOutputFormat =
       (useFriModel || this.profile !== "weai") ||

@@ -18,6 +18,9 @@
     "public:prepare": "pnpm --filter @super-canvas/providers build && node scripts/prepare-local-public.mjs",
     "public:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-public-managed.ps1",
     "public:watch": "pnpm public:prepare && pnpm public:start",
+    "public:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-public.ps1",
+    "public:start:installed": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%LOCALAPPDATA%\\SuperCanvas\\start-local-public.ps1\"",
+    "release:manifest": "node scripts/write-release-manifest.mjs",
     "db:generate": "pnpm --filter @super-canvas/db db:generate",
     "db:migrate": "pnpm --filter @super-canvas/db db:migrate",
     "format": "pnpm exec prettier --write ."

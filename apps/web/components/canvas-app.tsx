@@ -85,11 +85,12 @@ import {
   discardMaterialDrop,
   fetchAssets,
   fetchCanvas,
-  fetchCangyuanCatalog,
   fetchConnections,
+  fetchAppUpdate,
   getCachedModels,
   invalidateModelCache,
   fetchModels,
+  refreshModels,
   fetchMaterialDrops,
   fetchRun,
   fetchVisibleRuns,
@@ -100,6 +101,8 @@ import {
   CanvasSaveConflictError,
   type CanvasResponse,
   type ProviderConnectionView,
+  requestAppUpdate,
+  type AppUpdateView,
 } from "../lib/client-api";
 import {
   CANGYUAN_ALL_MODELS_GROUP,
@@ -217,6 +220,7 @@ import { DrawingLayer } from "./drawing-layer";
 import { NodeParameterFields } from "./node-parameter-fields";
 import { ProjectImportModal } from "./project-import-modal";
 import { ShortcutsModal } from "./shortcuts-modal";
+import { AppUpdateModal } from "./app-update-modal";
 import { useCanvasStore } from "./canvas-store";
 import { WorkflowNode } from "./workflow-node";
 import {
@@ -265,6 +269,7 @@ const SAVE_STATE_LABEL: Record<SaveState, string> = {
 
 const nodeTypes = { workflow: WorkflowNode };
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "超级画布";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0";
 const DIRECTOR_FEATURE_ENABLED =
   process.env.NEXT_PUBLIC_DIRECTOR_ENABLED !== "false";
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
@@ -2077,6 +2082,12 @@ function CanvasShell() {
   const latestNodeRunAt = useRef(new Map<string, string>());
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateView | null>(
+    null,
+  );
+  const [appUpdateOpen, setAppUpdateOpen] = useState(false);
+  const [appUpdateBusy, setAppUpdateBusy] = useState(false);
+  const [appUpdateReloadReady, setAppUpdateReloadReady] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [saveConflict, setSaveConflict] =
     useState<CanvasSaveConflictState | null>(null);
@@ -2164,6 +2175,8 @@ function CanvasShell() {
   const initialViewportApplied = useRef(false);
   const toastTimer = useRef<number | null>(null);
   const toastSeq = useRef(0);
+  const appUpdateVersionRef = useRef<string | null>(null);
+  const appUpdateNoticeVersionRef = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<CanvasSaveRequest | null>(null);
   const conflictedSave = useRef<CanvasSaveRequest | null>(null);
@@ -2381,6 +2394,55 @@ function CanvasShell() {
     },
     [],
   );
+
+  const refreshAppUpdate = useCallback(async (announce = true) => {
+    try {
+      const next = await fetchAppUpdate();
+      const previousCurrent = appUpdateVersionRef.current;
+      if (
+        previousCurrent &&
+        previousCurrent !== next.currentVersion &&
+        next.phase === "idle"
+      ) {
+        setAppUpdateReloadReady(true);
+        setAppUpdateOpen(true);
+      }
+      appUpdateVersionRef.current = next.currentVersion;
+      if (
+        announce &&
+        next.phase === "available" &&
+        next.latest &&
+        next.latest.version !== appUpdateNoticeVersionRef.current
+      ) {
+        appUpdateNoticeVersionRef.current = next.latest.version;
+        setAppUpdateOpen(true);
+      }
+      setAppUpdateStatus(next);
+    } catch {
+      // A disconnected updater must never make the canvas unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    const initialCheck = window.setTimeout(
+      () => void refreshAppUpdate(),
+      0,
+    );
+    const phase = appUpdateStatus?.phase;
+    const isActiveUpdate =
+      phase === "downloading" ||
+      phase === "ready" ||
+      phase === "waiting_for_idle" ||
+      phase === "applying";
+    const interval = window.setInterval(
+      () => void refreshAppUpdate(),
+      isActiveUpdate ? 2_000 : 10 * 60 * 1_000,
+    );
+    return () => {
+      window.clearTimeout(initialCheck);
+      window.clearInterval(interval);
+    };
+  }, [appUpdateStatus?.phase, refreshAppUpdate]);
 
   const recordLinkedAssetDuration = useCallback(
     (assetId: string, seconds: number) => {
@@ -2794,6 +2856,34 @@ function CanvasShell() {
       state.drawings,
     );
   }, [canvasId, saveGraph]);
+
+  const runAppUpdateAction = useCallback(
+    async (action: "check" | "download" | "apply" | "defer") => {
+      if (appUpdateBusy) return;
+      setAppUpdateBusy(true);
+      try {
+        if (action === "apply") await saveNow();
+        await requestAppUpdate(action, appUpdateStatus?.latest?.version);
+        if (action === "defer") {
+          setAppUpdateOpen(false);
+          showToast("已延后此版本更新");
+        } else if (action === "check") {
+          showToast("已请求检查 GitHub Release");
+        } else if (action === "download") {
+          showToast("更新包开始后台下载", "success");
+        } else {
+          showToast("更新已提交，服务将在空闲后切换", "success");
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 700));
+        await refreshAppUpdate(false);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "更新操作失败", "error");
+      } finally {
+        setAppUpdateBusy(false);
+      }
+    },
+    [appUpdateBusy, appUpdateStatus, refreshAppUpdate, saveNow, showToast],
+  );
 
   useEffect(() => {
     const flushPendingSave = () => {
@@ -6295,9 +6385,7 @@ function CanvasShell() {
     const modelRequest =
       isCangyuanImagePreset(selectedConnection.config.preset) &&
       isCangyuanImageGroup(selectedConnection.config.modelGroup)
-        ? fetchCangyuanCatalog(selectedConnection.config.modelGroup).then(
-            (catalog) => catalog.models,
-          )
+        ? refreshModels(selectedConnectionId)
         : fetchModels(selectedConnectionId);
     void modelRequest
       .then((items) => {
@@ -7569,6 +7657,7 @@ function CanvasShell() {
         <div className="brand">
           <span className="brand-mark">✦</span>
           <span>{APP_NAME}</span>
+          <span className="brand-version">v{APP_VERSION}</span>
         </div>
         <nav className="top-create-actions" aria-label="生成工具">
           <button
@@ -7780,6 +7869,22 @@ function CanvasShell() {
               }}
             >
               <History size={14} /> 运行历史
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setProjectMenuOpen(false);
+                setAppUpdateOpen(true);
+                void refreshAppUpdate(false);
+              }}
+            >
+              <RefreshCw size={14} /> 检查更新
+              <span className="project-menu-hint">
+                {appUpdateStatus?.latest
+                  ? `v${appUpdateStatus.latest.version}`
+                  : `v${APP_VERSION}`}
+              </span>
             </button>
             <div className="project-menu-divider" />
             <button
@@ -9042,6 +9147,18 @@ function CanvasShell() {
       <ShortcutsModal
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
+      />
+      <AppUpdateModal
+        open={appUpdateOpen}
+        status={appUpdateStatus}
+        busy={appUpdateBusy}
+        reloadReady={appUpdateReloadReady}
+        onReload={() => window.location.reload()}
+        onClose={() => setAppUpdateOpen(false)}
+        onCheck={() => void runAppUpdateAction("check")}
+        onDownload={() => void runAppUpdateAction("download")}
+        onApply={() => void runAppUpdateAction("apply")}
+        onDefer={() => void runAppUpdateAction("defer")}
       />
       {toast ? (
         <div

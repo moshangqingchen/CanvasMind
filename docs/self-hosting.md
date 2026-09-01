@@ -149,6 +149,31 @@ Compose 顶层项目名固定为 `supercanvas`，避免从中文目录名推导�
 
 ## 本地持久化开发
 
+## Windows 独立部署与 GitHub Release 更新
+
+Windows 本地发布模式使用独立版本目录，避免更新覆盖开发仓库和本地业务数据。完成依赖安装后，
+在开发仓库中运行：
+
+```powershell
+pnpm public:install
+pnpm public:start:installed
+```
+
+`public:install` 从 `SUPERCANVAS_UPDATE_REPOSITORY` 的 GitHub Releases 中选择最新的稳定
+`vX.Y.Z`，校验 Release 压缩包和 SHA-256 清单后安装到
+`%LOCALAPPDATA%\SuperCanvas\releases`。画布 JSON、素材、密钥和环境文件保存在该目录之外。
+
+发布前必须同步根目录 `package.json` 的 `version` 与 Release 标签，例如 `0.2.0` 对应 `v0.2.0`。
+`.github/workflows/release.yml` 会在 Windows runner 上构建并上传运行包；普通分支 push 不会触发
+本地升级。
+
+运行中的画布会在启动时和默认每 10 分钟检查一次更新。项目菜单中的“应用更新”显示 GitHub
+Release 正文，下载可以后台进行；应用阶段会等待生成任务排空，候选版本健康检查失败则自动恢复
+旧版本。检查、下载和切换过程记录在 `%LOCALAPPDATA%\SuperCanvas\logs`，不会记录 GitHub Token。
+
+公开仓库无需 Token；如使用私有仓库，可在本地环境文件中设置
+`SUPERCANVAS_GITHUB_TOKEN`，不要把它提交到 Git。
+
 如果需要热更新，同时使用 Docker 中的 PostgreSQL、Redis 和 MinIO，请显式加载只绑定回环地址的开发 override：
 
 ```powershell

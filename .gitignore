@@ -32,6 +32,7 @@ apps/web/.active-live-slot
 .codex-temp/
 .codex-logs/
 .codex-temp-*.json
+.release-stage/
 /apps/web/canvas-*.png
 .agents/
 _to_delete/

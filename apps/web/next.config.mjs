@@ -1,3 +1,7 @@
+import rootPackage from "../../package.json" with { type: "json" };
+const applicationVersion =
+  process.env.NEXT_PUBLIC_APP_VERSION || rootPackage.version || "0.1.0";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
@@ -20,6 +24,9 @@ const nextConfig = {
     "@super-canvas/storage",
   ],
   typedRoutes: false,
+  env: {
+    NEXT_PUBLIC_APP_VERSION: applicationVersion,
+  },
   ...(process.env.API_PROXY_BASE_URL
     ? {
         async rewrites() {

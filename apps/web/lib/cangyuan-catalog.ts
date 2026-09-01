@@ -209,7 +209,11 @@ function marketplacePriceLabel(
     };
   }
   const price = formatPrice(record.model_price);
-  const unit = priceUnit(record, marketplaceCapability(record) === "video");
+  const unit =
+    typeof record.model_name === "string" &&
+    /^midjourney-8\.2-/iu.test(record.model_name.trim())
+      ? "请求"
+      : priceUnit(record, marketplaceCapability(record) === "video");
   return {
     priceLabel: price ? `¥${price}/${unit}` : "价格以模型广场为准",
     billingLabel:
@@ -248,10 +252,13 @@ function nameWithLivePrice(
   record: PricingRecord,
   video = false,
 ) {
-  const baseName = model.name.replace(/（¥[^）]+\/(?:张|次|秒)）$/u, "");
+  const baseName = model.name.replace(/（¥[^）]+\/(?:张|次|秒|请求|条)）$/u, "");
   const price = formatPrice(record.model_price);
+  const unit = /^midjourney-8\.2-/iu.test(model.id)
+    ? "请求"
+    : priceUnit(record, video);
   return price
-    ? `${baseName}（¥${price}/${priceUnit(record, video)}）`
+    ? `${baseName}（¥${price}/${unit}）`
     : baseName;
 }
 
@@ -698,6 +705,21 @@ function videoDescriptorForRecord(
     return null;
   const id = record.model_name.trim();
   const refs = videoReferenceMetadata(record);
+  const fixedResolutionSku =
+    /^(?:minimax-h3-(?:768p|2k|4k)|(?:sd\d+-)?seedance-2\.0(?:-(?:480p|720p|1080p))?)$/iu.test(
+      id,
+    ) || /seedance-2\.5-(?:480p|720p|1080p)$/iu.test(id);
+  const parameters = inferredVideoParameters(record).filter(
+    (parameter) => !(fixedResolutionSku && parameter.key === "resolution"),
+  );
+  const payloadBuilder =
+    /^omni-v2v(?:-no-water)?$/iu.test(id)
+      ? "omni-v2v"
+      : /^omni-fast(?:-no-water)?$/iu.test(id)
+        ? "omni-frame"
+        : /^minimax-h3-/iu.test(id)
+          ? "minimax-video"
+          : refs.payloadBuilder;
   const price = formatPrice(record.model_price);
   const hasImages = (refs.maxInputImages ?? 0) > 0;
   const descriptionParts = [
@@ -729,10 +751,11 @@ function videoDescriptorForRecord(
         : []),
     ],
     outputKinds: ["video"],
-    parameters: inferredVideoParameters(record),
+    parameters,
     metadata: {
       modality: "video",
       ...refs,
+      ...(payloadBuilder ? { payloadBuilder } : {}),
     },
     limits: {
       ...(refs.maxInputImages !== undefined
@@ -778,8 +801,11 @@ function imageDescriptorForRecord(
   const known = knownModels.get(id);
   const supportsReferences = supportsImageReferences(record);
   const maxInputImages = imageReferenceLimit(record);
+  const fixedMidjourneyOutput = /^midjourney-8\.2-/iu.test(id);
   if (known) {
-    const parameters = inferredParameters(record);
+    const parameters = inferredParameters(record).filter(
+      (parameter) => !(fixedMidjourneyOutput && parameter.key === "n"),
+    );
     return {
       ...structuredClone(known),
       name: nameWithLivePrice(known, record),
@@ -800,7 +826,9 @@ function imageDescriptorForRecord(
     };
   }
   const price = formatPrice(record.model_price);
-  const parameters = inferredParameters(record);
+  const parameters = inferredParameters(record).filter(
+    (parameter) => !(fixedMidjourneyOutput && parameter.key === "n"),
+  );
   return {
     id,
     name: `${id}${price ? `（¥${price}/张）` : ""}`,
@@ -1022,6 +1050,129 @@ function fallbackSnapshot(): CangyuanCatalogSnapshot {
         maxInputAudioDurationSeconds: 15,
       },
     })),
+    {
+      id: "wan3.0-15s",
+      name: "wan3.0-15s（¥1.99/次）",
+      description:
+        "Wan 3.0 4–15 秒视频；支持最多 10 张图片、5 个视频和 5 个音频参考",
+      operations: VIDEO_OPERATIONS,
+      inputKinds: [
+        "text",
+        "image",
+        "image[]",
+        "video",
+        "video[]",
+        "audio",
+        "audio[]",
+      ],
+      outputKinds: ["video"],
+      parameters: fallbackVideoParameters(
+        Array.from({ length: 12 }, (_, index) => index + 4),
+        ["16:9", "1:1", "9:16", "4:3", "3:4"],
+        ["480p", "720p", "1080p"],
+      ),
+      metadata: { modality: "video", payloadBuilder: "wan3-flat" },
+      limits: {
+        maxInputImages: 10,
+        maxInputVideos: 5,
+        maxInputAudios: 5,
+      },
+    },
+    {
+      id: "seedance-2.0-1080p",
+      name: "seedance-2.0-1080p（¥4.9/次）",
+      description:
+        "Seedance 2.0 固定 1080p；支持文生、图生和多参考图/视频/音频",
+      operations: VIDEO_OPERATIONS,
+      inputKinds: [
+        "text",
+        "image",
+        "image[]",
+        "video",
+        "video[]",
+        "audio",
+        "audio[]",
+      ],
+      outputKinds: ["video"],
+      parameters: fallbackVideoParameters(
+        Array.from({ length: 12 }, (_, index) => index + 4),
+        ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+        [],
+        true,
+      ),
+      metadata: {
+        modality: "video",
+        payloadBuilder: "seedance-reference-urls",
+      },
+      limits: {
+        maxInputImages: 5,
+        maxInputVideos: 3,
+        maxInputAudios: 3,
+      },
+    },
+    ...[
+      ["minimax-h3-768p", "3.5", "768p"],
+      ["minimax-h3-2k", "4.5", "2K"],
+      ["minimax-h3-4k", "5.6", "4K"],
+    ].map(([id, price, tier]): ModelDescriptor => ({
+      id,
+      name: `${id}（¥${price}/次）`,
+      description: `MiniMax H3 ${tier}；支持文生、图生、多模态参考和首尾帧，5–15 秒`,
+      operations: VIDEO_OPERATIONS,
+      inputKinds: [
+        "text",
+        "image",
+        "image[]",
+        "video",
+        "video[]",
+        "audio",
+        "audio[]",
+      ],
+      outputKinds: ["video"],
+      parameters: fallbackVideoParameters(
+        Array.from({ length: 11 }, (_, index) => index + 5),
+        ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+        [],
+      ),
+      metadata: { modality: "video", payloadBuilder: "minimax-video" },
+      limits: {
+        maxInputImages: 5,
+        maxInputVideos: 3,
+        maxInputAudios: 3,
+        maxInputVideoDurationSeconds: 15,
+        maxTotalInputVideoDurationSeconds: 15,
+        maxInputAudioDurationSeconds: 15,
+      },
+    })),
+    ...[
+      ["omni-fast", "0.6624", "omni-frame"],
+      ["omni-fast-no-water", "0.6624", "omni-frame"],
+      ["omni-v2v", "0.6624", "omni-v2v"],
+      ["omni-v2v-no-water", "0.6624", "omni-v2v"],
+    ].map(([id, price, payloadBuilder]): ModelDescriptor => ({
+      id,
+      name: `${id}（¥${price}/次）`,
+      description:
+        payloadBuilder === "omni-v2v"
+          ? "Omni 视频风格/内容转换；支持最多 2 条参考视频与 2 张参考图"
+          : "Omni 文生/图生视频；支持参考图和首尾帧",
+      operations: VIDEO_OPERATIONS,
+      inputKinds:
+        payloadBuilder === "omni-v2v"
+          ? ["text", "image", "image[]", "video", "video[]"]
+          : ["text", "image", "image[]"],
+      outputKinds: ["video"],
+      parameters: fallbackVideoParameters(
+        [],
+        ["16:9", "9:16"],
+        [],
+      ),
+      metadata: { modality: "video", payloadBuilder },
+      limits:
+        payloadBuilder === "omni-v2v"
+          ? { maxInputImages: 2, maxInputVideos: 2, maxInputAssets: 2 }
+          : { maxInputImages: 5 },
+    })),
   ];
   const imageModels = [
     ...(cangyuanImageConnectorForGroup("IMAGE").models ?? []),
@@ -1091,15 +1242,22 @@ function fallbackVideoParameters(
   negativePrompt = false,
 ): ModelParameterDescriptor[] {
   return [
-    {
-      key: "duration",
-      label: "时长（秒）",
-      control: "select",
-      valueType: "integer",
-      default: durations[0],
-      options: durations.map((value) => ({ label: String(value), value })),
-      operations: VIDEO_OPERATIONS,
-    },
+    ...(durations.length > 0
+      ? [
+          {
+            key: "duration",
+            label: "时长（秒）",
+            control: "select" as const,
+            valueType: "integer" as const,
+            default: durations[0],
+            options: durations.map((value) => ({
+              label: String(value),
+              value,
+            })),
+            operations: VIDEO_OPERATIONS,
+          },
+        ]
+      : []),
     {
       key: "aspect_ratio",
       label: "画面比例",
@@ -1236,10 +1394,11 @@ export function cangyuanConnectorForModels(
     if (model.operations.some((operation) => operation.startsWith("video.")))
       modelOverrides[model.id] = videoTransportForModel(model);
     else if (
-      /^(?:gpt-image-2(?:-(?:1k|2k|4k))?|nano-banana(?:-pro)?-(?:1k|2k|4k)|nano-banana2-(?:1k|2k|4k))$/iu.test(
+      /^(?:gpt-image-2(?:-(?:1k|2k|4k))?|nano-banana(?:-pro)?-(?:1k|2k|4k)|nano-banana2-(?:1k|2k|4k)|midjourney-8\.2-(?:1k|2k))$/iu.test(
         model.id,
       ) &&
-      model.operations.includes("image.edit")
+      (model.operations.includes("image.edit") ||
+        /^midjourney-8\.2-/iu.test(model.id))
     )
       modelOverrides[model.id] = standardImageTransportForModel(model);
   }
@@ -1255,6 +1414,7 @@ function standardImageMappingsForModel(
   model: ModelDescriptor,
 ): RestRequestMapping[] {
   const supported = new Set((model.parameters ?? []).map((item) => item.key));
+  const isMidjourney = /^midjourney-8\.2-/iu.test(model.id);
   return [
     { target: "/model", source: { kind: "request", path: "$.model" } },
     { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
@@ -1269,7 +1429,10 @@ function standardImageMappingsForModel(
       omitIfUndefined: true,
       omitValues: ["auto"],
     },
-    ...(supported.has("size")
+    // Midjourney documents `size` as a ratio-only field. Some marketplace
+    // records also expose a generic exact-size control; never forward that
+    // pixel value to a Midjourney SKU because it is rejected as invalid_size.
+    ...(!isMidjourney && supported.has("size")
       ? [
           {
             target: "/size",
@@ -1412,7 +1575,7 @@ function assetMapping(
   options?: {
     role?: "reference" | "firstFrame" | "lastFrame";
     excludeRoles?: readonly ("reference" | "firstFrame" | "lastFrame")[];
-    select?: "all" | "first";
+    select?: "all" | "first" | "firstIfOnly" | "allIfMultiple";
   },
 ): RestRequestMapping {
   return {
@@ -1438,7 +1601,10 @@ function videoTransportForModel(
       assetMapping("/reference_image_urls", "image"),
       assetMapping("/video_url", "video", { select: "first" }),
     );
-  } else if (payloadBuilder === "omni-v2v") {
+  } else if (
+    payloadBuilder === "omni-v2v" ||
+    /^omni-v2v(?:-no-water)?$/iu.test(model.id)
+  ) {
     mappings.push(
       assetMapping("/reference_videos", "video"),
       assetMapping("/reference_image_urls", "image"),
@@ -1472,6 +1638,49 @@ function videoTransportForModel(
       }),
       assetMapping("/reference_videos", "video"),
       assetMapping("/reference_audios", "audio"),
+      assetMapping("/first_image_url", "image", {
+        role: "firstFrame",
+        select: "first",
+      }),
+      assetMapping("/last_image_url", "image", {
+        role: "lastFrame",
+        select: "first",
+      }),
+    );
+  } else if (model.id === "wan3.0-15s" || payloadBuilder === "wan3-flat") {
+    mappings.push(
+      assetMapping("/reference_image_urls", "image"),
+      assetMapping("/reference_videos", "video"),
+      assetMapping("/reference_audios", "audio"),
+    );
+  } else if (
+    model.id === "seedance-2.0-1080p" ||
+    payloadBuilder === "seedance-reference-urls"
+  ) {
+    mappings.push(
+      assetMapping("/image_url", "image", { select: "firstIfOnly" }),
+      assetMapping("/reference_image_urls", "image", {
+        select: "allIfMultiple",
+      }),
+      assetMapping("/reference_videos", "video"),
+      assetMapping("/reference_audios", "audio"),
+    );
+  } else if (
+    payloadBuilder === "minimax-video" ||
+    /^minimax-h3-/iu.test(model.id)
+  ) {
+    // MiniMax H3 uses the multimodal URL fields from its model document;
+    // do not fall back to the legacy /images field used by older video SKUs.
+    mappings.push(
+      assetMapping("/reference_image_urls", "image", {
+        excludeRoles: ["firstFrame", "lastFrame"],
+      }),
+      assetMapping("/reference_videos", "video", {
+        excludeRoles: ["firstFrame", "lastFrame"],
+      }),
+      assetMapping("/reference_audios", "audio", {
+        excludeRoles: ["firstFrame", "lastFrame"],
+      }),
       assetMapping("/first_image_url", "image", {
         role: "firstFrame",
         select: "first",

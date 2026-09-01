@@ -724,6 +724,75 @@ test.describe("超级画布完整验收", () => {
     await resetWorkspace(request);
   });
 
+  test("GitHub Release 更新可展示说明、延后并进入后台下载", async ({
+    page,
+  }) => {
+    let phase = "available";
+    const commands: string[] = [];
+    await page.route("**/api/app-update", async (route) => {
+      if (route.request().method() === "POST") {
+        const command = route.request().postDataJSON() as { action: string };
+        commands.push(command.action);
+        if (command.action === "defer") phase = "idle";
+        if (command.action === "download") phase = "downloading";
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: true, action: command.action }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          formatVersion: 1,
+          currentVersion: "0.1.0",
+          phase,
+          latest: {
+            version: "0.2.0",
+            tag: "v0.2.0",
+            commit: "1234567890abcdef",
+            publishedAt: "2026-09-01T08:00:00.000Z",
+            htmlUrl:
+              "https://github.com/moshangqingchen/CanvasMind/releases/tag/v0.2.0",
+            notes: "新增 Release 驱动更新，并保留本地画布数据。",
+          },
+          progress:
+            phase === "downloading"
+              ? { downloadedBytes: 512, totalBytes: 1024 }
+              : undefined,
+          enabled: true,
+          repository: "moshangqingchen/CanvasMind",
+          intervalSeconds: 600,
+          managerAvailable: true,
+          updatedAt: "2026-09-01T08:00:00.000Z",
+        }),
+      });
+    });
+
+    await openWorkspace(page);
+    const dialog = page.getByRole("dialog", { name: "超级画布更新" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("v0.1.0");
+    await expect(dialog).toContainText("v0.2.0");
+    await expect(dialog).toContainText(
+      "新增 Release 驱动更新，并保留本地画布数据。",
+    );
+
+    await dialog.getByRole("button", { name: "稍后提醒" }).click();
+    await expect(dialog).toBeHidden();
+    expect(commands).toContain("defer");
+
+    await page.getByRole("button", { name: "打开项目菜单" }).click();
+    await page.getByRole("menuitem", { name: /检查更新/ }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "下载更新" }).click();
+    await expect(dialog).toContainText("正在后台下载更新包");
+    await expect(dialog).toContainText("50%");
+    expect(commands).toContain("download");
+  });
+
   test("画布响应损坏时退出加载态并显示可恢复错误", async ({ page }) => {
     await page.route("**/api/canvas", async (route) => {
       if (route.request().method() !== "GET") {

@@ -118,6 +118,68 @@ export interface ProviderConnectionView {
   apiKey: string;
 }
 
+export type AppUpdatePhase =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "waiting_for_idle"
+  | "applying"
+  | "failed";
+
+export interface AppUpdateView {
+  formatVersion: 1;
+  enabled: boolean;
+  repository: string;
+  intervalSeconds: number;
+  managerAvailable: boolean;
+  currentVersion: string;
+  currentCommit?: string;
+  phase: AppUpdatePhase;
+  latest?: {
+    version: string;
+    tag: string;
+    commit?: string;
+    publishedAt?: string;
+    htmlUrl?: string;
+    notes?: string;
+    assetName?: string;
+    assetSize?: number;
+  };
+  downloadedVersion?: string;
+  progress?: { downloadedBytes: number; totalBytes?: number };
+  lastCheckedAt?: string;
+  lastSuccessfulCheckAt?: string;
+  error?: string;
+  deferredVersion?: string;
+  updatedAt: string;
+}
+
+export async function fetchAppUpdate(): Promise<AppUpdateView> {
+  const response = await fetch("/api/app-update", { cache: "no-store" });
+  if (!response.ok) throw new Error("无法读取应用更新状态");
+  return response.json() as Promise<AppUpdateView>;
+}
+
+export async function requestAppUpdate(
+  action: "check" | "download" | "apply" | "defer",
+  version?: string,
+): Promise<void> {
+  const response = await fetch("/api/app-update", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action, ...(version ? { version } : {}) }),
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(payload?.error || "更新操作失败");
+  }
+}
+
 export interface CangyuanMarketplaceModelView {
   id: string;
   name: string;

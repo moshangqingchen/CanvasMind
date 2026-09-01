@@ -133,6 +133,32 @@ const NANO_2_RATIO_OPTIONS: readonly ModelParameterOption[] = [
   { label: "8:1", value: "8:1" },
 ];
 
+const MIDJOURNEY_RATIO_OPTIONS: readonly ModelParameterOption[] = [
+  { label: "自动（提示词优先）", value: "auto" },
+  { label: "21:9", value: "21:9" },
+  { label: "16:9", value: "16:9" },
+  { label: "3:2", value: "3:2" },
+  { label: "4:3", value: "4:3" },
+  { label: "1:1", value: "1:1" },
+  { label: "3:4", value: "3:4" },
+  { label: "2:3", value: "2:3" },
+  { label: "9:16", value: "9:16" },
+  { label: "9:21", value: "9:21" },
+];
+
+const MIDJOURNEY_QUALITY_PARAMETER: ModelParameterDescriptor = {
+  key: "quality",
+  label: "质量",
+  control: "select",
+  valueType: "string",
+  default: "standard",
+  options: [
+    { label: "标准", value: "standard" },
+    { label: "Raw", value: "raw" },
+  ],
+  operations: IMAGE_OPERATIONS,
+};
+
 const sizeParameter = (defaultValue = "auto"): ModelParameterDescriptor => ({
   key: "size",
   label: "画面比例",
@@ -212,7 +238,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
   },
   {
     id: CANGYUAN_IMAGE_1K_MODEL,
-    name: "GPT Image 2 1K（¥0.025/张）",
+    name: "GPT Image 2 1K（¥0.055/张）",
     description: "固定 1K 计费档位；quality 不改变档位或价格",
     operations: IMAGE_OPERATIONS,
     metadata: { fixedOutputCount: 1 },
@@ -238,7 +264,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
   },
   {
     id: CANGYUAN_IMAGE_2K_MODEL,
-    name: "GPT Image 2 2K（¥0.05/张）",
+    name: "GPT Image 2 2K（¥0.075/张）",
     description: "固定 2K 计费档位；quality 不改变档位或价格",
     operations: IMAGE_OPERATIONS,
     metadata: { fixedOutputCount: 1 },
@@ -264,7 +290,7 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
   },
   {
     id: CANGYUAN_IMAGE_4K_MODEL,
-    name: "GPT Image 2 4K（¥0.08/张）",
+    name: "GPT Image 2 4K（¥0.095/张）",
     description: "固定 4K 计费档位；默认高分辨率，支持参考图和精确尺寸",
     operations: IMAGE_OPERATIONS,
     metadata: { fixedOutputCount: 1 },
@@ -289,9 +315,9 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
     limits: { maxInputImages: 9, supportedMimeTypes: IMAGE_MIME_TYPES },
   },
   ...[
-    [CANGYUAN_NANO_BANANA_PRO_1K_MODEL, "Nano Banana Pro 1K（¥0.08/张）"],
-    [CANGYUAN_NANO_BANANA_PRO_2K_MODEL, "Nano Banana Pro 2K（¥0.10/张）"],
-    [CANGYUAN_NANO_BANANA_PRO_4K_MODEL, "Nano Banana Pro 4K（¥0.149/张）"],
+    [CANGYUAN_NANO_BANANA_PRO_1K_MODEL, "Nano Banana Pro 1K（¥0.09/张）"],
+    [CANGYUAN_NANO_BANANA_PRO_2K_MODEL, "Nano Banana Pro 2K（¥0.13/张）"],
+    [CANGYUAN_NANO_BANANA_PRO_4K_MODEL, "Nano Banana Pro 4K（¥0.19/张）"],
   ].map(([id, name], index): ModelDescriptor => ({
     id: id!,
     name: name!,
@@ -302,9 +328,9 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
     limits: { maxInputImages: 9, supportedMimeTypes: IMAGE_MIME_TYPES },
   })),
   ...[
-    [CANGYUAN_NANO_BANANA_2_1K_MODEL, "Nano Banana 2 1K（¥0.059/张）"],
-    [CANGYUAN_NANO_BANANA_2_2K_MODEL, "Nano Banana 2 2K（¥0.08/张）"],
-    [CANGYUAN_NANO_BANANA_2_4K_MODEL, "Nano Banana 2 4K（¥0.12/张）"],
+    [CANGYUAN_NANO_BANANA_2_1K_MODEL, "Nano Banana 2 1K（¥0.075/张）"],
+    [CANGYUAN_NANO_BANANA_2_2K_MODEL, "Nano Banana 2 2K（¥0.11/张）"],
+    [CANGYUAN_NANO_BANANA_2_4K_MODEL, "Nano Banana 2 4K（¥0.145/张）"],
   ].map(([id, name], index): ModelDescriptor => ({
     id: id!,
     name: name!,
@@ -313,6 +339,20 @@ const IMAGE_GROUP_MODELS: readonly ModelDescriptor[] = [
     metadata: { fixedOutputCount: 1 },
     parameters: [aspectRatioParameter(NANO_2_RATIO_OPTIONS)],
     limits: { maxInputImages: 9, supportedMimeTypes: IMAGE_MIME_TYPES },
+  })),
+  ...[
+    ["midjourney-8.2-1k", "Midjourney 8.2 1K（¥0.3/请求）"],
+    ["midjourney-8.2-2k", "Midjourney 8.2 2K（¥0.36/请求）"],
+  ].map(([id, name]): ModelDescriptor => ({
+    id: id!,
+    name: name!,
+    description: "Midjourney 8.2 文生图 / 参考图生图；每次请求固定返回 4 张",
+    operations: IMAGE_OPERATIONS,
+    parameters: [
+      aspectRatioParameter(MIDJOURNEY_RATIO_OPTIONS, "9:16"),
+      MIDJOURNEY_QUALITY_PARAMETER,
+    ],
+    limits: { maxInputImages: 5, supportedMimeTypes: IMAGE_MIME_TYPES },
   })),
 ];
 

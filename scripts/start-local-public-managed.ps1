@@ -1,9 +1,17 @@
 $ErrorActionPreference = "Stop"
 
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$activeReleaseRoot = $env:SUPERCANVAS_ACTIVE_RELEASE_ROOT
+if ($activeReleaseRoot -and (Test-Path -LiteralPath $activeReleaseRoot)) {
+  $workspace = (Resolve-Path $activeReleaseRoot).Path
+}
 $webRoot = Join-Path $workspace "apps\web"
 $packagesRoot = Join-Path $workspace "packages"
-$envPath = Join-Path $workspace ".local-public.env"
+$envPath = if ($env:SUPERCANVAS_RUNTIME_ENV_PATH) {
+  [System.IO.Path]::GetFullPath($env:SUPERCANVAS_RUNTIME_ENV_PATH)
+} else {
+  Join-Path $workspace ".local-public.env"
+}
 $logRoot = Join-Path $env:LOCALAPPDATA "SuperCanvas\logs"
 $managerLog = Join-Path $logRoot "web-3210-manager.log"
 $serverOutLog = Join-Path $logRoot "web-3210.out.log"
@@ -12,9 +20,26 @@ $drainFlagPath = Join-Path $logRoot "web-3210-draining"
 $pauseFlagPath = Join-Path $logRoot "web-3210-manager.paused"
 $liveSlots = @(".next-live-a", ".next-live-b")
 $activeSlotPath = Join-Path $logRoot "web-3210-active-slot.txt"
+$updateRoot = if ($env:SUPERCANVAS_UPDATE_ROOT) {
+  [System.IO.Path]::GetFullPath($env:SUPERCANVAS_UPDATE_ROOT)
+} else {
+  Join-Path $env:LOCALAPPDATA "SuperCanvas\updates"
+}
+$updateStatusPath = Join-Path $updateRoot "status.json"
+$updateCommandPath = Join-Path $updateRoot "command.json"
+$releaseRoot = if ($env:SUPERCANVAS_RELEASE_ROOT) {
+  [System.IO.Path]::GetFullPath($env:SUPERCANVAS_RELEASE_ROOT)
+} else {
+  Join-Path (Split-Path -Parent $updateRoot) "releases"
+}
+$installRoot = Split-Path -Parent $updateRoot
 $port = 3210
+$script:previousWebRoots = New-Object System.Collections.Generic.List[string]
+$script:activeReleaseVersion = $null
 
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $updateRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 
 if (Test-Path -LiteralPath $pauseFlagPath) {
   Write-Output "Super Canvas live-update manager is paused by $pauseFlagPath."
@@ -32,6 +57,217 @@ function Write-ManagerLog {
   [void][Console]::WriteLine($line)
 }
 
+function Get-ApplicationVersion {
+  $packagePath = Join-Path $workspace "package.json"
+  try {
+    $package = Get-Content -LiteralPath $packagePath -Raw -Encoding utf8 | ConvertFrom-Json
+    $version = [string]$package.version
+    if ($version -match '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { return $version }
+  } catch { }
+  return "0.1.0"
+}
+
+function Get-UpdateConfig {
+  $interval = 600
+  if ($env:SUPERCANVAS_UPDATE_INTERVAL_SECONDS -match '^\d+$') {
+    $interval = [Math]::Max(60, [int]$env:SUPERCANVAS_UPDATE_INTERVAL_SECONDS)
+  }
+  return @{
+    Enabled = $env:SUPERCANVAS_UPDATE_ENABLED -ne "false"
+    Repository = if ($env:SUPERCANVAS_UPDATE_REPOSITORY) { $env:SUPERCANVAS_UPDATE_REPOSITORY.Trim() } else { "moshangqingchen/CanvasMind" }
+    IntervalSeconds = $interval
+    Token = if ($env:SUPERCANVAS_GITHUB_TOKEN) { $env:SUPERCANVAS_GITHUB_TOKEN.Trim() } else { $null }
+  }
+}
+
+function Get-UpdateHeaders {
+  $config = Get-UpdateConfig
+  $headers = @{
+    Accept = "application/vnd.github+json"
+    "X-GitHub-Api-Version" = "2022-11-28"
+    "User-Agent" = "SuperCanvas-Updater"
+  }
+  if ($config.Token) { $headers.Authorization = "Bearer $($config.Token)" }
+  return $headers
+}
+
+function Read-UpdateStatusObject {
+  if (-not (Test-Path -LiteralPath $updateStatusPath)) { return $null }
+  try { return Get-Content -LiteralPath $updateStatusPath -Raw -Encoding utf8 | ConvertFrom-Json } catch { return $null }
+}
+
+function Write-UpdateStatus {
+  param([hashtable]$Patch)
+
+  $status = Read-UpdateStatusObject
+  if (-not $status) { $status = [pscustomobject]@{} }
+  foreach ($entry in $Patch.GetEnumerator()) {
+    $property = $status.PSObject.Properties[$entry.Key]
+    if ($property) { $property.Value = $entry.Value }
+    else { $status | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value }
+  }
+  $status.formatVersion = 1
+  if (-not $status.currentVersion) { $status.currentVersion = Get-ApplicationVersion }
+  $status.updatedAt = (Get-Date).ToUniversalTime().ToString("o")
+  $temporaryPath = "$updateStatusPath.$PID.tmp"
+  [System.IO.File]::WriteAllText($temporaryPath, ($status | ConvertTo-Json -Depth 8), [System.Text.Encoding]::UTF8)
+  Move-Item -LiteralPath $temporaryPath -Destination $updateStatusPath -Force
+}
+
+function Compare-SemVer {
+  param([string]$Left, [string]$Right)
+  try { return ([version]$Left).CompareTo([version]$Right) } catch { return 0 }
+}
+
+function Set-ActiveReleaseRoot {
+  param([string]$Root)
+
+  $resolved = (Resolve-Path -LiteralPath $Root).Path
+  if ($script:webRoot -and ($script:webRoot -ne (Join-Path $resolved "apps\web"))) {
+    [void]$script:previousWebRoots.Add($script:webRoot)
+  }
+  $script:workspace = $resolved
+  $script:webRoot = Join-Path $resolved "apps\web"
+  $script:packagesRoot = Join-Path $resolved "packages"
+  $script:nextScript = Join-Path $script:webRoot "node_modules\next\dist\bin\next"
+  $version = Get-ApplicationVersion
+  $script:activeReleaseVersion = $version
+  $script:envPath = if ($env:SUPERCANVAS_RUNTIME_ENV_PATH) {
+    [System.IO.Path]::GetFullPath($env:SUPERCANVAS_RUNTIME_ENV_PATH)
+  } else {
+    Join-Path $resolved ".local-public.env"
+  }
+}
+
+function Invoke-ReleaseCheck {
+  $config = Get-UpdateConfig
+  if (-not $config.Enabled) {
+    Write-UpdateStatus @{ phase = "disabled"; currentVersion = Get-ApplicationVersion }
+    return
+  }
+
+  $now = (Get-Date).ToUniversalTime().ToString("o")
+  Write-UpdateStatus @{ phase = "checking"; lastCheckedAt = $now; error = $null }
+  try {
+    if ($config.Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Invalid GitHub repository configuration." }
+    $url = "https://api.github.com/repos/$($config.Repository)/releases?per_page=30"
+    $releases = @(Invoke-RestMethod -Uri $url -Headers (Get-UpdateHeaders) -TimeoutSec 20)
+    $currentVersion = Get-ApplicationVersion
+    $candidate = $null
+    foreach ($release in $releases) {
+      if ($release.draft -or $release.prerelease) { continue }
+      $tag = [string]$release.tag_name
+      if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { continue }
+      $version = $Matches[1]
+      if ((Compare-SemVer $version $currentVersion) -le 0) { continue }
+      if ($candidate -and (Compare-SemVer $version $candidate.Version) -le 0) { continue }
+      $zipName = "super-canvas-v$version-windows-x64.zip"
+      $sidecarName = "super-canvas-v$version-release-manifest.json"
+      $zip = @($release.assets | Where-Object { $_.name -eq $zipName } | Select-Object -First 1)
+      $sidecar = @($release.assets | Where-Object { $_.name -eq $sidecarName } | Select-Object -First 1)
+      $candidate = [pscustomobject]@{
+        Version = $version
+        Tag = $tag
+        Commit = [string]$release.target_commitish
+        PublishedAt = [string]$release.published_at
+        HtmlUrl = [string]$release.html_url
+        Notes = ([string]$release.body).Substring(0, [Math]::Min(50000, ([string]$release.body).Length))
+        AssetName = $zipName
+        AssetSize = if ($zip) { [int64]$zip.size } else { $null }
+        AssetUrl = if ($zip) { [string]$zip.browser_download_url } else { $null }
+        ManifestUrl = if ($sidecar) { [string]$sidecar.browser_download_url } else { $null }
+      }
+    }
+    if (-not $candidate) {
+      Write-UpdateStatus @{ phase = "idle"; currentVersion = $currentVersion; lastSuccessfulCheckAt = $now; latest = $null }
+      return
+    }
+    $status = Read-UpdateStatusObject
+    $deferred = if ($status) { [string]$status.deferredVersion } else { "" }
+    $phase = if ($deferred -eq $candidate.Version) { "idle" } else { "available" }
+    Write-UpdateStatus @{
+      phase = $phase
+      currentVersion = $currentVersion
+      latest = $candidate
+      lastSuccessfulCheckAt = $now
+      error = if ($candidate.AssetUrl -and $candidate.ManifestUrl) { $null } else { "此版本缺少 Windows 更新包或校验清单" }
+    }
+    Write-ManagerLog "GitHub Release check found $($candidate.Tag)."
+  } catch {
+    Write-UpdateStatus @{ phase = "failed"; currentVersion = Get-ApplicationVersion; error = "检查 GitHub Release 失败：$($_.Exception.Message)" }
+    Write-ManagerLog "GitHub Release check failed: $($_.Exception.Message)"
+  }
+}
+
+function Invoke-ReleaseDownload {
+  $status = Read-UpdateStatusObject
+  $latest = if ($status) { $status.latest } else { $null }
+  if (-not $latest -or -not $latest.assetUrl -or -not $latest.manifestUrl) {
+    Invoke-ReleaseCheck
+    $status = Read-UpdateStatusObject
+    $latest = if ($status) { $status.latest } else { $null }
+  }
+  if (-not $latest -or -not $latest.assetUrl -or -not $latest.manifestUrl) {
+    Write-UpdateStatus @{ phase = "failed"; error = "当前 Release 没有可用的 Windows 更新包" }
+    return
+  }
+  if ([string]$latest.version -notmatch '^\d+\.\d+\.\d+$') { throw "Unsafe release version." }
+  $downloadDirectory = Join-Path $updateRoot "downloads"
+  New-Item -ItemType Directory -Path $downloadDirectory -Force | Out-Null
+  $archivePath = Join-Path $downloadDirectory ([System.IO.Path]::GetFileName([string]$latest.assetName))
+  $manifestPath = Join-Path $downloadDirectory "release-manifest.json"
+  Write-UpdateStatus @{ phase = "downloading"; progress = @{ downloadedBytes = 0; totalBytes = $latest.assetSize } ; error = $null }
+  try {
+    Invoke-WebRequest -Uri ([string]$latest.assetUrl) -Headers (Get-UpdateHeaders) -OutFile $archivePath -UseBasicParsing -TimeoutSec 300
+    Invoke-WebRequest -Uri ([string]$latest.manifestUrl) -Headers (Get-UpdateHeaders) -OutFile $manifestPath -UseBasicParsing -TimeoutSec 60
+    $sidecar = Get-Content -LiteralPath $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
+    if ([string]$sidecar.version -ne [string]$latest.version -or [string]$sidecar.tag -ne [string]$latest.tag -or [string]$sidecar.assetName -ne [string]$latest.assetName -or [string]$sidecar.assetSha256.ToLowerInvariant() -ne $hash) {
+      throw "更新包校验失败。"
+    }
+    Write-UpdateStatus @{ phase = "ready"; downloadedVersion = [string]$latest.version; downloadPath = $archivePath; progress = @{ downloadedBytes = (Get-Item -LiteralPath $archivePath).Length; totalBytes = (Get-Item -LiteralPath $archivePath).Length }; error = $null }
+    Write-ManagerLog "Downloaded and verified $($latest.tag)."
+  } catch {
+    Write-UpdateStatus @{ phase = "failed"; error = "下载更新失败：$($_.Exception.Message)" }
+    Write-ManagerLog "Release download failed: $($_.Exception.Message)"
+  }
+}
+
+function Read-UpdateCommand {
+  if (-not (Test-Path -LiteralPath $updateCommandPath)) { return $null }
+  try {
+    $command = Get-Content -LiteralPath $updateCommandPath -Raw -Encoding utf8 | ConvertFrom-Json
+    Remove-Item -LiteralPath $updateCommandPath -Force -ErrorAction SilentlyContinue
+    return $command
+  } catch {
+    Remove-Item -LiteralPath $updateCommandPath -Force -ErrorAction SilentlyContinue
+    return $null
+  }
+}
+
+function Remove-OldReleaseDirectories {
+  param([string]$KeepVersion)
+
+  if (-not (Test-Path -LiteralPath $releaseRoot)) { return }
+  $directories = @(Get-ChildItem -LiteralPath $releaseRoot -Directory -Force |
+    Where-Object { $_.Name -match '^v\d+\.\d+\.\d+$' } |
+    Sort-Object LastWriteTimeUtc -Descending)
+  $keptRollback = $false
+  foreach ($directory in $directories) {
+    if ($directory.Name -eq "v$KeepVersion") { continue }
+    if (-not $keptRollback) {
+      $keptRollback = $true
+      continue
+    }
+    try {
+      Remove-Item -LiteralPath $directory.FullName -Recurse -Force -ErrorAction Stop
+      Write-ManagerLog "Removed old release directory $($directory.Name)."
+    } catch {
+      Write-ManagerLog "Unable to remove old release directory $($directory.Name): $($_.Exception.Message)"
+    }
+  }
+}
+
 function Load-LocalEnvironment {
   if (-not (Test-Path -LiteralPath $envPath)) {
     throw "Missing $envPath; run scripts/prepare-local-public.mjs first."
@@ -45,6 +281,7 @@ function Load-LocalEnvironment {
     [Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
   }
 
+  $env:NEXT_PUBLIC_APP_VERSION = Get-ApplicationVersion
   $env:PORT = "$port"
 }
 
@@ -208,6 +445,8 @@ function Get-RecordedActiveSlot {
 }
 
 function Resolve-PnpmCommand {
+  param([switch]$Optional)
+
   $pnpm = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
   if ($pnpm -and $pnpm.Source) {
     return @{
@@ -229,6 +468,7 @@ function Resolve-PnpmCommand {
     }
   }
 
+  if ($Optional) { return $null }
   throw "Neither pnpm.cmd nor corepack.cmd could be found."
 }
 
@@ -278,6 +518,22 @@ function Invoke-LiveBuild {
   return $true
 }
 
+function Adopt-PrebuiltBuild {
+  param(
+    [string]$Slot,
+    [string]$Fingerprint
+  )
+
+  $prebuiltRoot = Join-Path $webRoot ".next"
+  if (-not (Test-Path -LiteralPath (Join-Path $prebuiltRoot "BUILD_ID"))) { return $false }
+  $slotRoot = Join-Path $webRoot $Slot
+  if (Test-Path -LiteralPath $slotRoot) { Remove-Item -LiteralPath $slotRoot -Recurse -Force }
+  New-Item -ItemType Directory -Path $slotRoot -Force | Out-Null
+  Copy-Item -Path (Join-Path $prebuiltRoot "*") -Destination $slotRoot -Recurse -Force
+  [System.IO.File]::WriteAllText((Join-Path $slotRoot ".source-fingerprint"), "$Fingerprint`r`n", [System.Text.Encoding]::ASCII)
+  return Test-ValidBuildSlot $Slot
+}
+
 function Stop-ProcessTree {
   param([int]$TargetProcessId)
 
@@ -296,11 +552,11 @@ function Stop-StaleCanvasServers {
     $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerId" -ErrorAction SilentlyContinue
     if (-not $processInfo) { continue }
     $commandLine = [string]$processInfo.CommandLine
-    $resolvedWebRoot = [System.IO.Path]::GetFullPath($webRoot)
-    $resolvedNextScript = [System.IO.Path]::GetFullPath($nextScript)
+    $knownRoots = @($webRoot) + @($script:previousWebRoots)
     $isCanvasServer =
-      $commandLine.IndexOf($resolvedWebRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-      $commandLine.IndexOf($resolvedNextScript, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+      ($knownRoots | Where-Object {
+        $commandLine.IndexOf([System.IO.Path]::GetFullPath($_), [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+      }).Count -gt 0 -and
       $commandLine -match '(?i)\bstart\b.*(?:-p|--port)\s+[\"]?3210\b'
     if (-not $isCanvasServer) {
       throw "Port $port is occupied by another application (PID $ownerId)."
@@ -451,6 +707,123 @@ function Start-LiveServer {
   }
 }
 
+function Invoke-ReleaseApply {
+  param(
+    [ref]$ActiveSlot,
+    [ref]$ServerProcess,
+    [ref]$DeployedFingerprint,
+    [ref]$LastAttemptedFingerprint,
+    [string]$NodeCommand
+  )
+
+  $status = Read-UpdateStatusObject
+  $archivePath = if ($status) { [string]$status.downloadPath } else { "" }
+  $version = if ($status) { [string]$status.downloadedVersion } else { "" }
+  if (-not $status -or $status.phase -ne "ready" -or -not $archivePath -or $version -notmatch '^\d+\.\d+\.\d+$' -or -not (Test-Path -LiteralPath $archivePath)) {
+    Write-UpdateStatus @{ phase = "failed"; error = "更新包尚未准备完成" }
+    return
+  }
+  $currentVersion = Get-ApplicationVersion
+  if ((Compare-SemVer $version $currentVersion) -le 0) {
+    Write-UpdateStatus @{ phase = "failed"; currentVersion = $currentVersion; error = "拒绝安装低于或等于当前版本的更新包" }
+    return
+  }
+
+  $candidateRoot = Join-Path $releaseRoot "v$version"
+  $previousRoot = $script:workspace
+  $previousSlot = $ActiveSlot.Value
+  $previousFingerprint = $DeployedFingerprint.Value
+  Write-UpdateStatus @{ phase = "waiting_for_idle"; error = $null }
+  # Stop new paid submissions while waiting, otherwise a continuously busy
+  # canvas could keep extending the drain window forever.
+  Enter-DeploymentDrain
+  try {
+    if (Test-Path -LiteralPath $candidateRoot) { Remove-Item -LiteralPath $candidateRoot -Recurse -Force }
+    New-Item -ItemType Directory -Path $candidateRoot -Force | Out-Null
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $candidateRoot -Force
+    $manifestPath = Join-Path $candidateRoot "release-manifest.json"
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+    if (
+      [int]$manifest.formatVersion -ne 1 -or
+      [string]$manifest.app -ne "super-canvas" -or
+      [string]$manifest.version -ne $version -or
+      [string]$manifest.tag -ne "v$version"
+    ) { throw "更新包版本清单不匹配。" }
+    $candidatePackage = Get-Content -LiteralPath (Join-Path $candidateRoot "package.json") -Raw -Encoding utf8 | ConvertFrom-Json
+    if ([string]$candidatePackage.version -ne $version) { throw "更新包 package.json 版本不匹配。" }
+
+    # The drain protocol guarantees that a paid run is not killed by a release
+    # switch. Port 3210 is then handed to the candidate; a failed health check
+    # starts the previous release again.
+    Wait-ForActiveRunDrain
+    Write-UpdateStatus @{ phase = "applying"; error = $null }
+    Set-ActiveReleaseRoot -Root $candidateRoot
+    if (-not (Test-Path -LiteralPath $script:nextScript)) { throw "更新包缺少 Next.js 运行时。" }
+    $candidateFingerprint = Get-SourceFingerprint
+    $candidateSlot = Select-InactiveSlot -ActiveSlot $previousSlot
+    $buildOutcome = if (Adopt-PrebuiltBuild -Slot $candidateSlot -Fingerprint $candidateFingerprint) {
+      @($true)
+    } elseif ($pnpmCommand) {
+      @(Invoke-LiveBuild -Slot $candidateSlot -Fingerprint $candidateFingerprint -PnpmCommand $pnpmCommand -PnpmPrefixArguments $pnpmPrefixArguments)
+    } else {
+      @($false)
+    }
+    $buildSucceeded = $buildOutcome.Count -eq 1 -and $buildOutcome[0] -is [bool] -and $buildOutcome[0]
+    if (-not $buildSucceeded) { throw "更新包构建失败。" }
+    $newServer = Start-LiveServer -Slot $candidateSlot -NodeCommand $NodeCommand -NextScript $script:nextScript
+    $ServerProcess.Value = $newServer
+    $ActiveSlot.Value = $candidateSlot
+    $DeployedFingerprint.Value = $candidateFingerprint
+    $LastAttemptedFingerprint.Value = $null
+    [System.IO.File]::WriteAllText((Join-Path $installRoot "active-release.txt"), "$candidateRoot`r`n", [System.Text.Encoding]::ASCII)
+    Remove-OldReleaseDirectories -KeepVersion $version
+    Write-UpdateStatus @{ phase = "idle"; currentVersion = $version; downloadedVersion = $version; error = $null }
+    Write-ManagerLog "Applied GitHub Release v$version."
+  } catch {
+    Write-ManagerLog "Release apply failed: $($_.Exception.Message)"
+    $failedRoot = $script:workspace
+    if ($previousRoot -and (Test-Path -LiteralPath $previousRoot)) {
+      Set-ActiveReleaseRoot -Root $previousRoot
+      $ActiveSlot.Value = $previousSlot
+      $DeployedFingerprint.Value = $previousFingerprint
+      try {
+        $ServerProcess.Value = Start-LiveServer -Slot $previousSlot -NodeCommand $NodeCommand -NextScript $script:nextScript
+      } catch {
+        Write-ManagerLog "Unable to restore previous release: $($_.Exception.Message)"
+      }
+    }
+    if ($failedRoot -and $failedRoot -ne $previousRoot) {
+      Write-ManagerLog "Keeping failed release directory for diagnostics: $failedRoot"
+    }
+    Write-UpdateStatus @{ phase = "failed"; currentVersion = Get-ApplicationVersion; error = "应用更新失败：$($_.Exception.Message)" }
+  } finally {
+    Exit-DeploymentDrain
+  }
+}
+
+function Invoke-UpdateCommand {
+  param(
+    [ref]$ActiveSlot,
+    [ref]$ServerProcess,
+    [ref]$DeployedFingerprint,
+    [ref]$LastAttemptedFingerprint,
+    [string]$NodeCommand
+  )
+
+  $command = Read-UpdateCommand
+  if (-not $command) { return }
+  switch ([string]$command.action) {
+    "check" { Invoke-ReleaseCheck }
+    "download" { Invoke-ReleaseDownload }
+    "apply" { Invoke-ReleaseApply -ActiveSlot $ActiveSlot -ServerProcess $ServerProcess -DeployedFingerprint $DeployedFingerprint -LastAttemptedFingerprint $LastAttemptedFingerprint -NodeCommand $NodeCommand }
+    "defer" {
+      $version = [string]$command.version
+      if ($version) { Write-UpdateStatus @{ phase = "idle"; deferredVersion = $version } }
+    }
+    default { Write-ManagerLog "Ignoring unknown update command $($command.action)." }
+  }
+}
+
 $managerMutex = New-Object System.Threading.Mutex($false, "Local\SuperCanvasWeb3210")
 $ownsMutex = $false
 try {
@@ -470,11 +843,12 @@ try {
     Write-ManagerLog "Hot standby acquired the manager lock; taking over."
   }
 
-  $packageManager = Resolve-PnpmCommand
-  $pnpmCommand = $packageManager.Command
-  $pnpmPrefixArguments = @($packageManager.PrefixArguments)
+  $packageManager = Resolve-PnpmCommand -Optional
+  $pnpmCommand = if ($packageManager) { $packageManager.Command } else { $null }
+  $pnpmPrefixArguments = if ($packageManager) { @($packageManager.PrefixArguments) } else { @() }
   $nodeCommand = (Get-Command node.exe -ErrorAction Stop).Source
-  $nextScript = Join-Path $webRoot "node_modules\next\dist\bin\next"
+  Set-ActiveReleaseRoot -Root $workspace
+  $nextScript = $script:nextScript
   if (-not (Test-Path -LiteralPath $nextScript)) {
     throw "Missing Next.js command: $nextScript"
   }
@@ -490,7 +864,14 @@ try {
       $previousActiveSlot = Find-LatestValidSlot
     }
     $targetSlot = Select-InactiveSlot -ActiveSlot $previousActiveSlot
-    $initialBuildOutcome = @(Invoke-LiveBuild -Slot $targetSlot -Fingerprint $deployedFingerprint -PnpmCommand $pnpmCommand -PnpmPrefixArguments $pnpmPrefixArguments)
+    $initialBuildOutcome = if (Adopt-PrebuiltBuild -Slot $targetSlot -Fingerprint $deployedFingerprint) {
+      @($true)
+    } elseif ($pnpmCommand) {
+      @(Invoke-LiveBuild -Slot $targetSlot -Fingerprint $deployedFingerprint -PnpmCommand $pnpmCommand -PnpmPrefixArguments $pnpmPrefixArguments)
+    } else {
+      Write-ManagerLog "No prebuilt Next.js output or pnpm was found; cannot build the active release."
+      @($false)
+    }
     $initialBuildSucceeded =
       $initialBuildOutcome.Count -eq 1 -and
       $initialBuildOutcome[0] -is [bool] -and
@@ -517,9 +898,24 @@ try {
     }
   }
 
+  Write-UpdateStatus @{
+    phase = if ((Get-UpdateConfig).Enabled) { "idle" } else { "disabled" }
+    currentVersion = Get-ApplicationVersion
+    error = $null
+  }
+  Invoke-ReleaseCheck
+  $nextUpdateCheckAt = (Get-Date).AddSeconds((Get-UpdateConfig).IntervalSeconds)
+
   $lastAttemptedFingerprint = $deployedFingerprint
   while ($true) {
     Start-Sleep -Seconds 2
+
+    Invoke-UpdateCommand -ActiveSlot ([ref]$activeSlot) -ServerProcess ([ref]$serverProcess) -DeployedFingerprint ([ref]$deployedFingerprint) -LastAttemptedFingerprint ([ref]$lastAttemptedFingerprint) -NodeCommand $nodeCommand
+    $nextScript = $script:nextScript
+    if ((Get-Date) -ge $nextUpdateCheckAt) {
+      Invoke-ReleaseCheck
+      $nextUpdateCheckAt = (Get-Date).AddSeconds((Get-UpdateConfig).IntervalSeconds)
+    }
 
     if ($serverProcess -and $serverProcess.HasExited) {
       Write-ManagerLog "Server PID $($serverProcess.Id) exited; restarting the active build in 5 seconds."
@@ -544,7 +940,13 @@ try {
     $lastAttemptedFingerprint = $targetFingerprint
     $targetSlot = Select-InactiveSlot -ActiveSlot $activeSlot
 
-    $buildOutcome = @(Invoke-LiveBuild -Slot $targetSlot -Fingerprint $targetFingerprint -PnpmCommand $pnpmCommand -PnpmPrefixArguments $pnpmPrefixArguments)
+    $buildOutcome = if (Adopt-PrebuiltBuild -Slot $targetSlot -Fingerprint $targetFingerprint) {
+      @($true)
+    } elseif ($pnpmCommand) {
+      @(Invoke-LiveBuild -Slot $targetSlot -Fingerprint $targetFingerprint -PnpmCommand $pnpmCommand -PnpmPrefixArguments $pnpmPrefixArguments)
+    } else {
+      @($false)
+    }
     $buildSucceeded =
       $buildOutcome.Count -eq 1 -and
       $buildOutcome[0] -is [bool] -and

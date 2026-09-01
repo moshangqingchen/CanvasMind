@@ -1,0 +1,98 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $tag = "${{ github.ref_name }}"
+          if ($tag -ne "v$version") { throw "Release tag $tag does not match package.json version $version." }
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Remove development dependencies
+        run: pnpm prune --prod
+
+      - name: Stage runtime package
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:GITHUB_WORKSPACE ".release-stage"
+          if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          foreach ($name in @("apps", "packages", "scripts", "node_modules")) {
+            Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $name) -Destination $stage -Recurse -Force
+          }
+          foreach ($name in @("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc")) {
+            Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $name) -Destination $stage -Force
+          }
+          Get-ChildItem -LiteralPath $stage -Recurse -Directory -Force |
+            Where-Object { $_.Name -in @("data", "storage", "backups", "test-results", "playwright-report", ".next-live-a", ".next-live-b") } |
+            Sort-Object FullName -Descending |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -LiteralPath $stage -Recurse -File -Force |
+            Where-Object { $_.Name -match "\.log$|\.tsbuildinfo$" } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -LiteralPath $stage -Recurse -File -Force |
+            Where-Object { $_.Name -match '^\.env(?:\..*)?$|\.local-public\.env$' } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+          node scripts/write-release-manifest.mjs --output (Join-Path $stage "release-manifest.json") --version $env:APP_VERSION --commit "${{ github.sha }}"
+          $archive = Join-Path $env:GITHUB_WORKSPACE "super-canvas-v$env:APP_VERSION-windows-x64.zip"
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $archive -CompressionLevel Optimal
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          $sidecar = [ordered]@{
+            formatVersion = 1
+            app = "super-canvas"
+            version = $env:APP_VERSION
+            tag = "v$env:APP_VERSION"
+            commit = "${{ github.sha }}"
+            assetName = [System.IO.Path]::GetFileName($archive)
+            assetSha256 = $hash
+            builtAt = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $manifestPath = Join-Path $env:GITHUB_WORKSPACE "super-canvas-v$env:APP_VERSION-release-manifest.json"
+          $sidecar | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+          "ARCHIVE=$archive" >> $env:GITHUB_ENV
+          "SIDECAR=$manifestPath" >> $env:GITHUB_ENV
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create $tag --title "Super Canvas $tag" --generate-notes }
+          gh release upload $tag $env:ARCHIVE $env:SIDECAR --clobber

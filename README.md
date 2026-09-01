@@ -361,6 +361,42 @@ infra/minio       本地直传 CORS 配置
 pnpm public:watch
 ```
 
+### GitHub Release 更新
+
+如果要把本地运行目录与开发仓库分开，先在开发仓库发布一个与根目录
+`package.json` 一致的 GitHub Release，例如 `package.json` 为 `0.2.0` 时创建
+`v0.2.0`：
+
+```powershell
+pnpm public:install
+```
+
+该命令会从公开仓库 `moshangqingchen/CanvasMind` 下载并校验 Windows x64
+运行包，安装到 `%LOCALAPPDATA%\SuperCanvas`，并生成独立的数据、素材和环境配置目录。
+之后用安装目录中的 `start-local-public.ps1` 启动，或在仓库中运行：
+
+```powershell
+pnpm public:start:installed
+```
+
+画布启动时和每 10 分钟会检查 GitHub Releases。发现新版本后，项目菜单中的“应用更新”
+会显示版本号、发布时间、提交标识和 Release 正文。确认下载后，更新包会在后台校验；有生成
+任务时会等任务结束，再启动新版本并健康检查。失败时保留旧版本并恢复服务。应用更新不会覆盖
+画布 JSON、素材、密钥或 `.local-public.env`。
+
+更新检查可通过以下环境变量调整：
+
+```text
+SUPERCANVAS_UPDATE_ENABLED=true
+SUPERCANVAS_UPDATE_REPOSITORY=moshangqingchen/CanvasMind
+SUPERCANVAS_UPDATE_INTERVAL_SECONDS=600
+SUPERCANVAS_GITHUB_TOKEN=
+```
+
+公开仓库不需要 Token；私有仓库或 GitHub API 限流时才配置 Token。普通分支 push 只运行 CI，
+不会直接升级本地画布；必须发布带 `v` 前缀且与 `package.json` 对齐的 Release。开发源码热更新
+仍使用 `pnpm public:watch`。
+
 首次运行会先构建密钥迁移工具、生成 `.local-public.env` 和本地 JSON 数据库；已有配置项会原样保留，只补齐缺失的本地默认项和空的 `MASTER_KEY`。脚本不再写入固定公网域名；如需反向代理，请自行设置 `PUBLIC_BASE_URL` 和登录变量。只有确实迁移旧开发主密钥加密的连接时才会在 `backups` 中留下备份。
 
 管理器会监听 Web 运行代码、共享 packages 源码、项目依赖配置和 `.local-public.env`。文件停止变化 2 秒后，它会在备用 `.next-live-*` 目录完成生产构建；只有构建成功且源码在构建期间未再次变化时，才会停止旧进程并使用新进程接管 3210 端口。构建失败时保留当前可用服务，修改源码后自动重试。`apps/web/data`、`apps/web/storage`、测试文件和构建产物不参与监听，因此画布自动保存和素材写入不会触发服务重启。

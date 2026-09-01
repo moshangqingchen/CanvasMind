@@ -59,6 +59,8 @@ describe("provider presets", () => {
       CANGYUAN_NANO_BANANA_2_1K_MODEL,
       CANGYUAN_NANO_BANANA_2_2K_MODEL,
       CANGYUAN_NANO_BANANA_2_4K_MODEL,
+      "midjourney-8.2-1k",
+      "midjourney-8.2-2k",
     ]);
     expect(
       CANGYUAN_IMAGE_CONNECTOR.models?.find(
@@ -100,6 +102,8 @@ describe("provider presets", () => {
       CANGYUAN_NANO_BANANA_2_1K_MODEL,
       CANGYUAN_NANO_BANANA_2_2K_MODEL,
       CANGYUAN_NANO_BANANA_2_4K_MODEL,
+      "midjourney-8.2-1k",
+      "midjourney-8.2-2k",
     ]);
 
     const modelById = (id: string) =>
