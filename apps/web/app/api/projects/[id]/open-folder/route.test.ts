@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   ensureProjectDirectory: vi.fn(),
   projectDirectory: vi.fn(),
   spawn: vi.fn(),
+  once: vi.fn(),
   unref: vi.fn(),
 }));
 
@@ -37,7 +38,15 @@ beforeEach(() => {
   });
   mocks.ensureProjectDirectory.mockResolvedValue(undefined);
   mocks.projectDirectory.mockReturnValue("D:\\超级画布\\项目\\测试项目");
-  mocks.spawn.mockReturnValue({ unref: mocks.unref });
+  const child = {
+    once: mocks.once,
+    unref: mocks.unref,
+  };
+  mocks.once.mockImplementation((event: string, listener: () => void) => {
+    if (event === "spawn") listener();
+    return child;
+  });
+  mocks.spawn.mockReturnValue(child);
 });
 
 describe("/api/projects/[id]/open-folder", () => {
@@ -65,9 +74,42 @@ describe("/api/projects/[id]/open-folder", () => {
     expect(mocks.spawn).toHaveBeenCalledWith(
       "explorer.exe",
       ["D:\\超级画布\\项目\\测试项目"],
-      expect.objectContaining({ detached: true, stdio: "ignore" }),
+      expect.objectContaining({
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      }),
     );
     expect(mocks.unref).toHaveBeenCalledOnce();
+  });
+
+  it("returns an error when Windows Explorer cannot start", async () => {
+    const child = {
+      once: mocks.once,
+      unref: mocks.unref,
+    };
+    mocks.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
+      if (event === "error") listener(new Error("explorer unavailable"));
+      return child;
+    });
+    mocks.spawn.mockReturnValue(child);
+
+    const response = await POST(
+      new Request("http://localhost/api/projects/canvas-1/open-folder", {
+        method: "POST",
+      }),
+      context,
+    );
+
+    if (process.platform !== "win32") {
+      expect(response.status).toBe(200);
+      return;
+    }
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "explorer unavailable",
+    });
+    expect(mocks.unref).not.toHaveBeenCalled();
   });
 
   it("returns 404 without opening anything for an unknown project", async () => {

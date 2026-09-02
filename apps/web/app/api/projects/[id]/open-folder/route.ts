@@ -4,6 +4,21 @@ import { jsonError, repository } from "../../../../../lib/server";
 import { ensureProjectDirectory } from "../../../../../lib/project-service";
 import { getProjectFileStore } from "@super-canvas/storage";
 
+async function openInExplorer(directory: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("explorer.exe", [directory], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+    });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
 export async function POST(
   _: Request,
   context: { params: Promise<{ id: string }> },
@@ -25,12 +40,7 @@ export async function POST(
       });
     }
 
-    const child = spawn("explorer.exe", [directory], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    child.unref();
+    await openInExplorer(directory);
     return Response.json({ opened: true });
   } catch (error) {
     return jsonError(

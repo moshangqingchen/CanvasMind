@@ -8174,7 +8174,10 @@ function CanvasShell({
           }}
           onCreateProject={onCreateProject}
           onCleanupProject={onCleanupProject}
-          onOpenProjectFolder={onOpenProjectFolder}
+          onOpenProjectFolder={async (nextId) => {
+            await onOpenProjectFolder(nextId);
+            showToast("已打开项目文件夹", "success");
+          }}
         />
         <aside className={`sidebar ${mobileLibraryOpen ? "mobile-open" : ""}`}>
           <button
