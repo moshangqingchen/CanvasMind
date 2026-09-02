@@ -82,6 +82,7 @@ import {
   createRun,
   cleanupProjectDraft,
   openProjectFolder,
+  renameProject,
   claimMaterialDrop,
   canvasErrorMessage,
   deleteAssets,
@@ -111,7 +112,12 @@ import {
   requestAppUpdate,
   type AppUpdateView,
   type ProjectSummaryView,
+  type RenameProjectResult,
 } from "../lib/client-api";
+import {
+  ProjectActionDialog,
+  type ProjectActionDialogState,
+} from "./project-action-dialog";
 import {
   CANGYUAN_ALL_MODELS_GROUP,
   CANGYUAN_IMAGE_4K_MODEL,
@@ -2005,6 +2011,10 @@ interface CanvasShellProps {
   onCreateProject: (title: string) => Promise<void>;
   onCleanupProject: (projectId: string) => Promise<void>;
   onOpenProjectFolder: (projectId: string) => Promise<void>;
+  onRenameProject: (
+    projectId: string,
+    title: string,
+  ) => Promise<RenameProjectResult>;
   onDeleteProject: (projectId: string) => Promise<string | undefined>;
 }
 
@@ -2022,6 +2032,7 @@ function ProjectSidebar({
   onCreateProject,
   onCleanupProject,
   onOpenProjectFolder,
+  onRenameProject,
   onDeleteProject,
 }: {
   projects: ProjectSummaryView[];
@@ -2031,6 +2042,10 @@ function ProjectSidebar({
   onCreateProject: (title: string) => Promise<void>;
   onCleanupProject: (projectId: string) => Promise<void>;
   onOpenProjectFolder: (projectId: string) => Promise<void>;
+  onRenameProject: (
+    projectId: string,
+    title: string,
+  ) => Promise<RenameProjectResult>;
   onDeleteProject: (projectId: string) => Promise<string | undefined>;
 }) {
   const [creating, setCreating] = useState(false);
@@ -2039,6 +2054,8 @@ function ProjectSidebar({
   const [error, setError] = useState("");
   const [contextMenu, setContextMenu] =
     useState<ProjectContextMenuState | null>(null);
+  const [dialogAction, setDialogAction] =
+    useState<ProjectActionDialogState | null>(null);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -2065,26 +2082,12 @@ function ProjectSidebar({
     }
   };
 
-  const cleanup = async () => {
-    if (busy) return;
-    if (!window.confirm("只清理当前项目的草稿文件，成品文件不会被删除。确定继续吗？"))
-      return;
-    setBusy(true);
-    setError("");
-    try {
-      await onCleanupProject(activeProjectId);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "项目草稿清理失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
-    <aside
-      className={`project-sidebar ${mobileOpen ? "mobile-open" : ""}`}
-      aria-label="项目对话"
-    >
+    <>
+      <aside
+        className={`project-sidebar ${mobileOpen ? "mobile-open" : ""}`}
+        aria-label="项目对话"
+      >
       <div className="project-sidebar-head">
         <div>
           <strong>项目对话</strong>
@@ -2146,7 +2149,7 @@ function ProjectSidebar({
               setContextMenu({
                 project,
                 x: Math.min(event.clientX, Math.max(8, window.innerWidth - 232)),
-                y: Math.min(event.clientY, Math.max(8, window.innerHeight - 96)),
+                y: Math.min(event.clientY, Math.max(8, window.innerHeight - 160)),
               });
             }}
           >
@@ -2186,6 +2189,21 @@ function ProjectSidebar({
               role="menuitem"
               disabled={busy}
               onClick={() => {
+                setDialogAction({
+                  mode: "rename",
+                  project: contextMenu.project,
+                });
+                setContextMenu(null);
+                setError("");
+              }}
+            >
+              <Pencil size={14} /> 重命名项目
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
                 const projectId = contextMenu.project.id;
                 setContextMenu(null);
                 setBusy(true);
@@ -2213,26 +2231,8 @@ function ProjectSidebar({
               onClick={() => {
                 const project = contextMenu.project;
                 setContextMenu(null);
-                if (
-                  !window.confirm(
-                    `确定永久删除项目“${project.title}”吗？\n\n项目画布、对话、运行记录以及草稿/成品文件夹都会删除，且无法恢复。`,
-                  )
-                )
-                  return;
-                setBusy(true);
+                setDialogAction({ mode: "delete", project });
                 setError("");
-                void onDeleteProject(project.id)
-                  .then((warning) => {
-                    if (warning) setError(warning);
-                  })
-                  .catch((nextError) => {
-                    setError(
-                      nextError instanceof Error
-                        ? nextError.message
-                        : "项目删除失败",
-                    );
-                  })
-                  .finally(() => setBusy(false));
               }}
             >
               <Trash2 size={14} /> 删除项目
@@ -2244,14 +2244,32 @@ function ProjectSidebar({
         <button
           className="button danger small"
           type="button"
-          onClick={() => void cleanup()}
+          onClick={() => {
+            const project = projects.find((item) => item.id === activeProjectId);
+            if (project) setDialogAction({ mode: "cleanup", project });
+          }}
           disabled={busy || !activeProjectId}
         >
           <Trash2 size={13} /> 清理本项目草稿
         </button>
         {error ? <span className="field-note" role="alert">{error}</span> : null}
       </div>
-    </aside>
+      </aside>
+      {dialogAction ? (
+        <ProjectActionDialog
+          key={`${dialogAction.mode}:${dialogAction.project.id}:${dialogAction.project.title}`}
+          action={dialogAction}
+          onClose={() => setDialogAction(null)}
+          onRename={async (projectId, title) => {
+            await onRenameProject(projectId, title);
+          }}
+          onDelete={async (projectId) => {
+            await onDeleteProject(projectId);
+          }}
+          onCleanup={onCleanupProject}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -2262,6 +2280,7 @@ function CanvasShell({
   onCreateProject,
   onCleanupProject,
   onOpenProjectFolder,
+  onRenameProject,
   onDeleteProject,
 }: CanvasShellProps) {
   const [canvasId, setCanvasId] = useState<string | null>(projectId);
@@ -3011,7 +3030,7 @@ function CanvasShell({
       setBusy(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, projectTitle, showToast]);
+  }, [projectId, showToast]);
 
   const saveRequest = useCallback(
     async (request: CanvasSaveRequest, reportError = true) => {
@@ -8212,10 +8231,24 @@ function CanvasShell({
             onSelectProject(nextId);
           }}
           onCreateProject={onCreateProject}
-          onCleanupProject={onCleanupProject}
+          onCleanupProject={async (nextId) => {
+            await onCleanupProject(nextId);
+            showToast("项目草稿已清理，成品文件保持不变", "success");
+          }}
           onOpenProjectFolder={async (nextId) => {
             await onOpenProjectFolder(nextId);
             showToast("已打开项目文件夹", "success");
+          }}
+          onRenameProject={async (nextId, nextTitle) => {
+            if (nextId === canvasId) await saveNow();
+            const result = await onRenameProject(nextId, nextTitle);
+            if (nextId === canvasId) {
+              canvasRevision.current = result.revision;
+              setCanvasRevisionValue(result.revision);
+              setTitle(result.project.title);
+            }
+            showToast("项目与文件夹已同步重命名", "success");
+            return result;
           }}
           onDeleteProject={async (nextId) => {
             const warning = await onDeleteProject(nextId);
@@ -9541,6 +9574,19 @@ export function CanvasApp() {
     await openProjectFolder(projectId);
   }, []);
 
+  const handleRenameProject = useCallback(
+    async (projectId: string, title: string) => {
+      const result = await renameProject(projectId, title);
+      setProjects((current) =>
+        current?.map((project) =>
+          project.id === projectId ? result.project : project,
+        ) ?? null,
+      );
+      return result;
+    },
+    [],
+  );
+
   const handleDeleteProject = useCallback(async (projectId: string) => {
     const result = await deleteProject(projectId);
     setProjects((current) =>
@@ -9585,6 +9631,7 @@ export function CanvasApp() {
         onCreateProject={handleCreateProject}
         onCleanupProject={handleCleanupProject}
         onOpenProjectFolder={handleOpenProjectFolder}
+        onRenameProject={handleRenameProject}
         onDeleteProject={handleDeleteProject}
       />
     </ReactFlowProvider>

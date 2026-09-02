@@ -8,6 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import {
   dirname,
   extname,
@@ -192,6 +193,69 @@ export class ProjectFileStore {
     ];
     for (const directory of directories) await this.ensureSafeDirectory(directory);
     return project;
+  }
+
+  async renameProject(
+    currentProjectName: string,
+    nextProjectName: string,
+  ): Promise<boolean> {
+    const currentProject = this.projectDirectory(currentProjectName);
+    const nextProject = this.projectDirectory(nextProjectName);
+    if (currentProject === nextProject) {
+      await this.ensureProject(nextProjectName);
+      return false;
+    }
+
+    await mkdir(this.root, { recursive: true });
+    const rootDetails = await lstat(this.root);
+    if (rootDetails.isSymbolicLink() || !rootDetails.isDirectory())
+      throw new Error("项目根目录无效");
+
+    let currentExists = true;
+    try {
+      const currentDetails = await lstat(currentProject);
+      if (currentDetails.isSymbolicLink() || !currentDetails.isDirectory())
+        throw new Error("原项目目录无效");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      currentExists = false;
+    }
+
+    const caseOnlyRename =
+      process.platform === "win32" &&
+      currentProject.toLocaleLowerCase() === nextProject.toLocaleLowerCase();
+    if (!caseOnlyRename) {
+      try {
+        await lstat(nextProject);
+        throw new Error("目标项目文件夹已存在，请换一个项目名称");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+
+    if (!currentExists) {
+      await this.ensureProject(nextProjectName);
+      return false;
+    }
+
+    if (caseOnlyRename) {
+      const temporary = join(
+        /* turbopackIgnore: true */ this.root,
+        `.project-rename-${randomUUID()}`,
+      );
+      assertWithin(this.root, temporary);
+      await rename(currentProject, temporary);
+      try {
+        await rename(temporary, nextProject);
+      } catch (error) {
+        await rename(temporary, currentProject).catch(() => undefined);
+        throw error;
+      }
+    } else {
+      await rename(currentProject, nextProject);
+    }
+    await this.ensureProject(nextProjectName);
+    return true;
   }
 
   async deleteProject(projectName: string): Promise<boolean> {

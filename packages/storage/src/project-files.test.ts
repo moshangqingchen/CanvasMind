@@ -20,6 +20,35 @@ const asset = {
 };
 
 describe("ProjectFileStore", () => {
+  it("renames the project directory without losing archived files", async () => {
+    const store = await storeFixture();
+    const archived = await store.archiveDraft({ ...asset, source: "external" });
+    const currentProject = store.projectDirectory(asset.projectName);
+    const nextProject = store.projectDirectory("李大叔的新项目");
+
+    await expect(
+      store.renameProject(asset.projectName, "李大叔的新项目"),
+    ).resolves.toBe(true);
+
+    await expect(stat(currentProject)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(nextProject)).resolves.toBeTruthy();
+    await expect(
+      readFile(archived.path.replace(currentProject, nextProject), "utf8"),
+    ).resolves.toBe("image");
+    await expect(stat(join(nextProject, "成品", "图片"))).resolves.toBeTruthy();
+  });
+
+  it("refuses to merge a project into an existing folder", async () => {
+    const store = await storeFixture();
+    await store.ensureProject("原项目");
+    await store.ensureProject("已有项目");
+
+    await expect(store.renameProject("原项目", "已有项目")).rejects.toThrow(
+      "目标项目文件夹已存在",
+    );
+    await expect(stat(store.projectDirectory("原项目"))).resolves.toBeTruthy();
+  });
+
   it("deletes the complete project directory", async () => {
     const store = await storeFixture();
     await store.archiveDraft({ ...asset, source: "external" });

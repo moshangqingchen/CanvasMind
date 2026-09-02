@@ -7438,6 +7438,185 @@ body {
   opacity: 0.55;
 }
 
+.project-action-backdrop {
+  z-index: 120;
+}
+
+.project-action-dialog {
+  width: min(470px, calc(100vw - 32px));
+  border-color: rgba(120, 133, 165, 0.42);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(126, 108, 225, 0.12), transparent 42%),
+    #121722;
+}
+
+.project-action-dialog.is-danger {
+  border-color: rgba(255, 123, 145, 0.34);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 91, 120, 0.1), transparent 42%),
+    #121722;
+}
+
+.project-action-dialog-head {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-action-dialog-head > div:nth-child(2) {
+  min-width: 0;
+}
+
+.project-action-dialog-head span {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.project-action-dialog-head h2 {
+  margin: 3px 0 0;
+  color: #f3f5ff;
+  font-size: 17px;
+}
+
+.project-action-dialog-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(155, 140, 255, 0.36);
+  border-radius: 12px;
+  color: #c9c0ff;
+  background: rgba(126, 108, 225, 0.14);
+}
+
+.project-action-dialog-icon.danger {
+  border-color: rgba(255, 123, 145, 0.4);
+  color: #ff9cad;
+  background: rgba(255, 91, 120, 0.12);
+}
+
+.project-action-dialog-body {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.project-rename-field {
+  display: grid;
+  gap: 8px;
+}
+
+.project-rename-field > span {
+  color: #d8deef;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.project-rename-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #46516a;
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: #0a0f18;
+  color: #f3f5ff;
+  font: inherit;
+  outline: none;
+}
+
+.project-rename-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(155, 140, 255, 0.14);
+}
+
+.project-rename-field small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.project-action-warning {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(155, 140, 255, 0.24);
+  border-radius: 10px;
+  color: #bdb4ff;
+  background: rgba(126, 108, 225, 0.08);
+}
+
+.project-action-warning.danger {
+  border-color: rgba(255, 123, 145, 0.3);
+  color: #ff9cad;
+  background: rgba(255, 91, 120, 0.08);
+}
+
+.project-action-warning strong {
+  color: #eef1fb;
+  font-size: 12px;
+}
+
+.project-action-warning p {
+  margin: 5px 0 0;
+  color: #9ca7bd;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.project-action-target {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(8, 12, 19, 0.66);
+}
+
+.project-action-target span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.project-action-target strong {
+  overflow: hidden;
+  color: #e8ecf7;
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-action-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: #ff9cad;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.project-action-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.project-action-dialog-actions .button {
+  min-width: 92px;
+  justify-content: center;
+}
+
 .project-row-icon {
   width: 28px;
   height: 28px;

@@ -272,6 +272,40 @@ export async function createProject(title: string): Promise<ProjectSummaryView> 
   return payload.project;
 }
 
+export interface RenameProjectResult {
+  project: ProjectSummaryView;
+  revision: number;
+  folderRenamed: boolean;
+}
+
+export async function renameProject(
+  projectId: string,
+  title: string,
+): Promise<RenameProjectResult> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    project?: ProjectSummaryView;
+    revision?: number;
+    folderRenamed?: boolean;
+    error?: string;
+  } | null;
+  if (
+    !response.ok ||
+    !payload?.project ||
+    typeof payload.revision !== "number"
+  )
+    throw new Error(payload?.error ?? "项目重命名失败");
+  return {
+    project: payload.project,
+    revision: payload.revision,
+    folderRenamed: payload.folderRenamed === true,
+  };
+}
+
 export async function fetchProjectChat(
   projectId: string,
 ): Promise<ProjectChatMessageView[]> {
