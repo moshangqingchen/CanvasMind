@@ -85,6 +85,7 @@ import {
   claimMaterialDrop,
   canvasErrorMessage,
   deleteAssets,
+  deleteProject,
   fetchProjects,
   createProject,
   archiveProjectAssets,
@@ -2004,6 +2005,7 @@ interface CanvasShellProps {
   onCreateProject: (title: string) => Promise<void>;
   onCleanupProject: (projectId: string) => Promise<void>;
   onOpenProjectFolder: (projectId: string) => Promise<void>;
+  onDeleteProject: (projectId: string) => Promise<string | undefined>;
 }
 
 interface ProjectContextMenuState {
@@ -2020,6 +2022,7 @@ function ProjectSidebar({
   onCreateProject,
   onCleanupProject,
   onOpenProjectFolder,
+  onDeleteProject,
 }: {
   projects: ProjectSummaryView[];
   activeProjectId: string;
@@ -2028,6 +2031,7 @@ function ProjectSidebar({
   onCreateProject: (title: string) => Promise<void>;
   onCleanupProject: (projectId: string) => Promise<void>;
   onOpenProjectFolder: (projectId: string) => Promise<void>;
+  onDeleteProject: (projectId: string) => Promise<string | undefined>;
 }) {
   const [creating, setCreating] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
@@ -2199,6 +2203,40 @@ function ProjectSidebar({
             >
               <FolderOpen size={14} /> 查看项目文件夹
             </button>
+            <div className="project-context-menu-divider" />
+            <button
+              className="danger"
+              type="button"
+              role="menuitem"
+              disabled={busy || projects.length <= 1}
+              title={projects.length <= 1 ? "至少需要保留一个项目" : undefined}
+              onClick={() => {
+                const project = contextMenu.project;
+                setContextMenu(null);
+                if (
+                  !window.confirm(
+                    `确定永久删除项目“${project.title}”吗？\n\n项目画布、对话、运行记录以及草稿/成品文件夹都会删除，且无法恢复。`,
+                  )
+                )
+                  return;
+                setBusy(true);
+                setError("");
+                void onDeleteProject(project.id)
+                  .then((warning) => {
+                    if (warning) setError(warning);
+                  })
+                  .catch((nextError) => {
+                    setError(
+                      nextError instanceof Error
+                        ? nextError.message
+                        : "项目删除失败",
+                    );
+                  })
+                  .finally(() => setBusy(false));
+              }}
+            >
+              <Trash2 size={14} /> 删除项目
+            </button>
           </div>
         </>
       ) : null}
@@ -2224,6 +2262,7 @@ function CanvasShell({
   onCreateProject,
   onCleanupProject,
   onOpenProjectFolder,
+  onDeleteProject,
 }: CanvasShellProps) {
   const [canvasId, setCanvasId] = useState<string | null>(projectId);
   const [initialization, setInitialization] =
@@ -8178,6 +8217,11 @@ function CanvasShell({
             await onOpenProjectFolder(nextId);
             showToast("已打开项目文件夹", "success");
           }}
+          onDeleteProject={async (nextId) => {
+            const warning = await onDeleteProject(nextId);
+            showToast(warning ?? "项目已删除", warning ? "error" : "success");
+            return warning;
+          }}
         />
         <aside className={`sidebar ${mobileLibraryOpen ? "mobile-open" : ""}`}>
           <button
@@ -9497,6 +9541,17 @@ export function CanvasApp() {
     await openProjectFolder(projectId);
   }, []);
 
+  const handleDeleteProject = useCallback(async (projectId: string) => {
+    const result = await deleteProject(projectId);
+    setProjects((current) =>
+      current?.filter((project) => project.id !== projectId) ?? null,
+    );
+    setActiveProjectId((current) =>
+      current === projectId ? result.nextProjectId : current,
+    );
+    return result.warning;
+  }, []);
+
   if (!projects || !activeProjectId) {
     return (
       <div className="shell" aria-busy="true">
@@ -9530,6 +9585,7 @@ export function CanvasApp() {
         onCreateProject={handleCreateProject}
         onCleanupProject={handleCleanupProject}
         onOpenProjectFolder={handleOpenProjectFolder}
+        onDeleteProject={handleDeleteProject}
       />
     </ReactFlowProvider>
   );

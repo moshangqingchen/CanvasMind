@@ -7418,6 +7418,21 @@ body {
   outline: none;
 }
 
+.project-context-menu button.danger {
+  color: #ff9cad;
+}
+
+.project-context-menu button.danger:hover,
+.project-context-menu button.danger:focus-visible {
+  background: rgba(255, 123, 145, 0.14);
+}
+
+.project-context-menu-divider {
+  height: 1px;
+  margin: 4px 3px;
+  background: var(--line);
+}
+
 .project-context-menu button:disabled {
   cursor: wait;
   opacity: 0.55;

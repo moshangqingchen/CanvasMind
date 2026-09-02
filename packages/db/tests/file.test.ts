@@ -22,6 +22,21 @@ afterEach(async () => {
 });
 
 describe("FileRepository", () => {
+  it("persists canvas deletion across restarts", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json");
+    const repository = new FileRepository(path);
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: { saved: true } });
+
+    await repository.deleteCanvas(canvas.id);
+
+    const restored = new FileRepository(path);
+    await expect(restored.getCanvas(canvas.id)).resolves.toBeNull();
+    await expect(restored.listRevisions(canvas.id)).resolves.toEqual([]);
+  });
+
   it("does not persist a stale canvas save or revision", async () => {
     const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
     temporaryDirectories.push(directory);

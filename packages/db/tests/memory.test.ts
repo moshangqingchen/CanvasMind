@@ -3,6 +3,54 @@ import { MemoryRepository } from "../src/memory.js";
 import { CanvasRevisionConflictError } from "../src/types.js";
 
 describe("MemoryRepository", () => {
+  it("deletes a canvas and all canvas-scoped records", async () => {
+    const repository = new MemoryRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: { saved: true } });
+    await repository.createDirectorSession({
+      id: "session-delete",
+      canvasId: canvas.id,
+      profileId: null,
+      title: "待删除对话",
+      metadata: {},
+    });
+    await repository.createDirectorMessage({
+      id: "message-delete",
+      sessionId: "session-delete",
+      role: "user",
+      content: "删除",
+      metadata: {},
+    });
+    await repository.createRun({
+      id: "run-delete",
+      canvasId: canvas.id,
+      clientRequestId: "request-delete",
+      scope: "all",
+      status: "succeeded",
+      revisionGraph: {},
+    });
+    await repository.createNodeRun({
+      id: "node-run-delete",
+      workflowRunId: "run-delete",
+      nodeId: "node-delete",
+      status: "succeeded",
+      attempt: 1,
+      providerTaskId: null,
+      inputJson: {},
+      outputAssetIds: [],
+      errorJson: null,
+    });
+
+    await repository.deleteCanvas(canvas.id);
+
+    await expect(repository.getCanvas(canvas.id)).resolves.toBeNull();
+    await expect(repository.listRevisions(canvas.id)).resolves.toEqual([]);
+    await expect(repository.getDirectorSession("session-delete")).resolves.toBeNull();
+    await expect(repository.getDirectorMessage("message-delete")).resolves.toBeNull();
+    await expect(repository.getRun("run-delete")).resolves.toBeNull();
+    await expect(repository.getNodeRun("node-run-delete")).resolves.toBeNull();
+  });
+
   it("atomically rejects a stale canvas revision without changing state", async () => {
     const repository = new MemoryRepository();
     const canvas = await repository.ensureDefaultCanvas();

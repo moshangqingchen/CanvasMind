@@ -183,6 +183,7 @@ export interface Repository {
   ensureDefaultCanvas(): Promise<CanvasRecord>;
   listCanvases(): Promise<CanvasRecord[]>;
   getCanvas(id: string): Promise<CanvasRecord | null>;
+  deleteCanvas(id: string): Promise<void>;
   saveCanvas(input: {
     id: string;
     title?: string;

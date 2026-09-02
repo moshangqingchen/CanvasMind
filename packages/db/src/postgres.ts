@@ -109,6 +109,11 @@ export class PostgresRepository implements Repository {
     return result.rows[0] ? this.canvasRow(result.rows[0]) : null;
   }
 
+  async deleteCanvas(id: string): Promise<void> {
+    await this.ensureReady();
+    await this.pool.query("DELETE FROM canvas WHERE id=$1", [id]);
+  }
+
   async saveCanvas(input: {
     id: string;
     title?: string;

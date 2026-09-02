@@ -20,6 +20,17 @@ const asset = {
 };
 
 describe("ProjectFileStore", () => {
+  it("deletes the complete project directory", async () => {
+    const store = await storeFixture();
+    await store.archiveDraft({ ...asset, source: "external" });
+    await store.archiveFinished(asset);
+    const project = store.projectDirectory(asset.projectName);
+
+    await expect(store.deleteProject(asset.projectName)).resolves.toBe(true);
+    await expect(stat(project)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(store.deleteProject(asset.projectName)).resolves.toBe(false);
+  });
+
   it("creates separated draft and finished media directories", async () => {
     const store = await storeFixture();
     await store.ensureProject(asset.projectName);

@@ -194,6 +194,23 @@ export class ProjectFileStore {
     return project;
   }
 
+  async deleteProject(projectName: string): Promise<boolean> {
+    const project = this.projectDirectory(projectName);
+    try {
+      const rootDetails = await lstat(this.root);
+      if (rootDetails.isSymbolicLink() || !rootDetails.isDirectory())
+        throw new Error("项目根目录无效");
+      const projectDetails = await lstat(project);
+      if (projectDetails.isSymbolicLink() || !projectDetails.isDirectory())
+        throw new Error("项目目录无效");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+    await rm(project, { recursive: true, force: false });
+    return true;
+  }
+
   private async ensureSafeDirectory(directory: string): Promise<void> {
     await mkdir(this.root, { recursive: true });
     const rootDetails = await lstat(this.root);

@@ -332,6 +332,11 @@ export class FileRepository extends MemoryRepository {
     return result;
   }
 
+  override async deleteCanvas(id: string): Promise<void> {
+    await super.deleteCanvas(id);
+    await this.persist();
+  }
+
   override async saveAsset(
     input: Omit<AssetRecord, "createdAt" | "deleted"> & {
       createdAt?: string;

@@ -333,6 +333,29 @@ export async function openProjectFolder(projectId: string): Promise<void> {
     throw new Error(payload.error ?? "当前环境不支持自动打开项目文件夹");
 }
 
+export async function deleteProject(projectId: string): Promise<{
+  nextProjectId: string | null;
+  folderDeleted: boolean;
+  warning?: string;
+}> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    nextProjectId?: string | null;
+    folderDeleted?: boolean;
+    warning?: string;
+    error?: string;
+  } | null;
+  if (!response.ok) throw new Error(payload?.error ?? "项目删除失败");
+  return {
+    nextProjectId:
+      typeof payload?.nextProjectId === "string" ? payload.nextProjectId : null,
+    folderDeleted: payload?.folderDeleted === true,
+    ...(payload?.warning ? { warning: payload.warning } : {}),
+  };
+}
+
 function retryableCanvasStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }

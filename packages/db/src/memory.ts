@@ -170,6 +170,31 @@ export class MemoryRepository implements Repository {
     return record ? clone(record) : null;
   }
 
+  async deleteCanvas(id: string): Promise<void> {
+    const sessionIds = new Set(
+      [...this.directorSessions.values()]
+        .filter((session) => session.canvasId === id)
+        .map((session) => session.id),
+    );
+    const runIds = new Set(
+      [...this.runs.values()]
+        .filter((run) => run.canvasId === id)
+        .map((run) => run.id),
+    );
+    this.canvases.delete(id);
+    for (const [revisionId, revision] of this.revisions)
+      if (revision.canvasId === id) this.revisions.delete(revisionId);
+    for (const [messageId, message] of this.directorMessages)
+      if (sessionIds.has(message.sessionId)) this.directorMessages.delete(messageId);
+    for (const [proposalId, proposal] of this.directorProposals)
+      if (proposal.canvasId === id || sessionIds.has(proposal.sessionId))
+        this.directorProposals.delete(proposalId);
+    for (const [nodeRunId, nodeRun] of this.nodeRuns)
+      if (runIds.has(nodeRun.workflowRunId)) this.nodeRuns.delete(nodeRunId);
+    for (const runId of runIds) this.runs.delete(runId);
+    for (const sessionId of sessionIds) this.directorSessions.delete(sessionId);
+  }
+
   async saveCanvas(input: {
     id: string;
     title?: string;
