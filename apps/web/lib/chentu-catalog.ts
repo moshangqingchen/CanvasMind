@@ -330,6 +330,58 @@ const CHENTU_GPT_FREE_RATIOS = [
   ...CHENTU_GPT_HIGH_RES_RATIOS,
 ] as const;
 
+// Gemini image tiers use a different documented pixel table from GPT Image.
+// Keep it here as well as in the provider adapter so the marketplace and the
+// canvas parameter editor render the same values before/after a live scan.
+const CHENTU_GEMINI_1K_SIZES = [
+  "1024x1024",
+  "848x1264",
+  "1264x848",
+  "896x1200",
+  "1200x896",
+  "928x1152",
+  "1152x928",
+  "768x1376",
+  "1376x768",
+  "1584x672",
+] as const;
+const CHENTU_GEMINI_2K_SIZES = [
+  "2048x2048",
+  "1696x2528",
+  "2528x1696",
+  "1792x2400",
+  "2400x1792",
+  "1856x2304",
+  "2304x1856",
+  "1536x2752",
+  "2752x1536",
+  "3168x1344",
+] as const;
+const CHENTU_GEMINI_4K_SIZES = [
+  "4096x4096",
+  "3392x5056",
+  "5056x3392",
+  "3584x4800",
+  "4800x3584",
+  "3712x4608",
+  "4608x3712",
+  "3072x5504",
+  "5504x3072",
+  "6336x2688",
+] as const;
+const CHENTU_GEMINI_RATIOS = [
+  "1:1",
+  "2:3",
+  "3:2",
+  "3:4",
+  "4:3",
+  "4:5",
+  "5:4",
+  "9:16",
+  "16:9",
+  "21:9",
+] as const;
+
 type ChentuResolutionTier = "1K" | "2K" | "4K";
 
 function isChentuFlexibleImageModel(id: string): boolean {
@@ -347,7 +399,11 @@ function isKnownChentuImageModel(id: string): boolean {
   return (
     isChentuFlexibleImageModel(id) ||
     chentuGptResolutionTier(id) !== undefined ||
-    /^gemini-3\.(?:1-flash|pro)-image-(?:1k|2k|4k)$/iu.test(id)
+    // 辰途模型广场同时使用 `gemini-3.1-flash-image-*` 和
+    // `gemini-3-pro-image-*` 两种命名。Pro 系列的分隔符是连字符，
+    // 不能用只匹配点号的表达式，否则实时目录会把 Pro 图片模型
+    // 当成“没有画布协议”的普通模型并隐藏接入画布按钮。
+    /^gemini-3(?:\.1-flash|-pro)-image-(?:1k|2k|4k)$/iu.test(id)
   );
 }
 
@@ -391,16 +447,38 @@ function chentuGptSizeOptions(id: string): readonly ModelParameterOption[] {
   });
 }
 
+function chentuGeminiSizeOptions(
+  id: string,
+): readonly ModelParameterOption[] {
+  const tier = /^gemini-3(?:\.1-flash|-pro)-image-(1k|2k|4k)$/iu.exec(id)?.[1];
+  const sizes =
+    tier === "1k"
+      ? CHENTU_GEMINI_1K_SIZES
+      : tier === "2k"
+        ? CHENTU_GEMINI_2K_SIZES
+        : tier === "4k"
+          ? CHENTU_GEMINI_4K_SIZES
+          : [];
+  return sizes.map((value, index) => ({
+    label: `${tier?.toUpperCase()} · ${CHENTU_GEMINI_RATIOS[index]} · ${value.replace("x", " × ")}`,
+    value,
+  }));
+}
+
 function chentuImageParameters(
   id: string,
   group?: string,
 ): readonly ModelParameterDescriptor[] {
   const gptImage = isKnownChentuImageModel(id) && /^gpt-image-2/iu.test(id);
-  if (!gptImage) return [];
+  const geminiImage =
+    isKnownChentuImageModel(id) && /^gemini-3(?:\.1-flash|-pro)-image-/iu.test(id);
+  if (!gptImage && !geminiImage) return [];
 
   const flexible = isChentuFlexibleImageModel(id);
-  const official = group === "image2官key";
-  const sizeOptions = chentuGptSizeOptions(id);
+  const official = gptImage && group === "image2官key";
+  const sizeOptions = gptImage
+    ? chentuGptSizeOptions(id)
+    : chentuGeminiSizeOptions(id);
   const size: ModelParameterDescriptor = flexible
     ? {
         key: "size",
@@ -473,7 +551,7 @@ function chentuImageParameters(
       options: [{ label: "URL（推荐，辰途链接有效 2 小时）", value: "url" }],
       operations: IMAGE_OPERATIONS,
     },
-    quality,
+    ...(gptImage ? [quality] : []),
     ...(official
       ? [
           {

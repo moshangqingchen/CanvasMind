@@ -438,6 +438,58 @@ describe("chentu catalog", () => {
     ).toBe(true);
   });
 
+  it("recognizes the hyphenated Gemini Pro image IDs used by 辰途", () => {
+    // Some /v1/models responses omit supported_endpoint_types. The model ID
+    // is still enough to verify the documented OpenAI Images protocol for
+    // these Gemini image tiers; otherwise the live group is incorrectly
+    // marked as marketplace-only and cannot be added to the canvas.
+    const catalog = chentuCatalogFromPricing({
+      data: [
+        {
+          model_name: "gemini-3-pro-image-1k",
+          model_price: 0.04,
+          quota_type: 1,
+          enable_groups: ["低价gemni生图"],
+          supported_endpoint_types: [],
+        },
+        {
+          model_name: "gemini-3-pro-image-4k",
+          model_price: 0.09,
+          quota_type: 1,
+          enable_groups: ["低价gemni生图"],
+          supported_endpoint_types: [],
+        },
+      ],
+      group_ratio: { 低价gemni生图: 0.72 },
+      usable_group: {},
+    });
+    const group = catalog.marketplaceGroups.find(
+      (candidate) => candidate.id === "低价gemni生图",
+    );
+    expect(group).toMatchObject({
+      canvasSupported: true,
+      canvasModelCount: 2,
+    });
+    expect(catalog.groups["低价gemni生图"]?.map((model) => model.id)).toEqual([
+      "gemini-3-pro-image-1k",
+      "gemini-3-pro-image-4k",
+    ]);
+    expect(
+      group?.models.every((model) => model.canvasRunnable === true),
+    ).toBe(true);
+    const oneKSize = catalog.groups["低价gemni生图"]?.[0]?.parameters?.find(
+      (parameter) => parameter.key === "size",
+    );
+    expect(oneKSize).toMatchObject({
+      control: "select",
+      default: "1024x1024",
+    });
+    expect(oneKSize?.options).toContainEqual({
+      label: "1K · 16:9 · 1376 × 768",
+      value: "1376x768",
+    });
+  });
+
   it("uses keyed scan IDs as the sole visibility source", () => {
     const catalog = chentuCatalogFromPricing(payload);
     const resolved = resolveChentuScannedGroup(catalog, "低价Adobe生图", [

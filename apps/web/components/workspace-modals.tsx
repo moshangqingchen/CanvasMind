@@ -158,6 +158,7 @@ import {
   chentuConnectionConfig,
   chentuDefaultModelForGroup,
   chentuMarketplaceGroup,
+  isChentuImageGroup,
   isChentuPreset,
 } from "../lib/chentu-presets";
 import { localizeRunError } from "../lib/error-localization";
@@ -3255,7 +3256,13 @@ export function SettingsModal({
     const marketplaceGroup =
       effectiveChentuGroups.find((group) => group.id === groupId) ??
       chentuMarketplaceGroup(groupId);
-    if (!marketplaceGroup || !marketplaceGroup.canvasSupported) {
+    // A failed first /v1/models scan must not remove the setup entry point
+    // for a documented Chentu image group. Saving/retesting the connection is
+    // safe; actual runs still use the authoritative scan in /api/runs.
+    if (
+      !marketplaceGroup ||
+      (!marketplaceGroup.canvasSupported && !isChentuImageGroup(groupId))
+    ) {
       setMessage("该辰途 API 分组尚无已验证的画布生成协议。");
       return;
     }
@@ -3933,7 +3940,9 @@ export function SettingsModal({
                           <small>
                             {(activeSupplierKey === CYBERAFEI_SUPPLIER_KEY ||
                               activeSupplierKey === CHENTU_SUPPLIER_KEY) &&
-                            group.canvasSupported
+                            (group.canvasSupported ||
+                              (activeSupplierKey === CHENTU_SUPPLIER_KEY &&
+                                isChentuImageGroup(group.id)))
                               ? `${group.canvasModelCount ?? 0} 个画布模型 / ${group.models.length} 个广场模型`
                               : `${group.models.length} 个模型`}{" "}
                             · x{group.ratio}
@@ -3943,7 +3952,9 @@ export function SettingsModal({
                               : ""}
                             {usage === "agent"
                               ? " · 导演台可用"
-                              : group.canvasSupported
+                              : group.canvasSupported ||
+                                  (activeSupplierKey === CHENTU_SUPPLIER_KEY &&
+                                    isChentuImageGroup(group.id))
                                 ? " · 画布可用"
                                 : " · 模型信息"}
                           </small>
@@ -4769,7 +4780,9 @@ export function SettingsModal({
                     <span>
                       {(activeSupplierKey === CYBERAFEI_SUPPLIER_KEY ||
                         activeSupplierKey === CHENTU_SUPPLIER_KEY) &&
-                      activeMarketplaceGroup.canvasSupported
+                      (activeMarketplaceGroup.canvasSupported ||
+                        (activeSupplierKey === CHENTU_SUPPLIER_KEY &&
+                          isChentuImageGroup(activeMarketplaceGroup.id)))
                         ? `${activeMarketplaceGroup.canvasModelCount ?? 0} 个画布模型 / ${activeMarketplaceGroup.models.length} 个广场模型`
                         : `${activeMarketplaceGroup.models.length} 个模型`}
                     </span>
@@ -4857,7 +4870,9 @@ export function SettingsModal({
                       </button>
                     ) : null}
                     {activeConnectionUsage === "agent" ||
-                    (activeMarketplaceGroup.canvasSupported &&
+                      ((activeMarketplaceGroup.canvasSupported ||
+                        (activeSupplierKey === CHENTU_SUPPLIER_KEY &&
+                          isChentuImageGroup(activeMarketplaceGroup.id))) &&
                       (activeSupplierKey === CYBERAFEI_SUPPLIER_KEY ||
                         activeSupplierKey === CHENTU_SUPPLIER_KEY ||
                         activeSupplierKey === MIAOWU_SUPPLIER_KEY ||
