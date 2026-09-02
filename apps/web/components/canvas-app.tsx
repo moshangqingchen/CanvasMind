@@ -81,6 +81,7 @@ import { appendPriceLabelOnce } from "../lib/model-display";
 import {
   createRun,
   cleanupProjectDraft,
+  openProjectFolder,
   claimMaterialDrop,
   canvasErrorMessage,
   deleteAssets,
@@ -2002,6 +2003,13 @@ interface CanvasShellProps {
   onSelectProject: (projectId: string) => void;
   onCreateProject: (title: string) => Promise<void>;
   onCleanupProject: (projectId: string) => Promise<void>;
+  onOpenProjectFolder: (projectId: string) => Promise<void>;
+}
+
+interface ProjectContextMenuState {
+  project: ProjectSummaryView;
+  x: number;
+  y: number;
 }
 
 function ProjectSidebar({
@@ -2011,6 +2019,7 @@ function ProjectSidebar({
   onSelectProject,
   onCreateProject,
   onCleanupProject,
+  onOpenProjectFolder,
 }: {
   projects: ProjectSummaryView[];
   activeProjectId: string;
@@ -2018,11 +2027,23 @@ function ProjectSidebar({
   onSelectProject: (projectId: string) => void;
   onCreateProject: (title: string) => Promise<void>;
   onCleanupProject: (projectId: string) => Promise<void>;
+  onOpenProjectFolder: (projectId: string) => Promise<void>;
 }) {
   const [creating, setCreating] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [contextMenu, setContextMenu] =
+    useState<ProjectContextMenuState | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [contextMenu]);
 
   const submit = async () => {
     const title = draftTitle.trim();
@@ -2115,6 +2136,15 @@ function ProjectSidebar({
             className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
             key={project.id}
             role="listitem"
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setContextMenu({
+                project,
+                x: Math.min(event.clientX, Math.max(8, window.innerWidth - 232)),
+                y: Math.min(event.clientY, Math.max(8, window.innerHeight - 96)),
+              });
+            }}
           >
             <button
               className="project-row-main"
@@ -2132,6 +2162,46 @@ function ProjectSidebar({
           </div>
         ))}
       </div>
+      {contextMenu ? (
+        <>
+          <button
+            className="project-context-menu-backdrop"
+            type="button"
+            aria-label="关闭项目菜单"
+            onClick={() => setContextMenu(null)}
+          />
+          <div
+            className="project-context-menu"
+            role="menu"
+            aria-label={`${contextMenu.project.title} 的项目操作`}
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <span>{contextMenu.project.title}</span>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
+                const projectId = contextMenu.project.id;
+                setContextMenu(null);
+                setBusy(true);
+                setError("");
+                void onOpenProjectFolder(projectId)
+                  .catch((nextError) => {
+                    setError(
+                      nextError instanceof Error
+                        ? nextError.message
+                        : "项目文件夹打开失败",
+                    );
+                  })
+                  .finally(() => setBusy(false));
+              }}
+            >
+              <FolderOpen size={14} /> 查看项目文件夹
+            </button>
+          </div>
+        </>
+      ) : null}
       <div className="project-sidebar-foot">
         <button
           className="button danger small"
@@ -2153,8 +2223,9 @@ function CanvasShell({
   onSelectProject,
   onCreateProject,
   onCleanupProject,
+  onOpenProjectFolder,
 }: CanvasShellProps) {
-  const [canvasId, setCanvasId] = useState<string | null>(null);
+  const [canvasId, setCanvasId] = useState<string | null>(projectId);
   const [initialization, setInitialization] =
     useState<CanvasInitializationState>({ status: "loading" });
   const {
@@ -2343,6 +2414,7 @@ function CanvasShell({
     lastAt: number;
   }>({ past: [], future: [], lastAt: 0 });
   const saveQueue = useRef<LatestTaskQueue<CanvasSaveRequest> | null>(null);
+  const activeProjectIdRef = useRef(projectId);
   const persistQueuedCanvasSave = useCallback(
     async (request: CanvasSaveRequest) => {
       const existingConflict = saveConflictRef.current;
@@ -2363,9 +2435,10 @@ function CanvasShell({
           ...request,
           expectedRevision,
         });
+        clearPersistedNodeConfigurations(request.pendingNodeConfigurations);
+        if (request.canvasId !== activeProjectIdRef.current) return;
         canvasRevision.current = saved.revision;
         setCanvasRevisionValue(saved.revision);
-        clearPersistedNodeConfigurations(request.pendingNodeConfigurations);
       } catch (error) {
         if (error instanceof CanvasSaveConflictError) {
           const conflict: CanvasSaveConflictState = {
@@ -2656,10 +2729,41 @@ function CanvasShell({
     }
   }, [showToast]);
 
+  const projectTitle = projects.find((project) => project.id === projectId)?.title;
+
   useEffect(() => {
     const streams = eventSources.current;
     let active = true;
     let initializationSettled = false;
+    // Switching projects keeps the page shell mounted, so clear only the
+    // canvas-scoped state before the next snapshot arrives.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    activeProjectIdRef.current = projectId;
+    latestSaveAttempt.current += 1;
+    setInitialization({ status: "loading" });
+    setCanvasId(projectId);
+    setNodes([]);
+    setEdges([]);
+    setDrawings([]);
+    setSelectedId(null);
+    setViewport({ x: 0, y: 0, zoom: 0.85 });
+    graphRef.current = { nodes: [], edges: [] };
+    initialViewportApplied.current = false;
+    setNodeRunStatuses(new Map());
+    latestNodeRunAt.current.clear();
+    setBusy(false);
+    setSaveState("saved");
+    canvasRevision.current = null;
+    setCanvasRevisionValue(0);
+    saveConflictRef.current = null;
+    conflictedSave.current = null;
+    setSaveConflict(null);
+    setSaveConflictOpen(false);
+    if (projectTitle) setTitle(projectTitle);
+    activeRunKeys.current.clear();
+    activeRunSources.current.clear();
+    runSubmissionKeys.current.clear();
+    /* eslint-enable react-hooks/set-state-in-effect */
     const failInitialization = (error: unknown) => {
       if (!active || initializationSettled) return;
       initializationSettled = true;
@@ -2865,9 +2969,10 @@ function CanvasShell({
       pendingSave.current = null;
       for (const stream of streams.values()) stream.close();
       streams.clear();
+      setBusy(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [projectId, projectTitle, showToast]);
 
   const saveRequest = useCallback(
     async (request: CanvasSaveRequest, reportError = true) => {
@@ -5239,12 +5344,12 @@ function CanvasShell({
       if (inPromptEditor) return;
       const modalOpen = Boolean(
         document.querySelector(
-          '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu',
+          '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu, .project-context-menu',
         ),
       );
       const interactiveControl = Boolean(
         target?.closest(
-          "button, a, [role='menuitem'], .project-menu-backdrop, .mobile-backdrop",
+          "button, a, [role='menuitem'], .project-menu-backdrop, .project-context-menu-backdrop, .mobile-backdrop",
         ),
       );
       const shortcutAllowed = isCanvasShortcutAllowed({
@@ -5470,12 +5575,12 @@ function CanvasShell({
       );
       const modalOpen = Boolean(
         document.querySelector(
-          '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu',
+          '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu, .project-context-menu',
         ),
       );
       const interactiveControl = Boolean(
         target?.closest(
-          "button, a, [role='menuitem'], .project-menu-backdrop, .mobile-backdrop",
+          "button, a, [role='menuitem'], .project-menu-backdrop, .project-context-menu-backdrop, .mobile-backdrop",
         ),
       );
       if (editing || modalOpen || interactiveControl) return;
@@ -7172,12 +7277,12 @@ function CanvasShell({
       );
       const modalOpen = Boolean(
         document.querySelector(
-          '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu',
+          '[role="dialog"]:not(.node-config-popover), .connection-menu, .canvas-create-menu, .project-menu, .project-context-menu',
         ),
       );
       const interactiveControl = Boolean(
         target?.closest(
-          "button, a, [role='menuitem'], .project-menu-backdrop, .mobile-backdrop",
+          "button, a, [role='menuitem'], .project-menu-backdrop, .project-context-menu-backdrop, .mobile-backdrop",
         ),
       );
       if (editing || modalOpen || interactiveControl) return;
@@ -7769,50 +7874,6 @@ function CanvasShell({
     }
   }
 
-  if (initialization.status !== "ready") {
-    const failed = initialization.status === "error";
-    return (
-      <div className="shell" aria-busy={!failed}>
-        <header className="topbar">
-          <div className="brand">
-            <span className="brand-mark">✦</span>
-            <span>{APP_NAME}</span>
-          </div>
-        </header>
-        <main
-          className="workspace"
-          style={{ gridTemplateColumns: "minmax(0, 1fr)" }}
-        >
-          <section className="canvas-wrap">
-            <div
-              className="canvas-empty-state"
-              role={failed ? "alert" : "status"}
-              aria-live="polite"
-            >
-              <h2>{failed ? "画布加载失败" : "正在加载画布…"}</h2>
-              <p>
-                {failed
-                  ? initialization.message
-                  : "正在读取已保存的节点、连线和视图，请稍候。"}
-              </p>
-              {failed ? (
-                <div className="canvas-empty-actions">
-                  <button
-                    className="button primary small"
-                    type="button"
-                    onClick={() => window.location.reload()}
-                  >
-                    <RefreshCw size={13} /> 重新加载
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </section>
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="shell">
       <header className="topbar">
@@ -8105,7 +8166,7 @@ function CanvasShell({
         ) : null}
         <ProjectSidebar
           projects={projects}
-          activeProjectId={canvasId ?? projectId}
+          activeProjectId={projectId}
           mobileOpen={mobileProjectsOpen}
           onSelectProject={(nextId) => {
             setMobileProjectsOpen(false);
@@ -8113,6 +8174,7 @@ function CanvasShell({
           }}
           onCreateProject={onCreateProject}
           onCleanupProject={onCleanupProject}
+          onOpenProjectFolder={onOpenProjectFolder}
         />
         <aside className={`sidebar ${mobileLibraryOpen ? "mobile-open" : ""}`}>
           <button
@@ -8601,7 +8663,23 @@ function CanvasShell({
               <span>放入画布</span>
             </div>
           ) : null}
-          {nodes.length === 0 && !dropActive ? (
+          {initialization.status === "error" ? (
+            <div className="canvas-empty-state" role="alert" aria-live="polite">
+              <h2>画布加载失败</h2>
+              <p>{initialization.message}</p>
+              <div className="canvas-empty-actions">
+                <button
+                  className="button primary small"
+                  type="button"
+                  onClick={() => window.location.reload()}
+                >
+                  <RefreshCw size={13} /> 重新加载
+                </button>
+              </div>
+            </div>
+          ) : initialization.status === "ready" &&
+            nodes.length === 0 &&
+            !dropActive ? (
             <div className="canvas-empty-state">
               <h2>画布是空的</h2>
               <p>从这里开始，或者直接把图片、视频或音频拖进画布。</p>
@@ -9412,6 +9490,10 @@ export function CanvasApp() {
       throw new Error(`已清理 ${result.deleted} 项，另有 ${result.failed.length} 项失败`);
   }, []);
 
+  const handleOpenProjectFolder = useCallback(async (projectId: string) => {
+    await openProjectFolder(projectId);
+  }, []);
+
   if (!projects || !activeProjectId) {
     return (
       <div className="shell" aria-busy="true">
@@ -9439,12 +9521,12 @@ export function CanvasApp() {
   return (
     <ReactFlowProvider>
       <CanvasShell
-        key={activeProjectId}
         projectId={activeProjectId}
         projects={projects}
         onSelectProject={setActiveProjectId}
         onCreateProject={handleCreateProject}
         onCleanupProject={handleCleanupProject}
+        onOpenProjectFolder={handleOpenProjectFolder}
       />
     </ReactFlowProvider>
   );

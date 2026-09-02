@@ -15,6 +15,7 @@ coverage/
 /storage/
 /data/
 /backups/
+/项目/
 /apps/*/storage/
 /apps/*/data/
 *.sqlite

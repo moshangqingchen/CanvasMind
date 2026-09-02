@@ -319,6 +319,20 @@ export async function cleanupProjectDraft(projectId: string): Promise<{
   };
 }
 
+export async function openProjectFolder(projectId: string): Promise<void> {
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/open-folder`,
+    { method: "POST" },
+  );
+  const payload = (await response.json().catch(() => null)) as {
+    error?: string;
+    opened?: boolean;
+  } | null;
+  if (!response.ok) throw new Error(payload?.error ?? "项目文件夹打开失败");
+  if (payload?.opened === false)
+    throw new Error(payload.error ?? "当前环境不支持自动打开项目文件夹");
+}
+
 function retryableCanvasStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
