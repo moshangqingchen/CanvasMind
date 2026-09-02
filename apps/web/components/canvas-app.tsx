@@ -2422,6 +2422,7 @@ function CanvasShell({
   const toastSeq = useRef(0);
   const appUpdateVersionRef = useRef<string | null>(null);
   const appUpdateNoticeVersionRef = useRef<string | null>(null);
+  const appUpdateRemoteNoticeRef = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<CanvasSaveRequest | null>(null);
   const conflictedSave = useRef<CanvasSaveRequest | null>(null);
@@ -2664,6 +2665,16 @@ function CanvasShell({
         appUpdateNoticeVersionRef.current = next.latest.version;
         setAppUpdateOpen(true);
       }
+      if (!next.remoteUpdateAvailable) {
+        appUpdateRemoteNoticeRef.current = null;
+      } else if (
+        announce &&
+        next.remoteCommit &&
+        next.remoteCommit !== appUpdateRemoteNoticeRef.current
+      ) {
+        appUpdateRemoteNoticeRef.current = next.remoteCommit;
+        setAppUpdateOpen(true);
+      }
       setAppUpdateStatus(next);
     } catch {
       // A disconnected updater must never make the canvas unavailable.
@@ -2705,13 +2716,15 @@ function CanvasShell({
       phase === "applying";
     const interval = window.setInterval(
       () => void refreshAppUpdate(),
-      isActiveUpdate ? 2_000 : 10 * 60 * 1_000,
+      isActiveUpdate
+        ? 2_000
+        : Math.max(60, appUpdateStatus?.intervalSeconds ?? 600) * 1_000,
     );
     return () => {
       window.clearTimeout(initialCheck);
       window.clearInterval(interval);
     };
-  }, [appUpdateStatus?.phase, refreshAppUpdate]);
+  }, [appUpdateStatus?.intervalSeconds, appUpdateStatus?.phase, refreshAppUpdate]);
 
   const recordLinkedAssetDuration = useCallback(
     (assetId: string, seconds: number) => {
@@ -8171,7 +8184,9 @@ function CanvasShell({
             >
               <RefreshCw size={14} /> 检查更新
               <span className="project-menu-hint">
-                {appUpdateStatus?.latest
+                {appUpdateStatus?.remoteUpdateAvailable && appUpdateStatus.remoteCommit
+                  ? `${appUpdateStatus.remoteBranch || "main"} · ${appUpdateStatus.remoteCommit.slice(0, 8)}`
+                  : appUpdateStatus?.latest
                   ? `v${appUpdateStatus.latest.version}`
                   : `v${APP_VERSION}`}
               </span>

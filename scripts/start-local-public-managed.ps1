@@ -36,6 +36,7 @@ $installRoot = Split-Path -Parent $updateRoot
 $port = 3210
 $script:previousWebRoots = New-Object System.Collections.Generic.List[string]
 $script:activeReleaseVersion = $null
+$script:gitCommand = $null
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
@@ -76,6 +77,8 @@ function Get-UpdateConfig {
   return @{
     Enabled = $env:SUPERCANVAS_UPDATE_ENABLED -ne "false"
     Repository = if ($env:SUPERCANVAS_UPDATE_REPOSITORY) { $env:SUPERCANVAS_UPDATE_REPOSITORY.Trim() } else { "moshangqingchen/CanvasMind" }
+    Branch = if ($env:SUPERCANVAS_UPDATE_BRANCH) { $env:SUPERCANVAS_UPDATE_BRANCH.Trim() } else { "main" }
+    AutoSyncSource = $env:SUPERCANVAS_AUTO_SYNC_SOURCE -ne "false"
     IntervalSeconds = $interval
     Token = if ($env:SUPERCANVAS_GITHUB_TOKEN) { $env:SUPERCANVAS_GITHUB_TOKEN.Trim() } else { $null }
   }
@@ -137,6 +140,174 @@ function Compare-SemVer {
   try { return ([version]$Left).CompareTo([version]$Right) } catch { return 0 }
 }
 
+function Resolve-GitCommand {
+  if ($script:gitCommand) { return $script:gitCommand }
+
+  $configured = if ($env:SUPERCANVAS_GIT_COMMAND) { $env:SUPERCANVAS_GIT_COMMAND.Trim() } else { $null }
+  if ($configured -and (Test-Path -LiteralPath $configured -PathType Leaf)) {
+    $script:gitCommand = $configured
+    return $script:gitCommand
+  }
+
+  $command = Get-Command git.exe -ErrorAction SilentlyContinue
+  if ($command) {
+    $script:gitCommand = $command.Source
+    return $script:gitCommand
+  }
+
+  $candidates = @(
+    (Join-Path $env:ProgramFiles "Git\cmd\git.exe")
+    (Join-Path $env:LOCALAPPDATA "Programs\Git\cmd\git.exe")
+  )
+  foreach ($candidate in $candidates) {
+    if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+      $script:gitCommand = $candidate
+      return $script:gitCommand
+    }
+  }
+  return $null
+}
+
+function Invoke-GitCommand {
+  param([string[]]$Arguments)
+
+  $gitCommand = Resolve-GitCommand
+  if (-not $gitCommand) {
+    return [pscustomobject]@{
+      ExitCode = 127
+      Output = "未找到 git.exe；可通过 SUPERCANVAS_GIT_COMMAND 配置 Git 路径。"
+    }
+  }
+  $output = @(& $gitCommand -C $workspace @Arguments 2>&1)
+  $exitCode = $LASTEXITCODE
+  return [pscustomobject]@{
+    ExitCode = $exitCode
+    Output = (@($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+  }
+}
+
+function Get-GitSourceInfo {
+  $git = Resolve-GitCommand
+  if (-not $git) { return $null }
+
+  $rootResult = Invoke-GitCommand @("rev-parse", "--is-inside-work-tree")
+  if ($rootResult.ExitCode -ne 0 -or $rootResult.Output -ne "true") {
+    Write-ManagerLog "Git source root lookup failed: exit=$($rootResult.ExitCode) output=$($rootResult.Output)"
+    return $null
+  }
+
+  $branchResult = Invoke-GitCommand @("branch", "--show-current")
+  $headResult = Invoke-GitCommand @("rev-parse", "HEAD")
+  $remoteResult = Invoke-GitCommand @("config", "--get", "remote.origin.url")
+  if ($headResult.ExitCode -ne 0 -or $remoteResult.ExitCode -ne 0) {
+    Write-ManagerLog "Git source metadata lookup failed: head=$($headResult.ExitCode) remote=$($remoteResult.ExitCode)"
+    return $null
+  }
+  return [pscustomobject]@{
+    Branch = $branchResult.Output
+    Commit = $headResult.Output
+    RemoteUrl = $remoteResult.Output
+  }
+}
+
+function Get-GitHubRepositoryFromRemote {
+  param([string]$RemoteUrl)
+
+  $match = [regex]::Match($RemoteUrl.Trim(), '(?i)github\.com[/:]([^/]+)/([^/]+?)(?:\.git)?$')
+  if (-not $match.Success) { return $null }
+  return "$($match.Groups[1].Value)/$($match.Groups[2].Value)".ToLowerInvariant()
+}
+
+function Test-GitWorkingTreeClean {
+  $result = Invoke-GitCommand @("status", "--porcelain", "--untracked-files=normal")
+  return $result.ExitCode -eq 0 -and -not $result.Output
+}
+
+function Invoke-RemoteSourceSync {
+  $config = Get-UpdateConfig
+  $base = @{
+    remoteBranch = $config.Branch
+    remoteCommit = $null
+    remoteCommitUrl = $null
+    remoteUpdateAvailable = $false
+    remoteSyncState = "unavailable"
+    remoteSyncError = $null
+  }
+  if ($config.Branch -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*$' -or
+      $config.Branch.Contains("..") -or $config.Branch.Contains("//")) {
+    $base.remoteSyncState = "error"
+    $base.remoteSyncError = "更新分支配置无效，已跳过自动同步。"
+    return [pscustomobject]$base
+  }
+  $source = Get-GitSourceInfo
+  if (-not $source) {
+    Write-ManagerLog "Remote Git unavailable; git=$((Resolve-GitCommand)) workspace=$workspace."
+    return [pscustomobject]$base
+  }
+
+  $base.remoteCommitUrl = "https://github.com/$($config.Repository)/commit/"
+  $configuredRepository = $config.Repository.ToLowerInvariant()
+  $remoteRepository = Get-GitHubRepositoryFromRemote -RemoteUrl $source.RemoteUrl
+  if (-not $remoteRepository -or $remoteRepository -ne $configuredRepository) {
+    $base.remoteSyncState = "repository_mismatch"
+    $base.remoteSyncError = "本地 origin 与配置的 GitHub 仓库不一致，已跳过自动同步。"
+    return [pscustomobject]$base
+  }
+  if ($source.Branch -ne $config.Branch) {
+    $base.remoteSyncState = "branch_mismatch"
+    $base.remoteSyncError = "当前分支为 $($source.Branch)，未自动同步 $($config.Branch)。"
+    return [pscustomobject]$base
+  }
+
+  $remoteResult = Invoke-GitCommand @("ls-remote", "--heads", "origin", "refs/heads/$($config.Branch)")
+  if ($remoteResult.ExitCode -ne 0) {
+    $base.remoteSyncState = "error"
+    $base.remoteSyncError = "无法读取远程 Git 提交：$($remoteResult.Output)"
+    return [pscustomobject]$base
+  }
+  $remoteCommit = ([string]$remoteResult.Output -split "\s+")[0]
+  if ($remoteCommit -notmatch '^[0-9a-fA-F]{40}$') {
+    $base.remoteSyncState = "error"
+    $base.remoteSyncError = "远程 Git 返回的提交标识无效。"
+    return [pscustomobject]$base
+  }
+  $base.remoteCommit = $remoteCommit.ToLowerInvariant()
+  $base.remoteCommitUrl = "https://github.com/$($config.Repository)/commit/$($base.remoteCommit)"
+  if ($source.Commit -eq $base.remoteCommit) {
+    $base.remoteSyncState = "up_to_date"
+    return [pscustomobject]$base
+  }
+
+  $base.remoteUpdateAvailable = $true
+  if (-not $config.AutoSyncSource) {
+    $base.remoteSyncState = "available"
+    $base.remoteSyncError = "检测到远程提交；自动同步已关闭。"
+    return [pscustomobject]$base
+  }
+  if (-not (Test-GitWorkingTreeClean)) {
+    $base.remoteSyncState = "blocked_dirty"
+    $base.remoteSyncError = "检测到远程提交，但本地有未提交改动，已跳过自动同步。"
+    return [pscustomobject]$base
+  }
+
+  $pullResult = Invoke-GitCommand @("pull", "--ff-only", "origin", $config.Branch)
+  if ($pullResult.ExitCode -ne 0) {
+    $base.remoteSyncState = "blocked"
+    $base.remoteSyncError = "远程提交未能安全快进同步：$($pullResult.Output)"
+    return [pscustomobject]$base
+  }
+  $updatedSource = Get-GitSourceInfo
+  if (-not $updatedSource -or $updatedSource.Commit -ne $base.remoteCommit) {
+    $base.remoteSyncState = "error"
+    $base.remoteSyncError = "同步完成后本地提交仍未达到远程版本。"
+    return [pscustomobject]$base
+  }
+  $base.remoteUpdateAvailable = $false
+  $base.remoteSyncState = "synced"
+  Write-ManagerLog "Synced remote $($config.Branch) commit $($base.remoteCommit) without GitHub API; rebuilding source."
+  return [pscustomobject]$base
+}
+
 function Set-ActiveReleaseRoot {
   param([string]$Root)
 
@@ -166,54 +337,80 @@ function Invoke-ReleaseCheck {
 
   $now = (Get-Date).ToUniversalTime().ToString("o")
   Write-UpdateStatus @{ phase = "checking"; lastCheckedAt = $now; error = $null }
+  $source = Invoke-RemoteSourceSync
   try {
-    if ($config.Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Invalid GitHub repository configuration." }
-    $url = "https://api.github.com/repos/$($config.Repository)/releases?per_page=30"
-    $releases = Invoke-RestMethod -Uri $url -Headers (Get-UpdateHeaders) -TimeoutSec 20
     $currentVersion = Get-ApplicationVersion
     $candidate = $null
-    foreach ($release in $releases) {
-      if ($release.draft -or $release.prerelease) { continue }
-      $tag = [string]$release.tag_name
-      if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { continue }
-      $version = $Matches[1]
-      if ((Compare-SemVer $version $currentVersion) -le 0) { continue }
-      if ($candidate -and (Compare-SemVer $version $candidate.Version) -le 0) { continue }
-      $zipName = "super-canvas-v$version-windows-x64.zip"
-      $sidecarName = "super-canvas-v$version-release-manifest.json"
-      $zip = @($release.assets | Where-Object { $_.name -eq $zipName } | Select-Object -First 1)
-      $sidecar = @($release.assets | Where-Object { $_.name -eq $sidecarName } | Select-Object -First 1)
-      $candidate = [pscustomobject]@{
-        Version = $version
-        Tag = $tag
-        Commit = [string]$release.target_commitish
-        PublishedAt = [string]$release.published_at
-        HtmlUrl = [string]$release.html_url
-        Notes = ([string]$release.body).Substring(0, [Math]::Min(50000, ([string]$release.body).Length))
-        AssetName = $zipName
-        AssetSize = if ($zip) { [int64]$zip.size } else { $null }
-        AssetUrl = if ($zip) { [string]$zip.browser_download_url } else { $null }
-        ManifestUrl = if ($sidecar) { [string]$sidecar.browser_download_url } else { $null }
+    if ($config.Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Invalid GitHub repository configuration." }
+    if ($config.Token) {
+      $url = "https://api.github.com/repos/$($config.Repository)/releases?per_page=30"
+      $releases = Invoke-RestMethod -Uri $url -Headers (Get-UpdateHeaders) -TimeoutSec 20
+      foreach ($release in $releases) {
+        if ($release.draft -or $release.prerelease) { continue }
+        $tag = [string]$release.tag_name
+        if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { continue }
+        $version = $Matches[1]
+        if ((Compare-SemVer $version $currentVersion) -le 0) { continue }
+        if ($candidate -and (Compare-SemVer $version $candidate.Version) -le 0) { continue }
+        $zipName = "super-canvas-v$version-windows-x64.zip"
+        $sidecarName = "super-canvas-v$version-release-manifest.json"
+        $zip = @($release.assets | Where-Object { $_.name -eq $zipName } | Select-Object -First 1)
+        $sidecar = @($release.assets | Where-Object { $_.name -eq $sidecarName } | Select-Object -First 1)
+        $candidate = [pscustomobject]@{
+          Version = $version
+          Tag = $tag
+          Commit = [string]$release.target_commitish
+          PublishedAt = [string]$release.published_at
+          HtmlUrl = [string]$release.html_url
+          Notes = ([string]$release.body).Substring(0, [Math]::Min(50000, ([string]$release.body).Length))
+          AssetName = $zipName
+          AssetSize = if ($zip) { [int64]$zip.size } else { $null }
+          AssetUrl = if ($zip) { [string]$zip.browser_download_url } else { $null }
+          ManifestUrl = if ($sidecar) { [string]$sidecar.browser_download_url } else { $null }
+        }
       }
+    } else {
+      Write-ManagerLog "GitHub Release API check skipped; polling remote Git $($config.Branch) instead."
     }
-    if (-not $candidate) {
-      Write-UpdateStatus @{ phase = "idle"; currentVersion = $currentVersion; lastSuccessfulCheckAt = $now; latest = $null }
+    $sourcePatch = @{}
+    foreach ($property in $source.PSObject.Properties) { $sourcePatch[$property.Name] = $property.Value }
+    if ($candidate) {
+      $status = Read-UpdateStatusObject
+      $deferred = if ($status) { [string]$status.deferredVersion } else { "" }
+      $phase = if ($deferred -eq $candidate.Version) { "idle" } else { "available" }
+      $sourcePatch.phase = $phase
+      $sourcePatch.currentVersion = $currentVersion
+      $sourcePatch.latest = $candidate
+      $sourcePatch.lastSuccessfulCheckAt = $now
+      $sourcePatch.error = if ($candidate.AssetUrl -and $candidate.ManifestUrl) { $null } else { "此版本缺少 Windows 更新包或校验清单" }
+      Write-UpdateStatus $sourcePatch
+      Write-ManagerLog "GitHub Release check found $($candidate.Tag)."
       return
     }
-    $status = Read-UpdateStatusObject
-    $deferred = if ($status) { [string]$status.deferredVersion } else { "" }
-    $phase = if ($deferred -eq $candidate.Version) { "idle" } else { "available" }
-    Write-UpdateStatus @{
-      phase = $phase
-      currentVersion = $currentVersion
-      latest = $candidate
-      lastSuccessfulCheckAt = $now
-      error = if ($candidate.AssetUrl -and $candidate.ManifestUrl) { $null } else { "此版本缺少 Windows 更新包或校验清单" }
+
+    $sourcePatch.currentVersion = $currentVersion
+    $sourcePatch.latest = $null
+    $sourcePatch.lastSuccessfulCheckAt = $now
+    if ($source.remoteUpdateAvailable) {
+      $sourcePatch.phase = "available"
+      $sourcePatch.error = $source.remoteSyncError
+      Write-ManagerLog "Remote Git update is available at $($source.remoteCommit)."
+    } elseif ($source.remoteSyncState -eq "error") {
+      $sourcePatch.phase = "failed"
+      $sourcePatch.error = $source.remoteSyncError
+    } else {
+      $sourcePatch.phase = "idle"
+      $sourcePatch.error = $null
     }
-    Write-ManagerLog "GitHub Release check found $($candidate.Tag)."
+    Write-UpdateStatus $sourcePatch
   } catch {
-    Write-UpdateStatus @{ phase = "failed"; currentVersion = Get-ApplicationVersion; error = "检查 GitHub Release 失败：$($_.Exception.Message)" }
-    Write-ManagerLog "GitHub Release check failed: $($_.Exception.Message)"
+    $sourcePatch = @{}
+    foreach ($property in $source.PSObject.Properties) { $sourcePatch[$property.Name] = $property.Value }
+    $sourcePatch.phase = "failed"
+    $sourcePatch.currentVersion = Get-ApplicationVersion
+    $sourcePatch.error = "检查更新失败：$($_.Exception.Message)"
+    Write-UpdateStatus $sourcePatch
+    Write-ManagerLog "Update check failed: $($_.Exception.Message)"
   }
 }
 
@@ -933,6 +1130,7 @@ try {
   $pnpmPrefixArguments = if ($packageManager) { @($packageManager.PrefixArguments) } else { @() }
   $nodeCommand = (Get-Command node.exe -ErrorAction Stop).Source
   Set-ActiveReleaseRoot -Root $workspace
+  Load-LocalEnvironment
   $nextScript = $script:nextScript
   if (-not (Test-Path -LiteralPath $nextScript)) {
     throw "Missing Next.js command: $nextScript"

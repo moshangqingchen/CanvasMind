@@ -379,23 +379,28 @@ pnpm public:install
 pnpm public:start:installed
 ```
 
-画布启动时和每 10 分钟会检查 GitHub Releases。发现新版本后，项目菜单中的“应用更新”
-会显示版本号、发布时间、提交标识和 Release 正文。确认下载后，更新包会在后台校验；有生成
-任务时会等任务结束，再启动新版本并健康检查。失败时保留旧版本并恢复服务。应用更新不会覆盖
-画布 JSON、素材、密钥或 `.local-public.env`。
+画布启动时和配置的检查间隔会检查更新。源码目录运行时会通过 `git ls-remote` 读取配置分支的
+最新提交；没有配置 Token 时完全不调用 GitHub Releases REST API，因此不会消耗匿名 API 配额。
+本地分支匹配、工作区干净且远程提交可以快进时，管理器会自动执行 `git pull --ff-only`，然后
+重建并切换 Web 服务。检测到未提交改动、分支不匹配或无法安全快进时只报告状态，不会覆盖本地文件。
+项目菜单中的“检查更新”会显示远程分支和提交标识。正式 Release 仍会显示版本号、发布时间、
+提交标识和 Release 正文；确认下载后，更新包会在后台校验，有生成任务时会等任务结束再切换。
+失败时保留旧版本并恢复服务。应用更新不会覆盖画布 JSON、素材、密钥或 `.local-public.env`。
 
 更新检查可通过以下环境变量调整：
 
 ```text
 SUPERCANVAS_UPDATE_ENABLED=true
 SUPERCANVAS_UPDATE_REPOSITORY=moshangqingchen/CanvasMind
-SUPERCANVAS_UPDATE_INTERVAL_SECONDS=600
+SUPERCANVAS_UPDATE_BRANCH=main
+SUPERCANVAS_AUTO_SYNC_SOURCE=true
+SUPERCANVAS_UPDATE_INTERVAL_SECONDS=60
 SUPERCANVAS_GITHUB_TOKEN=
 ```
 
-公开仓库不需要 Token；私有仓库或 GitHub API 限流时才配置 Token。普通分支 push 只运行 CI，
-不会直接升级本地画布；必须发布带 `v` 前缀且与 `package.json` 对齐的 Release。开发源码热更新
-仍使用 `pnpm public:watch`。
+源码部署跟踪普通分支 push，不要求创建 Release；默认每 60 秒读取一次远程提交。Token 只在需要
+查询正式 GitHub Release 和下载 Windows 更新包时使用。若要让独立安装包获得新版本，仍需发布
+带 `v` 前缀且与 `package.json` 对齐的 Release。开发源码热更新仍使用 `pnpm public:watch`。
 
 首次运行会先构建密钥迁移工具、生成 `.local-public.env` 和本地 JSON 数据库；已有配置项会原样保留，只补齐缺失的本地默认项和空的 `MASTER_KEY`。脚本不再写入固定公网域名；如需反向代理，请自行设置 `PUBLIC_BASE_URL` 和登录变量。只有确实迁移旧开发主密钥加密的连接时才会在 `backups` 中留下备份。
 

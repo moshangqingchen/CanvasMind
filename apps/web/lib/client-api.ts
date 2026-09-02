@@ -137,6 +137,21 @@ export interface AppUpdateView {
   managerAvailable: boolean;
   currentVersion: string;
   currentCommit?: string;
+  remoteBranch?: string;
+  remoteCommit?: string;
+  remoteCommitUrl?: string;
+  remoteUpdateAvailable?: boolean;
+  remoteSyncState?:
+    | "up_to_date"
+    | "synced"
+    | "available"
+    | "blocked_dirty"
+    | "blocked"
+    | "branch_mismatch"
+    | "repository_mismatch"
+    | "unavailable"
+    | "error";
+  remoteSyncError?: string;
   phase: AppUpdatePhase;
   latest?: {
     version: string;
@@ -257,7 +272,9 @@ export async function fetchProjects(): Promise<ProjectSummaryView[]> {
   return Array.isArray(payload?.projects) ? payload.projects : [];
 }
 
-export async function createProject(title: string): Promise<ProjectSummaryView> {
+export async function createProject(
+  title: string,
+): Promise<ProjectSummaryView> {
   const response = await fetch("/api/projects", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -282,22 +299,21 @@ export async function renameProject(
   projectId: string,
   title: string,
 ): Promise<RenameProjectResult> {
-  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ title }),
-  });
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title }),
+    },
+  );
   const payload = (await response.json().catch(() => null)) as {
     project?: ProjectSummaryView;
     revision?: number;
     folderRenamed?: boolean;
     error?: string;
   } | null;
-  if (
-    !response.ok ||
-    !payload?.project ||
-    typeof payload.revision !== "number"
-  )
+  if (!response.ok || !payload?.project || typeof payload.revision !== "number")
     throw new Error(payload?.error ?? "项目重命名失败");
   return {
     project: payload.project,
@@ -372,9 +388,12 @@ export async function deleteProject(projectId: string): Promise<{
   folderDeleted: boolean;
   warning?: string;
 }> {
-  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
-    method: "DELETE",
-  });
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}`,
+    {
+      method: "DELETE",
+    },
+  );
   const payload = (await response.json().catch(() => null)) as {
     nextProjectId?: string | null;
     folderDeleted?: boolean;

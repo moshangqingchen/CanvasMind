@@ -32,7 +32,10 @@ describe("application update protocol", () => {
       delete process.env[key];
     }
     process.env.SUPERCANVAS_UPDATE_STATUS_PATH = join(directory, "status.json");
-    process.env.SUPERCANVAS_UPDATE_COMMAND_PATH = join(directory, "command.json");
+    process.env.SUPERCANVAS_UPDATE_COMMAND_PATH = join(
+      directory,
+      "command.json",
+    );
   });
 
   afterEach(async () => {
@@ -110,17 +113,32 @@ describe("application update protocol", () => {
         notes: "<script>alert(1)</script>",
         htmlUrl: "javascript:alert(1)",
       },
+      remoteBranch: "main",
+      remoteCommit: "A".repeat(40),
+      remoteCommitUrl:
+        "https://github.com/moshangqingchen/CanvasMind/commit/" +
+        "a".repeat(40),
+      remoteUpdateAvailable: true,
+      remoteSyncState: "blocked_dirty",
+      remoteSyncError: "本地有未提交改动",
       progress: { downloadedBytes: 12.8, totalBytes: -2 },
     });
     expect(status.phase).toBe("available");
     expect(status.latest?.notes).toBe("<script>alert(1)</script>");
     expect(status.latest?.htmlUrl).toBeUndefined();
+    expect(status.remoteBranch).toBe("main");
+    expect(status.remoteCommit).toBe("a".repeat(40));
+    expect(status.remoteUpdateAvailable).toBe(true);
+    expect(status.remoteSyncState).toBe("blocked_dirty");
+    expect(status.remoteSyncError).toBe("本地有未提交改动");
     expect(status.progress).toEqual({ downloadedBytes: 12 });
   });
 
   it("writes a single atomic command envelope", async () => {
     const command = await writeUpdateCommand("download", "0.2.0");
-    const stored = JSON.parse(await readFile(join(directory, "command.json"), "utf8"));
+    const stored = JSON.parse(
+      await readFile(join(directory, "command.json"), "utf8"),
+    );
     expect(stored).toMatchObject({
       id: command.id,
       action: "download",

@@ -41,6 +41,12 @@ export interface AppUpdateStatus {
   formatVersion: 1;
   currentVersion: string;
   currentCommit?: string;
+  remoteBranch?: string;
+  remoteCommit?: string;
+  remoteCommitUrl?: string;
+  remoteUpdateAvailable?: boolean;
+  remoteSyncState?: AppRemoteSyncState;
+  remoteSyncError?: string;
   phase: AppUpdatePhase;
   latest?: AppReleaseSummary;
   downloadedVersion?: string;
@@ -54,11 +60,18 @@ export interface AppUpdateStatus {
   updatedAt: string;
 }
 
-export type AppUpdateCommandAction =
-  | "check"
-  | "download"
-  | "apply"
-  | "defer";
+export type AppRemoteSyncState =
+  | "up_to_date"
+  | "synced"
+  | "available"
+  | "blocked_dirty"
+  | "blocked"
+  | "branch_mismatch"
+  | "repository_mismatch"
+  | "unavailable"
+  | "error";
+
+export type AppUpdateCommandAction = "check" | "download" | "apply" | "defer";
 
 export interface AppUpdateCommand {
   id: string;
@@ -107,7 +120,11 @@ export function compareAppVersions(left: string, right: string): number {
   }
   if (a.prerelease.length === 0 && b.prerelease.length > 0) return 1;
   if (a.prerelease.length > 0 && b.prerelease.length === 0) return -1;
-  for (let index = 0; index < Math.max(a.prerelease.length, b.prerelease.length); index += 1) {
+  for (
+    let index = 0;
+    index < Math.max(a.prerelease.length, b.prerelease.length);
+    index += 1
+  ) {
     const leftPart = a.prerelease[index];
     const rightPart = b.prerelease[index];
     if (leftPart === undefined) return -1;
@@ -140,7 +157,8 @@ export function validateReleaseManifest(
     return false;
   if (expected?.version && manifest.version !== expected.version) return false;
   if (expected?.tag && manifest.tag !== expected.tag) return false;
-  if (expected?.assetName && manifest.assetName !== expected.assetName) return false;
+  if (expected?.assetName && manifest.assetName !== expected.assetName)
+    return false;
   if (
     manifest.assetSha256 !== undefined &&
     (typeof manifest.assetSha256 !== "string" ||
@@ -181,7 +199,8 @@ export function getUpdateConfig(): AppUpdateConfig {
 
 export function getUpdateRoot(): string {
   const configured = nonEmpty(process.env.SUPERCANVAS_UPDATE_ROOT);
-  if (configured) return isAbsolute(configured) ? configured : resolve(configured);
+  if (configured)
+    return isAbsolute(configured) ? configured : resolve(configured);
   const localAppData = nonEmpty(process.env.LOCALAPPDATA);
   if (localAppData) return join(localAppData, "SuperCanvas", "updates");
   return join(tmpdir(), "super-canvas-updates");
@@ -216,14 +235,20 @@ function sanitizeRelease(value: unknown): AppReleaseSummary | undefined {
   if (
     typeof record.version !== "string" ||
     typeof record.tag !== "string" ||
-      !isValidAppVersion(record.version)
+    !isValidAppVersion(record.version)
   )
     return;
   const result: AppReleaseSummary = {
     version: record.version.slice(0, 64),
     tag: record.tag.slice(0, 80),
   };
-  for (const key of ["commit", "publishedAt", "htmlUrl", "notes", "assetName"] as const) {
+  for (const key of [
+    "commit",
+    "publishedAt",
+    "htmlUrl",
+    "notes",
+    "assetName",
+  ] as const) {
     const value = record[key];
     if (
       typeof value === "string" &&
@@ -232,14 +257,18 @@ function sanitizeRelease(value: unknown): AppReleaseSummary | undefined {
     )
       result[key] = value.slice(0, key === "notes" ? 50_000 : 2_048);
   }
-  if (typeof record.assetSize === "number" && Number.isSafeInteger(record.assetSize))
+  if (
+    typeof record.assetSize === "number" &&
+    Number.isSafeInteger(record.assetSize)
+  )
     result.assetSize = Math.max(0, record.assetSize);
   return result;
 }
 
 export function normalizeUpdateStatus(value: unknown): AppUpdateStatus {
   const fallback = defaultUpdateStatus();
-  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fallback;
   const record = value as Record<string, unknown>;
   const phases: AppUpdatePhase[] = [
     "disabled",
@@ -282,8 +311,41 @@ export function normalizeUpdateStatus(value: unknown): AppUpdateStatus {
     "managerHeartbeatAt",
   ] as const) {
     const value = record[key];
-    if (typeof value === "string" && value.trim()) status[key] = value.slice(0, 50_000);
+    if (typeof value === "string" && value.trim())
+      status[key] = value.slice(0, 50_000);
   }
+  if (typeof record.remoteBranch === "string" && record.remoteBranch.trim())
+    status.remoteBranch = record.remoteBranch.trim().slice(0, 128);
+  if (
+    typeof record.remoteCommit === "string" &&
+    /^[a-f0-9]{40}$/iu.test(record.remoteCommit.trim())
+  )
+    status.remoteCommit = record.remoteCommit.trim().toLowerCase();
+  if (
+    typeof record.remoteCommitUrl === "string" &&
+    /^https:\/\/github\.com\//u.test(record.remoteCommitUrl)
+  )
+    status.remoteCommitUrl = record.remoteCommitUrl.slice(0, 2_048);
+  if (typeof record.remoteUpdateAvailable === "boolean")
+    status.remoteUpdateAvailable = record.remoteUpdateAvailable;
+  const remoteSyncStates: AppRemoteSyncState[] = [
+    "up_to_date",
+    "synced",
+    "available",
+    "blocked_dirty",
+    "blocked",
+    "branch_mismatch",
+    "repository_mismatch",
+    "unavailable",
+    "error",
+  ];
+  if (remoteSyncStates.includes(record.remoteSyncState as AppRemoteSyncState))
+    status.remoteSyncState = record.remoteSyncState as AppRemoteSyncState;
+  if (
+    typeof record.remoteSyncError === "string" &&
+    record.remoteSyncError.trim()
+  )
+    status.remoteSyncError = record.remoteSyncError.slice(0, 2_048);
   if (
     typeof record.managerPid === "number" &&
     Number.isSafeInteger(record.managerPid) &&

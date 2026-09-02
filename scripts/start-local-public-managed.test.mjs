@@ -42,3 +42,14 @@ test("managed deployment refreshes installed watchdog scripts after applying a r
   assert.match(source, /candidateRegistrar/u);
   assert.match(source, /installedRegistrar/u);
 });
+
+test("managed deployment follows remote Git without anonymous GitHub API calls", async () => {
+  const source = await readFile(scriptUrl, "utf8");
+
+  assert.match(source, /gitCommand -C \$workspace/u);
+  assert.match(source, /ls-remote/u);
+  assert.match(source, /pull", "--ff-only", "origin"/u);
+  assert.match(source, /blocked_dirty/u);
+  assert.match(source, /GitHub Release API check skipped/u);
+  assert.match(source, /if \(\$config\.Token\)/u);
+});
