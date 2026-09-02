@@ -12,9 +12,9 @@ import {
   ImageIcon,
   KeyRound,
   LoaderCircle,
-  MessageSquarePlus,
   Paperclip,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
 import type {
@@ -25,7 +25,6 @@ import type {
 import type { ModelDescriptor } from "@super-canvas/providers";
 
 import {
-  createDirectorConversation,
   fetchDirectorConversation,
   fetchDirectorConversations,
   fetchDirectorProfile,
@@ -43,6 +42,8 @@ import type {
 } from "../lib/director-contracts";
 import { DIRECTOR_STAGES } from "../lib/director-contracts";
 import {
+  archiveProjectAssets,
+  clearProjectChat,
   fetchModels,
   uploadAsset,
   type ProviderConnectionView,
@@ -978,31 +979,30 @@ export function SuperDirectorPanel({
     [canvasId, sessionId],
   );
 
-  const startNewConversation = useCallback(async () => {
+  const clearConversation = useCallback(async () => {
     if (!canvasId || submitting || sessionSwitching) return;
+    if (!window.confirm("清空当前项目的对话内容？画布和素材不会受到影响。"))
+      return;
     setSessionSwitching(true);
     setError("");
     try {
-      const conversation = await createDirectorConversation(canvasId);
-      setConversations((current) => [
-        conversation.session,
-        ...current.filter((item) => item.id !== conversation.session.id),
-      ]);
-      setSessionId(conversation.session.id);
-      storeDirectorSession(canvasId, conversation.session.id);
+      await clearProjectChat(canvasId);
+      setConversations([]);
+      setSessionId(undefined);
       setMessages([]);
       setStage("understanding");
       setStageMessage("");
       setDraft("");
       setAttachments([]);
       setAttachmentError("");
+      storeDirectorSession(canvasId, undefined);
       previewPatchRef.current?.(null);
       window.requestAnimationFrame(() => textareaRef.current?.focus());
-    } catch (newConversationError) {
+    } catch (clearConversationError) {
       setError(
-        newConversationError instanceof Error
-          ? newConversationError.message
-          : "无法新建导演对话",
+        clearConversationError instanceof Error
+          ? clearConversationError.message
+          : "无法清空当前项目对话",
       );
     } finally {
       setSessionSwitching(false);
@@ -1087,6 +1087,7 @@ export function SuperDirectorPanel({
         const uploaded: DirectorAttachmentDraft[] = [];
         for (const file of prepared) {
           const asset = await uploadAsset(file);
+          void archiveProjectAssets(canvasId, [asset.id]).catch(() => undefined);
           const kind = attachmentKindForFile(file);
           if (!kind) continue;
           uploaded.push({
@@ -1106,7 +1107,13 @@ export function SuperDirectorPanel({
         setAttachmentBusy(false);
       }
     },
-    [attachmentBusy, attachments, selectedModelId, supportedAttachmentKinds],
+    [
+      attachmentBusy,
+      attachments,
+      canvasId,
+      selectedModelId,
+      supportedAttachmentKinds,
+    ],
   );
 
   useEffect(() => {
@@ -1359,13 +1366,13 @@ export function SuperDirectorPanel({
           <button
             type="button"
             style={styles.newSessionButton}
-            onClick={() => void startNewConversation()}
+            onClick={() => void clearConversation()}
             disabled={hydrating || submitting || sessionSwitching}
-            title="新开一个导演对话"
-            aria-label="新开对话"
+            title="清空当前项目对话"
+            aria-label="清空当前项目对话"
           >
-            <MessageSquarePlus size={13} />
-            <span>新对话</span>
+            <Trash2 size={13} />
+            <span>清空对话</span>
           </button>
           <select
             aria-label="历史对话"

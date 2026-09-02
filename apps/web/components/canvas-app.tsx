@@ -48,6 +48,7 @@ import {
   Keyboard,
   KeyRound,
   LayoutGrid,
+  MessageSquarePlus,
   MousePointer2,
   MoreHorizontal,
   Minus,
@@ -79,9 +80,13 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import { appendPriceLabelOnce } from "../lib/model-display";
 import {
   createRun,
+  cleanupProjectDraft,
   claimMaterialDrop,
   canvasErrorMessage,
   deleteAssets,
+  fetchProjects,
+  createProject,
+  archiveProjectAssets,
   discardMaterialDrop,
   fetchAssets,
   fetchCanvas,
@@ -103,6 +108,7 @@ import {
   type ProviderConnectionView,
   requestAppUpdate,
   type AppUpdateView,
+  type ProjectSummaryView,
 } from "../lib/client-api";
 import {
   CANGYUAN_ALL_MODELS_GROUP,
@@ -1846,54 +1852,6 @@ function normalizeGenerationNodeForRun(
   };
 }
 
-function starterGraph(): CanvasDocument {
-  const prompt = createNode("prompt", { x: 80, y: 185 }, 0);
-  const image = createNode("image-generation", { x: 490, y: 150 });
-  const video = createNode("video-generation", { x: 980, y: 150 });
-  const preview = createNode("preview", { x: 1470, y: 185 });
-  const edges: CanvasEdge[] = [
-    {
-      id: "edge-prompt-image",
-      source: prompt.id,
-      sourceHandle: "prompt",
-      target: image.id,
-      targetHandle: "prompt",
-      type: "smoothstep",
-    },
-    {
-      id: "edge-prompt-video",
-      source: prompt.id,
-      sourceHandle: "prompt",
-      target: video.id,
-      targetHandle: "prompt",
-      type: "smoothstep",
-      style: { strokeDasharray: "5 5" },
-    },
-    {
-      id: "edge-image-video",
-      source: image.id,
-      sourceHandle: "images",
-      target: video.id,
-      targetHandle: "firstFrame",
-      type: "smoothstep",
-    },
-    {
-      id: "edge-video-preview",
-      source: video.id,
-      sourceHandle: "video",
-      target: preview.id,
-      targetHandle: "video",
-      type: "smoothstep",
-    },
-  ];
-  return {
-    schemaVersion: 1,
-    nodes: [prompt, image, video, preview],
-    edges,
-    viewport: { x: 0, y: 0, zoom: 0.85 },
-  };
-}
-
 const transientNodeDataKeys = new Set([
   "onRun",
   "onRegenerate",
@@ -2038,7 +1996,164 @@ function nodePortKind(
   return ports.find((port) => port.id === handle)?.kind as PortKind | undefined;
 }
 
-function CanvasShell() {
+interface CanvasShellProps {
+  projectId: string;
+  projects: ProjectSummaryView[];
+  onSelectProject: (projectId: string) => void;
+  onCreateProject: (title: string) => Promise<void>;
+  onCleanupProject: (projectId: string) => Promise<void>;
+}
+
+function ProjectSidebar({
+  projects,
+  activeProjectId,
+  mobileOpen = false,
+  onSelectProject,
+  onCreateProject,
+  onCleanupProject,
+}: {
+  projects: ProjectSummaryView[];
+  activeProjectId: string;
+  mobileOpen?: boolean;
+  onSelectProject: (projectId: string) => void;
+  onCreateProject: (title: string) => Promise<void>;
+  onCleanupProject: (projectId: string) => Promise<void>;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    const title = draftTitle.trim();
+    if (!title || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onCreateProject(title);
+      setDraftTitle("");
+      setCreating(false);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "项目创建失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cleanup = async () => {
+    if (busy) return;
+    if (!window.confirm("只清理当前项目的草稿文件，成品文件不会被删除。确定继续吗？"))
+      return;
+    setBusy(true);
+    setError("");
+    try {
+      await onCleanupProject(activeProjectId);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "项目草稿清理失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <aside
+      className={`project-sidebar ${mobileOpen ? "mobile-open" : ""}`}
+      aria-label="项目对话"
+    >
+      <div className="project-sidebar-head">
+        <div>
+          <strong>项目对话</strong>
+          <small>{projects.length} 个项目</small>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => {
+            setCreating((current) => !current);
+            setError("");
+          }}
+          aria-label="新建对话"
+          title="新建项目对话"
+        >
+          <MessageSquarePlus size={16} />
+        </button>
+      </div>
+      {creating ? (
+        <form
+          className="project-create-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <input
+            autoFocus
+            value={draftTitle}
+            onChange={(event) => setDraftTitle(event.target.value)}
+            placeholder="项目名称"
+            maxLength={160}
+            disabled={busy}
+          />
+          <div>
+            <button className="button primary small" type="submit" disabled={!draftTitle.trim() || busy}>
+              创建
+            </button>
+            <button
+              className="button small"
+              type="button"
+              onClick={() => setCreating(false)}
+              disabled={busy}
+            >
+              取消
+            </button>
+          </div>
+        </form>
+      ) : null}
+      <div className="project-list" role="list">
+        {projects.map((project) => (
+          <div
+            className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
+            key={project.id}
+            role="listitem"
+          >
+            <button
+              className="project-row-main"
+              type="button"
+              onClick={() => onSelectProject(project.id)}
+              aria-current={project.id === activeProjectId ? "page" : undefined}
+              title={project.title}
+            >
+              <span className="project-row-icon"><MessageSquarePlus size={14} /></span>
+              <span className="project-row-copy">
+                <strong>{project.title}</strong>
+                <small>{new Date(project.updatedAt).toLocaleDateString("zh-CN")}</small>
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="project-sidebar-foot">
+        <button
+          className="button danger small"
+          type="button"
+          onClick={() => void cleanup()}
+          disabled={busy || !activeProjectId}
+        >
+          <Trash2 size={13} /> 清理本项目草稿
+        </button>
+        {error ? <span className="field-note" role="alert">{error}</span> : null}
+      </div>
+    </aside>
+  );
+}
+
+function CanvasShell({
+  projectId,
+  projects,
+  onSelectProject,
+  onCreateProject,
+  onCleanupProject,
+}: CanvasShellProps) {
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [initialization, setInitialization] =
     useState<CanvasInitializationState>({ status: "loading" });
@@ -2103,6 +2218,7 @@ function CanvasShell() {
   const [agentDraftRequest, setAgentDraftRequest] =
     useState<AgentDraftRequest | null>(null);
   const [mobileLibraryOpen, setMobileLibraryOpen] = useState(false);
+  const [mobileProjectsOpen, setMobileProjectsOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("node");
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
@@ -2549,7 +2665,7 @@ function CanvasShell() {
         // unhandled rejection while the canvas is loading.
         void assetsPromise.catch(() => undefined);
         void connectionsPromise.catch(() => undefined);
-        const canvasResult = await Promise.allSettled([fetchCanvas()]);
+        const canvasResult = await Promise.allSettled([fetchCanvas(projectId)]);
         if (!active || initializationSettled) return;
 
         const canvasOutcome = canvasResult[0];
@@ -2578,9 +2694,7 @@ function CanvasShell() {
         setTitle(canvas.title);
         setAssets([]);
         setConnections([]);
-        const graph = canvas.graph.nodes?.length
-          ? canvas.graph
-          : starterGraph();
+        const graph = canvas.graph;
         const typedNodes = graph.nodes.map((node) => ({
           ...node,
           type: "workflow" as const,
@@ -6555,6 +6669,7 @@ function CanvasShell() {
           asset,
           ...current.filter((item) => item.id !== asset.id),
         ]);
+        void archiveProjectAssets(canvasId ?? "", [asset.id]).catch(() => undefined);
         if (announceSuccess) showToast("素材已加入素材库", "success");
         return asset;
       } catch (error) {
@@ -6562,7 +6677,7 @@ function CanvasShell() {
         return null;
       }
     },
-    [showToast],
+    [canvasId, showToast],
   );
 
   const prepareFilesForImport = useCallback(
@@ -6889,6 +7004,7 @@ function CanvasShell() {
 
           try {
             const asset = await claimMaterialDrop(drop.id);
+            void archiveProjectAssets(canvasId, [asset.id]).catch(() => undefined);
             setAssets((current) => [
               asset,
               ...current.filter((item) => item.id !== asset.id),
@@ -7086,6 +7202,7 @@ function CanvasShell() {
     try {
       const rendered = await renderDrawingStrokesToPng(selected);
       const asset = await uploadAsset(rendered.file);
+      void archiveProjectAssets(canvasId ?? "", [asset.id]).catch(() => undefined);
       checkpoint(true);
       const state = useCanvasStore.getState();
       const nextDrawings = state.drawings.filter(
@@ -7129,6 +7246,7 @@ function CanvasShell() {
     }
   }, [
     changeCanvasMode,
+    canvasId,
     checkpoint,
     mergingDrawings,
     scheduleSave,
@@ -7206,6 +7324,10 @@ function CanvasShell() {
               await importDroppedMediaSources(downloadableSources);
             downloadedAssets = imported.assets;
             sourceFailures = imported.failures;
+            void archiveProjectAssets(
+              canvasId ?? "",
+              imported.assets.map((asset) => asset.id),
+            ).catch(() => undefined);
           } catch (error) {
             sourceFailures = [
               {
@@ -7319,6 +7441,10 @@ function CanvasShell() {
             const imported = await importDroppedMediaSources(fallbackSources);
             downloadedAssets = imported.assets;
             sourceFailures = imported.failures;
+            void archiveProjectAssets(
+              canvasId ?? "",
+              imported.assets.map((asset) => asset.id),
+            ).catch(() => undefined);
             if (downloadedAssets.length > 0) {
               setAssets((current) => [
                 ...downloadedAssets,
@@ -7363,6 +7489,7 @@ function CanvasShell() {
       prepareFilesForImport,
       showToast,
       unregisterPendingNativeDrop,
+      canvasId,
     ],
   );
 
@@ -7515,6 +7642,7 @@ function CanvasShell() {
         prepared,
         upload: async (assetFile) => {
           const uploaded = await uploadAsset(assetFile);
+          void archiveProjectAssets(canvasId, [uploaded.id]).catch(() => undefined);
           uploadedForRollback.push(uploaded);
           setAssets((current) => [
             uploaded,
@@ -7689,6 +7817,15 @@ function CanvasShell() {
           </button>
         </nav>
         <div className="top-actions">
+          <button
+            className="icon-button project-toggle"
+            type="button"
+            onClick={() => setMobileProjectsOpen(true)}
+            aria-label="打开项目对话"
+            title="项目对话"
+          >
+            <MessageSquarePlus size={15} />
+          </button>
           <button
             className="icon-button library-toggle"
             type="button"
@@ -7920,7 +8057,7 @@ function CanvasShell() {
           } as CSSProperties
         }
       >
-        {mobileInspectorOpen || mobileLibraryOpen ? (
+        {mobileInspectorOpen || mobileLibraryOpen || mobileProjectsOpen ? (
           <button
             className="mobile-backdrop"
             type="button"
@@ -7928,9 +8065,21 @@ function CanvasShell() {
             onClick={() => {
               setMobileInspectorOpen(false);
               setMobileLibraryOpen(false);
+              setMobileProjectsOpen(false);
             }}
           />
         ) : null}
+        <ProjectSidebar
+          projects={projects}
+          activeProjectId={canvasId ?? projectId}
+          mobileOpen={mobileProjectsOpen}
+          onSelectProject={(nextId) => {
+            setMobileProjectsOpen(false);
+            onSelectProject(nextId);
+          }}
+          onCreateProject={onCreateProject}
+          onCleanupProject={onCleanupProject}
+        />
         <aside className={`sidebar ${mobileLibraryOpen ? "mobile-open" : ""}`}>
           <button
             className="icon-button mobile-panel-close mobile-only"
@@ -8966,7 +9115,7 @@ function CanvasShell() {
                     <div className="inspector-primary-action">
                       <a
                         className="button primary"
-                        href={`/api/assets/${encodeURIComponent(selectedData.assetId)}/content`}
+                        href={`/api/assets/${encodeURIComponent(selectedData.assetId)}/content?download=1`}
                         download
                       >
                         <Download size={14} /> 下载结果
@@ -9190,9 +9339,79 @@ function CanvasShell() {
 }
 
 export function CanvasApp() {
+  const [projects, setProjects] = useState<ProjectSummaryView[] | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reloadProjects = useCallback(async () => {
+    try {
+      const next = await fetchProjects();
+      setProjects(next);
+      setActiveProjectId((current) =>
+        current && next.some((project) => project.id === current)
+          ? current
+          : (next[0]?.id ?? null),
+      );
+      setError(null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "项目列表读取失败");
+    }
+  }, []);
+
+  useEffect(() => {
+    // Initial project discovery synchronizes the shell with the server.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void reloadProjects();
+  }, [reloadProjects]);
+
+  const handleCreateProject = useCallback(async (title: string) => {
+    const project = await createProject(title);
+    setProjects((current) =>
+      current ? [project, ...current.filter((item) => item.id !== project.id)] : [project],
+    );
+    setActiveProjectId(project.id);
+  }, []);
+
+  const handleCleanupProject = useCallback(async (projectId: string) => {
+    const result = await cleanupProjectDraft(projectId);
+    if (result.failed.length > 0)
+      throw new Error(`已清理 ${result.deleted} 项，另有 ${result.failed.length} 项失败`);
+  }, []);
+
+  if (!projects || !activeProjectId) {
+    return (
+      <div className="shell" aria-busy="true">
+        <header className="topbar">
+          <div className="brand">
+            <span className="brand-mark">✦</span>
+            <span>{APP_NAME}</span>
+          </div>
+        </header>
+        <main className="workspace project-bootstrap">
+          <div className="canvas-empty-state" role={error ? "alert" : "status"}>
+            <h2>{error ? "项目加载失败" : "正在加载项目…"}</h2>
+            <p>{error ?? "正在读取项目对话和画布，请稍候。"}</p>
+            {error ? (
+              <button className="button primary small" type="button" onClick={() => void reloadProjects()}>
+                <RefreshCw size={13} /> 重新加载
+              </button>
+            ) : null}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <ReactFlowProvider>
-      <CanvasShell />
+      <CanvasShell
+        key={activeProjectId}
+        projectId={activeProjectId}
+        projects={projects}
+        onSelectProject={setActiveProjectId}
+        onCreateProject={handleCreateProject}
+        onCleanupProject={handleCleanupProject}
+      />
     </ReactFlowProvider>
   );
 }

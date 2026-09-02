@@ -10,6 +10,7 @@ import {
 } from "../../../../lib/provider-presets";
 import { requireServerMasterKey } from "../../../../lib/master-key";
 import { jsonError, repository } from "../../../../lib/server";
+import { appendProjectChatTurn } from "../../../../lib/project-service";
 
 const CHAT_TIMEOUT_MS = 120_000;
 const MAX_UPSTREAM_ERROR_LENGTH = 600;
@@ -262,6 +263,11 @@ function configuredStrings(value: unknown): string[] {
 export async function POST(request: Request) {
   const parsed = await parseJsonRequest(request, AgentChatRequestSchema);
   if (!parsed.success) return parsed.response;
+  if (
+    parsed.data.canvasId &&
+    !(await repository.getCanvas(parsed.data.canvasId))
+  )
+    return jsonError("项目不存在", 404);
 
   const connection = await repository.getConnection(parsed.data.connectionId);
   if (!connection) return jsonError("导演台 API 连接不存在", 404);
@@ -416,6 +422,34 @@ export async function POST(request: Request) {
     if (!content)
       return jsonError(`${providerName}接口没有返回可显示的助手文本`, 502);
     const usage = tokenUsage(payload);
+    if (parsed.data.canvasId) {
+      const latestUser = [...parsed.data.messages]
+        .reverse()
+        .find((message) => message.role === "user");
+      const userContent = latestUser
+        ? typeof latestUser.content === "string"
+          ? latestUser.content
+          : latestUser.content
+              .map((part) =>
+                part.type === "text"
+                  ? part.text
+                  : part.type === "image_url"
+                    ? "〔图片附件〕"
+                    : "〔音频附件〕",
+              )
+              .join(" ")
+        : "";
+      if (userContent) {
+        try {
+          await appendProjectChatTurn(parsed.data.canvasId, userContent, content);
+        } catch (error) {
+          console.error(
+            "[super-canvas] unable to persist project chat",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
+    }
     return Response.json({
       message: { role: "assistant", content },
       model: parsed.data.model,

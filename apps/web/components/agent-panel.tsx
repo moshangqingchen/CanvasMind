@@ -18,7 +18,9 @@ import {
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { appendPriceLabelOnce } from "../lib/model-display";
 import {
+  clearProjectChat,
   fetchCangyuanMarketplace,
+  fetchProjectChat,
   fetchModels,
   sendAgentChat,
   type AgentChatContentPartView,
@@ -242,7 +244,6 @@ export function AgentPanel({
   const [messages, setMessages] = useState<AgentMessage[]>([
     agentWelcomeMessage,
   ]);
-  const [hydratedCanvasId, setHydratedCanvasId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const agentConnections = useMemo(
@@ -533,12 +534,33 @@ export function AgentPanel({
     if (!canvasId) return;
     const restored = persistedAgentMessages(canvasId);
     setMessages([agentWelcomeMessage, ...restored]);
-    setHydratedCanvasId(canvasId);
+    let cancelled = false;
+    void fetchProjectChat(canvasId)
+      .then((persisted) => {
+        if (cancelled) return;
+        setMessages([
+          agentWelcomeMessage,
+          ...persisted.map((message) => ({
+            id: message.id,
+            role: message.role,
+            text: message.content,
+          })),
+        ]);
+        try {
+          window.localStorage.removeItem(agentHistoryStorageKey(canvasId));
+        } catch {
+          // The server remains authoritative when browser storage is unavailable.
+        }
+      })
+      .catch(() => undefined);
     try {
       window.localStorage.removeItem(legacyAgentHistoryStorageKey(canvasId));
     } catch {
       // History remains isolated by the v2 storage key even if cleanup fails.
     }
+    return () => {
+      cancelled = true;
+    };
   }, [canvasId]);
 
   useEffect(() => {
@@ -588,23 +610,6 @@ export function AgentPanel({
       window.removeEventListener("resize", handleWindowResize);
     };
   }, []);
-
-  useEffect(() => {
-    if (!canvasId || hydratedCanvasId !== canvasId || submitting) return;
-    if (messages.some((message) => message.pending || message.streaming))
-      return;
-    try {
-      const persistable = successfulAgentHistory(messages).map(
-        ({ id, role, text }) => ({ id, role, text }),
-      );
-      window.localStorage.setItem(
-        agentHistoryStorageKey(canvasId),
-        JSON.stringify(persistable),
-      );
-    } catch {
-      // Local storage can be unavailable in private browsing; chat still works.
-    }
-  }, [canvasId, hydratedCanvasId, messages, submitting]);
 
   useEffect(() => {
     let cancelled = false;
@@ -735,6 +740,7 @@ export function AgentPanel({
     setSubmitting(true);
     try {
       const result = await sendAgentChat({
+        canvasId,
         connectionId: selectedConnection.id,
         model: modelId,
         messages: [...history, { role: "user", content: userContent }],
@@ -773,6 +779,8 @@ export function AgentPanel({
 
   const startNewConversation = () => {
     if (submitting) return;
+    if (!window.confirm("清空当前项目的对话内容？画布和素材不会受到影响。"))
+      return;
     if (revealTimerRef.current !== null) {
       window.clearInterval(revealTimerRef.current);
       revealTimerRef.current = null;
@@ -788,6 +796,7 @@ export function AgentPanel({
     } catch {
       // Local storage can be unavailable; resetting the visible chat still works.
     }
+    void clearProjectChat(canvasId).catch(() => undefined);
   };
 
   return (
@@ -805,11 +814,11 @@ export function AgentPanel({
           className="agent-new-chat"
           onClick={startNewConversation}
           disabled={submitting}
-          title="清空当前对话并开始新对话"
-          aria-label="新对话"
+          title="清空当前项目对话"
+          aria-label="清空当前项目对话"
         >
           <RotateCcw size={13} />
-          <span>新对话</span>
+          <span>清空对话</span>
         </button>
       </header>
 

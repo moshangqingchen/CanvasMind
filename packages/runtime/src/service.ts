@@ -44,7 +44,12 @@ import {
   type RemoteArtifact,
   type ResolvedProviderConnection,
 } from "@super-canvas/providers";
-import { getObjectStorage, type ObjectStorage } from "@super-canvas/storage";
+import {
+  getObjectStorage,
+  getProjectFileStore,
+  type ObjectStorage,
+  type ProjectFileStore,
+} from "@super-canvas/storage";
 import {
   getEventBus,
   type RuntimeEvent,
@@ -103,7 +108,7 @@ type HistoricalInputSnapshot = { value: OutputValue } | { missing: true };
 
 type HistoricalInputs = Record<string, HistoricalInputSnapshot>;
 
-interface RuntimeOptions {
+export interface RuntimeOptions {
   repository?: Repository;
   storage?: ObjectStorage;
   eventBus?: RuntimeEventBus;
@@ -111,6 +116,7 @@ interface RuntimeOptions {
   retryBaseDelayMs?: number;
   executionMode?: "inline" | "queue";
   enqueueRun?: (runId: string) => Promise<void>;
+  projectFileStore?: ProjectFileStore | null;
 }
 
 const WEAI_RUNTIME_MODELS_BY_GROUP: Readonly<
@@ -722,6 +728,7 @@ export class RunService {
   private readonly retryBaseDelayMs: number;
   private readonly executionMode?: "inline" | "queue";
   private readonly enqueueRunOverride?: (runId: string) => Promise<void>;
+  private readonly projectFileStore?: ProjectFileStore | null;
 
   constructor(options: RuntimeOptions = {}) {
     this.repository = options.repository ?? getRepository();
@@ -731,6 +738,7 @@ export class RunService {
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? 500;
     this.executionMode = options.executionMode;
     this.enqueueRunOverride = options.enqueueRun;
+    this.projectFileStore = options.projectFileStore;
   }
 
   public adapters(
@@ -2850,11 +2858,18 @@ export class RunService {
     nodeId: string,
     outputIndex: number,
   ): Promise<string> {
+    // Providers currently type outputs as image/video, but the asset pipeline
+    // also accepts audio artifacts from compatible adapters.
+    const artifactKind = (artifact as { kind: "image" | "video" | "audio" }).kind;
     let bytes = artifact.data;
     const maxBytes = artifactDownloadMaxBytes();
     let mime =
       artifact.mimeType ??
-      (artifact.kind === "video" ? "video/mp4" : "image/png");
+      (artifactKind === "video"
+        ? "video/mp4"
+        : artifactKind === "audio"
+          ? "audio/mpeg"
+          : "image/png");
     if (!bytes && artifact.url?.startsWith("data:")) {
       const match = artifact.url.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
       if (match) {
@@ -2873,9 +2888,11 @@ export class RunService {
     }
     if (!bytes && artifact.metadata?.fake === true) {
       bytes =
-        artifact.kind === "image"
+        artifactKind === "image"
           ? new Uint8Array(fakePngBytes)
-          : new TextEncoder().encode("SUPER_CANVAS_FAKE_VIDEO");
+          : artifactKind === "video"
+            ? new TextEncoder().encode("SUPER_CANVAS_FAKE_VIDEO")
+            : new TextEncoder().encode("SUPER_CANVAS_FAKE_AUDIO");
     }
     if (!bytes)
       throw new Error(
@@ -2887,13 +2904,25 @@ export class RunService {
     const id = createHash("sha256")
       .update(`${runId}\0${nodeId}\0${outputIndex}`)
       .digest("hex");
-    const extension = artifact.kind === "video" ? "mp4" : "png";
+    const extension =
+      artifactKind === "video"
+        ? "mp4"
+        : artifactKind === "audio"
+          ? "mp3"
+          : "png";
     const storageKey = `assets/${id}/original.${extension}`;
+    const kindLabel =
+      artifactKind === "video"
+        ? "视频"
+        : artifactKind === "audio"
+          ? "音频"
+          : "图片";
+    const assetName = `${kindLabel} ${new Date().toLocaleString("zh-CN")}`;
     await retryOperation(() => this.storage.put(storageKey, bytes!, mime));
     await this.repository.saveAsset({
       id,
-      name: `${artifact.kind === "video" ? "视频" : "图片"} ${new Date().toLocaleString("zh-CN")}`,
-      kind: artifact.kind,
+      name: assetName,
+      kind: artifactKind,
       mimeType: mime,
       size: bytes.byteLength,
       storageKey,
@@ -2903,6 +2932,30 @@ export class RunService {
         fake: Boolean(artifact.url?.includes("example.invalid")),
       },
     });
+    if (this.projectFileStore) {
+      try {
+        const run = await this.repository.getRun(runId);
+        const canvas = run ? await this.repository.getCanvas(run.canvasId) : null;
+        if (canvas) {
+          await this.projectFileStore.archiveDraft({
+            projectName: canvas.title,
+            assetId: id,
+            name: assetName,
+            mimeType: mime,
+            kind: artifactKind,
+            bytes,
+            source: "generated",
+          });
+        }
+      } catch (error) {
+        // A filesystem archive must not turn a successful provider result into
+        // a failed workflow. The asset remains available in object storage.
+        console.error(
+          "[super-canvas] unable to archive generated asset",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
     this.publish({
       type: "asset",
       runId,
@@ -3061,8 +3114,11 @@ class NeedsAttentionError extends Error {
 class CancelledError extends Error {}
 
 const globalKey = "__superCanvasRunService";
-export function getRunService(): RunService {
+export function getRunService(options: RuntimeOptions = {}): RunService {
   const scope = globalThis as typeof globalThis & { [globalKey]?: RunService };
-  scope[globalKey] ??= new RunService();
+  scope[globalKey] ??= new RunService({
+    ...options,
+    projectFileStore: options.projectFileStore ?? getProjectFileStore(),
+  });
   return scope[globalKey];
 }

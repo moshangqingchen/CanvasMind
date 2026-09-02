@@ -289,6 +289,7 @@ const AgentChatMessageSchema = z
 
 export const AgentChatRequestSchema = z
   .object({
+    canvasId: IdentifierSchema.optional(),
     connectionId: IdentifierSchema,
     model: IdentifierSchema,
     reasoningEffort: z

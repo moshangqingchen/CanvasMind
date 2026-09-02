@@ -233,6 +233,92 @@ export interface AgentChatResponseView {
   };
 }
 
+export interface ProjectChatMessageView {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
+export interface ProjectSummaryView {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchProjects(): Promise<ProjectSummaryView[]> {
+  const response = await fetch("/api/projects", { cache: "no-store" });
+  const payload = (await response.json().catch(() => null)) as {
+    projects?: ProjectSummaryView[];
+    error?: string;
+  } | null;
+  if (!response.ok) throw new Error(payload?.error ?? "项目列表读取失败");
+  return Array.isArray(payload?.projects) ? payload.projects : [];
+}
+
+export async function createProject(title: string): Promise<ProjectSummaryView> {
+  const response = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    project?: ProjectSummaryView;
+    error?: string;
+  } | null;
+  if (!response.ok || !payload?.project)
+    throw new Error(payload?.error ?? "项目创建失败");
+  return payload.project;
+}
+
+export async function fetchProjectChat(
+  projectId: string,
+): Promise<ProjectChatMessageView[]> {
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/chat`,
+    { cache: "no-store" },
+  );
+  const payload = (await response.json().catch(() => null)) as {
+    messages?: ProjectChatMessageView[];
+    error?: string;
+  } | null;
+  if (!response.ok) throw new Error(payload?.error ?? "项目对话读取失败");
+  return Array.isArray(payload?.messages) ? payload.messages : [];
+}
+
+export async function clearProjectChat(projectId: string): Promise<void> {
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/chat`,
+    { method: "DELETE" },
+  );
+  if (!response.ok)
+    throw new Error(
+      ((await response.json().catch(() => null)) as { error?: string } | null)
+        ?.error ?? "项目对话清理失败",
+    );
+}
+
+export async function cleanupProjectDraft(projectId: string): Promise<{
+  deleted: number;
+  failed: Array<{ path: string; message: string }>;
+}> {
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/cleanup`,
+    { method: "POST" },
+  );
+  const payload = (await response.json().catch(() => null)) as {
+    deleted?: number;
+    failed?: Array<{ path: string; message: string }>;
+    error?: string;
+  } | null;
+  if (!response.ok) throw new Error(payload?.error ?? "项目草稿清理失败");
+  return {
+    deleted: typeof payload?.deleted === "number" ? payload.deleted : 0,
+    failed: Array.isArray(payload?.failed) ? payload.failed : [],
+  };
+}
+
 function retryableCanvasStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
@@ -331,6 +417,7 @@ async function fetchCanvasJsonWithRetry<T>(
 }
 
 export async function sendAgentChat(input: {
+  canvasId?: string;
   connectionId: string;
   model: string;
   messages: AgentChatMessageView[];
@@ -358,9 +445,9 @@ export async function sendAgentChat(input: {
   return payload as AgentChatResponseView;
 }
 
-export async function fetchCanvas(): Promise<CanvasResponse> {
+export async function fetchCanvas(canvasId?: string): Promise<CanvasResponse> {
   const { response, payload } = await fetchCanvasJsonWithRetry<CanvasResponse>(
-    "/api/canvas",
+    canvasId ? `/api/canvas/${encodeURIComponent(canvasId)}` : "/api/canvas",
     { cache: "no-store" },
   );
   if (!response.ok) throw new Error("无法读取画布");
@@ -469,6 +556,25 @@ export async function fetchMaterialDrops(): Promise<MaterialDropEventView[]> {
   });
   if (!response.ok) return [];
   return response.json() as Promise<MaterialDropEventView[]>;
+}
+
+export async function archiveProjectAssets(
+  projectId: string,
+  assetIds: readonly string[],
+): Promise<void> {
+  if (!projectId || assetIds.length === 0) return;
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/archive`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assetIds }),
+    },
+  );
+  if (!response.ok)
+    throw new Error(
+      (await response.json().catch(() => null))?.error ?? "素材归档失败",
+    );
 }
 
 export async function claimMaterialDrop(id: string): Promise<AssetView> {

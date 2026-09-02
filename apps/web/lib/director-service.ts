@@ -58,6 +58,7 @@ const MAX_HISTORY_CHARACTERS = 30_000;
 export const MAX_RESEARCH_RESPONSE_BYTES = 1 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 24 * 1024 * 1024;
+const PROJECT_CHAT_METADATA = { conversationType: "project-chat" } as const;
 
 type EmitDirectorEvent = (event: DirectorTurnEvent) => void | Promise<void>;
 
@@ -330,7 +331,7 @@ export async function createDirectorConversation(
     canvasId,
     profileId: profile?.id ?? null,
     title: "新对话",
-    metadata: {},
+    metadata: PROJECT_CHAT_METADATA,
   });
   return getDirectorConversation(session.id);
 }
@@ -357,7 +358,7 @@ async function ensureSession(input: {
     canvasId: input.canvasId,
     profileId: input.profile.id,
     title: input.message.trim().replace(/\s+/gu, " ").slice(0, 48),
-    metadata: {},
+    metadata: PROJECT_CHAT_METADATA,
   });
 }
 

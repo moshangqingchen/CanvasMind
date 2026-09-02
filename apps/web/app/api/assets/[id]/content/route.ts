@@ -1,5 +1,6 @@
 import type { StoredObject } from "@super-canvas/storage";
 import { jsonError, repository, storage } from "../../../../../lib/server";
+import { archiveGeneratedAssetForFinished } from "../../../../../lib/project-service";
 import {
   isSupportedMediaMimeType,
   mediaKindForMime,
@@ -109,6 +110,21 @@ export async function GET(
   if (!asset) return jsonError("Asset does not exist", 404);
   const forceDownload =
     new URL(request.url).searchParams.get("download") === "1";
+
+  if (forceDownload) {
+    try {
+      // Explicit downloads of generated results are also copied into the
+      // project's protected finished directory before the response is sent.
+      await archiveGeneratedAssetForFinished(asset);
+    } catch (error) {
+      // Keep browser downloads available when the optional project filesystem
+      // is temporarily unavailable; the asset remains in object storage.
+      console.error(
+        "[super-canvas] unable to archive finished asset",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
 
   let loadedObject: StoredObject | null | undefined;
   const metadata = storage.head
