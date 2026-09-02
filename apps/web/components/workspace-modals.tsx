@@ -20,6 +20,7 @@ import {
 import {
   deleteConnection,
   fetchCangyuanCatalog,
+  fetchCangyuanAvailability,
   fetchCangyuanMarketplace,
   fetchChentuCatalog,
   fetchChentuMarketplace,
@@ -36,6 +37,7 @@ import {
   type DeleteAssetsResult,
   type ProviderConnectionView,
   type CangyuanMarketplaceGroupView,
+  type CangyuanAvailabilityView,
 } from "../lib/client-api";
 import {
   intersectingSelectionIds,
@@ -246,6 +248,33 @@ function connectionScanLabel(connection: ProviderConnectionView): string {
 function modelPriceLabel(model: ModelDescriptor): string | undefined {
   const value = model.metadata?.priceLabel;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function cangyuanAvailabilityLabel(
+  status: CangyuanAvailabilityView["latestStatus"],
+): string {
+  if (status === "operational") return "正常";
+  if (status === "degraded") return "降级";
+  if (status === "unavailable") return "不可用";
+  return "未知";
+}
+
+function cangyuanAvailabilityClass(
+  status: CangyuanAvailabilityView["latestStatus"],
+): string {
+  return `cangyuan-availability-${status}`;
+}
+
+function cangyuanAvailabilitySummary(
+  availability: CangyuanAvailabilityView | undefined,
+): string | null {
+  if (!availability) return null;
+  const parts = [cangyuanAvailabilityLabel(availability.latestStatus)];
+  if (availability.availability !== null)
+    parts.push(`可用率 ${availability.availability}%`);
+  if (availability.averageLatencyMs !== null)
+    parts.push(`${Math.round(availability.averageLatencyMs)}ms`);
+  return parts.join(" · ");
 }
 
 function customModelDisplayLabel(model: ModelDescriptor): string {
@@ -1178,6 +1207,14 @@ export function SettingsModal({
   const [catalogSource, setCatalogSource] = useState<
     "live" | "stale" | "fallback"
   >("fallback");
+  const [cangyuanAvailability, setCangyuanAvailability] = useState<
+    Record<string, CangyuanAvailabilityView>
+  >({});
+  const [cangyuanAvailabilityState, setCangyuanAvailabilityState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [cangyuanAvailabilityRefresh, setCangyuanAvailabilityRefresh] =
+    useState(0);
   const [cyberAfeiCatalogSource, setCyberAfeiCatalogSource] = useState<
     "live" | "unavailable" | "stale" | "fallback"
   >("fallback");
@@ -1188,6 +1225,7 @@ export function SettingsModal({
     "live" | "stale" | "fallback"
   >("fallback");
   const cangyuanRequestRef = useRef(0);
+  const cangyuanAvailabilityRequestRef = useRef(0);
   const cyberAfeiRequestRef = useRef(0);
   const chentuRequestRef = useRef(0);
   const miaowuRequestRef = useRef(0);
@@ -1267,6 +1305,10 @@ export function SettingsModal({
   const activeMarketplaceModel = activeMarketplaceGroup?.models.find(
     (model) => model.id === selectedMarketplaceModel,
   );
+  const activeCangyuanAvailability =
+    activeSupplierKey === "cangyuan" && activeMarketplaceModel
+      ? cangyuanAvailability[activeMarketplaceModel.id]
+      : undefined;
   const miaowuMarketplaceModelCount = new Set(
     miaowuGroups.flatMap((group) => group.models.map((model) => model.id)),
   ).size;
@@ -1914,6 +1956,50 @@ export function SettingsModal({
       cancelled = true;
     };
   }, [initialCangyuanGroup, open]);
+
+  useEffect(() => {
+    if (
+      !open ||
+      activeSupplierKey !== "cangyuan" ||
+      !activeMarketplaceConnection?.apiKeyUsable
+    ) {
+      setCangyuanAvailabilityState("idle");
+      return;
+    }
+    const connectionId = activeMarketplaceConnection.id;
+    const requestId = ++cangyuanAvailabilityRequestRef.current;
+    let cancelled = false;
+    setCangyuanAvailabilityState("loading");
+    void fetchCangyuanAvailability(connectionId, { windowDays: 7 }).then(
+      (snapshot) => {
+        if (
+          cancelled ||
+          requestId !== cangyuanAvailabilityRequestRef.current
+        )
+          return;
+        setCangyuanAvailability(
+          Object.fromEntries(snapshot.items.map((item) => [item.name, item])),
+        );
+        setCangyuanAvailabilityState("ready");
+      },
+      () => {
+        if (
+          cancelled ||
+          requestId !== cangyuanAvailabilityRequestRef.current
+        )
+          return;
+        setCangyuanAvailabilityState("error");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeMarketplaceConnection,
+    activeSupplierKey,
+    cangyuanAvailabilityRefresh,
+    open,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -3551,6 +3637,7 @@ export function SettingsModal({
         const marketplace = await fetchCangyuanMarketplace({ refresh: true });
         setCangyuanGroups(marketplace.groups);
         setCatalogSource(marketplace.source);
+        setCangyuanAvailabilityRefresh((current) => current + 1);
         const normalizedGroup = normalizeCangyuanImageGroup(
           selectedMarketplaceGroup,
         );
@@ -5000,6 +5087,18 @@ export function SettingsModal({
                               ? ` · ${model.canvasUnavailableReason ?? "当前不可用于画布"}`
                               : ""}
                           </small>
+                          {activeSupplierKey === "cangyuan" &&
+                          cangyuanAvailability[model.id] ? (
+                            <em
+                              className={cangyuanAvailabilityClass(
+                                cangyuanAvailability[model.id]!.latestStatus,
+                              )}
+                            >
+                              {cangyuanAvailabilitySummary(
+                                cangyuanAvailability[model.id],
+                              )}
+                            </em>
+                          ) : null}
                         </button>
                       ))
                     ) : (
@@ -5055,6 +5154,21 @@ export function SettingsModal({
                                     : "以模型文档为准")}
                             </dd>
                           </div>
+                          {activeSupplierKey === "cangyuan" &&
+                          activeCangyuanAvailability ? (
+                            <div>
+                              <dt>平台可用性</dt>
+                              <dd
+                                className={cangyuanAvailabilityClass(
+                                  activeCangyuanAvailability.latestStatus,
+                                )}
+                              >
+                                {cangyuanAvailabilitySummary(
+                                  activeCangyuanAvailability,
+                                )}
+                              </dd>
+                            </div>
+                          ) : null}
                           {activeSupplierKey === CYBERAFEI_SUPPLIER_KEY &&
                           (activeConnectionUsage !== "agent" ||
                             activeMarketplaceModel.capability !== "chat") ? (
@@ -5110,7 +5224,11 @@ export function SettingsModal({
                             ? "模型说明来自辰途 API 模型广场与使用文档；接入后以该 Key 的 /v1/models 实时扫描权限，并对照其公开状态页运行情况。"
                             : activeSupplierKey === MIAOWU_SUPPLIER_KEY
                               ? "分组、倍率、模型和价格来自喵呜实时价目；每个分组独立保存 API Key，并通过 /v1/models 免费扫描实际权限。"
-                              : "分组和模型随沧元算力模型广场更新；API Key 仅在服务端加密保存。")}
+                              : cangyuanAvailabilityState === "loading"
+                                ? "正在查询沧元模型可用性和平均延迟……"
+                                : cangyuanAvailabilityState === "error"
+                                  ? "沧元可用性接口暂时不可用；模型目录和生成请求不受影响。"
+                                  : "分组和模型随沧元算力模型广场更新；可用性来自 /v1/availability，API Key 仅在服务端加密保存。")}
                   </span>
                 </div>
               </div>

@@ -2709,6 +2709,24 @@ circle.canvas-drawing-selection-outline {
   font-size: 9px;
   line-height: 1.35;
 }
+.cangyuan-model-item em {
+  grid-column: 2;
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1.35;
+}
+.cangyuan-availability-operational {
+  color: #78d7a4;
+}
+.cangyuan-availability-degraded {
+  color: #f0c36a;
+}
+.cangyuan-availability-unavailable {
+  color: #f28a9b;
+}
+.cangyuan-availability-unknown {
+  color: #aab5c9;
+}
 .cangyuan-model-info {
   min-width: 0;
   overflow: auto;

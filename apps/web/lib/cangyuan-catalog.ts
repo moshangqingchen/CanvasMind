@@ -1,4 +1,6 @@
 import {
+  fetchProviderJson,
+  joinUrl,
   providerFetch,
   type ModelDescriptor,
   type ModelParameterDescriptor,
@@ -86,6 +88,27 @@ export interface CangyuanCatalogSnapshot {
   marketplaceGroups: CangyuanMarketplaceGroup[];
 }
 
+export type CangyuanAvailabilityStatus =
+  | "operational"
+  | "degraded"
+  | "unavailable"
+  | "unknown";
+
+export interface CangyuanAvailabilityItem {
+  name: string;
+  category: string;
+  latestStatus: CangyuanAvailabilityStatus;
+  availability: number | null;
+  averageLatencyMs: number | null;
+  timeline: unknown[];
+}
+
+export interface CangyuanAvailabilitySnapshot {
+  checkedAt: string;
+  windowDays: 7 | 15 | 30;
+  items: CangyuanAvailabilityItem[];
+}
+
 interface CatalogCache {
   snapshot?: CangyuanCatalogSnapshot;
   expiresAt: number;
@@ -116,6 +139,137 @@ function connectionCatalogSyncCache(): ConnectionCatalogSyncCache {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const CANGYUAN_AVAILABILITY_STATUSES = new Set<CangyuanAvailabilityStatus>([
+  "operational",
+  "degraded",
+  "unavailable",
+  "unknown",
+]);
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function availabilityStatus(value: unknown): CangyuanAvailabilityStatus {
+  if (typeof value !== "string") return "unknown";
+  const normalized = value.trim().toLowerCase() as CangyuanAvailabilityStatus;
+  return CANGYUAN_AVAILABILITY_STATUSES.has(normalized)
+    ? normalized
+    : "unknown";
+}
+
+function availabilityRecords(payload: unknown): Array<{
+  key?: string;
+  value: Record<string, unknown>;
+}> {
+  if (Array.isArray(payload))
+    return payload.filter(isRecord).map((value) => ({ value }));
+  if (!isRecord(payload)) return [];
+
+  for (const key of ["data", "items", "models", "results", "availability"]) {
+    const nested = payload[key];
+    if (Array.isArray(nested))
+      return nested.filter(isRecord).map((value) => ({ value }));
+    if (isRecord(nested))
+      return Object.entries(nested)
+        .filter(([, value]) => isRecord(value))
+        .map(([entryKey, value]) => ({
+          key: entryKey,
+          value: value as Record<string, unknown>,
+        }));
+  }
+
+  return Object.entries(payload)
+    .filter(([, value]) => isRecord(value))
+    .map(([key, value]) => ({ key, value: value as Record<string, unknown> }));
+}
+
+/**
+ * Normalizes the availability endpoint's response without exposing the API
+ * key to the browser. The endpoint has used both arrays and keyed objects in
+ * different deployments, so accept both shapes and both snake/camel fields.
+ */
+export function parseCangyuanAvailabilityPayload(
+  payload: unknown,
+  windowDays: 7 | 15 | 30 = 7,
+): CangyuanAvailabilitySnapshot {
+  const items: CangyuanAvailabilityItem[] = [];
+  for (const { key, value } of availabilityRecords(payload)) {
+    const name =
+      (typeof value.name === "string" && value.name.trim()) ||
+      (typeof value.model_name === "string" && value.model_name.trim()) ||
+      (typeof value.model === "string" && value.model.trim()) ||
+      (typeof value.id === "string" && value.id.trim()) ||
+      key?.trim() ||
+      "";
+    if (!name) continue;
+    const categoryValue =
+      (typeof value.category === "string" && value.category.trim()) ||
+      (typeof value.type === "string" && value.type.trim()) ||
+      "unknown";
+    const timeline = Array.isArray(value.timeline)
+      ? value.timeline
+      : Array.isArray(value.history)
+        ? value.history
+        : [];
+    items.push({
+      name,
+      category: categoryValue,
+      latestStatus: availabilityStatus(
+        value.latest_status ?? value.latestStatus ?? value.status,
+      ),
+      availability: finiteNumber(value.availability ?? value.uptime),
+      averageLatencyMs: finiteNumber(
+        value.average_latency_ms ??
+          value.averageLatencyMs ??
+          value.avg_latency_ms,
+      ),
+      timeline,
+    });
+  }
+  const checkedAtValue =
+    isRecord(payload) &&
+    (payload.checked_at ?? payload.checkedAt ?? payload.generated_at);
+  return {
+    checkedAt:
+      typeof checkedAtValue === "string" && checkedAtValue.trim()
+        ? checkedAtValue
+        : new Date().toISOString(),
+    windowDays,
+    items,
+  };
+}
+
+export async function fetchCangyuanAvailability(
+  apiKey: string,
+  options: {
+    windowDays?: 7 | 15 | 30;
+    name?: string;
+    category?: "text" | "image" | "video" | "audio";
+    latestStatus?: CangyuanAvailabilityStatus;
+  } = {},
+): Promise<CangyuanAvailabilitySnapshot> {
+  const windowDays = options.windowDays ?? 7;
+  const query = new URLSearchParams({ window_days: String(windowDays) });
+  if (options.name?.trim()) query.set("name", options.name.trim());
+  if (options.category) query.set("category", options.category);
+  if (options.latestStatus) query.set("latest_status", options.latestStatus);
+  const payload = await fetchProviderJson<unknown>(
+    providerFetch,
+    `${joinUrl(CANGYUAN_IMAGE_BASE_URL, "/v1/availability")}?${query.toString()}`,
+    {
+      method: "GET",
+      headers: { authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+    },
+    { phase: "connect", timeoutMs: CATALOG_TIMEOUT_MS, maxResponseBytes: 4 * 1024 * 1024 },
+  );
+  return parseCangyuanAvailabilityPayload(payload, windowDays);
 }
 
 function stringArray(value: unknown): string[] {

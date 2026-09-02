@@ -221,6 +221,28 @@ export interface CangyuanMarketplaceGroupView {
   scannedModelCount?: number;
 }
 
+export type CangyuanAvailabilityStatus =
+  | "operational"
+  | "degraded"
+  | "unavailable"
+  | "unknown";
+
+export interface CangyuanAvailabilityView {
+  name: string;
+  category: string;
+  latestStatus: CangyuanAvailabilityStatus;
+  availability: number | null;
+  averageLatencyMs: number | null;
+  timeline: unknown[];
+}
+
+export interface CangyuanAvailabilitySnapshotView {
+  checkedAt: string;
+  windowDays: 7 | 15 | 30;
+  items: CangyuanAvailabilityView[];
+  source: "live" | "cache";
+}
+
 export interface AgentChatMessageView {
   role: "user" | "assistant";
   content: string | AgentChatContentPartView[];
@@ -1101,6 +1123,34 @@ export async function fetchCangyuanMarketplace(options?: {
     source: "live" | "stale" | "fallback";
     groups: CangyuanMarketplaceGroupView[];
   }>;
+}
+
+export async function fetchCangyuanAvailability(
+  connectionId: string,
+  options?: {
+    windowDays?: 7 | 15 | 30;
+    name?: string;
+    category?: "text" | "image" | "video" | "audio";
+    latestStatus?: CangyuanAvailabilityStatus;
+  },
+): Promise<CangyuanAvailabilitySnapshotView> {
+  const query = new URLSearchParams({
+    window_days: String(options?.windowDays ?? 7),
+  });
+  if (options?.name?.trim()) query.set("name", options.name.trim());
+  if (options?.category) query.set("category", options.category);
+  if (options?.latestStatus)
+    query.set("latest_status", options.latestStatus);
+  const response = await fetch(
+    `/api/providers/${encodeURIComponent(connectionId)}/availability?${query.toString()}`,
+    { cache: "no-store" },
+  );
+  const payload = (await response.json().catch(() => null)) as
+    | (Partial<CangyuanAvailabilitySnapshotView> & { error?: string })
+    | null;
+  if (!response.ok)
+    throw new Error(payload?.error ?? "沧元可用性状态读取失败");
+  return payload as CangyuanAvailabilitySnapshotView;
 }
 
 export async function fetchMiaowuCatalog(

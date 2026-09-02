@@ -7,6 +7,7 @@ import {
   cangyuanCatalogFromPricing,
   cangyuanConnectorForModels,
   loadCangyuanCatalog,
+  parseCangyuanAvailabilityPayload,
 } from "./cangyuan-catalog";
 import { CANGYUAN_BACKUP_IMAGE_GROUP } from "./provider-presets";
 
@@ -1039,5 +1040,55 @@ describe("Cangyuan live catalog", () => {
           mapping.source.path === "$.parameters.size",
       ),
     ).toBe(false);
+  });
+
+  it("normalizes Cangyuan availability arrays and keyed payloads", () => {
+    const arraySnapshot = parseCangyuanAvailabilityPayload(
+      {
+        checked_at: "2026-09-02T01:02:03.000Z",
+        data: [
+          {
+            model_name: "midjourney-8.2-2k",
+            category: "image",
+            latest_status: "operational",
+            availability: "99.5",
+            average_latency_ms: 640.4,
+            timeline: [{ status: "operational" }],
+          },
+        ],
+      },
+      15,
+    );
+    expect(arraySnapshot).toEqual({
+      checkedAt: "2026-09-02T01:02:03.000Z",
+      windowDays: 15,
+      items: [
+        {
+          name: "midjourney-8.2-2k",
+          category: "image",
+          latestStatus: "operational",
+          availability: 99.5,
+          averageLatencyMs: 640.4,
+          timeline: [{ status: "operational" }],
+        },
+      ],
+    });
+
+    const keyedSnapshot = parseCangyuanAvailabilityPayload({
+      models: {
+        "minimax-h3-2k": {
+          category: "video",
+          latestStatus: "degraded",
+          uptime: 97,
+          averageLatencyMs: "1200",
+        },
+      },
+    });
+    expect(keyedSnapshot.items[0]).toMatchObject({
+      name: "minimax-h3-2k",
+      latestStatus: "degraded",
+      availability: 97,
+      averageLatencyMs: 1200,
+    });
   });
 });
