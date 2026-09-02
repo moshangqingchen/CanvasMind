@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
 export const APP_UPDATE_FORMAT_VERSION = 1;
 export const DEFAULT_UPDATE_REPOSITORY = "moshangqingchen/CanvasMind";
 export const DEFAULT_UPDATE_INTERVAL_SECONDS = 600;
+export const UPDATE_MANAGER_HEARTBEAT_TIMEOUT_MS = 120_000;
 export const APP_VERSION_PATTERN =
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 
@@ -48,6 +49,8 @@ export interface AppUpdateStatus {
   lastSuccessfulCheckAt?: string;
   error?: string;
   deferredVersion?: string;
+  managerPid?: number;
+  managerHeartbeatAt?: string;
   updatedAt: string;
 }
 
@@ -276,10 +279,17 @@ export function normalizeUpdateStatus(value: unknown): AppUpdateStatus {
     "lastSuccessfulCheckAt",
     "error",
     "deferredVersion",
+    "managerHeartbeatAt",
   ] as const) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) status[key] = value.slice(0, 50_000);
   }
+  if (
+    typeof record.managerPid === "number" &&
+    Number.isSafeInteger(record.managerPid) &&
+    record.managerPid > 0
+  )
+    status.managerPid = record.managerPid;
   if (record.progress && typeof record.progress === "object") {
     const progress = record.progress as Record<string, unknown>;
     if (typeof progress.downloadedBytes === "number") {
@@ -297,7 +307,9 @@ export function normalizeUpdateStatus(value: unknown): AppUpdateStatus {
 export async function readUpdateStatus(): Promise<AppUpdateStatus> {
   try {
     const raw = await readFile(getUpdateStatusPath(), "utf8");
-    return normalizeUpdateStatus(JSON.parse(raw));
+    // Windows PowerShell 5 writes UTF-8 with a BOM by default. Keep the
+    // reader compatible with status files written by older managers.
+    return normalizeUpdateStatus(JSON.parse(raw.replace(/^\uFEFF/u, "")));
   } catch {
     return defaultUpdateStatus();
   }
@@ -323,8 +335,23 @@ export async function writeUpdateCommand(
 
 export async function updateManagerAvailable(): Promise<boolean> {
   try {
-    await access(getUpdateStatusPath());
-    return true;
+    const raw = await readFile(getUpdateStatusPath(), "utf8");
+    const status = normalizeUpdateStatus(
+      JSON.parse(raw.replace(/^\uFEFF/u, "")),
+    );
+    if (!status.managerHeartbeatAt) return false;
+    const heartbeat = Date.parse(status.managerHeartbeatAt);
+    const heartbeatIsFresh =
+      Number.isFinite(heartbeat) &&
+      Math.abs(Date.now() - heartbeat) <= UPDATE_MANAGER_HEARTBEAT_TIMEOUT_MS;
+    if (!heartbeatIsFresh) return false;
+    if (!status.managerPid) return false;
+    try {
+      process.kill(status.managerPid, 0);
+      return true;
+    } catch {
+      return false;
+    }
   } catch {
     return false;
   }

@@ -36,6 +36,7 @@ $installRoot = Split-Path -Parent $updateRoot
 $port = 3210
 $script:previousWebRoots = New-Object System.Collections.Generic.List[string]
 $script:activeReleaseVersion = $null
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $updateRoot -Force | Out-Null
@@ -120,8 +121,15 @@ function Write-UpdateStatus {
   if ($updatedProperty) { $updatedProperty.Value = $updatedAt }
   else { $status | Add-Member -NotePropertyName "updatedAt" -NotePropertyValue $updatedAt }
   $temporaryPath = "$updateStatusPath.$PID.tmp"
-  [System.IO.File]::WriteAllText($temporaryPath, ($status | ConvertTo-Json -Depth 8), [System.Text.Encoding]::UTF8)
+  [System.IO.File]::WriteAllText($temporaryPath, ($status | ConvertTo-Json -Depth 8), $utf8NoBom)
   Move-Item -LiteralPath $temporaryPath -Destination $updateStatusPath -Force
+}
+
+function Write-ManagerHeartbeat {
+  Write-UpdateStatus @{
+    managerPid = $PID
+    managerHeartbeatAt = (Get-Date).ToUniversalTime().ToString("o")
+  }
 }
 
 function Compare-SemVer {
@@ -968,10 +976,13 @@ try {
   Write-UpdateStatus @{
     phase = if ((Get-UpdateConfig).Enabled) { "idle" } else { "disabled" }
     currentVersion = Get-ApplicationVersion
+    managerPid = $PID
+    managerHeartbeatAt = (Get-Date).ToUniversalTime().ToString("o")
     error = $null
   }
   Invoke-ReleaseCheck
   $nextUpdateCheckAt = (Get-Date).AddSeconds((Get-UpdateConfig).IntervalSeconds)
+  $nextHeartbeatAt = (Get-Date).AddSeconds(5)
 
   $lastAttemptedFingerprint = $deployedFingerprint
   while ($true) {
@@ -979,6 +990,10 @@ try {
 
     Invoke-UpdateCommand -ActiveSlot ([ref]$activeSlot) -ServerProcess ([ref]$serverProcess) -DeployedFingerprint ([ref]$deployedFingerprint) -LastAttemptedFingerprint ([ref]$lastAttemptedFingerprint) -NodeCommand $nodeCommand
     $nextScript = $script:nextScript
+    if ((Get-Date) -ge $nextHeartbeatAt) {
+      Write-ManagerHeartbeat
+      $nextHeartbeatAt = (Get-Date).AddSeconds(5)
+    }
     if ((Get-Date) -ge $nextUpdateCheckAt) {
       Invoke-ReleaseCheck
       $nextUpdateCheckAt = (Get-Date).AddSeconds((Get-UpdateConfig).IntervalSeconds)

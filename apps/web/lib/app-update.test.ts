@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import {
   isValidAppVersion,
   normalizeUpdateStatus,
   readUpdateStatus,
+  updateManagerAvailable,
   validateReleaseManifest,
   writeUpdateCommand,
 } from "./app-update";
@@ -48,6 +49,55 @@ describe("application update protocol", () => {
     expect(status).toMatchObject({ formatVersion: 1, phase: "idle" });
     expect(status.currentVersion).toMatch(/^\d+\.\d+\.\d+$/u);
     expect(defaultUpdateStatus().formatVersion).toBe(1);
+  });
+
+  it("reads status files written with a UTF-8 BOM", async () => {
+    await writeFile(
+      join(directory, "status.json"),
+      `\uFEFF${JSON.stringify({
+        formatVersion: 1,
+        currentVersion: "0.2.6",
+        phase: "available",
+        latest: { version: "0.2.7", tag: "v0.2.7" },
+        updatedAt: "2026-09-02T00:00:00.000Z",
+      })}`,
+      "utf8",
+    );
+    await expect(readUpdateStatus()).resolves.toMatchObject({
+      phase: "available",
+      currentVersion: "0.2.6",
+      latest: { version: "0.2.7" },
+    });
+  });
+
+  it("reports manager availability from a fresh heartbeat", async () => {
+    await writeFile(
+      join(directory, "status.json"),
+      JSON.stringify({
+        formatVersion: 1,
+        currentVersion: "0.2.6",
+        phase: "idle",
+        managerPid: process.pid,
+        managerHeartbeatAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+      "utf8",
+    );
+    await expect(updateManagerAvailable()).resolves.toBe(true);
+
+    await writeFile(
+      join(directory, "status.json"),
+      JSON.stringify({
+        formatVersion: 1,
+        currentVersion: "0.2.6",
+        phase: "idle",
+        managerPid: process.pid,
+        managerHeartbeatAt: new Date(Date.now() - 180_000).toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+      "utf8",
+    );
+    await expect(updateManagerAvailable()).resolves.toBe(false);
   });
 
   it("normalizes untrusted manager status and release notes", () => {

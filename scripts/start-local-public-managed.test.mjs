@@ -23,3 +23,12 @@ test("managed deployment accepts only one explicit true build result", async () 
   assert.match(source, /\$buildOutcome\.Count -eq 1/u);
   assert.match(source, /\$buildOutcome\[0\] -is \[bool\]/u);
 });
+
+test("managed deployment writes status without a UTF-8 BOM and emits heartbeats", async () => {
+  const source = await readFile(scriptUrl, "utf8");
+
+  assert.match(source, /UTF8Encoding\]::new\(\$false\)/u);
+  assert.match(source, /WriteAllText\(\$temporaryPath,[\s\S]*\$utf8NoBom\)/u);
+  assert.match(source, /managerHeartbeatAt/u);
+  assert.match(source, /Write-ManagerHeartbeat/u);
+});

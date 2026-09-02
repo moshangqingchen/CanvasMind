@@ -2539,6 +2539,28 @@ function CanvasShell({
     }
   }, []);
 
+  const waitForAppUpdateCheck = useCallback(
+    async (previousLastCheckedAt?: string) => {
+      const deadline = Date.now() + 12_000;
+      let latest = await fetchAppUpdate();
+      while (Date.now() < deadline) {
+        if (
+          latest.phase === "available" ||
+          latest.phase === "failed" ||
+          (latest.phase === "idle" &&
+            latest.lastCheckedAt !== previousLastCheckedAt)
+        )
+          break;
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        latest = await fetchAppUpdate();
+      }
+      appUpdateVersionRef.current = latest.currentVersion;
+      setAppUpdateStatus(latest);
+      return latest;
+    },
+    [],
+  );
+
   useEffect(() => {
     const initialCheck = window.setTimeout(
       () => void refreshAppUpdate(),
@@ -2977,26 +2999,38 @@ function CanvasShell({
       setAppUpdateBusy(true);
       try {
         if (action === "apply") await saveNow();
+        const previousLastCheckedAt = appUpdateStatus?.lastCheckedAt;
         await requestAppUpdate(action, appUpdateStatus?.latest?.version);
         if (action === "defer") {
           setAppUpdateOpen(false);
           showToast("已延后此版本更新");
         } else if (action === "check") {
-          showToast("已请求检查 GitHub Release");
+          showToast("正在检查 GitHub Release");
         } else if (action === "download") {
           showToast("更新包开始后台下载", "success");
         } else {
           showToast("更新已提交，服务将在空闲后切换", "success");
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 700));
-        await refreshAppUpdate(false);
+        if (action === "check")
+          await waitForAppUpdateCheck(previousLastCheckedAt);
+        else {
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+          await refreshAppUpdate(false);
+        }
       } catch (error) {
         showToast(error instanceof Error ? error.message : "更新操作失败", "error");
       } finally {
         setAppUpdateBusy(false);
       }
     },
-    [appUpdateBusy, appUpdateStatus, refreshAppUpdate, saveNow, showToast],
+    [
+      appUpdateBusy,
+      appUpdateStatus,
+      refreshAppUpdate,
+      saveNow,
+      showToast,
+      waitForAppUpdateCheck,
+    ],
   );
 
   useEffect(() => {
