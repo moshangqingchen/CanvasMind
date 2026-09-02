@@ -31,4 +31,14 @@ test("managed deployment writes status without a UTF-8 BOM and emits heartbeats"
   assert.match(source, /WriteAllText\(\$temporaryPath,[\s\S]*\$utf8NoBom\)/u);
   assert.match(source, /managerHeartbeatAt/u);
   assert.match(source, /Write-ManagerHeartbeat/u);
+  assert.match(source, /phase = "starting"/u);
+});
+
+test("managed deployment refreshes installed watchdog scripts after applying a release", async () => {
+  const source = await readFile(scriptUrl, "utf8");
+
+  assert.match(source, /candidateWatchdog/u);
+  assert.match(source, /installedWatchdog/u);
+  assert.match(source, /candidateRegistrar/u);
+  assert.match(source, /installedRegistrar/u);
 });

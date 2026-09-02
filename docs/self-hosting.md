@@ -163,6 +163,11 @@ pnpm public:start:installed
 `vX.Y.Z`，校验 Release 压缩包和 SHA-256 清单后安装到
 `%LOCALAPPDATA%\SuperCanvas\releases`。画布 JSON、素材、密钥和环境文件保存在该目录之外。
 
+安装同时配置本地 Web 守护。守护每 10 秒检查 `http://127.0.0.1:3210/api/health`，发现管理器
+退出或心跳过期时自动重启，避免 Cloudflare 隧道仍在线但源站端口拒绝连接而出现 502。优先注册
+`SuperCanvas-Web3210-Watchdog` 计划任务；当前用户无任务注册权限时，会自动回退到启动文件夹中的
+`SuperCanvas Watchdog.lnk`。守护日志位于 `%LOCALAPPDATA%\SuperCanvas\logs\web-3210-watchdog.log`。
+
 发布前必须同步根目录 `package.json` 的 `version` 与 Release 标签，例如 `0.2.0` 对应 `v0.2.0`。
 `.github/workflows/release.yml` 会在 Windows runner 上构建并上传运行包；普通分支 push 不会触发
 本地升级。

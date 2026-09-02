@@ -851,6 +851,16 @@ function Invoke-ReleaseApply {
     $DeployedFingerprint.Value = $candidateFingerprint
     $LastAttemptedFingerprint.Value = $null
     [System.IO.File]::WriteAllText((Join-Path $installRoot "active-release.txt"), "$candidateRoot`r`n", [System.Text.Encoding]::ASCII)
+    $installedWatchdog = Join-Path $installRoot "start-local-public-watchdog.ps1"
+    $candidateWatchdog = Join-Path $candidateRoot "scripts\start-local-public-watchdog.ps1"
+    if (Test-Path -LiteralPath $candidateWatchdog) {
+      Copy-Item -LiteralPath $candidateWatchdog -Destination $installedWatchdog -Force
+    }
+    $installedRegistrar = Join-Path $installRoot "register-local-public-watchdog.ps1"
+    $candidateRegistrar = Join-Path $candidateRoot "scripts\register-local-public-watchdog.ps1"
+    if (Test-Path -LiteralPath $candidateRegistrar) {
+      Copy-Item -LiteralPath $candidateRegistrar -Destination $installedRegistrar -Force
+    }
     Remove-OldReleaseDirectories -KeepVersion $version
     Write-UpdateStatus @{ phase = "idle"; currentVersion = $version; downloadedVersion = $version; error = $null }
     Write-ManagerLog "Applied GitHub Release v$version."
@@ -929,6 +939,13 @@ try {
   }
 
   Write-ManagerLog "Super Canvas live-update manager started."
+  Write-UpdateStatus @{
+    phase = "starting"
+    currentVersion = Get-ApplicationVersion
+    managerPid = $PID
+    managerHeartbeatAt = (Get-Date).ToUniversalTime().ToString("o")
+    error = $null
+  }
   $deployedFingerprint = Get-SourceFingerprint
   $activeSlot = Find-MatchingSlot -Fingerprint $deployedFingerprint
   $serverProcess = $null

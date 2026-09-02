@@ -6,6 +6,8 @@ $releaseRoot = Join-Path $installRoot "releases"
 $updateRoot = Join-Path $installRoot "updates"
 $envPath = Join-Path $installRoot ".local-public.env"
 $bootstrap = Join-Path $installRoot "start-local-public.ps1"
+$watchdog = Join-Path $installRoot "start-local-public-watchdog.ps1"
+$registerWatchdog = Join-Path $installRoot "register-local-public-watchdog.ps1"
 $repository = if ($env:SUPERCANVAS_UPDATE_REPOSITORY) { $env:SUPERCANVAS_UPDATE_REPOSITORY.Trim() } else { "moshangqingchen/CanvasMind" }
 
 if ($repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Invalid GitHub repository: $repository" }
@@ -80,6 +82,9 @@ if (-not (Test-Path -LiteralPath $envPath)) {
   ) | Set-Content -LiteralPath $envPath -Encoding utf8
 }
 Copy-Item -LiteralPath (Join-Path $workspace "scripts\start-local-public-bootstrap.ps1") -Destination $bootstrap -Force
+Copy-Item -LiteralPath (Join-Path $workspace "scripts\start-local-public-watchdog.ps1") -Destination $watchdog -Force
+Copy-Item -LiteralPath (Join-Path $workspace "scripts\register-local-public-watchdog.ps1") -Destination $registerWatchdog -Force
 [System.IO.File]::WriteAllText((Join-Path $installRoot "active-release.txt"), "$candidateRoot`r`n", [System.Text.Encoding]::ASCII)
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $registerWatchdog -InstallRoot $installRoot
 Write-Output "Installed Super Canvas $($candidate.Tag) to $candidateRoot"
 Write-Output "Start it with: $bootstrap"
