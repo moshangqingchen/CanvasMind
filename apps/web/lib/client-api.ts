@@ -136,6 +136,7 @@ export interface AppUpdateView {
   intervalSeconds: number;
   managerAvailable: boolean;
   currentVersion: string;
+  currentNotes?: string;
   currentCommit?: string;
   remoteBranch?: string;
   remoteCommit?: string;

@@ -88,6 +88,9 @@ export function AppUpdateModal({
     status.managerAvailable,
   );
   const canApply = status.phase === "ready" && status.managerAvailable;
+  const visibleNotes =
+    latest?.notes ||
+    (!latest && !hasRemoteSourceUpdate ? status.currentNotes : undefined);
 
   return (
     <div className="modal-backdrop app-update-backdrop" role="presentation">
@@ -161,10 +164,12 @@ export function AppUpdateModal({
             </div>
           ) : null}
 
-          {latest?.notes ? (
+          {visibleNotes ? (
             <div className="app-update-notes">
-              <div className="app-update-notes-title">更新说明</div>
-              <pre>{latest.notes}</pre>
+              <div className="app-update-notes-title">
+                {latest ? "更新说明" : "本版本更新"}
+              </div>
+              <pre>{visibleNotes}</pre>
             </div>
           ) : (
             <p className="app-update-empty">

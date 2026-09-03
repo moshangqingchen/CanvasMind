@@ -11,11 +11,13 @@ describe("application update route", () => {
   const originalCommand = process.env.SUPERCANVAS_UPDATE_COMMAND_PATH;
   const originalEnabled = process.env.SUPERCANVAS_UPDATE_ENABLED;
   const originalPublicBaseUrl = process.env.PUBLIC_BASE_URL;
+  const originalAppVersion = process.env.NEXT_PUBLIC_APP_VERSION;
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), "super-canvas-update-route-"));
     process.env.SUPERCANVAS_UPDATE_STATUS_PATH = join(directory, "status.json");
     process.env.SUPERCANVAS_UPDATE_COMMAND_PATH = join(directory, "command.json");
+    process.env.NEXT_PUBLIC_APP_VERSION = "0.2.14";
     delete process.env.SUPERCANVAS_UPDATE_ENABLED;
   });
 
@@ -28,6 +30,8 @@ describe("application update route", () => {
     else process.env.SUPERCANVAS_UPDATE_ENABLED = originalEnabled;
     if (originalPublicBaseUrl === undefined) delete process.env.PUBLIC_BASE_URL;
     else process.env.PUBLIC_BASE_URL = originalPublicBaseUrl;
+    if (originalAppVersion === undefined) delete process.env.NEXT_PUBLIC_APP_VERSION;
+    else process.env.NEXT_PUBLIC_APP_VERSION = originalAppVersion;
     await rm(directory, { recursive: true, force: true });
   });
 
@@ -35,7 +39,12 @@ describe("application update route", () => {
     const response = await GET();
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(await response.json()).toMatchObject({ enabled: true, phase: "idle" });
+    expect(await response.json()).toMatchObject({
+      enabled: true,
+      phase: "idle",
+      currentVersion: "0.2.14",
+      currentNotes: expect.stringContaining("沧元算力模型可用性监控"),
+    });
   });
 
   it("does not expose stale update actions while disabled", async () => {

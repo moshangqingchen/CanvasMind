@@ -1236,7 +1236,8 @@ circle.canvas-drawing-selection-outline {
   color: #aab5cc;
   font-size: 12px;
 }
-.node-config-model-field select {
+.node-config-model-field select,
+.node-model-select-trigger {
   width: 100%;
   min-width: 0;
   height: 40px;
@@ -1249,9 +1250,122 @@ circle.canvas-drawing-selection-outline {
   font-size: 14px;
   outline: none;
 }
-.node-config-model-field select:focus {
+.node-config-model-field select:focus,
+.node-model-select-trigger:focus-visible {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(155, 140, 255, 0.12);
+  outline: none;
+}
+.node-model-select {
+  position: relative;
+  min-width: 0;
+}
+.node-model-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.node-model-select-trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node-model-select-trigger > svg {
+  flex: 0 0 auto;
+  color: #8f9ab0;
+  transition: transform 140ms ease;
+}
+.node-model-select[data-open] .node-model-select-trigger > svg {
+  transform: rotate(180deg);
+}
+.node-model-select-options {
+  display: grid;
+  max-height: 320px;
+  overflow: auto;
+  margin-top: 4px;
+  border: 1px solid #4b5670;
+  border-radius: 7px;
+  padding: 3px;
+  background: #0f1521;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.48);
+}
+.node-model-select-options > button {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 5px;
+  padding: 7px 8px;
+  background: transparent;
+  color: #edf1fa;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.node-model-select-options > button > span:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+.node-model-select-options > button:hover:not(:disabled),
+.node-model-select-options > button:focus-visible {
+  background: #252d40;
+  outline: none;
+}
+.node-model-select-options > button.selected {
+  background: rgba(116, 96, 218, 0.44);
+}
+.node-model-select-options > button:disabled {
+  color: #758096;
+  cursor: not-allowed;
+}
+.node-model-availability {
+  min-width: 48px;
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 2px 5px;
+  color: #aab5c9;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 0 8px rgba(170, 181, 201, 0.22);
+}
+.node-model-availability.is-operational {
+  color: #68e49e;
+  background: rgba(39, 171, 96, 0.11);
+  box-shadow: 0 0 9px rgba(74, 226, 139, 0.42);
+}
+.node-model-availability.is-degraded {
+  color: #ffd16f;
+  background: rgba(207, 150, 30, 0.11);
+  box-shadow: 0 0 9px rgba(255, 201, 91, 0.36);
+}
+.node-model-availability.is-unavailable,
+.node-model-availability.is-error {
+  color: #ff8799;
+  background: rgba(202, 55, 81, 0.12);
+  box-shadow: 0 0 9px rgba(255, 105, 130, 0.38);
+}
+.node-model-availability.is-loading {
+  color: #a99cff;
+  background: rgba(125, 106, 226, 0.12);
+  box-shadow: 0 0 9px rgba(156, 139, 255, 0.34);
+  animation: node-model-availability-pulse 1.35s ease-in-out infinite;
+}
+@keyframes node-model-availability-pulse {
+  50% {
+    opacity: 0.58;
+  }
 }
 .node-config-manage-api {
   width: 100%;

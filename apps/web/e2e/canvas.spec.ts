@@ -1730,7 +1730,7 @@ test.describe("超级画布完整验收", () => {
     await expect(imageConfigPopover).toBeVisible();
     await expect(
       imageConfigPopover.getByLabel("E2E 图片生成 模型", { exact: true }),
-    ).toHaveValue("e2e-image-cinematic");
+    ).toContainText("e2e-image-cinematic");
     await imageConfigPopover.getByLabel("质量").selectOption("high");
     await imageConfigPopover.getByLabel("画面比例").selectOption("9:16");
     await imageConfigPopover

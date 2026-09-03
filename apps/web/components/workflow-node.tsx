@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Handle,
@@ -19,6 +19,7 @@ import {
   AlignStartVertical,
   AlignVerticalSpaceBetween,
   CircleAlert,
+  ChevronDown,
   Download,
   ExternalLink,
   FileText,
@@ -46,12 +47,78 @@ import {
 import { localizeRunError } from "../lib/error-localization";
 import { modelCanvasUnavailableReason } from "../lib/graph-ui";
 import { appendPriceLabelOnce } from "../lib/model-display";
+import {
+  fetchCangyuanAvailability,
+  type CangyuanAvailabilityView,
+} from "../lib/client-api";
+import { cangyuanAvailabilityForModel } from "../lib/cangyuan-availability-ui";
 import { NodeParameterFields } from "./node-parameter-fields";
 import { shouldReselectNodeFromConfigPointer } from "../lib/node-config-pointer";
 import { PromptEditor } from "./prompt-editor";
 import type { CanvasNode, CanvasNodeData, RunErrorDetails } from "./types";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
+const CANGYUAN_AVAILABILITY_REFRESH_MS = 30_500;
+
+type ModelAvailabilityLoadState = "idle" | "loading" | "ready" | "error";
+
+function availabilityBadgeLabel(
+  availability: CangyuanAvailabilityView | undefined,
+  loadState: ModelAvailabilityLoadState,
+): string {
+  if (availability?.latestStatus === "operational") return "可用";
+  if (availability?.latestStatus === "degraded") return "波动";
+  if (availability?.latestStatus === "unavailable") return "不可用";
+  if (availability?.latestStatus === "unknown") return "未知";
+  if (loadState === "loading") return "查询中";
+  if (loadState === "error") return "查询失败";
+  return "未监测";
+}
+
+function availabilityBadgeTitle(
+  availability: CangyuanAvailabilityView | undefined,
+  loadState: ModelAvailabilityLoadState,
+  checkedAt: string | undefined,
+): string {
+  if (!availability) {
+    if (loadState === "loading") return "正在读取沧元实时可用性";
+    if (loadState === "error") return "沧元可用性查询暂时失败，不影响正常生成";
+    return "沧元可用性接口暂未收录这个模型";
+  }
+  const parts = [availabilityBadgeLabel(availability, loadState)];
+  if (availability.availability !== null)
+    parts.push(`近期可用率 ${availability.availability}%`);
+  if (availability.averageLatencyMs !== null)
+    parts.push(`平均延迟 ${Math.round(availability.averageLatencyMs)}ms`);
+  if (checkedAt) {
+    const date = new Date(checkedAt);
+    if (!Number.isNaN(date.getTime()))
+      parts.push(
+        `检测于 ${date.toLocaleTimeString("zh-CN", { hour12: false })}`,
+      );
+  }
+  return parts.join(" · ");
+}
+
+function ModelAvailabilityBadge({
+  availability,
+  loadState,
+  checkedAt,
+}: {
+  availability: CangyuanAvailabilityView | undefined;
+  loadState: ModelAvailabilityLoadState;
+  checkedAt: string | undefined;
+}) {
+  const status = availability?.latestStatus ?? loadState;
+  return (
+    <span
+      className={`node-model-availability is-${status}`}
+      title={availabilityBadgeTitle(availability, loadState, checkedAt)}
+    >
+      {availabilityBadgeLabel(availability, loadState)}
+    </span>
+  );
+}
 
 function handleAssetDragStart(
   event: React.DragEvent<HTMLElement>,
@@ -302,8 +369,16 @@ function GenerationNodeBody({
   data: CanvasNodeData;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const settingsPanelRef = useRef<HTMLElement | null>(null);
+  const modelSelectRef = useRef<HTMLDivElement | null>(null);
+  const [availabilitySnapshot, setAvailabilitySnapshot] = useState<{
+    connectionId: string;
+    items: CangyuanAvailabilityView[];
+    checkedAt?: string;
+    state: ModelAvailabilityLoadState;
+  }>({ connectionId: "", items: [], state: "idle" });
   const [settingsPosition, setSettingsPosition] = useState({
     top: 16,
     left: 16,
@@ -360,6 +435,23 @@ function GenerationNodeBody({
   }
   const selectedModel = modelOptions.find((model) => model.id === data.model);
   const modelName = selectedModel?.name ?? data.model ?? "自动模型";
+  const cangyuanAvailabilityEnabled =
+    currentSupplier === "cangyuan" &&
+    Boolean(currentConnection) &&
+    connectionAvailable;
+  const availabilityItems =
+    availabilitySnapshot.connectionId === currentConnection
+      ? availabilitySnapshot.items
+      : [];
+  const availabilityState =
+    availabilitySnapshot.connectionId === currentConnection
+      ? availabilitySnapshot.state
+      : cangyuanAvailabilityEnabled
+        ? "loading"
+        : "idle";
+  const selectedModelAvailability = selectedModel
+    ? cangyuanAvailabilityForModel(selectedModel, availabilityItems)
+    : undefined;
   const parameterControlsUnavailable =
     selectedModel?.metadata?.parameterControlsUnavailable === true;
   const summary =
@@ -396,6 +488,79 @@ function GenerationNodeBody({
       active.blur();
     }
   };
+
+  useEffect(() => {
+    if (!modelMenuOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !modelSelectRef.current?.contains(event.target)
+      )
+        setModelMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setModelMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [modelMenuOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen || !cangyuanAvailabilityEnabled) return;
+
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      setAvailabilitySnapshot((current) => ({
+        connectionId: currentConnection,
+        items: current.connectionId === currentConnection ? current.items : [],
+        checkedAt:
+          current.connectionId === currentConnection
+            ? current.checkedAt
+            : undefined,
+        state:
+          current.connectionId === currentConnection && current.items.length > 0
+            ? current.state
+            : "loading",
+      }));
+      try {
+        const snapshot = await fetchCangyuanAvailability(currentConnection, {
+          windowDays: 7,
+        });
+        if (cancelled) return;
+        setAvailabilitySnapshot({
+          connectionId: currentConnection,
+          items: snapshot.items,
+          checkedAt: snapshot.checkedAt,
+          state: "ready",
+        });
+      } catch {
+        if (cancelled) return;
+        setAvailabilitySnapshot((current) => ({
+          connectionId: currentConnection,
+          items:
+            current.connectionId === currentConnection ? current.items : [],
+          checkedAt:
+            current.connectionId === currentConnection
+              ? current.checkedAt
+              : undefined,
+          state: "error",
+        }));
+      } finally {
+        if (!cancelled)
+          refreshTimer = setTimeout(refresh, CANGYUAN_AVAILABILITY_REFRESH_MS);
+      }
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [cangyuanAvailabilityEnabled, currentConnection, settingsOpen]);
 
   useLayoutEffect(() => {
     if (!settingsOpen || typeof window === "undefined") return;
@@ -446,8 +611,7 @@ function GenerationNodeBody({
       aria-label={`${data.label} 模型与参数`}
       style={settingsPosition}
       onPointerDown={(event) => {
-        const target =
-          event.target instanceof Element ? event.target : null;
+        const target = event.target instanceof Element ? event.target : null;
         if (!shouldReselectNodeFromConfigPointer(target)) {
           event.stopPropagation();
           return;
@@ -516,7 +680,10 @@ function GenerationNodeBody({
         <button
           type="button"
           aria-label="关闭模型与参数面板"
-          onClick={() => setSettingsOpen(false)}
+          onClick={() => {
+            setModelMenuOpen(false);
+            setSettingsOpen(false);
+          }}
         >
           <X size={14} />
         </button>
@@ -526,6 +693,7 @@ function GenerationNodeBody({
           className="node-config-manage-api"
           type="button"
           onClick={() => {
+            setModelMenuOpen(false);
             setSettingsOpen(false);
             data.onOpenApiSettings?.();
           }}
@@ -538,41 +706,126 @@ function GenerationNodeBody({
             ，但该分组密钥不可用。 请重新配置或选择其他可用分组。
           </div>
         ) : null}
-        <label className="node-config-model-field">
+        <div className="node-config-model-field">
           <span>模型</span>
-          <select
-            aria-label={`${data.label} 模型`}
-            value={data.model ?? ""}
-            onChange={(event) => data.onModelChange?.(event.target.value)}
+          <div
+            className="node-model-select"
+            data-open={modelMenuOpen || undefined}
+            ref={modelSelectRef}
           >
-            <option value="">自动模型</option>
-            {data.model && !selectedModel ? (
-              <option value={data.model} disabled>
-                {data.model}
-                {data.modelOptionsLoading
-                  ? "（正在扫描模型…）"
-                  : data.modelOptionsError
-                    ? "（模型扫描失败，暂不可用）"
-                    : data.modelOptionsAuthoritative
-                      ? "（当前扫描不可用）"
-                      : "（正在同步模型目录…）"}
-              </option>
-            ) : null}
-            {modelOptions.map((model) => {
-              const unavailableReason = modelCanvasUnavailableReason(model);
-              return (
-                <option
-                  key={model.id}
-                  value={model.id}
-                  disabled={unavailableReason !== null}
+            <button
+              type="button"
+              className="node-model-select-trigger"
+              role="combobox"
+              aria-label={`${data.label} 模型`}
+              aria-haspopup="listbox"
+              aria-expanded={modelMenuOpen}
+              aria-controls={`node-model-options-${nodeId}`}
+              onClick={() => setModelMenuOpen((open) => !open)}
+            >
+              <span>
+                {selectedModel
+                  ? appendPriceLabelOnce(
+                      selectedModel.name,
+                      selectedModel.metadata?.["priceLabel"],
+                    )
+                  : modelName}
+              </span>
+              {cangyuanAvailabilityEnabled && selectedModel ? (
+                <ModelAvailabilityBadge
+                  availability={selectedModelAvailability}
+                  loadState={availabilityState}
+                  checkedAt={availabilitySnapshot.checkedAt}
+                />
+              ) : null}
+              <ChevronDown size={15} />
+            </button>
+            {modelMenuOpen ? (
+              <div
+                className="node-model-select-options"
+                id={`node-model-options-${nodeId}`}
+                role="listbox"
+                aria-label={`${data.label} 可选模型`}
+              >
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={!data.model}
+                  className={!data.model ? "selected" : undefined}
+                  onClick={() => {
+                    data.onModelChange?.("");
+                    setModelMenuOpen(false);
+                  }}
                 >
-                  {appendPriceLabelOnce(model.name, model.metadata?.["priceLabel"])}
-                  {unavailableReason ? `（不可运行：${unavailableReason}）` : ""}
-                </option>
-              );
-            })}
-          </select>
-        </label>
+                  <span>自动模型</span>
+                </button>
+                {data.model && !selectedModel ? (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="true"
+                    disabled
+                  >
+                    <span>
+                      {data.model}
+                      {data.modelOptionsLoading
+                        ? "（正在扫描模型…）"
+                        : data.modelOptionsError
+                          ? "（模型扫描失败，暂不可用）"
+                          : data.modelOptionsAuthoritative
+                            ? "（当前扫描不可用）"
+                            : "（正在同步模型目录…）"}
+                    </span>
+                  </button>
+                ) : null}
+                {modelOptions.map((model) => {
+                  const unavailableReason = modelCanvasUnavailableReason(model);
+                  const availability = cangyuanAvailabilityEnabled
+                    ? cangyuanAvailabilityForModel(model, availabilityItems)
+                    : undefined;
+                  return (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={model.id === data.model}
+                      className={
+                        model.id === data.model ? "selected" : undefined
+                      }
+                      key={model.id}
+                      disabled={unavailableReason !== null}
+                      title={
+                        unavailableReason
+                          ? `不可运行：${unavailableReason}`
+                          : undefined
+                      }
+                      onClick={() => {
+                        data.onModelChange?.(model.id);
+                        setModelMenuOpen(false);
+                      }}
+                    >
+                      <span>
+                        {appendPriceLabelOnce(
+                          model.name,
+                          model.metadata?.["priceLabel"],
+                        )}
+                        {unavailableReason
+                          ? `（不可运行：${unavailableReason}）`
+                          : ""}
+                      </span>
+                      {cangyuanAvailabilityEnabled ? (
+                        <ModelAvailabilityBadge
+                          availability={availability}
+                          loadState={availabilityState}
+                          checkedAt={availabilitySnapshot.checkedAt}
+                        />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        </div>
         <NodeParameterFields
           nodeId={nodeId}
           nodeType={nodeType}
@@ -635,7 +888,10 @@ function GenerationNodeBody({
           title="打开模型与参数面板"
           onClick={(event) => {
             event.stopPropagation();
-            setSettingsOpen((open) => !open);
+            setSettingsOpen((open) => {
+              if (open) setModelMenuOpen(false);
+              return !open;
+            });
           }}
         >
           <SlidersHorizontal size={13} />
