@@ -1,12 +1,20 @@
 "use client";
 
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   Handle,
   NodeResizer,
   NodeToolbar,
   Position,
+  useViewport,
   type NodeProps,
 } from "@xyflow/react";
 import {
@@ -370,6 +378,10 @@ function GenerationNodeBody({
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  // A portal-mounted config panel is outside React Flow's transformed
+  // viewport. Subscribe to viewport changes so its fixed coordinates are
+  // recalculated whenever the canvas is panned or zoomed.
+  const { x: viewportX, y: viewportY, zoom: viewportZoom } = useViewport();
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const settingsPanelRef = useRef<HTMLElement | null>(null);
   const modelSelectRef = useRef<HTMLDivElement | null>(null);
@@ -562,37 +574,38 @@ function GenerationNodeBody({
     };
   }, [cangyuanAvailabilityEnabled, currentConnection, settingsOpen]);
 
+  const updateSettingsPosition = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const trigger = settingsTriggerRef.current;
+    const panel = settingsPanelRef.current;
+    if (!trigger || !panel) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const viewportPadding = 12;
+    const viewportTop = 68;
+    const width = Math.min(420, window.innerWidth - viewportPadding * 2);
+    const maxHeight = Math.max(
+      220,
+      window.innerHeight - viewportTop - viewportPadding * 2,
+    );
+    const panelHeight = Math.min(
+      panel.getBoundingClientRect().height,
+      maxHeight,
+    );
+    const left = Math.min(
+      Math.max(viewportPadding, triggerRect.left),
+      Math.max(viewportPadding, window.innerWidth - width - viewportPadding),
+    );
+    const belowTop = triggerRect.bottom + 10;
+    const aboveTop = triggerRect.top - panelHeight - 10;
+    const top =
+      belowTop + panelHeight <= window.innerHeight - viewportPadding
+        ? belowTop
+        : Math.max(viewportTop, aboveTop);
+    setSettingsPosition({ top, left, width, maxHeight });
+  }, []);
+
   useLayoutEffect(() => {
     if (!settingsOpen || typeof window === "undefined") return;
-
-    const updateSettingsPosition = () => {
-      const trigger = settingsTriggerRef.current;
-      const panel = settingsPanelRef.current;
-      if (!trigger || !panel) return;
-      const triggerRect = trigger.getBoundingClientRect();
-      const viewportPadding = 12;
-      const viewportTop = 68;
-      const width = Math.min(420, window.innerWidth - viewportPadding * 2);
-      const maxHeight = Math.max(
-        220,
-        window.innerHeight - viewportTop - viewportPadding * 2,
-      );
-      const panelHeight = Math.min(
-        panel.getBoundingClientRect().height,
-        maxHeight,
-      );
-      const left = Math.min(
-        Math.max(viewportPadding, triggerRect.left),
-        Math.max(viewportPadding, window.innerWidth - width - viewportPadding),
-      );
-      const belowTop = triggerRect.bottom + 10;
-      const aboveTop = triggerRect.top - panelHeight - 10;
-      const top =
-        belowTop + panelHeight <= window.innerHeight - viewportPadding
-          ? belowTop
-          : Math.max(viewportTop, aboveTop);
-      setSettingsPosition({ top, left, width, maxHeight });
-    };
 
     updateSettingsPosition();
     window.addEventListener("resize", updateSettingsPosition);
@@ -601,7 +614,17 @@ function GenerationNodeBody({
       window.removeEventListener("resize", updateSettingsPosition);
       window.removeEventListener("scroll", updateSettingsPosition, true);
     };
-  }, [settingsOpen]);
+  }, [settingsOpen, updateSettingsPosition]);
+
+  useLayoutEffect(() => {
+    if (settingsOpen) updateSettingsPosition();
+  }, [
+    settingsOpen,
+    updateSettingsPosition,
+    viewportX,
+    viewportY,
+    viewportZoom,
+  ]);
 
   const settingsPopover = settingsOpen ? (
     <section

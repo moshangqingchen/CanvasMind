@@ -1700,6 +1700,105 @@ test.describe("超级画布完整验收", () => {
       .toMatchObject({ size: "1536x1024", quality: "high", n: 3 });
   });
 
+  test("模型与参数 portal 随画布缩放保持节点锚定", async ({ page }) => {
+    await openWorkspace(page);
+
+    const node = page.locator('.react-flow__node[data-id="e2e-image"]');
+    const trigger = node.getByRole("button", {
+      name: /打开 E2E 图片生成 模型与参数/u,
+    });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", {
+      name: "E2E 图片生成 模型与参数",
+    });
+    await expect(dialog).toBeVisible();
+
+    const measureAlignment = () =>
+      page.evaluate(() => {
+        const trigger = document.querySelector(
+          '.react-flow__node[data-id="e2e-image"] .node-config-summary',
+        );
+        const panel = document.querySelector(
+          '.node-config-popover-portal[role="dialog"]',
+        );
+        if (
+          !(trigger instanceof HTMLElement) ||
+          !(panel instanceof HTMLElement)
+        )
+          return null;
+
+        const triggerRect = trigger.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+        const padding = 12;
+        const viewportTop = 68;
+        const width = Math.min(420, window.innerWidth - padding * 2);
+        const maxHeight = Math.max(
+          220,
+          window.innerHeight - viewportTop - padding * 2,
+        );
+        const panelHeight = Math.min(panelRect.height, maxHeight);
+        const expectedLeft = Math.min(
+          Math.max(padding, triggerRect.left),
+          Math.max(padding, window.innerWidth - width - padding),
+        );
+        const belowTop = triggerRect.bottom + 10;
+        const aboveTop = triggerRect.top - panelHeight - 10;
+        const expectedTop =
+          belowTop + panelHeight <= window.innerHeight - padding
+            ? belowTop
+            : Math.max(viewportTop, aboveTop);
+        return {
+          triggerLeft: triggerRect.left,
+          leftError: Math.abs(panelRect.left - expectedLeft),
+          topError: Math.abs(panelRect.top - expectedTop),
+        };
+      });
+
+    const before = await measureAlignment();
+    expect(before).not.toBeNull();
+    expect(before!.leftError).toBeLessThan(2);
+    expect(before!.topError).toBeLessThan(2);
+
+    const wheelPoint = await page.locator(".react-flow__pane").evaluate(
+      (pane) => {
+        const bounds = pane.getBoundingClientRect();
+        const candidates = [
+          [0.5, 0.16],
+          [0.2, 0.16],
+          [0.8, 0.16],
+          [0.2, 0.84],
+          [0.8, 0.84],
+        ] as const;
+        for (const [xRatio, yRatio] of candidates) {
+          const x = bounds.left + bounds.width * xRatio;
+          const y = bounds.top + bounds.height * yRatio;
+          const target = document.elementFromPoint(x, y);
+          if (
+            target?.closest(".react-flow__pane") === pane &&
+            !target.closest(
+              ".react-flow__controls, .react-flow__minimap, .react-flow__node, .node-config-popover-portal",
+            )
+          )
+            return { x, y };
+        }
+        return {
+          x: bounds.left + bounds.width / 2,
+          y: bounds.top + bounds.height / 2,
+        };
+      },
+    );
+    await page.mouse.move(wheelPoint.x, wheelPoint.y);
+    await page.mouse.wheel(0, -240);
+    await expect
+      .poll(async () => (await measureAlignment())?.triggerLeft ?? null)
+      .not.toBe(before!.triggerLeft);
+
+    const after = await measureAlignment();
+    expect(after).not.toBeNull();
+    expect(after!.leftError).toBeLessThan(2);
+    expect(after!.topError).toBeLessThan(2);
+  });
+
   test("图片和视频节点内可编辑提示词，右侧统一配置并保存参数", async ({
     page,
     request,
