@@ -1,4 +1,11 @@
 const RELEASE_NOTES: Readonly<Record<string, string>> = {
+  "0.2.16": [
+    "独立安装包自动更新发现修复",
+    "",
+    "- 修复无 Git 元数据的 Windows 独立安装包始终显示“最新版本：暂无”的问题。",
+    "- 公共仓库现在可匿名查询 GitHub Release，REST API 失败时自动回退到 releases.atom。",
+    "- Git 网络/TLS 临时失败会记录为更新状态，不再导致常驻管理器退出。",
+  ].join("\n"),
   "0.2.15": [
     "画布模型与参数面板锚定修复",
     "",

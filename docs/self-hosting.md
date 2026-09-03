@@ -176,7 +176,7 @@ pnpm public:start:installed
 Release 正文，下载可以后台进行；应用阶段会等待生成任务排空，候选版本健康检查失败则自动恢复
 旧版本。检查、下载和切换过程记录在 `%LOCALAPPDATA%\SuperCanvas\logs`，不会记录 GitHub Token。
 
-公开仓库无需 Token；如使用私有仓库，可在本地环境文件中设置
+公开仓库的独立安装包无需 Token，管理器会匿名查询 GitHub Releases；如使用私有仓库，可在本地环境文件中设置
 `SUPERCANVAS_GITHUB_TOKEN`，不要把它提交到 Git。
 
 如果需要热更新，同时使用 Docker 中的 PostgreSQL、Redis 和 MinIO，请显式加载只绑定回环地址的开发 override：

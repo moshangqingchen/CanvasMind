@@ -178,11 +178,22 @@ function Invoke-GitCommand {
       Output = "未找到 git.exe；可通过 SUPERCANVAS_GIT_COMMAND 配置 Git 路径。"
     }
   }
-  $output = @(& $gitCommand -C $workspace @Arguments 2>&1)
-  $exitCode = $LASTEXITCODE
-  return [pscustomobject]@{
-    ExitCode = $exitCode
-    Output = (@($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+  try {
+    # Native stderr is promoted to a terminating error when the manager uses
+    # $ErrorActionPreference = "Stop". Convert that failure into the same
+    # typed result as a non-zero git exit code so a transient network outage
+    # cannot terminate the long-running manager.
+    $output = @(& $gitCommand -C $workspace @Arguments 2>&1)
+    $exitCode = [int]$LASTEXITCODE
+    return [pscustomobject]@{
+      ExitCode = $exitCode
+      Output = (@($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+    }
+  } catch {
+    return [pscustomobject]@{
+      ExitCode = 1
+      Output = "Git 命令执行失败：$($_.Exception.Message)"
+    }
   }
 }
 
@@ -218,6 +229,12 @@ function Get-GitHubRepositoryFromRemote {
   return "$($match.Groups[1].Value)/$($match.Groups[2].Value)".ToLowerInvariant()
 }
 
+function Test-GitSourceDeployment {
+  # Release archives intentionally omit .git. Keep source deployments on the
+  # commit-based sync path while allowing packaged installs to use Releases.
+  return Test-Path -LiteralPath (Join-Path $workspace ".git")
+}
+
 function Test-GitWorkingTreeClean {
   $result = Invoke-GitCommand @("status", "--porcelain", "--untracked-files=normal")
   return $result.ExitCode -eq 0 -and -not $result.Output
@@ -237,6 +254,10 @@ function Invoke-RemoteSourceSync {
       $config.Branch.Contains("..") -or $config.Branch.Contains("//")) {
     $base.remoteSyncState = "error"
     $base.remoteSyncError = "更新分支配置无效，已跳过自动同步。"
+    return [pscustomobject]$base
+  }
+  if (-not (Test-GitSourceDeployment)) {
+    Write-ManagerLog "Packaged release has no .git metadata; skipping remote Git sync."
     return [pscustomobject]$base
   }
   $source = Get-GitSourceInfo
@@ -328,6 +349,155 @@ function Set-ActiveReleaseRoot {
   }
 }
 
+function New-ReleaseCandidate {
+  param(
+    [string]$Repository,
+    [string]$CurrentVersion,
+    [string]$Tag,
+    [string]$Commit = "",
+    [string]$PublishedAt = "",
+    [string]$HtmlUrl = "",
+    [string]$Notes = "",
+    [string]$AssetUrl = "",
+    [string]$ManifestUrl = "",
+    [object]$AssetSize = $null
+  )
+
+  if ($Tag -notmatch '^v(\d+\.\d+\.\d+)$') { return $null }
+  $version = $Matches[1]
+  if ((Compare-SemVer $version $CurrentVersion) -le 0) { return $null }
+
+  $zipName = "super-canvas-v$version-windows-x64.zip"
+  $sidecarName = "super-canvas-v$version-release-manifest.json"
+  $normalizedNotes = [string]$Notes
+  if ($normalizedNotes.Length -gt 50000) {
+    $normalizedNotes = $normalizedNotes.Substring(0, 50000)
+  }
+  $normalizedSize = $null
+  if ($null -ne $AssetSize) {
+    try {
+      $parsedSize = [int64]$AssetSize
+      if ($parsedSize -ge 0) { $normalizedSize = $parsedSize }
+    } catch { }
+  }
+
+  return [pscustomobject]@{
+    Version = $version
+    Tag = "v$version"
+    Commit = if ($Commit) { $Commit } else { $null }
+    PublishedAt = if ($PublishedAt) { $PublishedAt } else { $null }
+    HtmlUrl = if ($HtmlUrl) { $HtmlUrl } else { "https://github.com/$Repository/releases/tag/v$version" }
+    Notes = $normalizedNotes
+    AssetName = $zipName
+    AssetSize = $normalizedSize
+    AssetUrl = if ($AssetUrl) { $AssetUrl } else { $null }
+    ManifestUrl = if ($ManifestUrl) { $ManifestUrl } else { $null }
+  }
+}
+
+function Get-ReleaseCandidateFromRest {
+  param(
+    [hashtable]$Config,
+    [string]$CurrentVersion
+  )
+
+  $url = "https://api.github.com/repos/$($Config.Repository)/releases?per_page=30"
+  $releases = @(Invoke-RestMethod -Uri $url -Headers (Get-UpdateHeaders) -TimeoutSec 20)
+  $candidate = $null
+  foreach ($release in $releases) {
+    if ($release.draft -or $release.prerelease) { continue }
+    $tag = [string]$release.tag_name
+    if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { continue }
+    $version = $Matches[1]
+    if ((Compare-SemVer $version $CurrentVersion) -le 0) { continue }
+
+    $zipName = "super-canvas-v$version-windows-x64.zip"
+    $sidecarName = "super-canvas-v$version-release-manifest.json"
+    $zip = @($release.assets | Where-Object { $_.name -eq $zipName } | Select-Object -First 1)
+    $sidecar = @($release.assets | Where-Object { $_.name -eq $sidecarName } | Select-Object -First 1)
+    $assetUrl = if ($zip) { [string]$zip.browser_download_url } else { "" }
+    $manifestUrl = if ($sidecar) { [string]$sidecar.browser_download_url } else { "" }
+    $assetSize = if ($zip) { $zip.size } else { $null }
+    $next = New-ReleaseCandidate `
+      -Repository $Config.Repository `
+      -CurrentVersion $CurrentVersion `
+      -Tag $tag `
+      -Commit ([string]$release.target_commitish) `
+      -PublishedAt ([string]$release.published_at) `
+      -HtmlUrl ([string]$release.html_url) `
+      -Notes ([string]$release.body) `
+      -AssetUrl $assetUrl `
+      -ManifestUrl $manifestUrl `
+      -AssetSize $assetSize
+    if ($next -and (-not $candidate -or (Compare-SemVer $next.Version $candidate.Version) -gt 0)) {
+      $candidate = $next
+    }
+  }
+  return $candidate
+}
+
+function Get-ReleaseCandidateFromAtom {
+  param(
+    [hashtable]$Config,
+    [string]$CurrentVersion
+  )
+
+  $url = "https://github.com/$($Config.Repository)/releases.atom"
+  $response = Invoke-WebRequest -Uri $url -Headers (Get-UpdateHeaders) -UseBasicParsing -TimeoutSec 20
+  $content = [string]$response.Content
+  if (-not $content) { throw "GitHub Releases Atom feed was empty." }
+  $xml = [xml]$content
+  $entries = @($xml.SelectNodes("/*[local-name()='feed']/*[local-name()='entry']"))
+  $candidate = $null
+  foreach ($entry in $entries) {
+    $titleNode = $entry.SelectSingleNode("./*[local-name()='title']")
+    $title = if ($titleNode) { [string]$titleNode.InnerText } else { "" }
+    $tagMatch = [regex]::Match($title, '(?i)(v\d+\.\d+\.\d+)\s*$')
+    if (-not $tagMatch.Success) { continue }
+    $tag = "v$($tagMatch.Groups[1].Value.Substring(1))"
+    $publishedNode = $entry.SelectSingleNode("./*[local-name()='published']")
+    if (-not $publishedNode) { $publishedNode = $entry.SelectSingleNode("./*[local-name()='updated']") }
+    $linkNode = $entry.SelectSingleNode("./*[local-name()='link'][contains(@href, '/releases/tag/')]")
+    $htmlUrl = if ($linkNode) { [string]$linkNode.GetAttribute("href") } else { "https://github.com/$($Config.Repository)/releases/tag/$tag" }
+    $assetBase = "https://github.com/$($Config.Repository)/releases/download/$tag"
+    $version = $tag.Substring(1)
+    $publishedAt = if ($publishedNode) { [string]$publishedNode.InnerText } else { "" }
+    $next = New-ReleaseCandidate `
+      -Repository $Config.Repository `
+      -CurrentVersion $CurrentVersion `
+      -Tag $tag `
+      -PublishedAt $publishedAt `
+      -HtmlUrl $htmlUrl `
+      -AssetUrl "$assetBase/super-canvas-v$version-windows-x64.zip" `
+      -ManifestUrl "$assetBase/super-canvas-v$version-release-manifest.json"
+    if ($next -and (-not $candidate -or (Compare-SemVer $next.Version $candidate.Version) -gt 0)) {
+      $candidate = $next
+    }
+  }
+  return $candidate
+}
+
+function Get-GitHubReleaseCandidate {
+  param(
+    [hashtable]$Config,
+    [string]$CurrentVersion
+  )
+
+  try {
+    return Get-ReleaseCandidateFromRest -Config $Config -CurrentVersion $CurrentVersion
+  } catch {
+    $restError = $_.Exception.Message
+    Write-ManagerLog "GitHub Release REST check failed: $restError; trying releases.atom."
+    try {
+      $candidate = Get-ReleaseCandidateFromAtom -Config $Config -CurrentVersion $CurrentVersion
+      if ($candidate) { Write-ManagerLog "GitHub Releases Atom fallback found $($candidate.Tag)." }
+      return $candidate
+    } catch {
+      throw "GitHub Release 查询失败（REST：$restError；Atom：$($_.Exception.Message)）"
+    }
+  }
+}
+
 function Invoke-ReleaseCheck {
   $config = Get-UpdateConfig
   if (-not $config.Enabled) {
@@ -337,40 +507,31 @@ function Invoke-ReleaseCheck {
 
   $now = (Get-Date).ToUniversalTime().ToString("o")
   Write-UpdateStatus @{ phase = "checking"; lastCheckedAt = $now; error = $null }
-  $source = Invoke-RemoteSourceSync
+  $source = [pscustomobject]@{
+    remoteBranch = $config.Branch
+    remoteCommit = $null
+    remoteCommitUrl = $null
+    remoteUpdateAvailable = $false
+    remoteSyncState = "unavailable"
+    remoteSyncError = $null
+  }
   try {
+    # Keep source synchronization inside the same guarded block as the
+    # Release lookup. Git can fail before a process returns an exit code (for
+    # example during a TLS handshake); that must become update status, not a
+    # manager-wide crash.
+    $source = Invoke-RemoteSourceSync
     $currentVersion = Get-ApplicationVersion
     $candidate = $null
     if ($config.Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Invalid GitHub repository configuration." }
     if ($config.Token) {
-      $url = "https://api.github.com/repos/$($config.Repository)/releases?per_page=30"
-      $releases = Invoke-RestMethod -Uri $url -Headers (Get-UpdateHeaders) -TimeoutSec 20
-      foreach ($release in $releases) {
-        if ($release.draft -or $release.prerelease) { continue }
-        $tag = [string]$release.tag_name
-        if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { continue }
-        $version = $Matches[1]
-        if ((Compare-SemVer $version $currentVersion) -le 0) { continue }
-        if ($candidate -and (Compare-SemVer $version $candidate.Version) -le 0) { continue }
-        $zipName = "super-canvas-v$version-windows-x64.zip"
-        $sidecarName = "super-canvas-v$version-release-manifest.json"
-        $zip = @($release.assets | Where-Object { $_.name -eq $zipName } | Select-Object -First 1)
-        $sidecar = @($release.assets | Where-Object { $_.name -eq $sidecarName } | Select-Object -First 1)
-        $candidate = [pscustomobject]@{
-          Version = $version
-          Tag = $tag
-          Commit = [string]$release.target_commitish
-          PublishedAt = [string]$release.published_at
-          HtmlUrl = [string]$release.html_url
-          Notes = ([string]$release.body).Substring(0, [Math]::Min(50000, ([string]$release.body).Length))
-          AssetName = $zipName
-          AssetSize = if ($zip) { [int64]$zip.size } else { $null }
-          AssetUrl = if ($zip) { [string]$zip.browser_download_url } else { $null }
-          ManifestUrl = if ($sidecar) { [string]$sidecar.browser_download_url } else { $null }
-        }
-      }
+      $candidate = Get-GitHubReleaseCandidate -Config $config -CurrentVersion $currentVersion
+    } elseif (-not (Test-GitSourceDeployment)) {
+      # A packaged install has no .git to poll. Public Releases are the
+      # bootstrap path for these clients, so anonymous REST is allowed here.
+      $candidate = Get-GitHubReleaseCandidate -Config $config -CurrentVersion $currentVersion
     } else {
-      Write-ManagerLog "GitHub Release API check skipped; polling remote Git $($config.Branch) instead."
+      Write-ManagerLog "GitHub Release API check skipped for Git source; polling remote Git $($config.Branch) instead."
     }
     $sourcePatch = @{}
     foreach ($property in $source.PSObject.Properties) { $sourcePatch[$property.Name] = $property.Value }
