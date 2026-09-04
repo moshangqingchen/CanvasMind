@@ -84,11 +84,16 @@ export async function scanChentuKeyModels(
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
     });
-    if (response.status === 401 || response.status === 403)
+    if (response.status === 401 || response.status === 403) {
+      const reason =
+        response.status === 401
+          ? "API Key 无效、过期或未按 Bearer Token 方式发送"
+          : "API Key 已到达辰途，但当前分组未开通 /v1/models 模型读取权限";
       return scanFailure(
         "unauthorized",
-        "辰途拒绝了当前分组 Key，或该 Key 没有模型读取权限",
+        `辰途 /v1/models 返回 HTTP ${response.status}：${reason}`,
       );
+    }
     if (!response.ok)
       return scanFailure(
         "failed",

@@ -145,6 +145,7 @@ const CHENTU_IMAGE_GROUP_IDS = new Set([
   "低价gemni生图",
   "兜底原生生图",
   "image2官key",
+  "image2官key生图",
   "测试生图",
 ]);
 
@@ -191,6 +192,21 @@ export const CHENTU_PLATFORM_GROUPS: readonly ChentuMarketplaceGroup[] = [
   marketplaceGroup("grok纯享视频", 1, "辰途模型广场分组。"),
   marketplaceGroup(
     "image2官key",
+    4.5,
+    "GPT Image 2 官方 Key 图片分组；当前广场显示 4K 与自由传参线路，实际权限仍通过 /v1/models 实时扫描。",
+    [
+      {
+        ...DOCUMENTED_IMAGE_MODELS.gpt4k,
+        priceLabel: "￥ 0.18 / 请求",
+      },
+      {
+        ...DOCUMENTED_IMAGE_MODELS.gptFree,
+        priceLabel: "￥ 0.18 / 请求",
+      },
+    ],
+  ),
+  marketplaceGroup(
+    "image2官key生图",
     4.5,
     "GPT Image 2 官方 Key 图片分组；当前广场显示 4K 与自由传参线路，实际权限仍通过 /v1/models 实时扫描。",
     [
@@ -256,6 +272,14 @@ export function isChentuImageGroup(
   value: unknown,
 ): value is string {
   return typeof value === "string" && CHENTU_IMAGE_GROUP_IDS.has(value);
+}
+
+/**
+ * 辰途模型广场曾使用不带“生图”后缀的旧分组名；两者都走官方 GPT
+ * Image 路由和参数约束，保留旧名兼容已保存的连接。
+ */
+export function isChentuOfficialImageGroup(value: unknown): boolean {
+  return value === "image2官key" || value === "image2官key生图";
 }
 
 export function chentuDefaultModelForGroup(

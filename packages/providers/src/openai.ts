@@ -1639,7 +1639,6 @@ const CHENTU_IMAGE_PARAMETER_KEYS: readonly WeAIImageParameterKey[] = [
   ...OPENAI_IMAGE_PARAMETER_KEYS,
   "response_format",
 ];
-const CHENTU_OFFICIAL_MODEL_GROUP = "image2官key";
 const CHENTU_OFFICIAL_IMAGE_PARAMETER_KEYS: readonly WeAIImageParameterKey[] = [
   "n",
   "size",
@@ -1649,7 +1648,7 @@ const CHENTU_OFFICIAL_IMAGE_PARAMETER_KEYS: readonly WeAIImageParameterKey[] = [
 ];
 
 function isChentuOfficialModelGroup(group: string | undefined): boolean {
-  return group === CHENTU_OFFICIAL_MODEL_GROUP;
+  return group === "image2官key" || group === "image2官key生图";
 }
 
 function chentuImageParameterKeys(

@@ -11,6 +11,7 @@ import {
   CHENTU_PLATFORM_GROUPS,
   CHENTU_SUPPLIER_KEY,
   chentuDefaultModelForGroup,
+  isChentuOfficialImageGroup,
 } from "./chentu-presets";
 import { providerPriceUnit } from "./provider-pricing-unit";
 
@@ -475,7 +476,7 @@ function chentuImageParameters(
   if (!gptImage && !geminiImage) return [];
 
   const flexible = isChentuFlexibleImageModel(id);
-  const official = gptImage && group === "image2官key";
+  const official = gptImage && isChentuOfficialImageGroup(group);
   const sizeOptions = gptImage
     ? chentuGptSizeOptions(id)
     : chentuGeminiSizeOptions(id);

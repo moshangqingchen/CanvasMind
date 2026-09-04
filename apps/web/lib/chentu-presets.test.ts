@@ -11,11 +11,12 @@ import {
 
 describe("辰途 API image presets", () => {
   it("keeps the model-plaza groups and documented image candidates visible", () => {
-    expect(CHENTU_PLATFORM_GROUPS).toHaveLength(20);
+    expect(CHENTU_PLATFORM_GROUPS).toHaveLength(21);
     expect(CHENTU_PLATFORM_GROUPS.map((group) => group.id)).toEqual(
       expect.arrayContaining([
         "1k低价生图",
         "image2官key",
+        "image2官key生图",
         "低价Adobe生图",
         "低价gemni生图",
         "兜底原生生图",
@@ -65,10 +66,21 @@ describe("辰途 API image presets", () => {
         }),
       ],
     });
+    expect(
+      CHENTU_PLATFORM_GROUPS.find((group) => group.id === "image2官key生图"),
+    ).toMatchObject({
+      ratio: 4.5,
+      canvasSupported: true,
+      models: [
+        expect.objectContaining({ id: "gpt-image-2-4k" }),
+        expect.objectContaining({ id: "gpt-image-2自由传参" }),
+      ],
+    });
   });
 
   it("keeps image groups live-scanned and a long image timeout", () => {
     expect(isChentuImageGroup(CHENTU_MODEL_GROUP)).toBe(true);
+    expect(isChentuImageGroup("image2官key生图")).toBe(true);
     expect(isChentuImageGroup("default")).toBe(false);
     expect(chentuDefaultModelForGroup(CHENTU_MODEL_GROUP)).toBe(
       CHENTU_DEFAULT_MODEL,
