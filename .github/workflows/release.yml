@@ -100,5 +100,12 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           gh release view $tag *> $null
-          if ($LASTEXITCODE -ne 0) { gh release create $tag --title "Super Canvas $tag" --generate-notes }
+          if ($LASTEXITCODE -ne 0) {
+            $notesPath = Join-Path $env:GITHUB_WORKSPACE "docs/releases/$tag.md"
+            if (Test-Path -LiteralPath $notesPath) {
+              gh release create $tag --title "Super Canvas $tag" --notes-file $notesPath
+            } else {
+              gh release create $tag --title "Super Canvas $tag" --generate-notes
+            }
+          }
           gh release upload $tag $env:ARCHIVE $env:SIDECAR --clobber

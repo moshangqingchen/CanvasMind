@@ -84,7 +84,7 @@ describe("ProjectFileStore", () => {
     await store.archiveFinished(asset);
     const cleanup = await store.clearDraft(asset.projectName);
     expect(cleanup.failed).toHaveLength(0);
-    await expect(stat(store.projectDirectory(asset.projectName) + "\\成品\\图片")).resolves.toBeTruthy();
+    await expect(stat(join(store.projectDirectory(asset.projectName), "成品", "图片"))).resolves.toBeTruthy();
     const files = await store.archiveFinished(asset);
     await expect(readFile(files.path, "utf8")).resolves.toBe("image");
   });
