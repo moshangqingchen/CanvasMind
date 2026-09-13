@@ -1,3 +1,4 @@
+import { matchesSupplierTemplate } from "./supplier-template-source";
 import {
   fetchProviderJson,
   joinUrl,
@@ -28,6 +29,7 @@ import {
   type CangyuanImageGroup,
 } from "./provider-presets";
 import { providerPriceUnit } from "./provider-pricing-unit";
+import { imageSizeOptions, type ImageSizeTier } from "@super-canvas/providers";
 
 const CATALOG_TTL_MS = 60_000;
 const CATALOG_RETRY_MS = 15_000;
@@ -89,10 +91,7 @@ export interface CangyuanCatalogSnapshot {
 }
 
 export type CangyuanAvailabilityStatus =
-  | "operational"
-  | "degraded"
-  | "unavailable"
-  | "unknown";
+  "operational" | "degraded" | "unavailable" | "unknown";
 
 export interface CangyuanAvailabilityItem {
   name: string;
@@ -267,7 +266,11 @@ export async function fetchCangyuanAvailability(
       headers: { authorization: `Bearer ${apiKey}` },
       cache: "no-store",
     },
-    { phase: "connect", timeoutMs: CATALOG_TIMEOUT_MS, maxResponseBytes: 4 * 1024 * 1024 },
+    {
+      phase: "connect",
+      timeoutMs: CATALOG_TIMEOUT_MS,
+      maxResponseBytes: 4 * 1024 * 1024,
+    },
   );
   return parseCangyuanAvailabilityPayload(payload, windowDays);
 }
@@ -406,14 +409,15 @@ function nameWithLivePrice(
   record: PricingRecord,
   video = false,
 ) {
-  const baseName = model.name.replace(/（¥[^）]+\/(?:张|次|秒|请求|条)）$/u, "");
+  const baseName = model.name.replace(
+    /（¥[^）]+\/(?:张|次|秒|请求|条)）$/u,
+    "",
+  );
   const price = formatPrice(record.model_price);
   const unit = /^midjourney-8\.2-/iu.test(model.id)
     ? "请求"
     : priceUnit(record, video);
-  return price
-    ? `${baseName}（¥${price}/${unit}）`
-    : baseName;
+  return price ? `${baseName}（¥${price}/${unit}）` : baseName;
 }
 
 function parameterOptions(value: unknown): ModelParameterOption[] {
@@ -479,6 +483,11 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
   const ui = isRecord(record.image_ui_params) ? record.image_ui_params : {};
   const params = isRecord(ui.params) ? ui.params : {};
   const descriptors: ModelParameterDescriptor[] = [];
+  // These are separately billed SKUs, not a quality-to-resolution mapping.
+  // Source: /api/pricing image_ui_params, verified 2026-09-10.
+  const flareTier = /^gpt-image-2\.5-flare-(1k|2k|4k)$/iu
+    .exec(String(record.model_name ?? ""))?.[1]
+    ?.toUpperCase();
   const aspectRatio = isRecord(params.aspectRatio) ? params.aspectRatio : null;
   if (aspectRatio?.enabled === true) {
     const options = imageRatioOptions(aspectRatio.options, record.model_name);
@@ -504,6 +513,12 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
       min: 16,
       max: 3840,
       step: 16,
+      ...(flareTier
+        ? {
+            default: "auto",
+            options: imageSizeOptions([flareTier as ImageSizeTier]),
+          }
+        : {}),
       placeholder: "宽 x 高",
       description: "接口要求宽高为 16 的倍数；选择精确尺寸后不再发送画面比例",
       operations: IMAGE_OPERATIONS,
@@ -517,11 +532,18 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
     );
     descriptors.push({
       key: "quality",
-      label: "分辨率",
+      label: flareTier ? "质量" : "分辨率",
       control: options.length > 0 ? "select" : "text",
       valueType: "string",
       ...(options.length > 0
-        ? { default: highDefault ? "high" : options[0]?.value, options }
+        ? {
+            default: flareTier
+              ? options[0]?.value
+              : highDefault
+                ? "high"
+                : options[0]?.value,
+            options,
+          }
         : {}),
       operations: IMAGE_OPERATIONS,
     });
@@ -709,6 +731,11 @@ function isImageReferenceParameter(name: string): boolean {
 }
 
 function supportsImageReferences(record: PricingRecord): boolean {
+  if (/^gpt-image-2\.5(?:-|$)/u.test(String(record.model_name ?? ""))) {
+    const ui = isRecord(record.image_ui_params) ? record.image_ui_params : {};
+    const limits = isRecord(ui.referenceLimits) ? ui.referenceLimits : {};
+    if (typeof limits.images === "number" && limits.images > 0) return true;
+  }
   const hasReferenceParameter = documentedImageReferenceParameters(record).some(
     (param) =>
       typeof param.name === "string" && isImageReferenceParameter(param.name),
@@ -866,14 +893,13 @@ function videoDescriptorForRecord(
   const parameters = inferredVideoParameters(record).filter(
     (parameter) => !(fixedResolutionSku && parameter.key === "resolution"),
   );
-  const payloadBuilder =
-    /^omni-v2v(?:-no-water)?$/iu.test(id)
-      ? "omni-v2v"
-      : /^omni-fast(?:-no-water)?$/iu.test(id)
-        ? "omni-frame"
-        : /^minimax-h3-/iu.test(id)
-          ? "minimax-video"
-          : refs.payloadBuilder;
+  const payloadBuilder = /^omni-v2v(?:-no-water)?$/iu.test(id)
+    ? "omni-v2v"
+    : /^omni-fast(?:-no-water)?$/iu.test(id)
+      ? "omni-frame"
+      : /^minimax-h3-/iu.test(id)
+        ? "minimax-video"
+        : refs.payloadBuilder;
   const price = formatPrice(record.model_price);
   const hasImages = (refs.maxInputImages ?? 0) > 0;
   const descriptionParts = [
@@ -1316,11 +1342,7 @@ function fallbackSnapshot(): CangyuanCatalogSnapshot {
           ? ["text", "image", "image[]", "video", "video[]"]
           : ["text", "image", "image[]"],
       outputKinds: ["video"],
-      parameters: fallbackVideoParameters(
-        [],
-        ["16:9", "9:16"],
-        [],
-      ),
+      parameters: fallbackVideoParameters([], ["16:9", "9:16"], []),
       metadata: { modality: "video", payloadBuilder },
       limits:
         payloadBuilder === "omni-v2v"
@@ -1548,7 +1570,7 @@ export function cangyuanConnectorForModels(
     if (model.operations.some((operation) => operation.startsWith("video.")))
       modelOverrides[model.id] = videoTransportForModel(model);
     else if (
-      /^(?:gpt-image-2(?:-(?:1k|2k|4k))?|nano-banana(?:-pro)?-(?:1k|2k|4k)|nano-banana2-(?:1k|2k|4k)|midjourney-8\.2-(?:1k|2k))$/iu.test(
+      /^(?:gpt-image-2(?:-(?:1k|2k|4k))?|gpt-image-2\.5(?:-(?:flare|sunburst))?(?:-(?:1k|2k|4k))?|nano-banana(?:-pro)?-(?:1k|2k|4k)|nano-banana2-(?:1k|2k|4k)|midjourney-8\.2-(?:1k|2k))$/iu.test(
         model.id,
       ) &&
       (model.operations.includes("image.edit") ||
@@ -1666,10 +1688,7 @@ function standardImageTransportForModel(
           bodyMode: "json",
           headers: { Connection: "close" },
           template: { async: true, n: 1 },
-          mappings: [
-            ...mappings,
-            assetMapping("/images", "image"),
-          ],
+          mappings: [...mappings, assetMapping("/images", "image")],
           response: {
             taskIdPath: "$.id",
             statusPath: "$.status",
@@ -1940,41 +1959,22 @@ async function syncCangyuanConnectionFromCatalog(
   connection: ProviderConnectionRecord | null,
   catalog: CangyuanCatalogSnapshot,
 ) {
-  if (!connection || connection.config.preset !== CANGYUAN_IMAGE_PRESET_ID)
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    !matchesSupplierTemplate(connection) ||
+    connection.config.preset !== CANGYUAN_IMAGE_PRESET_ID
+  )
     return connection;
   if (connection.config.usage === "agent") return connection;
   const group = normalizeCangyuanImageGroup(connection.config.modelGroup);
   if (!group) return connection;
   const models = catalog.groups[group];
-  if (models.length === 0) return connection;
-  // A live marketplace is an availability/price source, not an instruction to
-  // delete models a user already configured. Keep saved descriptors and
-  // transport overrides that are temporarily absent from the live response so
-  // existing canvas nodes remain executable and the selected default remains
-  // stable across a refresh.
+  if (catalog.source !== "live") return connection;
   const savedConnector = isRecord(connection.config.connector)
     ? connection.config.connector
     : {};
-  const savedModels = Array.isArray(savedConnector.models)
-    ? savedConnector.models.filter(isRecord)
-    : [];
-  const liveById = new Map(models.map((model) => [model.id, model]));
-  const mergedModels: ModelDescriptor[] = [];
-  const seen = new Set<string>();
-  for (const saved of savedModels) {
-    const id = typeof saved.id === "string" ? saved.id.trim() : "";
-    if (!id || seen.has(id)) continue;
-    const live = liveById.get(id);
-    mergedModels.push(
-      (live ? { ...saved, ...live } : saved) as unknown as ModelDescriptor,
-    );
-    seen.add(id);
-  }
-  for (const model of models) {
-    if (seen.has(model.id)) continue;
-    mergedModels.push(model);
-    seen.add(model.id);
-  }
+  const mergedModels = [...models];
   const configuredDefault =
     typeof connection.config.defaultModel === "string"
       ? connection.config.defaultModel.trim()
@@ -1982,7 +1982,7 @@ async function syncCangyuanConnectionFromCatalog(
   const defaultModel =
     configuredDefault ||
     mergedModels.find((model) => model.isDefault)?.id ||
-    mergedModels[0]!.id ||
+    mergedModels[0]?.id ||
     cangyuanDefaultModelForGroup(group);
   const generatedConnector = cangyuanConnectorForModels(
     group,
@@ -2012,21 +2012,28 @@ async function syncCangyuanConnectionFromCatalog(
   };
   if (JSON.stringify(connection.config) === JSON.stringify(config))
     return connection;
-  return getRepository().saveConnection({
-    id: connection.id,
-    name: connection.name,
-    provider: connection.provider,
-    encryptedSecret: connection.encryptedSecret,
-    config,
-  });
+  return getRepository().saveConnection(
+    {
+      id: connection.id,
+      name: connection.name,
+      provider: connection.provider,
+      encryptedSecret: connection.encryptedSecret,
+      config,
+    },
+    { expected: connection },
+  );
 }
 
 export async function syncCangyuanConnection(id: string) {
   const repository = getRepository();
-  const [connection, catalog] = await Promise.all([
-    repository.getConnection(id),
-    loadCangyuanCatalog(),
-  ]);
+  const connection = await repository.getConnection(id);
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    !matchesSupplierTemplate(connection)
+  )
+    return connection;
+  const catalog = await loadCangyuanCatalog();
   return syncCangyuanConnectionFromCatalog(connection, catalog);
 }
 

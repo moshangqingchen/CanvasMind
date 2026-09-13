@@ -14,6 +14,9 @@ import type {
   NodeRunRecord,
   NodeRunUpdateOptions,
   ProviderConnectionRecord,
+  SupplierRecord,
+  SupplierCommit,
+  ConnectionSaveOptions,
   WebhookEventRecord,
   WorkflowRunRecord,
   WorkflowStatus,
@@ -361,8 +364,25 @@ export class FileRepository extends MemoryRepository {
 
   override async saveConnection(
     input: Omit<ProviderConnectionRecord, "createdAt" | "updatedAt">,
+    options: ConnectionSaveOptions = {},
   ): Promise<ProviderConnectionRecord> {
-    const result = await super.saveConnection(input);
+    const result = await super.saveConnection(input, options);
+    await this.persist();
+    return result;
+  }
+
+  override async saveSupplier(
+    input: Omit<SupplierRecord, "createdAt" | "updatedAt">,
+  ): Promise<SupplierRecord> {
+    const result = await super.saveSupplier(input);
+    await this.persist();
+    return result;
+  }
+
+  override async commitSupplier(
+    input: SupplierCommit,
+  ): Promise<SupplierRecord> {
+    const result = await super.commitSupplier(input);
     await this.persist();
     return result;
   }
@@ -398,8 +418,9 @@ export class FileRepository extends MemoryRepository {
     patch: Partial<
       Pick<DirectorSessionRecord, "title" | "metadata" | "profileId">
     >,
+    options?: { expectedTurnId: string | null },
   ): Promise<DirectorSessionRecord | null> {
-    const result = await super.updateDirectorSession(id, patch);
+    const result = await super.updateDirectorSession(id, patch, options);
     if (result) await this.persist();
     return result;
   }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchModels, getCachedModels, refreshModels } from "./client-api";
+import { fetchModels, invalidateModelCache, getCachedModels, refreshModels } from "./client-api";
 
 describe("fetchModels cache", () => {
   afterEach(() => {
@@ -88,4 +88,16 @@ describe("fetchModels cache", () => {
     ).resolves.toEqual(models);
     expect(getCachedModels("stale-refresh-connection")).toEqual(models);
   });
+});
+
+it("never repopulates the cache with a request invalidated by a connection change", async () => {
+  let finish!: (r: Response) => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finish = resolve; })));
+  const pending = fetchModels("late-connection");
+  const rejected = expect(pending).rejects.toThrow("连接已改变");
+  invalidateModelCache("late-connection");
+  finish(Response.json([{ id: "old-model", name: "Old", operations: [] }]));
+  await rejected;
+  expect(getCachedModels("late-connection")).toBeUndefined();
+  vi.unstubAllGlobals();
 });

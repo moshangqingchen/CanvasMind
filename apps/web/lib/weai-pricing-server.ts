@@ -1,4 +1,4 @@
-import { weAIFetch } from "@super-canvas/providers";
+import { supplierDirectoryBase, weAIFetch } from "@super-canvas/providers";
 import {
   WEAI_ADOBE_PER_REQUEST_GROUP,
   WEAI_ADOBE_PER_REQUEST_URL_GROUP,
@@ -22,8 +22,8 @@ interface PricingCacheEntry {
   readonly groups: ReadonlyMap<string, WeAiLiveGroupPricing>;
 }
 
-let cachedPricing: PricingCacheEntry | undefined;
-let pendingPricing: Promise<PricingCacheEntry> | undefined;
+const cachedPricing = new Map<string, PricingCacheEntry>();
+const pendingPricing = new Map<string, Promise<PricingCacheEntry>>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -103,7 +103,9 @@ function modelPlazaModelPricing(
         ? { output: rounded(finiteNumber(pricing.output_price)! * scale) }
         : {}),
       ...(finiteNumber(pricing.cache_read_price) !== undefined
-        ? { cacheRead: rounded(finiteNumber(pricing.cache_read_price)! * scale) }
+        ? {
+            cacheRead: rounded(finiteNumber(pricing.cache_read_price)! * scale),
+          }
         : {}),
     };
   }
@@ -132,7 +134,13 @@ function modelPlazaModelPricing(
     tiers:
       tiers.length > 0
         ? tiers
-        : [{ id: "request", label: "单次", price: rounded(single! * requestScale) }],
+        : [
+            {
+              id: "request",
+              label: "单次",
+              price: rounded(single! * requestScale),
+            },
+          ],
   };
 }
 
@@ -162,13 +170,13 @@ export function parseWeAiModelPlazaPricing(
   checkedAt = new Date().toISOString(),
   sourceUrl = `https://asian-acc.we-token.cc${MODEL_PLAZA_PATH}`,
 ): ReadonlyMap<string, WeAiLiveGroupPricing> {
-  const envelope = isRecord(payload) && isRecord(payload.data) ? payload.data : payload;
+  const envelope =
+    isRecord(payload) && isRecord(payload.data) ? payload.data : payload;
   if (!isRecord(envelope) || !Array.isArray(envelope.groups)) return new Map();
   const result = new Map<string, WeAiLiveGroupPricing>();
   for (const rawGroup of envelope.groups) {
     if (!isRecord(rawGroup)) continue;
-    const rawId =
-      stringValue(rawGroup.name) ?? stringValue(rawGroup.id) ?? "";
+    const rawId = stringValue(rawGroup.name) ?? stringValue(rawGroup.id) ?? "";
     const groupId = canonicalGroupId(rawId);
     if (!groupId) continue;
     const models: Record<string, WeAiLiveModelPricing> = {};
@@ -328,22 +336,19 @@ async function responseText(response: Response): Promise<string> {
 }
 
 function originFromBaseUrl(baseUrl: unknown): string {
-  try {
-    const parsed = new URL(typeof baseUrl === "string" ? baseUrl : "");
-    if (parsed.hostname === "we-token.cc" || parsed.hostname.endsWith(".we-token.cc"))
-      return parsed.origin;
-  } catch {
-    // Use the official Asia endpoint below.
-  }
-  return "https://asian-acc.we-token.cc";
+  return supplierDirectoryBase(
+    typeof baseUrl === "string" ? baseUrl : "https://asian-acc.we-token.cc",
+  );
 }
-
 async function fetchPricing(baseUrl: unknown): Promise<PricingCacheEntry> {
   const checkedAt = new Date().toISOString();
   const origin = originFromBaseUrl(baseUrl);
   const plazaUrl = `${origin}${MODEL_PLAZA_PATH}`;
   try {
-    const token = process.env.WEAI_WEBSITE_ACCESS_TOKEN?.trim();
+    const token =
+      origin === "https://asian-acc.we-token.cc"
+        ? process.env.WEAI_WEBSITE_ACCESS_TOKEN?.trim()
+        : undefined;
     const response = await weAIFetch(plazaUrl, {
       headers: token ? { authorization: `Bearer ${token}` } : undefined,
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -358,6 +363,8 @@ async function fetchPricing(baseUrl: unknown): Promise<PricingCacheEntry> {
     // official guide below remains an authoritative, public live source.
   }
 
+  if (origin !== "https://asian-acc.we-token.cc")
+    throw new Error("当前地址未公开价格，不使用官方价格代替");
   const docsResponse = await weAIFetch(OFFICIAL_IMAGE_DOC_URL, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     cache: "no-store",
@@ -366,7 +373,8 @@ async function fetchPricing(baseUrl: unknown): Promise<PricingCacheEntry> {
     await responseText(docsResponse),
     checkedAt,
   );
-  if (groups.size === 0) throw new Error("We-AI official pricing was not found");
+  if (groups.size === 0)
+    throw new Error("We-AI official pricing was not found");
   return { expiresAt: Date.now() + CACHE_TTL_MS, groups };
 }
 
@@ -374,20 +382,27 @@ async function fetchPricing(baseUrl: unknown): Promise<PricingCacheEntry> {
 export async function liveWeAiPricingForGroup(
   groupId: unknown,
   baseUrl: unknown,
+  identity = "public",
 ): Promise<WeAiLiveGroupPricing | undefined> {
-  const id = typeof groupId === "string" ? canonicalGroupId(groupId) : undefined;
+  const id =
+    typeof groupId === "string" ? canonicalGroupId(groupId) : undefined;
   if (!id) return undefined;
-  if (cachedPricing && cachedPricing.expiresAt > Date.now())
-    return cachedPricing.groups.get(id);
-  pendingPricing ??= fetchPricing(baseUrl).finally(() => {
-    pendingPricing = undefined;
-  });
-  const fresh = await pendingPricing;
-  cachedPricing = fresh;
+  const key = `${originFromBaseUrl(baseUrl)}|${identity}`;
+  const cached = cachedPricing.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.groups.get(id);
+  let pending = pendingPricing.get(key);
+  if (!pending) {
+    pending = fetchPricing(baseUrl).finally(() => {
+      pendingPricing.delete(key);
+    });
+    pendingPricing.set(key, pending);
+  }
+  const fresh = await pending;
+  cachedPricing.set(key, fresh);
   return fresh.groups.get(id);
 }
 
 export function resetWeAiPricingCacheForTests(): void {
-  cachedPricing = undefined;
-  pendingPricing = undefined;
+  cachedPricing.clear();
+  pendingPricing.clear();
 }

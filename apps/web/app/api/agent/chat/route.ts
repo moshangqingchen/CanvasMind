@@ -182,12 +182,12 @@ function upstreamError(
   const suffix = detail ? ` 上游原因：${detail}` : "";
   if (status === 401 || status === 403)
     return {
-      message: `导演台 API 身份验证失败，请检查当前对话群组自己的 API Key 和模型权限。${suffix}`,
+      message: `智能体 API 身份验证失败，请检查当前对话群组自己的 API Key 和模型权限。${suffix}`,
       status: 401,
     };
   if (status === 429)
     return {
-      message: `导演台对话请求过于频繁或已达到当前 Key 的用量限制，请稍后重试。${suffix}`,
+      message: `智能体对话请求过于频繁或已达到当前 Key 的用量限制，请稍后重试。${suffix}`,
       status: 429,
     };
   if (status >= 500)
@@ -270,9 +270,9 @@ export async function POST(request: Request) {
     return jsonError("项目不存在", 404);
 
   const connection = await repository.getConnection(parsed.data.connectionId);
-  if (!connection) return jsonError("导演台 API 连接不存在", 404);
+  if (!connection) return jsonError("智能体 API 连接不存在", 404);
   if (connection.config.usage !== "agent")
-    return jsonError("所选连接不是右侧导演台的独立对话连接", 422);
+    return jsonError("所选连接不是智能体的独立对话连接", 422);
 
   const isCangyuan = connection.config.preset === CANGYUAN_IMAGE_PRESET_ID;
 
@@ -280,19 +280,19 @@ export async function POST(request: Request) {
     typeof connection.config.modelGroup === "string"
       ? connection.config.modelGroup.trim()
       : "";
-  if (!groupId) return jsonError("导演台连接缺少模型群组", 422);
+  if (!groupId) return jsonError("智能体连接缺少模型群组", 422);
 
   if (isCangyuan) {
     const catalog = await loadCangyuanCatalog();
     const group = catalog.marketplaceGroups.find((item) => item.id === groupId);
     if (!group && catalog.source === "fallback")
-      return jsonError("沧元实时模型目录暂不可用，无法安全校验导演台模型", 503);
+      return jsonError("沧元实时模型目录暂不可用，无法安全校验智能体模型", 503);
     const validModel = group?.models.some(
       (item) => item.id === parsed.data.model && item.capability === "chat",
     );
     if (!validModel)
       return jsonError(
-        "所选模型不是当前导演台群组中的对话模型，请刷新后重选",
+        "所选模型不是当前智能体群组中的对话模型，请刷新后重选",
         422,
       );
   } else {
@@ -308,7 +308,7 @@ export async function POST(request: Request) {
   const apiBaseUrl = isCangyuan
     ? joinUrl(CANGYUAN_IMAGE_BASE_URL, "/v1")
     : configuredBaseUrl;
-  if (!apiBaseUrl) return jsonError("导演台连接缺少 API Base URL", 422);
+  if (!apiBaseUrl) return jsonError("智能体连接缺少 API Base URL", 422);
   const chatEndpoint = joinUrl(apiBaseUrl, "/chat/completions");
   const responsesEndpoint = joinUrl(apiBaseUrl, "/responses");
   const providerName =
@@ -320,7 +320,7 @@ export async function POST(request: Request) {
         : connection.name;
 
   if (!connection.encryptedSecret)
-    return jsonError("当前导演台群组尚未配置 API Key", 409);
+    return jsonError("当前智能体群组尚未配置 API Key", 409);
   let apiKey: string;
   try {
     apiKey = decryptSecret(
@@ -329,7 +329,7 @@ export async function POST(request: Request) {
     );
   } catch {
     return jsonError(
-      "当前导演台群组的旧密文无法解密，请在 API 设置中重新填写该群组自己的 Key。",
+      "当前智能体群组的旧密文无法解密，请在 API 设置中重新填写该群组自己的 Key。",
       409,
     );
   }
@@ -338,7 +338,7 @@ export async function POST(request: Request) {
     {
       role: "system",
       content:
-        "你是超级画布右侧导演台的创作智能体。请用中文清晰回答，协助分析创作意图、改写提示词、规划镜头和完善视觉方案。",
+        "你是超级画布的创作智能体。请用中文清晰回答，协助分析创作意图、改写提示词、规划镜头和完善视觉方案。",
     },
     ...(parsed.data.context ? [contextMessage(parsed.data.context)] : []),
     ...parsed.data.messages,
@@ -441,7 +441,11 @@ export async function POST(request: Request) {
         : "";
       if (userContent) {
         try {
-          await appendProjectChatTurn(parsed.data.canvasId, userContent, content);
+          await appendProjectChatTurn(
+            parsed.data.canvasId,
+            userContent,
+            content,
+          );
         } catch (error) {
           console.error(
             "[super-canvas] unable to persist project chat",
@@ -458,7 +462,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError")
-      return jsonError("导演台对话请求超时，请稍后重试", 504);
+      return jsonError("智能体对话请求超时，请稍后重试", 504);
     return jsonError(`无法连接${providerName}接口，请检查网络后重试`, 502);
   } finally {
     clearTimeout(timeout);

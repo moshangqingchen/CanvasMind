@@ -11,6 +11,7 @@ import type {
 import StarterKit from "@tiptap/starter-kit";
 import type { PromptPart } from "@super-canvas/core";
 import type { AssetView } from "./types";
+import { registerPendingEditorEdit } from "../lib/pending-editor-edits";
 
 interface PromptEditorProps {
   parts: PromptPart[];
@@ -291,7 +292,9 @@ export function PromptEditor({
     });
     editorRef.current = editor;
     editor.mount(container);
+    const unregisterPendingEdit = registerPendingEditorEdit(flushPendingParts);
     return () => {
+      unregisterPendingEdit();
       flushPendingParts();
       editor.destroy();
       editorRef.current = null;

@@ -1,5 +1,5 @@
-import { CanvasApp } from "../components/canvas-app";
+import { WorkspaceHome } from "../components/workspace-home";
 
 export default function Page() {
-  return <CanvasApp />;
+  return <WorkspaceHome />;
 }

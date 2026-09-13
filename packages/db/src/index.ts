@@ -1,5 +1,6 @@
 export * from "./schema.js";
 export * from "./types.js";
+export * from "./supplier-state.js";
 export * from "./memory.js";
 export * from "./file.js";
 export * from "./postgres.js";

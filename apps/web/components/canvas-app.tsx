@@ -1,5 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
+import { trackCanvasSave, waitForCanvasSaves } from "../lib/canvas-save-barrier";
+import { flushPendingEditorEdits } from "../lib/pending-editor-edits";
 import {
   useCallback,
   useEffect,
@@ -32,7 +36,9 @@ import {
 } from "@xyflow/react";
 import {
   Archive,
+  ArrowLeft,
   ArrowUpRight,
+  Bot,
   CircleAlert,
   CircleCheck,
   Circle,
@@ -125,7 +131,10 @@ import {
   isCangyuanImagePreset,
 } from "../lib/provider-presets";
 import { chentuFallbackImageDescriptor } from "../lib/chentu-catalog";
-import { CHENTU_PRESET_ID } from "../lib/chentu-presets";
+import {
+  CHENTU_PRESET_ID,
+  isChentuOfficialImageGroup,
+} from "../lib/chentu-presets";
 import {
   FRIMODEL_PRESET_ID,
   friModelFallbackImageDescriptor,
@@ -228,7 +237,8 @@ import {
   SuperDirectorPanel,
   type AgentDraftRequest,
 } from "./super-director-panel";
-import { AgentPanel } from "./agent-panel";
+import { AgentPanel } from "./creative-agent-panel";
+import { AgentCanvasContext, type AgentCanvasBridge } from "./agent-canvas-context";
 import { CanvasSaveConflictModal } from "./canvas-save-conflict-modal";
 import { DrawingLayer } from "./drawing-layer";
 import { NodeParameterFields } from "./node-parameter-fields";
@@ -271,7 +281,8 @@ type CanvasInitializationState =
   | { status: "ready" }
   | { status: "error"; message: string };
 
-type InspectorMode = "node" | "agent";
+type InspectorMode = "node" | "agent" | "chat";
+type LeftSidebarMode = "projects" | "agent";
 
 const SAVE_STATE_LABEL: Record<SaveState, string> = {
   saved: "已保存",
@@ -306,7 +317,7 @@ const GENERATED_RESULT_INPUT_HANDLE = "generated";
 const GENERATED_RESULT_EDGE_PREFIX = "edge-generated-";
 const MATERIAL_DROP_LEASE_STORAGE_KEY = "super-canvas:material-drop-consumer";
 const INSPECTOR_MIN_WIDTH = 300;
-const INSPECTOR_DEFAULT_WIDTH = 300;
+const INSPECTOR_DEFAULT_WIDTH = 360;
 const INSPECTOR_MAX_WIDTH = 720;
 const INSPECTOR_WIDTH_STORAGE_KEY = "super-canvas:inspector-width";
 
@@ -372,6 +383,7 @@ interface CanvasSaveRequest {
   keepalive?: boolean;
   expectedRevision?: number;
   pendingNodeConfigurations?: PendingNodeConfiguration[];
+  draftVersion?: number;
 }
 
 interface CanvasSaveConflictState {
@@ -1330,6 +1342,7 @@ function connectionRequiresAuthoritativeModelScan(
   connection: ProviderConnectionView,
 ): boolean {
   return (
+    Boolean(connection.config.supplierId) ||
     verifiedWeAiModelDescriptorsForConnection(connection).length > 0 ||
     connection.config.preset === "cyberafei-api" ||
     connection.config.preset === CHENTU_PRESET_ID ||
@@ -1340,6 +1353,8 @@ function connectionRequiresAuthoritativeModelScan(
 function modelDescriptorsForConnection(
   connection: ProviderConnectionView,
 ): ModelDescriptor[] {
+  if (connection.config.supplierArchived === true || ["empty", "unauthorized"].includes(String(connection.config.modelScanStatus))) return [];
+  if (Array.isArray(connection.config.modelCatalogModels)) return connection.config.modelCatalogModels as unknown as ModelDescriptor[];
   if (
     connection.provider === "weai" &&
     providerConnectionSupplierKey(connection) === "weai"
@@ -1561,12 +1576,17 @@ export function modelDiscoveryMigrationPatch(
   data: CanvasNodeData,
   provider: string,
   model: ModelDescriptor,
+  connectedInputIds: ReadonlySet<string> = new Set(),
 ): Partial<CanvasNodeData> | null {
-  const normalizedInputs = generationInputsForModel(
+  let normalizedInputs = generationInputsForModel(
     nodeType,
     model,
     data.inputs,
   );
+  // Discovery may add ports, but must not silently disconnect the user's
+  // references. Unsupported linked inputs remain visible to run validation.
+  const preserved = (data.inputs ?? []).filter((input) => connectedInputIds.has(input.id) && !normalizedInputs?.some((next) => next.id === input.id));
+  if (preserved.length) normalizedInputs = [...(normalizedInputs ?? []), ...preserved];
   if (data.model === model.id && data.provider === provider) {
     return generationInputsEqual(data.inputs, normalizedInputs)
       ? null
@@ -1774,7 +1794,7 @@ function modelOptionsForNode(
       return [...compatible];
   }
   if (requiresAuthoritativeScan) {
-    if (hasSavedWeAiScan) return configured;
+    if (hasSavedWeAiScan || (connection?.config.modelScanStatus === "live" && Array.isArray(connection.config.modelCatalogModels))) return configured;
     const keyedImageScanPending = Boolean(
       connection &&
       (connection.config.preset === CHENTU_PRESET_ID ||
@@ -1847,7 +1867,7 @@ function normalizeGenerationNodeForRun(
       supplier === "frimodel" ||
       supplier === "cyberafei" ||
       supplier === "mikoto" ||
-      (supplier === "chentu" && group !== "image2官key");
+      (supplier === "chentu" && !isChentuOfficialImageGroup(group));
     if (singleOutput) delete normalized.n;
   }
   if (parameterValuesEqual(current, normalized)) return node;
@@ -2028,6 +2048,15 @@ function ProjectSidebar({
   projects,
   activeProjectId,
   mobileOpen = false,
+  leftMode,
+  onLeftModeChange,
+  connections,
+  assets,
+  canvasId,
+  selectedNode,
+  selectedPrompt,
+  draftRequest,
+  onManageApi,
   onSelectProject,
   onCreateProject,
   onCleanupProject,
@@ -2038,6 +2067,15 @@ function ProjectSidebar({
   projects: ProjectSummaryView[];
   activeProjectId: string;
   mobileOpen?: boolean;
+  leftMode: LeftSidebarMode;
+  onLeftModeChange: (mode: LeftSidebarMode) => void;
+  connections: ProviderConnectionView[];
+  assets: AssetView[];
+  canvasId: string;
+  selectedNode: CanvasNode | null;
+  selectedPrompt: string;
+  draftRequest: AgentDraftRequest | null;
+  onManageApi: (group?: string) => void;
   onSelectProject: (projectId: string) => void;
   onCreateProject: (title: string) => Promise<void>;
   onCleanupProject: (projectId: string) => Promise<void>;
@@ -2085,28 +2123,63 @@ function ProjectSidebar({
   return (
     <>
       <aside
-        className={`project-sidebar ${mobileOpen ? "mobile-open" : ""}`}
-        aria-label="项目对话"
+        className={`project-sidebar ${mobileOpen ? "mobile-open" : ""} ${leftMode === "agent" ? "is-agent" : ""}`}
+        aria-label={leftMode === "agent" ? "左侧智能体" : "项目对话"}
       >
       <div className="project-sidebar-head">
-        <div>
-          <strong>项目对话</strong>
-          <small>{projects.length} 个项目</small>
+        <div className="project-sidebar-mode-tabs" role="tablist" aria-label="左侧面板">
+          <button
+            className={`project-sidebar-mode-tab ${leftMode === "projects" ? "active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={leftMode === "projects"}
+            onClick={() => onLeftModeChange("projects")}
+          >
+            <MessageSquarePlus size={14} />
+            <span>项目</span>
+            <small>{projects.length}</small>
+          </button>
+          <button
+            className={`project-sidebar-mode-tab ${leftMode === "agent" ? "active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={leftMode === "agent"}
+            onClick={() => onLeftModeChange("agent")}
+          >
+            <Bot size={14} />
+            <span>智能体</span>
+          </button>
         </div>
-        <button
-          className="icon-button"
-          type="button"
-          onClick={() => {
-            setCreating((current) => !current);
-            setError("");
-          }}
-          aria-label="新建对话"
-          title="新建项目对话"
-        >
-          <MessageSquarePlus size={16} />
-        </button>
+        {leftMode === "projects" ? (
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => {
+              setCreating((current) => !current);
+              setError("");
+            }}
+            aria-label="新建对话"
+            title="新建项目对话"
+          >
+            <MessageSquarePlus size={16} />
+          </button>
+        ) : null}
       </div>
-      {creating ? (
+      {leftMode === "agent" ? (
+        <div className="project-sidebar-agent">
+          <AgentPanel
+            connections={connections}
+            assets={assets}
+            canvasId={canvasId}
+            selectedNode={selectedNode}
+            selectedPrompt={selectedPrompt}
+            draftRequest={draftRequest}
+            placement="left"
+            onManageApi={onManageApi}
+          />
+        </div>
+      ) : null}
+      {leftMode === "projects" && creating ? (
         <form
           className="project-create-form"
           onSubmit={(event) => {
@@ -2137,7 +2210,7 @@ function ProjectSidebar({
           </div>
         </form>
       ) : null}
-      <div className="project-list" role="list">
+      {leftMode === "projects" ? <div className="project-list" role="list">
         {projects.map((project) => (
           <div
             className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
@@ -2168,8 +2241,8 @@ function ProjectSidebar({
             </button>
           </div>
         ))}
-      </div>
-      {contextMenu ? (
+      </div> : null}
+      {leftMode === "projects" && contextMenu ? (
         <>
           <button
             className="project-context-menu-backdrop"
@@ -2226,8 +2299,7 @@ function ProjectSidebar({
               className="danger"
               type="button"
               role="menuitem"
-              disabled={busy || projects.length <= 1}
-              title={projects.length <= 1 ? "至少需要保留一个项目" : undefined}
+              disabled={busy}
               onClick={() => {
                 const project = contextMenu.project;
                 setContextMenu(null);
@@ -2240,7 +2312,7 @@ function ProjectSidebar({
           </div>
         </>
       ) : null}
-      <div className="project-sidebar-foot">
+      {leftMode === "projects" ? <div className="project-sidebar-foot">
         <button
           className="button danger small"
           type="button"
@@ -2253,7 +2325,7 @@ function ProjectSidebar({
           <Trash2 size={13} /> 清理本项目草稿
         </button>
         {error ? <span className="field-note" role="alert">{error}</span> : null}
-      </div>
+      </div> : null}
       </aside>
       {dialogAction ? (
         <ProjectActionDialog
@@ -2283,6 +2355,9 @@ function CanvasShell({
   onRenameProject,
   onDeleteProject,
 }: CanvasShellProps) {
+  const router = useRouter();
+  const [leaving, setLeaving] = useState(false);
+  const [draftStorageError, setDraftStorageError] = useState(false);
   const [canvasId, setCanvasId] = useState<string | null>(projectId);
   const [initialization, setInitialization] =
     useState<CanvasInitializationState>({ status: "loading" });
@@ -2346,6 +2421,8 @@ function CanvasShell({
   const [previewReturnsToHistory, setPreviewReturnsToHistory] = useState(false);
   const [agentDraftRequest, setAgentDraftRequest] =
     useState<AgentDraftRequest | null>(null);
+  const [leftSidebarMode, setLeftSidebarMode] =
+    useState<LeftSidebarMode>("projects");
   const [mobileLibraryOpen, setMobileLibraryOpen] = useState(false);
   const [mobileProjectsOpen, setMobileProjectsOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
@@ -2375,7 +2452,7 @@ function CanvasShell({
   const [dropActive, setDropActive] = useState(false);
   const [canvasMode, setCanvasMode] = useState<CanvasInteractionMode>("pan");
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("freehand");
-  const [brushColor, setBrushColor] = useState("#f4f1ff");
+  const [brushColor, setBrushColor] = useState("#4f46e5");
   const [brushSize, setBrushSize] = useState(8);
   const [activeStroke, setActiveStroke] = useState<CanvasDrawingStroke | null>(
     null,
@@ -2473,9 +2550,38 @@ function CanvasShell({
     lastAt: number;
   }>({ past: [], future: [], lastAt: 0 });
   const saveQueue = useRef<LatestTaskQueue<CanvasSaveRequest> | null>(null);
+  const instanceActive = useRef(true);
+  const saveSuspended = useRef(false);
+  const [agentMutation, setAgentMutation] = useState(false);
+  const agentMutationRef = useRef(false);
+  const draftVersion = useRef(0);
   const activeProjectIdRef = useRef(projectId);
+  useEffect(() => {
+    instanceActive.current = true;
+    return () => {
+      // Prompt editors buffer keystrokes briefly. Flush while their callbacks
+      // still belong to this canvas, before allowing another instance to load.
+      flushPendingEditorEdits();
+      instanceActive.current = false;
+    };
+  }, []);
+  const rememberDraft = useCallback((request: CanvasSaveRequest): CanvasSaveRequest => {
+    if (canvasRevision.current === null) return request;
+    const version = request.draftVersion ?? Math.max(Date.now(), draftVersion.current + 1);
+    draftVersion.current = version;
+    const next = { ...request, draftVersion: version };
+    void writeCanvasDraft({
+      canvasId: request.canvasId,
+      title: request.title,
+      graph: request.graph,
+      baseRevision: canvasRevision.current,
+      version,
+    }).catch(() => setDraftStorageError(true));
+    return next;
+  }, []);
   const persistQueuedCanvasSave = useCallback(
     async (request: CanvasSaveRequest) => {
+      if (saveSuspended.current) return;
       const existingConflict = saveConflictRef.current;
       if (existingConflict) {
         conflictedSave.current = request;
@@ -2494,10 +2600,17 @@ function CanvasShell({
           ...request,
           expectedRevision,
         });
+        if (request.canvasId === activeProjectIdRef.current) {
+          // Edits created while IDB acknowledgement is in progress must use
+          // the revision the server has already committed.
+          canvasRevision.current = saved.revision;
+          setCanvasRevisionValue(saved.revision);
+        }
+        if (request.draftVersion !== undefined) {
+          await acknowledgeCanvasDraft(request.canvasId, request.draftVersion, saved.revision)
+            .catch(() => setDraftStorageError(true));
+        }
         clearPersistedNodeConfigurations(request.pendingNodeConfigurations);
-        if (request.canvasId !== activeProjectIdRef.current) return;
-        canvasRevision.current = saved.revision;
-        setCanvasRevisionValue(saved.revision);
       } catch (error) {
         if (error instanceof CanvasSaveConflictError) {
           const conflict: CanvasSaveConflictState = {
@@ -2862,6 +2975,10 @@ function CanvasShell({
         // unhandled rejection while the canvas is loading.
         void assetsPromise.catch(() => undefined);
         void connectionsPromise.catch(() => undefined);
+        // A previous instance of this canvas may still be finishing its
+        // pagehide save. Read both server and draft only after that settles.
+        await waitForCanvasSaves(projectId);
+        if (!active || initializationSettled) return;
         const canvasResult = await Promise.allSettled([fetchCanvas(projectId)]);
         if (!active || initializationSettled) return;
 
@@ -2876,6 +2993,15 @@ function CanvasShell({
         if (!canvas) {
           throw new Error("无法读取画布");
         }
+        const localDraft = await readCanvasDraft(canvas.id).catch(() => {
+          if (active) setDraftStorageError(true);
+          throw new Error("无法读取浏览器中的画布草稿。为保护未保存内容，已暂停加载，请重新加载后重试。");
+        });
+        if (!active || initializationSettled) return;
+        const recovery = canvasDraftRecovery(localDraft, canvas);
+        const recoveredDraft = recovery === "recover" || recovery === "conflict" ? localDraft : undefined;
+        if (localDraft) draftVersion.current = localDraft.version;
+        if (recovery === "already-saved") void discardCanvasDraft(canvas.id).catch(() => undefined);
 
         // Provider connections are optional during the first paint. The
         // migration only affects legacy model IDs and can run when the catalog
@@ -2888,10 +3014,10 @@ function CanvasShell({
         setSaveConflict(null);
         setSaveConflictOpen(false);
         setCanvasId(canvas.id);
-        setTitle(canvas.title);
+        setTitle(recoveredDraft?.title ?? canvas.title);
         setAssets([]);
         setConnections([]);
-        const graph = canvas.graph;
+        const graph = recoveredDraft?.graph ?? canvas.graph;
         const typedNodes = graph.nodes.map((node) => ({
           ...node,
           type: "workflow" as const,
@@ -2933,6 +3059,20 @@ function CanvasShell({
         initializationSettled = true;
         window.clearTimeout(initializationTimeout);
         setInitialization({ status: "ready" });
+        if (recovery === "conflict" && recoveredDraft) {
+          const conflict = {
+            expectedRevision: recoveredDraft.baseRevision,
+            currentRevision: canvas.revision,
+            message: "已找回本地草稿，但服务器有较新版本，请先处理保存冲突",
+          };
+          canvasRevision.current = recoveredDraft.baseRevision;
+          saveConflictRef.current = conflict;
+          setSaveConflict(conflict);
+          setSaveConflictOpen(true);
+          setSaveState("conflict");
+        } else if (recovery === "recover") {
+          showToast("已恢复上次未完成保存的画布草稿", "success");
+        }
 
         void assetsPromise
           .then((loadedAssets) => {
@@ -2977,11 +3117,11 @@ function CanvasShell({
               );
           });
 
-        if (!canvas.graph.nodes?.length || graphWasReconciled) {
+        if (recovery !== "conflict" && (recoveredDraft || graphWasReconciled)) {
           const initialSaveAttempt = (latestSaveAttempt.current += 1);
-          pendingSave.current = {
+          pendingSave.current = rememberDraft({
             canvasId: canvas.id,
-            title: canvas.title,
+            title: recoveredDraft?.title ?? canvas.title,
             graph: serializableGraph(
               graphNodes,
               graphEdges,
@@ -2989,7 +3129,7 @@ function CanvasShell({
               graphDrawings,
             ),
             pendingNodeConfigurations,
-          };
+          });
           setSaveState("pending");
           saveTimer.current = setTimeout(() => {
             saveTimer.current = null;
@@ -2998,8 +3138,7 @@ function CanvasShell({
             pendingSave.current = null;
             if (!request) return;
             setSaveState("saving");
-            void saveQueue.current
-              ?.enqueue(request)
+            void trackCanvasSave(request.canvasId, saveQueue.current!.enqueue(request))
               .then(() => {
                 if (active && initialSaveAttempt === latestSaveAttempt.current)
                   setSaveState((current) =>
@@ -3037,7 +3176,8 @@ function CanvasShell({
       window.clearTimeout(initializationTimeout);
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
-      pendingSave.current = null;
+      // The pagehide/unmount flush owns pendingSave. Clearing it here would
+      // lose edits made within the autosave debounce before navigation.
       for (const stream of streams.values()) stream.close();
       streams.clear();
       setBusy(false);
@@ -3047,10 +3187,12 @@ function CanvasShell({
 
   const saveRequest = useCallback(
     async (request: CanvasSaveRequest, reportError = true) => {
+      if (saveSuspended.current) return;
+      const durableRequest = request.draftVersion === undefined ? rememberDraft(request) : request;
       const attempt = (latestSaveAttempt.current += 1);
       setSaveState("saving");
       try {
-        await saveQueue.current?.enqueue(request);
+        await trackCanvasSave(request.canvasId, saveQueue.current!.enqueue(durableRequest));
         // Only the newest request may publish completion. An older in-flight
         // save can finish after a manual flush has already queued newer data.
         if (attempt === latestSaveAttempt.current)
@@ -3072,7 +3214,7 @@ function CanvasShell({
         throw error;
       }
     },
-    [showToast],
+    [showToast, rememberDraft],
   );
 
   const saveGraph = useCallback(
@@ -3084,6 +3226,7 @@ function CanvasShell({
       nextDrawings = useCanvasStore.getState().drawings,
       pendingNodeConfigurations?: PendingNodeConfiguration[],
     ) => {
+      if (!instanceActive.current || saveSuspended.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = null;
       pendingSave.current = null;
@@ -3098,9 +3241,10 @@ function CanvasShell({
         title: useCanvasStore.getState().title,
         pendingNodeConfigurations,
       };
+      const durableRequest = rememberDraft(request);
       const conflict = saveConflictRef.current;
       if (conflict) {
-        conflictedSave.current = request;
+        conflictedSave.current = durableRequest;
         latestSaveAttempt.current += 1;
         setSaveState("conflict");
         throw new CanvasSaveConflictError(
@@ -3108,9 +3252,9 @@ function CanvasShell({
           conflict.message,
         );
       }
-      await saveRequest(request);
+      await saveRequest(durableRequest);
     },
-    [saveRequest],
+    [saveRequest, rememberDraft],
   );
 
   const scheduleSave = useCallback(
@@ -3120,7 +3264,7 @@ function CanvasShell({
       nextViewport = useCanvasStore.getState().viewport,
       nextDrawings = useCanvasStore.getState().drawings,
     ) => {
-      if (!canvasId) return;
+      if (!instanceActive.current || !canvasId || saveSuspended.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       latestSaveAttempt.current += 1;
       const request: CanvasSaveRequest = {
@@ -3133,13 +3277,14 @@ function CanvasShell({
         ),
         title: useCanvasStore.getState().title,
       };
+      const durableRequest = rememberDraft(request);
       if (saveConflictRef.current) {
         pendingSave.current = null;
-        conflictedSave.current = request;
+        conflictedSave.current = durableRequest;
         setSaveState("conflict");
         return;
       }
-      pendingSave.current = request;
+      pendingSave.current = durableRequest;
       setSaveState("pending");
       saveTimer.current = setTimeout(() => {
         saveTimer.current = null;
@@ -3148,12 +3293,13 @@ function CanvasShell({
         if (request) void saveRequest(request).catch(() => undefined);
       }, 650);
     },
-    [canvasId, saveRequest],
+    [canvasId, saveRequest, rememberDraft],
   );
 
   /** Flushes the debounced autosave immediately (Ctrl/Cmd+S, project menu). */
   const saveNow = useCallback(async () => {
     if (!canvasId) return;
+    flushPendingEditorEdits();
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -3168,6 +3314,19 @@ function CanvasShell({
       state.drawings,
     );
   }, [canvasId, saveGraph]);
+
+  const leaveCanvas = useCallback(async (destination: () => void | Promise<void>) => {
+    if (leaving || initialization.status !== "ready") return;
+    setLeaving(true);
+    try {
+      await saveNow();
+      await destination();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "画布尚未保存，请重试", "error");
+    } finally {
+      setLeaving(false);
+    }
+  }, [initialization.status, leaving, saveNow, showToast]);
 
   const runAppUpdateAction = useCallback(
     async (action: "check" | "download" | "apply" | "defer") => {
@@ -3211,6 +3370,7 @@ function CanvasShell({
 
   useEffect(() => {
     const flushPendingSave = () => {
+      if (instanceActive.current) flushPendingEditorEdits();
       if (saveConflictRef.current) {
         pendingSave.current = null;
         if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -3928,8 +4088,8 @@ function CanvasShell({
         return next;
       });
       setSelectedId(node.id);
-      if (window.matchMedia("(max-width: 1100px)").matches)
-        setMobileInspectorOpen(true);
+      setInspectorMode("node");
+      setMobileInspectorOpen(true);
       setCanvasMenu(null);
       setConnectionMenu(null);
       return node;
@@ -3989,6 +4149,7 @@ function CanvasShell({
   const deleteHistoricalAssets = useCallback(
     async (assetIds: string[]) => {
       const result = await deleteAssets(assetIds);
+      if (!instanceActive.current || saveSuspended.current) return result;
       if (result.deletedIds.length > 0) {
         checkpoint(true);
         const deletedIds = new Set(result.deletedIds);
@@ -4240,6 +4401,7 @@ function CanvasShell({
       patch: Partial<CanvasNodeData>,
       options?: { persistImmediately?: boolean },
     ) => {
+      if (!instanceActive.current || saveSuspended.current) return;
       checkpoint();
       const state = useCanvasStore.getState();
       const next = state.nodes.map((node) =>
@@ -4411,6 +4573,7 @@ function CanvasShell({
 
   const updateMediaAspectRatio = useCallback(
     (nodeId: string, ratio: number) => {
+      if (!instanceActive.current || saveSuspended.current) return;
       if (!Number.isFinite(ratio) || ratio <= 0) return;
       setNodes((current) => {
         let changed = false;
@@ -4448,6 +4611,7 @@ function CanvasShell({
 
   const applyRunSnapshot = useCallback(
     (snapshot: RunSnapshot, pendingRequestId?: string) => {
+      if (!instanceActive.current || saveSuspended.current || snapshot.run.canvasId !== activeProjectIdRef.current) return;
       const rejectedConnections = new Set(
         snapshot.nodes.flatMap((node) =>
           node.request?.provider === "weai" &&
@@ -4762,6 +4926,7 @@ function CanvasShell({
 
   const subscribeToRun = useCallback(
     (runId: string, submissionKey?: string) => {
+      if (!instanceActive.current) return;
       stopRunSubscription(runId);
       setBusy(true);
       const stream = new EventSource(
@@ -5077,13 +5242,18 @@ function CanvasShell({
         const options =
           freshlyScannedModels ??
           modelOptionsForNode(node, connections, connectionModels);
+        const savedConnection = connections.find((item) => item.id === node.data.connectionId);
+        // A pending inventory request must not erase known media restrictions.
+        // This fallback only validates inputs; it never authorizes a model for execution.
         const model =
           modelDescriptorForSavedSelectionOrDefault(
             options,
             node.data.model,
             node.data.parameters as
               Readonly<Record<string, unknown>> | undefined,
-          ) ?? null;
+          ) ?? (savedConnection
+            ? modelDescriptorForSavedSelection(modelDescriptorsForConnection(savedConnection), node.data.model)
+            : null);
         const linked = directLinkedAssetsForNode(
           node.id,
           state.nodes,
@@ -5096,6 +5266,8 @@ function CanvasShell({
           linkedAssetDurationsRef.current,
         );
         if (immediate.length > 0) return `${node.data.label}：${immediate[0]}`;
+        if (savedConnection && connectionRequiresAuthoritativeModelScan(savedConnection) && options.length === 0)
+          return `${node.data.label}：当前连接尚未确认可用模型，请等待扫描完成或刷新模型后重试`;
 
         const needsDuration = linked.filter(
           (asset) =>
@@ -5219,6 +5391,8 @@ function CanvasShell({
           nodeId,
           scope,
         );
+        if (!instanceActive.current) return;
+        flushPendingEditorEdits();
         if (mediaValidationError) {
           showToast(mediaValidationError);
           return;
@@ -5279,6 +5453,7 @@ function CanvasShell({
             graphRef.current = { nodes: pendingNodes, edges: pendingEdges };
           }
           await savePromise;
+          if (!instanceActive.current) return;
           submissionAttempted = true;
           const snapshot = await createRun({
             canvasId,
@@ -5286,6 +5461,7 @@ function CanvasShell({
             ...(nodeId ? { nodeId } : {}),
             scope,
           });
+          if (!instanceActive.current) return;
           applyRunSnapshot(snapshot, requestId);
           if (terminalRunStatuses.has(snapshot.run.status)) {
             void refreshAssets();
@@ -5295,6 +5471,7 @@ function CanvasShell({
             holdSubmissionUntilTerminal = true;
           }
         } catch (error) {
+          if (!instanceActive.current) return;
           const message = error instanceof Error ? error.message : "运行失败";
           const submissionUnknown =
             submissionAttempted &&
@@ -5707,9 +5884,8 @@ function CanvasShell({
       selectionRemains = nextSelectedId !== null;
       return { nodes: nextNodes, selectedId: nextSelectedId };
     });
-    if (window.matchMedia("(max-width: 1100px)").matches) {
-      setMobileInspectorOpen(selectionRemains);
-    }
+    setInspectorMode("node");
+    setMobileInspectorOpen(selectionRemains);
   }, []);
 
   const selectedCanvasNodes = useMemo(
@@ -5884,8 +6060,8 @@ function CanvasShell({
           selected: node.data.canvasGroupId === groupId,
         })),
       });
-      if (window.matchMedia("(max-width: 1100px)").matches)
-        setMobileInspectorOpen(true);
+      setInspectorMode("node");
+      setMobileInspectorOpen(true);
     },
     [],
   );
@@ -5960,6 +6136,7 @@ function CanvasShell({
 
   const applyDirectorPreviewPatch = useCallback(
     (patch: DirectorGraphPatch | null) => {
+      if (!instanceActive.current || saveSuspended.current) return;
       const state = useCanvasStore.getState();
       const previousIds = directorPreviewNodeIdsRef.current;
       const baseNodes = state.nodes.filter((node) => !previousIds.has(node.id));
@@ -6008,7 +6185,8 @@ function CanvasShell({
   );
 
   const applyDirectorApproval = useCallback(
-    async (result: DirectorApproveResult) => {
+    async (result: { canvas: { id: string; title: string; graph: unknown; revision: number }; run?: unknown }) => {
+      if (!instanceActive.current || saveSuspended.current || result.canvas.id !== activeProjectIdRef.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = null;
       pendingSave.current = null;
@@ -6058,6 +6236,32 @@ function CanvasShell({
     },
     [applyRunSnapshot, refreshAssets, subscribeToRun],
   );
+
+  const performAgentAction: AgentCanvasBridge["perform"] = async (request) => {
+    if (!canvasId || agentMutationRef.current || !instanceActive.current) throw new Error("画布正在处理操作");
+    agentMutationRef.current = true;
+    try {
+      flushPendingEditorEdits();
+      if (pendingSave.current || saveConflictRef.current || saveState === "error") await saveNow();
+      await waitForCanvasSaves(canvasId);
+      if (saveConflictRef.current || canvasRevision.current === null) throw new Error("请先处理画布保存冲突");
+      setAgentMutation(true);
+      const result = await request(canvasRevision.current);
+      if (!instanceActive.current) return result;
+      if (result.canvas) {
+        checkpoint(true);
+        await applyDirectorApproval({ canvas: result.canvas, run: result.run });
+        await acknowledgeCanvasDraft(canvasId, draftVersion.current, result.canvas.revision);
+      } else if (result.run?.run.id) {
+        applyRunSnapshot(result.run, result.run.run.clientRequestId);
+        subscribeToRun(result.run.run.id);
+      }
+      return result;
+    } finally {
+      agentMutationRef.current = false;
+      if (instanceActive.current) setAgentMutation(false);
+    }
+  };
 
   const renderedNodes = useMemo(() => {
     const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
@@ -6697,6 +6901,7 @@ function CanvasShell({
         currentNode.data,
         selectedConnection.provider,
         model,
+        new Set(useCanvasStore.getState().edges.flatMap((edge) => edge.target === currentNode.id && edge.targetHandle ? [edge.targetHandle] : [])),
       );
       if (migration) updateNodeData(currentNode.id, migration);
     };
@@ -6752,11 +6957,9 @@ function CanvasShell({
   ]);
 
   const selectedData = selectedNode?.data;
-  const effectiveInspectorMode: InspectorMode = DIRECTOR_FEATURE_ENABLED
+  const effectiveInspectorMode: InspectorMode = inspectorMode === "node" && !selectedNode
     ? "agent"
-    : inspectorMode === "node" && selectedNode
-      ? "node"
-      : "agent";
+    : inspectorMode;
   const showNodeInspector = effectiveInspectorMode === "node";
   const selectedGeneratedStatus =
     typeof selectedData?.generatedStatus === "string"
@@ -6843,6 +7046,7 @@ function CanvasShell({
   );
   const placeAssetsOnCanvas = useCallback(
     (items: AssetView[], position: { x: number; y: number }) => {
+      if (!instanceActive.current || saveSuspended.current) return;
       const media = items.filter(
         (asset): asset is AssetView & { kind: "image" | "video" | "audio" } =>
           asset.kind === "image" ||
@@ -6936,6 +7140,7 @@ function CanvasShell({
 
   const beginPendingAssetImports = useCallback(
     (files: readonly File[], position: { x: number; y: number }) => {
+      if (!instanceActive.current || saveSuspended.current) return [];
       if (files.length === 0) return [];
       checkpoint(true);
       const state = useCanvasStore.getState();
@@ -6971,6 +7176,7 @@ function CanvasShell({
 
   const completePendingAssetImport = useCallback(
     (nodeId: string, asset: AssetView) => {
+      if (!instanceActive.current || saveSuspended.current) return false;
       const state = useCanvasStore.getState();
       const pendingNode = state.nodes.find((node) => node.id === nodeId);
       if (!pendingNode) {
@@ -7003,6 +7209,7 @@ function CanvasShell({
 
   const failPendingAssetImport = useCallback(
     (nodeId: string) => {
+      if (!instanceActive.current || saveSuspended.current) return;
       const state = useCanvasStore.getState();
       const nextNodes = state.nodes.filter((node) => node.id !== nodeId);
       if (nextNodes.length !== state.nodes.length) {
@@ -7214,6 +7421,7 @@ function CanvasShell({
 
           try {
             const asset = await claimMaterialDrop(drop.id);
+            if (disposed || !instanceActive.current) return;
             void archiveProjectAssets(canvasId, [asset.id]).catch(() => undefined);
             setAssets((current) => [
               asset,
@@ -7235,6 +7443,7 @@ function CanvasShell({
                 : `已从素材管理拖入：${asset.name}（已放到画布中央）`,
             );
           } catch (error) {
+            if (disposed || !instanceActive.current) return;
             if (existingPendingNode) {
               useCanvasStore.setState((state) => ({
                 nodes: state.nodes.map((node) =>
@@ -7411,7 +7620,9 @@ function CanvasShell({
     setMergingDrawings(true);
     try {
       const rendered = await renderDrawingStrokesToPng(selected);
+      if (!instanceActive.current) return;
       const asset = await uploadAsset(rendered.file);
+      if (!instanceActive.current || saveSuspended.current) return;
       void archiveProjectAssets(canvasId ?? "", [asset.id]).catch(() => undefined);
       checkpoint(true);
       const state = useCanvasStore.getState();
@@ -7813,6 +8024,7 @@ function CanvasShell({
         fallbackViewport: viewport,
         availableAssetIds: new Set(assets.map((asset) => asset.id)),
       });
+      if (!instanceActive.current) return;
       setPendingProjectImport(prepared);
       setProjectImportBackup(true);
       setProjectImportProgress(null);
@@ -7863,6 +8075,7 @@ function CanvasShell({
         onProgress: (completed, totalCount) =>
           setProjectImportProgress({ completed, total: totalCount }),
       });
+      if (!instanceActive.current || saveSuspended.current) throw new Error("画布已关闭，已取消导入");
       const importedGraph = materialized.graph;
       const importedViewport = importedGraph.viewport ?? viewport;
       const importedDrawings = importedGraph.drawings ?? [];
@@ -7900,7 +8113,7 @@ function CanvasShell({
         },
         false,
       );
-
+      if (!instanceActive.current || saveSuspended.current) return;
       checkpoint(true);
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -7946,12 +8159,17 @@ function CanvasShell({
   }
 
   return (
-    <div className="shell">
+    <AgentCanvasContext.Provider value={{ perform: performAgentAction }}>
+    {agentMutation && <div role="status" style={{ position: "fixed", inset: 0, zIndex: 10000, display: "grid", placeItems: "center", background: "#ffffffaa" }}>正在保存并核对画布…</div>}
+    <div inert={agentMutation} className={`shell canvas-editor ${leaving ? "is-leaving" : ""}`}>
       <header className="topbar">
+        <button className="icon-button editor-home" type="button" aria-label="返回主界面" title="保存并返回主界面" disabled={leaving || initialization.status !== "ready"} onClick={() => void leaveCanvas(() => router.push("/"))}>
+          <ArrowLeft size={18} />
+        </button>
         <div className="brand">
           <span className="brand-mark">✦</span>
-          <span>{APP_NAME}</span>
-          <span className="brand-version">v{APP_VERSION}</span>
+          <span className="editor-project-title" title={title}>{title}</span>
+          <span className="brand-version">画布</span>
         </div>
         <nav className="top-create-actions" aria-label="生成工具">
           <button
@@ -7986,9 +8204,9 @@ function CanvasShell({
           <button
             className="icon-button project-toggle"
             type="button"
-            onClick={() => setMobileProjectsOpen(true)}
-            aria-label="打开项目对话"
-            title="项目对话"
+            onClick={() => setMobileProjectsOpen((open) => !open)}
+            aria-label="打开画布列表"
+            title="画布列表"
           >
             <MessageSquarePlus size={15} />
           </button>
@@ -8026,6 +8244,8 @@ function CanvasShell({
                 ? "有生成任务正在运行"
                 : saveState === "conflict"
                   ? "画布已在其他窗口更新；点击处理保存冲突"
+                  : draftStorageError
+                    ? "浏览器本地草稿不可用，请在离开前确认服务器保存成功"
                   : saveState === "error"
                     ? "上次保存失败，修改仍保留在浏览器中"
                     : "画布自动保存状态"
@@ -8043,6 +8263,7 @@ function CanvasShell({
               }`}
             />
             {busy ? "任务运行中" : SAVE_STATE_LABEL[saveState]}
+            {draftStorageError && saveState !== "saved" ? " · 本地草稿不可用" : ""}
           </button>
           <button
             className="icon-button"
@@ -8090,6 +8311,9 @@ function CanvasShell({
             title="配置生图与生视频 API"
           >
             <KeyRound size={13} /> API 设置
+          </button>
+          <button className="button primary editor-run" type="button" onClick={runAll} disabled={nodes.length === 0 || busy || leaving}>
+            <Play size={14} /> 运行全部
           </button>
           <button
             className="icon-button project-menu-toggle"
@@ -8218,10 +8442,12 @@ function CanvasShell({
         </>
       ) : null}
       <main
-        className={`workspace ${inspectorResizing ? "inspector-resizing" : ""}`}
+        className={`workspace ${mobileInspectorOpen ? "inspector-open" : ""} ${inspectorResizing ? "inspector-resizing" : ""}`}
         style={
           {
             "--inspector-width": `${inspectorWidth}px`,
+            "--project-sidebar-width":
+              leftSidebarMode === "agent" ? "380px" : "248px",
           } as CSSProperties
         }
       >
@@ -8237,15 +8463,37 @@ function CanvasShell({
             }}
           />
         ) : null}
-        <ProjectSidebar
+        <nav className="editor-rail" aria-label="创作工具">
+          <button type="button" title="图片生成" aria-label="新建图片节点" onClick={() => addNewNode("image-generation")}><ImageIcon size={20} /><span>图片</span></button>
+          <button type="button" title="视频生成" aria-label="新建视频节点" onClick={() => addNewNode("video-generation")}><Video size={20} /><span>视频</span></button>
+          <button type="button" title="提示词" aria-label="新建提示词节点" onClick={() => addNewNode("prompt")}><Type size={20} /><span>文本</span></button>
+          <span className="rail-divider" />
+          <button type="button" aria-label="打开节点与素材库" aria-pressed={mobileLibraryOpen} onClick={() => setMobileLibraryOpen((open) => !open)}><FolderOpen size={20} /><span>素材</span></button>
+          <button type="button" aria-label="历史生成" onClick={() => setHistoryOpen(true)}><History size={20} /><span>历史</span></button>
+          <span className="rail-divider" />
+          <button type="button" aria-label="打开智能体" aria-pressed={mobileInspectorOpen && inspectorMode === "chat"} onClick={() => { setInspectorMode("chat"); setMobileInspectorOpen(true); setMobileProjectsOpen(false); }}><Bot size={20} /><span>智能体</span></button>
+          <button type="button" aria-label="打开超级导演" aria-pressed={mobileInspectorOpen && inspectorMode === "agent"} onClick={() => { setInspectorMode("agent"); setMobileInspectorOpen(true); setMobileProjectsOpen(false); }}><WandSparkles size={20} /><span>导演</span></button>
+        </nav>
+        {mobileProjectsOpen ? <ProjectSidebar
           projects={projects}
           activeProjectId={projectId}
           mobileOpen={mobileProjectsOpen}
-          onSelectProject={(nextId) => {
-            setMobileProjectsOpen(false);
-            onSelectProject(nextId);
+          leftMode={leftSidebarMode}
+          onLeftModeChange={setLeftSidebarMode}
+          connections={connections}
+          assets={assets}
+          canvasId={canvasId ?? ""}
+          selectedNode={selectedNode}
+          selectedPrompt={selectedGeneratedPrompt}
+          draftRequest={agentDraftRequest}
+          onManageApi={(group) => {
+            setSettingsInitialCangyuanGroup(group ?? null);
+            setSettingsOpen(true);
           }}
-          onCreateProject={onCreateProject}
+          onSelectProject={(nextId) => {
+            void leaveCanvas(() => onSelectProject(nextId));
+          }}
+          onCreateProject={async (nextTitle) => { await saveNow(); await onCreateProject(nextTitle); }}
           onCleanupProject={async (nextId) => {
             await onCleanupProject(nextId);
             showToast("项目草稿已清理，成品文件保持不变", "success");
@@ -8255,22 +8503,42 @@ function CanvasShell({
             showToast("已打开项目文件夹", "success");
           }}
           onRenameProject={async (nextId, nextTitle) => {
-            if (nextId === canvasId) await saveNow();
-            const result = await onRenameProject(nextId, nextTitle);
             if (nextId === canvasId) {
-              canvasRevision.current = result.revision;
-              setCanvasRevisionValue(result.revision);
-              setTitle(result.project.title);
+              await saveNow();
+              await waitForCanvasSaves(nextId);
+              if (!instanceActive.current) throw new Error("画布已关闭，请在首页重命名");
+              saveSuspended.current = true;
             }
-            showToast("项目与文件夹已同步重命名", "success");
-            return result;
+            try {
+              return await trackCanvasSave(nextId, (async () => {
+                const result = await onRenameProject(nextId, nextTitle);
+                if (instanceActive.current && nextId === canvasId) {
+                  canvasRevision.current = result.revision;
+                  setCanvasRevisionValue(result.revision);
+                  setTitle(result.project.title);
+                }
+                if (instanceActive.current) showToast("项目与文件夹已同步重命名", "success");
+                return result;
+              })());
+            } finally {
+              if (nextId === canvasId) saveSuspended.current = false;
+            }
           }}
           onDeleteProject={async (nextId) => {
-            const warning = await onDeleteProject(nextId);
-            showToast(warning ?? "项目已删除", warning ? "error" : "success");
-            return warning;
+            if (nextId === canvasId) {
+              await saveNow();
+              saveSuspended.current = true;
+            }
+            try {
+              const warning = await onDeleteProject(nextId);
+              showToast(warning ?? "项目已删除", warning ? "error" : "success");
+              return warning;
+            } catch (error) {
+              saveSuspended.current = false;
+              throw error;
+            }
           }}
-        />
+        /> : null}
         <aside className={`sidebar ${mobileLibraryOpen ? "mobile-open" : ""}`}>
           <button
             className="icon-button mobile-panel-close mobile-only"
@@ -8409,16 +8677,8 @@ function CanvasShell({
           }}
           onDropCapture={(event) => void onCanvasDrop(event)}
         >
-          <div className="canvas-toolbar">
+          <div className={`canvas-toolbar ${canvasMode === "draw" ? "is-drawing" : ""} ${canvasMode === "select-drawing" ? "is-selecting-drawing" : ""}`}>
             <div className="toolbar-group">
-              <button
-                className="button primary small"
-                type="button"
-                onClick={runAll}
-                disabled={nodes.length === 0 || busy}
-              >
-                <Play size={13} /> 运行全部
-              </button>
               <button
                 className="button small canvas-tidy-button"
                 type="button"
@@ -8712,7 +8972,7 @@ function CanvasShell({
                 ))}
               </div>
             </ViewportPortal>
-            <Background gap={22} size={1} color="#2d3650" />
+            <Background gap={24} size={1} color="#d4d6df" />
             <DrawingLayer
               drawings={drawings}
               activeStroke={activeStroke}
@@ -8999,14 +9259,14 @@ function CanvasShell({
             }}
           />
           <button
-            className="icon-button mobile-panel-close mobile-only"
+            className="icon-button mobile-panel-close inspector-close"
             type="button"
             onClick={() => setMobileInspectorOpen(false)}
             aria-label="关闭参数与导演台"
           >
             <X size={15} />
           </button>
-          {!DIRECTOR_FEATURE_ENABLED ? (
+          {(
             <div
               className="inspector-mode-tabs"
               role="tablist"
@@ -9034,8 +9294,11 @@ function CanvasShell({
             >
               <WandSparkles size={13} /> 导演台
             </button>
+            <button className={`inspector-mode-tab ${effectiveInspectorMode === "chat" ? "active" : ""}`} type="button" role="tab" aria-selected={effectiveInspectorMode === "chat"} aria-controls="inspector-agent-panel" onClick={() => setInspectorMode("chat")}>
+              <Bot size={13} /> 智能体
+            </button>
             </div>
-          ) : null}
+          )}
           {showNodeInspector && selectedNode && selectedData ? (
             <div
               className="inspector-mode-content is-node"
@@ -9273,6 +9536,7 @@ function CanvasShell({
                   >
                     <KeyRound size={12} /> 管理 API 连接
                   </button>
+                  {selectedConnectionId && selectedConnectionId !== "fake-default" && !selectedConnectionRecord ? <div className="field-note" role="status">原连接已归档或删除，请恢复供应商历史配置或重新选择当前连接。节点与生成历史已保留。</div> : null}
                   {selectedConnectionRecord && !selectedConnectionConfigured ? (
                     <div className="field-note" role="status">
                       {providerConnectionGroup(selectedConnectionRecord)}
@@ -9358,7 +9622,7 @@ function CanvasShell({
               id="inspector-agent-panel"
               role="tabpanel"
             >
-              {DIRECTOR_FEATURE_ENABLED ? (
+              {DIRECTOR_FEATURE_ENABLED && effectiveInspectorMode !== "chat" ? (
                 <SuperDirectorPanel
                   connections={connections}
                   assets={assets}
@@ -9400,23 +9664,27 @@ function CanvasShell({
           onClose={() => setSaveConflictOpen(false)}
           onExport={() => exportProject(true)}
           onReload={() => {
+            if (saveSuspended.current) return;
+            saveSuspended.current = true;
             if (saveTimer.current) clearTimeout(saveTimer.current);
             saveTimer.current = null;
             pendingSave.current = null;
-            if (canvasId) {
-              const localConfigurations = readPendingNodeConfigurations().filter(
-                (entry) => entry.canvasId === canvasId,
-              );
-              clearPersistedNodeConfigurations(localConfigurations);
-            }
-            // Invalidate callbacks from a save that was already in flight;
-            // the reload must start from the server snapshot only.
             latestSaveAttempt.current += 1;
-            saveConflictRef.current = null;
-            conflictedSave.current = null;
-            setSaveConflict(null);
-            setSaveConflictOpen(false);
-            window.location.reload();
+            void (async () => {
+              try {
+                if (canvasId) {
+                  await waitForCanvasSaves(canvasId);
+                  await discardCanvasDraft(canvasId);
+                  clearPersistedNodeConfigurations(readPendingNodeConfigurations().filter(
+                    (entry) => entry.canvasId === canvasId,
+                  ));
+                }
+                window.location.reload();
+              } catch {
+                saveSuspended.current = false;
+                showToast("无法清除本地草稿，请重试", "error");
+              }
+            })();
           }}
         />
       ) : null}
@@ -9542,28 +9810,24 @@ function CanvasShell({
         </div>
       ) : null}
     </div>
+    </AgentCanvasContext.Provider>
   );
 }
 
-export function CanvasApp() {
+export function CanvasApp({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [projects, setProjects] = useState<ProjectSummaryView[] | null>(null);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reloadProjects = useCallback(async () => {
     try {
       const next = await fetchProjects();
       setProjects(next);
-      setActiveProjectId((current) =>
-        current && next.some((project) => project.id === current)
-          ? current
-          : (next[0]?.id ?? null),
-      );
-      setError(null);
+      setError(next.some((project) => project.id === projectId) ? null : "画布不存在或已被删除");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "项目列表读取失败");
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     // Initial project discovery synchronizes the shell with the server.
@@ -9576,8 +9840,8 @@ export function CanvasApp() {
     setProjects((current) =>
       current ? [project, ...current.filter((item) => item.id !== project.id)] : [project],
     );
-    setActiveProjectId(project.id);
-  }, []);
+    router.push(`/canvas/${encodeURIComponent(project.id)}`);
+  }, [router]);
 
   const handleCleanupProject = useCallback(async (projectId: string) => {
     const result = await cleanupProjectDraft(projectId);
@@ -9602,18 +9866,17 @@ export function CanvasApp() {
     [],
   );
 
-  const handleDeleteProject = useCallback(async (projectId: string) => {
-    const result = await deleteProject(projectId);
+  const handleDeleteProject = useCallback(async (deletedProjectId: string) => {
+    const result = await deleteProject(deletedProjectId);
     setProjects((current) =>
-      current?.filter((project) => project.id !== projectId) ?? null,
+      current?.filter((project) => project.id !== deletedProjectId) ?? null,
     );
-    setActiveProjectId((current) =>
-      current === projectId ? result.nextProjectId : current,
-    );
+    await discardCanvasDraft(deletedProjectId).catch(() => undefined);
+    if (deletedProjectId === projectId) router.push("/");
     return result.warning;
-  }, []);
+  }, [projectId, router]);
 
-  if (!projects || !activeProjectId) {
+  if (!projects || error) {
     return (
       <div className="shell" aria-busy="true">
         <header className="topbar">
@@ -9627,9 +9890,10 @@ export function CanvasApp() {
             <h2>{error ? "项目加载失败" : "正在加载项目…"}</h2>
             <p>{error ?? "正在读取项目对话和画布，请稍候。"}</p>
             {error ? (
-              <button className="button primary small" type="button" onClick={() => void reloadProjects()}>
-                <RefreshCw size={13} /> 重新加载
-              </button>
+              <div className="empty-actions">
+                <button className="button primary small" type="button" onClick={() => void reloadProjects()}><RefreshCw size={13} /> 重新加载</button>
+                <button className="button ghost small" type="button" onClick={() => router.push("/")}>返回主界面</button>
+              </div>
             ) : null}
           </div>
         </main>
@@ -9638,11 +9902,12 @@ export function CanvasApp() {
   }
 
   return (
-    <ReactFlowProvider>
+    <ReactFlowProvider key={projectId}>
       <CanvasShell
-        projectId={activeProjectId}
+        key={projectId}
+        projectId={projectId}
         projects={projects}
-        onSelectProject={setActiveProjectId}
+        onSelectProject={(id) => router.push(`/canvas/${encodeURIComponent(id)}`)}
         onCreateProject={handleCreateProject}
         onCleanupProject={handleCleanupProject}
         onOpenProjectFolder={handleOpenProjectFolder}

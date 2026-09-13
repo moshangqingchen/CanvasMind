@@ -1,0 +1,1583 @@
+{
+  "checkedAt": "2026-09-10T13:35:29.062Z",
+  "requestCount": 81,
+  "images": 57,
+  "statusCounts": {
+    "200": 57,
+    "400": 2,
+    "503": 21,
+    "network-error": 1
+  },
+  "models": [
+    {
+      "model": "gpt-image-2.5-flare",
+      "cases": [
+        {
+          "quality": "omitted",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "low",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "medium",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "xhigh",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "max",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "auto",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "omitted",
+          "requestedSize": "3840x2160",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "low",
+          "requestedSize": "3840x2160",
+          "attempts": 4,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "medium",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "xhigh",
+          "requestedSize": "3840x2160",
+          "attempts": 4,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "max",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "auto",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "invalid-quality-control",
+          "requestedSize": "1024x1024",
+          "attempts": 2,
+          "status": 400,
+          "error": {
+            "message": "model gpt-image-2.5-flare-high does not support quality invalid-quality-control",
+            "type": "invalid_request_error",
+            "param": "",
+            "code": "Bad Request"
+          }
+        },
+        {
+          "quality": "low",
+          "requestedSize": "4096x2304",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "omitted",
+          "requestedSize": "2048x2048",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1920x1920"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "2160x3840",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "2160x3840"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "2880x2880",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "2880x2880"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "2048x2048",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1920x1920"
+        }
+      ]
+    },
+    {
+      "model": "gpt-image-2.5-sunburst",
+      "cases": [
+        {
+          "quality": "omitted",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "low",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "medium",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "xhigh",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "max",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "auto",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1024x1024"
+        },
+        {
+          "quality": "omitted",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "low",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "medium",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "xhigh",
+          "requestedSize": "3840x2160",
+          "attempts": 6,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "max",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "auto",
+          "requestedSize": "3840x2160",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "invalid-quality-control",
+          "requestedSize": "1024x1024",
+          "attempts": 2,
+          "status": 400,
+          "error": {
+            "message": "model gpt-image-2.5-sunburst-high does not support quality invalid-quality-control",
+            "type": "invalid_request_error",
+            "param": "",
+            "code": "Bad Request"
+          }
+        },
+        {
+          "quality": "low",
+          "requestedSize": "4096x2304",
+          "attempts": 2,
+          "status": 200,
+          "actualSize": "3840x2160"
+        },
+        {
+          "quality": "omitted",
+          "requestedSize": "2048x2048",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1920x1920"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "2160x3840",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "2160x3840"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "2880x2880",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "2880x2880"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "2048x2048",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1920x1920"
+        }
+      ]
+    },
+    {
+      "model": "gpt-image-2.5",
+      "cases": [
+        {
+          "quality": "omitted",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1254x1254"
+        },
+        {
+          "quality": "low",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1254x1254"
+        },
+        {
+          "quality": "medium",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1254x1254"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1254x1254"
+        },
+        {
+          "quality": "xhigh",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1254x1254"
+        },
+        {
+          "quality": "max",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1254x1254"
+        },
+        {
+          "quality": "auto",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1254x1254"
+        },
+        {
+          "quality": "omitted",
+          "requestedSize": "3840x2160",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1672x941"
+        },
+        {
+          "quality": "low",
+          "requestedSize": "3840x2160",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1672x941"
+        },
+        {
+          "quality": "medium",
+          "requestedSize": "3840x2160",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1672x941"
+        },
+        {
+          "quality": "high",
+          "requestedSize": "3840x2160",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1672x941"
+        },
+        {
+          "quality": "xhigh",
+          "requestedSize": "3840x2160",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1672x941"
+        },
+        {
+          "quality": "max",
+          "requestedSize": "3840x2160",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1672x941"
+        },
+        {
+          "quality": "auto",
+          "requestedSize": "3840x2160",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1672x941"
+        },
+        {
+          "quality": "invalid-quality-control",
+          "requestedSize": "1024x1024",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1254x1254"
+        },
+        {
+          "quality": "low",
+          "requestedSize": "4096x2304",
+          "attempts": 1,
+          "status": 200,
+          "actualSize": "1672x941"
+        }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "at": "2026-09-10T13:17:13.566Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "omitted",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-omitted-1024x1024.png",
+      "elapsedMs": 30602,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:17:13.574Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "omitted",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-omitted-1024x1024.png",
+      "elapsedMs": 45407,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:17:44.169Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-low-1024x1024.png",
+      "elapsedMs": 20271,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:17:58.982Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-low-1024x1024.png",
+      "elapsedMs": 23627,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:18:04.441Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "medium",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-medium-1024x1024.png",
+      "elapsedMs": 20212,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:18:22.610Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "medium",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-medium-1024x1024.png",
+      "elapsedMs": 22232,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:18:24.654Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "high",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-high-1024x1024.png",
+      "elapsedMs": 28945,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:18:44.842Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "high",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "jpeg",
+      "file": "gpt-image-2.5-sunburst-high-1024x1024.jpeg",
+      "elapsedMs": 10677,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:18:53.599Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "xhigh",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-xhigh-1024x1024.png",
+      "elapsedMs": 30350,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:18:55.519Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "xhigh",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-xhigh-1024x1024.png",
+      "elapsedMs": 45424,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:19:23.950Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "max",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-max-1024x1024.png",
+      "elapsedMs": 31167,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:19:40.943Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "max",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-max-1024x1024.png",
+      "elapsedMs": 41682,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:19:55.118Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "auto",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-auto-1024x1024.png",
+      "elapsedMs": 27461,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:20:22.581Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "omitted",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-omitted-3840x2160.png",
+      "elapsedMs": 52183,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:20:22.625Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "auto",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "actualSize": "1024x1024",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-auto-1024x1024.png",
+      "elapsedMs": 47688,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:10.314Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "omitted",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 3738,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:14.053Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 374,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:14.428Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "medium",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 329,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:14.758Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "high",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 328,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:14.764Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 336,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:15.086Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 362,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:15.101Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "medium",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 361,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:15.448Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "max",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 359,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:15.462Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "high",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 365,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:15.807Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "auto",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 342,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:15.827Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 337,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:16.149Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "invalid-quality-control",
+      "requestedSize": "1024x1024",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 377,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:16.164Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "max",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 377,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:16.526Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "requestedSize": "4096x2304",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 330,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:16.542Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "auto",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 337,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:16.857Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "omitted",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "returnedSize": "1024x1024",
+      "returnedQuality": "auto",
+      "actualSize": "1254x1254",
+      "format": "png",
+      "file": "gpt-image-2.5-omitted-1024x1024.png",
+      "elapsedMs": 35500,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:16.880Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "invalid-quality-control",
+      "requestedSize": "1024x1024",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 389,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:17.270Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "requestedSize": "4096x2304",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 330,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:21:52.358Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "low",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "returnedSize": "1024x1024",
+      "returnedQuality": "low",
+      "actualSize": "1254x1254",
+      "format": "png",
+      "file": "gpt-image-2.5-low-1024x1024.png",
+      "elapsedMs": 36046,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:22:28.404Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "medium",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "returnedSize": "1024x1024",
+      "returnedQuality": "medium",
+      "actualSize": "1254x1254",
+      "format": "png",
+      "file": "gpt-image-2.5-medium-1024x1024.png",
+      "elapsedMs": 37053,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:22:54.010Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "invalid-quality-control",
+      "requestedSize": "1024x1024",
+      "status": 400,
+      "error": {
+        "message": "model gpt-image-2.5-flare-high does not support quality invalid-quality-control",
+        "type": "invalid_request_error",
+        "param": "",
+        "code": "Bad Request"
+      },
+      "elapsedMs": 700,
+      "sourceRun": "2026-09-10T13-22-54-008Z"
+    },
+    {
+      "at": "2026-09-10T13:22:54.018Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "invalid-quality-control",
+      "requestedSize": "1024x1024",
+      "status": 400,
+      "error": {
+        "message": "model gpt-image-2.5-sunburst-high does not support quality invalid-quality-control",
+        "type": "invalid_request_error",
+        "param": "",
+        "code": "Bad Request"
+      },
+      "elapsedMs": 698,
+      "sourceRun": "2026-09-10T13-22-54-008Z"
+    },
+    {
+      "at": "2026-09-10T13:22:54.711Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "high",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-high-3840x2160.png",
+      "elapsedMs": 33221,
+      "sourceRun": "2026-09-10T13-22-54-008Z"
+    },
+    {
+      "at": "2026-09-10T13:22:54.716Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "high",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-high-3840x2160.png",
+      "elapsedMs": 59309,
+      "sourceRun": "2026-09-10T13-22-54-008Z"
+    },
+    {
+      "at": "2026-09-10T13:23:05.457Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "high",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "returnedSize": "1024x1024",
+      "returnedQuality": "high",
+      "actualSize": "1254x1254",
+      "format": "png",
+      "file": "gpt-image-2.5-high-1024x1024.png",
+      "elapsedMs": 40754,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:23:27.932Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "omitted",
+      "requestedSize": "2048x2048",
+      "status": 200,
+      "actualSize": "1920x1920",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-omitted-2048x2048.png",
+      "elapsedMs": 36401,
+      "sourceRun": "2026-09-10T13-22-54-008Z"
+    },
+    {
+      "at": "2026-09-10T13:23:46.211Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "xhigh",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "returnedSize": "1024x1024",
+      "returnedQuality": "xhigh",
+      "actualSize": "1254x1254",
+      "format": "png",
+      "file": "gpt-image-2.5-xhigh-1024x1024.png",
+      "elapsedMs": 30711,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:23:54.026Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "omitted",
+      "requestedSize": "2048x2048",
+      "status": 200,
+      "actualSize": "1920x1920",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-omitted-2048x2048.png",
+      "elapsedMs": 54125,
+      "sourceRun": "2026-09-10T13-22-54-008Z"
+    },
+    {
+      "at": "2026-09-10T13:24:16.922Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "max",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "returnedSize": "1024x1024",
+      "returnedQuality": "max",
+      "actualSize": "1254x1254",
+      "format": "png",
+      "file": "gpt-image-2.5-max-1024x1024.png",
+      "elapsedMs": 31384,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:24:48.306Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "auto",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "returnedSize": "1024x1024",
+      "returnedQuality": "auto",
+      "actualSize": "1254x1254",
+      "format": "png",
+      "file": "gpt-image-2.5-auto-1024x1024.png",
+      "elapsedMs": 39379,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:25:27.686Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "omitted",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "returnedSize": "3840x2160",
+      "returnedQuality": "auto",
+      "actualSize": "1672x941",
+      "format": "png",
+      "file": "gpt-image-2.5-omitted-3840x2160.png",
+      "elapsedMs": 27290,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:25:37.119Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "requestedSize": "3840x2160",
+      "error": "fetch failed",
+      "elapsedMs": 97172,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:25:37.127Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "omitted",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-omitted-3840x2160.png",
+      "elapsedMs": 64939,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:25:54.976Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "low",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "returnedSize": "3840x2160",
+      "returnedQuality": "low",
+      "actualSize": "1672x941",
+      "format": "png",
+      "file": "gpt-image-2.5-low-3840x2160.png",
+      "elapsedMs": 27160,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:26:22.137Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "medium",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "returnedSize": "3840x2160",
+      "returnedQuality": "medium",
+      "actualSize": "1672x941",
+      "format": "png",
+      "file": "gpt-image-2.5-medium-3840x2160.png",
+      "elapsedMs": 30768,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:26:42.067Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-low-3840x2160.png",
+      "elapsedMs": 41104,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:26:52.905Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "high",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "returnedSize": "3840x2160",
+      "returnedQuality": "high",
+      "actualSize": "1672x941",
+      "format": "png",
+      "file": "gpt-image-2.5-high-3840x2160.png",
+      "elapsedMs": 86644,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:27:14.292Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "medium",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-medium-3840x2160.png",
+      "elapsedMs": 33471,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:27:23.172Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "medium",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-medium-3840x2160.png",
+      "elapsedMs": 38445,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:27:47.765Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 37470,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:28:01.617Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 23617,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:28:19.550Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "returnedSize": "3840x2160",
+      "returnedQuality": "xhigh",
+      "actualSize": "1672x941",
+      "format": "png",
+      "file": "gpt-image-2.5-xhigh-3840x2160.png",
+      "elapsedMs": 33972,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:28:53.523Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "max",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "returnedSize": "3840x2160",
+      "returnedQuality": "max",
+      "actualSize": "1672x941",
+      "format": "png",
+      "file": "gpt-image-2.5-max-3840x2160.png",
+      "elapsedMs": 33137,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:28:55.243Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 865,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:28:55.245Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 503,
+      "error": {
+        "message": "No available compatible accounts",
+        "type": "api_error",
+        "param": "",
+        "code": null
+      },
+      "elapsedMs": 877,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:29:26.110Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "1344x768",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-xhigh-3840x2160.png",
+      "elapsedMs": 26609,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:29:26.125Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-xhigh-3840x2160.png",
+      "elapsedMs": 40134,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:29:26.660Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "auto",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "returnedSize": "3840x2160",
+      "returnedQuality": "auto",
+      "actualSize": "1672x941",
+      "format": "png",
+      "file": "gpt-image-2.5-auto-3840x2160.png",
+      "elapsedMs": 30064,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:29:52.719Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "max",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-max-3840x2160.png",
+      "elapsedMs": 52297,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:29:56.724Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "invalid-quality-control",
+      "requestedSize": "1024x1024",
+      "status": 200,
+      "returnedSize": "1024x1024",
+      "returnedQuality": "invalid-quality-control",
+      "actualSize": "1254x1254",
+      "format": "png",
+      "file": "gpt-image-2.5-invalid-quality-control-1024x1024.png",
+      "elapsedMs": 36413,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:30:06.259Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "max",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-max-3840x2160.png",
+      "elapsedMs": 41595,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:30:33.138Z",
+      "group": "1k低价生图",
+      "model": "gpt-image-2.5",
+      "quality": "low",
+      "requestedSize": "4096x2304",
+      "status": 200,
+      "returnedSize": "4096x2304",
+      "returnedQuality": "low",
+      "actualSize": "1672x941",
+      "format": "png",
+      "file": "gpt-image-2.5-low-4096x2304.png",
+      "elapsedMs": 42037,
+      "sourceRun": "2026-09-10T13-17-13-564Z"
+    },
+    {
+      "at": "2026-09-10T13:30:45.017Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "auto",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-auto-3840x2160.png",
+      "elapsedMs": 48417,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:30:47.855Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "auto",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-auto-3840x2160.png",
+      "elapsedMs": 40100,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:31:27.955Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "requestedSize": "4096x2304",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-low-4096x2304.png",
+      "elapsedMs": 56000,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:31:33.435Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "requestedSize": "4096x2304",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-low-4096x2304.png",
+      "elapsedMs": 35158,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:32:08.597Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "high",
+      "requestedSize": "2160x3840",
+      "status": 200,
+      "actualSize": "2160x3840",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-high-2160x3840.png",
+      "elapsedMs": 51463,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:32:23.956Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "high",
+      "requestedSize": "2160x3840",
+      "status": 200,
+      "actualSize": "2160x3840",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-high-2160x3840.png",
+      "elapsedMs": 40103,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:33:00.060Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "high",
+      "requestedSize": "2880x2880",
+      "status": 200,
+      "actualSize": "2880x2880",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-high-2880x2880.png",
+      "elapsedMs": 67718,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:33:04.060Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "high",
+      "requestedSize": "2880x2880",
+      "status": 200,
+      "actualSize": "2880x2880",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-high-2880x2880.png",
+      "elapsedMs": 41978,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:33:46.039Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "high",
+      "requestedSize": "2048x2048",
+      "status": 200,
+      "actualSize": "1920x1920",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-high-2048x2048.png",
+      "elapsedMs": 35568,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:33:49.507Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-low-3840x2160.png",
+      "elapsedMs": 33682,
+      "sourceRun": "2026-09-10T13-33-49-506Z"
+    },
+    {
+      "at": "2026-09-10T13:33:49.515Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-xhigh-3840x2160.png",
+      "elapsedMs": 49189,
+      "sourceRun": "2026-09-10T13-33-49-506Z"
+    },
+    {
+      "at": "2026-09-10T13:34:07.779Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "high",
+      "requestedSize": "2048x2048",
+      "status": 200,
+      "actualSize": "1920x1920",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-high-2048x2048.png",
+      "elapsedMs": 48663,
+      "sourceRun": "2026-09-10T13-25-37-116Z"
+    },
+    {
+      "at": "2026-09-10T13:34:23.189Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-flare",
+      "quality": "low",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-flare-low-3840x2160.png",
+      "elapsedMs": 45606,
+      "sourceRun": "2026-09-10T13-33-49-506Z"
+    },
+    {
+      "at": "2026-09-10T13:34:38.704Z",
+      "group": "低价Adobe生图",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "xhigh",
+      "requestedSize": "3840x2160",
+      "status": 200,
+      "actualSize": "3840x2160",
+      "format": "png",
+      "file": "gpt-image-2.5-sunburst-xhigh-3840x2160.png",
+      "elapsedMs": 45406,
+      "sourceRun": "2026-09-10T13-33-49-506Z"
+    }
+  ]
+}

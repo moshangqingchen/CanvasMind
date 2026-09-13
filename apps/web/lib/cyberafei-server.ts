@@ -1,4 +1,9 @@
 import {
+  readBoundedModelJson,
+  scanAlternateSupplier,
+} from "./supplier-scan-utils";
+import { matchesSupplierTemplate } from "./supplier-template-source";
+import {
   getRepository,
   type JsonObject,
   type ProviderConnectionRecord,
@@ -9,11 +14,7 @@ import {
   type ModelDescriptor,
 } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
-import {
-  clearEmptyScanConfirmation,
-  pendingEmptyScanConfig,
-  shouldConfirmEmptyScan,
-} from "./model-scan-confirmation";
+import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
 import {
   CYBERAFEI_API_BASE_URL,
   CYBERAFEI_BASE_URL,
@@ -66,17 +67,20 @@ function scanFailure(
  */
 export async function scanCyberAfeiKeyModels(
   apiKey: string,
-  options?: { fetch?: typeof fetch },
+  options?: { fetch?: typeof fetch; baseUrl?: string },
 ): Promise<CyberAfeiKeyScan> {
   const checkedAt = new Date().toISOString();
   const fetchImpl = options?.fetch ?? providerFetch;
   try {
-    const response = await fetchImpl(`${CYBERAFEI_BASE_URL}/v1/models`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(30_000),
-    });
+    const response = await fetchImpl(
+      `${(options?.baseUrl ?? CYBERAFEI_BASE_URL).replace(/\/+$/u, "").replace(/\/v1$/u, "")}/v1/models`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
     if (response.status === 401 || response.status === 403)
       return scanFailure(
         "unauthorized",
@@ -87,7 +91,9 @@ export async function scanCyberAfeiKeyModels(
         "failed",
         `赛博阿飞模型扫描失败（HTTP ${response.status}）`,
       );
-    const payload = (await response.json()) as OpenAIModelsPayload;
+    const payload = (await readBoundedModelJson(
+      response,
+    )) as OpenAIModelsPayload;
     if (!Array.isArray(payload.data))
       return scanFailure("failed", "赛博阿飞模型扫描返回了无效数据");
     const modelIds = [
@@ -143,7 +149,7 @@ function configForLiveScan(
         ? connection.config.defaultModel
         : "";
     config.usage = "agent";
-    config.baseUrl = CYBERAFEI_API_BASE_URL;
+    config.baseUrl = connection.config.baseUrl;
     config.allowedModels = allowedModels;
     config.defaultModel = allowedModels.includes(configuredDefault)
       ? configuredDefault
@@ -160,7 +166,7 @@ function configForLiveScan(
         ? connection.config.defaultModel
         : "";
     config.usage = "canvas";
-    config.baseUrl = CYBERAFEI_BASE_URL;
+    config.baseUrl = connection.config.baseUrl;
     config.defaultModel = canvasModels.some(
       (model) => model.id === configuredDefault,
     )
@@ -179,7 +185,7 @@ function configForLiveScan(
   if (previousUsage === "agent" && chatModels.length > 0) {
     const allowedModels = chatModels.map((model) => model.id);
     config.usage = "agent";
-    config.baseUrl = CYBERAFEI_API_BASE_URL;
+    config.baseUrl = connection.config.baseUrl;
     config.allowedModels = allowedModels;
     config.defaultModel = allowedModels.includes(
       typeof connection.config.defaultModel === "string"
@@ -195,7 +201,7 @@ function configForLiveScan(
   }
 
   config.usage = "disabled";
-  config.baseUrl = CYBERAFEI_BASE_URL;
+  config.baseUrl = connection.config.baseUrl;
   config.disabledReason =
     scan.status === "empty"
       ? "当前分组 Key 扫描成功，但没有任何模型权限"
@@ -227,7 +233,11 @@ export async function scanCyberAfeiConnection(
 ): Promise<CyberAfeiConnectionScan> {
   const repository = getRepository();
   const connection = await repository.getConnection(id);
-  if (!connection || connection.config.preset !== CYBERAFEI_PRESET_ID) {
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    connection.config.preset !== CYBERAFEI_PRESET_ID
+  ) {
     const failed = scanFailure("failed", "赛博阿飞连接不存在");
     return {
       ...failed,
@@ -238,6 +248,8 @@ export async function scanCyberAfeiConnection(
       catalogSource: "unavailable",
     };
   }
+  if (!matchesSupplierTemplate(connection))
+    return scanAlternateSupplier(connection, options);
   const emptyCatalog = await loadCyberAfeiCatalog({
     force: options?.forcePricing,
     fetch: options?.fetch ?? providerFetch,
@@ -286,6 +298,10 @@ export async function scanCyberAfeiConnection(
   }
 
   const scan = await scanCyberAfeiKeyModels(apiKey, {
+    baseUrl:
+      typeof connection.config.baseUrl === "string"
+        ? connection.config.baseUrl
+        : undefined,
     ...(options?.fetch ? { fetch: options.fetch } : {}),
   });
   const resolved = resolveCyberAfeiScannedGroup(
@@ -302,17 +318,15 @@ export async function scanCyberAfeiConnection(
     : [];
   const staleResolved =
     scan.status === "failed" && savedModelIds.length > 0
-      ? resolveCyberAfeiScannedGroup(
-          emptyCatalog,
-          group,
-          savedModelIds,
-          { capabilityBlocks: connection.config.capabilityBlocks },
-        )
+      ? resolveCyberAfeiScannedGroup(emptyCatalog, group, savedModelIds, {
+          capabilityBlocks: connection.config.capabilityBlocks,
+        })
       : null;
   const baseResult: CyberAfeiConnectionScan = {
     ...scan,
     connection,
-    marketplaceGroup: staleResolved?.marketplaceGroup ?? resolved.marketplaceGroup,
+    marketplaceGroup:
+      staleResolved?.marketplaceGroup ?? resolved.marketplaceGroup,
     canvasModels:
       scan.status === "live" || scan.status === "empty"
         ? resolved.canvasModels
@@ -335,30 +349,9 @@ export async function scanCyberAfeiConnection(
     latest.updatedAt !== connection.updatedAt ||
     latest.encryptedSecret !== connection.encryptedSecret
   ) {
-    if (options?.retryOnConcurrentChange === false) return baseResult;
-    return scanCyberAfeiConnection(id, {
-      ...options,
-      retryOnConcurrentChange: false,
-    });
+    return baseResult;
   }
-  if (
-    scan.status === "empty" &&
-    !shouldConfirmEmptyScan(latest.config, group)
-  ) {
-    const pendingConfig = pendingEmptyScanConfig(
-      latest.config,
-      scan.checkedAt,
-      group,
-    );
-    const saved = await repository.saveConnection({
-      id: latest.id,
-      name: latest.name,
-      provider: latest.provider,
-      encryptedSecret: latest.encryptedSecret,
-      config: pendingConfig,
-    });
-    return { ...baseResult, connection: saved };
-  }
+
   const config = configForLiveScan(
     latest,
     group,
@@ -370,13 +363,16 @@ export async function scanCyberAfeiConnection(
   clearEmptyScanConfirmation(config);
   if (JSON.stringify(config) === JSON.stringify(latest.config))
     return { ...baseResult, connection: latest };
-  const saved = await repository.saveConnection({
-    id: latest.id,
-    name: latest.name,
-    provider: "rest",
-    encryptedSecret: latest.encryptedSecret,
-    config,
-  });
+  const saved = await repository.saveConnection(
+    {
+      id: latest.id,
+      name: latest.name,
+      provider: "rest",
+      encryptedSecret: latest.encryptedSecret,
+      config,
+    },
+    { expected: latest },
+  );
   return { ...baseResult, connection: saved };
 }
 

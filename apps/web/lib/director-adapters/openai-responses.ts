@@ -199,7 +199,7 @@ export class OpenAIResponsesAdapter implements DirectorModelAdapter {
         }),
         body: JSON.stringify({
           model: connection.model,
-          instructions: structuredSystemPrompt(input.system),
+          instructions: structuredSystemPrompt(input.system, input.responseJsonSchema),
           input: responseInput(input),
           store: false,
           ...(connection.capabilities.structuredOutput
@@ -209,7 +209,7 @@ export class OpenAIResponsesAdapter implements DirectorModelAdapter {
                     type: "json_schema",
                     name: "director_decision",
                     strict: true,
-                    schema: DIRECTOR_DECISION_JSON_SCHEMA,
+                    schema: input.responseJsonSchema ?? DIRECTOR_DECISION_JSON_SCHEMA,
                   },
                 },
               }
@@ -246,7 +246,7 @@ export class OpenAIResponsesAdapter implements DirectorModelAdapter {
           })
         : undefined;
     return {
-      output: strictDecisionFromCandidates(candidates),
+      output: strictDecisionFromCandidates(candidates, input.responseJsonSchema),
       ...(text ? { text } : {}),
       sources: normalizeSources(responseSources(payload)),
       ...(usage ? { usage } : {}),

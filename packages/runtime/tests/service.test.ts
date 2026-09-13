@@ -2,11 +2,24 @@ import { describe, expect, it } from "vitest";
 import { MemoryRepository, type JsonObject } from "@super-canvas/db";
 import {
   ProviderHttpError,
+  imageSizeOptions,
   type ProviderAdapter,
   type ProviderTask,
 } from "@super-canvas/providers";
 import type { ObjectStorage, StoredObject } from "@super-canvas/storage";
 import { RunService } from "../src/service.js";
+
+async function testRepository() {
+  const repository = new MemoryRepository();
+  await repository.saveConnection({
+    id: "runway-test",
+    name: "Isolated adapter fixture",
+    provider: "runway",
+    encryptedSecret: null,
+    config: {},
+  });
+  return repository;
+}
 
 class MemoryStorage implements ObjectStorage {
   readonly values = new Map<string, StoredObject>();
@@ -141,7 +154,7 @@ describe("RunService model freezing", () => {
     config: JsonObject;
     clientRequestId: string;
   }) => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({
       id: options.connectionId,
@@ -1050,7 +1063,7 @@ async function waitForRun(service: RunService, runId: string) {
 
 describe("RunService", () => {
   it("reports local request validation failures without blaming the supplier", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: graph() });
     let submitCalls = 0;
@@ -1106,7 +1119,7 @@ describe("RunService", () => {
   });
 
   it("executes and archives a complete image-to-video graph", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: graph() });
@@ -1143,7 +1156,7 @@ describe("RunService", () => {
   });
 
   it("deduplicates a repeated client request", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: graph() });
     const service = new RunService({
@@ -1166,7 +1179,7 @@ describe("RunService", () => {
   });
 
   it("records an unexpected execution failure as needs_attention", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({
       id: canvas.id,
@@ -1193,7 +1206,7 @@ describe("RunService", () => {
   });
 
   it("moves an uncertain provider submission to needs_attention", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({
       id: canvas.id,
@@ -1216,7 +1229,7 @@ describe("RunService", () => {
   });
 
   it("refuses recovery after the local snapshot retention limit", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     const run = await repository.createRun({
       id: "expired-recovery-run",
@@ -1244,7 +1257,7 @@ describe("RunService", () => {
   });
 
   it("does not archive or resubmit completed nodes during recovery", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: graph() });
@@ -1265,7 +1278,7 @@ describe("RunService", () => {
   });
 
   it("uses image operations when the only image is referenced by the prompt", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await storage.put(
@@ -1315,7 +1328,7 @@ describe("RunService", () => {
   });
 
   it("does not overwrite canvas edits made while a frozen revision is running", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: graph() });
     const service = new RunService({
@@ -1344,7 +1357,7 @@ describe("RunService", () => {
   });
 
   it("continues independent branches and blocks only failed dependencies", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({
       id: canvas.id,
@@ -1379,7 +1392,7 @@ describe("RunService", () => {
   });
 
   it("retries safe polling errors without resubmitting an existing task", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await seedResumableRun(repository, canvas.id);
@@ -1409,7 +1422,7 @@ describe("RunService", () => {
   });
 
   it("quarantines a We-AI model only after three consecutive unknown-model rejections", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({
@@ -1515,8 +1528,8 @@ describe("RunService", () => {
     });
   });
 
-  it("restores a quarantined We-AI model after a successful generation", async () => {
-    const repository = new MemoryRepository();
+  it("restores a quarantined We-AI model after revalidation and a successful generation", async () => {
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({
@@ -1527,8 +1540,8 @@ describe("RunService", () => {
       config: {
         modelGroup: "AZURE-openai",
         defaultModel: "gpt-image-2",
-        modelScanStatus: "empty",
-        scannedModelIds: [],
+        modelScanStatus: "live",
+        scannedModelIds: ["gpt-image-2"],
         modelAvailabilityFailures: [
           {
             id: "gpt-image-2",
@@ -1597,7 +1610,7 @@ describe("RunService", () => {
   });
 
   it("records a Cyber Afei group image permission denial", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({
@@ -1688,7 +1701,7 @@ describe("RunService", () => {
   });
 
   it("resolves Cyber Afei 4K automatic size from the prompt before submit", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({
@@ -1776,7 +1789,7 @@ describe("RunService", () => {
   });
 
   it("uses a multi-digit prompt ratio for Cangyuan nodes saved with size auto", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({
@@ -1864,7 +1877,7 @@ describe("RunService", () => {
   });
 
   it("keeps We-AI automatic sizing inside the selected 4K tier", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({
@@ -2077,7 +2090,7 @@ describe("RunService", () => {
   ])(
     "maps $supplier automatic 4K dimensions before submit",
     async ({ provider, supplier, model, prompt, expected, connector }) => {
-      const repository = new MemoryRepository();
+      const repository = await testRepository();
       const storage = new MemoryStorage();
       const canvas = await repository.ensureDefaultCanvas();
       const connectionId = `${supplier}-4k-tier`;
@@ -2165,8 +2178,232 @@ describe("RunService", () => {
     },
   );
 
+  it.each([
+    {
+      supplier: "frimodel",
+      provider: "openai",
+      prompt: "生成 16:9 海报",
+      tier: "4K",
+      size: "auto",
+      expected: "3840x2160",
+    },
+    {
+      supplier: "mikoto",
+      provider: "rest",
+      prompt: "生成 9:16 海报",
+      tier: "4K",
+      size: "auto",
+      expected: "2160x3840",
+    },
+    {
+      supplier: "frimodel",
+      provider: "openai",
+      prompt: "跟随参考图生成海报",
+      tier: "2K",
+      size: "auto",
+      expected: "2352x1776",
+    },
+    {
+      supplier: "frimodel",
+      provider: "openai",
+      prompt: "生成 9:16 海报",
+      tier: "4K",
+      size: "3840x2160",
+      expected: "3840x2160",
+    },
+    {
+      supplier: "frimodel",
+      provider: "openai",
+      prompt: "生成 16:9 海报",
+      tier: undefined,
+      size: "auto",
+      expected: "1360x768",
+    },
+    {
+      supplier: "cyberafei",
+      provider: "rest",
+      prompt: "生成 16:9 海报",
+      tier: "2K",
+      size: "auto",
+      expected: "2048x1152",
+    },
+    {
+      supplier: "cangyuan",
+      provider: "rest",
+      prompt: "生成 9:16 海报",
+      tier: undefined,
+      size: "auto",
+      expected: "2160x3840",
+    },
+    {
+      supplier: "chentu",
+      provider: "openai",
+      prompt: "生成 16:9 海报",
+      tier: "4K",
+      size: "auto",
+      expected: "3840x2160",
+    },
+  ])(
+    "resolves verified 2.5 $supplier $tier $size with prompt priority over references",
+    async ({ supplier, provider, prompt, tier, size, expected }) => {
+      const repository = await testRepository();
+      const storage = new MemoryStorage();
+      const canvas = await repository.ensureDefaultCanvas();
+      const model =
+        supplier === "frimodel"
+          ? "gpt-image-2.5-flare-adobe"
+          : supplier === "cangyuan"
+            ? "gpt-image-2.5-flare-4k"
+            : supplier === "chentu"
+              ? "gpt-image-2.5-flare"
+              : "gpt-image-2.5";
+      const descriptor = {
+        id: model,
+        name: model,
+        operations: ["image.generate", "image.edit"],
+        metadata: {
+          ...(supplier === "cangyuan"
+            ? {}
+            : { image25VerifiedAt: "2026-09-10" }),
+          supportsImageEdit: true,
+        },
+        parameters: [
+          {
+            key: "size",
+            control: "dimensions",
+            max: supplier === "cyberafei" ? 2048 : 3840,
+            options: imageSizeOptions(
+              supplier === "cyberafei"
+                ? ["1K", "2K"]
+                : supplier === "cangyuan"
+                  ? ["4K"]
+                  : ["1K", "2K", "4K"],
+              supplier === "cyberafei" ? 2048 : 3840,
+            ),
+          },
+        ],
+      };
+      await repository.saveConnection({
+        id: "image25",
+        name: "Image 2.5",
+        provider,
+        encryptedSecret: null,
+        config: {
+          supplierKey: supplier,
+          defaultModel: model,
+          ...(provider === "openai"
+            ? { modelCatalogModels: [descriptor] }
+            : { connector: { models: [descriptor] } }),
+        } as unknown as JsonObject,
+      });
+      await storage.put(
+        "reference.png",
+        new Uint8Array([1, 2, 3]),
+        "image/png",
+      );
+      await repository.saveAsset({
+        id: "reference",
+        name: "Landscape reference",
+        kind: "image",
+        mimeType: "image/png",
+        size: 3,
+        storageKey: "reference.png",
+        metadata: {},
+      });
+      await repository.saveCanvas({
+        id: canvas.id,
+        graph: {
+          schemaVersion: 1,
+          nodes: [
+            {
+              id: "asset",
+              type: "workflow",
+              data: {
+                nodeType: "asset-input",
+                assetId: "reference",
+                assetKind: "image",
+                mediaAspectRatio: 4 / 3,
+                outputs: [port("asset", "image")],
+              },
+            },
+            {
+              id: "image",
+              type: "workflow",
+              data: {
+                nodeType: "image-generation",
+                provider,
+                connectionId: "image25",
+                model,
+                parts: [{ type: "text", text: prompt }],
+                parameters: {
+                  size,
+                  ...(tier ? { size_tier: tier } : {}),
+                  n: 1,
+                },
+                inputs: [port("references", "image[]")],
+                outputs: [port("image", "image")],
+              },
+            },
+          ],
+          edges: [
+            {
+              id: "reference-edge",
+              source: "asset",
+              sourceHandle: "asset",
+              target: "image",
+              targetHandle: "references",
+            },
+          ],
+        },
+      });
+      let submitted: Readonly<Record<string, unknown>> | undefined;
+      const adapter: ProviderAdapter = {
+        async testConnection() {},
+        async listModels() {
+          return [];
+        },
+        async validate() {
+          return { valid: true, issues: [] };
+        },
+        async submit(request) {
+          submitted = request.parameters;
+          return {
+            providerTaskId: "image25-task",
+            status: "succeeded",
+            result: {},
+          };
+        },
+        async extractOutputs() {
+          return [
+            {
+              kind: "image",
+              data: new Uint8Array([1, 2, 3]),
+              mimeType: "image/png",
+            },
+          ];
+        },
+      };
+      const service = new AdapterRunService(
+        adapter,
+        repository,
+        storage,
+        "inline",
+        provider,
+      );
+      const run = await service.createRun({
+        canvasId: canvas.id,
+        clientRequestId: "image25-run",
+        scope: "all",
+      });
+      expect((await waitForRun(service, run.id)).run.status).toBe("succeeded");
+      expect(submitted).toMatchObject({ size: expected });
+      expect(submitted).not.toHaveProperty("size_tier");
+      expect(submitted).not.toHaveProperty("aspect_ratio");
+    },
+  );
+
   it("keeps 辰途自由传参 automatic sizing prompt-first and maps the selected K tier", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({
@@ -2309,7 +2546,7 @@ describe("RunService", () => {
     process.env.PUBLIC_BASE_URL = "https://canvas.example.test";
     process.env.MASTER_KEY = "runtime-test-master-key";
     try {
-      const repository = new MemoryRepository();
+      const repository = await testRepository();
       const storage = new MemoryStorage();
       const canvas = await repository.ensureDefaultCanvas();
       await storage.put(
@@ -2430,7 +2667,7 @@ describe("RunService", () => {
   });
 
   it("uploads a connected image to the Cyber Afei 4K edit route and follows its ratio", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await storage.put(
@@ -2561,7 +2798,7 @@ describe("RunService", () => {
   });
 
   it("moves an indeterminate task to needs_attention after three poll failures", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await seedResumableRun(repository, canvas.id);
@@ -2598,7 +2835,7 @@ describe("RunService", () => {
   });
 
   it("reuses the latest successful upstream output from node runs", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: graph() });
@@ -2633,7 +2870,7 @@ describe("RunService", () => {
   });
 
   it("freezes historical upstream inputs when a queued run is created", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({
@@ -2689,7 +2926,7 @@ describe("RunService", () => {
   it.each(["node", "downstream"] as const)(
     "blocks a %s run before provider submission when an excluded generation has no successful output",
     async (scope) => {
-      const repository = new MemoryRepository();
+      const repository = await testRepository();
       const canvas = await repository.ensureDefaultCanvas();
       await repository.saveCanvas({
         id: canvas.id,
@@ -2717,7 +2954,7 @@ describe("RunService", () => {
   );
 
   it("requires attention when output extraction fails after provider success", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
     const service = new AdapterRunService(
@@ -2739,7 +2976,7 @@ describe("RunService", () => {
   });
 
   it("requires attention when archiving fails after provider success", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
     const service = new AdapterRunService(
@@ -2761,7 +2998,7 @@ describe("RunService", () => {
   });
 
   it("retries archiving without submitting a second provider task", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new RecoverableStorage(3);
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
@@ -2792,7 +3029,7 @@ describe("RunService", () => {
   });
 
   it("repairs an interrupted recovery left in archiving state", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new RecoverableStorage(3);
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
@@ -2823,7 +3060,7 @@ describe("RunService", () => {
   });
 
   it("requeues blocked descendants when retrying a failed upstream node", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({
       id: canvas.id,
@@ -2858,7 +3095,7 @@ describe("RunService", () => {
   });
 
   it("repairs missing node runs and retries scheduling for an existing queued run", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     const frozenGraph = selectedValidationGraph();
     await repository.createRun({
@@ -2901,7 +3138,7 @@ describe("RunService", () => {
   });
 
   it("validates required inputs only for nodes in the selected run scope", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({
       id: canvas.id,
@@ -2932,7 +3169,7 @@ describe("RunService", () => {
   });
 
   it("freezes and restores only explicitly selected nodes", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({
       id: canvas.id,
@@ -2982,7 +3219,7 @@ describe("RunService", () => {
   });
 
   it("never resubmits an approval-backed selection run without a new approval", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
@@ -3030,7 +3267,7 @@ describe("RunService", () => {
   });
 
   it("accepts an inline prompt on a legacy required prompt port and prefers parts over prompt", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     const workflow = selectedValidationGraph();
     const imageData = graphNodeData(workflow, "disconnected-image");
@@ -3067,7 +3304,7 @@ describe("RunService", () => {
       expected: "cinematic city",
     },
   ])("$name", async ({ inlineText, expected }) => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     const workflow = graph();
     const imageData = graphNodeData(workflow, "image");
@@ -3093,7 +3330,7 @@ describe("RunService", () => {
   });
 
   it("cancels archiving nodes and never overwrites the terminal run status", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new GatedStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
@@ -3131,7 +3368,7 @@ describe("RunService", () => {
   });
 
   it("persists a provider task that returns after cancellation without reviving the node", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
     const provider = gatedSubmitAdapter();
@@ -3167,7 +3404,7 @@ describe("RunService", () => {
   });
 
   it("reconciles a persisted provider task after the run is cancelled", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     const providerTask = await seedCancelledProviderRun(repository, canvas.id);
     const provider = cancellationAdapter();
@@ -3187,7 +3424,7 @@ describe("RunService", () => {
   });
 
   it("keeps cancellation pending and records an adapter cancellation error", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
     const providerTask = await seedCancelledProviderRun(repository, canvas.id);
     const provider = cancellationAdapter(
@@ -3211,7 +3448,7 @@ describe("RunService", () => {
   });
 
   it("replays local archiving with a deterministic asset identity", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new WriteThenFailStorage(3);
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
@@ -3253,7 +3490,7 @@ describe("RunService", () => {
   });
 
   it("drops stale REST image batch counts for fixed-output models", async () => {
-    const repository = new MemoryRepository();
+    const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({

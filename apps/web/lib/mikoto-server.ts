@@ -1,15 +1,16 @@
 import {
+  readBoundedModelJson,
+  scanAlternateSupplier,
+} from "./supplier-scan-utils";
+import { matchesSupplierTemplate } from "./supplier-template-source";
+import {
   getRepository,
   type JsonObject,
   type ProviderConnectionRecord,
 } from "@super-canvas/db";
 import { decryptSecret, providerFetch } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
-import {
-  clearEmptyScanConfirmation,
-  pendingEmptyScanConfig,
-  shouldConfirmEmptyScan,
-} from "./model-scan-confirmation";
+import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
 import {
   MIKOTO_BASE_URL,
   MIKOTO_PRESET_ID,
@@ -19,11 +20,7 @@ import {
 } from "./mikoto-presets";
 
 export type MikotoModelScanStatus =
-  | "live"
-  | "empty"
-  | "unauthorized"
-  | "unconfigured"
-  | "failed";
+  "live" | "empty" | "unauthorized" | "unconfigured" | "failed";
 
 export interface MikotoKeyScan {
   status: MikotoModelScanStatus;
@@ -68,12 +65,15 @@ export async function scanMikotoKeyModels(
   const fetchImpl = options?.fetch ?? providerFetch;
   const baseUrl = (options?.baseUrl ?? MIKOTO_BASE_URL).replace(/\/+$/u, "");
   try {
-    const response = await fetchImpl(`${baseUrl}/v1/models`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(30_000),
-    });
+    const response = await fetchImpl(
+      `${baseUrl.replace(/\/v1$/u, "")}/v1/models`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
     if (response.status === 401 || response.status === 403)
       return mikotoScanFailure(
         "unauthorized",
@@ -84,7 +84,9 @@ export async function scanMikotoKeyModels(
         "failed",
         `MikotoPro 模型扫描失败（HTTP ${response.status}）`,
       );
-    const payload = (await response.json()) as OpenAIModelsPayload;
+    const payload = (await readBoundedModelJson(
+      response,
+    )) as OpenAIModelsPayload;
     if (!Array.isArray(payload.data))
       return mikotoScanFailure("failed", "MikotoPro 模型扫描返回了无效数据");
     const modelIds = [
@@ -190,11 +192,17 @@ export async function scanMikotoConnection(
 ): Promise<MikotoConnectionScan> {
   const repository = getRepository();
   const connection = await repository.getConnection(id);
-  if (!connection || connection.config.preset !== MIKOTO_PRESET_ID)
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    connection.config.preset !== MIKOTO_PRESET_ID
+  )
     return {
       ...mikotoScanFailure("failed", "MikotoPro 连接不存在"),
       connection,
     };
+  if (!matchesSupplierTemplate(connection))
+    return scanAlternateSupplier(connection, options);
   if (!connection.encryptedSecret)
     return {
       ...mikotoScanFailure(
@@ -209,11 +217,7 @@ export async function scanMikotoConnection(
   // fetchers always bypass this cache.
   if (!options?.force && !options?.fetch) {
     const cached = cachedMikotoScan(connection);
-    // A first empty response is only a pending confirmation. Recheck it on
-    // the next normal request instead of hiding the second upstream probe
-    // behind the regular 60-second scan cache.
-    if (cached && !shouldConfirmEmptyScan(connection.config, String(connection.config.modelGroup ?? "")))
-      return { ...cached, connection };
+    if (cached) return { ...cached, connection };
   }
 
   let apiKey: string;
@@ -233,6 +237,10 @@ export async function scanMikotoConnection(
   }
 
   const scan = await scanMikotoKeyModels(apiKey, {
+    baseUrl:
+      typeof connection.config.baseUrl === "string"
+        ? connection.config.baseUrl
+        : undefined,
     ...(options?.fetch ? { fetch: options.fetch } : {}),
   });
   const baseResult: MikotoConnectionScan = { ...scan, connection };
@@ -248,39 +256,23 @@ export async function scanMikotoConnection(
     latest.updatedAt !== connection.updatedAt ||
     latest.encryptedSecret !== connection.encryptedSecret
   ) {
-    if (options?.retryOnConcurrentChange === false) return baseResult;
-    return scanMikotoConnection(id, {
-      ...options,
-      retryOnConcurrentChange: false,
-    });
+    return baseResult;
   }
-  if (scan.status === "empty" &&
-      !shouldConfirmEmptyScan(latest.config, String(latest.config.modelGroup ?? ""))) {
-    const pendingConfig = pendingEmptyScanConfig(
-      latest.config,
-      scan.checkedAt,
-      String(latest.config.modelGroup ?? ""),
-    );
-    const saved = await repository.saveConnection({
-      id: latest.id,
-      name: latest.name,
-      provider: latest.provider,
-      encryptedSecret: latest.encryptedSecret,
-      config: pendingConfig,
-    });
-    return { ...baseResult, connection: saved };
-  }
+
   const config = mikotoConfigForScan(latest, scan);
   clearEmptyScanConfirmation(config);
   if (sameConfigIgnoringCheckedAt(config, latest.config))
     return { ...baseResult, connection: latest };
-  const saved = await repository.saveConnection({
-    id: latest.id,
-    name: latest.name,
-    provider: latest.provider,
-    encryptedSecret: latest.encryptedSecret,
-    config,
-  });
+  const saved = await repository.saveConnection(
+    {
+      id: latest.id,
+      name: latest.name,
+      provider: latest.provider,
+      encryptedSecret: latest.encryptedSecret,
+      config,
+    },
+    { expected: latest },
+  );
   return { ...baseResult, connection: saved };
 }
 
@@ -291,7 +283,11 @@ export async function scanMikotoConnection(
 export async function syncMikotoConnection(id: string) {
   const repository = getRepository();
   const connection = await repository.getConnection(id);
-  if (!connection || connection.config.preset !== MIKOTO_PRESET_ID)
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    connection.config.preset !== MIKOTO_PRESET_ID
+  )
     return connection;
   const normalizedGroup = normalizeMikotoGroupId(connection.config.modelGroup);
   if (!normalizedGroup) return connection;
@@ -302,9 +298,7 @@ export async function syncMikotoConnection(id: string) {
     typeof connection.config.defaultModel === "string"
       ? connection.config.defaultModel
       : "";
-  const defaultModel = group.models.some(
-    (model) => model.id === currentDefault,
-  )
+  const defaultModel = group.models.some((model) => model.id === currentDefault)
     ? currentDefault
     : group.defaultModel;
   const currentPreset = mikotoConnectionConfig(group.id);
@@ -323,13 +317,16 @@ export async function syncMikotoConnection(id: string) {
   )
     return connection;
 
-  return repository.saveConnection({
-    id: connection.id,
-    name: connection.name,
-    provider: group.provider,
-    encryptedSecret: connection.encryptedSecret,
-    config,
-  });
+  return repository.saveConnection(
+    {
+      id: connection.id,
+      name: connection.name,
+      provider: group.provider,
+      encryptedSecret: connection.encryptedSecret,
+      config,
+    },
+    { expected: connection },
+  );
 }
 
 export async function syncAllMikotoConnections() {

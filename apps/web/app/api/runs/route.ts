@@ -1,3 +1,5 @@
+import { assertCurrentSupplierConnection } from "../../../lib/supplier-service";
+import { matchesSupplierTemplate } from "../../../lib/supplier-template-source";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { WorkflowGraphSchema, selectRunNodeIds } from "@super-canvas/core";
@@ -91,7 +93,9 @@ async function cyberAfeiRunPreflight(input: {
       typeof data.connectionId === "string" ? data.connectionId : "";
     if (!connectionId || connectionId === "fake-default") continue;
     const connection = await repository.getConnection(connectionId);
-    if (!connection) continue;
+    if (!connection) return { message: "连接已删除，请为画布节点重新选择连接", status: 409 };
+    try { await assertCurrentSupplierConnection(connection); } catch (e) { return { message: e instanceof Error ? e.message : "连接来源已改变", status: 409 }; }
+    if (!matchesSupplierTemplate(connection)) continue;
     const model = typeof data.model === "string" ? data.model.trim() : "";
     const preset = connection.config.preset;
 

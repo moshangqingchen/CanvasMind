@@ -121,8 +121,6 @@ export async function DELETE(
   const canvas = await repository.getCanvas(parsedId.data);
   if (!canvas) return jsonError("项目不存在", 404);
   const canvases = await repository.listCanvases();
-  if (canvases.length <= 1)
-    return jsonError("至少需要保留一个项目，最后一个项目不能删除", 409);
   const runs = await repository.listRuns(canvas.id);
   if (runs.some((run) => activeRunStatuses.has(run.status)))
     return jsonError("当前项目仍有生成任务运行，请等待任务结束后再删除", 409);

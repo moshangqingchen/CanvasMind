@@ -166,19 +166,20 @@ describe("DELETE /api/projects/[id]", () => {
     expect(mocks.deleteProject).toHaveBeenCalledWith(target.title);
   });
 
-  it("refuses to delete the final project", async () => {
-    mocks.repository.listCanvases.mockResolvedValue([target]);
+  it("can delete the final project and return to an empty workspace", async () => {
+    mocks.repository.listCanvases.mockResolvedValueOnce([target]).mockResolvedValueOnce([]);
 
     const response = await DELETE(request, context);
 
-    expect(response.status).toBe(409);
-    expect(mocks.repository.deleteCanvas).not.toHaveBeenCalled();
-    expect(mocks.deleteProject).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ deleted: true, nextProjectId: null, folderDeleted: true });
+    expect(mocks.repository.deleteCanvas).toHaveBeenCalledWith(target.id);
+    expect(mocks.deleteProject).toHaveBeenCalledWith(target.title);
   });
 
-  it("refuses deletion while a generation run is active", async () => {
-    mocks.repository.listCanvases.mockResolvedValue([target, remaining]);
-    mocks.repository.listRuns.mockResolvedValue([{ status: "running" }]);
+  it.each(["queued", "running"])("refuses final-project deletion while a generation run is %s", async (status) => {
+    mocks.repository.listCanvases.mockResolvedValue([target]);
+    mocks.repository.listRuns.mockResolvedValue([{ status }]);
 
     const response = await DELETE(request, context);
 

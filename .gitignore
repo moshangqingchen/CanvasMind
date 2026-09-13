@@ -24,6 +24,7 @@ coverage/
 playwright-report/
 test-results/
 apps/web/test-results-mention/
+apps/web/test-results-suppliers/
 apps/web/.active-live-slot
 
 # local secrets & tool artifacts

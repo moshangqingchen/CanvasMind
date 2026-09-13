@@ -1,15 +1,16 @@
 import {
+  readBoundedModelJson,
+  scanAlternateSupplier,
+} from "./supplier-scan-utils";
+import { matchesSupplierTemplate } from "./supplier-template-source";
+import {
   getRepository,
   type JsonObject,
   type ProviderConnectionRecord,
 } from "@super-canvas/db";
 import { decryptSecret, providerFetch } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
-import {
-  clearEmptyScanConfirmation,
-  pendingEmptyScanConfig,
-  shouldConfirmEmptyScan,
-} from "./model-scan-confirmation";
+import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
 import {
   FRIMODEL_BASE_URL,
   FRIMODEL_MODEL_GROUP,
@@ -19,11 +20,7 @@ import {
 } from "./frimodel-presets";
 
 export type FriModelModelScanStatus =
-  | "live"
-  | "empty"
-  | "unauthorized"
-  | "unconfigured"
-  | "failed";
+  "live" | "empty" | "unauthorized" | "unconfigured" | "failed";
 
 export interface FriModelKeyScan {
   status: FriModelModelScanStatus;
@@ -84,7 +81,9 @@ export async function scanFriModelKeyModels(
         "failed",
         `FriModel 模型扫描失败（HTTP ${response.status}）`,
       );
-    const payload = (await response.json()) as OpenAIModelsPayload;
+    const payload = (await readBoundedModelJson(
+      response,
+    )) as OpenAIModelsPayload;
     if (!Array.isArray(payload.data))
       return friModelScanFailure("failed", "FriModel 模型扫描返回了无效数据");
     const modelIds = [
@@ -161,11 +160,17 @@ export async function scanFriModelConnection(
 ): Promise<FriModelConnectionScan> {
   const repository = getRepository();
   const connection = await repository.getConnection(id);
-  if (!connection || connection.config.preset !== FRIMODEL_PRESET_ID)
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    connection.config.preset !== FRIMODEL_PRESET_ID
+  )
     return {
       ...friModelScanFailure("failed", "FriModel 连接不存在"),
       connection,
     };
+  if (!matchesSupplierTemplate(connection))
+    return scanAlternateSupplier(connection, options);
   if (!connection.encryptedSecret)
     return {
       ...friModelScanFailure(
@@ -192,6 +197,10 @@ export async function scanFriModelConnection(
   }
 
   const scan = await scanFriModelKeyModels(apiKey, {
+    baseUrl:
+      typeof connection.config.baseUrl === "string"
+        ? connection.config.baseUrl
+        : undefined,
     ...(options?.fetch ? { fetch: options.fetch } : {}),
   });
   const baseResult: FriModelConnectionScan = { ...scan, connection };
@@ -207,42 +216,24 @@ export async function scanFriModelConnection(
     latest.updatedAt !== connection.updatedAt ||
     latest.encryptedSecret !== connection.encryptedSecret
   ) {
-    if (options?.retryOnConcurrentChange === false) return baseResult;
-    return scanFriModelConnection(id, {
-      ...options,
-      retryOnConcurrentChange: false,
-    });
+    return baseResult;
   }
   const scanScope = String(latest.config.modelGroup ?? "");
-  if (
-    scan.status === "empty" &&
-    !shouldConfirmEmptyScan(latest.config, scanScope)
-  ) {
-    const pendingConfig = pendingEmptyScanConfig(
-      latest.config,
-      scan.checkedAt,
-      scanScope,
-    );
-    const saved = await repository.saveConnection({
-      id: latest.id,
-      name: latest.name,
-      provider: latest.provider,
-      encryptedSecret: latest.encryptedSecret,
-      config: pendingConfig,
-    });
-    return { ...baseResult, connection: saved };
-  }
+
   const config = friModelConfigForScan(latest, scan);
   clearEmptyScanConfirmation(config);
   if (sameConfigIgnoringCheckedAt(config, latest.config))
     return { ...baseResult, connection: latest };
-  const saved = await repository.saveConnection({
-    id: latest.id,
-    name: latest.name,
-    provider: latest.provider,
-    encryptedSecret: latest.encryptedSecret,
-    config,
-  });
+  const saved = await repository.saveConnection(
+    {
+      id: latest.id,
+      name: latest.name,
+      provider: latest.provider,
+      encryptedSecret: latest.encryptedSecret,
+      config,
+    },
+    { expected: latest },
+  );
   return { ...baseResult, connection: saved };
 }
 
@@ -254,7 +245,11 @@ export async function scanFriModelConnection(
 export async function syncFriModelConnection(id: string) {
   const repository = getRepository();
   const connection = await repository.getConnection(id);
-  if (!connection || connection.config.preset !== FRIMODEL_PRESET_ID)
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    connection.config.preset !== FRIMODEL_PRESET_ID
+  )
     return connection;
 
   const modelGroup =
@@ -277,13 +272,16 @@ export async function syncFriModelConnection(id: string) {
   if (JSON.stringify(connection.config) === JSON.stringify(config))
     return connection;
 
-  return repository.saveConnection({
-    id: connection.id,
-    name: connection.name,
-    provider: connection.provider,
-    encryptedSecret: connection.encryptedSecret,
-    config,
-  });
+  return repository.saveConnection(
+    {
+      id: connection.id,
+      name: connection.name,
+      provider: connection.provider,
+      encryptedSecret: connection.encryptedSecret,
+      config,
+    },
+    { expected: connection },
+  );
 }
 
 export async function syncAllFriModelConnections() {

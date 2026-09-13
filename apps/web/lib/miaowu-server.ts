@@ -1,15 +1,16 @@
 import {
+  readBoundedModelJson,
+  scanAlternateSupplier,
+} from "./supplier-scan-utils";
+import { matchesSupplierTemplate } from "./supplier-template-source";
+import {
   getRepository,
   type JsonObject,
   type ProviderConnectionRecord,
 } from "@super-canvas/db";
 import { decryptSecret, providerFetch } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
-import {
-  clearEmptyScanConfirmation,
-  pendingEmptyScanConfig,
-  shouldConfirmEmptyScan,
-} from "./model-scan-confirmation";
+import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
 import {
   MIAOWU_BASE_URL,
   MIAOWU_PRESET_ID,
@@ -86,11 +87,14 @@ export async function scanMiaowuKeyModels(
   const fetchImpl = options?.fetch ?? providerFetch;
   const base = (options?.baseUrl ?? MIAOWU_BASE_URL).replace(/\/+$/u, "");
   try {
-    const response = await fetchImpl(`${base}/v1/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(30_000),
-    });
+    const response = await fetchImpl(
+      `${base.replace(/\/v1$/u, "")}/v1/models`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
     const checkedAt = new Date().toISOString();
     if (response.status === 401 || response.status === 403)
       return miaowuScanFailure(
@@ -102,7 +106,9 @@ export async function scanMiaowuKeyModels(
         "failed",
         `喵呜模型扫描失败（HTTP ${response.status}），将保留上次成功模型`,
       );
-    const payload = (await response.json().catch(() => null)) as {
+    const payload = (await readBoundedModelJson(response).catch(
+      () => null,
+    )) as {
       data?: unknown;
     } | null;
     if (!payload || !Array.isArray(payload.data))
@@ -152,8 +158,14 @@ export async function scanMiaowuConnection(
 ): Promise<MiaowuConnectionScan> {
   const repository = getRepository();
   const connection = await repository.getConnection(id);
-  if (!connection || connection.config.preset !== MIAOWU_PRESET_ID)
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    connection.config.preset !== MIAOWU_PRESET_ID
+  )
     return { ...miaowuScanFailure("failed", "喵呜连接不存在"), connection };
+  if (!matchesSupplierTemplate(connection))
+    return scanAlternateSupplier(connection, options);
   if (!connection.encryptedSecret)
     return {
       ...miaowuScanFailure(
@@ -183,6 +195,10 @@ export async function scanMiaowuConnection(
       ...(options?.fetch ? { fetch: options.fetch } : {}),
     }),
     scanMiaowuKeyModels(apiKey, {
+      baseUrl:
+        typeof connection.config.baseUrl === "string"
+          ? connection.config.baseUrl
+          : undefined,
       ...(options?.fetch ? { fetch: options.fetch } : {}),
     }),
   ]);
@@ -217,31 +233,10 @@ export async function scanMiaowuConnection(
     latest.updatedAt !== connection.updatedAt ||
     latest.encryptedSecret !== connection.encryptedSecret
   ) {
-    if (options?.retryOnConcurrentChange === false) return baseResult;
-    return scanMiaowuConnection(id, {
-      ...options,
-      retryOnConcurrentChange: false,
-    });
+    return baseResult;
   }
   const scanScope = String(latest.config.modelGroup ?? MIAOWU_PRESET_ID);
-  if (
-    scan.status === "empty" &&
-    !shouldConfirmEmptyScan(latest.config, scanScope)
-  ) {
-    const pendingConfig = pendingEmptyScanConfig(
-      latest.config,
-      scan.checkedAt,
-      scanScope,
-    );
-    const saved = await repository.saveConnection({
-      id: latest.id,
-      name: latest.name,
-      provider: latest.provider,
-      encryptedSecret: latest.encryptedSecret,
-      config: pendingConfig,
-    });
-    return { ...baseResult, connection: saved };
-  }
+
   const configuredDefault =
     typeof latest.config.defaultModel === "string"
       ? latest.config.defaultModel
@@ -269,13 +264,16 @@ export async function scanMiaowuConnection(
   clearEmptyScanConfirmation(config);
   if (JSON.stringify(latest.config) === JSON.stringify(config))
     return { ...baseResult, connection: latest };
-  const saved = await repository.saveConnection({
-    id: latest.id,
-    name: latest.name,
-    provider: "rest",
-    encryptedSecret: latest.encryptedSecret,
-    config,
-  });
+  const saved = await repository.saveConnection(
+    {
+      id: latest.id,
+      name: latest.name,
+      provider: "rest",
+      encryptedSecret: latest.encryptedSecret,
+      config,
+    },
+    { expected: latest },
+  );
   return { ...baseResult, connection: saved };
 }
 
@@ -283,7 +281,11 @@ async function syncMiaowuConnectionFromCatalog(
   connection: ProviderConnectionRecord | null,
   catalog: MiaowuCatalogSnapshot,
 ) {
-  if (!connection || connection.config.preset !== MIAOWU_PRESET_ID)
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    connection.config.preset !== MIAOWU_PRESET_ID
+  )
     return connection;
   const groupId =
     typeof connection.config.modelGroup === "string"
@@ -353,13 +355,16 @@ async function syncMiaowuConnectionFromCatalog(
     JSON.stringify(connection.config) === JSON.stringify(config)
   )
     return connection;
-  return getRepository().saveConnection({
-    id: connection.id,
-    name: connection.name,
-    provider: "rest",
-    encryptedSecret: connection.encryptedSecret,
-    config,
-  });
+  return getRepository().saveConnection(
+    {
+      id: connection.id,
+      name: connection.name,
+      provider: "rest",
+      encryptedSecret: connection.encryptedSecret,
+      config,
+    },
+    { expected: connection },
+  );
 }
 
 /**

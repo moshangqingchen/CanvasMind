@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { scanProviderModelCatalog } from "./model-catalog.js";
 
 describe("provider model catalog scanner", () => {
+  it("recognizes new video families and does not mistake visual understanding for generation", () => {
+    const ids = ["happyhorse-1.1", "minimax-h3-4k", "wan3.0-15s", "gpt-4-vision-preview", "nano-banana2"];
+    const models = scanProviderModelCatalog(ids.map(id => ({id}))).models;
+    expect(models.slice(0, 3).every(m => m.operations.includes("video.generate"))).toBe(true);
+    expect(models[3]?.operations).toEqual([]);
+    expect(models[4]?.operations).toContain("image.generate");
+  });
+  it("keeps every group membership when one model occurs in multiple groups", () => {
+    const scan = scanProviderModelCatalog({ data: [
+      { id: "image-pro", group: "A" },
+      { id: "image-pro", group: "B" },
+      { model_name: "video-pro", enable_groups: ["A", "B"] },
+    ] });
+    expect(scan.models).toHaveLength(2);
+    expect(scan.groups).toEqual([
+      { id: "A", label: "A", modelIds: ["image-pro", "video-pro"] },
+      { id: "B", label: "B", modelIds: ["image-pro", "video-pro"] },
+    ]);
+  });
   it("keeps live models grouped and carries price metadata", () => {
     const scan = scanProviderModelCatalog({
       data: [

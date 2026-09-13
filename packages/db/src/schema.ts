@@ -59,6 +59,22 @@ export const assets = pgTable(
   ],
 );
 
+export const suppliers = pgTable("supplier", {
+  id: id("id"),
+  name: text("name").notNull(),
+  supplierKey: text("supplier_key").notNull(),
+  siteUrl: text("site_url").notNull().default(""),
+  apiUrl: text("api_url").notNull().default(""),
+  kind: text("kind").notNull().default("auto"),
+  catalog: jsonb("catalog").notNull().default({ groups: [] }),
+  scanStatus: text("scan_status").notNull().default("unscanned"),
+  scannedAt: text("scanned_at"),
+  scanError: text("scan_error"),
+  state: jsonb("state"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+
 export const providerConnections = pgTable("provider_connection", {
   id: id("id"),
   name: text("name").notNull(),
@@ -200,7 +216,7 @@ export const directorProposals = pgTable(
     ),
     check(
       "director_proposal_status_chk",
-      sql`${table.status} in ('draft','awaiting_approval','approved','cancelled','expired','running','succeeded','failed')`,
+      sql`${table.status} in ('draft','awaiting_approval','approved','materializing','awaiting_execution','cancelled','expired','running','succeeded','failed')`,
     ),
   ],
 );

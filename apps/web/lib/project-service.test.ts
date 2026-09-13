@@ -36,6 +36,7 @@ import {
   appendProjectChatTurn,
   clearProjectChat,
   listProjectChatMessages,
+  projectCardSummary,
 } from "./project-service";
 
 const canvas = {
@@ -72,6 +73,33 @@ beforeEach(() => {
     updatedAt: "2026-09-02T00:00:00.000Z",
   }));
   mocks.repository.createDirectorMessage.mockResolvedValue({});
+});
+
+describe("project card summaries", () => {
+  it("returns a compact empty summary for legacy graphs without nodes", async () => {
+    await expect(projectCardSummary(canvas)).resolves.toEqual({
+      id: canvas.id, title: canvas.title, createdAt: canvas.createdAt,
+      updatedAt: canvas.updatedAt, nodeCount: 0,
+    });
+    expect(mocks.repository.getAsset).not.toHaveBeenCalled();
+  });
+
+  it("only chooses an existing image and never exposes graph or remote source data", async () => {
+    mocks.repository.getAsset.mockImplementation(async (id: string) => {
+      if (id === "valid-image") return { id, kind: "image", deleted: false };
+      if (id === "deleted-image") return { id, kind: "image", deleted: true };
+      if (id === "video") return { id, kind: "video", deleted: false };
+      return null;
+    });
+    const result = await projectCardSummary({ ...canvas, graph: { nodes: [
+      { data: { parts: [{ type: "asset", assetId: "valid-image" }] } },
+      { data: { assetId: "deleted-image", lastOutputAssetIds: ["missing", "video"], url: "https://example.com/private-image" } },
+    ] } });
+    expect(result).toEqual({ id: canvas.id, title: canvas.title, createdAt: canvas.createdAt,
+      updatedAt: canvas.updatedAt, nodeCount: 2, previewAssetId: "valid-image" });
+    expect(mocks.repository.getAsset).toHaveBeenCalledWith("missing");
+    expect(result).not.toHaveProperty("graph");
+  });
 });
 
 describe("project chat persistence", () => {

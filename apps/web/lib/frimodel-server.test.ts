@@ -263,16 +263,6 @@ describe("scanFriModelConnection", () => {
   it("persists an authoritative empty scan", async () => {
     const repository = makeRepository(connectionRecord());
     const fetchImpl = modelsFetch([]);
-    const pending = await scanFriModelConnection("frimodel-1", {
-      fetch: fetchImpl,
-    });
-    expect(pending.status).toBe("empty");
-    expect(pending.connection?.config.emptyScanConfirmations).toBe(1);
-    expect(pending.connection?.config.defaultModel).toBe(
-      "gpt-image-2-adobe",
-    );
-    expect(repository.saveConnection).toHaveBeenCalledTimes(1);
-
     const result = await scanFriModelConnection("frimodel-1", {
       fetch: fetchImpl,
     });
@@ -285,7 +275,7 @@ describe("scanFriModelConnection", () => {
       "gpt-image-2-high",
     ]);
     expect(config.emptyScanConfirmations).toBeUndefined();
-    expect(repository.saveConnection).toHaveBeenCalledTimes(2);
+    expect(repository.saveConnection).toHaveBeenCalledTimes(1);
   });
 
   it("does not persist unauthorized or failed scans", async () => {
@@ -330,7 +320,7 @@ describe("scanFriModelConnection", () => {
     expect(second.connection?.updatedAt).toBe("saved-1");
   });
 
-  it("retries once when the connection changes concurrently", async () => {
+  it("discards the old result without scanning a concurrently changed connection", async () => {
     const repository = makeRepository(connectionRecord());
     let mutated = false;
     const fetchImpl = modelsFetch(["gpt-image-2-adobe"], () => {
@@ -344,9 +334,9 @@ describe("scanFriModelConnection", () => {
       fetch: fetchImpl,
     });
     expect(result.status).toBe("live");
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(repository.saveConnection).toHaveBeenCalledTimes(1);
-    expect(result.connection?.config.modelScanStatus).toBe("live");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(repository.saveConnection).not.toHaveBeenCalled();
+    expect(result.connection?.config.modelScanStatus).toBeUndefined();
   });
 
   it("does not retry or write when retryOnConcurrentChange is false", async () => {

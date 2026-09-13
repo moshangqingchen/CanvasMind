@@ -87,9 +87,9 @@ describe("model parameter helpers", () => {
       metadata: { parameterControlsUnavailable: true },
     };
 
-    expect(
-      parameterDescriptorsFor("video-generation", "rest", model),
-    ).toEqual([]);
+    expect(parameterDescriptorsFor("video-generation", "rest", model)).toEqual(
+      [],
+    );
     expect(
       normalizedParametersForModel("video-generation", "rest", model, {
         duration: 26,
@@ -348,6 +348,31 @@ describe("model parameter helpers", () => {
     ).toEqual({ size: "auto", size_tier: "2K" });
   });
 
+  it.each(["1K", "2K"])(
+    "uses only the available %s tier even with a stale saved 4K tier",
+    (tier) => {
+      const descriptors = [
+        {
+          key: "size",
+          label: "输出分辨率",
+          control: "dimensions" as const,
+          default: "auto",
+          options: [
+            { label: "自动", value: "auto" },
+            { label: `${tier} · 1:1`, value: "1024x1024" },
+          ],
+        },
+      ];
+      expect(parametersWithDefaults(descriptors)).toEqual({
+        size: "auto",
+        size_tier: tier,
+      });
+      expect(
+        parametersWithDefaults(descriptors, { size: "auto", size_tier: "4K" }),
+      ).toEqual({ size: "auto", size_tier: tier });
+    },
+  );
+
   it("reads a connector's configured default model before remote discovery", () => {
     const descriptor = modelDescriptorFromConnectionConfig(
       {
@@ -522,12 +547,9 @@ describe("model parameter helpers", () => {
     };
 
     expect(
-      parameterDescriptorsForValues(
-        "video-generation",
-        "rest",
-        model,
-        { resolution: "720p" },
-      ).find((descriptor) => descriptor.key === "duration")?.max,
+      parameterDescriptorsForValues("video-generation", "rest", model, {
+        resolution: "720p",
+      }).find((descriptor) => descriptor.key === "duration")?.max,
     ).toBe(12);
     expect(
       normalizedParametersForModel("video-generation", "rest", model, {

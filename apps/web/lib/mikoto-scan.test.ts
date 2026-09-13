@@ -249,16 +249,6 @@ describe("scanMikotoConnection", () => {
   it("persists an authoritative empty scan", async () => {
     const repository = makeRepository(connectionRecord());
     const fetchImpl = modelsFetch([]);
-    const pending = await scanMikotoConnection("mikoto-1", {
-      fetch: fetchImpl,
-    });
-    expect(pending.status).toBe("empty");
-    expect(pending.connection?.config.emptyScanConfirmations).toBe(1);
-    expect(pending.connection?.config.defaultModel).toBe(
-      "gemini-3.1-flash-image-preview",
-    );
-    expect(repository.saveConnection).toHaveBeenCalledTimes(1);
-
     const result = await scanMikotoConnection("mikoto-1", {
       fetch: fetchImpl,
     });
@@ -271,7 +261,7 @@ describe("scanMikotoConnection", () => {
       "gemini-3-pro-image-preview",
     ]);
     expect(config.emptyScanConfirmations).toBeUndefined();
-    expect(repository.saveConnection).toHaveBeenCalledTimes(2);
+    expect(repository.saveConnection).toHaveBeenCalledTimes(1);
   });
 
   it("does not persist unauthorized or failed scans", async () => {
@@ -316,7 +306,7 @@ describe("scanMikotoConnection", () => {
     expect(second.connection?.updatedAt).toBe("saved-1");
   });
 
-  it("retries once when the connection changes concurrently", async () => {
+  it("discards the old result without scanning a concurrently changed connection", async () => {
     const repository = makeRepository(connectionRecord());
     let mutated = false;
     const fetchImpl = modelsFetch(["gemini-3.1-flash-image-preview"], () => {
@@ -330,9 +320,9 @@ describe("scanMikotoConnection", () => {
       fetch: fetchImpl,
     });
     expect(result.status).toBe("live");
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(repository.saveConnection).toHaveBeenCalledTimes(1);
-    expect(result.connection?.config.modelScanStatus).toBe("live");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(repository.saveConnection).not.toHaveBeenCalled();
+    expect(result.connection?.config.modelScanStatus).toBeUndefined();
   });
 
   it("does not retry or write when retryOnConcurrentChange is false", async () => {

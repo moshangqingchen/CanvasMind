@@ -315,7 +315,7 @@ export async function getDirectorConversation(
 export async function listDirectorConversations(canvasId: string) {
   const sessions = await repository.listDirectorSessions(canvasId);
   return Promise.all(
-    sessions.map((session) => getDirectorConversation(session.id)),
+    sessions.filter(s => s.metadata.conversationType !== "agent-task").map((session) => getDirectorConversation(session.id)),
   );
 }
 
@@ -1052,6 +1052,7 @@ export async function approveDirectorProposal(input: {
   let proposal = await repository.getDirectorProposal(input.proposalId);
   if (!proposal)
     throw new DirectorServiceError("PROPOSAL_NOT_FOUND", "方案不存在", 404);
+  if (proposal.plan.mode === "agent") throw new DirectorServiceError("AGENT_APPROVAL_REQUIRED", "请在智能体中分别确认画布方案与生成", 409);
   proposal = await expireProposalIfNeeded(proposal);
   if (proposal.version !== input.version) {
     throw new DirectorServiceError(

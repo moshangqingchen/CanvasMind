@@ -1,3 +1,6 @@
+import { normalizeSupplierSiteBase } from "@super-canvas/providers";
+import { randomUUID } from "node:crypto";
+import { SupplierConflictError } from "@super-canvas/db";
 import {
   ProviderConnectionRequestSchema,
   parseJsonRequest,
@@ -8,25 +11,30 @@ import {
   maskConnection,
   saveProviderConnection,
 } from "../../../lib/server";
-import { syncCangyuanConnection } from "../../../lib/cangyuan-catalog";
-import { syncCyberAfeiConnection } from "../../../lib/cyberafei-server";
 import { CHENTU_PRESET_ID } from "../../../lib/chentu-presets";
-import { syncChentuConnection } from "../../../lib/chentu-server";
-import { FRIMODEL_PRESET_ID } from "../../../lib/frimodel-presets";
-import { syncFriModelConnection } from "../../../lib/frimodel-server";
-import { syncMikotoConnection } from "../../../lib/mikoto-server";
-import { syncMiaowuConnection } from "../../../lib/miaowu-server";
 import { clearEmptyScanConfirmation } from "../../../lib/model-scan-confirmation";
 import { supplierKeyForConnection } from "../../../lib/supplier-identity";
+import {
+  listSupplierRecords,
+  assertCurrentSupplierConnection,
+  supplierConfigForConnection,
+  SupplierServiceError,
+} from "../../../lib/supplier-service";
+import {
+  validateManualProviderModels,
+  ManualModelValidationError,
+} from "../../../lib/manual-provider-models";
 
 export async function GET(_request?: Request) {
   void _request;
-  // Listing saved connections must stay read-only. Provider-specific model
-  // routes perform an explicit refresh when the user asks for one; a page
-  // load must never rewrite a saved connector or its default model.
+  // Reconcile legacy source ownership once, without fetching model catalogs.
+  // A list read must never replace a saved connector or its default model.
+  await listSupplierRecords();
   const connections = await repository.listConnections();
   return Response.json(
-    connections.map((connection) => maskConnection(connection)),
+    connections
+      .filter((c) => c.config.supplierArchived !== true)
+      .map((connection) => maskConnection(connection)),
     { headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -50,17 +58,50 @@ export async function POST(request: Request) {
     // apiKey is omitted, making credentials leak across suppliers. Switching
     // suppliers must always create a new connection.
     if (existing) {
+      await assertCurrentSupplierConnection(existing);
+      if (!existing.config.supplierId) {
+        if (config.baseUrl === undefined)
+          config.baseUrl = existing.config.baseUrl;
+        if (
+          normalizeSupplierSiteBase(String(config.baseUrl || "")) !==
+          normalizeSupplierSiteBase(String(existing.config.baseUrl || ""))
+        )
+          return jsonError(
+            "请从供应商连接地址修改 API 地址，以归档旧分组与 Key",
+            409,
+          );
+      }
+      if (existing.config.supplierSourceId)
+        config.supplierSourceId = existing.config.supplierSourceId;
+      if (existing.config.supplierId && config.supplierId === undefined)
+        config.supplierId = existing.config.supplierId;
+      if (existing.config.manualModels && config.manualModels === undefined)
+        config.manualModels = existing.config.manualModels;
+      if (
+        existing.config.supplierId &&
+        config.supplierId &&
+        existing.config.supplierId !== config.supplierId
+      )
+        return jsonError(
+          "不能把已保存 Key 的分组移到其他供应商，请新建独立连接",
+          409,
+        );
       const previousSupplier = supplierKeyForConnection(existing);
       const nextSupplier = supplierKeyForConnection({
         provider: parsed.data.provider,
         config,
       });
       if (previousSupplier !== nextSupplier)
-        return jsonError(
-          "不能将已有连接切换到其他供应商，请新建独立连接",
-          409,
-        );
+        return jsonError("不能将已有连接切换到其他供应商，请新建独立连接", 409);
     }
+    validateManualProviderModels(parsed.data.provider, config);
+    Object.assign(
+      config,
+      await supplierConfigForConnection({
+        provider: parsed.data.provider,
+        config,
+      }),
+    );
     // A newly submitted key starts a fresh availability sequence. Do not let
     // an empty response recorded for the previous key confirm this key.
     if (parsed.data.apiKey) clearEmptyScanConfirmation(config);
@@ -175,35 +216,57 @@ export async function POST(request: Request) {
       else if (existing?.config.unavailableModels !== undefined)
         config.unavailableModels = existing.config.unavailableModels;
     }
-    let connection = await saveProviderConnection({
+    // Never trust scan state submitted by the browser; scope it to the saved credentials.
+    const identityFields = [
+      "baseUrl",
+      "modelGroup",
+      "protocol",
+      "directorProtocol",
+      "usage",
+      "supplierSourceId",
+    ];
+    const identityChanged =
+      !!parsed.data.apiKey ||
+      !existing ||
+      identityFields.some((k) => config[k] !== existing.config[k]);
+    for (const field of [
+      "modelScanStatus",
+      "modelScanCheckedAt",
+      "scannedModelIds",
+      "modelScanGroups",
+      "modelCatalogModels",
+      "modelCatalogSource",
+      "weAiLivePricing",
+      "modelProtocolTemplate",
+      "unknownModels",
+      "unavailableModels",
+    ]) {
+      if (identityChanged) delete config[field];
+      else if (existing?.config[field] !== undefined)
+        config[field] = existing.config[field];
+      else delete config[field];
+    }
+    config.modelScanRequestId = randomUUID();
+    if (identityChanged) config.modelScanStatus = "unscanned";
+    const connection = await saveProviderConnection({
+      expected: existing ?? undefined,
       id: parsed.data.id,
       name: parsed.data.name,
       provider: parsed.data.provider,
       apiKey: parsed.data.apiKey,
       config,
     });
-    if (connection.config.preset === "cangyuan-gpt-image-2") {
-      connection = (await syncCangyuanConnection(connection.id)) ?? connection;
-    }
-    if (connection.config.preset === "cyberafei-api") {
-      connection = (await syncCyberAfeiConnection(connection.id)) ?? connection;
-    }
-    if (connection.config.preset === "mikoto-pro") {
-      connection = (await syncMikotoConnection(connection.id)) ?? connection;
-    }
-    if (connection.config.preset === "miaowu-openai-videos") {
-      connection = (await syncMiaowuConnection(connection.id)) ?? connection;
-    }
-    if (connection.config.preset === CHENTU_PRESET_ID) {
-      connection = (await syncChentuConnection(connection.id)) ?? connection;
-    }
-    if (connection.config.preset === FRIMODEL_PRESET_ID) {
-      connection = (await syncFriModelConnection(connection.id)) ?? connection;
-    }
+    // Saving credentials is independent of scanning. Explicit test/refresh owns inventories.
     return Response.json(maskConnection(connection), {
       status: parsed.data.id ? 200 : 201,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof SupplierConflictError)
+      return jsonError(error.message, 409);
+    if (error instanceof ManualModelValidationError)
+      return jsonError(error.message, 400);
+    if (error instanceof SupplierServiceError)
+      return jsonError(error.message, error.status);
     return jsonError("供应商连接保存失败", 500);
   }
 }

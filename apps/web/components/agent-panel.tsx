@@ -152,11 +152,18 @@ function audioFormat(
   return null;
 }
 
-const agentWelcomeMessage: AgentMessage = {
-  id: "agent-welcome",
-  role: "assistant",
-  text: "我是画布右侧导演台。选择对话群组与模型后可直接多轮交流；选中生成结果时，我也会收到该结果的提示词上下文。",
-};
+function agentWelcomeMessageFor(
+  placement: "left" | "right",
+): AgentMessage {
+  return {
+    id: "agent-welcome",
+    role: "assistant",
+    text:
+      placement === "left"
+        ? "我是画布左侧智能体。选择沧元对话群组与模型后可直接多轮交流；选中生成结果时，我也会收到该结果的提示词上下文。"
+        : "我是你的画布智能体。选择对话分组与模型后即可开始交流；选中生成结果时，我也会收到对应的提示词上下文。",
+  };
+}
 
 function persistedAgentMessages(canvasId: string): AgentMessage[] {
   try {
@@ -198,6 +205,7 @@ export function AgentPanel({
   selectedPrompt,
   draftRequest,
   onManageApi,
+  placement = "right",
 }: {
   connections: ProviderConnectionView[];
   assets: AssetView[];
@@ -206,6 +214,7 @@ export function AgentPanel({
   selectedPrompt: string;
   draftRequest: AgentDraftRequest | null;
   onManageApi: (group?: string) => void;
+  placement?: "left" | "right";
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -242,7 +251,7 @@ export function AgentPanel({
     text: string;
   }>({ requestId: null, text: "" });
   const [messages, setMessages] = useState<AgentMessage[]>([
-    agentWelcomeMessage,
+    agentWelcomeMessageFor(placement),
   ]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -408,7 +417,7 @@ export function AgentPanel({
         }
         if (kind === "image" && file.size > MAX_ATTACHMENT_BYTES) {
           setAttachmentError(
-            `${file.name} 超过 5MB；导演台附件需要压缩后再上传`,
+            `${file.name} 超过 5MB；智能体附件需要压缩后再上传`,
           );
           return;
         }
@@ -533,13 +542,14 @@ export function AgentPanel({
   useEffect(() => {
     if (!canvasId) return;
     const restored = persistedAgentMessages(canvasId);
-    setMessages([agentWelcomeMessage, ...restored]);
+    const welcomeMessage = agentWelcomeMessageFor(placement);
+    setMessages([welcomeMessage, ...restored]);
     let cancelled = false;
     void fetchProjectChat(canvasId)
       .then((persisted) => {
         if (cancelled) return;
         setMessages([
-          agentWelcomeMessage,
+          welcomeMessage,
           ...persisted.map((message) => ({
             id: message.id,
             role: message.role,
@@ -561,7 +571,7 @@ export function AgentPanel({
     return () => {
       cancelled = true;
     };
-  }, [canvasId]);
+  }, [canvasId, placement]);
 
   useEffect(() => {
     const stored = Number(
@@ -765,7 +775,7 @@ export function AgentPanel({
             ? {
                 ...message,
                 text:
-                  error instanceof Error ? error.message : "导演台对话调用失败",
+                  error instanceof Error ? error.message : "智能体对话调用失败",
                 pending: false,
                 streaming: false,
                 error: true,
@@ -785,7 +795,7 @@ export function AgentPanel({
       window.clearInterval(revealTimerRef.current);
       revealTimerRef.current = null;
     }
-    setMessages([agentWelcomeMessage]);
+    setMessages([agentWelcomeMessageFor(placement)]);
     setDraftState({ requestId: draftRequest?.id ?? null, text: "" });
     setAttachments([]);
     setAttachmentError("");
@@ -807,7 +817,10 @@ export function AgentPanel({
         </span>
         <div>
           <strong>智能体</strong>
-          <small>导演台 · 沧元对话模型</small>
+          <small>
+            {placement === "left" ? "左侧智能体" : "画布智能体"} ·{" "}
+            {supplier ? providerSupplierLabel(supplier) : "对话模型"}
+          </small>
         </div>
         <button
           type="button"
@@ -1163,7 +1176,7 @@ export function AgentPanel({
             {connectionWarning}{" "}
             {group ? (
               <button type="button" onClick={() => onManageApi(group)}>
-                配置该导演台群组
+                配置该智能体分组
               </button>
             ) : null}
           </small>

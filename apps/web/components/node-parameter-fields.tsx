@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type {
   ModelDescriptor,
   ModelParameterDescriptor,
@@ -76,11 +76,39 @@ export function resolutionTierShortcuts(
         ? { label, value: values[0]!, values }
         : undefined;
     });
-  return shortcuts.every(
+  return shortcuts.filter(
     (shortcut): shortcut is ResolutionTierShortcut => shortcut !== undefined,
-  )
-    ? shortcuts
-    : [];
+  );
+}
+
+/** Preserve the chosen shape when moving to another resolution budget. */
+export function sizeOnTierChange(
+  descriptor: ModelParameterDescriptor,
+  value: unknown,
+  tier: ResolutionTierShortcut["label"],
+): string {
+  if (String(value ?? "auto").toLowerCase() === "auto") return "auto";
+  const current = descriptor.options?.find(
+    (o) => String(o.value) === String(value),
+  );
+  const ratioLabel = current?.label.match(/\d+\s*:\s*\d+/u)?.[0];
+  const options = resolutionOptionsForTier(descriptor, tier).filter((o) =>
+    canonicalDimension(o.value),
+  );
+  const matching =
+    ratioLabel &&
+    options.find((o) => o.label.match(/\d+\s*:\s*\d+/u)?.[0] === ratioLabel);
+  if (matching) return String(matching.value);
+  const [width, height] = dimensionParts(value).map(Number);
+  if (!width || !height || !options.length) return "auto";
+  const closest = options.reduce((best, option) => {
+    const distance = (v: unknown) => {
+      const [w, h] = dimensionParts(v).map(Number);
+      return Math.abs(Math.log(w! / h! / (width / height)));
+    };
+    return distance(option.value) < distance(best.value) ? option : best;
+  });
+  return String(closest.value);
 }
 
 export function resolutionTierForValue(
@@ -197,10 +225,7 @@ function DimensionsControl({
   descriptor: ModelParameterDescriptor;
   value: unknown;
   savedTier: unknown;
-  update: (
-    raw: string,
-    tier?: ResolutionTierShortcut["label"] | null,
-  ) => void;
+  update: (raw: string, tier?: ResolutionTierShortcut["label"] | null) => void;
 }) {
   const initial = dimensionParts(value);
   const [width, setWidth] = useState(initial[0]);
@@ -306,9 +331,15 @@ function DimensionsControl({
               type="button"
               aria-pressed={activeResolutionTier === shortcut.label}
               onClick={() => {
-                setWidth("");
-                setHeight("");
-                update("auto", shortcut.label);
+                const next = sizeOnTierChange(
+                  descriptor,
+                  value,
+                  shortcut.label,
+                );
+                const [w, h] = dimensionParts(next);
+                setWidth(w);
+                setHeight(h);
+                update(next, shortcut.label);
               }}
               key={shortcut.label}
             >
@@ -405,7 +436,10 @@ function ParameterControl({
   sizeAspectRatioContext: SizeAspectRatioContext;
   clampNumericInput: boolean;
 }) {
-  const id = controlId(nodeId, descriptor.key);
+  // The same node can be configured in the inspector and a popover at once.
+  // Each rendered control needs its own ID so labels target the local input.
+  const instanceId = useId();
+  const id = `${controlId(nodeId, descriptor.key)}-${instanceId}`;
   const value =
     descriptor.key === "aspect_ratio" &&
     parameters.aspect_ratio === undefined &&

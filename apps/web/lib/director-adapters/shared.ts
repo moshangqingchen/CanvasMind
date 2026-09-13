@@ -287,7 +287,25 @@ export function strictDecision(value: unknown): DirectorDecision {
  */
 export function strictDecisionFromCandidates(
   candidates: readonly unknown[],
-): DirectorDecision {
+  customSchema?: Readonly<Record<string, unknown>>,
+): unknown {
+  if (customSchema) {
+    const unwrap = (value: unknown): unknown => {
+      if (isRecord(value) && typeof value.decision === "string") return JSON.parse(value.decision);
+      if (isRecord(value) && isRecord(value.decision)) return value.decision;
+      return value;
+    };
+    for (const candidate of candidates) {
+      try {
+        const value = unwrap(typeof candidate === "string"
+          ? JSON.parse(candidate.trim().replace(/^```(?:json)?\s*/u, "").replace(/\s*```$/u, "")) : candidate);
+        // Provider envelopes (content arrays, message objects, parts) are not
+        // decisions. Continue to the extracted JSON/text candidate instead.
+        if (isRecord(value) && typeof value.type === "string" && !["message", "output_text", "text", "tool_use"].includes(value.type)) return value;
+      } catch { /* Try the next provider representation. */ }
+    }
+    return { type: "reply", message: candidates.find(c => typeof c === "string") || "模型未返回可用内容" };
+  }
   for (const candidate of candidates) {
     if (candidate === null || candidate === undefined) continue;
     try {
@@ -371,11 +389,11 @@ export function textFromStructuredValue(value: unknown): string | null {
   return null;
 }
 
-export function structuredSystemPrompt(system: string): string {
+export function structuredSystemPrompt(system: string, schema?: Readonly<Record<string, unknown>>): string {
   return [
     system,
     "只返回一个符合下面 JSON Schema 的 JSON 对象，不要使用 Markdown 代码块，也不要添加解释。即使当前接口不支持原生 response_format，也必须把该对象作为纯文本 JSON 返回。",
-    JSON.stringify(DIRECTOR_DECISION_JSON_SCHEMA),
+    JSON.stringify(schema ?? DIRECTOR_DECISION_JSON_SCHEMA),
   ].join("\n\n");
 }
 

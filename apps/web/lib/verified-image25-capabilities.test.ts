@@ -1,0 +1,237 @@
+import { describe, expect, it } from "vitest";
+import { applyVerifiedImage25Capabilities } from "./verified-image25-capabilities";
+import { bindScannedModelProtocols } from "./scanned-model-protocols";
+import {
+  mikotoConnectionConfig,
+  MIKOTO_IMAGE_4K_GROUP,
+} from "./mikoto-presets";
+import {
+  cangyuanCatalogFromPricing,
+  cangyuanConnectorForModels,
+} from "./cangyuan-catalog";
+import type { ModelDescriptor } from "@super-canvas/providers";
+
+const model: ModelDescriptor = {
+  id: "gpt-image-2.5-flare",
+  name: "Flare",
+  operations: ["image.generate"],
+};
+describe("verified supplier 2.5 capabilities", () => {
+  it("does not enable Sunburst xhigh after a timed-out real generation", () => {
+    const result = applyVerifiedImage25Capabilities(
+      {
+        provider: "openai",
+        config: {
+          supplierKey: "frimodel",
+          baseUrl: "https://api.frimodel.com/v1",
+          modelGroup: "gpt_image_adobe",
+        },
+      },
+      { ...model, id: "gpt-image-2.5-sunburst-adobe" },
+    );
+    const values = result.parameters
+      ?.find((p) => p.key === "quality")
+      ?.options?.map((o) => o.value);
+    expect(values).toContain("max");
+    expect(values).not.toContain("xhigh");
+  });
+  it("upgrades an existing cached Mikoto model and its runtime connector together", () => {
+    const connection = {
+      provider: "rest",
+      config: mikotoConnectionConfig(MIKOTO_IMAGE_4K_GROUP),
+    };
+    const result = bindScannedModelProtocols(connection, [model]);
+    const m = result.models[0]!;
+    expect(
+      m.parameters
+        ?.find((p) => p.key === "quality")
+        ?.options?.map((o) => o.value),
+    ).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    expect(
+      m.parameters?.find((p) => p.key === "size")?.options?.map((o) => o.value),
+    ).toEqual(
+      expect.arrayContaining([
+        "auto",
+        "1024x1024",
+        "2048x2048",
+        "3840x2160",
+        "2160x3840",
+        "2880x2880",
+      ]),
+    );
+    expect(m.parameters?.find((p) => p.key === "size")?.options).toHaveLength(
+      34,
+    );
+    expect(m.operations).toContain("image.edit");
+    expect(result.connector?.models).toEqual([m]);
+    expect(bindScannedModelProtocols(connection, result.models).models).toEqual(
+      result.models,
+    );
+  });
+  it.each([
+    {
+      supplierKey: "mikoto",
+      modelGroup: "生图（1k）",
+      baseUrl: "https://api.mikoto.vip",
+    },
+    {
+      supplierKey: "mikoto",
+      modelGroup: MIKOTO_IMAGE_4K_GROUP,
+      baseUrl: "https://other.example",
+    },
+    {
+      supplierKey: "chentu",
+      modelGroup: "1k低价生图",
+      baseUrl: "https://tu.988236.xyz/v1",
+    },
+  ])(
+    "leaves an unverified group/host unchanged: $modelGroup $baseUrl",
+    (config) => {
+      expect(
+        applyVerifiedImage25Capabilities({ provider: "rest", config }, model),
+      ).toBe(model);
+    },
+  );
+  it("does not turn a key denial into a runnable model", () => {
+    const denied = {
+      ...model,
+      metadata: {
+        canvasRunnable: false,
+        canvasUnavailableReason: "403 权限拒绝",
+      },
+    };
+    expect(
+      applyVerifiedImage25Capabilities(
+        {
+          provider: "rest",
+          config: mikotoConnectionConfig(MIKOTO_IMAGE_4K_GROUP),
+        },
+        denied,
+      ),
+    ).toBe(denied);
+  });
+  it.each(["flare", "sunburst"])(
+    "enables rechecked Chentu Adobe %s 4K and six qualities without claiming exact 2K",
+    (variant) => {
+      const result = applyVerifiedImage25Capabilities(
+        {
+          provider: "openai",
+          config: {
+            supplierKey: "chentu",
+            modelGroup: "低价Adobe生图",
+            baseUrl: "https://tu.988236.xyz/v1",
+          },
+        },
+        { ...model, id: `gpt-image-2.5-${variant}` },
+      );
+      const sizes =
+        result.parameters?.find((p) => p.key === "size")?.options ?? [];
+      expect(sizes).toHaveLength(23);
+      expect(sizes.some((o) => o.value === "3840x2160")).toBe(true);
+      expect(sizes.some((o) => o.label.startsWith("2K"))).toBe(false);
+      expect(
+        result.parameters
+          ?.find((p) => p.key === "quality")
+          ?.options?.map((o) => o.value),
+      ).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    },
+  );
+  it("offers only exact 1K/2K on Cyber Afei, without adding ignored quality values", () => {
+    const m = applyVerifiedImage25Capabilities(
+      {
+        provider: "rest",
+        config: {
+          supplierKey: "cyberafei",
+          baseUrl: "https://api.3365api.cn",
+          modelGroup: "image-2稳定生图",
+        },
+      },
+      { ...model, id: "gpt-image-2.5" },
+    );
+    expect(m.parameters?.find((p) => p.key === "size")?.options).toHaveLength(
+      23,
+    );
+    expect(m.parameters?.find((p) => p.key === "quality")).toBeUndefined();
+  });
+  it.each(["1k", "2k", "4k"])(
+    "keeps Cangyuan %s as a separate SKU and forwards quality/reference inputs",
+    (tier) => {
+      const id = `gpt-image-2.5-flare-${tier}`;
+      const catalog = cangyuanCatalogFromPricing({
+        data: [
+          {
+            model_name: id,
+            request_unit: "image",
+            enable_groups: ["IMAGE"],
+            image_ui_params: {
+              referenceLimits: { images: 9 },
+              params: {
+                customDimensions: { enabled: true },
+                quality: {
+                  enabled: true,
+                  options: ["medium", "low", "high", "xhigh", "max"].map(
+                    (value) => ({ label: value, value }),
+                  ),
+                },
+              },
+            },
+          },
+        ],
+      });
+      const models = catalog.groups.IMAGE!;
+      const m = models.find((m) => m.id === id)!;
+      const cached = applyVerifiedImage25Capabilities(
+        {
+          provider: "rest",
+          config: {
+            supplierKey: "cangyuan",
+            baseUrl: "https://ai.cangyuansuanli.cn",
+            modelGroup: "IMAGE",
+          },
+        },
+        {
+          ...m,
+          parameters: m.parameters?.map((p) =>
+            p.key === "size"
+              ? {
+                  ...p,
+                  options: [
+                    {
+                      label: `${tier.toUpperCase()} · 1:1`,
+                      value: "1024x1024",
+                    },
+                  ],
+                }
+              : p,
+          ),
+        },
+      );
+      expect(
+        cached.parameters?.find((p) => p.key === "size")?.options,
+      ).toHaveLength(12);
+      expect(m.parameters?.find((p) => p.key === "size")?.options).toHaveLength(
+        12,
+      );
+      expect(m.operations).toContain("image.edit");
+      expect(m.parameters?.find((p) => p.key === "quality")).toMatchObject({
+        label: "质量",
+        default: "medium",
+      });
+      expect(
+        m.parameters
+          ?.find((p) => p.key === "size")
+          ?.options?.every(
+            (o) => o.value === "auto" || o.label.startsWith(tier.toUpperCase()),
+          ),
+      ).toBe(true);
+      const override = cangyuanConnectorForModels("IMAGE", [m])
+        .modelOverrides?.[id];
+      expect(override?.submit?.mappings).toContainEqual(
+        expect.objectContaining({ target: "/quality" }),
+      );
+      expect(
+        override?.operationOverrides?.["image.edit"]?.submit?.mappings,
+      ).toContainEqual(expect.objectContaining({ target: "/images" }));
+    },
+  );
+});

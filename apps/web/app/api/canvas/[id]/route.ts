@@ -43,7 +43,13 @@ export async function PUT(
     });
     return Response.json(canvas);
   } catch (error) {
-    if (error instanceof CanvasRevisionConflictError) {
+    // The persistent development repository can outlive a hot-reloaded module.
+    // Preserve the typed error contract even when its class identity changes.
+    if (error instanceof CanvasRevisionConflictError || (
+      error instanceof Error && "code" in error && error.code === "CANVAS_REVISION_CONFLICT" &&
+      "expectedRevision" in error && Number.isSafeInteger(error.expectedRevision) &&
+      "currentRevision" in error && Number.isSafeInteger(error.currentRevision)
+    )) {
       return Response.json(
         {
           error: "画布已在其他位置更新，请先处理版本冲突",

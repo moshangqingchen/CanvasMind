@@ -57,6 +57,27 @@
       "when": 1788065797558,
       "tag": "0007_numerous_venus",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788828154834,
+      "tag": "0008_bright_charles_xavier",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788836736441,
+      "tag": "0009_careful_blazing_skull",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788845708607,
+      "tag": "0010_equal_bloodaxe",
+      "breakpoints": true
     }
   ]
 }

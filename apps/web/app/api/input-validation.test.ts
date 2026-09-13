@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   repository: {
     saveCanvas: vi.fn(),
     listConnections: vi.fn(),
+    listSuppliers: vi.fn(async () => []),
   },
   runService: {
     repository: {
@@ -133,7 +134,7 @@ describe("API route input validation", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual([]);
-    expect(mocks.repository.listConnections).toHaveBeenCalledOnce();
+    expect(mocks.repository.listConnections).toHaveBeenCalledTimes(2); // Legacy-source reconciliation, then the current list.
   });
 
   it("creates a run without contacting unrelated supplier catalogs", async () => {

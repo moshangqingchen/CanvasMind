@@ -22,7 +22,7 @@ export const FRIMODEL_DOCS_URL = "https://ai-doc.apifox.cn";
  * before the canvas offers a reference-image edit input.
  */
 export function friModelSupportsImageEdit(modelId: string): boolean {
-  return /^gpt-image-2(?:-|$)/iu.test(modelId.trim());
+  return /^gpt-image-2(?:-|$)/iu.test(modelId.trim()) || /^gpt-image-2\.5-(?:flare|sunburst)-adobe$/iu.test(modelId.trim());
 }
 
 const FRIMODEL_EDIT_SIZE_OPTIONS = [
@@ -122,7 +122,9 @@ export function friModelFallbackImageDescriptor(
               },
             ],
           }
-        : parameter,
+        : parameter.key === "quality" && /^gpt-image-2\.5-(?:flare|sunburst)-adobe$/iu.test(id)
+          ? { ...parameter, options: [...(parameter.options ?? []), ...(id === "gpt-image-2.5-flare-adobe" ? [{ label: "超高（xhigh）", value: "xhigh" }] : []), { label: "最高（max）", value: "max" }], description: "2026-09-10 已实测的质量档位；Sunburst 的 xhigh 超时，暂不新增。" }
+          : parameter,
     ),
     limits: {
       maxInputImages: 10,

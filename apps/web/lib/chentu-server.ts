@@ -1,4 +1,13 @@
 import {
+  readBoundedModelJson,
+  scanAlternateSupplier,
+} from "./supplier-scan-utils";
+import { matchesSupplierTemplate } from "./supplier-template-source";
+import {
+  chentuNativeGeminiConnector,
+  isChentuNativeGeminiModel,
+} from "./chentu-gemini";
+import {
   getRepository,
   type JsonObject,
   type ProviderConnectionRecord,
@@ -9,11 +18,7 @@ import {
   type ModelDescriptor,
 } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
-import {
-  clearEmptyScanConfirmation,
-  pendingEmptyScanConfig,
-  shouldConfirmEmptyScan,
-} from "./model-scan-confirmation";
+import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
 import {
   CHENTU_BASE_URL,
   CHENTU_IMAGE_REQUEST_TIMEOUT_MS,
@@ -30,11 +35,7 @@ import {
 } from "./chentu-catalog";
 
 export type ChentuModelScanStatus =
-  | "live"
-  | "empty"
-  | "unauthorized"
-  | "unconfigured"
-  | "failed";
+  "live" | "empty" | "unauthorized" | "unconfigured" | "failed";
 
 export interface ChentuKeyScan {
   status: ChentuModelScanStatus;
@@ -73,17 +74,20 @@ function scanFailure(
  */
 export async function scanChentuKeyModels(
   apiKey: string,
-  options?: { fetch?: typeof fetch },
+  options?: { fetch?: typeof fetch; baseUrl?: string },
 ): Promise<ChentuKeyScan> {
   const checkedAt = new Date().toISOString();
   const fetchImpl = options?.fetch ?? providerFetch;
   try {
-    const response = await fetchImpl(`${CHENTU_BASE_URL}/models`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(30_000),
-    });
+    const response = await fetchImpl(
+      `${(options?.baseUrl ?? CHENTU_BASE_URL).replace(/\/+$/u, "").replace(/\/v1$/u, "")}/v1/models`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
     if (response.status === 401 || response.status === 403) {
       const reason =
         response.status === 401
@@ -99,7 +103,9 @@ export async function scanChentuKeyModels(
         "failed",
         `辰途模型扫描失败（HTTP ${response.status}）`,
       );
-    const payload = (await response.json()) as OpenAIModelsPayload;
+    const payload = (await readBoundedModelJson(
+      response,
+    )) as OpenAIModelsPayload;
     if (!Array.isArray(payload.data))
       return scanFailure("failed", "辰途模型扫描返回了无效数据");
     const modelIds = [
@@ -138,9 +144,8 @@ function hasOperationPrefix(
  * Image groups keep the existing OpenAI Images path (provider "openai",
  * baseUrl https://tu.988236.xyz/v1, no connector: the OpenAI adapter builds
  * chentu image descriptors from its own keyed live inventory). Video groups
- * switch to the rest OpenAI Videos connector (provider "rest", site origin
- * baseUrl). Groups without runnable canvas models fall back to agent usage
- * (when previously configured for chat) or a disabled state.
+ * switch to the rest OpenAI Videos connector. Scanning updates model
+ * availability, never the user-selected usage or the saved key's UI slot.
  */
 function configForLiveScan(
   connection: ProviderConnectionRecord,
@@ -162,6 +167,7 @@ function configForLiveScan(
     modelScanStatus: scan.status,
     scannedModelIds: [...scan.modelIds],
     catalogSource,
+    usage: previousUsage ?? "canvas",
   };
 
   const agentConfig = (): { config: JsonObject; provider: string } => {
@@ -170,8 +176,7 @@ function configForLiveScan(
       typeof connection.config.defaultModel === "string"
         ? connection.config.defaultModel
         : "";
-    config.usage = "agent";
-    config.baseUrl = CHENTU_BASE_URL;
+    config.baseUrl = connection.config.baseUrl;
     config.allowedModels = allowedModels;
     config.defaultModel = allowedModels.includes(configuredDefault)
       ? configuredDefault
@@ -196,14 +201,21 @@ function configForLiveScan(
       typeof connection.config.defaultModel === "string"
         ? connection.config.defaultModel
         : "";
-    config.usage = "canvas";
-    config.baseUrl = CHENTU_BASE_URL;
+    config.baseUrl = connection.config.baseUrl;
     config.defaultModel = imageModels.some(
       (model) => model.id === configuredDefault,
     )
       ? configuredDefault
       : chentuDefaultModelForLiveGroup(group, imageModels);
     config.requestTimeoutMs = CHENTU_IMAGE_REQUEST_TIMEOUT_MS;
+    if (imageModels.every((model) => isChentuNativeGeminiModel(model.id))) {
+      config.connector = chentuNativeGeminiConnector(
+        imageModels,
+      ) as unknown as JsonObject;
+      delete config.allowedModels;
+      delete config.disabledReason;
+      return { config, provider: "rest" };
+    }
     delete config.connector;
     delete config.allowedModels;
     delete config.disabledReason;
@@ -215,8 +227,7 @@ function configForLiveScan(
       typeof connection.config.defaultModel === "string"
         ? connection.config.defaultModel
         : "";
-    config.usage = "canvas";
-    config.baseUrl = CHENTU_SITE_URL;
+    config.baseUrl = connection.config.baseUrl;
     config.defaultModel = videoModels.some(
       (model) => model.id === configuredDefault,
     )
@@ -231,8 +242,7 @@ function configForLiveScan(
     return { config, provider: "rest" };
   }
 
-  config.usage = "disabled";
-  config.baseUrl = CHENTU_BASE_URL;
+  config.baseUrl = connection.config.baseUrl;
   config.disabledReason =
     scan.status === "empty"
       ? "当前分组 Key 扫描成功，但没有任何模型权限"
@@ -264,7 +274,11 @@ export async function scanChentuConnection(
 ): Promise<ChentuConnectionScan> {
   const repository = getRepository();
   const connection = await repository.getConnection(id);
-  if (!connection || connection.config.preset !== CHENTU_PRESET_ID) {
+  if (
+    !connection ||
+    connection.config.supplierArchived === true ||
+    connection.config.preset !== CHENTU_PRESET_ID
+  ) {
     const failed = scanFailure("failed", "辰途连接不存在");
     return {
       ...failed,
@@ -275,6 +289,8 @@ export async function scanChentuConnection(
       catalogSource: "fallback",
     };
   }
+  if (!matchesSupplierTemplate(connection))
+    return scanAlternateSupplier(connection, options);
   const catalog = await loadChentuCatalog({
     force: options?.forcePricing,
     fetch: options?.fetch ?? providerFetch,
@@ -323,6 +339,10 @@ export async function scanChentuConnection(
   }
 
   const scan = await scanChentuKeyModels(apiKey, {
+    baseUrl:
+      typeof connection.config.baseUrl === "string"
+        ? connection.config.baseUrl
+        : undefined,
     ...(options?.fetch ? { fetch: options.fetch } : {}),
   });
   const resolved = resolveChentuScannedGroup(catalog, group, scan.modelIds);
@@ -339,7 +359,8 @@ export async function scanChentuConnection(
   const baseResult: ChentuConnectionScan = {
     ...scan,
     connection,
-    marketplaceGroup: staleResolved?.marketplaceGroup ?? resolved.marketplaceGroup,
+    marketplaceGroup:
+      staleResolved?.marketplaceGroup ?? resolved.marketplaceGroup,
     canvasModels:
       scan.status === "live" || scan.status === "empty"
         ? resolved.canvasModels
@@ -362,30 +383,9 @@ export async function scanChentuConnection(
     latest.updatedAt !== connection.updatedAt ||
     latest.encryptedSecret !== connection.encryptedSecret
   ) {
-    if (options?.retryOnConcurrentChange === false) return baseResult;
-    return scanChentuConnection(id, {
-      ...options,
-      retryOnConcurrentChange: false,
-    });
+    return baseResult;
   }
-  if (
-    scan.status === "empty" &&
-    !shouldConfirmEmptyScan(latest.config, group)
-  ) {
-    const pendingConfig = pendingEmptyScanConfig(
-      latest.config,
-      scan.checkedAt,
-      group,
-    );
-    const saved = await repository.saveConnection({
-      id: latest.id,
-      name: latest.name,
-      provider: latest.provider,
-      encryptedSecret: latest.encryptedSecret,
-      config: pendingConfig,
-    });
-    return { ...baseResult, connection: saved };
-  }
+
   const next = configForLiveScan(
     latest,
     group,
@@ -400,13 +400,16 @@ export async function scanChentuConnection(
     JSON.stringify(next.config) === JSON.stringify(latest.config)
   )
     return { ...baseResult, connection: latest };
-  const saved = await repository.saveConnection({
-    id: latest.id,
-    name: latest.name,
-    provider: next.provider,
-    encryptedSecret: latest.encryptedSecret,
-    config: next.config,
-  });
+  const saved = await repository.saveConnection(
+    {
+      id: latest.id,
+      name: latest.name,
+      provider: next.provider,
+      encryptedSecret: latest.encryptedSecret,
+      config: next.config,
+    },
+    { expected: latest },
+  );
   return { ...baseResult, connection: saved };
 }
 

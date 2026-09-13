@@ -106,6 +106,13 @@ describe("pagehide canvas persistence", () => {
     ).toBe(false);
   });
 
+  it("keeps connected reference ports when refreshed model metadata stops supporting them", () => {
+    const data: CanvasNodeData = { nodeType: "video-generation", label: "Video", provider: "rest", model: "text-only", inputs: [{ id: "prompt", kind: "text", label: "Prompt" }, { id: "referenceVideos", kind: "video[]", label: "Video", multiple: true }] };
+    const patch = canvasModule.modelDiscoveryMigrationPatch("video-generation", data, "rest", { id: "text-only", name: "Text only", operations: ["video.generate"], limits: { maxInputImages: 1, maxInputVideos: 0 } }, new Set(["referenceVideos"]));
+    expect(patch?.inputs?.map((input) => input.id)).toContain("referenceVideos");
+    expect(data.inputs).toHaveLength(2);
+  });
+
   it("does not rewrite an explicit model's parameters during catalog refresh", () => {
     const model: ModelDescriptor = {
       id: "seedance-2.0",

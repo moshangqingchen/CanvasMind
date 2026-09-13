@@ -1,4 +1,5 @@
 import { arePortKindsCompatible, type PortKind } from "@super-canvas/core";
+import { scanProviderModelCatalog } from "@super-canvas/providers/model-catalog";
 import type {
   ModelDescriptor,
   ProviderOperation,
@@ -156,12 +157,32 @@ export function providerSupportsNodeType(
 }
 
 export function modelSupportsNodeType(
-  model: Pick<ModelDescriptor, "operations">,
+  model: Pick<ModelDescriptor, "operations"> &
+    Partial<Pick<ModelDescriptor, "id" | "metadata" | "outputKinds">>,
   nodeType: GenerationNodeType,
 ): boolean {
-  // An empty operation list is the connector's "capabilities unknown" form.
-  if (model.operations.length === 0) return true;
+  // Unknown transport is not a declaration that the model supports both media.
+  // Use output capability, never reference-image inputs, to classify a model.
+  const modality =
+    model.metadata?.catalogCapability ?? model.metadata?.modality;
+  if (modality === "video" || modality === "image")
+    return nodeType === `${modality}-generation`;
+  if (modality === "chat" || modality === "text") return false;
+  const outputs =
+    model.outputKinds?.filter((kind) => kind === "image" || kind === "video") ??
+    [];
+  if (outputs.length)
+    return outputs.includes(
+      nodeType === "image-generation" ? "image" : "video",
+    );
   const required = operationsForNodeType(nodeType);
+  if (model.operations.length === 0) {
+    const inferred = model.id
+      ? (scanProviderModelCatalog({ data: [{ id: model.id }] }).models[0]
+          ?.operations ?? [])
+      : [];
+    return inferred.some((operation) => required.includes(operation));
+  }
   return model.operations.some((operation) => required.includes(operation));
 }
 

@@ -126,8 +126,9 @@ export async function resolveDirectorConnection(
 ): Promise<ResolvedDirectorConnection> {
   const connection = await repository.getConnection(profile.brainConnectionId);
   if (!connection) throw new Error("导演大脑连接不存在，请重新配置");
-  if (connection.config.usage === "disabled")
+  if ((connection.config.usage === "disabled" || connection.config.supplierArchived === true))
     throw new Error("导演大脑连接已停用，请重新选择供应商分组");
+  if (connection.config.supplierId) await (await import("./supplier-service")).assertCurrentSupplierConnection(connection);
   if (!connection.encryptedSecret) throw new Error("导演大脑尚未配置 API Key");
   let apiKey: string;
   try {
@@ -179,7 +180,7 @@ export async function saveDirectorProfileConfiguration(input: {
 }): Promise<DirectorProfileRecord> {
   const connection = await repository.getConnection(input.brainConnectionId);
   if (!connection) throw new Error("导演大脑连接不存在");
-  if (connection.config.usage === "disabled")
+  if ((connection.config.usage === "disabled" || connection.config.supplierArchived === true))
     throw new Error("请选择未停用的供应商分组");
   if (!connection.encryptedSecret)
     throw new Error("导演大脑连接尚未配置 API Key");

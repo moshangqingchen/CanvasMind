@@ -2,6 +2,7 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import { readRecoveredArtifact } from "./recovered-artifacts.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_BYTES = 256 * 1024 * 1024;
@@ -32,6 +33,8 @@ export interface RemoteDownloadOptions {
   maxRedirects?: number;
   resolve?: (hostname: string) => Promise<readonly ResolvedAddress[]>;
   transport?: RemoteDownloadTransport;
+  /** Local original files staged by an explicit archive recovery operation. */
+  recoveryDirectory?: string;
 }
 
 export interface RemoteDownloadResult {
@@ -265,6 +268,11 @@ export async function downloadRemoteArtifact(
         resolvePublicAddress(current, resolve),
         controller.signal,
       );
+      const recovered = await abortable(
+        readRecoveredArtifact(current.href, maxBytes, options.recoveryDirectory),
+        controller.signal,
+      );
+      if (recovered) return recovered;
       const response = await transport(
         current,
         resolved,

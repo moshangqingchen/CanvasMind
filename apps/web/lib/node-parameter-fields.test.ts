@@ -8,6 +8,7 @@ import {
   savedSelectValueMissingFromDescriptor,
   setParameterValueWithSizeExclusivity,
   shouldUseUnifiedResolutionControl,
+  sizeOnTierChange,
 } from "../components/node-parameter-fields";
 
 const dimensionsDescriptor: ModelParameterDescriptor = {
@@ -49,15 +50,21 @@ describe("resolution tier shortcuts", () => {
     ]);
   });
 
-  it("does not show shortcuts when any required tier is absent", () => {
+  it("shows only the supported tiers when 4K is absent", () => {
     expect(
       resolutionTierShortcuts({
         ...dimensionsDescriptor,
         options: dimensionsDescriptor.options?.filter(
           (option) => !option.label.startsWith("4K"),
         ),
-      }),
-    ).toEqual([]);
+      }).map(s => s.label),
+    ).toEqual(["1K", "2K"]);
+  });
+
+  it("preserves the selected ratio when switching tiers, including automatic", () => {
+    expect(sizeOnTierChange(dimensionsDescriptor, "2048x1152", "4K")).toBe("3840x2160");
+    expect(sizeOnTierChange(dimensionsDescriptor, "3840x2160", "2K")).toBe("2048x1152");
+    expect(sizeOnTierChange(dimensionsDescriptor, "auto", "2K")).toBe("auto");
   });
 
   it("derives the active tier from the current exact descriptor size", () => {

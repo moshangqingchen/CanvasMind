@@ -54,6 +54,13 @@ async function modelsForConnection(connection: ProviderConnectionRecord): Promis
   authoritative: boolean;
   checkedAt?: string;
 }> {
+  if (connection.config.supplierId) {
+    const { GET } = await import("../app/api/providers/[id]/models/route");
+    const response = await GET(new Request(`http://localhost/api/providers/${encodeURIComponent(connection.id)}/models`), { params: Promise.resolve({ id: connection.id }) });
+    if (!response.ok) return { models: [], authoritative: true };
+    const models = await response.json() as ModelDescriptor[];
+    return { models, authoritative: response.headers.get("X-Model-Scan-Status") !== "stale", checkedAt: response.headers.get("X-Model-Scan-Checked-At") ?? undefined };
+  }
   const preset = connection.config.preset;
   if (preset === CANGYUAN_IMAGE_PRESET_ID) {
     const catalog = await loadCangyuanCatalog();
@@ -145,7 +152,8 @@ export async function loadDirectorCatalog(): Promise<DirectorCatalogCandidate[]>
   const canvasConnections = connections.filter(
     (connection) =>
       connection.config.usage !== "agent" &&
-      connection.config.usage !== "disabled" &&
+      connection.config.supplierArchived !== true && connection.config.usage !== "disabled" &&
+      !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
       connection.provider !== "fake" &&
       Boolean(connection.encryptedSecret),
   );

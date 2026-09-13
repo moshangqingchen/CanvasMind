@@ -5,5 +5,6 @@ export function appendPriceLabelOnce(
 ): string {
   if (typeof priceLabel !== "string" || !priceLabel.trim()) return name;
   const price = priceLabel.trim();
-  return name.includes(price) ? name : `${name}（${price}）`;
+  const cleanName = name.replace(/[（(]价格以(?:平台|模型广场)为准(?:·快照)?[）)]/gu, "");
+  return cleanName.includes(price) ? cleanName : `${cleanName}（${price}）`;
 }

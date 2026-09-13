@@ -13,6 +13,8 @@ export interface ProjectSummary {
   title: string;
   createdAt: string;
   updatedAt: string;
+  nodeCount: number;
+  previewAssetId?: string;
 }
 
 export interface ProjectChatMessage {
@@ -28,7 +30,40 @@ export function projectSummary(canvas: CanvasRecord): ProjectSummary {
     title: canvas.title,
     createdAt: canvas.createdAt,
     updatedAt: canvas.updatedAt,
+    nodeCount: Array.isArray(canvas.graph.nodes) ? canvas.graph.nodes.length : 0,
   };
+}
+
+/** Only expose a durable image asset ID, never graph contents or remote URLs. */
+export async function projectCardSummary(canvas: CanvasRecord): Promise<ProjectSummary> {
+  const summary = projectSummary(canvas);
+  const nodes = Array.isArray(canvas.graph.nodes) ? canvas.graph.nodes : [];
+  const candidates = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string" && value.trim()) candidates.add(value);
+  };
+  for (const node of [...nodes].reverse()) {
+    if (!node || typeof node !== "object" || !node.data || typeof node.data !== "object") continue;
+    const data = node.data as Record<string, unknown>;
+    add(data.assetId);
+    for (const field of [data.lastOutputAssetIds, data.materializedOutputAssetIds]) {
+      if (Array.isArray(field)) [...field].reverse().forEach(add);
+    }
+    for (const field of [data.parts, data.generatedPromptParts]) {
+      if (!Array.isArray(field)) continue;
+      for (const part of field) {
+        if (part && typeof part === "object" && part.type === "asset") add(part.assetId);
+      }
+    }
+  }
+  for (const id of candidates) {
+    const asset = await repository.getAsset(id);
+    if (asset && !asset.deleted && asset.kind === "image") {
+      summary.previewAssetId = asset.id;
+      break;
+    }
+  }
+  return summary;
 }
 
 export async function canvasForProject(id: string): Promise<CanvasRecord | null> {

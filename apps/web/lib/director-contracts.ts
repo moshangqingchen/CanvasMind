@@ -42,6 +42,8 @@ export interface DirectorPublicProposal {
   readonly canvasId: string;
   readonly version: number;
   readonly status:
+    | "materializing"
+    | "awaiting_execution"
     | "draft"
     | "awaiting_approval"
     | "approved"

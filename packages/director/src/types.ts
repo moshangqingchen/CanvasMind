@@ -197,7 +197,7 @@ export interface RoutedDirectorCall extends DirectorCallDraft {
 }
 
 export interface DirectorCanvasNodeData extends Record<string, unknown> {
-  readonly nodeType: "prompt" | "image-generation" | "video-generation";
+  readonly nodeType: "prompt" | "asset-input" | "image-generation" | "video-generation";
   readonly label: string;
   readonly directorDraft: boolean;
   readonly directorCallId: string;

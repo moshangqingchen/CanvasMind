@@ -1127,7 +1127,7 @@ circle.canvas-drawing-selection-outline {
   font-size: 9px;
 }
 .react-flow__node-workflow:has(.node-config-popover) {
-  z-index: 40 !important;
+  z-index: 2000 !important;
 }
 .node-config-popover-anchor {
   position: absolute;
@@ -5181,13 +5181,13 @@ body {
 }
 
 .api-settings-button {
-  border-color: rgba(76, 215, 181, 0.32) !important;
+  border-color: rgba(76, 215, 181, 0.32);
   background: linear-gradient(
     180deg,
     rgba(35, 90, 80, 0.28),
     rgba(19, 49, 47, 0.28)
-  ) !important;
-  color: #c9f8ec !important;
+  );
+  color: #c9f8ec;
 }
 
 .button {
@@ -7386,7 +7386,7 @@ body {
 
 /* Project conversations remain visible beside the canvas on desktop. */
 .workspace:not(.project-bootstrap) {
-  grid-template-columns: 248px minmax(0, 1fr) var(--inspector-width, 300px);
+  grid-template-columns: var(--project-sidebar-width, 248px) minmax(0, 1fr) var(--inspector-width, 300px);
 }
 
 .project-sidebar {
@@ -7409,11 +7409,74 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
+.project-sidebar-mode-tabs {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.project-sidebar-mode-tab {
+  min-width: 0;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 9px;
+  background: transparent;
+  color: #9da8be;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.project-sidebar-mode-tab:hover,
+.project-sidebar-mode-tab:focus-visible {
+  border-color: rgba(155, 140, 255, 0.3);
+  background: rgba(126, 108, 225, 0.1);
+  color: #e8e5ff;
+  outline: none;
+}
+
+.project-sidebar-mode-tab.active {
+  border-color: rgba(155, 140, 255, 0.45);
+  background: rgba(126, 108, 225, 0.18);
+  color: #f0edff;
+}
+
+.project-sidebar-mode-tab small {
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #b9c1d3;
+  font-size: 9px;
+  text-align: center;
+}
+
+.project-sidebar-agent {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  overflow: hidden;
+}
+
+.project-sidebar-agent > .agent-panel {
+  width: 100%;
+}
+
 .project-sidebar-head > div,
 .project-row-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.project-sidebar-head > .project-sidebar-mode-tabs {
+  flex-direction: row;
 }
 
 .project-sidebar-head strong {
@@ -8018,12 +8081,14 @@ body {
 }
 
 .node-config-popover-portal {
-  position: fixed;
-  z-index: 1000;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
   box-sizing: border-box;
-  width: min(420px, calc(100vw - 24px));
-  max-width: calc(100vw - 24px);
-  max-height: calc(100dvh - 24px);
+  width: 100%;
+  max-width: none;
+  max-height: 560px;
   overflow: auto;
   overscroll-behavior: contain;
   border-color: var(--ui-panel-border-strong);

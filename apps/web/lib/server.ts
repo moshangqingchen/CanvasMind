@@ -385,6 +385,7 @@ export function publicAsset(
 }
 
 export async function saveProviderConnection(input: {
+  expected?: import("@super-canvas/db").ProviderConnectionRecord;
   id?: string;
   name: string;
   provider: string;
@@ -403,7 +404,7 @@ export async function saveProviderConnection(input: {
     provider: input.provider,
     encryptedSecret,
     config: input.config ?? existing?.config ?? {},
-  });
+  }, { expected: input.expected ?? existing ?? undefined });
 }
 
 const sensitiveHeaderName =

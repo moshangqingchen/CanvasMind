@@ -132,14 +132,14 @@ export class GoogleGenerateContentAdapter implements DirectorModelAdapter {
         }),
         body: JSON.stringify({
           systemInstruction: {
-            parts: [{ text: structuredSystemPrompt(input.system) }],
+            parts: [{ text: structuredSystemPrompt(input.system, input.responseJsonSchema) }],
           },
           contents: geminiContents(input),
           ...(connection.capabilities.structuredOutput
             ? {
                 generationConfig: {
                   responseMimeType: "application/json",
-                  responseJsonSchema: DIRECTOR_DECISION_JSON_SCHEMA,
+                  responseJsonSchema: input.responseJsonSchema ?? DIRECTOR_DECISION_JSON_SCHEMA,
                 },
               }
             : {}),
@@ -164,7 +164,7 @@ export class GoogleGenerateContentAdapter implements DirectorModelAdapter {
           })
         : undefined;
     return {
-      output: strictDecisionFromCandidates(result.decision),
+      output: strictDecisionFromCandidates(result.decision, input.responseJsonSchema),
       ...(result.text ? { text: result.text } : {}),
       sources: normalizeSources(result.sources),
       ...(usage ? { usage } : {}),

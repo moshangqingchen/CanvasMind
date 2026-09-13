@@ -29,6 +29,7 @@ class ProviderModelsRequestError extends Error {
   }
 }
 
+const modelEpochs = new Map<string, number>();
 const modelListCache = new Map<string, ModelListCacheEntry>();
 const pendingModelRequests = new Map<string, Promise<ModelDescriptor[]>>();
 
@@ -38,6 +39,7 @@ export function getCachedModels(id: string): ModelDescriptor[] | undefined {
 }
 
 export function invalidateModelCache(id: string): void {
+  modelEpochs.set(id, (modelEpochs.get(id) ?? 0) + 1);
   modelListCache.delete(id);
   pendingModelRequests.delete(id);
 }
@@ -283,6 +285,8 @@ export interface ProjectSummaryView {
   title: string;
   createdAt: string;
   updatedAt: string;
+  nodeCount?: number;
+  previewAssetId?: string;
 }
 
 export async function fetchProjects(): Promise<ProjectSummaryView[]> {
@@ -1021,7 +1025,9 @@ export async function fetchModels(id: string): Promise<ModelDescriptor[]> {
   const pending = pendingModelRequests.get(id);
   if (pending) return pending;
 
+  const epoch = modelEpochs.get(id) ?? 0;
   const request = fetchModelsUncached(id).then((items) => {
+    if ((modelEpochs.get(id) ?? 0) !== epoch) throw new ProviderModelsRequestError("连接已改变，请重新读取模型", 409);
     return cacheModels(id, items);
   });
   pendingModelRequests.set(id, request);
@@ -1040,12 +1046,13 @@ export async function refreshModels(
 ): Promise<ModelDescriptor[]> {
   const previous = getCachedModels(id);
   invalidateModelCache(id);
+  const epoch = modelEpochs.get(id);
   const request = fetchModelsUncached(
     id,
     true,
     options?.clearUnavailable === true,
   )
-    .then((items) => cacheModels(id, items))
+    .then((items) => { if (modelEpochs.get(id) !== epoch) throw new ProviderModelsRequestError("连接已改变，请重新读取模型", 409); return cacheModels(id, items); })
     .catch((error: unknown) => {
       // A refresh is advisory. Keep the last successful inventory during
       // transient network/5xx failures so an otherwise usable canvas does not
@@ -1064,7 +1071,7 @@ export async function refreshModels(
         status === 429 ||
         status >= 500 ||
         scanStatus === "failed";
-      if (retryable && previous && previous.length > 0)
+      if (modelEpochs.get(id) === epoch && retryable && previous && previous.length > 0)
         return cacheModels(id, previous);
       throw error;
     });

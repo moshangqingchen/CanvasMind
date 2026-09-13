@@ -10,6 +10,18 @@ function jsonResponse(value: unknown): Response {
 }
 
 describe("OpenAIImageAdapter", () => {
+  it.each(["gpt-image-2-low", "gpt-image-2.5"])("submits the exact new Chentu model ID %s through the Images API", async (model) => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => String(url).endsWith("/models")
+      ? jsonResponse({ data: [{ id: model }] })
+      : jsonResponse({ data: [{ url: "https://tu.988236.xyz/generated/result.png" }] }));
+    const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{ id: "chentu", provider: "openai", apiKey: "test-key", baseUrl: "https://tu.988236.xyz/v1", settings: { supplierKey: "chentu", modelGroup: "1k低价生图" } }]), { fetch: fetchMock });
+    const models = await adapter.listModels("chentu");
+    expect(models.map((item) => item.id)).toEqual([model]);
+    expect(models[0]?.parameters?.some((parameter) => parameter.key === "quality")).toBe(true);
+    await adapter.submit({ connectionId: "chentu", operation: "image.generate", model, prompt: "Test", idempotencyKey: `test-${model}`, parameters: { size: "auto", quality: "auto" } });
+    const submit = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/images/generations"));
+    expect(JSON.parse(String(submit?.[1]?.body))).toMatchObject({ model, size: "auto", quality: "auto" });
+  });
   it("submits an idempotent image generation and extracts base64 output", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

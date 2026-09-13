@@ -10,6 +10,37 @@ import {
   type ChentuPricingPayload,
 } from "./chentu-catalog";
 
+it("binds keyed GPT Image aliases and newer versions without requiring exact built-in IDs", () => {
+  const ids = ["gpt-image-2-low", "gpt-image-2.5", "gpt-image-2.5-flare"];
+  const catalog = chentuCatalogFromPricing({
+    group_ratio: { images: 1 },
+    data: ids.map((id) => ({
+      model_name: id,
+      model_price: 0.0154,
+      enable_groups: ["images"],
+      supported_endpoint_types: ["openai"],
+    })),
+  });
+  const resolved = resolveChentuScannedGroup(
+    catalog,
+    "images",
+    ids.slice(0, 2),
+  );
+  expect(resolved.canvasModels.map((model) => model.id)).toEqual(
+    ids.slice(0, 2),
+  );
+  for (const model of resolved.canvasModels) {
+    expect(model.metadata).toMatchObject({
+      canvasRunnable: true,
+      protocol: "openai-images",
+      priceLabel: "￥ 0.0154 / 请求",
+    });
+    expect(
+      model.parameters?.find((parameter) => parameter.key === "size"),
+    ).toMatchObject({ control: "text", default: "auto" });
+  }
+});
+
 /**
  * Trimmed verbatim from the live https://tu.988236.xyz/api/pricing payload
  * saved at .codex-temp/probe/chentu.json (captured 2026-08-28).
@@ -474,9 +505,9 @@ describe("chentu catalog", () => {
       "gemini-3-pro-image-1k",
       "gemini-3-pro-image-4k",
     ]);
-    expect(
-      group?.models.every((model) => model.canvasRunnable === true),
-    ).toBe(true);
+    expect(group?.models.every((model) => model.canvasRunnable === true)).toBe(
+      true,
+    );
     const oneKSize = catalog.groups["低价gemni生图"]?.[0]?.parameters?.find(
       (parameter) => parameter.key === "size",
     );

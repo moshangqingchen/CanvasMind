@@ -382,7 +382,7 @@ describe("canvas graph UI helpers", () => {
     expect(providerSupportsNodeType("rest", "image-generation")).toBe(true);
   });
 
-  it("filters listed models while preserving unknown connector capabilities", () => {
+  it("filters listed models without treating unknown capabilities as both media", () => {
     const imageModel: ModelDescriptor = {
       id: "image",
       name: "Image",
@@ -401,7 +401,43 @@ describe("canvas graph UI helpers", () => {
     expect(modelSupportsNodeType(imageModel, "image-generation")).toBe(true);
     expect(modelSupportsNodeType(imageModel, "video-generation")).toBe(false);
     expect(modelSupportsNodeType(videoModel, "video-generation")).toBe(true);
-    expect(modelSupportsNodeType(unknownModel, "image-generation")).toBe(true);
+    expect(modelSupportsNodeType(unknownModel, "image-generation")).toBe(false);
+    expect(modelSupportsNodeType(unknownModel, "video-generation")).toBe(false);
+  });
+
+  it.each([
+    "happyhorse-1.1",
+    "minimax-h3-2k",
+    "sd4-seedance-2.5-720p",
+    "wan3.0-15s",
+  ])("keeps unbound video model %s out of image nodes", (id) => {
+    const model = { id, operations: [] };
+    expect(modelSupportsNodeType(model, "image-generation")).toBe(false);
+    expect(modelSupportsNodeType(model, "video-generation")).toBe(true);
+  });
+  it("uses output metadata for opaque IDs and excludes chat/vision models", () => {
+    expect(
+      modelSupportsNodeType(
+        { operations: [], outputKinds: ["video"] },
+        "image-generation",
+      ),
+    ).toBe(false);
+    expect(
+      modelSupportsNodeType(
+        { operations: [], outputKinds: ["video"] },
+        "video-generation",
+      ),
+    ).toBe(true);
+    expect(
+      modelSupportsNodeType(
+        { operations: [], metadata: { catalogCapability: "image" } },
+        "image-generation",
+      ),
+    ).toBe(true);
+    for (const id of ["gpt-5.6", "codex-auto-review", "gpt-4-vision-preview"])
+      expect(
+        modelSupportsNodeType({ id, operations: [] }, "image-generation"),
+      ).toBe(false);
   });
 
   it("identifies scanned display-only models without hiding their reason", () => {

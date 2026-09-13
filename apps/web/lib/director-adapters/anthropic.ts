@@ -121,7 +121,7 @@ export class AnthropicMessagesAdapter implements DirectorModelAdapter {
       ? {
           name: "submit_director_decision",
           description: "Submit the final validated director decision.",
-          input_schema: DIRECTOR_DECISION_JSON_SCHEMA,
+          input_schema: input.responseJsonSchema ?? DIRECTOR_DECISION_JSON_SCHEMA,
           strict: true,
         }
       : null;
@@ -148,7 +148,7 @@ export class AnthropicMessagesAdapter implements DirectorModelAdapter {
         }),
         body: JSON.stringify({
           model: connection.model,
-          system: structuredSystemPrompt(input.system),
+          system: structuredSystemPrompt(input.system, input.responseJsonSchema),
           messages: anthropicMessages(input),
           max_tokens: 8_192,
           ...(tools.length ? { tools } : {}),
@@ -184,7 +184,7 @@ export class AnthropicMessagesAdapter implements DirectorModelAdapter {
         : undefined;
     return {
       output: strictDecisionFromCandidates(
-        [result.decision],
+        [result.decision], input.responseJsonSchema,
       ),
       ...(result.text ? { text: result.text } : {}),
       sources: normalizeSources(result.sources),

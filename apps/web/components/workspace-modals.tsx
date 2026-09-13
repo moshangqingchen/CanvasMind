@@ -183,6 +183,7 @@ import {
   type DirectorReasoningEffort,
 } from "../lib/director-reasoning";
 import type { AssetView, RunSnapshot } from "./types";
+import { SupplierManager } from "./supplier-manager";
 
 interface ModalProps {
   open: boolean;
@@ -221,7 +222,7 @@ function cyberAfeiScanLabel(
   group:
     | Pick<
         CangyuanMarketplaceGroupView,
-        "models" | "scanStatus" | "scannedModelCount"
+        "models" | "scanStatus" | "scannedModelCount" | "scanError"
       >
     | undefined,
 ): string {
@@ -229,8 +230,16 @@ function cyberAfeiScanLabel(
   if (group.scanStatus === "live")
     return `Key 实时扫描 ${group.scannedModelCount ?? group.models.length} 个`;
   if (group.scanStatus === "empty") return "Key 扫描成功 · 0 个模型";
-  if (group.scanStatus === "unauthorized") return "Key 无权限 · 已隐藏旧模型";
-  return "扫描失败 · 已隐藏旧模型";
+  if (group.scanStatus === "unauthorized") {
+    const status = group.scanError?.match(/HTTP\s+(\d{3})/iu)?.[1];
+    return status
+      ? `Key 无权限（HTTP ${status}）· 已隐藏旧模型`
+      : "Key 无权限 · 已隐藏旧模型";
+  }
+  const status = group.scanError?.match(/HTTP\s+(\d{3})/iu)?.[1];
+  return status
+    ? `扫描失败（HTTP ${status}）· 已隐藏旧模型`
+    : "扫描失败 · 已隐藏旧模型";
 }
 
 function connectionScanLabel(connection: ProviderConnectionView): string {
@@ -610,9 +619,6 @@ function defaultDirectorCapabilities(
   };
 }
 
-// Legacy settings renderer retained for serialized-layout compatibility; the
-// live workbench uses the inline composer configuration below.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function DirectorBrainSettings({
   connections,
   marketplaceGroups,
@@ -1154,6 +1160,35 @@ export function SettingsModal({
   onClose,
   initialCangyuanGroup,
 }: SettingsModalProps) {
+  const [tab, setTab] = useState<"suppliers" | "director">("suppliers");
+  const [advanced, setAdvanced] = useState(false);
+  const [connections, setConnections] = useState<ProviderConnectionView[]>([]);
+  const dialogRef = useDialogFocus(open && !advanced, onClose);
+  if (!open) return null;
+  if (advanced) return <LegacySettingsModal open={open} onClose={() => setAdvanced(false)} initialCangyuanGroup={initialCangyuanGroup} />;
+  return (
+    <div className="sm-settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="sm-settings-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-label="供应商与模型设置" tabIndex={-1}>
+        <header className="sm-settings-header">
+          <div><h2>创作设置</h2><p>连接模型，让灵感自由生长。</p></div>
+          <nav className="sm-settings-tabs" aria-label="设置分类" role="tablist">
+            <button type="button" role="tab" aria-selected={tab === "suppliers"} aria-controls="sm-suppliers-panel" onClick={() => setTab("suppliers")}>供应商与模型</button>
+            <button type="button" role="tab" aria-selected={tab === "director"} aria-controls="sm-director-panel" onClick={() => setTab("director")}>导演设置</button>
+          </nav>
+          <button type="button" className="sm-icon" aria-label="关闭设置" onClick={onClose}><X size={19} /></button>
+        </header>
+        {tab === "suppliers" ? <SupplierManager initialCangyuanGroup={initialCangyuanGroup} onConnectionsChanged={setConnections} onOpenAdvanced={() => setAdvanced(true)} /> : <div id="sm-director-panel" className="sm-director-tab" role="tabpanel"><DirectorBrainSettings connections={connections} marketplaceGroups={{}} onConnectionCreated={(connection) => setConnections((current) => [...current.filter((item) => item.id !== connection.id), connection])} /></div>}
+      </section>
+    </div>
+  );
+}
+
+function LegacySettingsModal({
+  open,
+  onClose,
+  initialCangyuanGroup,
+}: SettingsModalProps) {
+  const initializationEditRevision = useRef(0);
   const [connections, setConnections] = useState<ProviderConnectionView[]>([]);
   const [selectedSupplierKey, setSelectedSupplierKey] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1801,6 +1836,7 @@ export function SettingsModal({
     // user switches tabs while catalogs are still loading.
     if (!open) return;
     let cancelled = false;
+    const initialEditRevision = initializationEditRevision.current;
     void Promise.all([
       fetchConnections(),
       fetchCangyuanMarketplace(),
@@ -1836,7 +1872,6 @@ export function SettingsModal({
         // their scoped scan completes.
         const items = normalizeLoadedWeAiConnections(loadedItems);
         if (cancelled) return;
-        setConnections(items);
         setCangyuanGroups(marketplace.groups);
         setCatalogSource(marketplace.source);
         setCyberAfeiGroups(cyberAfeiMarketplace.groups);
@@ -1847,6 +1882,18 @@ export function SettingsModal({
         }
         setMiaowuGroups(miaowuMarketplace.groups);
         setMiaowuCatalogSource(miaowuMarketplace.source);
+        // A slow catalog batch must not restore the pre-edit connection list
+        // or reset the form after the user has selected, edited, or saved it.
+        if (initializationEditRevision.current !== initialEditRevision) {
+          const refreshRevision = initializationEditRevision.current;
+          try {
+            const currentItems = await fetchConnections();
+            if (!cancelled && initializationEditRevision.current === refreshRevision)
+              setConnections(normalizeLoadedWeAiConnections(currentItems));
+          } catch { /* Explicit save/refresh actions keep their own result. */ }
+          return;
+        }
+        setConnections(items);
         const weAiConnection = items.find(
           (connection) =>
             providerConnectionSupplierKey(connection) === "weai" &&
@@ -3139,14 +3186,14 @@ export function SettingsModal({
       setPreservedConfig(saved.config);
       setMessage(
         apiKey
-          ? `${groupId} 导演台 API Key 已独立加密保存`
+          ? `${groupId} 智能体 API Key 已独立加密保存`
           : existing
-            ? `${groupId} 导演台连接已更新`
-            : `${groupId} 已接入右侧导演台`,
+            ? `${groupId} 智能体连接已更新`
+            : `${groupId} 已接入智能体`,
       );
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "导演台对话分组接入失败",
+        error instanceof Error ? error.message : "智能体对话分组接入失败",
       );
     } finally {
       setBusy(false);
@@ -3455,9 +3502,9 @@ export function SettingsModal({
       setPreservedConfig(saved.config);
       setMessage(
         apiKey
-          ? `${groupId} 导演台 API Key 已独立加密保存`
+          ? `${groupId} 智能体 API Key 已独立加密保存`
           : existing
-            ? `${groupId} 导演台连接已更新`
+            ? `${groupId} 智能体连接已更新`
             : `${groupId} 已接入辰途导演台`,
       );
     } catch (error) {
@@ -3522,9 +3569,9 @@ export function SettingsModal({
       setPreservedConfig(saved.config);
       setMessage(
         apiKey
-          ? `${groupId} 导演台 API Key 已独立加密保存`
+          ? `${groupId} 智能体 API Key 已独立加密保存`
           : existing
-            ? `${groupId} 导演台连接已更新`
+            ? `${groupId} 智能体连接已更新`
             : `${groupId} 已接入赛博阿飞导演台`,
       );
     } catch (error) {
@@ -3807,6 +3854,9 @@ export function SettingsModal({
       <section
         ref={dialogRef}
         className="modal-window settings-modal-window"
+        onPointerDownCapture={() => { initializationEditRevision.current += 1; }}
+        onKeyDownCapture={() => { initializationEditRevision.current += 1; }}
+        onChangeCapture={() => { initializationEditRevision.current += 1; }}
         role="dialog"
         aria-modal="true"
         aria-label="供应商设置"
@@ -4930,8 +4980,8 @@ export function SettingsModal({
                       {activeGroupHasUnreadableKey
                         ? "当前分组的旧密文无法解密，请重新填写该分组对应的 API Key。"
                         : activeConnectionUsage === "agent"
-                          ? "此 Key 仅供右侧导演台对话使用，不与画布图片/视频连接复用；明文不会下发到浏览器。"
-                          : `此 Key 仅供${providerSupplierLabel(activeSupplierKey)}画布图片/视频节点使用，不与右侧导演台复用；明文不会下发到浏览器。`}
+                          ? "此 Key 仅供智能体对话使用，不与画布图片/视频连接复用；明文不会下发到浏览器。"
+                          : `此 Key 仅供${providerSupplierLabel(activeSupplierKey)}画布图片/视频节点使用，不与智能体复用；明文不会下发到浏览器。`}
                     </small>
                   </div>
                   <div className="cangyuan-key-actions">
@@ -5019,10 +5069,10 @@ export function SettingsModal({
                         )}{" "}
                         {activeMarketplaceConnection
                           ? activeConnectionUsage === "agent"
-                            ? "更新导演台连接"
+                            ? "更新智能体连接"
                             : "更新画布分组"
                           : activeConnectionUsage === "agent"
-                            ? "接入右侧导演台"
+                            ? "接入智能体"
                             : "接入画布分组"}
                       </button>
                     ) : (

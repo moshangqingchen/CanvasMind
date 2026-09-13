@@ -12,12 +12,23 @@ import type {
   JsonObject,
   NodeRunRecord,
   ProviderConnectionRecord,
+  SupplierRecord,
+  SupplierCommit,
+  ConnectionSaveOptions,
   Repository,
   NodeRunUpdateOptions,
   WebhookEventRecord,
   WorkflowRunRecord,
 } from "./types.js";
 import { CanvasRevisionConflictError } from "./types.js";
+import {
+  assertConnectionSave,
+  assertRunConnections,
+  frozenCredentialIds,
+  assertSnapshotCredentials,
+} from "./supplier-state.js";
+import { MemoryRepository } from "./memory.js";
+import { isDeepStrictEqual } from "node:util";
 
 const iso = (value: Date | string | undefined): string =>
   value instanceof Date
@@ -286,6 +297,221 @@ export class PostgresRepository implements Repository {
     );
     return result.rows.map((row) => this.connectionRow(row));
   }
+  private supplierRow(row: Record<string, unknown>): SupplierRecord {
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      supplierKey: String(row.supplier_key),
+      siteUrl: String(row.site_url ?? ""),
+      apiUrl: String(row.api_url ?? ""),
+      kind: row.kind as SupplierRecord["kind"],
+      catalog: parse<SupplierRecord["catalog"]>(row.catalog, { groups: [] }),
+      scanStatus: row.scan_status as SupplierRecord["scanStatus"],
+      ...(row.state
+        ? { state: parse<SupplierRecord["state"]>(row.state, undefined) }
+        : {}),
+      ...(row.scanned_at ? { scannedAt: String(row.scanned_at) } : {}),
+      ...(row.scan_error ? { scanError: String(row.scan_error) } : {}),
+      createdAt: iso(row.created_at as Date),
+      updatedAt: iso(row.updated_at as Date),
+    };
+  }
+  async listSuppliers(): Promise<SupplierRecord[]> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      "SELECT * FROM supplier ORDER BY created_at ASC",
+    );
+    return result.rows.map((row) => this.supplierRow(row));
+  }
+  async getSupplier(id: string): Promise<SupplierRecord | null> {
+    await this.ensureReady();
+    const result = await this.pool.query("SELECT * FROM supplier WHERE id=$1", [
+      id,
+    ]);
+    return result.rows[0] ? this.supplierRow(result.rows[0]) : null;
+  }
+  async saveSupplier(
+    input: Omit<SupplierRecord, "createdAt" | "updatedAt">,
+  ): Promise<SupplierRecord> {
+    await this.ensureReady();
+    const result = await this.pool.query(
+      `INSERT INTO supplier(id,name,supplier_key,site_url,api_url,kind,catalog,scan_status,scanned_at,scan_error,state,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11::jsonb,$12,$12) ON CONFLICT(id) DO UPDATE SET name=$2,supplier_key=$3,site_url=$4,api_url=$5,kind=$6,catalog=$7::jsonb,scan_status=$8,scanned_at=$9,scan_error=$10,state=$11::jsonb,updated_at=$12 RETURNING *`,
+      [
+        input.id,
+        input.name,
+        input.supplierKey,
+        input.siteUrl,
+        input.apiUrl,
+        input.kind,
+        json(input.catalog),
+        input.scanStatus,
+        input.scannedAt ?? null,
+        input.scanError ?? null,
+        input.state ? json(input.state) : null,
+        new Date(),
+      ],
+    );
+    return this.supplierRow(result.rows[0]);
+  }
+  async commitSupplier(input: SupplierCommit): Promise<SupplierRecord> {
+    await this.ensureReady();
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      // Serialize source transitions with connection/run insertion and snapshot writes.
+      await client.query(
+        "LOCK TABLE supplier, provider_connection, workflow_run, node_run, director_proposal, director_profile, canvas, canvas_revision IN SHARE ROW EXCLUSIVE MODE",
+      );
+      const [suppliers, connections, runs, nodes, proposals, profiles] =
+        await Promise.all([
+          client.query("SELECT * FROM supplier"),
+          client.query("SELECT * FROM provider_connection"),
+          client.query("SELECT * FROM workflow_run"),
+          client.query("SELECT * FROM node_run"),
+          client.query("SELECT * FROM director_proposal"),
+          client.query("SELECT * FROM director_profile"),
+        ]);
+      const canvasRows = input.deleteConnectionIds?.length
+        ? await client.query("SELECT * FROM canvas")
+        : { rows: [] };
+      const revisionRows = input.deleteConnectionIds?.length
+        ? await client.query("SELECT * FROM canvas_revision")
+        : { rows: [] };
+      const snapshot = {
+        version: 2 as const,
+        suppliers: suppliers.rows.map((r) => this.supplierRow(r)),
+        connections: connections.rows.map((r) => this.connectionRow(r)),
+        runs: runs.rows.map((r) => this.runRow(r)),
+        nodeRuns: nodes.rows.map((r) => this.nodeRow(r)),
+        directorProposals: proposals.rows.map((r) =>
+          this.directorProposalRow(r),
+        ),
+        directorProfiles: profiles.rows.map((r) => this.directorProfileRow(r)),
+        directorSessions: [],
+        directorMessages: [],
+        canvases: canvasRows.rows.map((r) => this.canvasRow(r)),
+        revisions: revisionRows.rows.map((r) => ({
+          id: String(r.id),
+          canvasId: String(r.canvas_id),
+          graph: parse<JsonObject>(r.graph, {}),
+          reason: String(r.reason),
+          createdAt: iso(r.created_at as Date),
+        })),
+        assets: [],
+        webhookKeys: [],
+      };
+      const memory = new MemoryRepository(snapshot);
+      const saved = await memory.commitSupplier(input);
+      const after = memory.exportSnapshot();
+      await client.query(
+        `INSERT INTO supplier(id,name,supplier_key,site_url,api_url,kind,catalog,scan_status,scanned_at,scan_error,state,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11::jsonb,$12,$13) ON CONFLICT(id) DO UPDATE SET name=$2,site_url=$4,api_url=$5,kind=$6,catalog=$7::jsonb,scan_status=$8,scanned_at=$9,scan_error=$10,state=$11::jsonb,updated_at=$13`,
+        [
+          saved.id,
+          saved.name,
+          saved.supplierKey,
+          saved.siteUrl,
+          saved.apiUrl,
+          saved.kind,
+          json(saved.catalog),
+          saved.scanStatus,
+          saved.scannedAt ?? null,
+          saved.scanError ?? null,
+          json(saved.state),
+          saved.createdAt,
+          saved.updatedAt,
+        ],
+      );
+      for (const c of input.connections)
+        await client.query(
+          "UPDATE provider_connection SET name=$2,provider=$3,encrypted_secret=$4,config=$5::jsonb,updated_at=$6 WHERE id=$1",
+          [
+            c.id,
+            c.name,
+            c.provider,
+            c.encryptedSecret ?? null,
+            json(c.config),
+            saved.updatedAt,
+          ],
+        );
+      const deleted = input.deleteConnectionIds ?? [];
+      if (deleted.length) {
+        await client.query(
+          "DELETE FROM director_profile WHERE brain_connection_id=ANY($1::text[])",
+          [deleted],
+        );
+        await client.query(
+          "UPDATE director_profile SET research_connection_id=NULL WHERE research_connection_id=ANY($1::text[])",
+          [deleted],
+        );
+        await client.query(
+          "DELETE FROM provider_connection WHERE id=ANY($1::text[])",
+          [deleted],
+        );
+        for (const r of after.runs)
+          if (
+            !isDeepStrictEqual(
+              r,
+              snapshot.runs.find((x) => x.id === r.id),
+            )
+          )
+            await client.query(
+              "UPDATE workflow_run SET revision_graph=$2::jsonb WHERE id=$1",
+              [r.id, json(r.revisionGraph)],
+            );
+        for (const n of after.nodeRuns)
+          if (
+            !isDeepStrictEqual(
+              n,
+              snapshot.nodeRuns.find((x) => x.id === n.id),
+            )
+          )
+            await client.query(
+              "UPDATE node_run SET input_json=$2::jsonb WHERE id=$1",
+              [n.id, json(n.inputJson)],
+            );
+        for (const p of after.directorProposals)
+          if (
+            !isDeepStrictEqual(
+              p,
+              snapshot.directorProposals.find((x) => x.id === p.id),
+            )
+          )
+            await client.query(
+              "UPDATE director_proposal SET plan=$2::jsonb,status=$3,quote=$4::jsonb WHERE id=$1",
+              [p.id, json(p.plan), p.status, json(p.quote)],
+            );
+      }
+      for (const c of after.canvases)
+        if (
+          !isDeepStrictEqual(
+            c.graph,
+            snapshot.canvases.find((old) => old.id === c.id)?.graph,
+          )
+        )
+          await client.query("UPDATE canvas SET graph=$2::jsonb WHERE id=$1", [
+            c.id,
+            json(c.graph),
+          ]);
+      for (const c of after.revisions)
+        if (
+          !isDeepStrictEqual(
+            c.graph,
+            snapshot.revisions.find((old) => old.id === c.id)?.graph,
+          )
+        )
+          await client.query(
+            "UPDATE canvas_revision SET graph=$2::jsonb WHERE id=$1",
+            [c.id, json(c.graph)],
+          );
+      await client.query("COMMIT");
+      return saved;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
   async getConnection(id: string): Promise<ProviderConnectionRecord | null> {
     await this.ensureReady();
     const result = await this.pool.query(
@@ -309,21 +535,50 @@ export class PostgresRepository implements Repository {
   }
   async saveConnection(
     input: Omit<ProviderConnectionRecord, "createdAt" | "updatedAt">,
+    options: ConnectionSaveOptions = {},
   ): Promise<ProviderConnectionRecord> {
     await this.ensureReady();
-    const timestamp = new Date();
-    const result = await this.pool.query(
-      `INSERT INTO provider_connection(id,name,provider,encrypted_secret,config,created_at,updated_at) VALUES($1,$2,$3,$4,$5::jsonb,$6,$6) ON CONFLICT(id) DO UPDATE SET name=$2,provider=$3,encrypted_secret=COALESCE($4,provider_connection.encrypted_secret),config=$5::jsonb,updated_at=$6 RETURNING *`,
-      [
-        input.id,
-        input.name,
-        input.provider,
-        input.encryptedSecret ?? null,
-        json(input.config),
-        timestamp,
-      ],
-    );
-    return this.connectionRow(result.rows[0]);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "LOCK TABLE supplier, provider_connection IN SHARE ROW EXCLUSIVE MODE",
+      );
+      const previous = await client.query(
+        "SELECT * FROM provider_connection WHERE id=$1",
+        [input.id],
+      );
+      const supplier = input.config.supplierId
+        ? await client.query("SELECT * FROM supplier WHERE id=$1", [
+            input.config.supplierId,
+          ])
+        : null;
+      assertConnectionSave(
+        input,
+        previous.rows[0] ? this.connectionRow(previous.rows[0]) : null,
+        supplier?.rows[0] ? this.supplierRow(supplier.rows[0]) : null,
+        options,
+      );
+      const timestamp = new Date();
+      const result = await client.query(
+        `INSERT INTO provider_connection(id,name,provider,encrypted_secret,config,created_at,updated_at) VALUES($1,$2,$3,$4,$5::jsonb,$6,$6) ON CONFLICT(id) DO UPDATE SET name=$2,provider=$3,encrypted_secret=COALESCE($4,provider_connection.encrypted_secret),config=$5::jsonb,updated_at=$6 RETURNING *`,
+        [
+          input.id,
+          input.name,
+          input.provider,
+          input.encryptedSecret ?? null,
+          json(input.config),
+          timestamp,
+        ],
+      );
+      await client.query("COMMIT");
+      return this.connectionRow(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   async deleteConnection(id: string): Promise<void> {
     await this.ensureReady();
@@ -444,6 +699,7 @@ export class PostgresRepository implements Repository {
     patch: Partial<
       Pick<DirectorSessionRecord, "title" | "metadata" | "profileId">
     >,
+    options?: { expectedTurnId: string | null },
   ): Promise<DirectorSessionRecord | null> {
     await this.ensureReady();
     const values: unknown[] = [id];
@@ -458,8 +714,13 @@ export class PostgresRepository implements Repository {
     if (patch.profileId !== undefined) add("profile_id", patch.profileId);
     if (sets.length === 0) return this.getDirectorSession(id);
     sets.push("updated_at=now()");
+    let guard = "";
+    if (options) {
+      values.push(options.expectedTurnId);
+      guard = ` AND (metadata->>'activeTurnId') IS NOT DISTINCT FROM $${values.length}::text`;
+    }
     const result = await this.pool.query(
-      `UPDATE director_session SET ${sets.join(",")} WHERE id=$1 RETURNING *`,
+      `UPDATE director_session SET ${sets.join(",")} WHERE id=$1${guard} RETURNING *`,
       values,
     );
     return result.rows[0] ? this.directorSessionRow(result.rows[0]) : null;
@@ -587,12 +848,41 @@ export class PostgresRepository implements Repository {
     };
   }
 
+  private async queryWithSnapshot(
+    value: unknown,
+    sql: string,
+    values: unknown[],
+  ) {
+    if (!frozenCredentialIds(value).size) return this.pool.query(sql, values);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "LOCK TABLE provider_connection, director_proposal IN SHARE ROW EXCLUSIVE MODE",
+      );
+      const current = await client.query("SELECT * FROM provider_connection");
+      assertSnapshotCredentials(
+        value,
+        current.rows.map((r) => this.connectionRow(r)),
+      );
+      const result = await client.query(sql, values);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async createDirectorProposal(
     input: Omit<DirectorProposalRecord, "createdAt" | "updatedAt">,
   ): Promise<DirectorProposalRecord> {
     await this.ensureReady();
     const timestamp = new Date();
-    const result = await this.pool.query(
+    const result = await this.queryWithSnapshot(
+      input.plan,
       `INSERT INTO director_proposal(id,session_id,canvas_id,version,status,base_canvas_revision,plan,quote,knowledge_version,catalog_fingerprint,expires_at,workflow_run_id,created_at,updated_at)
        VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13,$13) RETURNING *`,
       [
@@ -679,7 +969,12 @@ export class PostgresRepository implements Repository {
       values.push([...options.expectedStatuses]);
       conditions.push(`status=ANY($${values.length}::text[])`);
     }
-    const result = await this.pool.query(
+    if (options.expectedPreflightId !== undefined) {
+      values.push(options.expectedPreflightId);
+      conditions.push(`plan->'preflight'->>'id'=$${values.length}::text`);
+    }
+    const result = await this.queryWithSnapshot(
+      patch.plan,
       `UPDATE director_proposal SET ${sets.join(",")} WHERE ${conditions.join(
         " AND ",
       )} RETURNING *`,
@@ -730,26 +1025,54 @@ export class PostgresRepository implements Repository {
     input: Omit<WorkflowRunRecord, "createdAt" | "updatedAt">,
   ): Promise<WorkflowRunRecord> {
     await this.ensureReady();
-    const timestamp = new Date();
-    const result = await this.pool.query(
-      `INSERT INTO workflow_run(id,canvas_id,client_request_id,scope,node_id,node_ids,status,revision_graph,created_at,updated_at)
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "LOCK TABLE supplier, provider_connection, workflow_run IN SHARE ROW EXCLUSIVE MODE",
+      );
+      const duplicate = await client.query(
+        "SELECT * FROM workflow_run WHERE canvas_id=$1 AND client_request_id=$2",
+        [input.canvasId, input.clientRequestId],
+      );
+      if (duplicate.rows[0]) {
+        await client.query("COMMIT");
+        return this.runRow(duplicate.rows[0]);
+      }
+      const cs = await client.query("SELECT * FROM provider_connection");
+      const ss = await client.query("SELECT * FROM supplier");
+      assertRunConnections(
+        input,
+        cs.rows.map((r) => this.connectionRow(r)),
+        ss.rows.map((r) => this.supplierRow(r)),
+      );
+      const timestamp = new Date();
+      const result = await client.query(
+        `INSERT INTO workflow_run(id,canvas_id,client_request_id,scope,node_id,node_ids,status,revision_graph,created_at,updated_at)
        VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$9)
        ON CONFLICT(canvas_id,client_request_id) DO UPDATE
        SET client_request_id=workflow_run.client_request_id
        RETURNING *`,
-      [
-        input.id,
-        input.canvasId,
-        input.clientRequestId,
-        input.scope,
-        input.nodeId ?? null,
-        json(input.nodeIds ?? []),
-        input.status,
-        json(input.revisionGraph),
-        timestamp,
-      ],
-    );
-    return this.runRow(result.rows[0]);
+        [
+          input.id,
+          input.canvasId,
+          input.clientRequestId,
+          input.scope,
+          input.nodeId ?? null,
+          json(input.nodeIds ?? []),
+          input.status,
+          json(input.revisionGraph),
+          timestamp,
+        ],
+      );
+      await client.query("COMMIT");
+      return this.runRow(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   async getRun(id: string): Promise<WorkflowRunRecord | null> {
     await this.ensureReady();

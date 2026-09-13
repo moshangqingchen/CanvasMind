@@ -308,7 +308,11 @@ function isFriModelImageCandidate(model: string): boolean {
  * candidates until FriModel publishes an edit contract for them.
  */
 function friModelSupportsImageEdit(model: string): boolean {
-  return /^gpt-image-2(?:-|$)/iu.test(model.trim());
+  return /^gpt-image-2(?:-|$)/iu.test(model.trim()) || isFriModelImage25(model);
+}
+
+function isFriModelImage25(model: string): boolean {
+  return /^gpt-image-2\.5-(?:flare|sunburst)-adobe$/iu.test(model.trim());
 }
 
 function isChentuImageCandidate(model: string): boolean {
@@ -611,6 +615,10 @@ function friModelImageParameterDescriptors(
             { label: "低（low）", value: "low" },
             { label: "中（medium）", value: "medium" },
             { label: "高（high）", value: "high" },
+            ...(isFriModelImage25(modelId) ? [
+              ...(modelId === "gpt-image-2.5-flare-adobe" ? [{ label: "超高（xhigh）", value: "xhigh" }] : []),
+              { label: "最高（max）", value: "max" },
+            ] : []),
           ],
       description: fixedQuality
         ? `gpt-image-2-${fixedQuality} 是 FriModel 模型广场的固定${fixedQuality.toUpperCase()}质量模型。`
@@ -871,7 +879,7 @@ function chentuModelPrice(model: string, group?: string): string {
 }
 
 function isChentuGptImageModel(model: string): boolean {
-  return /^gpt-image-2(?:-|$)/u.test(model) || model === "gpt-image-2自由传参";
+  return /^gpt-image-\d+(?:\.\d+)*(?:-|$)/iu.test(model) || model === "gpt-image-2自由传参";
 }
 
 function chentuModelDisplayName(model: string): string {
@@ -1876,8 +1884,37 @@ function allowedWeAIModels(
 ): readonly string[] | undefined {
   const group = configuredModelGroup(connection);
   if (group && isMikotoGeminiGroup(group))
-    return MIKOTO_GEMINI_GROUP_MODELS[group];
+    return [
+      ...MIKOTO_GEMINI_GROUP_MODELS[group]!,
+      ...scannedMikotoGeminiModels(connection),
+    ];
   return group ? WEAI_GROUP_MODELS[group] : undefined;
+}
+
+function scannedMikotoGeminiModels(
+  connection: ResolvedProviderConnection,
+): string[] {
+  if (configuredSupplierKey(connection) !== "mikoto") return [];
+  const nested = connection.settings?.["config"];
+  const settings = isRecord(nested) ? nested : connection.settings;
+  const models =
+    connection.settings?.["modelCatalogModels"] ?? settings?.["modelCatalogModels"];
+  const ids =
+    connection.settings?.["scannedModelIds"] ?? settings?.["scannedModelIds"];
+  if (!Array.isArray(models) || !Array.isArray(ids)) return [];
+  return models.flatMap((model) => {
+    if (
+      !isRecord(model) ||
+      typeof model.id !== "string" ||
+      !ids.includes(model.id)
+    ) return [];
+    const metadata = model.metadata;
+    return /^gemini-.*image/iu.test(model.id) &&
+      isRecord(metadata) &&
+      metadata.canvasRunnable === true &&
+      metadata.protocol === "gemini-generate-content"
+      ? [model.id] : [];
+  });
 }
 
 function unavailableWeAIModels(
@@ -2915,7 +2952,12 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       resolvedSupplierKey === "mikoto"
         ? MIKOTO_GEMINI_IMAGE_MODELS
         : WEAI_GEMINI_IMAGE_MODELS;
-    if (useGemini && !supportedGeminiModels.has(resolvedModel)) {
+    if (
+      useGemini &&
+      !supportedGeminiModels.has(resolvedModel) &&
+      !(resolvedConnection &&
+        scannedMikotoGeminiModels(resolvedConnection).includes(resolvedModel))
+    ) {
       issues.push({
         path: "model",
         code: "unsupported_model",
@@ -3326,6 +3368,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
             // Legacy canvas values; friModelImageParameters normalizes them.
             "standard",
             "hd",
+            ...(isFriModelImage25(resolvedModel) ? ["max"] : []),
+            ...(resolvedModel === "gpt-image-2.5-flare-adobe" ? ["xhigh"] : []),
           ].includes(quality.trim().toLowerCase()))
       )
         issues.push({

@@ -108,6 +108,16 @@ type HistoricalInputSnapshot = { value: OutputValue } | { missing: true };
 
 type HistoricalInputs = Record<string, HistoricalInputSnapshot>;
 
+/** Server-only immutable execution input. Never serialize to a browser. */
+export interface PreparedRun {
+  canvasId: string;
+  canvasRevision: number;
+  scope: RunScope;
+  nodeId?: string;
+  nodeIds: string[];
+  revisionGraph: JsonObject;
+}
+
 export interface RuntimeOptions {
   repository?: Repository;
   storage?: ObjectStorage;
@@ -346,7 +356,43 @@ function ratioValue(value: unknown): number | undefined {
   return width > 0 && height > 0 ? width / height : undefined;
 }
 
-/** Resolves a connector-declared K-size option before using supplier tables. */
+function configuredImageDescriptor(
+  connectionConfig: JsonObject | undefined,
+  model: string | undefined,
+) {
+  const connectorModels =
+    isRecord(connectionConfig?.connector) &&
+    Array.isArray(connectionConfig.connector.models)
+      ? connectionConfig.connector.models
+      : [];
+  const catalogModels = Array.isArray(connectionConfig?.modelCatalogModels)
+    ? connectionConfig.modelCatalogModels
+    : [];
+  return [...catalogModels, ...connectorModels].find(
+    (candidate) => isRecord(candidate) && candidate.id === model,
+  );
+}
+
+function singleConfiguredSizeTier(descriptor: unknown): string | undefined {
+  if (!isRecord(descriptor) || !Array.isArray(descriptor.parameters))
+    return undefined;
+  const size = descriptor.parameters.find(
+    (parameter) => isRecord(parameter) && parameter.key === "size",
+  );
+  if (!isRecord(size) || !Array.isArray(size.options)) return undefined;
+  const tiers = new Set(
+    size.options.flatMap((option) => {
+      const tier =
+        isRecord(option) && typeof option.label === "string"
+          ? /^(1K|2K|4K)\b/iu.exec(option.label)?.[1]?.toUpperCase()
+          : undefined;
+      return tier ? [tier] : [];
+    }),
+  );
+  return tiers.size === 1 ? [...tiers][0] : undefined;
+}
+
+/** Resolves model-declared K-size options before using legacy supplier tables. */
 function connectorSizeForResolutionTier(
   connectionConfig: JsonObject | undefined,
   model: string | undefined,
@@ -354,14 +400,8 @@ function connectorSizeForResolutionTier(
   aspectRatio?: string,
 ): string | undefined {
   const tier = weAiResolutionTier(tierValue);
-  if (!tier || !model || !isRecord(connectionConfig?.connector))
-    return undefined;
-  const models = Array.isArray(connectionConfig.connector.models)
-    ? connectionConfig.connector.models
-    : [];
-  const descriptor = models.find(
-    (candidate) => isRecord(candidate) && candidate.id === model,
-  );
+  if (!tier || !model) return undefined;
+  const descriptor = configuredImageDescriptor(connectionConfig, model);
   const parameters =
     isRecord(descriptor) && Array.isArray(descriptor.parameters)
       ? descriptor.parameters
@@ -402,8 +442,7 @@ function connectorSizeForResolutionTier(
     return candidateDistance < bestDistance ? candidate : best;
   });
   const nearestDistance = Math.abs(Math.log(nearest.ratio / requested));
-  if (!supportsCustomDimensions || nearestDistance <= 1e-6)
-    return nearest.size;
+  if (!supportsCustomDimensions || nearestDistance <= 1e-6) return nearest.size;
 
   const descriptorMax =
     isRecord(sizeDescriptor) && typeof sizeDescriptor.max === "number"
@@ -411,10 +450,13 @@ function connectorSizeForResolutionTier(
       : undefined;
   const maxEdge = Math.max(
     16,
-    descriptorMax ?? Math.max(...candidates.map((candidate) => {
-      const [width, height] = candidate.size.split("x").map(Number);
-      return Math.max(width ?? 0, height ?? 0);
-    })),
+    descriptorMax ??
+      Math.max(
+        ...candidates.map((candidate) => {
+          const [width, height] = candidate.size.split("x").map(Number);
+          return Math.max(width ?? 0, height ?? 0);
+        }),
+      ),
   );
   const maxPixels = Math.max(
     ...candidates.map((candidate) => {
@@ -694,6 +736,11 @@ class RepoConnectionResolver implements ProviderConnectionResolver {
       this.frozenConnections.get(connectionId) ??
       (await this.repository.getConnection(connectionId));
     if (!record) throw new Error(`找不到供应商连接：${connectionId}`);
+    if (
+      !this.frozenConnections.has(connectionId) &&
+      record.config.supplierArchived === true
+    )
+      throw new Error("此供应商连接已归档，请重新选择当前连接");
     const encrypted = record.encryptedSecret;
     const masterKey = masterKeyForRuntime();
     if (encrypted && !masterKey) {
@@ -940,11 +987,15 @@ export class RunService {
     const existingByNodeId = new Map(
       existingNodeRuns.map((nodeRun) => [nodeRun.nodeId, nodeRun]),
     );
-    const historicalInputs = await this.freezeHistoricalInputs(
-      graph,
-      run.canvasId,
-      selected,
-    );
+    const preparedInputs = run.revisionGraph.__preparedHistoricalInputs;
+    const historicalInputs = isRecord(preparedInputs)
+      ? new Map(
+          Object.entries(preparedInputs).map(([id, value]) => [
+            id,
+            isRecord(value) ? value : {},
+          ]),
+        )
+      : await this.freezeHistoricalInputs(graph, run.canvasId, selected);
     for (const id of nodeIds) {
       const existing = existingByNodeId.get(id);
       const snapshot = historicalInputs.get(id) ?? {};
@@ -982,6 +1033,112 @@ export class RunService {
         });
       }
     }
+  }
+
+  async prepareRun(input: {
+    canvasId: string;
+    scope: RunScope;
+    nodeId?: string;
+    nodeIds?: readonly string[];
+  }): Promise<PreparedRun> {
+    const canvas = await this.repository.getCanvas(input.canvasId);
+    if (!canvas) throw new Error("Canvas not found");
+    const graph = await this.freezeModels(asGraph(canvas.graph));
+    const validation = validateGraph(graph, {
+      checkPorts: true,
+      checkRequiredInputs: false,
+    });
+    if (!validation.valid)
+      throw new Error(
+        validation.errors.map((error) => error.message).join("; "),
+      );
+    const nodeIds = selectRunNodeIds(
+      graph,
+      input.scope,
+      input.nodeId,
+      input.nodeIds,
+    );
+    const selected = new Set(nodeIds);
+    const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+    const missingRequiredInputs = validateGraph(graph, {
+      checkPorts: true,
+      checkRequiredInputs: true,
+    }).errors.filter(
+      (error) =>
+        error.code === "missing_required_input" &&
+        error.nodeId !== undefined &&
+        selected.has(error.nodeId) &&
+        !(
+          error.portId === "prompt" &&
+          hasInlineGenerationPrompt(nodeById.get(error.nodeId))
+        ),
+    );
+    if (missingRequiredInputs.length > 0) {
+      throw new Error(
+        missingRequiredInputs.map((error) => error.message).join("; "),
+      );
+    }
+    const historicalInputs = await this.freezeHistoricalInputs(
+      graph,
+      input.canvasId,
+      selected,
+    );
+    for (const [nodeId, inputs] of historicalInputs) {
+      for (const [sourceId, snapshot] of Object.entries(inputs)) {
+        if (
+          snapshot &&
+          typeof snapshot === "object" &&
+          !Array.isArray(snapshot) &&
+          "missing" in snapshot &&
+          snapshot.missing === true
+        )
+          throw new Error(
+            `节点 ${nodeId} 的上游 ${sourceId} 没有可用成果，请先生成上游或连接有效素材`,
+          );
+      }
+    }
+    return {
+      canvasId: canvas.id,
+      canvasRevision: canvas.revision,
+      scope: input.scope,
+      ...(input.nodeId ? { nodeId: input.nodeId } : {}),
+      nodeIds: [...nodeIds],
+      revisionGraph: {
+        ...graph,
+        __preparedHistoricalInputs: Object.fromEntries(historicalInputs),
+      } as unknown as JsonObject,
+    };
+  }
+
+  async createRunFromPrepared(
+    prepared: PreparedRun,
+    clientRequestId: string,
+  ): Promise<WorkflowRunRecord> {
+    let run = await this.repository.getRunByClientRequest(
+      prepared.canvasId,
+      clientRequestId,
+    );
+    if (!run) {
+      run = await this.repository.createRun({
+        id: randomUUID(),
+        canvasId: prepared.canvasId,
+        clientRequestId,
+        scope: prepared.scope,
+        nodeId: prepared.nodeId ?? null,
+        nodeIds: prepared.scope === "selection" ? [...prepared.nodeIds] : null,
+        status: "queued",
+        revisionGraph: structuredClone(prepared.revisionGraph),
+      });
+    }
+    if (run.status !== "queued" && run.status !== "running") return run;
+    await this.ensureNodeRuns(run);
+    this.publish({
+      type: "run",
+      runId: run.id,
+      payload: { status: run.status, nodeIds: prepared.nodeIds },
+    });
+    await this.scheduleRun(run.id);
+    return run;
   }
 
   async createRun(input: {
@@ -1976,7 +2133,12 @@ export class RunService {
     if (rejectedModel !== requestedModel) return;
 
     const connection = await this.repository.getConnection(connectionId);
-    if (!connection || connection.provider !== "weai") return;
+    if (
+      !connection ||
+      connection.config.supplierArchived === true ||
+      connection.provider !== "weai"
+    )
+      return;
     const detectedAt = new Date().toISOString();
     const configuredFailures = connection.config.modelAvailabilityFailures;
     const existingFailures = Array.isArray(configuredFailures)
@@ -2080,7 +2242,12 @@ export class RunService {
     if (typeof connectionId !== "string" || typeof model !== "string") return;
 
     const connection = await this.repository.getConnection(connectionId);
-    if (!connection || connection.provider !== "weai") return;
+    if (
+      !connection ||
+      connection.config.supplierArchived === true ||
+      connection.provider !== "weai"
+    )
+      return;
     const nextConfig: JsonObject = { ...connection.config };
     let changed = false;
 
@@ -2157,6 +2324,7 @@ export class RunService {
     const connection = await this.repository.getConnection(connectionId);
     if (
       !connection ||
+      connection.config.supplierArchived === true ||
       connection.provider !== "rest" ||
       connection.config.preset !== "cyberafei-api"
     )
@@ -2455,6 +2623,13 @@ export class RunService {
       unresolvedAsset: "empty",
     });
     if (semanticType(node) === "image-generation") {
+      const imageDescriptor = configuredImageDescriptor(
+        connectionConfig,
+        model,
+      );
+      const verifiedImage25 =
+        isRecord(imageDescriptor?.metadata) &&
+        imageDescriptor.metadata.image25VerifiedAt !== undefined;
       const selectedWeAiTier =
         providerName === "weai"
           ? weAiResolutionTier(parameters.size_tier)
@@ -2475,7 +2650,7 @@ export class RunService {
           ? weAiResolutionTier(parameters.size_tier)
           : undefined;
       const selectedConnectorTier =
-        providerName === "rest" && supplier !== "cyberafei"
+        providerName === "rest" && (supplier !== "cyberafei" || verifiedImage25)
           ? weAiResolutionTier(parameters.size_tier)
           : undefined;
       const selectedResolutionTier =
@@ -2483,7 +2658,14 @@ export class RunService {
         selectedChentuTier ??
         selectedFriModelTier ??
         selectedMikotoTier ??
-        selectedConnectorTier;
+        selectedConnectorTier ??
+        (verifiedImage25
+          ? weAiResolutionTier(parameters.size_tier)
+          : undefined) ??
+        (parameters.size === "auto"
+          ? singleConfiguredSizeTier(imageDescriptor)
+          : undefined) ??
+        (verifiedImage25 && parameters.size === "auto" ? "1K" : undefined);
       const autoAspectKey =
         parameters.aspect_ratio === "auto"
           ? "aspect_ratio"
@@ -2546,14 +2728,12 @@ export class RunService {
         selectedResolutionTier &&
         (parameters.size === undefined || parameters.size === "auto")
       ) {
-        const connectorSize =
-          selectedConnectorTier &&
-          connectorSizeForResolutionTier(
-            connectionConfig,
-            model,
-            selectedConnectorTier,
-            inferredRatio,
-          );
+        const connectorSize = connectorSizeForResolutionTier(
+          connectionConfig,
+          model,
+          selectedResolutionTier,
+          inferredRatio,
+        );
         parameters.size =
           connectorSize ??
           (selectedWeAiTier
@@ -2860,7 +3040,8 @@ export class RunService {
   ): Promise<string> {
     // Providers currently type outputs as image/video, but the asset pipeline
     // also accepts audio artifacts from compatible adapters.
-    const artifactKind = (artifact as { kind: "image" | "video" | "audio" }).kind;
+    const artifactKind = (artifact as { kind: "image" | "video" | "audio" })
+      .kind;
     let bytes = artifact.data;
     const maxBytes = artifactDownloadMaxBytes();
     let mime =
@@ -2935,7 +3116,9 @@ export class RunService {
     if (this.projectFileStore) {
       try {
         const run = await this.repository.getRun(runId);
-        const canvas = run ? await this.repository.getCanvas(run.canvasId) : null;
+        const canvas = run
+          ? await this.repository.getCanvas(run.canvasId)
+          : null;
         if (canvas) {
           await this.projectFileStore.archiveDraft({
             projectName: canvas.title,

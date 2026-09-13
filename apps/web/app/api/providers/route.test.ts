@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   repository: {
     listConnections: vi.fn(),
+    listSuppliers: vi.fn(async () => []),
   },
   maskConnection: vi.fn((connection: unknown) => connection),
 }));
@@ -38,7 +39,7 @@ beforeEach(() => {
 
 describe("providers collection route", () => {
   it("returns saved connections without waiting for Mikoto refresh", async () => {
-    mocks.repository.listConnections.mockResolvedValueOnce([
+    mocks.repository.listConnections.mockResolvedValue([
       { id: "connection-1", provider: "fake", config: { name: "Demo" } },
     ]);
 

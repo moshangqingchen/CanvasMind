@@ -1,20 +1,12 @@
 "use client";
 
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Handle,
   NodeResizer,
   NodeToolbar,
   Position,
-  useViewport,
   type NodeProps,
 } from "@xyflow/react";
 import {
@@ -378,12 +370,17 @@ function GenerationNodeBody({
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  // A portal-mounted config panel is outside React Flow's transformed
-  // viewport. Subscribe to viewport changes so its fixed coordinates are
-  // recalculated whenever the canvas is panned or zoomed.
-  const { x: viewportX, y: viewportY, zoom: viewportZoom } = useViewport();
-  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const settingsPanelRef = useRef<HTMLElement | null>(null);
+  // Share the node's coordinate system, outside the card's content layout.
+  // Dragging, resizing and viewport transforms then apply to both together.
+  const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
+  const attachSettingsTrigger = useCallback(
+    (trigger: HTMLButtonElement | null) => {
+      setSettingsHost(
+        trigger?.closest<HTMLElement>(".react-flow__node") ?? null,
+      );
+    },
+    [],
+  );
   const modelSelectRef = useRef<HTMLDivElement | null>(null);
   const [availabilitySnapshot, setAvailabilitySnapshot] = useState<{
     connectionId: string;
@@ -391,12 +388,6 @@ function GenerationNodeBody({
     checkedAt?: string;
     state: ModelAvailabilityLoadState;
   }>({ connectionId: "", items: [], state: "idle" });
-  const [settingsPosition, setSettingsPosition] = useState({
-    top: 16,
-    left: 16,
-    width: 420,
-    maxHeight: 600,
-  });
   const nodeType =
     data.nodeType === "video-generation"
       ? "video-generation"
@@ -574,65 +565,11 @@ function GenerationNodeBody({
     };
   }, [cangyuanAvailabilityEnabled, currentConnection, settingsOpen]);
 
-  const updateSettingsPosition = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const trigger = settingsTriggerRef.current;
-    const panel = settingsPanelRef.current;
-    if (!trigger || !panel) return;
-    const triggerRect = trigger.getBoundingClientRect();
-    const viewportPadding = 12;
-    const viewportTop = 68;
-    const width = Math.min(420, window.innerWidth - viewportPadding * 2);
-    const maxHeight = Math.max(
-      220,
-      window.innerHeight - viewportTop - viewportPadding * 2,
-    );
-    const panelHeight = Math.min(
-      panel.getBoundingClientRect().height,
-      maxHeight,
-    );
-    const left = Math.min(
-      Math.max(viewportPadding, triggerRect.left),
-      Math.max(viewportPadding, window.innerWidth - width - viewportPadding),
-    );
-    const belowTop = triggerRect.bottom + 10;
-    const aboveTop = triggerRect.top - panelHeight - 10;
-    const top =
-      belowTop + panelHeight <= window.innerHeight - viewportPadding
-        ? belowTop
-        : Math.max(viewportTop, aboveTop);
-    setSettingsPosition({ top, left, width, maxHeight });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!settingsOpen || typeof window === "undefined") return;
-
-    updateSettingsPosition();
-    window.addEventListener("resize", updateSettingsPosition);
-    window.addEventListener("scroll", updateSettingsPosition, true);
-    return () => {
-      window.removeEventListener("resize", updateSettingsPosition);
-      window.removeEventListener("scroll", updateSettingsPosition, true);
-    };
-  }, [settingsOpen, updateSettingsPosition]);
-
-  useLayoutEffect(() => {
-    if (settingsOpen) updateSettingsPosition();
-  }, [
-    settingsOpen,
-    updateSettingsPosition,
-    viewportX,
-    viewportY,
-    viewportZoom,
-  ]);
-
   const settingsPopover = settingsOpen ? (
     <section
-      ref={settingsPanelRef}
       className="node-config-popover node-config-popover-portal nodrag nowheel nopan"
       role="dialog"
       aria-label={`${data.label} 模型与参数`}
-      style={settingsPosition}
       onPointerDown={(event) => {
         const target = event.target instanceof Element ? event.target : null;
         if (!shouldReselectNodeFromConfigPointer(target)) {
@@ -868,8 +805,8 @@ function GenerationNodeBody({
     <div
       className={`node-generation-body ${(data.linkedAssets?.length ?? 0) > 0 ? "has-linked-assets" : ""}`}
     >
-      {typeof document !== "undefined" && settingsPopover
-        ? createPortal(settingsPopover, document.body)
+      {settingsHost && settingsPopover
+        ? createPortal(settingsPopover, settingsHost)
         : null}
       <LinkedAssetStrip data={data} />
       <div
@@ -905,7 +842,7 @@ function GenerationNodeBody({
       >
         <button
           className="node-config-summary"
-          ref={settingsTriggerRef}
+          ref={attachSettingsTrigger}
           type="button"
           aria-label={`打开 ${data.label} 模型与参数`}
           title="打开模型与参数面板"

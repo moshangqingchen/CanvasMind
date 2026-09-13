@@ -28,6 +28,38 @@ beforeEach(() => {
 });
 
 describe("PostgresRepository canvas revision guard", () => {
+  it("conditionally writes task memory and approval against the expected turn and preflight", async () => {
+    mocks.poolQuery.mockResolvedValue({ rows: [] });
+    const repository = new PostgresRepository("postgres://test");
+    expect(
+      await repository.updateDirectorSession(
+        "s",
+        { metadata: { activeTurnId: "two" } },
+        { expectedTurnId: "one" },
+      ),
+    ).toBeNull();
+    const session = mocks.poolQuery.mock.calls.find(([sql]) =>
+      String(sql).includes("UPDATE director_session SET"),
+    );
+    expect(String(session?.[0])).toContain("IS NOT DISTINCT FROM");
+    expect(session?.[1]).toContain("one");
+    expect(
+      await repository.updateDirectorProposal(
+        "p",
+        { status: "approved" },
+        {
+          expectedVersion: 1,
+          expectedStatuses: ["awaiting_execution"],
+          expectedPreflightId: "exact-snapshot",
+        },
+      ),
+    ).toBeNull();
+    const proposal = mocks.poolQuery.mock.calls.find(([sql]) =>
+      String(sql).includes("UPDATE director_proposal SET"),
+    );
+    expect(String(proposal?.[0])).toContain("plan->'preflight'->>'id'");
+    expect(proposal?.[1]).toContain("exact-snapshot");
+  });
   it("updates or creates through one conditional statement", async () => {
     mocks.client.query.mockImplementation(async (sql: string) => {
       if (sql.includes("WITH updated AS")) {
@@ -165,7 +197,7 @@ describe("PostgresRepository director persistence", () => {
   });
 
   it("stores explicit run node ids in jsonb", async () => {
-    mocks.poolQuery.mockImplementation(async (sql: string) => {
+    mocks.client.query.mockImplementation(async (sql: string) => {
       if (sql.includes("INSERT INTO workflow_run")) {
         return {
           rows: [
@@ -184,7 +216,7 @@ describe("PostgresRepository director persistence", () => {
           ],
         };
       }
-      return { rows: [{ ok: 1 }] };
+      return { rows: [] };
     });
     const repository = new PostgresRepository("postgres://test");
 
@@ -200,7 +232,7 @@ describe("PostgresRepository director persistence", () => {
       }),
     ).resolves.toMatchObject({ nodeIds: ["image", "video"] });
 
-    const insertCall = mocks.poolQuery.mock.calls.find(([sql]) =>
+    const insertCall = mocks.client.query.mock.calls.find(([sql]) =>
       String(sql).includes("INSERT INTO workflow_run"),
     );
     expect(String(insertCall?.[0])).toContain("node_ids");
@@ -215,5 +247,107 @@ describe("PostgresRepository director persistence", () => {
       JSON.stringify({}),
       expect.any(Date),
     ]);
+  });
+});
+
+describe("Postgres supplier transactions", () => {
+  const now = new Date("2026-09-08T00:00:00.000Z");
+  const supplier = {
+    id: "s",
+    name: "S",
+    supplierKey: "custom",
+    siteUrl: "https://example.com",
+    apiUrl: "https://example.com/v1",
+    kind: "auto" as const,
+    catalog: { groups: [] },
+    scanStatus: "unscanned" as const,
+    state: {
+      version: 1 as const,
+      revision: 1,
+      visibility: "visible" as const,
+      sourceId: "one",
+      fingerprint: "one",
+      history: [],
+    },
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+  function setup(failWrite = false) {
+    mocks.client.query.mockImplementation(async (sql: string) => {
+      if (sql === "SELECT * FROM supplier")
+        return {
+          rows: [
+            {
+              id: "s",
+              name: "S",
+              supplier_key: "custom",
+              site_url: supplier.siteUrl,
+              api_url: supplier.apiUrl,
+              kind: "auto",
+              catalog: supplier.catalog,
+              scan_status: "unscanned",
+              state: supplier.state,
+              created_at: now,
+              updated_at: now,
+            },
+          ],
+        };
+      if (sql.startsWith("INSERT INTO supplier") && failWrite)
+        throw new Error("simulated disk failure");
+      return { rows: [] };
+    });
+  }
+  it("commits the lifecycle in one transaction with a row-version guard", async () => {
+    setup();
+    const db = new PostgresRepository("postgres://test");
+    expect(
+      (
+        await db.commitSupplier({
+          supplier: {
+            ...supplier,
+            state: { ...supplier.state, revision: 2, visibility: "hidden" },
+          },
+          expectedRevision: 1,
+          expectedConnections: [],
+          connections: [],
+        })
+      ).state?.visibility,
+    ).toBe("hidden");
+    expect(mocks.client.query.mock.calls.map((c) => c[0])).toContain("COMMIT");
+    expect(mocks.client.release).toHaveBeenCalled();
+  });
+  it("rolls back stale versions and storage failures without writing connection changes", async () => {
+    setup();
+    const db = new PostgresRepository("postgres://test");
+    await expect(
+      db.commitSupplier({
+        supplier,
+        expectedRevision: 0,
+        expectedConnections: [],
+        connections: [],
+      }),
+    ).rejects.toThrow();
+    expect(
+      mocks.client.query.mock.calls.some((c) =>
+        String(c[0]).startsWith("INSERT INTO supplier"),
+      ),
+    ).toBe(false);
+    expect(mocks.client.query.mock.calls.map((c) => c[0])).toContain(
+      "ROLLBACK",
+    );
+    setup(true);
+    await expect(
+      db.commitSupplier({
+        supplier,
+        expectedRevision: 1,
+        expectedConnections: [],
+        connections: [],
+      }),
+    ).rejects.toThrow("simulated disk failure");
+    expect(
+      mocks.client.query.mock.calls.some((c) =>
+        String(c[0]).startsWith("UPDATE provider_connection"),
+      ),
+    ).toBe(false);
   });
 });

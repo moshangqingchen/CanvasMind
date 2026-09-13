@@ -1,9 +1,18 @@
+import { supplierKeyForConnection } from "../../../../../lib/supplier-identity";
+import { randomUUID } from "node:crypto";
+import { SupplierConflictError } from "@super-canvas/db";
+import {
+  assertCurrentSupplierConnection,
+  SupplierServiceError,
+} from "../../../../../lib/supplier-service";
+import { matchesSupplierTemplate, SUPPLIER_TEMPLATE_API_URLS } from "../../../../../lib/supplier-template-source";
 import {
   decryptSecret,
   fetchProviderJson,
   joinUrl,
   providerFetch,
   scanProviderModelCatalog,
+  ProviderHttpError,
   type ModelDescriptor,
 } from "@super-canvas/providers";
 import { getRunService, type RunService } from "@super-canvas/runtime";
@@ -25,6 +34,8 @@ import {
 } from "../../../../../lib/frimodel-presets";
 import { scanFriModelConnection } from "../../../../../lib/frimodel-server";
 import { scanMikotoConnection } from "../../../../../lib/mikoto-server";
+import { bindScannedModelProtocols } from "../../../../../lib/scanned-model-protocols";
+import { enrichSupplierModelPrices } from "../../../../../lib/supplier-model-pricing";
 import { MIAOWU_PRESET_ID } from "../../../../../lib/miaowu-presets";
 import { scanMiaowuConnection } from "../../../../../lib/miaowu-server";
 import { CANGYUAN_IMAGE_PRESET_ID } from "../../../../../lib/provider-presets";
@@ -36,6 +47,10 @@ import {
 } from "../../../../../lib/weai-catalog";
 import { liveWeAiPricingForGroup } from "../../../../../lib/weai-pricing-server";
 import { isWeAiConnectionConfig } from "../../../../../lib/provider-connection-options";
+import {
+  manualProviderModelDescriptors,
+  mergeManualProviderModels,
+} from "../../../../../lib/manual-provider-models";
 
 function adapterFor(service: RunService, provider: string) {
   const anyService = service as unknown as {
@@ -87,9 +102,23 @@ async function listCustomGroupModels(connection: {
     connection.encryptedSecret,
     requireServerMasterKey(),
   );
+  const nativeProtocol = String(
+    connection.config.directorProtocol ?? connection.config.protocol ?? "",
+  );
+  const nativeHeaders: Record<string, string> =
+    nativeProtocol === "anthropic-messages"
+      ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
+      : nativeProtocol === "google-generate-content"
+        ? { "x-goog-api-key": apiKey }
+        : { authorization: `Bearer ${apiKey}` };
   const candidates = [
     joinUrl(baseUrl, "/models"),
-    joinUrl(baseUrl, "/v1/models"),
+    joinUrl(
+      baseUrl,
+      nativeProtocol === "google-generate-content"
+        ? "/v1beta/models"
+        : "/v1/models",
+    ),
   ].filter((url, index, all) => all.indexOf(url) === index);
   let payload: OpenAIModelList | undefined;
   let successfulPayload: OpenAIModelList | undefined;
@@ -101,7 +130,7 @@ async function listCustomGroupModels(connection: {
         url,
         {
           method: "GET",
-          headers: { authorization: `Bearer ${apiKey}` },
+          headers: nativeHeaders,
           cache: "no-store",
         },
         {
@@ -112,18 +141,24 @@ async function listCustomGroupModels(connection: {
       );
       successfulPayload ??= candidate;
       if (
-        modelListItems(candidate).length > 0 ||
+        Array.isArray(candidate.data) ||
+        Array.isArray(candidate.models) ||
         url === candidates[candidates.length - 1]
       ) {
         payload = candidate;
         break;
       }
     } catch (error) {
+      if (
+        error instanceof ProviderHttpError &&
+        (error.details.status === 401 || error.details.status === 403)
+      )
+        throw error;
       lastError = error;
     }
   }
   payload ??= successfulPayload;
-  if (!payload) throw (lastError ?? new Error("model list unavailable"));
+  if (!payload) throw lastError ?? new Error("model list unavailable");
   const defaultModel =
     typeof connection.config.defaultModel === "string"
       ? connection.config.defaultModel.trim()
@@ -153,26 +188,30 @@ async function persistCustomGroupModelScan(
   const modelGroups = Object.fromEntries(
     scan.groups.map((group) => [group.id, [...group.modelIds]]),
   );
-  await repository.saveConnection({
-    id: latest.id,
-    name: latest.name,
-    provider: latest.provider,
-    encryptedSecret: latest.encryptedSecret,
-    config: {
-      ...latest.config,
-      modelScanStatus: modelIds.length > 0 ? "live" : "empty",
-      modelScanCheckedAt: scan.checkedAt,
-      scannedModelIds: modelIds,
-      modelScanGroups: modelGroups,
-      modelCatalogModels: scan.models,
-      modelCatalogSource: "live",
-      ...(effectiveDefault ? { defaultModel: effectiveDefault } : {}),
+  await repository.saveConnection(
+    {
+      id: latest.id,
+      name: latest.name,
+      provider: latest.provider,
+      encryptedSecret: latest.encryptedSecret,
+      config: {
+        ...latest.config,
+        modelScanStatus: modelIds.length > 0 ? "live" : "empty",
+        modelScanCheckedAt: scan.checkedAt,
+        scannedModelIds: modelIds,
+        modelScanGroups: modelGroups,
+        modelCatalogModels: scan.models,
+        modelCatalogSource: "live",
+        ...(effectiveDefault ? { defaultModel: effectiveDefault } : {}),
+      },
     },
-  });
+    { expected: connection },
+  );
 }
 
 async function persistCustomGroupScanFailure(
   connection: NonNullable<Awaited<ReturnType<typeof repository.getConnection>>>,
+  status: "failed" | "unauthorized" = "failed",
 ): Promise<void> {
   const latest = await repository.getConnection(connection.id);
   if (
@@ -181,18 +220,26 @@ async function persistCustomGroupScanFailure(
     latest.encryptedSecret !== connection.encryptedSecret
   )
     return;
-  await repository.saveConnection({
-    id: latest.id,
-    name: latest.name,
-    provider: latest.provider,
-    encryptedSecret: latest.encryptedSecret,
-    config: {
-      ...latest.config,
-      modelScanStatus: "failed",
-      modelScanCheckedAt: new Date().toISOString(),
-      modelCatalogSource: "saved",
+  await repository.saveConnection(
+    {
+      id: latest.id,
+      name: latest.name,
+      provider: latest.provider,
+      encryptedSecret: latest.encryptedSecret,
+      config: {
+        ...latest.config,
+        // A transient failure cannot undo an explicit denial for the same key.
+        modelScanStatus:
+          status === "failed" &&
+          latest.config.modelScanStatus === "unauthorized"
+            ? "unauthorized"
+            : status,
+        modelScanCheckedAt: new Date().toISOString(),
+        modelCatalogSource: "saved",
+      },
     },
-  });
+    { expected: connection },
+  );
 }
 
 function configuredStrings(value: unknown): string[] {
@@ -204,10 +251,10 @@ function configuredStrings(value: unknown): string[] {
 
 function savedConnectorModels(connection: {
   config: Record<string, unknown>;
-}): ModelDescriptor[] {
+}, preferConnector = false): ModelDescriptor[] {
   const connector = connection.config.connector;
   const configuredCatalog = connection.config.modelCatalogModels;
-  const models = Array.isArray(configuredCatalog)
+  const models = !preferConnector && Array.isArray(configuredCatalog)
     ? configuredCatalog
     : connector && typeof connector === "object" && !Array.isArray(connector)
       ? (connector as Record<string, unknown>).models
@@ -275,7 +322,10 @@ function agentModelsFromMarketplaceGroup(
       inputKinds: ["text"],
       outputKinds: ["text"],
       isDefault: model.id === defaultModel,
-      ...(model.priceLabel || model.billingLabel || model.tags?.length || model.endpointTypes?.length
+      ...(model.priceLabel ||
+      model.billingLabel ||
+      model.tags?.length ||
+      model.endpointTypes?.length
         ? {
             metadata: {
               ...(model.priceLabel ? { priceLabel: model.priceLabel } : {}),
@@ -310,8 +360,8 @@ function savedFriModelSnapshotModels(connection: {
   return models.map((model) => {
     const imageFallback =
       model.capability === "image"
-      ? friModelFallbackImageDescriptor(model.id, groupId)
-      : undefined;
+        ? friModelFallbackImageDescriptor(model.id, groupId)
+        : undefined;
     return {
       ...(imageFallback ?? {
         id: model.id,
@@ -372,13 +422,16 @@ async function persistWeAiModelScan(
     ...(livePricing ? { weAiLivePricing: livePricing } : {}),
     ...(effectiveDefault ? { defaultModel: effectiveDefault } : {}),
   };
-  await repository.saveConnection({
-    id: latest.id,
-    name: latest.name,
-    provider: latest.provider,
-    encryptedSecret: latest.encryptedSecret,
-    config,
-  });
+  await repository.saveConnection(
+    {
+      id: latest.id,
+      name: latest.name,
+      provider: latest.provider,
+      encryptedSecret: latest.encryptedSecret,
+      config,
+    },
+    { expected: connection },
+  );
 }
 
 /**
@@ -413,13 +466,14 @@ function annotateScannedAvailability(
   const present = new Set(items.map((model) => model.id));
   for (const id of unknown) {
     if (present.has(id) || chatLike.test(id)) continue;
+    const discovered = scanProviderModelCatalog({ data: [{ id }] }).models[0]!;
     result.push({
       id,
       name: `${id}（价格以平台为准）`,
       description: "当前分组 Key 可见、但内置目录尚未收录的模型。",
-      operations: items[0]?.operations ?? [],
-      ...(items[0]?.inputKinds ? { inputKinds: items[0].inputKinds } : {}),
-      ...(items[0]?.outputKinds ? { outputKinds: items[0].outputKinds } : {}),
+      operations: discovered.operations,
+      inputKinds: discovered.inputKinds,
+      outputKinds: discovered.outputKinds,
       metadata: {
         priceLabel: "价格以平台为准",
         canvasRunnable: false,
@@ -472,9 +526,23 @@ async function listAgentModels(connection: {
     connection.encryptedSecret,
     requireServerMasterKey(),
   );
+  const nativeProtocol = String(
+    connection.config.directorProtocol ?? connection.config.protocol ?? "",
+  );
+  const nativeHeaders: Record<string, string> =
+    nativeProtocol === "anthropic-messages"
+      ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
+      : nativeProtocol === "google-generate-content"
+        ? { "x-goog-api-key": apiKey }
+        : { authorization: `Bearer ${apiKey}` };
   const candidates = [
     joinUrl(baseUrl, "/models"),
-    joinUrl(baseUrl, "/v1/models"),
+    joinUrl(
+      baseUrl,
+      nativeProtocol === "google-generate-content"
+        ? "/v1beta/models"
+        : "/v1/models",
+    ),
   ].filter((url, index, all) => all.indexOf(url) === index);
   let response: OpenAIModelList | undefined;
   let successfulResponse: OpenAIModelList | undefined;
@@ -486,7 +554,7 @@ async function listAgentModels(connection: {
         url,
         {
           method: "GET",
-          headers: { authorization: `Bearer ${apiKey}` },
+          headers: nativeHeaders,
           cache: "no-store",
         },
         {
@@ -497,16 +565,25 @@ async function listAgentModels(connection: {
       );
       successfulResponse ??= payload;
       const items = modelListItems(payload);
-      if (items.length > 0 || url === candidates[candidates.length - 1]) {
+      if (
+        Array.isArray(payload.data) ||
+        Array.isArray(payload.models) ||
+        url === candidates[candidates.length - 1]
+      ) {
         response = payload;
         break;
       }
     } catch (error) {
+      if (
+        error instanceof ProviderHttpError &&
+        (error.details.status === 401 || error.details.status === 403)
+      )
+        throw error;
       lastError = error;
     }
   }
   response ??= successfulResponse;
-  if (!response) throw (lastError ?? new Error("model list unavailable"));
+  if (!response) throw lastError ?? new Error("model list unavailable");
   const responseItems = modelListItems(response);
   const available = new Set(
     responseItems.flatMap((item) =>
@@ -542,7 +619,7 @@ async function listAgentModels(connection: {
   }));
 }
 
-export async function GET(
+async function readModels(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
@@ -554,7 +631,11 @@ export async function GET(
   const refresh = searchParams.get("refresh") === "1";
   let connection = await repository.getConnection(id);
   if (!connection) return jsonError("供应商连接不存在", 404);
-  if (connection.config.preset === "cyberafei-api") {
+  const alternateSource =
+    !matchesSupplierTemplate(connection) &&
+    Boolean(connection.config.preset || SUPPLIER_TEMPLATE_API_URLS[supplierKeyForConnection(connection)]);
+
+  if (!alternateSource && connection.config.preset === "cyberafei-api") {
     const scan = await scanCyberAfeiConnection(id, {
       forcePricing: refresh,
       persist: refresh,
@@ -613,7 +694,7 @@ export async function GET(
     }
     return Response.json(scan.canvasDisplayModels, { headers });
   }
-  if (connection.config.preset === CHENTU_PRESET_ID) {
+  if (!alternateSource && connection.config.preset === CHENTU_PRESET_ID) {
     const scan = await scanChentuConnection(id, {
       forcePricing: refresh,
       persist: refresh,
@@ -672,7 +753,7 @@ export async function GET(
     }
     return Response.json(scan.canvasDisplayModels, { headers });
   }
-  if (connection.config.preset === MIAOWU_PRESET_ID) {
+  if (!alternateSource && connection.config.preset === MIAOWU_PRESET_ID) {
     const scan = await scanMiaowuConnection(id, {
       forcePricing: refresh,
       persist: refresh,
@@ -698,13 +779,16 @@ export async function GET(
     if (scan.status === "live" || scan.status === "empty") {
       connection = scan.connection ?? connection;
       const connector = connection.config.connector as
-        | { models?: ModelDescriptor[] }
-        | undefined;
+        { models?: ModelDescriptor[] } | undefined;
       return Response.json(connector?.models ?? [], { headers: scanHeaders });
     }
     // unconfigured：尚未保存 Key，继续展示价目目录里的模型信息。
   }
-  if (connection.config.preset === FRIMODEL_PRESET_ID && refresh) {
+  if (
+    !alternateSource &&
+    connection.config.preset === FRIMODEL_PRESET_ID &&
+    refresh
+  ) {
     // 免费的 /models 扫描：把可用性字段持久化给设置界面；模型列表本身
     // 由下方 openai 适配器的实时列举返回。
     const scan = await scanFriModelConnection(id).catch(() => undefined);
@@ -727,7 +811,7 @@ export async function GET(
     }
   }
   let mikotoScanHeaders: Record<string, string> = {};
-  if (connection.config.preset === "mikoto-pro") {
+  if (!alternateSource && connection.config.preset === "mikoto-pro") {
     const scan = await scanMikotoConnection(id, {
       force: refresh,
       persist: refresh,
@@ -743,40 +827,105 @@ export async function GET(
             scan.error ??
             "MikotoPro 拒绝了当前分组 Key（可能分组已停用），请在官网确认后重新填写",
         },
-        { status: 401, headers: { "Cache-Control": "no-store", ...mikotoScanHeaders } },
+        {
+          status: 401,
+          headers: { "Cache-Control": "no-store", ...mikotoScanHeaders },
+        },
       );
     connection = scan.connection ?? connection;
     if (scan.status === "failed") {
       const stale = savedConnectorModels(connection);
-      if (stale.length > 0) return staleModelsResponse(stale, mikotoScanHeaders);
+      if (stale.length > 0)
+        return staleModelsResponse(stale, mikotoScanHeaders);
     }
   }
-  if (connection.config.customGroup === true) {
+  if (connection.config.customGroup === true || alternateSource) {
     try {
       const scan = await listCustomGroupModels(connection);
       if (refresh) await persistCustomGroupModelScan(connection, scan);
-      return Response.json(scan.models, {
-        headers: {
-          "Cache-Control": "no-store",
-          "X-Model-Scan-Status": scan.models.length > 0 ? "live" : "empty",
-          "X-Model-Scan-Checked-At": scan.checkedAt,
-          "X-Model-Scan-Source": "live",
+      return Response.json(
+        mergeManualProviderModels(
+          {
+            ...connection,
+            config: {
+              ...connection.config,
+              modelScanStatus: scan.models.length ? "live" : "empty",
+            },
+          },
+          scan.models,
+          true,
+        ),
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            "X-Model-Scan-Status": scan.models.length > 0 ? "live" : "empty",
+            "X-Model-Scan-Checked-At": scan.checkedAt,
+            "X-Model-Scan-Source": "live",
+          },
         },
-      });
-    } catch {
+      );
+    } catch (error) {
+      if (
+        error instanceof ProviderHttpError &&
+        (error.details.status === 401 || error.details.status === 403)
+      ) {
+        if (refresh)
+          await persistCustomGroupScanFailure(connection, "unauthorized");
+        return Response.json(
+          { error: "当前分组 Key 无权读取模型，请重新配置密钥" },
+          {
+            status: error.details.status,
+            headers: {
+              "X-Model-Scan-Status": "unauthorized",
+              "Cache-Control": "no-store",
+            },
+          },
+        );
+      }
       if (refresh)
         void persistCustomGroupScanFailure(connection).catch(() => undefined);
-      const stale =
+      const stale = mergeManualProviderModels(
+        connection,
         connection.config.modelScanStatus === "live" ||
-        connection.config.modelScanStatus === "failed"
+          connection.config.modelScanStatus === "failed"
           ? savedConnectorModels(connection)
-          : [];
+          : [],
+      );
       if (stale.length > 0)
         return staleModelsResponse(stale, {
           "X-Model-Scan-Source": "saved",
         });
-      return jsonError("自定义分组模型列表读取失败，请检查 Base URL、密钥和接口路径", 502);
+      return jsonError(
+        "自定义分组模型列表读取失败，请检查 Base URL、密钥和接口路径",
+        502,
+      );
     }
+  }
+  if (refresh && connection.config.preset === CANGYUAN_IMAGE_PRESET_ID) {
+    const scan = await listCustomGroupModels(connection);
+    if (!scan.models.length)
+      return Response.json([], { headers: { "X-Model-Scan-Status": "empty" } });
+    if (connection.config.usage === "agent")
+      return Response.json(scan.models, {
+        headers: { "X-Model-Scan-Status": "live" },
+      });
+    connection = (await syncCangyuanConnection(id)) ?? connection;
+    const configured = savedConnectorModels(connection, true);
+    const byId = new Map(configured.map((m) => [m.id, m]));
+    return Response.json(
+      scan.models.map(
+        (m) =>
+          byId.get(m.id) ?? {
+            ...m,
+            metadata: {
+              ...m.metadata,
+              canvasRunnable: false,
+              canvasUnavailableReason: "此模型已扫描到，但生成协议尚未验证",
+            },
+          },
+      ),
+      { headers: { "X-Model-Scan-Status": "live" } },
+    );
   }
   // A normal model read is strictly read-only. Explicit refresh may reconcile
   // a preset catalog, but that operation is isolated to the requested
@@ -830,6 +979,7 @@ export async function GET(
       const livePricing = await liveWeAiPricingForGroup(
         connection.config.modelGroup,
         connection.config.baseUrl,
+        `${connection.id}:${connection.config.modelScanRequestId ?? ""}`,
       ).catch(() => undefined);
       const pricedModels = livePricing
         ? applyWeAiLivePricing(savedModels, livePricing)
@@ -854,10 +1004,25 @@ export async function GET(
   }
   if (connection.config.usage === "agent") {
     try {
-      return Response.json(await listAgentModels(connection), {
-        headers: { "Cache-Control": "no-store" },
-      });
-    } catch {
+      return Response.json(
+        mergeManualProviderModels(
+          connection,
+          await listAgentModels(connection),
+          true,
+        ),
+        {
+          headers: { "Cache-Control": "no-store" },
+        },
+      );
+    } catch (error) {
+      if (
+        error instanceof ProviderHttpError &&
+        (error.details.status === 401 || error.details.status === 403)
+      )
+        return jsonError("当前分组 Key 无权读取模型", error.details.status);
+      const manual = manualProviderModelDescriptors(connection);
+      if (manual.length)
+        return staleModelsResponse(manual, { "X-Model-Scan-Source": "manual" });
       return jsonError("对话模型列表读取失败，请检查地址、密钥和模型权限", 502);
     }
   }
@@ -869,6 +1034,7 @@ export async function GET(
       ? liveWeAiPricingForGroup(
           connection.config.modelGroup,
           connection.config.baseUrl,
+          `${connection.id}:${connection.config.modelScanRequestId ?? ""}`,
         ).catch(() => undefined)
       : Promise.resolve(undefined);
     const [listedItems, livePricing] = await Promise.all([
@@ -888,7 +1054,7 @@ export async function GET(
         : connection.config.preset === FRIMODEL_PRESET_ID
           ? annotateFriModelPrices(priced)
           : priced;
-    return Response.json(items, {
+    return Response.json(mergeManualProviderModels(connection, items, true), {
       headers: {
         "Cache-Control": "no-store",
         ...mikotoScanHeaders,
@@ -906,13 +1072,19 @@ export async function GET(
           : {}),
       },
     });
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof ProviderHttpError &&
+      (error.details.status === 401 || error.details.status === 403)
+    )
+      return jsonError("当前分组 Key 无权读取模型", error.details.status);
     const connectorSnapshot = savedConnectorModels(connection);
     const weAiSnapshot = isWeAiConnectionConfig(connection)
       ? (weAiCanvasModelDescriptorsFromSavedScan(connection.config) ?? [])
       : [];
     const stale =
-      connectorSnapshot.length > 0 && connection.config.modelScanStatus === "live"
+      connectorSnapshot.length > 0 &&
+      connection.config.modelScanStatus === "live"
         ? connectorSnapshot
         : weAiSnapshot.length > 0
           ? weAiSnapshot
@@ -928,6 +1100,239 @@ export async function GET(
             ? { "X-Model-Scan-Source": "saved" }
             : {}),
       });
+    const manual = manualProviderModelDescriptors(connection);
+    if (manual.length)
+      return staleModelsResponse(manual, { "X-Model-Scan-Source": "manual" });
     return jsonError("模型列表读取失败，请检查供应商连接", 502);
+  }
+}
+
+/** One request identity across every adapter prevents delayed results from restoring old state. */
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  const parsedId = parseRouteIdentifier((await context.params).id, "连接 ID");
+  if (!parsedId.success) return parsedId.response;
+  const id = parsedId.data;
+  let original = await repository.getConnection(id);
+  if (!original) return jsonError("供应商连接已删除，请重新选择连接", 404);
+  const refresh = new URL(request.url).searchParams.get("refresh") === "1";
+  try {
+    await assertCurrentSupplierConnection(original);
+    if (
+      !refresh &&
+      original.config.supplierSourceId &&
+      (!original.config.modelScanStatus ||
+        original.config.modelScanStatus === "unscanned") &&
+      original.encryptedSecret
+    ) {
+      const url = new URL(request.url);
+      url.searchParams.set("refresh", "1");
+      return GET(new Request(url), context);
+    }
+
+    if (refresh)
+      original = await repository.saveConnection(
+        {
+          ...original,
+          config: { ...original.config, modelScanRequestId: randomUUID() },
+        },
+        { expected: original },
+      );
+    const requestId = original.config.modelScanRequestId;
+    if (!refresh && original.config.modelScanStatus === "unauthorized")
+      return Response.json(
+        { error: "当前 Key 鉴权失败，请更新 Key 或重新测试" },
+        { status: 401, headers: { "X-Model-Scan-Status": "unauthorized" } },
+      );
+    if (!refresh && original.config.modelScanStatus === "empty")
+      return Response.json([], {
+        headers: {
+          "X-Model-Scan-Status": "empty",
+          "Cache-Control": "no-store",
+        },
+      });
+    if (
+      !refresh &&
+      Array.isArray(original.config.modelCatalogModels) &&
+      ["live", "failed"].includes(String(original.config.modelScanStatus))
+    ) {
+      // Cached inventories still contain the old protocol decisions after a
+      // software update. Rebind those exact IDs without a new upstream scan.
+      const cached = original.config.modelCatalogModels as unknown as ModelDescriptor[];
+      const bound = bindScannedModelProtocols(original, await enrichSupplierModelPrices(original, cached));
+      if (JSON.stringify(bound.models) !== JSON.stringify(cached)) {
+        original = await repository.saveConnection({ ...original, config: {
+          ...original.config,
+          modelCatalogModels: bound.models as unknown as typeof original.config.modelCatalogModels,
+          ...(bound.connector ? { connector: bound.connector as unknown as typeof original.config.connector,
+            modelProtocolTemplate: bound.templateConnector as unknown as typeof original.config.connector } : {}),
+        } }, { expected: original });
+      }
+      return Response.json(
+        mergeManualProviderModels(original, bound.models),
+        {
+          headers: {
+            "X-Model-Scan-Status":
+              original.config.modelScanStatus === "failed" ? "stale" : "live",
+            "Cache-Control": "no-store",
+          },
+        },
+      );
+    }
+    const response = await readModels(request, context);
+    let latest = await repository.getConnection(id);
+    if (
+      !latest ||
+      latest.config.modelScanRequestId !== requestId ||
+      latest.encryptedSecret !== original.encryptedSecret
+    )
+      throw new SupplierConflictError(
+        "扫描期间连接已改变，旧结果已丢弃，请重新读取",
+      );
+    await assertCurrentSupplierConnection(latest);
+    if (refresh) {
+      const status = response.headers.get("X-Model-Scan-Status");
+      const payload: unknown = response.ok
+        ? await response
+            .clone()
+            .json()
+            .catch(() => null)
+        : null;
+      let config = { ...latest.config };
+      if (
+        response.ok &&
+        Array.isArray(payload) &&
+        status !== "stale" &&
+        status !== "failed"
+      ) {
+        const unavailable = (m: ModelDescriptor) =>
+          m.metadata?.canvasRunnable === false &&
+          String(m.metadata?.canvasUnavailableReason ?? "").includes("未返回");
+        const visible = (payload as ModelDescriptor[]).filter(
+          (m) => !unavailable(m),
+        );
+        const bound = bindScannedModelProtocols(latest, await enrichSupplierModelPrices(latest, visible, true), original);
+        const models = bound.models;
+        const defaultModel =
+          models.find((m) => m.id === config.defaultModel && m.metadata?.canvasRunnable !== false) ??
+          models.find((m) => m.metadata?.canvasRunnable !== false && m.operations.length > 0);
+        config = {
+          ...config,
+          ...(bound.connector
+            ? {
+                connector: bound.connector as unknown as typeof config.connector,
+                modelProtocolTemplate: bound.templateConnector as unknown as typeof config.connector,
+              }
+            : {}),
+          ...(defaultModel ? { defaultModel: defaultModel.id } : {}),
+          modelScanStatus: models.length ? "live" : "empty",
+          modelScanCheckedAt: new Date().toISOString(),
+          modelCatalogModels:
+            models as unknown as typeof config.modelCatalogModels,
+          scannedModelIds: models.map((m) => m.id),
+          modelCatalogSource: "live",
+        };
+        latest = await repository.saveConnection(
+          { ...latest, config },
+          { expected: latest },
+        );
+        return Response.json(mergeManualProviderModels(latest, models, true), {
+          headers: {
+            "Cache-Control": "no-store",
+            "X-Model-Scan-Status": models.length ? "live" : "empty",
+          },
+        });
+      }
+      config.modelScanStatus =
+        response.status === 401 ||
+        response.status === 403 ||
+        status === "unauthorized"
+          ? "unauthorized"
+          : ["unauthorized", "empty"].includes(
+                String(original.config.modelScanStatus),
+              )
+            ? original.config.modelScanStatus
+            : config.modelScanStatus === "unauthorized"
+              ? "unauthorized"
+              : "failed";
+      config.modelScanCheckedAt = new Date().toISOString();
+      await repository.saveConnection(
+        { ...latest, config },
+        { expected: latest },
+      );
+    }
+    if (response.ok) {
+      const payload: unknown = await response.clone().json().catch(() => null);
+      if (Array.isArray(payload)) {
+        const models = await enrichSupplierModelPrices(latest, payload as ModelDescriptor[]);
+        return Response.json(models, { headers: response.headers });
+      }
+    }
+    return response;
+  } catch (error) {
+    if (
+      error instanceof SupplierConflictError ||
+      error instanceof SupplierServiceError
+    )
+      return jsonError(
+        error.message,
+        error instanceof SupplierServiceError ? error.status : 409,
+      );
+    try {
+      const latest = await repository.getConnection(id);
+      if (
+        !latest ||
+        latest.config.modelScanRequestId !==
+          original.config.modelScanRequestId ||
+        latest.encryptedSecret !== original.encryptedSecret
+      )
+        return jsonError("扫描期间连接已改变，旧结果已丢弃", 409);
+      await assertCurrentSupplierConnection(latest);
+      const denied =
+        error instanceof ProviderHttpError &&
+        [401, 403].includes(error.details.status ?? 0);
+      const previousDenial = ["unauthorized", "empty"].includes(
+        String(original.config.modelScanStatus),
+      );
+      const status = denied
+        ? "unauthorized"
+        : previousDenial
+          ? original.config.modelScanStatus
+          : "failed";
+      const saved = await repository.saveConnection(
+        {
+          ...latest,
+          config: {
+            ...latest.config,
+            modelScanStatus: status,
+            modelScanCheckedAt: new Date().toISOString(),
+          },
+        },
+        { expected: latest },
+      );
+      if (status === "unauthorized")
+        return jsonError("当前 Key 鉴权失败，请重新配置或测试", 401);
+      if (status === "empty") return staleModelsResponse([]);
+      if (Array.isArray(saved.config.modelCatalogModels))
+        return staleModelsResponse(
+          mergeManualProviderModels(
+            saved,
+            saved.config.modelCatalogModels as unknown as ModelDescriptor[],
+            true,
+          ),
+        );
+    } catch (failure) {
+      if (
+        failure instanceof SupplierConflictError ||
+        failure instanceof SupplierServiceError
+      )
+        return jsonError(
+          failure.message,
+          failure instanceof SupplierServiceError ? failure.status : 409,
+        );
+    }
+    return jsonError("模型刷新失败，请稍后重试", 502);
   }
 }

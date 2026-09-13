@@ -1,4 +1,5 @@
 import type { ModelDescriptor, ProviderOperation } from "./contracts.js";
+import { catalogPriceLabel } from "./catalog-pricing.js";
 
 export interface ProviderCatalogGroup {
   id: string;
@@ -29,7 +30,10 @@ function number(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function operationsForModel(id: string, value: Record<string, unknown>): ProviderOperation[] {
+function operationsForModel(
+  id: string,
+  value: Record<string, unknown>,
+): ProviderOperation[] {
   const declared = value.operations ?? value.capabilities;
   if (Array.isArray(declared)) {
     const operations = declared.filter(
@@ -42,10 +46,10 @@ function operationsForModel(id: string, value: Record<string, unknown>): Provide
     if (operations.length > 0) return operations;
   }
   const kind = `${id} ${text(value.type) ?? ""} ${text(value.kind) ?? ""}`;
-  if (/video|kling|runway|seedance|sora|hailuo|luma|veo|视频/iu.test(kind))
+  if (/video|kling|runway|seedance|sora|hailuo|luma|veo|happyhorse|minimax-h\d|(?:^|[\s/_-])wan\d|视频/iu.test(kind))
     return ["video.generate", "video.image-to-video"];
   if (
-    /image|vision|dall[-_ ]?e|flux|stable[-_ ]?diffusion|sdxl|imagen|seedream|画图|绘图/iu.test(
+    /image|nano[-_ ]?banana|dall[-_ ]?e|flux|stable[-_ ]?diffusion|sdxl|imagen|seedream|画图|绘图/iu.test(
       kind,
     )
   )
@@ -59,6 +63,7 @@ function pricing(value: Record<string, unknown>): {
 } {
   const nested = [value.pricing, value.price, value.billing].find(isRecord);
   const priceLabel =
+    catalogPriceLabel(value) ??
     text(value.priceLabel) ??
     text(value.price_label) ??
     text(value.billingLabel) ??
@@ -66,7 +71,7 @@ function pricing(value: Record<string, unknown>): {
     text(typeof value.price === "string" ? value.price : undefined) ??
     (typeof value.price === "number" ? String(value.price) : undefined) ??
     (nested
-      ? text(nested.label) ??
+      ? (text(nested.label) ??
         text(nested.priceLabel) ??
         (() => {
           const input = number(nested.input ?? nested.input_price);
@@ -78,14 +83,14 @@ function pricing(value: Record<string, unknown>): {
           ]
             .filter(Boolean)
             .join(" · ");
-        })()
+        })())
       : undefined);
   const billingLabel =
     text(value.billingLabel) ??
     text(value.billing_label) ??
     text(value.billingMode) ??
     text(value.billing_mode) ??
-    (nested ? text(nested.unit) ?? text(nested.dimension) : undefined);
+    (nested ? (text(nested.unit) ?? text(nested.dimension)) : undefined);
   return {
     ...(priceLabel ? { priceLabel: priceLabel.slice(0, 256) } : {}),
     ...(billingLabel ? { billingLabel: billingLabel.slice(0, 128) } : {}),
@@ -93,9 +98,15 @@ function pricing(value: Record<string, unknown>): {
 }
 
 function entriesFromPayload(payload: unknown): Record<string, unknown>[] {
-  if (Array.isArray(payload)) return payload.filter(isRecord) as Record<string, unknown>[];
+  if (Array.isArray(payload))
+    return payload.filter(isRecord) as Record<string, unknown>[];
   if (!isRecord(payload)) return [];
-  const candidates = [payload.data, payload.models, payload.items, payload.result];
+  const candidates = [
+    payload.data,
+    payload.models,
+    payload.items,
+    payload.result,
+  ];
   return candidates.flatMap((candidate) => {
     if (Array.isArray(candidate))
       return candidate.filter(isRecord) as Record<string, unknown>[];
@@ -121,19 +132,22 @@ export function scanProviderModelCatalog(
   const byId = new Map<string, ModelDescriptor>();
   const groupIds = new Map<string, string[]>();
   for (const entry of entriesFromPayload(payload)) {
-    const rawId = text(entry.id ?? entry.model ?? entry.name);
-    const id = rawId?.replace(/^models\//u, "");
-    if (!id || byId.has(id)) continue;
+    const rawId = text(
+      entry.id ?? entry.model_name ?? entry.model ?? entry.name,
+    );
+    const id = rawId;
+    if (!id) continue;
     const name = text(entry.display_name ?? entry.name) ?? id;
     const operations = operationsForModel(id, entry);
     const prices = pricing(entry);
-    const group = text(
-      entry.group ??
-        entry.model_group ??
-        entry.modelGroup ??
-        entry.category ??
-        entry.channel,
-    ) ?? "默认群组";
+    const group =
+      text(
+        entry.group ??
+          entry.model_group ??
+          entry.modelGroup ??
+          entry.category ??
+          entry.channel,
+      ) ?? "默认群组";
     const descriptor: ModelDescriptor = {
       id,
       name,
@@ -145,7 +159,9 @@ export function scanProviderModelCatalog(
       operations,
       inputKinds: [
         "text",
-        ...(operations.some((op) => op.startsWith("image.")) ? (["image"] as const) : []),
+        ...(operations.some((op) => op.startsWith("image."))
+          ? (["image"] as const)
+          : []),
       ],
       outputKinds: [
         operations.some((op) => op.startsWith("video."))
@@ -165,10 +181,17 @@ export function scanProviderModelCatalog(
         catalogGroup: group,
       },
     };
-    byId.set(id, descriptor);
-    const ids = groupIds.get(group) ?? [];
-    ids.push(id);
-    groupIds.set(group, ids);
+    if (!byId.has(id)) byId.set(id, descriptor);
+    const memberships = Array.isArray(entry.enable_groups)
+      ? entry.enable_groups.flatMap((value) =>
+          text(value) ? [text(value)!] : [],
+        )
+      : [group];
+    for (const membership of memberships.length ? memberships : [group]) {
+      const ids = groupIds.get(membership) ?? [];
+      if (!ids.includes(id)) ids.push(id);
+      groupIds.set(membership, ids);
+    }
   }
   const models = [...byId.values()];
   const groups = [...groupIds.entries()].map(([id, modelIds]) => ({

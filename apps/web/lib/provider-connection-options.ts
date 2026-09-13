@@ -83,6 +83,7 @@ export type ProviderConnectionUsage = "canvas" | "agent" | "disabled";
 export function providerConnectionUsage(
   connection: ProviderConnectionView,
 ): ProviderConnectionUsage {
+  if (connection.config.supplierArchived === true) return "disabled";
   if (connection.config.usage === "agent") return "agent";
   if (connection.config.usage === "disabled") return "disabled";
   return "canvas";

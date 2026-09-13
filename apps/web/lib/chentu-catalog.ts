@@ -14,6 +14,7 @@ import {
   isChentuOfficialImageGroup,
 } from "./chentu-presets";
 import { providerPriceUnit } from "./provider-pricing-unit";
+import { chentuNativeGeminiDescriptor, isChentuNativeGeminiModel } from "./chentu-gemini";
 
 /** Site origin without the /v1 suffix carried by CHENTU_BASE_URL. */
 export const CHENTU_SITE_URL = CHENTU_BASE_URL.replace(/\/v1\/?$/u, "");
@@ -398,6 +399,7 @@ function chentuGptResolutionTier(id: string): ChentuResolutionTier | undefined {
 
 function isKnownChentuImageModel(id: string): boolean {
   return (
+    /^gpt-image-\d+(?:\.\d+)*(?:-|$)/iu.test(id) ||
     isChentuFlexibleImageModel(id) ||
     chentuGptResolutionTier(id) !== undefined ||
     // 辰途模型广场同时使用 `gemini-3.1-flash-image-*` 和
@@ -448,9 +450,7 @@ function chentuGptSizeOptions(id: string): readonly ModelParameterOption[] {
   });
 }
 
-function chentuGeminiSizeOptions(
-  id: string,
-): readonly ModelParameterOption[] {
+function chentuGeminiSizeOptions(id: string): readonly ModelParameterOption[] {
   const tier = /^gemini-3(?:\.1-flash|-pro)-image-(1k|2k|4k)$/iu.exec(id)?.[1];
   const sizes =
     tier === "1k"
@@ -470,9 +470,11 @@ function chentuImageParameters(
   id: string,
   group?: string,
 ): readonly ModelParameterDescriptor[] {
-  const gptImage = isKnownChentuImageModel(id) && /^gpt-image-2/iu.test(id);
+  if (isChentuNativeGeminiModel(id)) return chentuNativeGeminiDescriptor(id).parameters ?? [];
+  const gptImage = isKnownChentuImageModel(id) && /^gpt-image-/iu.test(id);
   const geminiImage =
-    isKnownChentuImageModel(id) && /^gemini-3(?:\.1-flash|-pro)-image-/iu.test(id);
+    isKnownChentuImageModel(id) &&
+    /^gemini-3(?:\.1-flash|-pro)-image-/iu.test(id);
   if (!gptImage && !geminiImage) return [];
 
   const flexible = isChentuFlexibleImageModel(id);
@@ -495,17 +497,28 @@ function chentuImageParameters(
           "自动模式优先读取提示词中的比例，其次参考图；选择 1K、2K 或 4K 后只显示该档位的常用比例和像素尺寸，也可填写自定义尺寸。",
         operations: IMAGE_OPERATIONS,
       }
-    : {
-        key: "size",
-        label: "精确尺寸（辰途文档）",
-        control: "select",
-        valueType: "string",
-        default: sizeOptions[0]?.value,
-        options: sizeOptions,
-        description:
-          "尺寸必须来自该模型对应的辰途 API 文档；不要按倍率自行换算。",
-        operations: IMAGE_OPERATIONS,
-      };
+    : sizeOptions.length === 0
+      ? {
+          key: "size",
+          label: "输出尺寸",
+          control: "text",
+          valueType: "string",
+          default: "auto",
+          placeholder: "auto 或宽×高，例如 1024x1024",
+          description: "同系列模型使用图片接口，具体尺寸以当前模型支持为准。",
+          operations: IMAGE_OPERATIONS,
+        }
+      : {
+          key: "size",
+          label: "精确尺寸（辰途文档）",
+          control: "select",
+          valueType: "string",
+          default: sizeOptions[0]?.value,
+          options: sizeOptions,
+          description:
+            "尺寸必须来自该模型对应的辰途 API 文档；不要按倍率自行换算。",
+          operations: IMAGE_OPERATIONS,
+        };
 
   const quality: ModelParameterDescriptor = {
     key: "quality",
@@ -665,6 +678,7 @@ export function chentuFallbackImageDescriptor(
   id: string,
   group?: string,
 ): ModelDescriptor | undefined {
+  if (isChentuNativeGeminiModel(id)) return chentuNativeGeminiDescriptor(id);
   if (!isKnownChentuImageModel(id)) return undefined;
   return {
     id,
@@ -715,6 +729,7 @@ function descriptorFor(record: PricingRecord): ModelDescriptor | null {
     return null;
   const id = record.model_name.trim();
   const endpoints = strings(record.supported_endpoint_types);
+  if (isChentuNativeGeminiModel(id)) return chentuNativeGeminiDescriptor(id);
   // Key scans can contain a documented GPT Image model that is absent from
   // the public pricing snapshot (for example gpt-image-2-2k). Treat those
   // known IDs as verified image protocols instead of downgrading them to a
@@ -783,6 +798,7 @@ function marketplaceModel(
   const capability = capabilityFor(record, id);
   const endpoints = strings(record.supported_endpoint_types);
   const runnable =
+    isChentuNativeGeminiModel(id) ||
     endpoints.includes("image-generation") ||
     endpoints.includes("openai-video") ||
     isKnownChentuImageModel(id);

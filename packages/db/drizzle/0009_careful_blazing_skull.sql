@@ -1,0 +1,2 @@
+ALTER TABLE "director_proposal" DROP CONSTRAINT "director_proposal_status_chk";--> statement-breakpoint
+ALTER TABLE "director_proposal" ADD CONSTRAINT "director_proposal_status_chk" CHECK ("director_proposal"."status" in ('draft','awaiting_approval','approved','materializing','awaiting_execution','cancelled','expired','running','succeeded','failed'));

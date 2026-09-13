@@ -54,6 +54,46 @@ export interface ProviderConnectionRecord {
   updatedAt: string;
 }
 
+export interface SupplierCatalogModel {
+  id: string;
+  name?: string;
+  capability: "image" | "video" | "chat" | "other";
+  protocol?:
+    | "openai-images"
+    | "openai-videos"
+    | "chat-completions"
+    | "responses"
+    | "gemini"
+    | "rest"
+    | "unknown";
+  priceLabel?: string;
+}
+
+export interface SupplierRecord {
+  id: string;
+  name: string;
+  /** Credential and preset namespace, independent of the editable label. */
+  supplierKey: string;
+  siteUrl: string;
+  apiUrl: string;
+  kind: "auto" | "newapi" | "sub2api" | "openai-compatible";
+  catalog: {
+    groups: Array<{
+      id: string;
+      label: string;
+      source?: "manual" | "catalog";
+      status?: "available" | "missing";
+      models: SupplierCatalogModel[];
+    }>;
+  };
+  scanStatus: "unscanned" | "live" | "empty" | "failed" | "unauthorized";
+  scannedAt?: string;
+  scanError?: string;
+  state?: SupplierState;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DirectorProfileRecord {
   id: string;
   brainConnectionId: string;
@@ -86,6 +126,8 @@ export interface DirectorMessageRecord {
 }
 
 export type DirectorProposalStatus =
+  | "materializing"
+  | "awaiting_execution"
   | "draft"
   | "awaiting_approval"
   | "approved"
@@ -115,6 +157,53 @@ export interface DirectorProposalRecord {
 export interface DirectorProposalUpdateOptions {
   expectedVersion?: number;
   expectedStatuses?: readonly DirectorProposalStatus[];
+  expectedPreflightId?: string;
+}
+
+export interface SupplierSourceArchive {
+  id: string;
+  siteUrl: string;
+  apiUrl: string;
+  kind: SupplierRecord["kind"];
+  catalog: SupplierRecord["catalog"];
+  connectionIds: string[];
+  connections?: Array<{
+    id: string;
+    name: string;
+    group: string;
+    modelIds: string[];
+    usage: string;
+    keyConfigured: boolean;
+  }>;
+  archivedAt: string;
+  reason: "address-change" | "legacy-unverified" | "restored";
+}
+export interface SupplierState {
+  version: 1;
+  revision: number;
+  visibility: "visible" | "hidden" | "deleted";
+  sourceId: string;
+  fingerprint: string;
+  scanId?: string;
+  /** Server-only website login, encrypted with MASTER_KEY and scoped to this source. */
+  siteLogin?: { username: string; encryptedPassword: string; siteUrl: string };
+  history: SupplierSourceArchive[];
+}
+export interface SupplierCommit {
+  supplier: Omit<SupplierRecord, "createdAt" | "updatedAt">;
+  expectedRevision: number;
+  expectedConnections: ProviderConnectionRecord[];
+  connections: ProviderConnectionRecord[];
+  deleteConnectionIds?: string[];
+}
+export interface ConnectionSaveOptions {
+  expected?: ProviderConnectionRecord;
+}
+export class SupplierConflictError extends Error {
+  constructor(message = "供应商配置已改变，请刷新后重试") {
+    super(message);
+    this.name = "SupplierConflictError";
+  }
 }
 
 export type WorkflowStatus =
@@ -180,6 +269,12 @@ export interface WebhookEventRecord {
 }
 
 export interface Repository {
+  listSuppliers(): Promise<SupplierRecord[]>;
+  getSupplier(id: string): Promise<SupplierRecord | null>;
+  saveSupplier(
+    input: Omit<SupplierRecord, "createdAt" | "updatedAt">,
+  ): Promise<SupplierRecord>;
+  commitSupplier(input: SupplierCommit): Promise<SupplierRecord>;
   ensureDefaultCanvas(): Promise<CanvasRecord>;
   listCanvases(): Promise<CanvasRecord[]>;
   getCanvas(id: string): Promise<CanvasRecord | null>;
@@ -206,6 +301,7 @@ export interface Repository {
   getConnection(id: string): Promise<ProviderConnectionRecord | null>;
   saveConnection(
     input: Omit<ProviderConnectionRecord, "createdAt" | "updatedAt">,
+    options?: ConnectionSaveOptions,
   ): Promise<ProviderConnectionRecord>;
   deleteConnection(id: string): Promise<void>;
   getDirectorProfile(id: string): Promise<DirectorProfileRecord | null>;
@@ -223,6 +319,7 @@ export interface Repository {
     patch: Partial<
       Pick<DirectorSessionRecord, "title" | "metadata" | "profileId">
     >,
+    options?: { expectedTurnId: string | null },
   ): Promise<DirectorSessionRecord | null>;
   deleteDirectorSession(id: string): Promise<void>;
   createDirectorMessage(

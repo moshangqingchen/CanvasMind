@@ -366,14 +366,23 @@ export function parametersWithDefaults(
     (descriptor) =>
       descriptor.key === "size" &&
       descriptor.control === "dimensions" &&
-      ["1K", "2K", "4K"].every((tier) =>
+      ["1K", "2K", "4K"].some((tier) =>
         descriptor.options?.some((option) =>
           option.label.toUpperCase().startsWith(tier),
         ),
       ),
   );
   if (hasTieredDimensionControl) {
-    if (["1K", "2K", "4K"].includes(savedResolutionTier)) {
+    if (
+      ["1K", "2K", "4K"].includes(savedResolutionTier) &&
+      descriptors.some(
+        (d) =>
+          d.key === "size" &&
+          d.options?.some((o) =>
+            o.label.toUpperCase().startsWith(savedResolutionTier),
+          ),
+      )
+    ) {
       parameters.size_tier = savedResolutionTier;
     } else {
       const sizeDescriptor = descriptors.find(
@@ -391,10 +400,15 @@ export function parametersWithDefaults(
         (current.size === undefined ||
           (typeof current.size === "string" &&
             current.size.trim().toLowerCase() === "auto")) &&
-        current.size_tier === undefined
+        current.size_tier !== null
       ) {
         parameters.size = "auto";
-        parameters.size_tier = "4K";
+        const defaultTier = ["4K", "2K", "1K"].find((tier) =>
+          sizeDescriptor?.options?.some((o) =>
+            o.label.toUpperCase().startsWith(tier),
+          ),
+        );
+        if (defaultTier) parameters.size_tier = defaultTier;
       }
     }
   }

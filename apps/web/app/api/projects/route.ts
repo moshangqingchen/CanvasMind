@@ -4,6 +4,7 @@ import { jsonError, repository, safeJsonObject } from "../../../lib/server";
 import {
   ensureProjectDirectory,
   normalizedProjectTitle,
+  projectCardSummary,
   projectSummary,
 } from "../../../lib/project-service";
 
@@ -18,16 +19,11 @@ const emptyGraph = {
 };
 
 export async function GET() {
-  let canvases = await repository.listCanvases();
-  if (canvases.length === 0) {
-    const defaultCanvas = await repository.ensureDefaultCanvas();
-    canvases = [defaultCanvas];
-  }
-  canvases = canvases.sort((a, b) =>
+  const canvases = (await repository.listCanvases()).sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
   );
   await Promise.all(canvases.map((canvas) => ensureProjectDirectory(canvas)));
-  return Response.json({ projects: canvases.map(projectSummary) });
+  return Response.json({ projects: await Promise.all(canvases.map(projectCardSummary)) });
 }
 
 export async function POST(request: Request) {

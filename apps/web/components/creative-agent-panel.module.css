@@ -1,0 +1,379 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: #272731;
+  background: #fff;
+  font-size: 12px;
+}
+.panel button,
+.panel select,
+.panel input,
+.panel textarea {
+  font: inherit;
+  color: inherit;
+}
+.panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid #e4e3ec;
+  background: #fff;
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  line-height: 1.45;
+}
+.panel button:hover {
+  background: #f4f3fb;
+  border-color: #b8b3e3;
+}
+.panel button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.panel :is(button, select, input, textarea):focus-visible {
+  outline: 2px solid #655cba;
+  outline-offset: 2px;
+}
+.panel select,
+.panel textarea,
+.panel input[type="number"] {
+  border: 1px solid #e1dfeb;
+  border-radius: 8px;
+  background: white;
+  padding: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.panel textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 90px;
+  line-height: 1.65;
+  box-sizing: border-box;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 12px;
+  border-bottom: 1px solid #eceaf2;
+}
+.header > span,
+.header > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header svg {
+  color: #655cba;
+}
+.tasks {
+  display: flex;
+  gap: 6px;
+  padding: 9px 12px;
+}
+.tasks select {
+  flex: 1;
+  min-width: 0;
+}
+.conversation {
+  flex: 1;
+  overflow: auto;
+  min-height: 100px;
+  padding: 12px;
+  scrollbar-width: thin;
+}
+.welcome {
+  padding: 28px 8px;
+  color: #625d77;
+  line-height: 1.7;
+}
+.welcome h3 {
+  font-size: 19px;
+  color: #292638;
+  margin: 10px 0;
+}
+.welcome div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 20px;
+}
+.message {
+  padding: 13px 12px;
+  margin: 0 0 14px;
+  background: #f7f7fb;
+  border: 1px solid #edebf4;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.message p,
+.card p {
+  white-space: pre-wrap;
+  margin: 6px 0;
+}
+.message > small,
+.card > small {
+  color: #68627e;
+  font-weight: 600;
+}
+.user {
+  background: #eeecfb;
+  margin-left: 22px;
+  border-color: #e3def7;
+}
+.card {
+  border: 1px solid #dcd6f2;
+  background: #fff;
+  border-radius: 12px;
+  padding: 13px;
+  margin-bottom: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.card h4 {
+  font-size: 14px;
+  margin: 6px 0 12px;
+}
+.card details,
+.artifact details {
+  border-top: 1px solid #eeecf4;
+  padding: 10px 0;
+}
+.card summary,
+.artifact summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.card select {
+  width: 100%;
+  margin: 7px 0;
+}
+.card label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.card input[type="number"] {
+  width: 70px;
+}
+.card input[type="text"] {
+  width: 130px;
+  border: 1px solid #e1dfeb;
+  border-radius: 8px;
+  padding: 7px;
+}
+.card label {
+  margin-top: 6px;
+}
+.card small {
+  display: block;
+  color: #6d667e;
+}
+.card textarea {
+  min-height: 110px;
+}
+.card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.panel .primary {
+  background: #635bb8;
+  color: white;
+  border-color: #635bb8;
+}
+.panel .primary:hover {
+  background: #544ca4;
+}
+.question {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e3deef;
+}
+.question > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.artifact {
+  margin-top: 10px;
+  border-top: 1px solid #dfdbec;
+  padding-top: 10px;
+}
+.artifact label {
+  display: block;
+}
+.artifact label textarea {
+  margin: 4px 0 10px;
+}
+.preflight {
+  background: #f1f5ed;
+  border: 1px solid #d9e3d3;
+  border-radius: 9px;
+  padding: 10px;
+  margin-top: 10px;
+}
+.preflight > button {
+  margin-top: 10px;
+}
+.stage {
+  padding: 10px;
+  color: #655cba;
+  background: #f6f4ff;
+  border-radius: 8px;
+  line-height: 1.7;
+}
+.error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  color: #9c3131;
+  background: #fff1ef;
+  border: 1px solid #f0ceca;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 6px 12px;
+  line-height: 1.6;
+}
+.composer {
+  border: 1px solid #ddd8ee;
+  border-radius: 12px;
+  margin: 6px 10px 10px;
+  background: #fff;
+  padding: 9px;
+  flex-shrink: 0;
+}
+.composer > textarea {
+  border: none;
+  min-height: 90px;
+  max-height: 220px;
+  padding: 6px;
+  background: #fff;
+}
+.context {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  line-height: 1.5;
+  color: #665c85;
+  margin-bottom: 6px;
+}
+.selectors {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 7px;
+}
+.selectors select {
+  width: 100%;
+  font-size: 11px;
+}
+.selectors select:nth-child(3):last-child {
+  grid-column: 1/-1;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+}
+.actions small {
+  flex: 1;
+  color: #766f86;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.attachments {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.attachments > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #f2f0f9;
+  border-radius: 7px;
+  padding: 4px;
+  max-width: 100%;
+}
+.attachments img {
+  height: 35px;
+  width: 35px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.attachments small {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachments button {
+  padding: 2px;
+  border: 0;
+}
+.settings {
+  margin: 0 12px 8px;
+  padding: 10px;
+  border: 1px solid #e3dfed;
+  border-radius: 9px;
+  background: #faf9fc;
+  max-height: 280px;
+  overflow: auto;
+}
+.settings p {
+  margin-top: 0;
+  line-height: 1.6;
+}
+.settings > button {
+  margin: 0 5px 7px 0;
+}
+.settings details {
+  margin-top: 8px;
+}
+.settings details label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px;
+}
+.settings details select {
+  width: 100%;
+  margin: 8px 0;
+}
+@media (max-width: 600px) {
+  .header {
+    padding: 11px;
+  }
+  .conversation {
+    padding: 8px;
+  }
+  .composer {
+    margin: 4px 7px 7px;
+  }
+  .buttons button {
+    flex: 1;
+  }
+  .card {
+    padding: 10px;
+  }
+  .composer > textarea {
+    min-height: 70px;
+  }
+}

@@ -11,18 +11,31 @@ import type {
   JsonObject,
   NodeRunRecord,
   ProviderConnectionRecord,
+  SupplierRecord,
+  SupplierCommit,
+  ConnectionSaveOptions,
   Repository,
   NodeRunUpdateOptions,
   WebhookEventRecord,
   WorkflowRunRecord,
 } from "./types.js";
 import { CanvasRevisionConflictError } from "./types.js";
+import {
+  assertSnapshotCredentials,
+  assertRunConnections,
+  assertSupplierCommit,
+  assertConnectionSave,
+  scrubConnectionSecrets,
+  referencesConnections,
+} from "./supplier-state.js";
 
 const now = (): string => new Date().toISOString();
 const clone = <T>(value: T): T => structuredClone(value);
 
 export interface MemoryRepositorySnapshot {
   version: 2;
+  /** Optional for snapshots created before supplier management existed. */
+  suppliers?: SupplierRecord[];
   canvases: CanvasRecord[];
   revisions: CanvasRevisionRecord[];
   assets: AssetRecord[];
@@ -65,6 +78,7 @@ export function migrateMemoryRepositorySnapshot(
 }
 
 export class MemoryRepository implements Repository {
+  private readonly suppliers = new Map<string, SupplierRecord>();
   private readonly canvases = new Map<string, CanvasRecord>();
   private readonly revisions = new Map<string, CanvasRevisionRecord>();
   private readonly assets = new Map<string, AssetRecord>();
@@ -85,6 +99,8 @@ export class MemoryRepository implements Repository {
       ? migrateMemoryRepositorySnapshot(snapshotInput)
       : undefined;
     if (!snapshot) return;
+    for (const record of snapshot.suppliers ?? [])
+      this.suppliers.set(record.id, clone(record));
     for (const record of snapshot.canvases)
       this.canvases.set(record.id, clone(record));
     for (const record of snapshot.revisions)
@@ -115,6 +131,7 @@ export class MemoryRepository implements Repository {
   protected exportSnapshotView(): MemoryRepositorySnapshot {
     return {
       version: 2,
+      suppliers: [...this.suppliers.values()],
       canvases: [...this.canvases.values()],
       revisions: [...this.revisions.values()],
       assets: [...this.assets.values()],
@@ -138,6 +155,121 @@ export class MemoryRepository implements Repository {
 
   public exportSnapshot(): MemoryRepositorySnapshot {
     return clone(this.exportSnapshotView());
+  }
+
+  async listSuppliers(): Promise<SupplierRecord[]> {
+    return [...this.suppliers.values()].map(clone);
+  }
+
+  async getSupplier(id: string): Promise<SupplierRecord | null> {
+    const record = this.suppliers.get(id);
+    return record ? clone(record) : null;
+  }
+
+  async saveSupplier(
+    input: Omit<SupplierRecord, "createdAt" | "updatedAt">,
+  ): Promise<SupplierRecord> {
+    const timestamp = now();
+    const record = {
+      ...clone(input),
+      createdAt: this.suppliers.get(input.id)?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+    this.suppliers.set(record.id, record);
+    return clone(record);
+  }
+
+  async commitSupplier(input: SupplierCommit): Promise<SupplierRecord> {
+    assertSupplierCommit(
+      input,
+      this.suppliers.get(input.supplier.id) ?? null,
+      [...this.connections.values()],
+      [...this.runs.values()],
+    );
+    const timestamp = now();
+    const supplier = {
+      ...clone(input.supplier),
+      createdAt: this.suppliers.get(input.supplier.id)?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+    const deleted = new Set(input.deleteConnectionIds ?? []);
+    // One synchronous mutation; FileRepository durably writes it once.
+    this.suppliers.set(supplier.id, supplier);
+    for (const connection of input.connections)
+      this.connections.set(connection.id, {
+        ...clone(connection),
+        updatedAt: timestamp,
+      });
+    for (const id of deleted) this.connections.delete(id);
+    if (deleted.size) {
+      for (const [id, canvas] of this.canvases)
+        this.canvases.set(id, {
+          ...canvas,
+          graph: scrubConnectionSecrets(canvas.graph, deleted) as JsonObject,
+        });
+      for (const [id, revision] of this.revisions)
+        this.revisions.set(id, {
+          ...revision,
+          graph: scrubConnectionSecrets(revision.graph, deleted) as JsonObject,
+        });
+
+      for (const [id, profile] of this.directorProfiles) {
+        if (deleted.has(profile.brainConnectionId)) {
+          this.directorProfiles.delete(id);
+          for (const [sid, session] of this.directorSessions)
+            if (session.profileId === id)
+              this.directorSessions.set(sid, { ...session, profileId: null });
+        } else if (
+          profile.researchConnectionId &&
+          deleted.has(profile.researchConnectionId)
+        )
+          this.directorProfiles.set(id, {
+            ...profile,
+            researchConnectionId: null,
+          });
+      }
+      for (const [id, run] of this.runs)
+        this.runs.set(id, {
+          ...run,
+          revisionGraph: scrubConnectionSecrets(
+            run.revisionGraph,
+            deleted,
+          ) as JsonObject,
+        });
+      for (const [id, run] of this.nodeRuns)
+        this.nodeRuns.set(id, {
+          ...run,
+          inputJson: scrubConnectionSecrets(
+            run.inputJson,
+            deleted,
+          ) as JsonObject,
+        });
+      for (const [id, proposal] of this.directorProposals) {
+        if (!referencesConnections(proposal.plan, deleted)) continue;
+        const plan = scrubConnectionSecrets(
+          proposal.plan,
+          deleted,
+        ) as JsonObject;
+        delete plan.preflight;
+        delete plan.prepared;
+        plan.error = "引用的供应商已删除，请重新选择连接";
+        this.directorProposals.set(id, {
+          ...proposal,
+          plan,
+          quote: scrubConnectionSecrets(proposal.quote, deleted) as JsonObject,
+          status: [
+            "draft",
+            "awaiting_approval",
+            "materializing",
+            "awaiting_execution",
+            "approved",
+          ].includes(proposal.status)
+            ? "cancelled"
+            : proposal.status,
+        });
+      }
+    }
+    return clone(supplier);
   }
 
   async ensureDefaultCanvas(): Promise<CanvasRecord> {
@@ -185,7 +317,8 @@ export class MemoryRepository implements Repository {
     for (const [revisionId, revision] of this.revisions)
       if (revision.canvasId === id) this.revisions.delete(revisionId);
     for (const [messageId, message] of this.directorMessages)
-      if (sessionIds.has(message.sessionId)) this.directorMessages.delete(messageId);
+      if (sessionIds.has(message.sessionId))
+        this.directorMessages.delete(messageId);
     for (const [proposalId, proposal] of this.directorProposals)
       if (proposal.canvasId === id || sessionIds.has(proposal.sessionId))
         this.directorProposals.delete(proposalId);
@@ -313,8 +446,15 @@ export class MemoryRepository implements Repository {
 
   async saveConnection(
     input: Omit<ProviderConnectionRecord, "createdAt" | "updatedAt">,
+    options: ConnectionSaveOptions = {},
   ): Promise<ProviderConnectionRecord> {
     const previous = this.connections.get(input.id);
+    assertConnectionSave(
+      input,
+      previous ?? null,
+      this.suppliers.get(String(input.config.supplierId ?? "")) ?? null,
+      options,
+    );
     const timestamp = now();
     const record: ProviderConnectionRecord = {
       ...input,
@@ -398,9 +538,15 @@ export class MemoryRepository implements Repository {
     patch: Partial<
       Pick<DirectorSessionRecord, "title" | "metadata" | "profileId">
     >,
+    options?: { expectedTurnId: string | null },
   ): Promise<DirectorSessionRecord | null> {
     const existing = this.directorSessions.get(id);
-    if (!existing) return null;
+    if (
+      !existing ||
+      (options &&
+        (existing.metadata.activeTurnId ?? null) !== options.expectedTurnId)
+    )
+      return null;
     const record: DirectorSessionRecord = {
       ...existing,
       ...patch,
@@ -487,6 +633,7 @@ export class MemoryRepository implements Repository {
   ): Promise<DirectorProposalRecord> {
     if (this.directorProposals.has(input.id))
       throw new Error(`Director proposal already exists: ${input.id}`);
+    assertSnapshotCredentials(input.plan, [...this.connections.values()]);
     const timestamp = now();
     const record: DirectorProposalRecord = {
       ...input,
@@ -526,13 +673,18 @@ export class MemoryRepository implements Repository {
     >,
     options: DirectorProposalUpdateOptions = {},
   ): Promise<DirectorProposalRecord | null> {
+    if (patch.plan)
+      assertSnapshotCredentials(patch.plan, [...this.connections.values()]);
     const existing = this.directorProposals.get(id);
     if (
       !existing ||
       (options.expectedVersion !== undefined &&
         existing.version !== options.expectedVersion) ||
       (options.expectedStatuses !== undefined &&
-        !options.expectedStatuses.includes(existing.status))
+        !options.expectedStatuses.includes(existing.status)) ||
+      (options.expectedPreflightId !== undefined &&
+        (existing.plan.preflight as JsonObject | undefined)?.id !==
+          options.expectedPreflightId)
     )
       return null;
     const record: DirectorProposalRecord = {
@@ -573,6 +725,11 @@ export class MemoryRepository implements Repository {
         run.clientRequestId === input.clientRequestId,
     );
     if (existing) return clone(existing);
+    assertRunConnections(
+      input,
+      [...this.connections.values()],
+      [...this.suppliers.values()],
+    );
     if (this.runs.has(input.id))
       throw new Error(`Run already exists: ${input.id}`);
     const timestamp = now();

@@ -27,7 +27,7 @@ import { probeOpenAICompatibleCapabilities } from "./probe";
 
 function chatMessages(input: DirectorAdapterInput) {
   const messages: Array<Record<string, unknown>> = [
-    { role: "system", content: structuredSystemPrompt(input.system) },
+    { role: "system", content: structuredSystemPrompt(input.system, input.responseJsonSchema) },
     ...input.messages,
   ];
   if (!input.attachments?.length) return messages;
@@ -183,7 +183,7 @@ export class OpenAIChatAdapter implements DirectorModelAdapter {
                   json_schema: {
                     name: "director_decision",
                     strict: true,
-                    schema: DIRECTOR_DECISION_JSON_SCHEMA,
+                    schema: input.responseJsonSchema ?? DIRECTOR_DECISION_JSON_SCHEMA,
                   },
                 },
               }
@@ -208,7 +208,7 @@ export class OpenAIChatAdapter implements DirectorModelAdapter {
           })
         : undefined;
     return {
-      output: strictDecisionFromCandidates(result.decision),
+      output: strictDecisionFromCandidates(result.decision, input.responseJsonSchema),
       ...(result.text ? { text: result.text } : {}),
       sources: normalizeSources(result.sources),
       ...(usage ? { usage } : {}),

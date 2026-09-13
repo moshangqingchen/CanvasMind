@@ -92,4 +92,20 @@ describe("PUT /api/canvas/[id]", () => {
       expect.objectContaining({ expectedRevision: undefined }),
     );
   });
+
+  it("recognizes a conflict from a repository surviving a module reload", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(Object.assign(new Error("conflict"), {
+      code: "CANVAS_REVISION_CONFLICT", expectedRevision: 3, currentRevision: 5,
+    }));
+    const response = await PUT(request(3), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ currentRevision: 5 });
+  });
+
+  it("does not mistake malformed errors for version conflicts", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(Object.assign(new Error("failure"), {
+      code: "CANVAS_REVISION_CONFLICT", expectedRevision: "3", currentRevision: null,
+    }));
+    expect((await PUT(request(3), context)).status).toBe(500);
+  });
 });

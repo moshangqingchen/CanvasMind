@@ -27,6 +27,14 @@ vi.mock("../../../lib/project-service", () => ({
     title: canvas.title,
     createdAt: canvas.createdAt,
     updatedAt: canvas.updatedAt,
+    nodeCount: 0,
+  }),
+  projectCardSummary: async (canvas: typeof canvasFixture) => ({
+    id: canvas.id,
+    title: canvas.title,
+    createdAt: canvas.createdAt,
+    updatedAt: canvas.updatedAt,
+    nodeCount: 0,
   }),
 }));
 
@@ -59,10 +67,20 @@ describe("/api/projects", () => {
           title: canvasFixture.title,
           createdAt: canvasFixture.createdAt,
           updatedAt: canvasFixture.updatedAt,
+          nodeCount: 0,
         },
       ],
     });
     expect(mocks.ensureProjectDirectory).toHaveBeenCalledWith(canvasFixture);
+  });
+
+  it("returns an empty workspace without creating a default canvas", async () => {
+    mocks.repository.listCanvases.mockResolvedValue([]);
+    const response = await GET();
+    await expect(response.json()).resolves.toEqual({ projects: [] });
+    expect(mocks.repository.ensureDefaultCanvas).not.toHaveBeenCalled();
+    expect(mocks.repository.saveCanvas).not.toHaveBeenCalled();
+    expect(mocks.ensureProjectDirectory).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate names after normalization", async () => {
