@@ -24,6 +24,10 @@ export function applyVerifiedImage25Capabilities(
     return model;
   const supplier = supplierKeyForConnection(connection);
   const group = String(connection.config.modelGroup ?? "");
+  const mikotoOneK =
+    supplier === "mikoto" &&
+    group === "生图（1k）" &&
+    model.id === "gpt-image-2.5-flare";
   const full =
     (supplier === "mikoto" &&
       ["生图（原生4k", "生图（原生4k）"].includes(group) &&
@@ -47,7 +51,8 @@ export function applyVerifiedImage25Capabilities(
           .exec(model.id)?.[1]
           ?.toUpperCase() as ImageSizeTier | undefined)
       : undefined;
-  if (!full && !twoK && !cangyuanTier && !chentuAdobe) return model;
+  if (!full && !twoK && !cangyuanTier && !chentuAdobe && !mikotoOneK)
+    return model;
   // An actual key denial must remain unavailable even for a verified model.
   if (
     model.metadata?.canvasRunnable === false &&
@@ -56,6 +61,32 @@ export function applyVerifiedImage25Capabilities(
     )
   )
     return model;
+  if (mikotoOneK) {
+    // 2026-09-13: all eleven ratios produced matching image aspect ratios.
+    // The channel rescales requested pixels; this does not establish 2K/4K
+    // support, new quality tiers, or another model's capabilities.
+    return {
+      ...model,
+      parameters: model.parameters?.map((parameter) =>
+        parameter.key === "size" && parameter.control === "dimensions"
+          ? {
+              ...parameter,
+              default: "auto",
+              step: 16,
+              options: imageSizeOptions(["1K"]),
+              description:
+                "1K 渠道的 11 种比例已实测；尺寸为请求值，实际像素由渠道调整。自动比例优先提示词，其次参考图。",
+            }
+          : parameter,
+      ),
+      metadata: {
+        ...model.metadata,
+        imageAspectRatiosVerifiedAt: "2026-09-13",
+        imageAspectRatiosVerificationSource:
+          "docs/mikoto-1k-ratios-2026-09-13.md",
+      },
+    };
+  }
   if (cangyuanTier) {
     // Saved authenticated inventories can outlive the marketplace descriptor.
     // Refresh only an already-declared dimension control for this fixed SKU.

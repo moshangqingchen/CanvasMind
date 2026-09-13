@@ -3,6 +3,7 @@ import { applyVerifiedImage25Capabilities } from "./verified-image25-capabilitie
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
 import {
   mikotoConnectionConfig,
+  MIKOTO_IMAGE_1K_GROUP,
   MIKOTO_IMAGE_4K_GROUP,
 } from "./mikoto-presets";
 import {
@@ -71,7 +72,7 @@ describe("verified supplier 2.5 capabilities", () => {
   it.each([
     {
       supplierKey: "mikoto",
-      modelGroup: "生图（1k）",
+      modelGroup: "unknown-image-group",
       baseUrl: "https://api.mikoto.vip",
     },
     {
@@ -92,6 +93,35 @@ describe("verified supplier 2.5 capabilities", () => {
       ).toBe(model);
     },
   );
+  it("repairs cached Mikoto Flare 1K ratios without adding higher tiers or qualities", () => {
+    const connection = {
+      provider: "rest",
+      config: mikotoConnectionConfig(MIKOTO_IMAGE_1K_GROUP),
+    };
+    const initial = bindScannedModelProtocols(connection, [model]);
+    const repaired = bindScannedModelProtocols(
+      { ...connection, config: { ...connection.config, connector: initial.connector } },
+      initial.models,
+    );
+    const descriptor = repaired.models[0]!;
+    const size = descriptor.parameters?.find(p => p.key === "size");
+    expect(size?.options).toHaveLength(12);
+    expect(size?.options?.filter(o => o.value !== "auto").every(o => o.label.startsWith("1K"))).toBe(true);
+    expect(size?.options?.map(o => o.value)).toEqual(expect.arrayContaining([
+      "auto", "1360x768", "768x1360", "1552x672", "672x1552",
+    ]));
+    expect(descriptor.parameters?.find(p => p.key === "quality")).toMatchObject({
+      default: "high",
+      options: [{ label: "自动", value: "auto" }, { label: "高", value: "high" }],
+    });
+    expect(repaired.connector?.models).toEqual(repaired.models);
+    expect(repaired.models).toEqual(initial.models);
+    expect(applyVerifiedImage25Capabilities(connection, {
+      ...model, id: "gpt-image-2.5-sunburst",
+    }).parameters).toBeUndefined();
+    const denied = { ...descriptor, metadata: { canvasRunnable: false, canvasUnavailableReason: "403 权限拒绝" } };
+    expect(applyVerifiedImage25Capabilities(connection, denied)).toBe(denied);
+  });
   it("does not turn a key denial into a runnable model", () => {
     const denied = {
       ...model,

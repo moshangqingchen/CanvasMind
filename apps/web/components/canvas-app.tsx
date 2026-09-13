@@ -4534,17 +4534,17 @@ function CanvasShell({
         connection?.provider === "weai" &&
         typeof currentModel?.metadata?.modelGroup === "string" &&
         currentModel.metadata.modelGroup === nextModel?.metadata?.modelGroup;
+      // A newly selected model starts at its own highest supported quality.
+      // Saved/user-selected values on the current model are retained on reload.
+      if (modelId !== node.data.model) {
+        delete currentParameters.quality;
+        delete currentParameters.image_quality;
+        delete currentParameters.output_quality;
+      }
       if (nodeType === "image-generation" && !keepsWeAiGroupParameters) {
         delete currentParameters.size;
         delete currentParameters.size_tier;
         delete currentParameters.aspect_ratio;
-        const qualityDescriptor = nextModel?.parameters?.find(
-          (parameter) => parameter.key === "quality",
-        );
-        const keepsCurrentQuality = qualityDescriptor?.options?.some(
-          (option) => String(option.value) === currentParameters.quality,
-        );
-        if (!keepsCurrentQuality) delete currentParameters.quality;
         delete currentParameters.n;
       }
       updateNodeData(

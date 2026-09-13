@@ -5,6 +5,7 @@ import type {
   ProviderOperation,
 } from "@super-canvas/providers";
 import type { GenerationNodeType } from "./graph-ui";
+import { withHighestQualityDefault } from "./model-quality";
 
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
   {
@@ -151,6 +152,7 @@ export function parameterDescriptorsFor(
   const operations = operationsForNodeType(nodeType);
   const declared = (model?.parameters ?? [])
     .filter(isParameterDescriptor)
+    .map(withHighestQualityDefault)
     .filter(
       (descriptor) =>
         !descriptor.operations?.length ||
@@ -342,7 +344,8 @@ export function parametersWithDefaults(
   current: Readonly<Record<string, unknown>> = {},
 ): Record<string, unknown> {
   const parameters = Object.fromEntries(
-    descriptors.flatMap((descriptor) => {
+    descriptors.flatMap((original) => {
+      const descriptor = withHighestQualityDefault(original);
       const currentValue = current[descriptor.key];
       const acceptsCurrentValue =
         currentValue === undefined ||

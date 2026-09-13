@@ -10,6 +10,7 @@ import { chentuFallbackImageDescriptor } from "./chentu-catalog";
 import { supplierKeyForConnection } from "./supplier-identity";
 import { matchesSupplierTemplate } from "./supplier-template-source";
 import { applyVerifiedImage25Capabilities } from "./verified-image25-capabilities";
+import { withHighestModelQualityDefault } from "./model-quality";
 
 type Connection = { provider: string; config: Record<string, unknown> };
 
@@ -324,7 +325,9 @@ export function bindScannedModelProtocols(
 ): ReturnType<typeof bindExistingModelProtocols> {
   const bound = bindExistingModelProtocols(connection, scanned, previous);
   const models = bound.models.map((model) =>
-    withKnownPriceLabel(applyVerifiedImage25Capabilities(connection, model)),
+    withHighestModelQualityDefault(
+      withKnownPriceLabel(applyVerifiedImage25Capabilities(connection, model)),
+    ),
   );
   return {
     ...bound,
