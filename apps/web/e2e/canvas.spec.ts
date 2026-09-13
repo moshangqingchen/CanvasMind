@@ -4085,7 +4085,8 @@ test.describe("超级画布完整验收", () => {
       "codex-gpt-image-2-1k",
     );
     await expect(inspector.getByLabel("画面比例")).toHaveValue("auto");
-    await expect(inspector.getByLabel("分辨率")).toHaveValue("low");
+    // This model offers 1K (low) and 2K (medium); default to its highest tier.
+    await expect(inspector.getByLabel("分辨率")).toHaveValue("medium");
     await expect(inspector.getByLabel("生成张数")).toHaveValue("1");
     await expect
       .poll(async () => {
@@ -4093,7 +4094,7 @@ test.describe("超级画布完整验收", () => {
         return canvas.graph.nodes.find((node) => node.id === "e2e-image")?.data
           .parameters;
       })
-      .toEqual({ size: "auto", quality: "low", n: 1 });
+      .toEqual({ size: "auto", quality: "medium", n: 1 });
   });
 
   test("项目 JSON 可导出并重新导入", async ({ page }) => {
