@@ -11,6 +11,8 @@ import {
   cangyuanConnectorForModels,
 } from "./cangyuan-catalog";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { parametersWithDefaults } from "./model-parameters";
+import { resolutionTierShortcuts, sizeOnTierChange } from "../components/node-parameter-fields";
 
 const model: ModelDescriptor = {
   id: "gpt-image-2.5-flare",
@@ -141,7 +143,7 @@ describe("verified supplier 2.5 capabilities", () => {
     ).toBe(denied);
   });
   it.each(["flare", "sunburst"])(
-    "enables rechecked Chentu Adobe %s 4K and six qualities without claiming exact 2K",
+    "keeps Chentu Adobe %s tiers scoped to its own generation evidence",
     (variant) => {
       const result = applyVerifiedImage25Capabilities(
         {
@@ -156,9 +158,9 @@ describe("verified supplier 2.5 capabilities", () => {
       );
       const sizes =
         result.parameters?.find((p) => p.key === "size")?.options ?? [];
-      expect(sizes).toHaveLength(23);
+      expect(sizes).toHaveLength(variant === "flare" ? 34 : 23);
       expect(sizes.some((o) => o.value === "3840x2160")).toBe(true);
-      expect(sizes.some((o) => o.label.startsWith("2K"))).toBe(false);
+      expect(sizes.some((o) => o.label.startsWith("2K"))).toBe(variant === "flare");
       expect(
         result.parameters
           ?.find((p) => p.key === "quality")
@@ -166,6 +168,32 @@ describe("verified supplier 2.5 capabilities", () => {
       ).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
     },
   );
+  it("refreshes cached Chentu Flare 2K controls and runtime parameters together", () => {
+    const connection = {
+      provider: "openai",
+      config: { supplierKey: "chentu", modelGroup: "低价Adobe生图", baseUrl: "https://tu.988236.xyz/v1" },
+    };
+    const cached = applyVerifiedImage25Capabilities(connection, model);
+    cached.parameters = cached.parameters?.map(p => p.key === "size"
+      ? { ...p, options: p.options?.filter(o => !o.label.startsWith("2K")) }
+      : p);
+    const bound = bindScannedModelProtocols(connection, [cached]);
+    const updated = bound.models[0]!;
+    const size = updated.parameters!.find(p => p.key === "size")!;
+    const twoK = size.options!.filter(o => o.label.startsWith("2K"));
+    expect(twoK).toHaveLength(11);
+    expect(twoK.every(o => o.label.includes("实际可能近似"))).toBe(true);
+    expect(resolutionTierShortcuts(size).map(t => t.label)).toEqual(["1K", "2K", "4K"]);
+    expect(sizeOnTierChange(size, "3840x2160", "2K")).toBe("2720x1536");
+    expect(sizeOnTierChange(size, "2160x3840", "2K")).toBe("1536x2720");
+    expect(parametersWithDefaults(updated.parameters!, { size: "auto", size_tier: "2K" })).toMatchObject({
+      size: "auto", size_tier: "2K", quality: "max",
+    });
+    // OpenAI adapters consume the model parameters directly, without a REST connector.
+    expect(bound.connector).toBeUndefined();
+    expect(updated.metadata).toMatchObject({ image2KVerifiedAt: "2026-09-14", image2KAllowsApproximateOutput: true });
+    expect(bindScannedModelProtocols(connection, bound.models).models).toEqual(bound.models);
+  });
   it("offers only exact 1K/2K on Cyber Afei, without adding ignored quality values", () => {
     const m = applyVerifiedImage25Capabilities(
       {

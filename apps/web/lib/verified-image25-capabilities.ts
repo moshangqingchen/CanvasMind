@@ -43,6 +43,7 @@ export function applyVerifiedImage25Capabilities(
     supplier === "chentu" &&
     group === "低价Adobe生图" &&
     /^gpt-image-2\.5-(flare|sunburst)$/u.test(model.id);
+  const chentuFlareTwoK = chentuAdobe && model.id === "gpt-image-2.5-flare";
   const advancedQuality = full || chentuAdobe;
   const cangyuanTier =
     supplier === "cangyuan" &&
@@ -104,8 +105,16 @@ export function applyVerifiedImage25Capabilities(
     };
   }
   const sizes = imageSizeOptions(
-    chentuAdobe ? ["1K", "4K"] : full ? ["1K", "2K", "4K"] : ["1K", "2K"],
+    full || chentuFlareTwoK
+      ? ["1K", "2K", "4K"]
+      : chentuAdobe
+        ? ["1K", "4K"]
+        : ["1K", "2K"],
     advancedQuality ? 3840 : 2048,
+  ).map((option) =>
+    chentuFlareTwoK && option.label.startsWith("2K")
+      ? { ...option, label: `${option.label}（实际可能近似）` }
+      : option,
   );
   const size: ModelParameterDescriptor = {
     key: "size",
@@ -118,11 +127,13 @@ export function applyVerifiedImage25Capabilities(
     step: 16,
     options: sizes,
     operations,
-    description: chentuAdobe
-      ? "9 月 10 日晚复测：1K 与 3840×2160 实际像素成功；请求 2048×2048 返回 1920×1920，暂不提供精确 2K 档。"
-      : full
-        ? "按所选档位适配比例与尺寸；自动比例优先提示词，其次参考图。宽高按 16 像素对齐。"
-        : "已实测 1K、2K；该渠道请求 4K 未返回目标像素，暂不提供 4K 预设。",
+    description: chentuFlareTwoK
+      ? "9 月 14 日复测：max 质量下，2K 方图 2048×2048、横图 2720×1536、竖图 1536×2720 均返回目标像素。历史方图曾返回 1920×1920；2K 允许近似输出，所列尺寸为请求值。其他比例为计算预设。"
+      : chentuAdobe
+        ? "9 月 10 日晚复测：1K 与 3840×2160 实际像素成功；请求 2048×2048 返回 1920×1920。9 月 14 日 Sunburst 复测无可用渠道，暂不新增 2K 档。"
+        : full
+          ? "按所选档位适配比例与尺寸；自动比例优先提示词，其次参考图。宽高按 16 像素对齐。"
+          : "已实测 1K、2K；该渠道请求 4K 未返回目标像素，暂不提供 4K 预设。",
   };
   const quality: ModelParameterDescriptor = {
     key: "quality",
@@ -159,6 +170,13 @@ export function applyVerifiedImage25Capabilities(
       ? {
           image25VerificationSource:
             "docs/chentu-image25-recheck-2026-09-10.md",
+        }
+      : {}),
+    ...(chentuFlareTwoK
+      ? {
+          image2KVerifiedAt: "2026-09-14",
+          image2KVerificationSource: "docs/chentu-2k-recheck-2026-09-14.md",
+          image2KAllowsApproximateOutput: true,
         }
       : {}),
   };

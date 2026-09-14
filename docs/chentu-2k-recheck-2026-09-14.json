@@ -1,0 +1,80 @@
+{
+  "inventory": {
+    "at": "2026-09-14T01:28:01.497Z",
+    "group": "低价Adobe生图",
+    "models": [
+      "gpt-image-2.5-flare"
+    ],
+    "missing": [
+      "gpt-image-2.5-sunburst"
+    ]
+  },
+  "requestCount": 4,
+  "results": [
+    {
+      "at": "2026-09-14T01:28:01.499Z",
+      "model": "gpt-image-2.5-sunburst",
+      "group": "低价Adobe生图",
+      "ratio": "1:1",
+      "requestedSize": "2048x2048",
+      "quality": "max",
+      "status": 503,
+      "error": "No available channel for model gpt-image-2.5-sunburst under group 低价Adobe生图 (distributor) (request id: 202609140128016896940968268d9d62sNCRmBK)",
+      "elapsedMs": 537
+    },
+    {
+      "at": "2026-09-14T01:28:01.498Z",
+      "model": "gpt-image-2.5-flare",
+      "group": "低价Adobe生图",
+      "ratio": "1:1",
+      "requestedSize": "2048x2048",
+      "quality": "max",
+      "status": 200,
+      "width": 2048,
+      "height": 2048,
+      "format": "png",
+      "widthScale": 1,
+      "heightScale": 1,
+      "relativeRatioError": 0,
+      "exactPixels": true,
+      "near2K": true,
+      "elapsedMs": 45428
+    },
+    {
+      "at": "2026-09-14T01:28:46.928Z",
+      "model": "gpt-image-2.5-flare",
+      "group": "低价Adobe生图",
+      "ratio": "16:9",
+      "requestedSize": "2720x1536",
+      "quality": "max",
+      "status": 200,
+      "width": 2720,
+      "height": 1536,
+      "format": "png",
+      "widthScale": 1,
+      "heightScale": 1,
+      "relativeRatioError": 0,
+      "exactPixels": true,
+      "near2K": true,
+      "elapsedMs": 33339
+    },
+    {
+      "at": "2026-09-14T01:29:20.268Z",
+      "model": "gpt-image-2.5-flare",
+      "group": "低价Adobe生图",
+      "ratio": "9:16",
+      "requestedSize": "1536x2720",
+      "quality": "max",
+      "status": 200,
+      "width": 1536,
+      "height": 2720,
+      "format": "png",
+      "widthScale": 1,
+      "heightScale": 1,
+      "relativeRatioError": 0,
+      "exactPixels": true,
+      "near2K": true,
+      "elapsedMs": 34155
+    }
+  ]
+}
