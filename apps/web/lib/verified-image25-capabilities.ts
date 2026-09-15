@@ -48,7 +48,7 @@ export function applyVerifiedImage25Capabilities(
   const cangyuanTier =
     supplier === "cangyuan" &&
     ["IMAGE", "IMAGE-备用分组", "全模型-无claude/gpt"].includes(group)
-      ? (/^gpt-image-2\.5-flare-(1k|2k|4k)$/iu
+      ? (/^gpt-image-2(?:\.5-(?:flare|sunburst))?-(1k|2k|4k)$/iu
           .exec(model.id)?.[1]
           ?.toUpperCase() as ImageSizeTier | undefined)
       : undefined;

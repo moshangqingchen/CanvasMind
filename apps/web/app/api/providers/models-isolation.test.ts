@@ -29,6 +29,7 @@ import { GET } from "./[id]/models/route";
 import {
   mikotoConnectorForGroup,
   MIKOTO_IMAGE_GROUP,
+  MIKOTO_IMAGE_4K_GROUP,
 } from "../../../lib/mikoto-presets";
 const refresh = (id: string, enabled = true) =>
   GET(
@@ -70,6 +71,24 @@ async function fixture(supplierKey?: string) {
   return { supplier, connection };
 }
 describe("model refresh source boundary", () => {
+  it("removes absent Mikoto models before reapplying verified 4K controls", async () => {
+    (globalThis as Record<string, unknown>).__superCanvasRepository = mocks.repository;
+    try {
+      const connector = mikotoConnectorForGroup(MIKOTO_IMAGE_4K_GROUP);
+      await mocks.repository.saveConnection({ id: "mikoto-current", name: "Mikoto", provider: "rest", encryptedSecret: encryptSecret("mock-key", "isolated-test-master"), config: {
+        supplierKey: "mikoto", preset: "mikoto-pro", baseUrl: "https://api.mikoto.vip", modelGroup: MIKOTO_IMAGE_4K_GROUP, usage: "canvas",
+        connector: connector as never, modelCatalogModels: connector.models as never,
+      } });
+      mocks.fetch.mockResolvedValue(Response.json({ data: [{ id: "gpt-image-2" }, { id: "gpt-6-astra" }] }));
+      const result = await refresh("mikoto-current");
+      expect(result.status).toBe(200);
+      expect((await result.json()).map((model: { id: string }) => model.id)).toEqual(["gpt-image-2"]);
+      const saved = await mocks.repository.getConnection("mikoto-current");
+      expect((saved?.config.connector as typeof connector).models?.map(model => model.id)).toEqual(["gpt-image-2"]);
+    } finally {
+      delete (globalThis as Record<string, unknown>).__superCanvasRepository;
+    }
+  });
   it("uses freshly synchronized Cangyuan transport instead of an unavailable cached catalog entry", async () => {
     const model = {id: "happyhorse-1.1", name: "HappyHorse", operations: ["video.generate"], outputKinds: ["video"], metadata: {priceLabel: "¥2.8/次"}};
     const connector = {submit: {path: "/v1/videos", mappings: [{target: "/model", source: {kind: "request", path: "$.model"}}]}, output: {path: "$.url", kind: "video"}, models: [model]};

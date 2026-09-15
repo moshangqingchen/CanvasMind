@@ -11,6 +11,7 @@ export * from "./suppliers.js";
 export * from "./model-catalog.js";
 export * from "./catalog-pricing.js";
 export * from "./image-size-presets.js";
+export * from "./chentu-az.js";
 export * from "./supplier-catalog.js";
 export * from "./supplier-login.js";
 export * from "./rest.js";

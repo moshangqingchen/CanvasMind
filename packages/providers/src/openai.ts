@@ -17,6 +17,7 @@ import type {
   ValidationResult,
 } from "./contracts.js";
 import { Agent, Dispatcher1Wrapper } from "undici";
+import { chentuAzImageDescriptor, isChentuAzImageModel, CHENTU_AZ_IMAGE_SIZES } from "./chentu-az.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
   assetToBlob,
@@ -903,6 +904,8 @@ function chentuModelDescriptor(
   isDefault: boolean,
   group?: string,
 ): ModelDescriptor {
+  const az = chentuAzImageDescriptor(id, group);
+  if (az) return { ...az, isDefault, name: `${id}（按量计费，以渠道账单为准）` };
   const sizes = chentuAllowedSizes(id);
   const sizeOptions = chentuSizeOptions(id);
   const supportsQuality = isChentuGptImageModel(id);
@@ -1663,6 +1666,7 @@ function chentuImageParameterKeys(
   model: string,
   group?: string,
 ): readonly WeAIImageParameterKey[] {
+  if (isChentuAzImageModel(model) && chentuAzImageDescriptor(model, group)) return ["size", "quality", "n"];
   const keys = isChentuOfficialModelGroup(group)
     ? CHENTU_OFFICIAL_IMAGE_PARAMETER_KEYS
     : CHENTU_IMAGE_PARAMETER_KEYS;
@@ -1739,6 +1743,10 @@ function imageParameters(
   group?: string,
   supplierKey?: string,
 ) {
+  if (supplierKey === "chentu" && chentuAzImageDescriptor(model, group)) {
+    // AZ rejects response_format/style and requires low on this 1K route.
+    return { size: parameters?.size ?? "1024x1024", quality: parameters?.quality ?? "low", n: 1 };
+  }
   if (supplierKey === "frimodel")
     return friModelImageParameters(parameters, model);
   const sourceParameters = parameters ?? {};
@@ -2932,6 +2940,21 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       useGemini && resolvedSupplierKey !== "mikoto"
         ? canonicalWeAIGeminiModel(requestedModel)
         : requestedModel;
+    const azModel = resolvedSupplierKey === "chentu"
+      ? chentuAzImageDescriptor(resolvedModel, resolvedConnection ? configuredModelGroup(resolvedConnection) : undefined)
+      : undefined;
+    if (azModel) {
+      const size = request.parameters?.size;
+      if (size !== undefined && !(CHENTU_AZ_IMAGE_SIZES as readonly unknown[]).includes(size))
+        issues.push({ path: "parameters.size", code: "invalid_image_size", message: "请选择辰途 AZ 已实测通过的 1K 尺寸" });
+      const quality = request.parameters?.quality;
+      if (quality !== undefined && quality !== "low")
+        issues.push({ path: "parameters.quality", code: "invalid_quality", message: "辰途 AZ 当前 1K 渠道仅验证 low；medium/high 对应的 2K/4K 会被拒绝" });
+      if (request.parameters?.n !== undefined && Number(request.parameters.n) !== 1)
+        issues.push({ path: "parameters.n", code: "invalid_count", message: "辰途 AZ 当前每次仅支持 1 张" });
+      if ((request.assets ?? []).filter(asset => asset.kind === "image").length > 1)
+        issues.push({ path: "assets", code: "too_many_images", message: "辰途 AZ 当前仅验证单张参考图编辑" });
+    }
     if (
       resolvedSupplierKey === "frimodel" &&
       request.operation === "image.edit" &&
@@ -3221,7 +3244,17 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     }
     if (resolvedSupplierKey === "chentu") {
       const size = request.parameters?.["size"];
-      const allowedSizes = chentuAllowedSizes(resolvedModel);
+      const savedModels = resolvedConnection?.settings?.modelCatalogModels;
+      const savedModel = Array.isArray(savedModels)
+        ? savedModels.find(candidate => isRecord(candidate) && candidate.id === resolvedModel)
+        : undefined;
+      const savedParameters = isRecord(savedModel) && Array.isArray(savedModel.parameters) ? savedModel.parameters : [];
+      const savedSize = savedParameters.find(candidate => isRecord(candidate) && candidate.key === "size" && candidate.control === "select");
+      const hasLiveSizes = isRecord(savedModel) && isRecord(savedModel.metadata) && savedModel.metadata.imageSizeCapabilitiesSource === "/v1/image/model-capabilities";
+      const liveSizes = hasLiveSizes && isRecord(savedSize) && Array.isArray(savedSize.options)
+        ? savedSize.options.flatMap(option => isRecord(option) && typeof option.value === "string" ? [option.value] : [])
+        : [];
+      const allowedSizes = liveSizes.length ? liveSizes : chentuAllowedSizes(resolvedModel);
       if (
         typeof size === "string" &&
         allowedSizes.length > 0 &&
@@ -3230,7 +3263,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         issues.push({
           path: "parameters.size",
           code: "invalid_image_size",
-          message: `辰途 API ${resolvedModel} size 必须使用该模型文档中的精确尺寸`,
+          message: `辰途 API ${resolvedModel} size 必须使用当前分组支持的精确尺寸`,
         });
     }
     const aspectRatio = request.parameters?.["aspect_ratio"];

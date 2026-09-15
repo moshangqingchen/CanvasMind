@@ -211,10 +211,10 @@ describe("verified supplier 2.5 capabilities", () => {
     );
     expect(m.parameters?.find((p) => p.key === "quality")).toBeUndefined();
   });
-  it.each(["1k", "2k", "4k"])(
-    "keeps Cangyuan %s as a separate SKU and forwards quality/reference inputs",
-    (tier) => {
-      const id = `gpt-image-2.5-flare-${tier}`;
+  it.each(["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].flatMap(family => ["1k", "2k", "4k"].map(tier => ({ family, tier }))))(
+    "keeps Cangyuan $family $tier as a separate SKU and forwards quality/reference inputs",
+    ({ family, tier }) => {
+      const id = `${family}-${tier}`;
       const catalog = cangyuanCatalogFromPricing({
         data: [
           {
@@ -273,7 +273,7 @@ describe("verified supplier 2.5 capabilities", () => {
       expect(m.operations).toContain("image.edit");
       expect(m.parameters?.find((p) => p.key === "quality")).toMatchObject({
         label: "质量",
-        default: "medium",
+        default: "max",
       });
       expect(
         m.parameters

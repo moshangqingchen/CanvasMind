@@ -19,6 +19,7 @@ import {
 } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
 import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
+import { applyChentuImageCapabilities } from "./chentu-image-capabilities";
 import {
   CHENTU_BASE_URL,
   CHENTU_IMAGE_REQUEST_TIMEOUT_MS,
@@ -346,6 +347,42 @@ export async function scanChentuConnection(
     ...(options?.fetch ? { fetch: options.fetch } : {}),
   });
   const resolved = resolveChentuScannedGroup(catalog, group, scan.modelIds);
+  if (
+    scan.status === "live" &&
+    connection.config.usage !== "agent" &&
+    resolved.canvasModels.some(
+      (model) => model.metadata?.protocol === "openai-images",
+    )
+  ) {
+    try {
+      const baseUrl = String(connection.config.baseUrl ?? CHENTU_BASE_URL)
+        .replace(/\/+$/u, "")
+        .replace(/\/v1$/u, "");
+      const response = await (options?.fetch ?? providerFetch)(
+        `${baseUrl}/v1/image/model-capabilities`,
+        {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          cache: "no-store",
+          signal: AbortSignal.timeout(12_000),
+        },
+      );
+      if (response.ok) {
+        const payload = await readBoundedModelJson(response);
+        resolved.canvasModels = applyChentuImageCapabilities(
+          resolved.canvasModels,
+          payload,
+          scan.checkedAt,
+        );
+        resolved.canvasDisplayModels = applyChentuImageCapabilities(
+          resolved.canvasDisplayModels,
+          payload,
+          scan.checkedAt,
+        );
+      }
+    } catch {
+      // A capability timeout must not discard a successful keyed model inventory.
+    }
+  }
   const savedModelIds = Array.isArray(connection.config.scannedModelIds)
     ? connection.config.scannedModelIds.filter(
         (value): value is string =>

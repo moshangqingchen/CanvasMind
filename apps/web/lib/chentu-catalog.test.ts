@@ -185,6 +185,35 @@ function resetCatalogCache(): void {
 }
 
 describe("chentu catalog", () => {
+  it("enables only the live-tested AZ group and does not price token billing as free", () => {
+    const ids = ["AZ-gpt-image-2", "AZ-gpt-image-2.5-flare", "AZ-gpt-image-2.5-sunburst"];
+    const catalog = chentuCatalogFromPricing({
+      data: ids.map(model_name => ({
+        model_name, quota_type: 0, model_price: 0, model_ratio: 2.5, completion_ratio: 2,
+        enable_groups: ["image2官key生图", "低价Adobe生图"], supported_endpoint_types: ["openai"],
+      })),
+      group_ratio: { "image2官key生图": 2.2, "低价Adobe生图": 1 },
+    });
+    const models = catalog.groups["image2官key生图"]!;
+    expect(models.map(model => model.id)).toEqual(ids);
+    for (const model of models) {
+      expect(model.operations).toEqual(["image.generate", "image.edit"]);
+      expect(model.parameters?.map(parameter => parameter.key)).toEqual(["size", "quality"]);
+      expect(model.parameters?.[0]?.options?.map(option => option.value)).toEqual([
+        "1024x1024", "1536x1024", "1024x1536", "1824x1024", "1024x1824",
+        "1792x768", "768x1792", "1024x768", "768x1024",
+      ]);
+      expect(model.parameters?.[1]).toMatchObject({ default: "low", options: [{ value: "low" }] });
+      expect(model.limits?.maxInputImages).toBe(1);
+      expect(model.metadata).toMatchObject({ canvasRunnable: true, fixedOutputCount: 1, billingLabel: "按量计费" });
+      expect(model.pricing).toBeUndefined();
+    }
+    expect(catalog.groups["低价Adobe生图"]).toBeUndefined();
+    expect(catalog.marketplaceGroups.find(group => group.id === "低价Adobe生图")?.models.every(model => model.canvasRunnable === false)).toBe(true);
+    expect(resolveChentuScannedGroup(catalog, "低价Adobe生图", ids).canvasModels).toEqual([]);
+    expect(resolveChentuScannedGroup(catalog, "image2官key生图", ids).canvasModels).toHaveLength(3);
+  });
+
   it("prices models with the live ￥ group-ratio math", () => {
     const catalog = chentuCatalogFromPricing(payload);
     expect(CHENTU_CATALOG_SOURCE).toBe("https://tu.988236.xyz/api/pricing");

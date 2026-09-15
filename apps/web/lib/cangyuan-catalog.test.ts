@@ -11,6 +11,68 @@ import {
 } from "./cangyuan-catalog";
 import { CANGYUAN_BACKUP_IMAGE_GROUP } from "./provider-presets";
 
+it("preserves Banana 4K documented pixels above the GPT edge limit", () => {
+  const model = cangyuanCatalogFromPricing({
+    data: [
+      {
+        model_name: "nano-banana-pro-4k",
+        enable_groups: ["IMAGE"],
+        request_unit: "image",
+        image_ui_params: {
+          params: {
+            aspectRatio: {
+              enabled: true,
+              options: [
+                { value: "1:1", width: 4096, height: 4096 },
+                { value: "16:9", width: 5504, height: 3072 },
+              ],
+            },
+            customDimensions: { enabled: true },
+            quality: { enabled: false },
+          },
+        },
+      },
+    ],
+  }).groups.IMAGE[0]!;
+  expect(model.parameters?.find((p) => p.key === "size")).toMatchObject({
+    max: 5504,
+    default: "auto",
+    options: [
+      expect.objectContaining({ value: "auto" }),
+      { label: "4K · 1:1 · 4096 × 4096", value: "4096x4096" },
+      { label: "4K · 16:9 · 5504 × 3072", value: "5504x3072" },
+    ],
+  });
+  expect(model.parameters?.some((p) => p.key === "quality")).toBe(false);
+});
+
+it("labels Gemini K-valued quality as resolution and defaults to 4K", () => {
+  const model = cangyuanCatalogFromPricing({
+    data: [
+      {
+        model_name: "gemini-3.1-flash-image-preview",
+        enable_groups: ["IMAGE"],
+        request_unit: "image",
+        image_ui_params: {
+          params: {
+            quality: {
+              enabled: true,
+              options: ["1k", "2k", "4k"].map((value) => ({
+                value,
+                label: value,
+              })),
+            },
+          },
+        },
+      },
+    ],
+  }).groups.IMAGE[0]!;
+  expect(model.parameters?.find((p) => p.key === "quality")).toMatchObject({
+    label: "分辨率",
+    default: "4k",
+  });
+});
+
 const pricingPayload = {
   group_ratio: {
     IMAGE: 1,
@@ -207,7 +269,7 @@ describe("Cangyuan live catalog", () => {
     );
   });
 
-  it("routes GPT Image 2 references through the verified JSON generation endpoint", async () => {
+  it("routes GPT Image 2 references through the JSON edits endpoint", async () => {
     const catalog = cangyuanCatalogFromPricing(pricingPayload);
     const connector = cangyuanConnectorForModels("IMAGE", catalog.groups.IMAGE);
     const fetchMock = vi
@@ -265,7 +327,7 @@ describe("Cangyuan live catalog", () => {
     });
     const task = await adapter.submit(request);
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://ai.cangyuansuanli.cn/v1/images/generations",
+      "https://ai.cangyuansuanli.cn/v1/images/edits",
     );
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body).toMatchObject({
@@ -280,7 +342,7 @@ describe("Cangyuan live catalog", () => {
 
     await adapter.poll(task);
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
-      "https://ai.cangyuansuanli.cn/v1/images/generations/edit-1",
+      "https://ai.cangyuansuanli.cn/v1/images/edits/edit-1",
     );
   });
 
@@ -330,45 +392,42 @@ describe("Cangyuan live catalog", () => {
   });
 
   it("polls asynchronous GPT Image tasks in the renamed backup group", async () => {
-    const connector = cangyuanConnectorForModels(
-      CANGYUAN_BACKUP_IMAGE_GROUP,
-      [
-        {
-          id: "gpt-image-2-4k",
-          name: "gpt-image-2-4k",
-          operations: ["image.generate", "image.edit"],
-          parameters: [
-            {
-              key: "aspect_ratio",
-              label: "画面比例",
-              control: "select",
-              valueType: "string",
-              options: [{ label: "1:1", value: "1:1" }],
-            },
-            {
-              key: "background",
-              label: "背景模式",
-              control: "select",
-              valueType: "string",
-              default: "auto",
-              options: [
-                { label: "自动", value: "auto" },
-                { label: "不透明", value: "opaque" },
-                { label: "透明", value: "transparent" },
-              ],
-            },
-            {
-              key: "n",
-              label: "生成张数",
-              control: "number",
-              valueType: "integer",
-              min: 1,
-              max: 1,
-            },
-          ],
-        },
-      ],
-    );
+    const connector = cangyuanConnectorForModels(CANGYUAN_BACKUP_IMAGE_GROUP, [
+      {
+        id: "gpt-image-2-4k",
+        name: "gpt-image-2-4k",
+        operations: ["image.generate", "image.edit"],
+        parameters: [
+          {
+            key: "aspect_ratio",
+            label: "画面比例",
+            control: "select",
+            valueType: "string",
+            options: [{ label: "1:1", value: "1:1" }],
+          },
+          {
+            key: "background",
+            label: "背景模式",
+            control: "select",
+            valueType: "string",
+            default: "auto",
+            options: [
+              { label: "自动", value: "auto" },
+              { label: "不透明", value: "opaque" },
+              { label: "透明", value: "transparent" },
+            ],
+          },
+          {
+            key: "n",
+            label: "生成张数",
+            control: "number",
+            valueType: "integer",
+            min: 1,
+            max: 1,
+          },
+        ],
+      },
+    ]);
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -443,7 +502,9 @@ describe("Cangyuan live catalog", () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
       "https://ai.cangyuansuanli.cn/v1/images/generations/backup-4k",
     );
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+    ).toMatchObject({
       background: "transparent",
     });
 
@@ -470,14 +531,35 @@ describe("Cangyuan live catalog", () => {
     });
     await adapter.poll(editTask);
     expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
-      "https://ai.cangyuansuanli.cn/v1/images/generations",
+      "https://ai.cangyuansuanli.cn/v1/images/edits",
     );
     const editBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
     expect(editBody).toMatchObject({ background: "transparent" });
     expect(editBody.images).toHaveLength(1);
     expect(String(fetchMock.mock.calls[3]?.[0])).toBe(
-      "https://ai.cangyuansuanli.cn/v1/images/generations/backup-edit",
+      "https://ai.cangyuansuanli.cn/v1/images/edits/backup-edit",
     );
+  });
+
+  it.each([
+    "gpt-image-2",
+    ...["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].flatMap(prefix => ["1k", "2k", "4k"].map(tier => `${prefix}-${tier}`)),
+  ])("sends ordered reference URLs to JSON edits and polls edits for %s", async (model) => {
+    const descriptor = { id: model, name: model, operations: ["image.generate", "image.edit"] as const };
+    const refs = ["https://example.com/character.png", "https://example.com/card.png", "https://example.com/bag.png"];
+    for (const group of ["IMAGE", "全模型-无claude/gpt", CANGYUAN_BACKUP_IMAGE_GROUP] as const) {
+      const connector = cangyuanConnectorForModels(group, [descriptor]);
+      expect(connector.assetsRequirePublicUrls).toBe(true);
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ id: "ref-test", status: "queued" })).mockResolvedValueOnce(Response.json({ id: "ref-test", status: "completed", data: [{ url: "https://example.com/result.png" }] }));
+      const adapter = new GenericRestAdapter({ resolve: async () => ({ id: "cangyuan", provider: "rest", apiKey: "test-key", baseUrl: "https://ai.cangyuansuanli.cn", settings: { connector } }) }, { fetch: fetchMock });
+      const task = await adapter.submit({ connectionId: "cangyuan", model, operation: "image.edit", prompt: "Use all references", idempotencyKey: `edit-${model}-${encodeURIComponent(group)}`, assets: refs.map((url, index) => ({ id: `ref-${index}`, kind: "image" as const, mimeType: "image/png", url })) });
+      const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+      expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://ai.cangyuansuanli.cn/v1/images/edits");
+      expect(body).toMatchObject({ model, images: refs, async: true, n: 1 });
+      await adapter.poll(task);
+      expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://ai.cangyuansuanli.cn/v1/images/edits/ref-test");
+      expect(connector.modelOverrides?.[model]?.submit?.path).toBe("/v1/images/generations");
+    }
   });
 
   it("maps Banana ratios to size and routes references through JSON generation", () => {
@@ -717,22 +799,22 @@ describe("Cangyuan live catalog", () => {
     });
     const catalog = cangyuanCatalogFromPricing({
       data: [
-        videoRecord(
-          "grok-video",
-          "grok-generations",
-          { images: 7, videos: 1, audios: 0 },
-        ),
+        videoRecord("grok-video", "grok-generations", {
+          images: 7,
+          videos: 1,
+          audios: 0,
+        }),
         videoRecord(
           "omni-fast",
           "omni-frame",
           { images: 5, videos: 0, audios: 0 },
           true,
         ),
-        videoRecord(
-          "happyhouse-1.0",
-          "seedance-flat",
-          { images: 9, videos: 1, audios: 0 },
-        ),
+        videoRecord("happyhouse-1.0", "seedance-flat", {
+          images: 9,
+          videos: 1,
+          audios: 0,
+        }),
         videoRecord(
           "minimax-h3-2k",
           "seedance-flat",
@@ -940,7 +1022,10 @@ describe("Cangyuan live catalog", () => {
             payloadBuilder: "wan3-flat",
             params: {
               duration: { enabled: true, min: 4, max: 15 },
-              ratio: { enabled: true, options: [{ label: "横屏", value: "16:9" }] },
+              ratio: {
+                enabled: true,
+                options: [{ label: "横屏", value: "16:9" }],
+              },
               resolution: {
                 enabled: true,
                 options: [{ label: "720p", value: "720p" }],
@@ -965,7 +1050,10 @@ describe("Cangyuan live catalog", () => {
             payloadBuilder: "seedance-reference-urls",
             params: {
               duration: { enabled: true, numericOptions: [4, 8, 15] },
-              ratio: { enabled: true, options: [{ label: "横屏", value: "16:9" }] },
+              ratio: {
+                enabled: true,
+                options: [{ label: "横屏", value: "16:9" }],
+              },
               generateAudio: { enabled: true },
             },
             referenceLimits: { images: 5, videos: 3, audios: 3 },
@@ -1029,8 +1117,8 @@ describe("Cangyuan live catalog", () => {
         ],
       },
     ]);
-    const mappings = connector.modelOverrides?.["midjourney-8.2-2k"]?.submit
-      ?.mappings;
+    const mappings =
+      connector.modelOverrides?.["midjourney-8.2-2k"]?.submit?.mappings;
     expect(mappings?.map((mapping) => mapping.target)).toContain("/size");
     expect(
       mappings?.some(

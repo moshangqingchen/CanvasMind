@@ -2188,6 +2188,15 @@ describe("RunService", () => {
       expected: "3840x2160",
     },
     {
+      supplier: "cangyuan",
+      provider: "rest",
+      prompt: "生成 1:1 海报",
+      tier: "4K",
+      size: "auto",
+      expected: "2880x2880",
+      modelId: "gpt-image-2-4k",
+    },
+    {
       supplier: "mikoto",
       provider: "rest",
       prompt: "生成 9:16 海报",
@@ -2245,18 +2254,18 @@ describe("RunService", () => {
     },
   ])(
     "resolves verified 2.5 $supplier $tier $size with prompt priority over references",
-    async ({ supplier, provider, prompt, tier, size, expected }) => {
+    async ({ supplier, provider, prompt, tier, size, expected, modelId }) => {
       const repository = await testRepository();
       const storage = new MemoryStorage();
       const canvas = await repository.ensureDefaultCanvas();
-      const model =
+      const model = modelId ?? (
         supplier === "frimodel"
           ? "gpt-image-2.5-flare-adobe"
           : supplier === "cangyuan"
             ? "gpt-image-2.5-flare-4k"
             : supplier === "chentu"
               ? "gpt-image-2.5-flare"
-              : "gpt-image-2.5";
+              : "gpt-image-2.5");
       const descriptor = {
         id: model,
         name: model,

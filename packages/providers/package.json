@@ -11,6 +11,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./chentu-az": {
+      "types": "./src/chentu-az.ts",
+      "import": "./dist/chentu-az.js",
+      "default": "./dist/chentu-az.js"
+    },
     "./suppliers": {
       "types": "./src/suppliers.ts",
       "import": "./dist/suppliers.js",

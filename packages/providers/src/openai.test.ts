@@ -10,6 +10,19 @@ function jsonResponse(value: unknown): Response {
 }
 
 describe("OpenAIImageAdapter", () => {
+  it("validates Chentu exact sizes against this connection's live capability list", async () => {
+    const model = "gpt-image-2-2k";
+    const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{
+      id: "chentu-live", provider: "openai", apiKey: "test-key", baseUrl: "https://tu.988236.xyz/v1",
+      settings: { supplierKey: "chentu", modelGroup: "兜底原生生图", modelCatalogModels: [{
+        id: model, metadata: { imageSizeCapabilitiesSource: "/v1/image/model-capabilities" },
+        parameters: [{ key: "size", control: "select", options: [{ value: "2000x2000" }] }],
+      }] },
+    }]));
+    const request = { connectionId: "chentu-live", operation: "image.generate" as const, model, prompt: "Test", idempotencyKey: "live-sizes" };
+    expect((await adapter.validate({ ...request, parameters: { size: "2000x2000" } })).valid).toBe(true);
+    expect((await adapter.validate({ ...request, parameters: { size: "2048x2048" } })).issues).toContainEqual(expect.objectContaining({ code: "invalid_image_size" }));
+  });
   it.each(["gpt-image-2-low", "gpt-image-2.5"])("submits the exact new Chentu model ID %s through the Images API", async (model) => {
     const fetchMock = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => String(url).endsWith("/models")
       ? jsonResponse({ data: [{ id: model }] })

@@ -5,6 +5,7 @@ import type {
   RestConnectorConfig,
   RestRequestMapping,
 } from "@super-canvas/providers";
+import { chentuAzImageDescriptor, isChentuAzImageModel } from "@super-canvas/providers/chentu-az";
 import {
   CHENTU_BASE_URL,
   CHENTU_DEFAULT_MODEL,
@@ -399,6 +400,7 @@ function chentuGptResolutionTier(id: string): ChentuResolutionTier | undefined {
 
 function isKnownChentuImageModel(id: string): boolean {
   return (
+    isChentuAzImageModel(id) ||
     /^gpt-image-\d+(?:\.\d+)*(?:-|$)/iu.test(id) ||
     isChentuFlexibleImageModel(id) ||
     chentuGptResolutionTier(id) !== undefined ||
@@ -470,6 +472,8 @@ function chentuImageParameters(
   id: string,
   group?: string,
 ): readonly ModelParameterDescriptor[] {
+  const az = chentuAzImageDescriptor(id, group);
+  if (az) return az.parameters ?? [];
   if (isChentuNativeGeminiModel(id)) return chentuNativeGeminiDescriptor(id).parameters ?? [];
   const gptImage = isKnownChentuImageModel(id) && /^gpt-image-/iu.test(id);
   const geminiImage =
@@ -648,6 +652,8 @@ function recordDescription(record: PricingRecord): string | undefined {
 }
 
 function imageDescriptor(record: PricingRecord, id: string): ModelDescriptor {
+  const az = chentuAzImageDescriptor(id);
+  if (az) return az;
   return {
     id,
     name: id,
@@ -678,6 +684,8 @@ export function chentuFallbackImageDescriptor(
   id: string,
   group?: string,
 ): ModelDescriptor | undefined {
+  const az = chentuAzImageDescriptor(id, group);
+  if (isChentuAzImageModel(id)) return az;
   if (isChentuNativeGeminiModel(id)) return chentuNativeGeminiDescriptor(id);
   if (!isKnownChentuImageModel(id)) return undefined;
   return {
@@ -724,10 +732,11 @@ function videoDescriptor(record: PricingRecord, id: string): ModelDescriptor {
  * `image-generation` (existing OpenAI Images path) and `openai-video`
  * (`/v1/videos` submit + poll). Everything else stays marketplace-only.
  */
-function descriptorFor(record: PricingRecord): ModelDescriptor | null {
+function descriptorFor(record: PricingRecord, group?: string): ModelDescriptor | null {
   if (typeof record.model_name !== "string" || !record.model_name.trim())
     return null;
   const id = record.model_name.trim();
+  if (isChentuAzImageModel(id)) return chentuAzImageDescriptor(id, group) ?? null;
   const endpoints = strings(record.supported_endpoint_types);
   if (isChentuNativeGeminiModel(id)) return chentuNativeGeminiDescriptor(id);
   // Key scans can contain a documented GPT Image model that is absent from
@@ -749,6 +758,7 @@ function descriptorWithPricing(
 ): ModelDescriptor {
   const price = priceFor(record, groupRatio);
   const numericPrice =
+    record.quota_type !== 0 &&
     typeof record.model_price === "number" &&
     Number.isFinite(record.model_price) &&
     record.model_price >= 0
@@ -790,6 +800,7 @@ function descriptorWithPricing(
 function marketplaceModel(
   record: PricingRecord,
   ratio: number,
+  group?: string,
 ): ChentuMarketplaceModelLive | null {
   if (typeof record.model_name !== "string" || !record.model_name.trim())
     return null;
@@ -797,7 +808,7 @@ function marketplaceModel(
   const prices = priceFor(record, ratio);
   const capability = capabilityFor(record, id);
   const endpoints = strings(record.supported_endpoint_types);
-  const runnable =
+  const runnable = isChentuAzImageModel(id) ? Boolean(chentuAzImageDescriptor(id, group)) :
     isChentuNativeGeminiModel(id) ||
     endpoints.includes("image-generation") ||
     endpoints.includes("openai-video") ||
@@ -842,11 +853,11 @@ export function chentuCatalogFromPricing(
 
   for (const record of records) {
     const enabledGroups = strings(record.enable_groups);
-    const descriptor = descriptorFor(record);
     for (const group of enabledGroups) {
+      const descriptor = descriptorFor(record, group);
       groupIds.add(group);
       const ratio = ratios[group] ?? 1;
-      const marketplace = marketplaceModel(record, ratio);
+      const marketplace = marketplaceModel(record, ratio, group);
       if (marketplace) {
         const models = marketplaceByGroup.get(group) ?? [];
         models.push(marketplace);
@@ -1037,13 +1048,13 @@ export function resolveChentuScannedGroup(
           tags: [...priced.tags],
           endpointTypes: [...priced.endpointTypes],
         }
-      : marketplaceModel({ model_name: id }, publicGroup?.ratio ?? 1)!;
+      : marketplaceModel({ model_name: id }, publicGroup?.ratio ?? 1, group)!;
     const descriptor = descriptorFor({
       model_name: model.id,
       description: model.description,
       tags: model.tags,
       supported_endpoint_types: model.endpointTypes,
-    });
+    }, group);
     if (!descriptor)
       return {
         ...model,

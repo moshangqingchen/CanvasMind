@@ -833,6 +833,15 @@ async function readModels(
         },
       );
     connection = scan.connection ?? connection;
+    if (connection.provider === "rest" && (scan.status === "live" || scan.status === "empty")) {
+      // The REST adapter lists its saved connector, which may still contain a
+      // removed model. Use the key inventory before binding size/quality controls.
+      const saved = new Map(savedConnectorModels(connection).map(model => [model.id, model]));
+      const models = scanProviderModelCatalog({ data: scan.modelIds.map(id => ({ id })) }).models
+        .filter(model => model.operations.length > 0)
+        .map(model => saved.get(model.id) ?? model);
+      return Response.json(models, { headers: { "Cache-Control": "no-store", ...mikotoScanHeaders } });
+    }
     if (scan.status === "failed") {
       const stale = savedConnectorModels(connection);
       if (stale.length > 0)

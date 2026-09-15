@@ -1,0 +1,841 @@
+{
+  "date": "2026-09-15",
+  "supplier": "辰途",
+  "group": "image2官key生图",
+  "currencySymbol": "￥",
+  "currencyUnit": "平台人民币余额单位",
+  "requestCount": 29,
+  "successCount": 12,
+  "rejectedCount": 17,
+  "settlement": {
+    "checkedAt": "2026-09-15T00:41:32.829Z",
+    "quotaPerCurrencyUnit": 500000,
+    "baselineBillingUsage": 18,
+    "finalBillingUsage": 43.4224,
+    "billingUsageDivisor": 100,
+    "totalQuota": 127112,
+    "totalAmount": 0.254224,
+    "verification": "逐笔正向扣费总和与 billing/usage 累计消费增量一致。即时 usage/token 可能延迟且后续触发 429，不用于最终结算。"
+  },
+  "models": [
+    {
+      "model": "AZ-gpt-image-2",
+      "successfulRequests": 4,
+      "settledQuota": 42334,
+      "settledAmount": 0.084668
+    },
+    {
+      "model": "AZ-gpt-image-2.5-flare",
+      "successfulRequests": 4,
+      "settledQuota": 42389,
+      "settledAmount": 0.084778
+    },
+    {
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "successfulRequests": 4,
+      "settledQuota": 42389,
+      "settledAmount": 0.084778
+    }
+  ],
+  "requests": [
+    {
+      "id": "AZ-gpt-image-2-1024x1024-high-1789432373700",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1024",
+      "quality": "high",
+      "startedAt": "2026-09-15T00:32:54.267Z",
+      "finishedAt": "2026-09-15T00:32:54.494Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2 属于 1k 档，quality 不能指向 4k 档",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2-1024x1024-low-1789432383330",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:33:03.994Z",
+      "finishedAt": "2026-09-15T00:33:08.720Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "Unknown parameter: 'response_format'.",
+          "type": "invalid_request_error",
+          "param": "response_format",
+          "code": "unknown_parameter"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-1024x1024-low-1789432389503",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:33:10.041Z",
+      "finishedAt": "2026-09-15T00:33:14.297Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "Unknown parameter: 'response_format'.",
+          "type": "invalid_request_error",
+          "param": "response_format",
+          "code": "unknown_parameter"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-1024x1024-low-1789432395065",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:33:15.603Z",
+      "finishedAt": "2026-09-15T00:33:18.243Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "Unknown parameter: 'response_format'.",
+          "type": "invalid_request_error",
+          "param": "response_format",
+          "code": "unknown_parameter"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2-1024x1024-low-1789432425326",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:33:45.854Z",
+      "finishedAt": "2026-09-15T00:34:04.321Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 232
+      },
+      "settledQuota": 2354,
+      "settledAmount": 0.004708
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-1024x1024-low-1789432462688",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:34:23.223Z",
+      "finishedAt": "2026-09-15T00:34:40.306Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 232
+      },
+      "settledQuota": 2354,
+      "settledAmount": 0.004708
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-1024x1024-low-1789432518663",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:35:19.357Z",
+      "finishedAt": "2026-09-15T00:35:38.447Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 232
+      },
+      "settledQuota": 2354,
+      "settledAmount": 0.004708
+    },
+    {
+      "id": "AZ-gpt-image-2-2048x2048-medium-1789432561532",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "2048x2048",
+      "quality": "medium",
+      "startedAt": "2026-09-15T00:36:02.235Z",
+      "finishedAt": "2026-09-15T00:36:02.442Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2 属于 1k 档，quality 不能指向 2k 档",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2-3840x2160-high-1789432614883",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "3840x2160",
+      "quality": "high",
+      "startedAt": "2026-09-15T00:36:54.883Z",
+      "finishedAt": "2026-09-15T00:36:55.444Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2 属于 1k 档，quality 不能指向 4k 档",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-2048x2048-medium-1789432615686",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "2048x2048",
+      "quality": "medium",
+      "startedAt": "2026-09-15T00:36:55.690Z",
+      "finishedAt": "2026-09-15T00:36:56.220Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2.5-flare 属于 1k 档，quality 不能指向 2k 档",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-3840x2160-high-1789432616453",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "3840x2160",
+      "quality": "high",
+      "startedAt": "2026-09-15T00:36:56.456Z",
+      "finishedAt": "2026-09-15T00:36:56.999Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2.5-flare 属于 1k 档，quality 不能指向 4k 档",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-2048x2048-medium-1789432617248",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "2048x2048",
+      "quality": "medium",
+      "startedAt": "2026-09-15T00:36:57.249Z",
+      "finishedAt": "2026-09-15T00:36:57.783Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2.5-sunburst 属于 1k 档，quality 不能指向 2k 档",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-3840x2160-high-1789432618018",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "3840x2160",
+      "quality": "high",
+      "startedAt": "2026-09-15T00:36:58.019Z",
+      "finishedAt": "2026-09-15T00:36:58.565Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2.5-sunburst 属于 1k 档，quality 不能指向 4k 档",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-1024x1024-max-1789432618804",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1024",
+      "quality": "max",
+      "startedAt": "2026-09-15T00:36:58.808Z",
+      "finishedAt": "2026-09-15T00:36:59.358Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "quality 仅支持 low=1k、medium=2k、high=4k，或直接传 1k/2k/4k",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2-2048x2048-low-1789432634495",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "2048x2048",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:37:14.499Z",
+      "finishedAt": "2026-09-15T00:37:15.062Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2 属于 1k 档，size 必须是该档位允许尺寸",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2-3840x2160-low-1789432635300",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "3840x2160",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:37:15.303Z",
+      "finishedAt": "2026-09-15T00:37:15.839Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2 属于 1k 档，size 必须是该档位允许尺寸",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-2048x2048-low-1789432636072",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "2048x2048",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:37:16.074Z",
+      "finishedAt": "2026-09-15T00:37:16.609Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2.5-flare 属于 1k 档，size 必须是该档位允许尺寸",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-3840x2160-low-1789432636861",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "3840x2160",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:37:16.864Z",
+      "finishedAt": "2026-09-15T00:37:17.388Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2.5-flare 属于 1k 档，size 必须是该档位允许尺寸",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-2048x2048-low-1789432637617",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "2048x2048",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:37:17.620Z",
+      "finishedAt": "2026-09-15T00:37:18.171Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2.5-sunburst 属于 1k 档，size 必须是该档位允许尺寸",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-3840x2160-low-1789432638415",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "3840x2160",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:37:18.416Z",
+      "finishedAt": "2026-09-15T00:37:18.960Z",
+      "status": "failed",
+      "httpStatus": 400,
+      "error": {
+        "error": {
+          "message": "模型 AZ-gpt-image-2.5-sunburst 属于 1k 档，size 必须是该档位允许尺寸",
+          "type": "image_size_policy_error"
+        }
+      },
+      "settledQuota": 0,
+      "settledAmount": 0
+    },
+    {
+      "id": "AZ-gpt-image-2-1536x1024-low-1789432639190",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1536x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:37:19.193Z",
+      "finishedAt": "2026-09-15T00:37:39.687Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1536,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 158,
+        "output_tokens_details": {
+          "image_tokens": 158,
+          "text_tokens": 0
+        },
+        "total_tokens": 194
+      },
+      "settledQuota": 1936,
+      "settledAmount": 0.003872
+    },
+    {
+      "id": "AZ-gpt-image-2-1024x1536-low-1789432659949",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1536",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:37:39.949Z",
+      "finishedAt": "2026-09-15T00:37:53.859Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1536,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 158,
+        "output_tokens_details": {
+          "image_tokens": 158,
+          "text_tokens": 0
+        },
+        "total_tokens": 194
+      },
+      "settledQuota": 1936,
+      "settledAmount": 0.003872
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-1536x1024-low-1789432699136",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1536x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:38:19.137Z",
+      "finishedAt": "2026-09-15T00:38:32.751Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1536,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 158,
+        "output_tokens_details": {
+          "image_tokens": 158,
+          "text_tokens": 0
+        },
+        "total_tokens": 194
+      },
+      "settledQuota": 1936,
+      "settledAmount": 0.003872
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-1024x1536-low-1789432712983",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1536",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:38:32.985Z",
+      "finishedAt": "2026-09-15T00:38:54.781Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1536,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 158,
+        "output_tokens_details": {
+          "image_tokens": 158,
+          "text_tokens": 0
+        },
+        "total_tokens": 194
+      },
+      "settledQuota": 1936,
+      "settledAmount": 0.003872
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-1536x1024-low-1789432735020",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1536x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:38:55.020Z",
+      "finishedAt": "2026-09-15T00:39:14.609Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1536,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 158,
+        "output_tokens_details": {
+          "image_tokens": 158,
+          "text_tokens": 0
+        },
+        "total_tokens": 194
+      },
+      "settledQuota": 1936,
+      "settledAmount": 0.003872
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-1024x1536-low-1789432754856",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/generations",
+      "requestedSize": "1024x1536",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:39:14.857Z",
+      "finishedAt": "2026-09-15T00:39:33.359Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1536,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 36,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 36
+        },
+        "output_tokens": 158,
+        "output_tokens_details": {
+          "image_tokens": 158,
+          "text_tokens": 0
+        },
+        "total_tokens": 194
+      },
+      "settledQuota": 1936,
+      "settledAmount": 0.003872
+    },
+    {
+      "id": "AZ-gpt-image-2-1024x1024-low-edit-1789432773602",
+      "model": "AZ-gpt-image-2",
+      "endpoint": "/v1/images/edits",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:39:33.606Z",
+      "finishedAt": "2026-09-15T00:39:55.820Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 1053,
+        "input_tokens_details": {
+          "image_tokens": 1024,
+          "text_tokens": 29
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 1249
+      },
+      "settledQuota": 36108,
+      "settledAmount": 0.072216
+    },
+    {
+      "id": "AZ-gpt-image-2.5-flare-1024x1024-low-edit-1789432796061",
+      "model": "AZ-gpt-image-2.5-flare",
+      "endpoint": "/v1/images/edits",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:39:56.062Z",
+      "finishedAt": "2026-09-15T00:40:20.556Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 1063,
+        "input_tokens_details": {
+          "image_tokens": 1024,
+          "text_tokens": 39
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 1259
+      },
+      "settledQuota": 36163,
+      "settledAmount": 0.072326
+    },
+    {
+      "id": "AZ-gpt-image-2.5-sunburst-1024x1024-low-edit-1789432820801",
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "endpoint": "/v1/images/edits",
+      "requestedSize": "1024x1024",
+      "quality": "low",
+      "startedAt": "2026-09-15T00:40:20.802Z",
+      "finishedAt": "2026-09-15T00:40:49.838Z",
+      "status": "succeeded",
+      "httpStatus": 200,
+      "width": 1024,
+      "height": 1024,
+      "format": "png",
+      "exactPixels": true,
+      "usage": {
+        "input_tokens": 1063,
+        "input_tokens_details": {
+          "image_tokens": 1024,
+          "text_tokens": 39
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 1259
+      },
+      "settledQuota": 36163,
+      "settledAmount": 0.072326
+    }
+  ],
+  "charges": [
+    {
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "createdAt": "2026-09-15T00:40:48.000Z",
+      "requestId": "202609150040213090690948268d9d6WiUMbND0",
+      "endpoint": "/v1/images/edits",
+      "size": "1024x1024",
+      "quota": 36163,
+      "amount": 0.072326
+    },
+    {
+      "model": "AZ-gpt-image-2.5-flare",
+      "createdAt": "2026-09-15T00:40:19.000Z",
+      "requestId": "202609150039565919275428268d9d6AEdST149",
+      "endpoint": "/v1/images/edits",
+      "size": "1024x1024",
+      "quota": 36163,
+      "amount": 0.072326
+    },
+    {
+      "model": "AZ-gpt-image-2",
+      "createdAt": "2026-09-15T00:39:54.000Z",
+      "requestId": "202609150039341068587528268d9d6zqPZdM4K",
+      "endpoint": "/v1/images/edits",
+      "size": "1024x1024",
+      "quota": 36108,
+      "amount": 0.072216
+    },
+    {
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "createdAt": "2026-09-15T00:39:31.000Z",
+      "requestId": "202609150039146833997788268d9d622JUj62q",
+      "endpoint": "/v1/images/generations",
+      "size": "1024x1536",
+      "quota": 1936,
+      "amount": 0.003872
+    },
+    {
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "createdAt": "2026-09-15T00:39:13.000Z",
+      "requestId": "202609150038548460781838268d9d6AV9CprxX",
+      "endpoint": "/v1/images/generations",
+      "size": "1536x1024",
+      "quota": 1936,
+      "amount": 0.003872
+    },
+    {
+      "model": "AZ-gpt-image-2.5-flare",
+      "createdAt": "2026-09-15T00:38:53.000Z",
+      "requestId": "202609150038328141884898268d9d62ghGIQDy",
+      "endpoint": "/v1/images/generations",
+      "size": "1024x1536",
+      "quota": 1936,
+      "amount": 0.003872
+    },
+    {
+      "model": "AZ-gpt-image-2.5-flare",
+      "createdAt": "2026-09-15T00:38:31.000Z",
+      "requestId": "202609150038189605516968268d9d6YxY6qshW",
+      "endpoint": "/v1/images/generations",
+      "size": "1536x1024",
+      "quota": 1936,
+      "amount": 0.003872
+    },
+    {
+      "model": "AZ-gpt-image-2",
+      "createdAt": "2026-09-15T00:37:52.000Z",
+      "requestId": "202609150037399111099468268d9d6LZ0YzcFP",
+      "endpoint": "/v1/images/generations",
+      "size": "1024x1536",
+      "quota": 1936,
+      "amount": 0.003872
+    },
+    {
+      "model": "AZ-gpt-image-2",
+      "createdAt": "2026-09-15T00:37:38.000Z",
+      "requestId": "202609150037190234495618268d9d6LGNOny5o",
+      "endpoint": "/v1/images/generations",
+      "size": "1536x1024",
+      "quota": 1936,
+      "amount": 0.003872
+    },
+    {
+      "model": "AZ-gpt-image-2.5-sunburst",
+      "createdAt": "2026-09-15T00:35:37.000Z",
+      "requestId": "202609150035188394550518268d9d6hdB2Stnx",
+      "endpoint": "/v1/images/generations",
+      "size": "1024x1024",
+      "quota": 2354,
+      "amount": 0.004708
+    },
+    {
+      "model": "AZ-gpt-image-2.5-flare",
+      "createdAt": "2026-09-15T00:34:38.000Z",
+      "requestId": "202609150034227074074178268d9d6ovh0oWbC",
+      "endpoint": "/v1/images/generations",
+      "size": "1024x1024",
+      "quota": 2354,
+      "amount": 0.004708
+    },
+    {
+      "model": "AZ-gpt-image-2",
+      "createdAt": "2026-09-15T00:34:02.000Z",
+      "requestId": "202609150033453391215168268d9d68eawKJaT",
+      "endpoint": "/v1/images/generations",
+      "size": "1024x1024",
+      "quota": 2354,
+      "amount": 0.004708
+    }
+  ]
+}

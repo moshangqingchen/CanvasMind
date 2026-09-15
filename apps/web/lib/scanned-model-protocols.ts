@@ -293,9 +293,9 @@ function bindExistingModelProtocols(
       operations: template.operations,
       inputKinds: template.inputKinds,
       outputKinds: template.outputKinds,
-      parameters: structuredClone(template.parameters)?.filter(parameter =>
+      parameters: structuredClone(model.parameters ?? template.parameters)?.filter(parameter =>
         !(hasFixedResolution(model.id) && parameter.key === "resolution")),
-      limits: structuredClone(template.limits),
+      limits: structuredClone(model.limits ?? template.limits),
       ...(model.pricing ? { pricing: model.pricing } : {}),
       isDefault: model.isDefault,
       description: "当前 Key 扫描到的模型，使用当前分组的调用协议。",

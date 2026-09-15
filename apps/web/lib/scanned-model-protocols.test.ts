@@ -32,6 +32,16 @@ const scanned = (
 });
 
 describe("scanned model protocol binding", () => {
+  it("keeps a newly scanned model's own size and quality when binding family transport", () => {
+    const parameters = [{ key: "size", label: "2K", control: "select" as const, options: [{ label: "2K", value: "2048x2048" }] }];
+    const connection = { provider: "rest", config: { connector: {
+      submit: { path: "/images", method: "POST", mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }] },
+      models: [{ id: "gpt-image-old", name: "Old", operations: ["image.generate"], parameters: [{ key: "size", label: "1K", control: "text", default: "1024x1024" }] }],
+    } } };
+    const result = bindScannedModelProtocols(connection, [{ ...scanned("gpt-image-new", ["image.generate"]), parameters, limits: { maxInputImages: 3 } }]);
+    expect(result.models[0]?.parameters).toEqual(parameters);
+    expect(result.models[0]?.limits).toEqual({ maxInputImages: 3 });
+  });
   it("restores an exact model's native endpoint without requiring model-in-body inheritance", () => {
     const id = "ad-gemini-3-pro-image-preview";
     const connection = {

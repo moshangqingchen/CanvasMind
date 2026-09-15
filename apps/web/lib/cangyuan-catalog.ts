@@ -29,7 +29,12 @@ import {
   type CangyuanImageGroup,
 } from "./provider-presets";
 import { providerPriceUnit } from "./provider-pricing-unit";
-import { imageSizeOptions, type ImageSizeTier } from "@super-canvas/providers";
+import {
+  imageSizeForTier,
+  imageSizeOptions,
+  type ImageSizeTier,
+} from "@super-canvas/providers";
+import { withHighestQualityDefault } from "./model-quality";
 
 const CATALOG_TTL_MS = 60_000;
 const CATALOG_RETRY_MS = 15_000;
@@ -437,28 +442,15 @@ function parameterOptions(value: unknown): ModelParameterOption[] {
 }
 
 /**
- * Cangyuan's GPT Image 4K ratio controls are sent upstream as ratio strings
+ * Cangyuan's fixed GPT Image tier controls accept upstream ratio strings
  * (for example `1:1`). Keep that value intact, but show the corresponding
- * practical 4K pixel canvas beside it so users can choose by both ratio and
- * expected output size. These dimensions stay within the 3840px edge and
- * ~8.29MP limits documented by the upstream Images API.
+ * pixel budget beside it so users can choose by ratio and requested size.
+ * Each tier has its own pixel budget and shares the documented 3840px edge.
  */
-const GPT_IMAGE_4K_RATIO_PIXELS: Readonly<Record<string, string>> = {
-  "1:1": "2160×2160",
-  "5:4": "3200×2560",
-  "7:6": "3104×2656",
-  "9:16": "2160×3840",
-  "21:9": "3840×1648",
-  "16:9": "3840×2160",
-  "3:2": "3264×2176",
-  "4:3": "2880×2160",
-  "4:5": "2560×3200",
-  "3:4": "2160×2880",
-  "2:3": "2176×3264",
-};
-
-function isGptImage4KModel(modelName: unknown): boolean {
-  return typeof modelName === "string" && /gpt-image.*4k/iu.test(modelName);
+function fixedGptTier(modelName: unknown): ImageSizeTier | undefined {
+  return /^gpt-image-2(?:\.5-(?:flare|sunburst))?-(1k|2k|4k)$/iu
+    .exec(String(modelName ?? ""))?.[1]
+    ?.toUpperCase() as ImageSizeTier | undefined;
 }
 
 function imageRatioOptions(
@@ -468,12 +460,13 @@ function imageRatioOptions(
   const options = parameterOptions(value).filter(
     (option) => option.value !== "auto",
   );
-  const withPixels = isGptImage4KModel(modelName)
+  const tier = fixedGptTier(modelName);
+  const withPixels = tier
     ? options.map((option) => {
         const ratio = String(option.value);
-        const pixels = GPT_IMAGE_4K_RATIO_PIXELS[ratio];
-        if (!pixels || /\d\s*[×x]\s*\d/iu.test(option.label)) return option;
-        return { ...option, label: `${option.label}（4K：${pixels}）` };
+        if (!/^\d+:\d+$/u.test(ratio)) return option;
+        const pixels = imageSizeForTier(tier, ratio).replace("x", "×");
+        return { ...option, label: `${ratio}（${tier}：${pixels}）` };
       })
     : options;
   return [{ label: "自动（提示词优先）", value: "auto" }, ...withPixels];
@@ -484,8 +477,9 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
   const params = isRecord(ui.params) ? ui.params : {};
   const descriptors: ModelParameterDescriptor[] = [];
   // These are separately billed SKUs, not a quality-to-resolution mapping.
-  // Source: /api/pricing image_ui_params, verified 2026-09-10.
-  const flareTier = /^gpt-image-2\.5-flare-(1k|2k|4k)$/iu
+  // Source: /api/pricing image_ui_params, checked 2026-09-15.
+  const gptTier = fixedGptTier(record.model_name);
+  const bananaTier = /^nano-banana(?:-pro|2)-(1k|2k|4k)$/iu
     .exec(String(record.model_name ?? ""))?.[1]
     ?.toUpperCase();
   const aspectRatio = isRecord(params.aspectRatio) ? params.aspectRatio : null;
@@ -505,20 +499,54 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
     ? params.customDimensions
     : null;
   if (customDimensions?.enabled === true) {
+    const documentedSizes =
+      bananaTier && Array.isArray(aspectRatio?.options)
+        ? aspectRatio.options.flatMap((option): ModelParameterOption[] => {
+            if (!isRecord(option)) return [];
+            const width = Number(option.width),
+              height = Number(option.height);
+            if (
+              !Number.isInteger(width) ||
+              !Number.isInteger(height) ||
+              width < 16 ||
+              height < 16
+            )
+              return [];
+            return [
+              {
+                label: `${bananaTier} · ${String(option.value)} · ${width} × ${height}`,
+                value: `${width}x${height}`,
+              },
+            ];
+          })
+        : [];
     descriptors.push({
       key: "size",
       label: "精确尺寸",
       control: "dimensions",
       valueType: "string",
       min: 16,
-      max: 3840,
+      max: Math.max(
+        3840,
+        ...documentedSizes.flatMap((o) =>
+          String(o.value).split("x").map(Number),
+        ),
+      ),
       step: 16,
-      ...(flareTier
+      ...(gptTier
         ? {
             default: "auto",
-            options: imageSizeOptions([flareTier as ImageSizeTier]),
+            options: imageSizeOptions([gptTier]),
           }
-        : {}),
+        : documentedSizes.length
+          ? {
+              default: "auto",
+              options: [
+                { label: "自动（提示词优先，其次参考图）", value: "auto" },
+                ...documentedSizes,
+              ],
+            }
+          : {}),
       placeholder: "宽 x 高",
       description: "接口要求宽高为 16 的倍数；选择精确尺寸后不再发送画面比例",
       operations: IMAGE_OPERATIONS,
@@ -530,23 +558,25 @@ function inferredParameters(record: PricingRecord): ModelParameterDescriptor[] {
     const highDefault = options.some(
       (option) => String(option.value).trim().toLowerCase() === "high",
     );
-    descriptors.push({
-      key: "quality",
-      label: flareTier ? "质量" : "分辨率",
-      control: options.length > 0 ? "select" : "text",
-      valueType: "string",
-      ...(options.length > 0
-        ? {
-            default: flareTier
-              ? options[0]?.value
-              : highDefault
-                ? "high"
-                : options[0]?.value,
-            options,
-          }
-        : {}),
-      operations: IMAGE_OPERATIONS,
-    });
+    descriptors.push(
+      withHighestQualityDefault({
+        key: "quality",
+        label:
+          options.length > 0 &&
+          options.every((option) => /^(?:1|2|4)k$/iu.test(String(option.value)))
+            ? "分辨率"
+            : "质量",
+        control: options.length > 0 ? "select" : "text",
+        valueType: "string",
+        ...(options.length > 0
+          ? {
+              default: highDefault ? "high" : options[0]?.value,
+              options,
+            }
+          : {}),
+        operations: IMAGE_OPERATIONS,
+      }),
+    );
   }
   const background = isRecord(params.background) ? params.background : null;
   if (background?.enabled === true) {
@@ -1565,6 +1595,7 @@ export function cangyuanConnectorForModels(
   const includesVideoModels = models.some((model) =>
     model.operations.some((operation) => operation.startsWith("video.")),
   );
+  const includesGptImageModels = models.some((model) => /^gpt-image-2(?:[.-]|$)/iu.test(model.id));
   const modelOverrides: Record<string, RestModelConnectorOverride> = {};
   for (const model of models) {
     if (model.operations.some((operation) => operation.startsWith("video.")))
@@ -1580,7 +1611,7 @@ export function cangyuanConnectorForModels(
   }
   return {
     ...connector,
-    ...(includesVideoModels ? { assetsRequirePublicUrls: true } : {}),
+    ...(includesVideoModels || includesGptImageModels ? { assetsRequirePublicUrls: true } : {}),
     models: structuredClone(models),
     ...(Object.keys(modelOverrides).length > 0 ? { modelOverrides } : {}),
   };
@@ -1640,6 +1671,11 @@ function standardImageTransportForModel(
   model: ModelDescriptor,
 ): RestModelConnectorOverride {
   const mappings = standardImageMappingsForModel(model);
+  // GPT Image ignores reference images on /generations. Its editing contract
+  // accepts JSON images URLs (not multipart); verified with a paired live test.
+  const editPath = /^gpt-image-2(?:[.-]|$)/iu.test(model.id)
+    ? "/v1/images/edits"
+    : "/v1/images/generations";
   return {
     pollIntervalMs: 5_000,
     submit: {
@@ -1679,11 +1715,7 @@ function standardImageTransportForModel(
       "image.edit": {
         pollIntervalMs: 5_000,
         submit: {
-          // Cangyuan's verified reference-image contract uses the async
-          // generations endpoint with a JSON `images` array. The gateway's
-          // multipart /edits route currently drops the model field and
-          // responds with "model is required", even when the form contains it.
-          path: "/v1/images/generations",
+          path: editPath,
           method: "POST",
           bodyMode: "json",
           headers: { Connection: "close" },
@@ -1697,7 +1729,7 @@ function standardImageTransportForModel(
           },
         },
         poll: {
-          path: "/v1/images/generations/{taskId}",
+          path: `${editPath}/{taskId}`,
           method: "GET",
           bodyMode: "none",
           headers: { Connection: "close" },

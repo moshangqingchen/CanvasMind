@@ -2677,7 +2677,7 @@ export class RunService {
           ? (aspectRatioFromPrompt(prompt) ??
             referenceAspectRatio(graph, assets))
           : undefined;
-      if (isCangyuanGptImage4K) {
+      if (isCangyuanGptImage4K && !singleConfiguredSizeTier(imageDescriptor)) {
         // The Cangyuan 4K SKU accepts ratios, but an explicit 4K canvas is
         // required when automatic sizing is selected. Keep a user-entered
         // WxH size untouched; otherwise resolve the selected/prompt ratio to
