@@ -18,11 +18,11 @@ function ModelIdentity({ model, parameters, price = false, detailsId }: { model:
 }
 
 export function ModelPicker({ id, label, connectionId, models, value, onChange, parameters = {},
-  open: controlledOpen, onOpenChange, maxHeight = 360, loading = false, failed = false, authoritative = true, allowManual = false, badge,
+  open: controlledOpen, onOpenChange, maxHeight = 360, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge,
 }: {
   id?: string; label: string; connectionId: string; models: readonly ModelDescriptor[]; value: string;
   onChange: (modelId: string) => void; parameters?: Record<string, unknown>; open?: boolean;
-  onOpenChange?: (open: boolean) => void; maxHeight?: number; loading?: boolean; failed?: boolean;
+  onOpenChange?: (open: boolean) => void; maxHeight?: number; anchorKey?: string; loading?: boolean; failed?: boolean;
   authoritative?: boolean; allowManual?: boolean; badge?: (model: ModelDescriptor) => ReactNode;
 }) {
   const generatedId = useId();
@@ -106,7 +106,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       window.visualViewport?.removeEventListener("resize", position);
       window.visualViewport?.removeEventListener("scroll", position);
     };
-  }, [open, maxHeight, options.length]);
+  }, [open, maxHeight, options.length, anchorKey]);
   useEffect(() => {
     if (!open) return;
     search.current?.focus();

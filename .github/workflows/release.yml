@@ -80,7 +80,7 @@ jobs:
         run: pnpm desktop:build
 
       - name: Supplier capabilities and quality default regressions
-        run: pnpm --filter @super-canvas/desktop-ui exec vitest run lib/supplier-image25-quality.test.ts lib/supplier-verification.test.ts lib/scanned-model-protocols.test.ts lib/mikoto-presets.test.ts lib/model-quality.test.ts lib/canvas-save-reliability.test.ts lib/node-configuration-journal.test.ts lib/model-parameters.test.ts lib/connection-model-snapshot.test.ts lib/node-config-position.test.ts
+        run: pnpm --filter @super-canvas/desktop-ui exec vitest run lib/supplier-image25-quality.test.ts lib/supplier-verification.test.ts lib/scanned-model-protocols.test.ts lib/mikoto-presets.test.ts lib/model-quality.test.ts lib/canvas-save-reliability.test.ts lib/node-configuration-journal.test.ts lib/model-parameters.test.ts lib/connection-model-snapshot.test.ts lib/node-config-pointer.test.ts
 
       - name: Install browser for parameter regression tests
         run: pnpm --filter @super-canvas/desktop-ui exec playwright install chromium
@@ -89,7 +89,7 @@ jobs:
         run: pnpm --filter @super-canvas/desktop-ui exec vitest run lib/supplier-billing.test.ts lib/supplier-billing-read.test.ts lib/client-supplier-billing.test.ts lib/model-display.test.ts
 
       - name: Verify quality defaults, supplier switching and saved selections
-        run: pnpm --filter @super-canvas/desktop-ui exec playwright test e2e/canvas-declared-image-parameters.spec.ts e2e/canvas-supplier-picker.spec.ts e2e/supplier-billing.spec.ts e2e/app-update.spec.ts e2e/canvas-panel-zoom.spec.ts
+        run: pnpm --filter @super-canvas/desktop-ui exec playwright test e2e/canvas-declared-image-parameters.spec.ts e2e/canvas-supplier-picker.spec.ts e2e/supplier-billing.spec.ts e2e/app-update.spec.ts e2e/canvas-panel-zoom.spec.ts e2e/canvas-panel-interaction.spec.ts e2e/canvas-layout-regression.spec.ts
         env:
           PLAYWRIGHT_CHANNEL: chromium
 

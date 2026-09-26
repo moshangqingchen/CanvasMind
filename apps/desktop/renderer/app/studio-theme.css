@@ -292,7 +292,7 @@ html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="of
 .modal-window,.sm-settings-dialog { border-color:var(--line); }
 .modal-head h2 { font-size:20px; }.modal-head .eyebrow { font-size:12px; color:var(--muted); }
 .button { min-height:36px; }.button.small { min-height:32px; }.icon-button { min-width:32px; min-height:32px; }
-.node-config-popover-portal { width:440px; max-width:calc(100vw - 24px); font-size:13px; border-radius:14px; }
+.node-config-popover-portal { width:100%; max-width:none; font-size:13px; border-radius:14px; }
 .node-config-popover-portal>header { position:relative; padding:14px; }
 .node-config-popover-portal>header>button { position:absolute; right:10px; top:12px; }
 .node-config-popover-portal>header>div { flex:1; }.node-config-popover-portal>header strong { font-size:18px; }

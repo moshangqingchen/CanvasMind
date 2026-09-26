@@ -55,7 +55,7 @@ test("Chuangxiang historical small response keeps 2K and 4K plus every ratio vis
   }
 });
 
-test("one passed 4K probe exposes every ratio, preserves auto, and keeps the panel fixed", async ({ page, request }, testInfo) => {
+test("one passed 4K probe exposes every ratio, preserves auto, and keeps the panel attached to its node", async ({ page, request }, testInfo) => {
   const descriptor = effectiveImageCapabilities({
     supplier: { id: "isolated", name: "隔离", supplierKey: "isolated", kind: "newapi", apiUrl: "https://isolated.invalid", siteUrl: "https://isolated.invalid", catalog: { groups: [] }, scanStatus: "live", createdAt: "now", updatedAt: "now" },
     connection: { id: "fixture", provider: "openai", config: {} },
@@ -77,14 +77,19 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   await open();
   const panel = page.getByRole("dialog", { name: "比例验收 模型与参数" });
   await expect(panel).toHaveCSS("width", "420px");
-  const panelHeight = (await panel.boundingBox())!.height;
-  expect(panelHeight).toBeLessThanOrEqual(560);
-  const node = page.locator('.react-flow__node[data-id="image"] .node-card');
-  const separated = async () => {
-    const [card, popup] = await Promise.all([node.boundingBox(), panel.boundingBox()]);
-    return !!card && !!popup && (popup.x >= card.x + card.width + 9 || popup.x + popup.width <= card.x - 9 || popup.y >= card.y + card.height + 9 || popup.y + popup.height <= card.y - 9);
-  };
-  await expect.poll(separated).toBe(true);
+  const assertAttached = () => expect.poll(() => panel.evaluate(element => {
+    const card = element.closest(".react-flow__node")!.querySelector(".node-card")!.getBoundingClientRect();
+    const bounds = element.getBoundingClientRect();
+    const viewport = document.querySelector(".react-flow__viewport")!;
+    const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a;
+    return Math.max(
+      Math.abs(bounds.x - card.x),
+      Math.abs(bounds.width - card.width),
+      Math.abs(bounds.y - card.bottom - 10 * zoom),
+      Math.abs(bounds.height - 560 * zoom),
+    );
+  })).toBeLessThanOrEqual(1);
+  await assertAttached();
   const size = panel.getByLabel("输出分辨率预设", { exact: true });
   const options = await size.locator("option").allTextContents();
   expect(options.filter(label => /4K · \d+:\d+/u.test(label))).toHaveLength(11);
@@ -93,27 +98,35 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   await size.selectOption("auto");
   await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters).toMatchObject({ size: "auto", size_tier: "4K" });
   await panel.locator("summary").last().click();
-  await expect(panel).toHaveCSS("height", `${panelHeight}px`);
+  await expect(panel).toHaveCSS("height", "560px");
   const body = panel.locator(".node-config-popover-body");
   await expect(body).toHaveCSS("overflow-y", "auto");
   await body.evaluate(el => { el.scrollTop = el.scrollHeight; });
   await expect.poll(() => body.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await assertAttached();
+  // Connection controls scroll with the rest of the panel. Return to the top
+  // before using them, as a user would after inspecting the lower parameters.
+  await body.hover({ position: { x: 16, y: 16 } });
+  await page.mouse.wheel(0, -5000);
+  await expect(body).toHaveJSProperty("scrollTop", 0);
   const modelSelect = panel.getByRole("combobox", { name: "比例验收 模型", exact: true });
   await expect(modelSelect).toBeInViewport({ ratio: 1 });
   await expect(panel.getByLabel("比例验收 供应商", { exact: true })).toBeInViewport({ ratio: 1 });
   await expect(panel.getByLabel("比例验收 模型群组", { exact: true })).toBeInViewport({ ratio: 1 });
-  await page.screenshot({ path: testInfo.outputPath("scrolled-panel-model-visible.png") });
+  await page.screenshot({ path: testInfo.outputPath("panel-scrolled-back-to-model.png") });
   const modelBox = await modelSelect.boundingBox();
-  expect(modelBox!.y + modelBox!.height).toBeLessThanOrEqual((await body.boundingBox())!.y);
+  const bodyBox = await body.boundingBox();
+  expect(modelBox!.y).toBeGreaterThanOrEqual(bodyBox!.y);
+  expect(modelBox!.y + modelBox!.height).toBeLessThanOrEqual(bodyBox!.y + bodyBox!.height);
   await modelSelect.click();
   const menu = panel.getByRole("listbox");
   await expect(menu).toBeInViewport({ ratio: 1 });
   const menuBox = await menu.boundingBox();
   const panelBox = await panel.boundingBox();
   expect(menuBox!.y + menuBox!.height).toBeLessThan(panelBox!.y + panelBox!.height);
-  await expect(panel).toHaveCSS("height", `${panelHeight}px`);
+  await expect(panel).toHaveCSS("height", "560px");
   await panel.getByRole("option", { name: "简单型号", exact: true }).click();
-  await expect(panel).toHaveCSS("height", `${panelHeight}px`);
+  await expect(panel).toHaveCSS("height", "560px");
   await expect(body).toHaveJSProperty("scrollTop", 0);
   await panel.getByRole("combobox", { name: "比例验收 模型", exact: true }).click();
   await panel.getByRole("option", { name: "比例验收", exact: true }).click();
@@ -123,14 +136,13 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   await open();
   await expect(size).toHaveValue("auto");
   await expect(panel.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(panel).toHaveCSS("height", `${panelHeight}px`);
-  await page.screenshot({ path: testInfo.outputPath("fixed-panel-ratios.png") });
-  await expect.poll(separated).toBe(true);
+  await expect(panel).toHaveCSS("height", "560px");
+  await page.screenshot({ path: testInfo.outputPath("attached-panel-ratios.png") });
+  await assertAttached();
   await page.setViewportSize({ width: 1280, height: 720 });
-  await expect.poll(separated).toBe(true);
-  expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(panelHeight);
+  await assertAttached();
   await page.screenshot({ path: testInfo.outputPath("panel-below-node.png") });
   await page.setViewportSize({ width: 760, height: 580 });
-  await expect.poll(async () => { const box = await panel.boundingBox(); return box && box.x >= 0 && box.y >= 0 && box.x + box.width <= 760 && box.y + box.height <= 580; }).toBe(true);
+  await assertAttached();
   expect(submissions).toBe(0);
 });

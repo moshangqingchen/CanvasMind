@@ -8065,7 +8065,7 @@ body {
   container-type: inline-size;
   container-name: node-config;
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 10px);
   left: 0;
   z-index: 40;
   box-sizing: border-box;
@@ -8074,7 +8074,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 560px;
-  max-height: calc(100dvh - 100px);
+  max-height: none;
   overflow: hidden;
   overscroll-behavior: contain;
   border-color: var(--ui-panel-border-strong);

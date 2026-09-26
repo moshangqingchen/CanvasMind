@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { bindScannedModelProtocols } from "../lib/scanned-model-protocols";
 
-test("缩放和后台扫描保持模型参数布局、尺寸及滚动位置", async ({ page, request }, testInfo) => {
+test("参数面板随节点同比缩放，后台扫描保持参数及滚动位置", async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   const descriptor = bindScannedModelProtocols({ provider: "openai", config: {
     baseUrl: "https://genimage.pro/v1", modelGroup: "gptResponseBase64", usage: "canvas",
@@ -53,10 +53,27 @@ test("缩放和后台扫描保持模型参数布局、尺寸及滚动位置", as
   await quality.scrollIntoViewIfNeeded();
   const scrollTop = await body.evaluate(element => element.scrollTop);
   const assertStable = async () => {
+    // CSS dimensions stay in canvas units. The rendered panel, controls and gap
+    // must inherit the same zoom as the node, even when they leave the viewport.
     await expect(panel).toHaveCSS("width", "420px");
     await expect(panel).toHaveCSS("height", "560px");
     await expect(panel).toHaveCSS("font-size", "13px");
-    await expect(panel).toBeInViewport({ ratio: 1 });
+    await expect.poll(() => panel.evaluate(element => {
+      const node = document.querySelector('.react-flow__node[data-id="image"] .node-card')!;
+      const viewport = document.querySelector(".react-flow__viewport")!;
+      const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a;
+      const card = node.getBoundingClientRect();
+      const panel = element.getBoundingClientRect();
+      const close = element.querySelector('[aria-label="关闭模型与参数面板"]')!;
+      const closeWidth = Number.parseFloat(getComputedStyle(close).width);
+      return Math.max(
+        Math.abs(panel.x - card.x),
+        Math.abs(panel.width - card.width),
+        Math.abs(panel.y - card.bottom - 10 * zoom),
+        Math.abs(panel.height - 560 * zoom),
+        Math.abs(close.getBoundingClientRect().width - closeWidth * zoom),
+      );
+    })).toBeLessThanOrEqual(1);
     await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(panel.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("auto");
     await expect(quality).toHaveValue("max");

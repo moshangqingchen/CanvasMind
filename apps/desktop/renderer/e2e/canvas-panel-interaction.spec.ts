@@ -282,3 +282,111 @@ test("异步模型目录返回后反复切换供应商与群组仍可编辑参�
   await expect(ui.group).toHaveValue("标准");
   ui.assertNoRuns();
 });
+
+test("缩放后平移画布与拖动节点时，参数面板一直贴在节点下方", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  const ui = await openPanel(page, request);
+  await page.getByRole("button", { name: "抓手模式", exact: true }).click();
+  const node = page.locator('.react-flow__node[data-id="source"] .node-card');
+  const geometry = () => ui.panel.evaluate(element => {
+    const node = document.querySelector('.react-flow__node[data-id="source"]')!;
+    const card = node.querySelector(".node-card")!.getBoundingClientRect();
+    const panel = element.getBoundingClientRect();
+    const viewport = document.querySelector(".react-flow__viewport")!;
+    const transform = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+    const position = new DOMMatrixReadOnly(getComputedStyle(node).transform);
+    return {
+      nodeX: card.x,
+      nodeY: card.y,
+      panelX: panel.x,
+      panelY: panel.y,
+      worldX: position.m41,
+      worldY: position.m42,
+      zoom: transform.a,
+      attachmentError: Math.max(
+        Math.abs(panel.x - card.x),
+        Math.abs(panel.width - card.width),
+        Math.abs(panel.y - card.bottom - 10 * transform.a),
+        Math.abs(panel.height - 560 * transform.a),
+      ),
+    };
+  });
+  const assertAttached = () => expect.poll(async () => (await geometry()).attachmentError).toBeLessThanOrEqual(1);
+
+  await page.locator(".react-flow__controls-zoomout").click();
+  await expect.poll(async () => (await geometry()).zoom).toBeLessThan(1);
+  await assertAttached();
+
+  const beforePan = await geometry();
+  const pane = await page.locator(".react-flow__pane").boundingBox();
+  expect(pane).not.toBeNull();
+  const panStart = { x: pane!.x + pane!.width - 260, y: pane!.y + 100 };
+  await page.mouse.move(panStart.x, panStart.y);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(panStart.x + 100, panStart.y + 40, { steps: 12 });
+    await expect.poll(async () => (await geometry()).nodeX).toBeCloseTo(beforePan.nodeX + 100, 0);
+    await expect.poll(async () => (await geometry()).nodeY).toBeCloseTo(beforePan.nodeY + 40, 0);
+    // Check while the pointer is still down, not just after the gesture settles.
+    await assertAttached();
+  } finally {
+    await page.mouse.up();
+  }
+  const afterPan = await geometry();
+  expect(afterPan.worldX).toBe(beforePan.worldX);
+  expect(afterPan.worldY).toBe(beforePan.worldY);
+
+  const header = await node.locator(".node-head").boundingBox();
+  expect(header).not.toBeNull();
+  const dragStart = { x: header!.x + header!.width / 2, y: header!.y + header!.height / 2 };
+  await page.mouse.move(dragStart.x, dragStart.y);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(dragStart.x + 120, dragStart.y + 50, { steps: 12 });
+    // React Flow begins movement after its drag threshold, so the node need
+    // not travel the pointer's full distance. Its panel must travel with it.
+    await expect.poll(async () => (await geometry()).nodeX - afterPan.nodeX).toBeGreaterThan(80);
+    await expect.poll(async () => (await geometry()).nodeY - afterPan.nodeY).toBeGreaterThan(25);
+    const dragged = await geometry();
+    const deltaX = dragged.nodeX - afterPan.nodeX;
+    const deltaY = dragged.nodeY - afterPan.nodeY;
+    expect(dragged.panelX - afterPan.panelX).toBeCloseTo(deltaX, 0);
+    expect(dragged.panelY - afterPan.panelY).toBeCloseTo(deltaY, 0);
+    expect((dragged.worldX - afterPan.worldX) * dragged.zoom).toBeCloseTo(deltaX, 0);
+    expect((dragged.worldY - afterPan.worldY) * dragged.zoom).toBeCloseTo(deltaY, 0);
+    await assertAttached();
+  } finally {
+    await page.mouse.up();
+  }
+  await expect.poll(async () => (await geometry()).worldX).toBeGreaterThan(afterPan.worldX);
+  await assertAttached();
+
+  // A user must be able to pan upward to reach the lower controls. The node
+  // itself leaves the viewport before its attached panel does; virtualization
+  // must not unmount that still-visible panel.
+  const card = await node.boundingBox();
+  expect(card).not.toBeNull();
+  const current = await geometry();
+  const upwardPan = pane!.y - (card!.y + card!.height) - 4 * current.zoom;
+  const offscreenPanStart = { x: panStart.x, y: pane!.y + pane!.height - 180 };
+  await page.mouse.move(offscreenPanStart.x, offscreenPanStart.y);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(offscreenPanStart.x, offscreenPanStart.y + upwardPan, { steps: 20 });
+    await expect(ui.panel).toBeVisible();
+    await expect.poll(() => node.evaluate(element => {
+      const canvas = document.querySelector(".react-flow__pane")!.getBoundingClientRect();
+      return element.getBoundingClientRect().bottom - canvas.top;
+    })).toBeLessThan(0);
+    await assertAttached();
+  } finally {
+    await page.mouse.up();
+  }
+  await ui.quantity.fill("2");
+  await expect(ui.quantity).toHaveValue("2");
+  // The attached header now sits behind the app's top bar. Escape must still
+  // close the panel while its node is offscreen and restore normal culling.
+  await page.keyboard.press("Escape");
+  await expect(ui.panel).toBeHidden();
+  ui.assertNoRuns();
+});

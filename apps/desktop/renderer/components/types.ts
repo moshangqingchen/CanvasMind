@@ -128,6 +128,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   onPromptPartsChange?: (parts: PromptPart[]) => void;
   onConnectionChange?: (connectionId: string) => void;
   onConfigurationFocus?: () => void;
+  onConfigurationOpenChange?: (nodeId: string, open: boolean) => void;
   onModelChange?: (model: string) => void;
   onParametersChange?: (parameters: Record<string, unknown>) => void;
   onMediaAspectRatio?: (ratio: number) => void;

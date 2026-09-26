@@ -65,7 +65,6 @@ import { cangyuanAvailabilityForModel, modelAvailabilityBadgeState, type ModelAv
 import { NodeParameterFields } from "./node-parameter-fields";
 import { ModelResolutionShortcuts } from "./model-resolution-shortcuts";
 import { shouldReselectNodeFromConfigPointer } from "../lib/node-config-pointer";
-import { nodeConfigPosition } from "../lib/node-config-position";
 import { PromptEditor } from "./prompt-editor";
 import { AssetPreviewImage } from "./asset-preview-image";
 import { useResultPreviewSize } from "../lib/use-result-preview-size";
@@ -410,60 +409,41 @@ function GenerationNodeBody({
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  // A screen-space portal remains readable at every canvas zoom level.
+  const onConfigurationOpenChange = data.onConfigurationOpenChange;
+  useLayoutEffect(() => {
+    if (!settingsOpen) return;
+    onConfigurationOpenChange?.(nodeId, true);
+    return () => onConfigurationOpenChange?.(nodeId, false);
+  }, [nodeId, onConfigurationOpenChange, settingsOpen]);
+  // Share the node's coordinate space so the panel pans, zooms and resizes with it.
   const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
   const settingsTrigger = useRef<HTMLButtonElement | null>(null);
   const settingsPanel = useRef<HTMLElement | null>(null);
   const settingsBody = useRef<HTMLDivElement | null>(null);
-  const [settingsPosition, setSettingsPosition] = useState({ left: 12, top: 76, width: 420, height: 560 });
   const settingsAnchor = useStore(state => {
-    if (!settingsOpen) return "";
+    if (!modelMenuOpen) return "";
     const node = state.nodeLookup.get(nodeId);
     return [state.transform.join(","), node?.internals.positionAbsolute.x,
       node?.internals.positionAbsolute.y, node?.measured.width, node?.measured.height].join(":");
   });
   const attachSettingsTrigger = useCallback((trigger: HTMLButtonElement | null) => {
     settingsTrigger.current = trigger;
-    setSettingsHost(trigger?.closest<HTMLElement>(".canvas-editor") ?? null);
+    setSettingsHost(trigger?.closest<HTMLElement>(".react-flow__node") ?? null);
   }, []);
   useLayoutEffect(() => {
     if (!settingsOpen) return;
-    const position = () => {
-      const card = settingsTrigger.current?.closest<HTMLElement>(".node-card");
-      const rect = card?.getBoundingClientRect();
-      if (!rect) return;
-      const canvas = card?.closest(".canvas-wrap")?.getBoundingClientRect();
-      const visual = window.visualViewport;
-      const viewLeft = visual?.offsetLeft ?? 0;
-      const viewTop = visual?.offsetTop ?? 0;
-      const viewRight = viewLeft + (visual?.width ?? document.documentElement.clientWidth);
-      const viewBottom = viewTop + (visual?.height ?? document.documentElement.clientHeight);
-      const topEdge = Math.max(viewTop + 76, (canvas?.top ?? viewTop + 64) + 12);
-      const bottomEdge = Math.min(viewBottom - 24, (canvas?.bottom ?? viewBottom) - 24);
-      setSettingsPosition(nodeConfigPosition(rect,
-        { left: viewLeft + 12, right: viewRight - 12, top: topEdge, bottom: bottomEdge }));
-    };
-    // Anchor follows the node, while text and controls remain in screen pixels.
-    position();
-    const frame = requestAnimationFrame(position);
-    const observer = new ResizeObserver(position);
-    const card = settingsTrigger.current?.closest<HTMLElement>(".node-card");
-    if (card) observer.observe(card);
-    const fitWindow = position;
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { if (event.target instanceof HTMLSelectElement || event.target instanceof Element && event.target.closest(".node-model-select[data-open]")) return; event.stopImmediatePropagation(); setSettingsOpen(false); setModelMenuOpen(false); settingsTrigger.current?.focus(); } };
-    window.addEventListener("resize", fitWindow);
-    window.visualViewport?.addEventListener("resize", fitWindow);
-    window.visualViewport?.addEventListener("scroll", fitWindow);
     window.addEventListener("keydown", escape, true);
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", fitWindow); window.visualViewport?.removeEventListener("resize", fitWindow); window.visualViewport?.removeEventListener("scroll", fitWindow); window.removeEventListener("keydown", escape, true); };
-  }, [settingsOpen, settingsAnchor]);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, [settingsOpen]);
   const modelSelectRef = useRef<HTMLDivElement | null>(null);
   const [modelMenuHeight, setModelMenuHeight] = useState(320);
   useLayoutEffect(() => {
     if (!modelMenuOpen) return;
     const select = modelSelectRef.current?.getBoundingClientRect();
-    if (select) setModelMenuHeight(Math.max(40, Math.min(320, settingsPosition.top + settingsPosition.height - select.bottom - 16)));
-  }, [modelMenuOpen, settingsPosition]);
+    const panel = settingsPanel.current?.getBoundingClientRect();
+    if (select && panel) setModelMenuHeight(Math.max(40, Math.min(320, panel.bottom - select.bottom - 16)));
+  }, [modelMenuOpen, settingsAnchor]);
   const [availabilitySnapshot, setAvailabilitySnapshot] = useState<{
     connectionId: string;
     items: CangyuanAvailabilityView[];
@@ -664,7 +644,6 @@ function GenerationNodeBody({
       // keeps its Ctrl-selection handler from swallowing these form events.
       className="node-config-popover node-config-popover-portal nodrag nowheel nopan nokey"
       ref={settingsPanel}
-      style={{ position: "fixed", ...settingsPosition, fontSize: 13, zIndex: 90 }}
       role="dialog"
       aria-label={`${data.label} 模型与参数`}
       // A portal still bubbles through the owning React node. Native select
@@ -774,7 +753,7 @@ function GenerationNodeBody({
               connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
               parameters={{ ...parameters, prompt: renderPromptParts(data.parts ?? []) }}
               onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
-              maxHeight={modelMenuHeight} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
+              maxHeight={modelMenuHeight} anchorKey={settingsAnchor} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
               badge={cangyuanAvailabilityEnabled ? model => <ModelAvailabilityBadge
                 availability={cangyuanAvailabilityForModel(model, availabilityItems)}

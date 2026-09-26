@@ -1956,6 +1956,7 @@ const transientNodeDataKeys = new Set([
   "onPromptPartsChange",
   "onConnectionChange",
   "onConfigurationFocus",
+  "onConfigurationOpenChange",
   "onModelChange",
   "onParametersChange",
   "onMediaAspectRatio",
@@ -2454,6 +2455,16 @@ function CanvasShell({
   >({});
   const [connections, setConnections] = useState<ProviderConnectionView[]>([]);
   const [modelEditorNodeId, setModelEditorNodeId] = useState<string | null>(null);
+  const [openConfigurationNodeIds, setOpenConfigurationNodeIds] = useState<Set<string>>(() => new Set());
+  const onConfigurationOpenChange = useCallback((nodeId: string, open: boolean) => {
+    setOpenConfigurationNodeIds(current => {
+      if (current.has(nodeId) === open) return current;
+      const next = new Set(current);
+      if (open) next.add(nodeId);
+      else next.delete(nodeId);
+      return next;
+    });
+  }, []);
   const [modelEditorSelectionId, setModelEditorSelectionId] = useState(selectedId);
   if (modelEditorSelectionId !== selectedId) {
     setModelEditorSelectionId(selectedId);
@@ -7090,6 +7101,7 @@ function CanvasShell({
           onConnectionChange: (connectionId: string) =>
             changeNodeConnection(node.id, connectionId),
           onConfigurationFocus: () => setModelEditorNodeId(node.id),
+          onConfigurationOpenChange,
           onModelChange: (model: string) => changeNodeModel(node.id, model),
           onParametersChange: (parameters: Record<string, unknown>) => {
             const current = useCanvasStore.getState().nodes.find(item => item.id === node.id)?.data;
@@ -7138,6 +7150,7 @@ function CanvasShell({
     contentNodes,
     linkedAssetDurations,
     modelLoadError,
+    onConfigurationOpenChange,
     recordLinkedAssetDuration,
     openAssetPreview,
     applyRunSnapshot,
@@ -9459,7 +9472,9 @@ function CanvasShell({
             nodesConnectable={canvasMode === "pan"}
             elementsSelectable={canvasMode === "pan"}
             edgesFocusable
-            onlyRenderVisibleElements
+            // An open panel extends beyond the node's measured bounds. Keep it
+            // mounted when panning its node offscreen to reach the lower fields.
+            onlyRenderVisibleElements={openConfigurationNodeIds.size === 0}
             selectionKeyCode="Control"
             multiSelectionKeyCode="Control"
             selectionMode={SelectionMode.Partial}

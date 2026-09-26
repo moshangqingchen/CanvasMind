@@ -5,7 +5,7 @@ const NODE_LABEL = "布局验收：长名称模型与参数";
 const MODEL_NAME = "用于检验长模型名称截断和完整提示的高质量图像生成模型";
 const QUALITY_LABEL = "用于检验长标签自动换行的输出画质设置";
 
-async function createLayoutCanvas(request: APIRequestContext, connectionId: string, zoom: number) {
+async function createLayoutCanvas(request: APIRequestContext, connectionId: string, zoom: number, nodeWidth: number) {
   const response = await request.post("/api/canvas", {
     data: {
       title: `布局回归 ${zoom}`,
@@ -16,8 +16,8 @@ async function createLayoutCanvas(request: APIRequestContext, connectionId: stri
         nodes: [{
           id: "layout-image",
           type: "workflow",
-          position: { x: 80 / zoom, y: 100 / zoom },
-          style: { width: 420, height: 180 },
+          position: { x: 24 / zoom, y: 40 / zoom },
+          style: { width: nodeWidth, height: 180 },
           data: {
             nodeType: "image-generation", label: NODE_LABEL, provider: "rest",
             connectionId, model: "layout-image-model", parameters: { quality: "high" },
@@ -42,7 +42,7 @@ async function expectSeparated(first: Locator, second: Locator) {
 }
 
 for (const width of [980, 1280, 1366, 1440, 1920]) {
-  test(`参数面板和画布工具在 ${width}px 窗口内保持可读并避让`, async ({ page, request }, testInfo) => {
+  test(`参数面板在 ${width}px 窗口随节点缩放，画布工具保持避让`, async ({ page, request }, testInfo) => {
     test.setTimeout(90_000);
     await page.setViewportSize({ width, height: 820 });
     const response = await request.post("/api/providers", {
@@ -76,14 +76,29 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
     });
 
     for (const zoom of [0.25, 0.5, 1, 2]) {
-      const canvasId = await createLayoutCanvas(request, connection.id, zoom);
+      const nodeWidth = zoom === 0.5 ? 560 : 420;
+      const canvasId = await createLayoutCanvas(request, connection.id, zoom, nodeWidth);
       await page.goto(`/canvas/${canvasId}`);
       await expect(page.locator(".canvas-zoom-value")).toHaveText(`${zoom * 100}%`);
+      const inspectorToggle = page.getByRole("button", { name: "智能体面板", exact: true });
+      if (await inspectorToggle.getAttribute("aria-expanded") === "true") await inspectorToggle.click();
       await page.getByRole("button", { name: `打开 ${NODE_LABEL} 模型与参数`, exact: true }).click();
       const panel = page.getByRole("dialog", { name: `${NODE_LABEL} 模型与参数`, exact: true });
-      await expect(panel).toHaveCSS("width", "420px");
+      await expect(panel).toHaveCSS("width", `${nodeWidth}px`);
       await expect(panel).toHaveCSS("font-size", "13px");
-      await expect(panel).toBeInViewport({ ratio: 1 });
+      // At 2x the panel may extend below the screen. Keeping it attached to the
+      // node takes priority over the old screen-space clipping/clamping rule.
+      await expect.poll(() => panel.evaluate((element, expected) => {
+        const card = document.querySelector('.react-flow__node[data-id="layout-image"] .node-card')!.getBoundingClientRect();
+        const bounds = element.getBoundingClientRect();
+        return Math.max(
+          Math.abs(bounds.x - card.x),
+          Math.abs(bounds.width - card.width),
+          Math.abs(bounds.width - expected.nodeWidth * expected.zoom),
+          Math.abs(bounds.y - card.bottom - 10 * expected.zoom),
+          Math.abs(bounds.height - 560 * expected.zoom),
+        );
+      }, { zoom, nodeWidth })).toBeLessThanOrEqual(1);
       await expect(panel.getByRole("button", { name: "关闭模型与参数面板" })).toBeInViewport({ ratio: 1 });
       await expect(panel.getByRole("button", { name: "管理供应商与密钥" })).toBeInViewport({ ratio: 1 });
       const model = panel.getByRole("combobox", { name: `${NODE_LABEL} 模型`, exact: true });
@@ -93,7 +108,6 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       await expect(body).toHaveCSS("overflow-y", "auto");
       await expect.poll(() => body.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
       const quality = panel.getByLabel(QUALITY_LABEL, { exact: true });
-      await quality.scrollIntoViewIfNeeded();
       await expect(quality).toHaveCSS("font-size", "13px");
       const label = panel.locator(".parameter-field label").filter({ hasText: QUALITY_LABEL });
       await expect(label).toHaveCSS("font-size", "12px");
