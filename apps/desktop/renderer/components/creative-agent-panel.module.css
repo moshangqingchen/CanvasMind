@@ -5,6 +5,9 @@
   min-height: 0;
   color:#afb6f5;
   background:var(--panel);
+  font-size: 13px;
+}
+.panel small {
   font-size: 12px;
 }
 .panel button,
@@ -281,16 +284,78 @@
 }
 .selectors select {
   width: 100%;
-  font-size: 11px;
+  font-size: 12px;
 }
 .selectors select:nth-child(3):last-child {
   grid-column: 1/-1;
+}
+.result {
+  padding: 9px 0;
+}
+.resultHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.resultName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.resultStatus {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: #b4bac7;
+  background: rgb(165 173 190 / 9%);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.resultStatus svg {
+  flex-shrink: 0;
+}
+.resultStatus[data-tone="pending"] {
+  color: #e8ca82;
+  background: rgb(232 202 130 / 10%);
+}
+.resultStatus[data-tone="running"] {
+  color: #afb6f5;
+  background: rgb(175 182 245 / 10%);
+}
+.resultStatus[data-tone="success"] {
+  color: #87d6bc;
+  background: rgb(135 214 188 / 10%);
+}
+.resultStatus[data-tone="error"] {
+  color: #ee9caa;
+  background: rgb(238 156 170 / 10%);
+}
+.card .result details {
+  padding: 4px 0 0;
+  border-top: 0;
+}
+.result details summary {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.changeName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .reasoningSource {
   display: block;
   margin-top: 6px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .mediaSupport {
   display: flex;
@@ -298,7 +363,7 @@
   gap: 3px 10px;
   margin-top: 7px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -315,7 +380,7 @@
 .actions small {
   flex: 1;
   color:var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.4;
 }
 .attachments {

@@ -77,7 +77,7 @@ export function readPendingNodeConfigurations(
 }
 
 function configurationData(
-  data: CanvasNodeData,
+  data: PendingNodeConfiguration["data"],
 ): PendingNodeConfiguration["data"] {
   return {
     provider: data.provider,
@@ -90,13 +90,12 @@ function configurationData(
   };
 }
 
-export function journalNodeConfiguration(
+function configurationEntry(
   canvasId: string,
   node: CanvasNode,
-  storage = storageOrNull(),
-): PendingNodeConfiguration[] {
-  const now = Date.now();
-  const entry: PendingNodeConfiguration = {
+  now: number,
+): PendingNodeConfiguration {
+  return {
     version: 1,
     token:
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -107,6 +106,15 @@ export function journalNodeConfiguration(
     savedAt: now,
     data: configurationData(node.data),
   };
+}
+
+export function journalNodeConfiguration(
+  canvasId: string,
+  node: CanvasNode,
+  storage = storageOrNull(),
+): PendingNodeConfiguration[] {
+  const now = Date.now();
+  const entry = configurationEntry(canvasId, node, now);
   const entries = readPendingNodeConfigurations(storage, now).filter(
     (candidate) =>
       candidate.canvasId !== canvasId || candidate.nodeId !== node.id,
@@ -114,6 +122,35 @@ export function journalNodeConfiguration(
   entries.push(entry);
   writeEntries(entries, storage);
   return entries.filter((candidate) => candidate.canvasId === canvasId);
+}
+
+/** Capture the journal superseded by a full graph, including undo/redo snapshots. */
+export function synchronizePendingNodeConfigurations(
+  canvasId: string,
+  nodes: readonly CanvasNode[],
+  storage = storageOrNull(),
+): PendingNodeConfiguration[] {
+  const now = Date.now();
+  const pending = readPendingNodeConfigurations(storage, now);
+  if (!pending.some((entry) => entry.canvasId === canvasId)) return [];
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  let changed = false;
+  const entries = pending.flatMap((entry) => {
+    if (entry.canvasId !== canvasId) return [entry];
+    const node = nodesById.get(entry.nodeId);
+    if (!node) {
+      changed = true;
+      return [];
+    }
+    if (JSON.stringify(configurationData(entry.data)) === JSON.stringify(configurationData(node.data)))
+      return [entry];
+    changed = true;
+    // A late acknowledgement of the replaced configuration must not clear
+    // the undo/redo choice before that newer snapshot is itself persisted.
+    return [configurationEntry(canvasId, node, now)];
+  });
+  if (changed) writeEntries(entries, storage);
+  return entries.filter((entry) => entry.canvasId === canvasId);
 }
 
 export function applyPendingNodeConfigurations(
@@ -131,7 +168,9 @@ export function applyPendingNodeConfigurations(
     const patch = patches.get(node.id);
     if (!patch) return node;
     changed = true;
-    return { ...node, data: { ...node.data, ...patch } };
+    // JSON omits undefined fields. Restore them explicitly so undo can also
+    // remove a previous quality mode, connection, or parameter collection.
+    return { ...node, data: { ...node.data, ...configurationData(patch) } };
   });
   return changed ? next : nodes;
 }

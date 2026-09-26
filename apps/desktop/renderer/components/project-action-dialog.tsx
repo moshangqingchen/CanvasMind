@@ -3,10 +3,12 @@
 import { CircleAlert, Pencil, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ProjectSummaryView } from "../lib/client-api";
+import { useDialogFocus } from "./use-dialog-focus";
 
 export type ProjectActionDialogState = {
   mode: "rename" | "delete" | "cleanup";
   project: ProjectSummaryView;
+  returnFocus?: HTMLElement | null;
 };
 
 interface ProjectActionDialogProps {
@@ -24,16 +26,20 @@ export function ProjectActionDialog({
   onDelete,
   onCleanup,
 }: ProjectActionDialogProps) {
-  const dialogRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [title, setTitle] = useState(action.project.title);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const dialogRef = useDialogFocus(true, () => {
+    if (!busy) onClose();
+  }, action.returnFocus);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      dialogRef.current?.focus({ preventScroll: true });
-      if (action.mode === "rename") inputRef.current?.select();
+      if (action.mode === "rename") {
+        inputRef.current?.focus({ preventScroll: true });
+        inputRef.current?.select();
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [action]);
@@ -85,9 +91,6 @@ export function ProjectActionDialog({
         aria-modal="true"
         aria-labelledby="project-action-dialog-title"
         tabIndex={-1}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && !busy) onClose();
-        }}
       >
         <header className="project-action-dialog-head">
           <div className={`project-action-dialog-icon ${isDelete ? "danger" : ""}`}>
@@ -119,7 +122,7 @@ export function ProjectActionDialog({
                 disabled={busy}
                 onChange={(event) => setTitle(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) {
                     event.preventDefault();
                     void submit();
                   }

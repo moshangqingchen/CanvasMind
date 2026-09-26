@@ -5,11 +5,11 @@ type Rect = { left: number; top: number; right: number; bottom: number };
  * panel must stay in CSS pixels and choose the side with the most room.
  */
 export function nodeConfigPosition(node: Rect, viewport: Rect) {
-  const width = Math.max(1, node.right - node.left);
   const viewportWidth = Math.max(1, viewport.right - viewport.left);
   const viewportHeight = Math.max(1, viewport.bottom - viewport.top);
   const gap = 10;
-  const panelWidth = Math.min(width, viewportWidth);
+  // Node bounds already include canvas zoom; only use them as the anchor.
+  const panelWidth = Math.min(420, viewportWidth);
   const below = Math.max(0, viewport.bottom - node.bottom - gap);
   const above = Math.max(0, node.top - viewport.top - gap);
   const maxHeight = Math.min(560, viewportHeight);
@@ -22,9 +22,8 @@ export function nodeConfigPosition(node: Rect, viewport: Rect) {
   const placeAbove = below < preferredMinimum && above > below;
   const available = placeAbove ? above : below;
   const height = Math.max(1, Math.min(maxHeight, Math.max(preferredMinimum, available)));
-  const top = placeAbove
-    ? Math.max(viewport.top, node.top - height - gap)
-    : Math.min(viewport.bottom - height, Math.max(viewport.top, node.bottom + gap));
+  const desiredTop = placeAbove ? node.top - height - gap : node.bottom + gap;
+  const top = Math.max(viewport.top, Math.min(viewport.bottom - height, desiredTop));
   const left = Math.min(
     viewport.right - panelWidth,
     Math.max(viewport.left, node.left),

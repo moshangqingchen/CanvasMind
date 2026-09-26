@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, Ref } from "react";
 import {
   ArrowLeft,
   Check,
+  Circle,
   CircleAlert,
+  CircleCheck,
+  CircleX,
   ImageOff,
   Layers,
   LoaderCircle,
@@ -13,6 +16,7 @@ import {
   PencilLine,
   RotateCcw,
   Save,
+  Star,
 } from "lucide-react";
 import {
   IMAGE_REVIEW_LABELS,
@@ -28,8 +32,10 @@ import { useDialogFocus } from "./use-dialog-focus";
 import styles from "./image-design-compare.module.css";
 
 interface ImageDesignCompareProps {
+  ref?: Ref<ImageDesignCompareHandle>;
   assets: AssetView[];
   onClose: () => void;
+  onDismiss: () => void;
   onSaveReview: (
     assetId: string,
     input: ImageDesignReviewInput,
@@ -38,13 +44,26 @@ interface ImageDesignCompareProps {
   onReuseAsset: (assetId: string) => void;
 }
 
+export interface ImageDesignCompareHandle {
+  requestDismiss: () => void;
+}
+
 type Zoom = "fit" | 1 | 1.5 | 2 | 3;
 type Pan = { x: number; y: number };
 type ReviewDraft = Pick<ImageDesignReview, "status" | "note"> & {
   originalRevision: number;
 };
 type LeaveAction =
-  { kind: "close" } | { kind: "edit" | "reuse"; assetId: string };
+  | { kind: "close" }
+  | { kind: "dismiss" }
+  | { kind: "edit" | "reuse"; assetId: string };
+
+const STATUS_ICONS = {
+  unreviewed: Circle,
+  candidate: Star,
+  approved: CircleCheck,
+  rejected: CircleX,
+} as const;
 
 const STATUSES: ImageReviewStatus[] = [
   "unreviewed",
@@ -261,8 +280,10 @@ function ImageViewport({
 }
 
 export function ImageDesignCompare({
+  ref,
   assets,
   onClose,
+  onDismiss,
   onSaveReview,
   onContinueEditing,
   onReuseAsset,
@@ -290,10 +311,11 @@ export function ImageDesignCompare({
   const performLeave = useCallback(
     (action: LeaveAction) => {
       if (action.kind === "close") onClose();
+      else if (action.kind === "dismiss") onDismiss();
       else if (action.kind === "edit") onContinueEditing(action.assetId);
       else onReuseAsset(action.assetId);
     },
-    [onClose, onContinueEditing, onReuseAsset],
+    [onClose, onDismiss, onContinueEditing, onReuseAsset],
   );
 
   const requestLeave = useCallback(
@@ -304,6 +326,10 @@ export function ImageDesignCompare({
     },
     [dirtyCount, performLeave],
   );
+
+  useImperativeHandle(ref, () => ({
+    requestDismiss: () => requestLeave({ kind: "dismiss" }),
+  }), [requestLeave]);
 
   const dialogRef = useDialogFocus(true, () => {
     if (leaveAction) setLeaveAction(null);
@@ -534,6 +560,7 @@ export function ImageDesignCompare({
             const review = latestReview(asset, savedReviews[asset.id]);
             const draft = drafts[asset.id];
             const status = draft?.status ?? review.status;
+            const StatusIcon = STATUS_ICONS[status];
             const note = draft?.note ?? review.note;
             const dirty = isDirty(draft, review);
             const size = dimensions[asset.id];
@@ -561,6 +588,7 @@ export function ImageDesignCompare({
                     </span>
                   </div>
                   <span className={styles.statusBadge} data-status={status}>
+                    <StatusIcon size={13} aria-hidden="true" />
                     {IMAGE_REVIEW_LABELS[status]}
                   </span>
                 </div>

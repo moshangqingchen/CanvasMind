@@ -10,6 +10,12 @@ import {
   X,
   RefreshCw,
   Check,
+  Circle,
+  CircleCheck,
+  CircleX,
+  Clock3,
+  LoaderCircle,
+  MinusCircle,
   Play,
 } from "lucide-react";
 import { agentRequest, streamAgentTurn } from "../lib/agent-client";
@@ -42,6 +48,7 @@ type Props = {
   assets: AssetView[];
   canvasId: string;
   selectedNode: CanvasNode | null;
+  nodes?: readonly CanvasNode[];
   selectedPrompt: string;
   draftRequest: { id: string; text: string; assetId?: string } | null;
   onManageApi: (group?: string) => void;
@@ -83,6 +90,21 @@ const statusNames: Record<string, string> = {
   failed: "生成失败",
   cancelled: "已取消",
   expired: "方案已过期",
+};
+const resultStatuses: Record<string, { label: string; Icon: typeof Circle; tone: string }> = {
+  queued: { label: "排队中", Icon: Clock3, tone: "pending" },
+  pending: { label: "等待执行", Icon: Clock3, tone: "pending" },
+  blocked: { label: "等待前序完成", Icon: Clock3, tone: "pending" },
+  submitting: { label: "正在提交", Icon: LoaderCircle, tone: "running" },
+  running: { label: "生成中", Icon: LoaderCircle, tone: "running" },
+  archiving: { label: "正在保存成果", Icon: LoaderCircle, tone: "running" },
+  waiting: { label: "等待结果", Icon: Clock3, tone: "pending" },
+  succeeded: { label: "已完成", Icon: CircleCheck, tone: "success" },
+  failed: { label: "生成失败", Icon: CircleX, tone: "error" },
+  cancelled: { label: "已取消", Icon: MinusCircle, tone: "neutral" },
+  cancel_requested: { label: "正在取消", Icon: Clock3, tone: "pending" },
+  needs_attention: { label: "需要处理", Icon: CircleX, tone: "error" },
+  skipped: { label: "已跳过", Icon: MinusCircle, tone: "neutral" },
 };
 
 export function AgentPanel(props: Props) {
@@ -738,6 +760,7 @@ export function AgentPanel(props: Props) {
               <PlanCard
                 key={`${p.id}:${p.version}`}
                 plan={p}
+                nodes={props.nodes}
                 busy={busy}
                 onAction={(a, accept) => void planAction(p, a, accept)}
                 onSave={(proposal) =>
@@ -1164,12 +1187,14 @@ function ArtifactEditor({
 
 function PlanCard({
   plan,
+  nodes,
   busy,
   onAction,
   onSave,
   onCancel,
 }: {
   plan: AgentPlan;
+  nodes?: readonly CanvasNode[];
   busy: boolean;
   onAction: (action: string, accept?: boolean) => void;
   onSave: (p: AgentProposal) => Promise<void>;
@@ -1179,6 +1204,11 @@ function PlanCard({
   const [dirty, setDirty] = useState(false);
   const [accept, setAccept] = useState(false);
   const editable = plan.status === "awaiting_approval";
+  const nodeName = (nodeId: string, index: number) =>
+    nodes?.find((node) => node.id === nodeId)?.data.label ||
+    plan.patch?.nodes.find((node) => node.id === nodeId)?.data.label ||
+    plan.proposal.texts.find((text) => text.targetNodeId === nodeId)?.title ||
+    `节点 ${index + 1}`;
   return (
     <article className={styles.card}>
       <small>
@@ -1186,17 +1216,36 @@ function PlanCard({
       </small>
       <h4>{plan.summary}</h4>
       {plan.error && <p role="alert">{plan.error}</p>}
-      {plan.results?.map((result) => (
-        <div key={result.nodeId}>
-          <small>
-            {result.nodeId} · {result.status} · {result.assetIds.length} 个成果
-          </small>
-          {result.error && <p role="alert">{result.error}</p>}
-        </div>
-      ))}
-      {plan.changes?.map((change) => (
+      {plan.results?.map((result, index) => {
+        const status = resultStatuses[result.status] ?? {
+          label: "状态待确认", Icon: Circle, tone: "neutral",
+        };
+        const name = nodeName(result.nodeId, index);
+        return (
+          <div key={result.nodeId} className={styles.result}>
+            <div className={styles.resultHeading}>
+              <strong className={styles.resultName} title={name}>{name}</strong>
+              <span className={styles.resultStatus} data-tone={status.tone}>
+                <status.Icon size={13} aria-hidden="true" />
+                {status.label}
+              </span>
+            </div>
+            <small>{result.assetIds.length} 个成果</small>
+            <details>
+              <summary>节点详情</summary>
+              <small>节点 ID：{result.nodeId}</small>
+              {!resultStatuses[result.status] && <small>原始状态：{result.status}</small>}
+            </details>
+            {result.error && <p role="alert">{result.error}</p>}
+          </div>
+        );
+      })}
+      {plan.changes?.map((change, index) => (
         <details key={change.nodeId}>
-          <summary>修改差异 · {change.nodeId}</summary>
+          <summary className={styles.changeName} title={nodeName(change.nodeId, index)}>
+            修改差异 · {nodeName(change.nodeId, index)}
+          </summary>
+          <small>节点 ID：{change.nodeId}</small>
           <p>修改前</p>
           <pre>{change.before}</pre>
           <p>修改后</p>

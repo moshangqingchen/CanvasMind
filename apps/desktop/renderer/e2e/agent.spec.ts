@@ -267,6 +267,7 @@ async function scenario(page: Page, mode: "text" | "media" | "failure" | "discon
       });
       executed++;
       plan.status = "succeeded";
+      plan.results = [{ nodeId: "agent-image", status: "succeeded", assetIds: ["generated-image"] }];
       return route.fulfill({ json: { plan, run: null } });
     }
     if (path.startsWith("/api/agent/artifacts/")) {
@@ -342,6 +343,14 @@ test("生成方案经过两次确认，第一次确认后刷新仍不运行", as
   await page.getByLabel("我已了解价格未知，确认生成").check();
   await execute.click();
   await expect.poll(() => s.counts().executed).toBe(1);
+  const result = page.getByRole("region", { name: "通用创作智能体" })
+    .locator('[class*="resultHeading"]');
+  await expect(result).toContainText("产品主视觉");
+  await expect(result).toContainText("已完成");
+  await expect(result).not.toContainText("agent-image");
+  await expect(page.getByText("节点 ID：agent-image", { exact: true })).not.toBeVisible();
+  await page.getByText("节点详情", { exact: true }).click();
+  await expect(page.getByText("节点 ID：agent-image", { exact: true })).toBeVisible();
 });
 test("同名供应商分别选择，并适应窄屏键盘输入", async ({ page }) => {
   await page.setViewportSize({ width: 430, height: 900 });

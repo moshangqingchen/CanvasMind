@@ -14,14 +14,20 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
   );
 }
 
-export function useDialogFocus(open: boolean, onClose: () => void) {
+export function useDialogFocus(
+  open: boolean,
+  onClose: () => void,
+  returnFocus?: HTMLElement | null,
+) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
+  const returnFocusRef = useRef(returnFocus);
 
   useEffect(() => {
     onCloseRef.current = onClose;
-  }, [onClose]);
+    returnFocusRef.current = returnFocus;
+  }, [onClose, returnFocus]);
 
   useEffect(() => {
     if (!open) return;
@@ -46,7 +52,7 @@ export function useDialogFocus(open: boolean, onClose: () => void) {
       const dialog = dialogRef.current;
       if (!dialog || openDialogs.at(-1) !== token) return;
 
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !event.isComposing) {
         event.preventDefault();
         event.stopImmediatePropagation();
         onCloseRef.current();
@@ -85,7 +91,9 @@ export function useDialogFocus(open: boolean, onClose: () => void) {
       const wasTopDialog = openDialogs.at(-1) === token;
       const index = openDialogs.indexOf(token);
       if (index >= 0) openDialogs.splice(index, 1);
-      const previousFocus = previousFocusRef.current;
+      const previousFocus = returnFocusRef.current?.isConnected
+        ? returnFocusRef.current
+        : previousFocusRef.current;
       previousFocusRef.current = null;
       if (wasTopDialog && previousFocus?.isConnected) {
         previousFocus.focus({ preventScroll: true });

@@ -24,7 +24,7 @@ import {
 import type { AssetView } from "./types";
 import type { DeleteAssetsResult } from "../lib/client-api";
 import { filterDesignImages } from "../lib/image-design";
-import { ImageDesignCompare } from "./image-design-compare";
+import { ImageDesignCompare, type ImageDesignCompareHandle } from "./image-design-compare";
 import { useDialogFocus } from "./use-dialog-focus";
 import { registerDesktopSave } from "../lib/desktop-client";
 import {
@@ -283,6 +283,7 @@ export function GenerationHistoryModal(props: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [focused, setFocused] = useState<string | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const compareRef = useRef<ImageDesignCompareHandle>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -521,7 +522,9 @@ export function GenerationHistoryModal(props: Props) {
     <div
       className={`modal-backdrop generation-history-backdrop ${dragging ? "asset-dragging" : ""}`}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) close();
+        if (event.target !== event.currentTarget) return;
+        if (compareIds.length) compareRef.current?.requestDismiss();
+        else close();
       }}
     >
       <section
@@ -534,8 +537,13 @@ export function GenerationHistoryModal(props: Props) {
       >
         {compareIds.length ? (
           <ImageDesignCompare
+            ref={compareRef}
             assets={all.filter((asset) => compareIds.includes(asset.id))}
             onClose={() => setCompareIds([])}
+            onDismiss={() => {
+              setCompareIds([]);
+              close();
+            }}
             onSaveReview={onSaveReview}
             onContinueEditing={onContinueEditing}
             onReuseAsset={onReuseAsset}

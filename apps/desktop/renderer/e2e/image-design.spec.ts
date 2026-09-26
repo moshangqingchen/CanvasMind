@@ -296,6 +296,63 @@ async function savedReview(request: APIRequestContext, asset: DesignAsset) {
 }
 
 test.describe("图片设计比稿与定稿", () => {
+  test("比稿遮罩、返回和 Escape 均保护未保存评审", async ({ page, designFixture }) => {
+    const history = await openHistory(page, designFixture);
+    const card = await openSingleReview(history, designFixture.images[0]);
+    const note = "遮罩关闭前必须保留的评审草稿";
+    await card.getByRole("textbox").fill(note);
+    const leavePrompt = history.getByText("还有 1 张图片的评审未保存", { exact: true });
+    const backdrop = page.locator(".generation-history-backdrop");
+
+    await backdrop.click({ position: { x: 2, y: 2 } });
+    await expect(leavePrompt).toBeVisible();
+    await history.getByRole("button", { name: "继续编辑评审", exact: true }).click();
+    await expect(card.getByRole("textbox")).toHaveValue(note);
+
+    await history.getByRole("button", { name: "返回图片列表", exact: true }).click();
+    await expect(leavePrompt).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(leavePrompt).toHaveCount(0);
+    await expect(card.getByRole("textbox")).toHaveValue(note);
+    await page.keyboard.press("Escape");
+    await expect(leavePrompt).toBeVisible();
+    await history.getByRole("button", { name: "继续编辑评审", exact: true }).click();
+
+    await backdrop.click({ position: { x: 2, y: 2 } });
+    await history.getByRole("button", { name: "丢弃更改并继续", exact: true }).click();
+    await expect(history).toHaveCount(0);
+    await page.getByRole("button", { name: "历史生成", exact: true }).click();
+    await expect(history.getByRole("heading", { name: "图片库", exact: true })).toBeVisible();
+  });
+
+  test("比稿保存过程中遮罩不能关闭窗口", async ({ page, request, designFixture }) => {
+    const asset = designFixture.images[0];
+    const history = await openHistory(page, designFixture);
+    const card = await openSingleReview(history, asset);
+    await card.getByRole("textbox").fill("保存完成前不能关闭");
+    let releaseSave!: () => void;
+    const saving = new Promise<void>((resolve) => { releaseSave = resolve; });
+    await page.route(`**/api/assets/${asset.id}/design-review`, async (route) => {
+      await saving;
+      await route.fallback();
+    }, { times: 1 });
+    try {
+      await card.getByRole("button", { name: "保存评审", exact: true }).click();
+      await expect(card.getByRole("button", { name: "保存中…", exact: true })).toBeDisabled();
+      await expect(history.getByRole("button", { name: "返回图片列表", exact: true })).toBeDisabled();
+      await page.locator(".generation-history-backdrop").click({ position: { x: 2, y: 2 } });
+      await page.keyboard.press("Escape");
+      await expect(card.getByRole("textbox")).toHaveValue("保存完成前不能关闭");
+      await expect(history.getByText("还有 1 张图片的评审未保存", { exact: true })).toHaveCount(0);
+    } finally {
+      releaseSave();
+    }
+    await expect.poll(() => savedReview(request, asset)).toMatchObject({ note: "保存完成前不能关闭" });
+    await expect(card.getByRole("button", { name: "保存评审", exact: true })).toBeDisabled();
+    await page.locator(".generation-history-backdrop").click({ position: { x: 2, y: 2 } });
+    await expect(history).toHaveCount(0);
+  });
+
   test("两图同步缩放，定稿和备注保存后重载仍可筛选", async ({
     page,
     request,
@@ -462,6 +519,17 @@ test.describe("图片设计比稿与定稿", () => {
     const history = await openHistory(page, designFixture);
     const card = await openSingleReview(history, asset);
     const note = "尚未保存：标题下移，保留商品外观";
+    const badgeColors: string[] = [];
+    for (const status of ["unreviewed", "candidate", "approved", "rejected"] as const) {
+      await card.getByRole("combobox").selectOption(status);
+      const badge = card.locator(`span[data-status="${status}"]`);
+      await expect(badge).toBeVisible();
+      await expect(badge).toHaveText({ unreviewed: "未标记", candidate: "候选", approved: "定稿", rejected: "淘汰" }[status]);
+      await expect(badge.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+      await expect(badge).toHaveCSS("font-size", "12px");
+      badgeColors.push(await badge.evaluate(element => getComputedStyle(element).color));
+    }
+    expect(new Set(badgeColors).size).toBe(4);
     await card.getByRole("combobox").selectOption("candidate");
     await card.getByRole("textbox").fill(note);
     await page.route(
@@ -478,6 +546,16 @@ test.describe("图片设计比稿与定稿", () => {
     await expect(card).toContainText("测试保存暂时失败");
     await expect(card.getByRole("textbox")).toHaveValue(note);
     expect(await savedReview(request, asset)).toBeUndefined();
+
+    for (const closeMethod of ["backdrop", "escape"] as const) {
+      if (closeMethod === "backdrop")
+        await page.locator(".generation-history-backdrop").click({ position: { x: 2, y: 2 } });
+      else await page.keyboard.press("Escape");
+      await expect(history.getByText("还有 1 张图片的评审未保存", { exact: true })).toBeVisible();
+      await history.getByRole("button", { name: "继续编辑评审", exact: true }).click();
+      await expect(card.getByRole("textbox")).toHaveValue(note);
+      await expect(card).toContainText("测试保存暂时失败");
+    }
 
     await history
       .getByRole("button", { name: "返回图片列表", exact: true })

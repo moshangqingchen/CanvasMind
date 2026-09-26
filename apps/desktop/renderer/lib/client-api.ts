@@ -827,15 +827,38 @@ export async function fetchVisibleRuns(
   runIds: readonly string[],
   clientRequestIds: readonly string[],
 ): Promise<RunSnapshot[]> {
-  const query = new URLSearchParams({ canvasId });
-  if (runIds.length > 0) query.set("runIds", runIds.join(","));
-  if (clientRequestIds.length > 0)
-    query.set("clientRequestIds", clientRequestIds.join(","));
-  const response = await fetch(`/api/runs?${query.toString()}`, {
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("无法读取当前运行状态");
-  return response.json() as Promise<RunSnapshot[]>;
+  // Match the API's per-field limit. A run can appear once per generated
+  // image, so deduplication must happen before constructing the query.
+  const uniqueRunIds = [...new Set(runIds)];
+  const uniqueRequestIds = [...new Set(clientRequestIds)];
+  const batchSize = 50;
+  const batchCount = Math.ceil(Math.max(uniqueRunIds.length, uniqueRequestIds.length) / batchSize);
+  const snapshots = new Map<string, RunSnapshot>();
+  for (let start = 0; start < batchCount; start += 4) {
+    const batches = await Promise.all(
+      Array.from({ length: Math.min(4, batchCount - start) }, async (_, offset) => {
+        const from = (start + offset) * batchSize;
+        const query = new URLSearchParams({ canvasId });
+        const runs = uniqueRunIds.slice(from, from + batchSize);
+        const requests = uniqueRequestIds.slice(from, from + batchSize);
+        if (runs.length) query.set("runIds", runs.join(","));
+        if (requests.length) query.set("clientRequestIds", requests.join(","));
+        const response = await fetch(`/api/runs?${query.toString()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("无法读取当前运行状态");
+        return response.json() as Promise<RunSnapshot[]>;
+      }),
+    );
+    for (const snapshot of batches.flat()) {
+      const previous = snapshots.get(snapshot.run.id);
+      if (!previous || (snapshot.run.updatedAt ?? snapshot.run.createdAt) >=
+        (previous.run.updatedAt ?? previous.run.createdAt)) {
+        snapshots.set(snapshot.run.id, snapshot);
+      }
+    }
+  }
+  // Reconciliation must see a complete response, never a successful subset
+  // of batches. Newest first matches the run-history API and its consumers.
+  return [...snapshots.values()].sort((a, b) => b.run.createdAt.localeCompare(a.run.createdAt));
 }
 
 export async function fetchConnections(): Promise<ProviderConnectionView[]> {

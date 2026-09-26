@@ -171,6 +171,7 @@ import {
   clearPersistedNodeConfigurations,
   journalNodeConfiguration,
   readPendingNodeConfigurations,
+  synchronizePendingNodeConfigurations,
   type PendingNodeConfiguration,
 } from "../lib/node-configuration-journal";
 import {
@@ -2097,6 +2098,7 @@ interface CanvasShellProps {
 
 interface ProjectContextMenuState {
   project: ProjectSummaryView;
+  returnFocus: HTMLElement | null;
   x: number;
   y: number;
 }
@@ -2109,6 +2111,7 @@ function ProjectSidebar({
   onLeftModeChange,
   connections,
   assets,
+  nodes,
   canvasId,
   selectedNode,
   selectedPrompt,
@@ -2128,6 +2131,7 @@ function ProjectSidebar({
   onLeftModeChange: (mode: LeftSidebarMode) => void;
   connections: ProviderConnectionView[];
   assets: AssetView[];
+  nodes: CanvasNode[];
   canvasId: string;
   selectedNode: CanvasNode | null;
   selectedPrompt: string;
@@ -2227,6 +2231,7 @@ function ProjectSidebar({
           <AgentPanel
             connections={connections}
             assets={assets}
+            nodes={nodes}
             canvasId={canvasId}
             selectedNode={selectedNode}
             selectedPrompt={selectedPrompt}
@@ -2278,6 +2283,7 @@ function ProjectSidebar({
               event.stopPropagation();
               setContextMenu({
                 project,
+                returnFocus: event.currentTarget.querySelector<HTMLButtonElement>(".project-row-main"),
                 x: Math.min(event.clientX, Math.max(8, window.innerWidth - 232)),
                 y: Math.min(event.clientY, Math.max(8, window.innerHeight - 160)),
               });
@@ -2322,6 +2328,7 @@ function ProjectSidebar({
                 setDialogAction({
                   mode: "rename",
                   project: contextMenu.project,
+                  returnFocus: contextMenu.returnFocus,
                 });
                 setContextMenu(null);
                 setError("");
@@ -2360,7 +2367,7 @@ function ProjectSidebar({
               onClick={() => {
                 const project = contextMenu.project;
                 setContextMenu(null);
-                setDialogAction({ mode: "delete", project });
+                setDialogAction({ mode: "delete", project, returnFocus: contextMenu.returnFocus });
                 setError("");
               }}
             >
@@ -2373,9 +2380,9 @@ function ProjectSidebar({
         <button
           className="button danger small"
           type="button"
-          onClick={() => {
+          onClick={(event) => {
             const project = projects.find((item) => item.id === activeProjectId);
-            if (project) setDialogAction({ mode: "cleanup", project });
+            if (project) setDialogAction({ mode: "cleanup", project, returnFocus: event.currentTarget });
           }}
           disabled={busy || !activeProjectId}
         >
@@ -2464,6 +2471,7 @@ function CanvasShell({
   >(new Map());
   const latestNodeRunAt = useRef(new Map<string, string>());
   const [busy, setBusy] = useState(false);
+  const [runSyncError, setRunSyncError] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateView | null>(
     null,
@@ -2660,7 +2668,16 @@ function CanvasShell({
     if (canvasRevision.current === null) return request;
     const version = request.draftVersion ?? Math.max(Date.now(), draftVersion.current + 1);
     draftVersion.current = version;
-    const next = { ...request, draftVersion: version };
+    const next = {
+      ...request,
+      draftVersion: version,
+      // Every full snapshot supersedes its captured configuration journal,
+      // even when it is an undo/redo or a retry after an earlier save failed.
+      pendingNodeConfigurations: synchronizePendingNodeConfigurations(
+        request.canvasId,
+        request.graph.nodes,
+      ),
+    };
     void writeCanvasDraft({
       canvasId: request.canvasId,
       title: request.title,
@@ -2733,6 +2750,23 @@ function CanvasShell({
   useEffect(() => {
     graphRef.current = { nodes, edges };
   }, [nodes, edges]);
+
+  useEffect(() => {
+    const canvas = canvasWrapRef.current;
+    if (!canvas) return;
+    // A sidebar can make the canvas narrow even on a wide desktop window.
+    // Use its measured width without introducing CSS containment, which would
+    // change the coordinate system of the fixed context menus inside it.
+    const updateTools = (width: number) => {
+      canvas.toggleAttribute("data-compact-tools", width <= 1350);
+    };
+    updateTools(canvas.clientWidth);
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) updateTools(entry.contentRect.width);
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(
     () => () => {
@@ -5358,6 +5392,7 @@ function CanvasShell({
     let cancelled = false;
     let reconciling = false;
     let reconcileAgain = false;
+    let lastReconcileFailed = false;
     const reconcileRuns = () => {
       if (reconciling) {
         reconcileAgain = true;
@@ -5393,15 +5428,19 @@ function CanvasShell({
       ) {
         reconciling = false;
         reconcileAgain = false;
+        lastReconcileFailed = false;
+        setRunSyncError(false);
         return;
       }
       void fetchVisibleRuns(
         canvasId,
-        visibleRunIdsBeforeFetch,
+        [...visibleRunIdsBeforeFetch, ...eventSources.current.keys()],
         visibleRequestIdsBeforeFetch,
       )
         .then((runs) => {
           if (cancelled) return;
+          lastReconcileFailed = false;
+          setRunSyncError(false);
           const state = useCanvasStore.getState();
           const visibleRunIds = new Set(
             state.nodes.flatMap((node) =>
@@ -5434,6 +5473,9 @@ function CanvasShell({
           );
           const orphanedRequestIds = new Set(
             [...visibleRequestIds].filter((requestId) => {
+              // A placeholder added while this lookup was in flight has not
+              // been queried yet; absence is not an authoritative result.
+              if (!visibleRequestIdsBeforeFetch.includes(requestId)) return false;
               const pendingNode = state.nodes.find(
                 (node) =>
                   node.data.generatedResult === true &&
@@ -5508,23 +5550,24 @@ function CanvasShell({
             applyRunSnapshot(snapshot, snapshot.run.clientRequestId);
           }
 
-          const activeRunIds = new Set<string>();
-          for (const snapshot of visibleSnapshots) {
+          for (const snapshot of runs) {
             if (terminalRunStatuses.has(snapshot.run.status)) {
               if (eventSources.current.has(snapshot.run.id))
                 stopRunSubscription(snapshot.run.id);
               continue;
             }
-            activeRunIds.add(snapshot.run.id);
-            if (!eventSources.current.has(snapshot.run.id))
+            if ((visibleRunIds.has(snapshot.run.id) || visibleRequestIds.has(snapshot.run.clientRequestId ?? "")) &&
+              !eventSources.current.has(snapshot.run.id))
               subscribeToRun(snapshot.run.id);
           }
-          for (const subscribedRunId of eventSources.current.keys()) {
-            if (!activeRunIds.has(subscribedRunId))
-              stopRunSubscription(subscribedRunId);
-          }
+          // Missing responses (or runs created during this lookup) do not
+          // prove completion. Only a terminal snapshot closes a subscription.
         })
-        .catch(() => undefined)
+        .catch(() => {
+          if (cancelled) return;
+          lastReconcileFailed = true;
+          setRunSyncError(true);
+        })
         .finally(() => {
           reconciling = false;
           if (reconcileAgain && !cancelled) {
@@ -5542,10 +5585,11 @@ function CanvasShell({
           .nodes.some(
             (node) =>
               node.data.generatedResult === true &&
-              needsTaskReconciliation(node.data) &&
-              typeof node.data.generatedPendingRequestId === "string",
+              (needsTaskReconciliation(node.data) ||
+                (typeof node.data.generatedFromRunId === "string" &&
+                  isPendingGeneratedResultStatus(node.data.generatedStatus))),
           );
-      if (hasPendingResult || eventSources.current.size > 0) reconcileRuns();
+      if (hasPendingResult || eventSources.current.size > 0 || lastReconcileFailed) reconcileRuns();
     }, 5_000);
 
     reconcileRuns();
@@ -8762,7 +8806,17 @@ function CanvasShell({
             {SAVE_STATE_LABEL[saveState]}
             {draftStorageError && saveState !== "saved" ? " · 本地草稿不可用" : ""}
           </button>
-          {busy ? <span className="pill task-state"><span className="node-status running" />任务运行中</span> : null}
+          {runSyncError ? (
+            <button
+              type="button"
+              className="pill save-state is-error"
+              aria-label="重试任务状态同步"
+              title="暂时无法读取任务状态，已保留现有任务；点击重新查询"
+              onClick={() => window.dispatchEvent(new Event("canvas-reconcile-tasks"))}
+            >
+              <CircleAlert size={14} /> 状态同步失败 · 重试
+            </button>
+          ) : busy ? <span className="pill task-state"><span className="node-status running" />任务运行中</span> : null}
           <button
             className="icon-button"
             type="button"
@@ -8978,6 +9032,7 @@ function CanvasShell({
           onLeftModeChange={setLeftSidebarMode}
           connections={connections}
           assets={assets}
+          nodes={nodes}
           canvasId={canvasId ?? ""}
           selectedNode={selectedNode}
           selectedPrompt={selectedGeneratedPrompt}
@@ -9491,7 +9546,7 @@ function CanvasShell({
                   : "#9b8cff"
               }
             />}
-          </ReactFlow>
+          {/* Keep drawing below the controls in the same stacking context. */}
           {canvasMode !== "pan" ? (
             <div
               className={`canvas-drawing-input-layer ${canvasMode}`}
@@ -9509,6 +9564,7 @@ function CanvasShell({
               onContextMenu={(event) => event.preventDefault()}
             />
           ) : null}
+          </ReactFlow>
           {dropActive ? (
             <div className="canvas-drop-overlay" aria-hidden="true">
               <Upload size={22} />
@@ -9775,6 +9831,7 @@ function CanvasShell({
             <AgentPanel
               connections={connections}
               assets={assets}
+              nodes={nodes}
               canvasId={canvasId ?? ""}
               selectedNode={selectedNode}
               selectedPrompt={selectedGeneratedPrompt}
