@@ -6,6 +6,21 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./credentials": {
+      "types": "./src/credentials.ts",
+      "import": "./dist/credentials.js",
+      "default": "./dist/credentials.js"
+    },
+    "./provider-asset-token": {
+      "types": "./src/provider-asset-token.ts",
+      "import": "./dist/provider-asset-token.js",
+      "default": "./dist/provider-asset-token.js"
+    },
+    "./cli-contracts": {
+      "types": "./src/cli-contracts.ts",
+      "import": "./dist/cli-contracts.js",
+      "default": "./dist/cli-contracts.js"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./dist/index.js",
@@ -16,6 +31,26 @@
       "import": "./dist/chentu-az.js",
       "default": "./dist/chentu-az.js"
     },
+    "./image-size-presets": {
+      "types": "./src/image-size-presets.ts",
+      "import": "./dist/image-size-presets.js",
+      "default": "./dist/image-size-presets.js"
+    },
+    "./image-quality-presets": {
+      "types": "./src/image-quality-presets.ts",
+      "import": "./dist/image-quality-presets.js",
+      "default": "./dist/image-quality-presets.js"
+    },
+    "./genimage-image-capabilities": {
+      "types": "./src/genimage-image-capabilities.ts",
+      "import": "./dist/genimage-image-capabilities.js",
+      "default": "./dist/genimage-image-capabilities.js"
+    },
+    "./media-billing": {
+      "types": "./src/media-billing.ts",
+      "import": "./dist/media-billing.js",
+      "default": "./dist/media-billing.js"
+    },
     "./suppliers": {
       "types": "./src/suppliers.ts",
       "import": "./dist/suppliers.js",
@@ -25,6 +60,21 @@
       "types": "./src/weai-models.ts",
       "import": "./dist/weai-models.js",
       "default": "./dist/weai-models.js"
+    },
+    "./supplier-group-details": {
+      "types": "./src/supplier-group-details.ts",
+      "import": "./dist/supplier-group-details.js",
+      "default": "./dist/supplier-group-details.js"
+    },
+    "./monster-image-capabilities": {
+      "types": "./src/monster-image-capabilities.ts",
+      "import": "./dist/monster-image-capabilities.js",
+      "default": "./dist/monster-image-capabilities.js"
+    },
+    "./chuangxiang-image-capabilities": {
+      "types": "./src/chuangxiang-image-capabilities.ts",
+      "import": "./dist/chuangxiang-image-capabilities.js",
+      "default": "./dist/chuangxiang-image-capabilities.js"
     },
     "./model-catalog": {
       "types": "./src/model-catalog.ts",
@@ -44,7 +94,7 @@
   "devDependencies": {
     "@types/node": "^22.15.29",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "4.1.11"
   },
   "dependencies": {
     "undici": "8.9.0"

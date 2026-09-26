@@ -1,0 +1,853 @@
+{
+  "checkedAt": "2026-09-24T00:17:25.801Z",
+  "supplier": "We-AI",
+  "startedAt": "2026-09-24T00:06:29.979Z",
+  "newSubmissions": 5,
+  "results": {
+    "succeeded": 3,
+    "inconclusive": 1,
+    "needs_attention": 1,
+    "queued": 2
+  },
+  "paused": true,
+  "pauseReason": "核验结果或扣费需要核对",
+  "cases": [
+    {
+      "id": "ee594b00-0803-4dd3-8b45-fdc6eab137e7",
+      "requestId": "311e1051-4f9b-4265-987e-656a0dd84b10",
+      "supplierId": "supplier-cb9569a9a2f0add809499214",
+      "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+      "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+      "group": "生图-openai-adobe-image2.5专属",
+      "modelId": "gpt-image-2.5-flare",
+      "provider": "openai",
+      "dedupeKey": "df5d78d021401e2b664c8368a9d92f039789724350b04fabfa1c7f3f6327ae5f",
+      "resolution": "4K",
+      "quality": "max",
+      "qualityCandidates": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "ratio": "16:9",
+      "parameters": {
+        "n": 1,
+        "size": "3840x2160",
+        "quality": "max"
+      },
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "status": "succeeded",
+      "createdAt": "2026-09-23T23:58:53.170Z",
+      "updatedAt": "2026-09-24T00:07:18.041Z",
+      "chargeStatus": "unknown",
+      "submittedAt": "2026-09-24T00:06:29.979Z",
+      "assetId": "23f39372a8822389398eb0835a387bcc9161af46746e32a486603cf3d0e68787",
+      "actualWidth": 3840,
+      "actualHeight": 2160,
+      "approximate": false,
+      "reason": "最高档请求已接受，画质差异未验证",
+      "taskId": "openai:311e1051-4f9b-4265-987e-656a0dd84b10"
+    },
+    {
+      "id": "6e1b3271-a5ec-4e79-9727-2c3dd6dd5792",
+      "requestId": "9ae621a3-c9c5-4790-b036-66c863bf8e3a",
+      "supplierId": "supplier-cb9569a9a2f0add809499214",
+      "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+      "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+      "group": "生图-openai-adobe-image2.5专属",
+      "modelId": "gpt-image-2.5-sunburst",
+      "provider": "openai",
+      "dedupeKey": "6639bad8b3ef56233f91295718545ca6f75e9bcd7055870c7c54fdd6de2d2413",
+      "resolution": "4K",
+      "quality": "max",
+      "qualityCandidates": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "ratio": "16:9",
+      "parameters": {
+        "n": 1,
+        "size": "3840x2160",
+        "quality": "max"
+      },
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "status": "succeeded",
+      "createdAt": "2026-09-23T23:58:53.170Z",
+      "updatedAt": "2026-09-24T00:08:51.356Z",
+      "chargeStatus": "unknown",
+      "submittedAt": "2026-09-24T00:07:18.684Z",
+      "assetId": "eca63f69979228ea0f2489c5ed667e0454c6cd3c2e72d2631d8ba2f515ad279c",
+      "actualWidth": 3840,
+      "actualHeight": 2160,
+      "approximate": false,
+      "reason": "最高档请求已接受，画质差异未验证",
+      "taskId": "openai:9ae621a3-c9c5-4790-b036-66c863bf8e3a"
+    },
+    {
+      "id": "4a56e26c-eef1-4837-8cb9-0617ee275639",
+      "requestId": "0d682784-2b85-4969-bc0b-a6fc075cf349",
+      "supplierId": "supplier-cb9569a9a2f0add809499214",
+      "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+      "connectionId": "19eaacc5-9418-4fb4-bd19-4753865bc5da",
+      "group": "AZURE-openai",
+      "modelId": "gpt-image-2",
+      "provider": "weai",
+      "dedupeKey": "92e74bb772a91c2c161c7764d9c576edb10af84264b97402ac4849b166016737",
+      "resolution": "4K",
+      "quality": "high",
+      "qualityCandidates": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "ratio": "16:9",
+      "parameters": {
+        "n": 1,
+        "size": "3840x2160",
+        "aspect_ratio": "16:9",
+        "quality": "high"
+      },
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "status": "succeeded",
+      "createdAt": "2026-09-23T23:58:53.169Z",
+      "updatedAt": "2026-09-24T00:10:23.383Z",
+      "chargeStatus": "unknown",
+      "submittedAt": "2026-09-24T00:08:52.376Z",
+      "assetId": "f53cbbde5620f76d5743504c0799701417ca99541a9f018a50ea41c460bd7727",
+      "actualWidth": 3840,
+      "actualHeight": 2160,
+      "approximate": false,
+      "reason": "最高档请求已接受，画质差异未验证",
+      "taskId": "weai:0d682784-2b85-4969-bc0b-a6fc075cf349"
+    },
+    {
+      "id": "645b09ca-0f37-49f6-8c4b-fada68777953",
+      "requestId": "47d6d2ff-3764-45f4-9c9c-b8c91f3e0fdb",
+      "supplierId": "supplier-cb9569a9a2f0add809499214",
+      "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+      "connectionId": "6e05aa69-ae8e-4c1c-aa19-0f8716f82458",
+      "group": "生图-openai-codex-token计费",
+      "modelId": "gpt-image-2",
+      "provider": "weai",
+      "dedupeKey": "59bf289f58520a1343ded2dfac1475013976f0274c374fa659bb3eef110d21df",
+      "resolution": "4K",
+      "quality": "high",
+      "qualityCandidates": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "ratio": "16:9",
+      "parameters": {
+        "n": 1,
+        "size": "3840x2160",
+        "aspect_ratio": "16:9",
+        "quality": "high"
+      },
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "status": "inconclusive",
+      "createdAt": "2026-09-23T23:58:53.170Z",
+      "updatedAt": "2026-09-24T00:10:43.810Z",
+      "chargeStatus": "unknown",
+      "submittedAt": "2026-09-24T00:10:24.420Z",
+      "resolutionMismatch": true,
+      "assetId": "e353739065800fac24c61184c9981781eaf3d52836ed72b0fda26fdb4cbd74a6",
+      "actualWidth": 1536,
+      "actualHeight": 1024,
+      "approximate": false,
+      "reason": "返回图片尺寸或比例未达到此档位要求",
+      "taskId": "weai:47d6d2ff-3764-45f4-9c9c-b8c91f3e0fdb"
+    },
+    {
+      "id": "0f1a46a9-c1f5-4a26-bb1e-ef1756640fd9",
+      "requestId": "93ce4aa4-c540-4f71-9a73-235ffda11bb0",
+      "supplierId": "supplier-cb9569a9a2f0add809499214",
+      "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+      "connectionId": "be997edb-f9b9-421d-a342-9091ece7e16d",
+      "group": "gemini香蕉",
+      "modelId": "gemini-3-pro-image",
+      "provider": "weai",
+      "dedupeKey": "14a641483bde5dd58fa385d765343811b7fb3d9fa0e2b35bc7f65322aa42776b",
+      "resolution": "4K",
+      "ratio": "16:9",
+      "parameters": {
+        "n": 1,
+        "image_size": "4K",
+        "aspect_ratio": "16:9"
+      },
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "status": "needs_attention",
+      "createdAt": "2026-09-23T23:58:53.170Z",
+      "updatedAt": "2026-09-24T00:10:46.900Z",
+      "chargeStatus": "unknown",
+      "submittedAt": "2026-09-24T00:10:44.753Z",
+      "reason": "生成结果或扣费尚未确认，保留请求等待核对"
+    },
+    {
+      "id": "228c71d7-fa3c-444a-ae4f-d1d06cd0975e",
+      "requestId": "d283b4f3-899a-419b-9d37-9bc6cd9250a2",
+      "supplierId": "supplier-cb9569a9a2f0add809499214",
+      "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+      "connectionId": "be997edb-f9b9-421d-a342-9091ece7e16d",
+      "group": "gemini香蕉",
+      "modelId": "gemini-3.1-flash-image",
+      "provider": "weai",
+      "dedupeKey": "761227a02573d063daea820fea171bb0edac1574aa2fb52a973ac6ff198206de",
+      "resolution": "4K",
+      "ratio": "16:9",
+      "parameters": {
+        "n": 1,
+        "image_size": "4K",
+        "aspect_ratio": "16:9"
+      },
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "status": "queued",
+      "createdAt": "2026-09-23T23:58:53.170Z",
+      "updatedAt": "2026-09-23T23:58:53.170Z",
+      "chargeStatus": "unknown"
+    },
+    {
+      "id": "707a8716-5a90-4d57-b534-59b447284c31",
+      "requestId": "96e0cc71-eaf0-44d9-87a2-239b91d83b23",
+      "supplierId": "supplier-cb9569a9a2f0add809499214",
+      "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+      "connectionId": "c71c1714-acdb-47e9-90cb-f72aa3e97cee",
+      "group": "生图-openai-adobe-token计费",
+      "modelId": "gpt-image-2",
+      "provider": "weai",
+      "dedupeKey": "165aad1f9c1480f93d4696af60170cd66cbcdfebf35d4b106b7004f600d916f9",
+      "resolution": "4K",
+      "quality": "high",
+      "qualityCandidates": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "ratio": "16:9",
+      "parameters": {
+        "n": 1,
+        "size": "3840x2160",
+        "aspect_ratio": "16:9",
+        "quality": "high"
+      },
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "status": "queued",
+      "createdAt": "2026-09-23T23:58:53.170Z",
+      "updatedAt": "2026-09-23T23:58:53.170Z",
+      "chargeStatus": "unknown"
+    }
+  ],
+  "models": [
+    {
+      "id": "gpt-image-2.5-flare",
+      "parameters": [
+        {
+          "key": "size",
+          "label": "分辨率",
+          "control": "dimensions",
+          "options": [
+            {
+              "label": "自动（提示词优先，其次参考图）",
+              "value": "auto"
+            },
+            {
+              "label": "1K · 1:1 · 1024 × 1024",
+              "value": "1024x1024"
+            },
+            {
+              "label": "1K · 16:9 · 1360 × 768",
+              "value": "1360x768"
+            },
+            {
+              "label": "1K · 9:16 · 768 × 1360",
+              "value": "768x1360"
+            },
+            {
+              "label": "1K · 4:3 · 1184 × 880",
+              "value": "1184x880"
+            },
+            {
+              "label": "1K · 3:4 · 880 × 1184",
+              "value": "880x1184"
+            },
+            {
+              "label": "1K · 3:2 · 1248 × 832",
+              "value": "1248x832"
+            },
+            {
+              "label": "1K · 2:3 · 832 × 1248",
+              "value": "832x1248"
+            },
+            {
+              "label": "1K · 5:4 · 1136 × 912",
+              "value": "1136x912"
+            },
+            {
+              "label": "1K · 4:5 · 912 × 1136",
+              "value": "912x1136"
+            },
+            {
+              "label": "1K · 21:9 · 1552 × 672",
+              "value": "1552x672"
+            },
+            {
+              "label": "1K · 9:21 · 672 × 1552",
+              "value": "672x1552"
+            },
+            {
+              "label": "2K · 1:1 · 2048 × 2048",
+              "value": "2048x2048"
+            },
+            {
+              "label": "2K · 16:9 · 2720 × 1536",
+              "value": "2720x1536"
+            },
+            {
+              "label": "2K · 9:16 · 1536 × 2720",
+              "value": "1536x2720"
+            },
+            {
+              "label": "2K · 4:3 · 2352 × 1776",
+              "value": "2352x1776"
+            },
+            {
+              "label": "2K · 3:4 · 1776 × 2352",
+              "value": "1776x2352"
+            },
+            {
+              "label": "2K · 3:2 · 2496 × 1680",
+              "value": "2496x1680"
+            },
+            {
+              "label": "2K · 2:3 · 1680 × 2496",
+              "value": "1680x2496"
+            },
+            {
+              "label": "2K · 5:4 · 2288 × 1824",
+              "value": "2288x1824"
+            },
+            {
+              "label": "2K · 4:5 · 1824 × 2288",
+              "value": "1824x2288"
+            },
+            {
+              "label": "2K · 21:9 · 3120 × 1344",
+              "value": "3120x1344"
+            },
+            {
+              "label": "2K · 9:21 · 1344 × 3120",
+              "value": "1344x3120"
+            },
+            {
+              "label": "4K · 1:1 · 2880 × 2880",
+              "value": "2880x2880"
+            },
+            {
+              "label": "4K · 16:9 · 3840 × 2160",
+              "value": "3840x2160"
+            },
+            {
+              "label": "4K · 9:16 · 2160 × 3840",
+              "value": "2160x3840"
+            },
+            {
+              "label": "4K · 4:3 · 3312 × 2496",
+              "value": "3312x2496"
+            },
+            {
+              "label": "4K · 3:4 · 2496 × 3312",
+              "value": "2496x3312"
+            },
+            {
+              "label": "4K · 3:2 · 3520 × 2352",
+              "value": "3520x2352"
+            },
+            {
+              "label": "4K · 2:3 · 2352 × 3520",
+              "value": "2352x3520"
+            },
+            {
+              "label": "4K · 5:4 · 3216 × 2576",
+              "value": "3216x2576"
+            },
+            {
+              "label": "4K · 4:5 · 2576 × 3216",
+              "value": "2576x3216"
+            },
+            {
+              "label": "4K · 21:9 · 3840 × 1648",
+              "value": "3840x1648"
+            },
+            {
+              "label": "4K · 9:21 · 1648 × 3840",
+              "value": "1648x3840"
+            }
+          ],
+          "valueType": "string",
+          "default": "auto",
+          "description": "可选档位开放全部比例预设和自动；自动比例优先提示词，其次参考图。实际图片尺寸与实测范围见核验记录。"
+        },
+        {
+          "key": "quality",
+          "label": "质量",
+          "control": "select",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（auto）"
+            },
+            {
+              "value": "low",
+              "label": "低（low）"
+            },
+            {
+              "value": "medium",
+              "label": "中（medium）"
+            },
+            {
+              "value": "high",
+              "label": "高（high）"
+            },
+            {
+              "value": "xhigh",
+              "label": "超高（xhigh）"
+            },
+            {
+              "value": "max",
+              "label": "最高（max）"
+            }
+          ],
+          "description": "按最高合法档位开放同型号全部质量选项；其余选项未逐档实测。"
+        }
+      ],
+      "evidence": [
+        {
+          "id": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf:gpt-image-2.5-flare:1K",
+          "supplierId": "supplier-cb9569a9a2f0add809499214",
+          "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+          "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+          "group": "生图-openai-adobe-image2.5专属",
+          "modelId": "gpt-image-2.5-flare",
+          "operation": "image.generate",
+          "kind": "group",
+          "sourceUrl": "https://asian-acc.we-token.cc",
+          "checkedAt": "2026-09-23T23:58:25.724Z",
+          "excerpt": "生图-openai-adobe-image2.5专属。",
+          "fingerprint": "78451f4e8a153c6d8a0ad31358dd8782d108122726fa9fda2c79f1ed77e80ebc",
+          "status": "assumed",
+          "resolution": "1K"
+        },
+        {
+          "id": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf:gpt-image-2.5-flare:2K",
+          "supplierId": "supplier-cb9569a9a2f0add809499214",
+          "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+          "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+          "group": "生图-openai-adobe-image2.5专属",
+          "modelId": "gpt-image-2.5-flare",
+          "operation": "image.generate",
+          "kind": "inference",
+          "sourceUrl": "https://asian-acc.we-token.cc",
+          "checkedAt": "2026-09-24T00:07:18.041Z",
+          "excerpt": "同一分组、Key、型号的 4K 已通过（实际 3840×2160，请求 311e1051-4f9b-4265-987e-656a0dd84b10），据此开放 2K；未另行生成 2K 测试图。",
+          "fingerprint": "78451f4e8a153c6d8a0ad31358dd8782d108122726fa9fda2c79f1ed77e80ebc",
+          "status": "inferred",
+          "resolution": "2K"
+        },
+        {
+          "id": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf:gpt-image-2.5-flare:4K",
+          "supplierId": "supplier-cb9569a9a2f0add809499214",
+          "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+          "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+          "group": "生图-openai-adobe-image2.5专属",
+          "modelId": "gpt-image-2.5-flare",
+          "operation": "image.generate",
+          "kind": "test",
+          "sourceUrl": "https://asian-acc.we-token.cc",
+          "checkedAt": "2026-09-24T00:07:18.041Z",
+          "excerpt": "请求 3840×2160，实际 3840×2160；仅核验 16:9",
+          "fingerprint": "78451f4e8a153c6d8a0ad31358dd8782d108122726fa9fda2c79f1ed77e80ebc",
+          "status": "verified",
+          "resolution": "4K",
+          "actualWidth": 3840,
+          "actualHeight": 2160
+        },
+        {
+          "id": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf:gpt-image-2.5-flare:quality",
+          "supplierId": "supplier-cb9569a9a2f0add809499214",
+          "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+          "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+          "group": "生图-openai-adobe-image2.5专属",
+          "modelId": "gpt-image-2.5-flare",
+          "operation": "image.generate",
+          "kind": "test",
+          "sourceUrl": "https://asian-acc.we-token.cc",
+          "checkedAt": "2026-09-24T00:07:18.041Z",
+          "excerpt": "max 档请求已接受，画质差异未验证",
+          "fingerprint": "78451f4e8a153c6d8a0ad31358dd8782d108122726fa9fda2c79f1ed77e80ebc",
+          "status": "verified",
+          "quality": "max"
+        }
+      ],
+      "priceLabel": "价格未公布"
+    },
+    {
+      "id": "gpt-image-2.5-sunburst",
+      "parameters": [
+        {
+          "key": "size",
+          "label": "分辨率",
+          "control": "dimensions",
+          "options": [
+            {
+              "label": "自动（提示词优先，其次参考图）",
+              "value": "auto"
+            },
+            {
+              "label": "1K · 1:1 · 1024 × 1024",
+              "value": "1024x1024"
+            },
+            {
+              "label": "1K · 16:9 · 1360 × 768",
+              "value": "1360x768"
+            },
+            {
+              "label": "1K · 9:16 · 768 × 1360",
+              "value": "768x1360"
+            },
+            {
+              "label": "1K · 4:3 · 1184 × 880",
+              "value": "1184x880"
+            },
+            {
+              "label": "1K · 3:4 · 880 × 1184",
+              "value": "880x1184"
+            },
+            {
+              "label": "1K · 3:2 · 1248 × 832",
+              "value": "1248x832"
+            },
+            {
+              "label": "1K · 2:3 · 832 × 1248",
+              "value": "832x1248"
+            },
+            {
+              "label": "1K · 5:4 · 1136 × 912",
+              "value": "1136x912"
+            },
+            {
+              "label": "1K · 4:5 · 912 × 1136",
+              "value": "912x1136"
+            },
+            {
+              "label": "1K · 21:9 · 1552 × 672",
+              "value": "1552x672"
+            },
+            {
+              "label": "1K · 9:21 · 672 × 1552",
+              "value": "672x1552"
+            },
+            {
+              "label": "2K · 1:1 · 2048 × 2048",
+              "value": "2048x2048"
+            },
+            {
+              "label": "2K · 16:9 · 2720 × 1536",
+              "value": "2720x1536"
+            },
+            {
+              "label": "2K · 9:16 · 1536 × 2720",
+              "value": "1536x2720"
+            },
+            {
+              "label": "2K · 4:3 · 2352 × 1776",
+              "value": "2352x1776"
+            },
+            {
+              "label": "2K · 3:4 · 1776 × 2352",
+              "value": "1776x2352"
+            },
+            {
+              "label": "2K · 3:2 · 2496 × 1680",
+              "value": "2496x1680"
+            },
+            {
+              "label": "2K · 2:3 · 1680 × 2496",
+              "value": "1680x2496"
+            },
+            {
+              "label": "2K · 5:4 · 2288 × 1824",
+              "value": "2288x1824"
+            },
+            {
+              "label": "2K · 4:5 · 1824 × 2288",
+              "value": "1824x2288"
+            },
+            {
+              "label": "2K · 21:9 · 3120 × 1344",
+              "value": "3120x1344"
+            },
+            {
+              "label": "2K · 9:21 · 1344 × 3120",
+              "value": "1344x3120"
+            },
+            {
+              "label": "4K · 1:1 · 2880 × 2880",
+              "value": "2880x2880"
+            },
+            {
+              "label": "4K · 16:9 · 3840 × 2160",
+              "value": "3840x2160"
+            },
+            {
+              "label": "4K · 9:16 · 2160 × 3840",
+              "value": "2160x3840"
+            },
+            {
+              "label": "4K · 4:3 · 3312 × 2496",
+              "value": "3312x2496"
+            },
+            {
+              "label": "4K · 3:4 · 2496 × 3312",
+              "value": "2496x3312"
+            },
+            {
+              "label": "4K · 3:2 · 3520 × 2352",
+              "value": "3520x2352"
+            },
+            {
+              "label": "4K · 2:3 · 2352 × 3520",
+              "value": "2352x3520"
+            },
+            {
+              "label": "4K · 5:4 · 3216 × 2576",
+              "value": "3216x2576"
+            },
+            {
+              "label": "4K · 4:5 · 2576 × 3216",
+              "value": "2576x3216"
+            },
+            {
+              "label": "4K · 21:9 · 3840 × 1648",
+              "value": "3840x1648"
+            },
+            {
+              "label": "4K · 9:21 · 1648 × 3840",
+              "value": "1648x3840"
+            }
+          ],
+          "valueType": "string",
+          "default": "auto",
+          "description": "可选档位开放全部比例预设和自动；自动比例优先提示词，其次参考图。实际图片尺寸与实测范围见核验记录。"
+        },
+        {
+          "key": "quality",
+          "label": "质量",
+          "control": "select",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（auto）"
+            },
+            {
+              "value": "low",
+              "label": "低（low）"
+            },
+            {
+              "value": "medium",
+              "label": "中（medium）"
+            },
+            {
+              "value": "high",
+              "label": "高（high）"
+            },
+            {
+              "value": "xhigh",
+              "label": "超高（xhigh）"
+            },
+            {
+              "value": "max",
+              "label": "最高（max）"
+            }
+          ],
+          "description": "按最高合法档位开放同型号全部质量选项；其余选项未逐档实测。"
+        }
+      ],
+      "evidence": [
+        {
+          "id": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf:gpt-image-2.5-sunburst:1K",
+          "supplierId": "supplier-cb9569a9a2f0add809499214",
+          "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+          "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+          "group": "生图-openai-adobe-image2.5专属",
+          "modelId": "gpt-image-2.5-sunburst",
+          "operation": "image.generate",
+          "kind": "group",
+          "sourceUrl": "https://asian-acc.we-token.cc",
+          "checkedAt": "2026-09-23T23:58:25.724Z",
+          "excerpt": "生图-openai-adobe-image2.5专属。",
+          "fingerprint": "78451f4e8a153c6d8a0ad31358dd8782d108122726fa9fda2c79f1ed77e80ebc",
+          "status": "assumed",
+          "resolution": "1K"
+        },
+        {
+          "id": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf:gpt-image-2.5-sunburst:2K",
+          "supplierId": "supplier-cb9569a9a2f0add809499214",
+          "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+          "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+          "group": "生图-openai-adobe-image2.5专属",
+          "modelId": "gpt-image-2.5-sunburst",
+          "operation": "image.generate",
+          "kind": "inference",
+          "sourceUrl": "https://asian-acc.we-token.cc",
+          "checkedAt": "2026-09-24T00:08:51.356Z",
+          "excerpt": "同一分组、Key、型号的 4K 已通过（实际 3840×2160，请求 9ae621a3-c9c5-4790-b036-66c863bf8e3a），据此开放 2K；未另行生成 2K 测试图。",
+          "fingerprint": "78451f4e8a153c6d8a0ad31358dd8782d108122726fa9fda2c79f1ed77e80ebc",
+          "status": "inferred",
+          "resolution": "2K"
+        },
+        {
+          "id": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf:gpt-image-2.5-sunburst:4K",
+          "supplierId": "supplier-cb9569a9a2f0add809499214",
+          "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+          "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+          "group": "生图-openai-adobe-image2.5专属",
+          "modelId": "gpt-image-2.5-sunburst",
+          "operation": "image.generate",
+          "kind": "test",
+          "sourceUrl": "https://asian-acc.we-token.cc",
+          "checkedAt": "2026-09-24T00:08:51.356Z",
+          "excerpt": "请求 3840×2160，实际 3840×2160；仅核验 16:9",
+          "fingerprint": "78451f4e8a153c6d8a0ad31358dd8782d108122726fa9fda2c79f1ed77e80ebc",
+          "status": "verified",
+          "resolution": "4K",
+          "actualWidth": 3840,
+          "actualHeight": 2160
+        },
+        {
+          "id": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf:gpt-image-2.5-sunburst:quality",
+          "supplierId": "supplier-cb9569a9a2f0add809499214",
+          "sourceId": "2f11be0a-1d0b-4cde-bfeb-b88096ca7c04",
+          "connectionId": "1f2d1fd4-b264-43ca-9542-0c8e063fbbcf",
+          "group": "生图-openai-adobe-image2.5专属",
+          "modelId": "gpt-image-2.5-sunburst",
+          "operation": "image.generate",
+          "kind": "test",
+          "sourceUrl": "https://asian-acc.we-token.cc",
+          "checkedAt": "2026-09-24T00:08:51.356Z",
+          "excerpt": "max 档请求已接受，画质差异未验证",
+          "fingerprint": "78451f4e8a153c6d8a0ad31358dd8782d108122726fa9fda2c79f1ed77e80ebc",
+          "status": "verified",
+          "quality": "max"
+        }
+      ],
+      "priceLabel": "价格未公布"
+    }
+  ],
+  "billing": {
+    "status": "unreconciled",
+    "sourceUrl": "https://asian-acc.we-token.cc/api/v1/usage?page=1&page_size=50",
+    "checkedAt": "2026-09-24T00:11:25.277Z",
+    "rowsDuringRun": [
+      {
+        "id": 44806816,
+        "api_key_id": 526,
+        "request_id": "client:d28f763c-6736-452f-9003-a180a482f35a",
+        "model": "gpt-image-2",
+        "group_id": 6,
+        "input_tokens": 50,
+        "output_tokens": 343,
+        "total_cost": 0.01054,
+        "actual_cost": 0.007378,
+        "duration_ms": 14843,
+        "image_count": 1,
+        "image_size": "2K",
+        "created_at": "2026-09-24T08:10:37.414674+08:00"
+      },
+      {
+        "id": 44806792,
+        "api_key_id": 528,
+        "request_id": "client:afcc1b6d-933f-4cf8-8708-a5a74268b120",
+        "model": "gpt-image-2",
+        "group_id": 19,
+        "input_tokens": 50,
+        "output_tokens": 13342,
+        "total_cost": 0.40051,
+        "actual_cost": 0.80102,
+        "duration_ms": 86626,
+        "image_count": 1,
+        "image_size": "4K",
+        "image_quality": "high",
+        "created_at": "2026-09-24T08:10:17.074831+08:00"
+      },
+      {
+        "id": 44806646,
+        "api_key_id": 998,
+        "request_id": "client:40f49c24-5014-44b9-9a3f-83c3001f685b",
+        "model": "gpt-image-2.5-sunburst",
+        "group_id": 35,
+        "input_tokens": 57,
+        "output_tokens": 13342,
+        "total_cost": 0.1,
+        "actual_cost": 0.1,
+        "duration_ms": 89284,
+        "image_count": 1,
+        "image_size": "4K",
+        "image_quality": "max",
+        "created_at": "2026-09-24T08:08:45.630532+08:00"
+      },
+      {
+        "id": 44806530,
+        "api_key_id": 998,
+        "request_id": "client:cfdd4d78-56a4-405b-bf55-599da7838eaf",
+        "model": "gpt-image-2.5-flare",
+        "group_id": 35,
+        "input_tokens": 57,
+        "output_tokens": 13342,
+        "total_cost": 0.1,
+        "actual_cost": 0.1,
+        "duration_ms": 44587,
+        "image_count": 1,
+        "image_size": "4K",
+        "image_quality": "max",
+        "created_at": "2026-09-24T08:07:12.48036+08:00"
+      }
+    ],
+    "observedAmount": 1.008398,
+    "currency": null,
+    "responseRequestIds": [
+      {
+        "at": "2026-09-24T00:10:19.336Z",
+        "path": "/v1/images/generations",
+        "status": 200,
+        "headers": {
+          "x-client-request-id": "afcc1b6d-933f-4cf8-8708-a5a74268b120",
+          "x-request-id": "f2622916-9172-452c-bc06-38856852b57b"
+        }
+      },
+      {
+        "at": "2026-09-24T00:10:40.260Z",
+        "path": "/v1/images/generations",
+        "status": 200,
+        "headers": {
+          "x-client-request-id": "d28f763c-6736-452f-9003-a180a482f35a",
+          "x-request-id": "8a0cefb2-db05-4526-98b9-5a0157a1b69c"
+        }
+      }
+    ],
+    "note": "同期账单观察值，不是已完成逐请求对账的最终总额。供应商用 client 请求编号，当前任务未完整保存该编号；账单未注明币种。Gemini 请求不能因尚未找到扣费行而记为免费。测试开始前的 Sunburst 1K 记录已排除。"
+  }
+}

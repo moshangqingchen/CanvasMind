@@ -74,6 +74,8 @@ export function chentuAzImageDescriptor(
       supportsImageEdit: true,
       azVerifiedAt: "2026-09-15",
       verificationSource: "docs/chentu-az-live-test-2026-09-15.md",
+      imageSupportedResolutions: ["1K"],
+      imageUnsupportedResolutions: ["2K", "4K"],
       ratioVerificationSource: "docs/chentu-az-ratio-test-2026-09-15.md",
     },
   };

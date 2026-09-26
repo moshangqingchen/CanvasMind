@@ -4,6 +4,29 @@ import { presentProviderError } from "./error-presentation";
 import { ProviderHttpError } from "./http";
 
 describe("provider error presentation", () => {
+  it("states that failed route discovery did not submit a paid request", () => {
+    const cause = Object.assign(new Error("discovery failed"), { code: "PROVIDER_NETWORK_DISCOVERY_FAILED" });
+    const error = new ProviderHttpError("Provider network request failed", {
+      kind: "network", phase: "submit", retryable: true, submissionMayHaveOccurred: false, cause,
+    });
+    const presentation = presentProviderError(error, { provider: "openai" });
+    expect(presentation.type).toBe("连接准备失败");
+    expect(presentation.message).toContain("尚未向供应商提交请求");
+  });
+
+  it("preserves safe transport evidence for durable diagnostics without exposing the raw cause", () => {
+    const transport = { elapsedMs: 99_123, stage: "awaiting_headers" as const, responseBytes: 0,
+      errorCode: "UND_ERR_SOCKET", socketBytesRead: 0, socketBytesWritten: 500,
+      localAddress: "192.168.1.20", remoteAddress: "104.156.154.225", localPort: 50001, remotePort: 443, route: "physical-direct" as const };
+    const error = new ProviderHttpError("Provider network request failed", {
+      kind: "network", phase: "submit", retryable: false, submissionMayHaveOccurred: true,
+      transport, cause: new Error("authorization: secret"),
+    });
+    const presentation = presentProviderError(error, { provider: "openai" });
+    expect(presentation.transport).toEqual(transport);
+    expect(JSON.stringify(presentation)).not.toContain("secret");
+  });
+
   it("explains oversized successful image responses", () => {
     const error = new ProviderHttpError("Unable to read provider response", {
       kind: "invalid_response",
@@ -204,6 +227,61 @@ describe("provider error presentation", () => {
     });
   });
 
+  it("explains confirmed asynchronous overload failures and retains the provider evidence", () => {
+    const raw = 'adobe throttled: status 408 retry-after=none envoy=false {"error_code":"timeout_error","message":"system under load"}';
+    expect(presentProviderError(new Error(raw), { provider: "openai", operation: "image.edit" })).toMatchObject({
+      message: "供应商模型当前繁忙，未能完成本次生成，请稍后重试。",
+      type: "供应商繁忙", code: "provider_overloaded", providerMessage: raw,
+    });
+  });
+
+  it("distinguishes an upstream HTTP 524 from a local timeout without encouraging resubmission", () => {
+    const error = new ProviderHttpError("Provider returned HTTP 524", {
+      kind: "provider",
+      phase: "submit",
+      status: 524,
+      retryable: false,
+      submissionMayHaveOccurred: true,
+      responseBody: "<html>Cloudflare: generation timed out after 125 seconds</html>",
+    });
+
+    const presentation = presentProviderError(error, { provider: "openai" });
+    expect(presentation).toMatchObject({
+      type: "请求链路网关超时",
+      code: "HTTP 524",
+      statusCode: 524,
+    });
+    expect(presentation.message).toContain("请求可能仍在生成或已扣费");
+    expect(presentation.message).toContain("不要重复提交");
+    expect(presentation.message).toContain("延长本地等待时间无法解除此网关限制");
+    expect(presentation.message).not.toContain("请稍后重试");
+  });
+
+  it.each(["connect", "poll", "archive", "cancel"] as const)(
+    "does not imply a new paid generation for HTTP 524 during %s",
+    (phase) => {
+      const error = new ProviderHttpError("Provider returned HTTP 524", {
+        kind: "provider",
+        phase,
+        status: 524,
+        retryable: true,
+        submissionMayHaveOccurred: false,
+      });
+      const presentation = presentProviderError(error, { provider: "openai" });
+      expect(presentation).toMatchObject({
+        type: "请求链路网关超时", code: "HTTP 524", statusCode: 524,
+      });
+      expect(presentation.message).toContain("核对供应商服务或原任务状态");
+      expect(presentation.message).not.toMatch(/已扣费|仍在生成|重复提交/);
+    },
+  );
+
+  it("keeps a plain HTTP 524 diagnostic without guessing a paid submission", () => {
+    const presentation = presentProviderError(new Error("Gateway error HTTP 524"), { provider: "rest" });
+    expect(presentation).toMatchObject({ type: "请求链路网关超时", code: "HTTP 524" });
+    expect(presentation.message).not.toMatch(/已扣费|仍在生成/);
+  });
+
   it("shows the underlying transport code for network failures", () => {
     const error = new ProviderHttpError("Provider network request failed", {
       kind: "network",
@@ -218,11 +296,22 @@ describe("provider error presentation", () => {
     });
 
     expect(presentProviderError(error, { provider: "rest" })).toMatchObject({
-      message: "API 提交时网络连接失败，请检查网络和接口地址。",
-      type: "网络连接错误",
+      message: "API 提交过程中连接中断，未收到完整响应。供应商可能仍在生成或已扣费，请先核对原任务和账单，不要重复提交。",
+      type: "连接中断",
       code: "UND_ERR_SOCKET",
       api: "自定义 REST API",
     });
+  });
+
+  it.each(["connect", "poll", "archive", "cancel"] as const)("keeps socket failures during %s separate from uncertain submission", (phase) => {
+    const error = new ProviderHttpError("Provider network request failed", {
+      kind: "network", phase, retryable: true, submissionMayHaveOccurred: false,
+      cause: Object.assign(new Error("socket closed"), { code: "UND_ERR_SOCKET" }),
+    });
+    const presentation = presentProviderError(error, { provider: "openai" });
+    expect(presentation).toMatchObject({ type: "连接中断", code: "UND_ERR_SOCKET" });
+    expect(presentation.message).toContain("未收到完整响应");
+    expect(presentation.message).not.toMatch(/仍在生成|已扣费|重复提交/);
   });
 
   it("explains EACCES as a local proxy or TUN/Fake-IP routing problem", () => {

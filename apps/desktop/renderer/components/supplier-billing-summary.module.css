@@ -1,0 +1,12 @@
+.summary { margin: 12px 0; padding: 14px 16px; border: 1px solid var(--border, #3b3b42); border-radius: 12px; background: var(--panel-bg, #242428); font-size: 12px; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.heading button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border, #484850); border-radius: 7px; padding: 5px 8px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.heading button:disabled { opacity: .6; cursor: wait; }
+.amounts { display: flex; flex-wrap: wrap; gap: 10px 24px; margin: 12px 0 8px; }
+.amounts span { display: flex; gap: 8px; }
+.summary small { display: block; opacity: .65; line-height: 1.6; }
+.summary p { color: #e4b1a4; margin: 5px 0; line-height: 1.5; }
+.compact { margin: 8px 0 0; padding: 9px 10px; }
+.compact .amounts { gap: 8px 12px; }
+.spin { animation: rotate 1s linear infinite; }
+@keyframes rotate { to { transform: rotate(360deg); } }

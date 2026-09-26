@@ -1,6 +1,11 @@
+import {
+  SupplierVerificationConflictError,
+  type SupplierVerificationRecord,
+} from "./supplier-verification.js";
 import { randomUUID } from "node:crypto";
 import type {
   AssetRecord,
+  AssetImageDesignReviewInput,
   CanvasRecord,
   CanvasRevisionRecord,
   DirectorMessageRecord,
@@ -20,6 +25,7 @@ import type {
   WorkflowRunRecord,
 } from "./types.js";
 import { CanvasRevisionConflictError } from "./types.js";
+import { applyImageDesignReview } from "./image-design-review.js";
 import {
   assertSnapshotCredentials,
   assertRunConnections,
@@ -34,6 +40,8 @@ const clone = <T>(value: T): T => structuredClone(value);
 
 export interface MemoryRepositorySnapshot {
   version: 2;
+  verificationSchemaVersion?: 1;
+  supplierVerifications?: SupplierVerificationRecord[];
   /** Optional for snapshots created before supplier management existed. */
   suppliers?: SupplierRecord[];
   canvases: CanvasRecord[];
@@ -78,6 +86,10 @@ export function migrateMemoryRepositorySnapshot(
 }
 
 export class MemoryRepository implements Repository {
+  private readonly supplierVerifications = new Map<
+    string,
+    SupplierVerificationRecord
+  >();
   private readonly suppliers = new Map<string, SupplierRecord>();
   private readonly canvases = new Map<string, CanvasRecord>();
   private readonly revisions = new Map<string, CanvasRevisionRecord>();
@@ -92,6 +104,12 @@ export class MemoryRepository implements Repository {
   >();
   private readonly runs = new Map<string, WorkflowRunRecord>();
   private readonly nodeRuns = new Map<string, NodeRunRecord>();
+  private readonly nodeRunIdsByRun = new Map<string, Set<string>>();
+  private readonly nodeRunIdsByCanvasNode = new Map<string, Set<string>>();
+  private readonly latestSucceededByCanvasNode = new Map<
+    string,
+    string | null
+  >();
   private readonly webhookKeys = new Set<string>();
 
   constructor(snapshotInput?: MemoryRepositorySnapshotInput) {
@@ -99,6 +117,8 @@ export class MemoryRepository implements Repository {
       ? migrateMemoryRepositorySnapshot(snapshotInput)
       : undefined;
     if (!snapshot) return;
+    for (const record of snapshot.supplierVerifications ?? [])
+      this.supplierVerifications.set(record.id, clone(record));
     for (const record of snapshot.suppliers ?? [])
       this.suppliers.set(record.id, clone(record));
     for (const record of snapshot.canvases)
@@ -118,8 +138,10 @@ export class MemoryRepository implements Repository {
     for (const record of snapshot.directorProposals)
       this.directorProposals.set(record.id, clone(record));
     for (const record of snapshot.runs) this.runs.set(record.id, clone(record));
-    for (const record of snapshot.nodeRuns)
+    for (const record of snapshot.nodeRuns) {
       this.nodeRuns.set(record.id, clone(record));
+      this.indexNodeRun(record);
+    }
     for (const key of snapshot.webhookKeys) this.webhookKeys.add(key);
   }
 
@@ -131,6 +153,8 @@ export class MemoryRepository implements Repository {
   protected exportSnapshotView(): MemoryRepositorySnapshot {
     return {
       version: 2,
+      verificationSchemaVersion: 1,
+      supplierVerifications: [...this.supplierVerifications.values()],
       suppliers: [...this.suppliers.values()],
       canvases: [...this.canvases.values()],
       revisions: [...this.revisions.values()],
@@ -155,6 +179,103 @@ export class MemoryRepository implements Repository {
 
   public exportSnapshot(): MemoryRepositorySnapshot {
     return clone(this.exportSnapshotView());
+  }
+
+  private canvasNodeKey(record: NodeRunRecord): string | undefined {
+    const run = this.runs.get(record.workflowRunId);
+    return run ? JSON.stringify([run.canvasId, record.nodeId]) : undefined;
+  }
+
+  private indexNodeRun(record: NodeRunRecord, previous?: NodeRunRecord): void {
+    const key = this.canvasNodeKey(record);
+    const previousKey = previous && this.canvasNodeKey(previous);
+    if (previous && previous.workflowRunId !== record.workflowRunId) {
+      this.removeIndexEntry(
+        this.nodeRunIdsByRun,
+        previous.workflowRunId,
+        record.id,
+      );
+    }
+    if (previousKey && previousKey !== key) {
+      this.removeIndexEntry(
+        this.nodeRunIdsByCanvasNode,
+        previousKey,
+        record.id,
+      );
+      this.latestSucceededByCanvasNode.delete(previousKey);
+    }
+    const byRun =
+      this.nodeRunIdsByRun.get(record.workflowRunId) ?? new Set<string>();
+    byRun.add(record.id);
+    this.nodeRunIdsByRun.set(record.workflowRunId, byRun);
+    if (key) {
+      const byNode = this.nodeRunIdsByCanvasNode.get(key) ?? new Set<string>();
+      byNode.add(record.id);
+      this.nodeRunIdsByCanvasNode.set(key, byNode);
+      this.latestSucceededByCanvasNode.delete(key);
+    }
+  }
+
+  private removeIndexEntry(
+    index: Map<string, Set<string>>,
+    key: string,
+    id: string,
+  ): void {
+    const ids = index.get(key);
+    ids?.delete(id);
+    if (ids?.size === 0) index.delete(key);
+  }
+
+  private removeNodeRun(record: NodeRunRecord): void {
+    this.nodeRuns.delete(record.id);
+    this.removeIndexEntry(
+      this.nodeRunIdsByRun,
+      record.workflowRunId,
+      record.id,
+    );
+    const key = this.canvasNodeKey(record);
+    if (key) {
+      this.removeIndexEntry(this.nodeRunIdsByCanvasNode, key, record.id);
+      this.latestSucceededByCanvasNode.delete(key);
+    }
+  }
+
+  async listSupplierVerifications(): Promise<SupplierVerificationRecord[]> {
+    return [...this.supplierVerifications.values()].map(clone);
+  }
+  async getSupplierVerification(
+    id: string,
+  ): Promise<SupplierVerificationRecord | null> {
+    const record = this.supplierVerifications.get(id);
+    return record ? clone(record) : null;
+  }
+  async saveSupplierVerification(
+    input: SupplierVerificationRecord,
+    expectedRevision: number,
+  ): Promise<SupplierVerificationRecord> {
+    const current = this.supplierVerifications.get(input.id);
+    if ((current?.revision ?? 0) !== expectedRevision)
+      throw new SupplierVerificationConflictError();
+    const queued = input.cases.filter(
+      (test) => test.status === "queued",
+    ).length;
+    if (
+      !Number.isSafeInteger(input.used) ||
+      !Number.isSafeInteger(input.limit) ||
+      input.used < (current?.used ?? 0) ||
+      input.used > input.limit ||
+      (input.policyVersion === 1
+        ? input.limit !== input.round * 6
+        : input.policyVersion !== 2 || input.limit !== input.used + queued)
+    )
+      throw new Error("Invalid verification budget");
+    const record = {
+      ...clone(input),
+      revision: expectedRevision + 1,
+      updatedAt: now(),
+    };
+    this.supplierVerifications.set(input.id, record);
+    return clone(record);
   }
 
   async listSuppliers(): Promise<SupplierRecord[]> {
@@ -322,8 +443,12 @@ export class MemoryRepository implements Repository {
     for (const [proposalId, proposal] of this.directorProposals)
       if (proposal.canvasId === id || sessionIds.has(proposal.sessionId))
         this.directorProposals.delete(proposalId);
-    for (const [nodeRunId, nodeRun] of this.nodeRuns)
-      if (runIds.has(nodeRun.workflowRunId)) this.nodeRuns.delete(nodeRunId);
+    for (const runId of runIds) {
+      for (const nodeRunId of this.nodeRunIdsByRun.get(runId) ?? []) {
+        const nodeRun = this.nodeRuns.get(nodeRunId);
+        if (nodeRun) this.removeNodeRun(nodeRun);
+      }
+    }
     for (const runId of runIds) this.runs.delete(runId);
     for (const sessionId of sessionIds) this.directorSessions.delete(sessionId);
   }
@@ -413,13 +538,39 @@ export class MemoryRepository implements Repository {
       deleted?: boolean;
     },
   ): Promise<AssetRecord> {
+    const metadata = clone(input.metadata);
+    const existing = this.assets.get(input.id);
+    // Archival retries upsert the same deterministic ID with fresh generation
+    // metadata. A generic upsert must never erase or replace a saved review.
+    if (
+      existing &&
+      Object.prototype.hasOwnProperty.call(
+        existing.metadata,
+        "imageDesignReview",
+      )
+    ) {
+      metadata.imageDesignReview = clone(existing.metadata.imageDesignReview);
+    }
     const record: AssetRecord = {
       ...input,
       createdAt: input.createdAt ?? now(),
       deleted: input.deleted ?? false,
-      metadata: clone(input.metadata),
+      metadata,
     };
     this.assets.set(record.id, record);
+    return clone(record);
+  }
+
+  async updateImageDesignReview(
+    id: string,
+    input: AssetImageDesignReviewInput,
+  ): Promise<AssetRecord | null> {
+    const existing = this.assets.get(id);
+    if (!existing || existing.deleted) return null;
+    // No await between reading and storing: concurrent requests compare against
+    // the same authoritative record and only one expected revision can win.
+    const record = applyImageDesignReview(existing, input);
+    this.assets.set(id, record);
     return clone(record);
   }
 
@@ -741,6 +892,11 @@ export class MemoryRepository implements Repository {
       nodeIds: input.nodeIds ? [...input.nodeIds] : input.nodeIds,
     };
     this.runs.set(record.id, record);
+    // Imported/custom repositories may create a run after its node records.
+    for (const id of this.nodeRunIdsByRun.get(record.id) ?? []) {
+      const nodeRun = this.nodeRuns.get(id);
+      if (nodeRun) this.indexNodeRun(nodeRun);
+    }
     return clone(record);
   }
 
@@ -807,19 +963,21 @@ export class MemoryRepository implements Repository {
   }
 
   async listNodeRuns(runId: string): Promise<NodeRunRecord[]> {
-    return [...this.nodeRuns.values()]
-      .filter((item) => item.workflowRunId === runId)
-      .map(clone);
+    return [...(this.nodeRunIdsByRun.get(runId) ?? [])].map((id) =>
+      clone(this.nodeRuns.get(id)!),
+    );
   }
 
   async createNodeRun(
     input: Omit<NodeRunRecord, "createdAt" | "updatedAt">,
   ): Promise<NodeRunRecord> {
-    const existing = [...this.nodeRuns.values()].find(
-      (nodeRun) =>
-        nodeRun.workflowRunId === input.workflowRunId &&
-        nodeRun.nodeId === input.nodeId,
-    );
+    const existing = [...(this.nodeRunIdsByRun.get(input.workflowRunId) ?? [])]
+      .map((id) => this.nodeRuns.get(id)!)
+      .find(
+        (nodeRun) =>
+          nodeRun.workflowRunId === input.workflowRunId &&
+          nodeRun.nodeId === input.nodeId,
+      );
     if (existing) return clone(existing);
     if (this.nodeRuns.has(input.id))
       throw new Error(`Node run already exists: ${input.id}`);
@@ -832,6 +990,7 @@ export class MemoryRepository implements Repository {
       outputAssetIds: [...input.outputAssetIds],
     };
     this.nodeRuns.set(record.id, record);
+    this.indexNodeRun(record);
     return clone(record);
   }
 
@@ -869,6 +1028,7 @@ export class MemoryRepository implements Repository {
         : existing.outputAssetIds,
     };
     this.nodeRuns.set(id, record);
+    this.indexNodeRun(record, existing);
     return clone(record);
   }
 
@@ -894,22 +1054,28 @@ export class MemoryRepository implements Repository {
     canvasId: string,
     nodeId: string,
   ): Promise<NodeRunRecord | null> {
-    const record = [...this.nodeRuns.values()]
-      .filter((nodeRun) => {
-        const run = this.runs.get(nodeRun.workflowRunId);
-        return (
-          run?.canvasId === canvasId &&
-          nodeRun.nodeId === nodeId &&
-          nodeRun.status === "succeeded" &&
-          nodeRun.outputAssetIds.length > 0
-        );
-      })
-      .sort(
-        (left, right) =>
-          right.updatedAt.localeCompare(left.updatedAt) ||
-          right.createdAt.localeCompare(left.createdAt) ||
-          right.id.localeCompare(left.id),
-      )[0];
+    const key = JSON.stringify([canvasId, nodeId]);
+    if (!this.latestSucceededByCanvasNode.has(key)) {
+      let latest: NodeRunRecord | undefined;
+      for (const id of this.nodeRunIdsByCanvasNode.get(key) ?? []) {
+        const candidate = this.nodeRuns.get(id)!;
+        if (
+          candidate.status !== "succeeded" ||
+          !candidate.outputAssetIds.length
+        )
+          continue;
+        if (
+          !latest ||
+          (candidate.updatedAt.localeCompare(latest.updatedAt) ||
+            candidate.createdAt.localeCompare(latest.createdAt) ||
+            candidate.id.localeCompare(latest.id)) > 0
+        )
+          latest = candidate;
+      }
+      this.latestSucceededByCanvasNode.set(key, latest?.id ?? null);
+    }
+    const id = this.latestSucceededByCanvasNode.get(key);
+    const record = id ? this.nodeRuns.get(id) : undefined;
     return record ? clone(record) : null;
   }
 

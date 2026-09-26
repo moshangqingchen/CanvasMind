@@ -1,13 +1,21 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { ProjectFileStore } from "./project-files.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { normalizeProjectName, ProjectFileStore } from "./project-files.js";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((root) =>
+    rm(root, { recursive: true, force: true }),
+  ));
+});
 
 async function storeFixture() {
-  return new ProjectFileStore({
-    root: await mkdtemp(join(tmpdir(), "super-canvas-project-")),
-  });
+  const root = await mkdtemp(join(tmpdir(), "super-canvas-project-"));
+  temporaryDirectories.push(root);
+  return new ProjectFileStore({ root });
 }
 
 const asset = {
@@ -20,6 +28,38 @@ const asset = {
 };
 
 describe("ProjectFileStore", () => {
+  it("archives simultaneous requests for one asset exactly once", async () => {
+    const store = await storeFixture();
+    const results = await Promise.all(
+      Array.from({ length: 12 }, (_, index) => store.archiveFinished({
+        ...asset,
+        name: `版本-${index}.png`,
+        bytes: new TextEncoder().encode(`image-${index}`),
+      })),
+    );
+    expect(results.filter((result) => result.created)).toHaveLength(1);
+    expect(new Set(results.map((result) => result.path)).size).toBe(1);
+    const directory = join(store.projectDirectory(asset.projectName), "成品", "图片");
+    expect(await readdir(directory)).toHaveLength(1);
+    const winner = results.findIndex((result) => result.created);
+    expect(await readFile(results[0]!.path, "utf8")).toBe(`image-${winner}`);
+  });
+
+  it("normalizes Windows device names and suffixes introduced by truncation", async () => {
+    for (const name of ["CON", "aux.txt", "COM1", "lpt9", "NUL"]) {
+      const normalized = normalizeProjectName(name);
+      expect(normalized).not.toBe(name);
+      const store = await storeFixture();
+      await expect(store.ensureProject(name)).resolves.toBe(store.projectDirectory(name));
+    }
+    expect(normalizeProjectName(`${"a".repeat(119)}.suffix`)).not.toMatch(/[. ]$/u);
+  });
+  it("allows simultaneous workspace reads to create the same project directories", async () => {
+    const store = await storeFixture();
+    const directories = await Promise.all(Array.from({ length: 12 }, () => store.ensureProject("并发启动")));
+    expect(new Set(directories).size).toBe(1);
+    expect((await stat(join(directories[0]!, "成品", "图片"))).isDirectory()).toBe(true);
+  });
   it("renames the project directory without losing archived files", async () => {
     const store = await storeFixture();
     const archived = await store.archiveDraft({ ...asset, source: "external" });

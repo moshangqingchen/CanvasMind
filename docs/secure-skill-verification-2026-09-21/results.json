@@ -1,0 +1,590 @@
+{
+  "supplier": "secure-skill",
+  "updatedAt": "2026-09-21T12:46:47.533Z",
+  "documentation": "https://token.secure-skill.com/docs",
+  "pricing": "https://token.secure-skill.com/pricing",
+  "videoSubmissions": 0,
+  "submissions": 8,
+  "successfulImages": 3,
+  "failed": 4,
+  "pending": 20,
+  "stopReason": "banana-全系列 / nano-banana-pro 提交超时，未取得远端任务编号。已核对异步任务、同步记录与账单，暂未出现对应记录；停止后续付费请求，原请求编号 0f44697f-d72e-4874-982e-3c9d4b25a07a，不自动重发。",
+  "billing": {
+    "newPostedChargesCNY": 0.25,
+    "previousPostedChargesCNY": 0.152,
+    "totalPostedChargesCNY": 0.402,
+    "balanceDisplayedCNY": 9.6,
+    "source": "https://token.secure-skill.com/usage",
+    "checkedAt": "2026-09-21T12:46:47.481Z",
+    "newRows": [
+      {
+        "group": "adobe-image2-mid",
+        "model": "gpt-image-2",
+        "amount": 0.05,
+        "time": "2026-09-21 20:30:01"
+      },
+      {
+        "group": "seedream-5.0-pro图片模型",
+        "model": "seedream-5.0-pro",
+        "amount": 0.15,
+        "time": "2026-09-21 20:33:50"
+      },
+      {
+        "group": "banana-全系列",
+        "model": "nano-banana-2",
+        "amount": 0.05,
+        "time": "2026-09-21 20:37:10"
+      }
+    ],
+    "notes": "费用按后台明细新增行汇总；失败请求和超时请求暂未出现新增账单。不能把未出现账单作为未受理的证明。"
+  },
+  "cases": [
+    {
+      "group": "adobe-image2-mid",
+      "model": "gpt-image-2",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "succeeded",
+      "submissions": 1,
+      "requestId": "aaeae698-816c-4fd6-8cb6-ce481aa10dac",
+      "serverRequestId": "aaeae698-816c-4fd6-8cb6-ce481aa10dac",
+      "taskId": "img-663ecb63-a2ca",
+      "submittedAt": "2026-09-21T12:28:53.898Z",
+      "finishedAt": "2026-09-21T12:30:10.914Z",
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "actualWidth": 3840,
+      "actualHeight": 2160,
+      "meetsResolution": true,
+      "returnedImages": 1,
+      "declaredPriceCNY": 0.05,
+      "billingObservation": {
+        "amount": 0.05,
+        "currency": "CNY",
+        "group": "adobe-image2-mid",
+        "model": "gpt-image-2",
+        "quantity": 1,
+        "tier": "4K",
+        "time": "2026-09-21 20:30:01",
+        "source": "https://token.secure-skill.com/usage",
+        "association": "group-model-time; request ID not exposed by bill table",
+        "priceComparison": "matches-current-pricing-page"
+      },
+      "chargeStatus": "unknown",
+      "image": "de468b32-378b-4d4e-99e7-28fbb9282148.png"
+    },
+    {
+      "group": "seedream-5.0-pro图片模型",
+      "model": "seedream-5.0-pro",
+      "tier": "2K",
+      "quality": "由分组/模型决定",
+      "status": "succeeded",
+      "submissions": 1,
+      "requestId": "a6f5bafd-61ca-4241-9010-31a71acea8a0",
+      "serverRequestId": "a6f5bafd-61ca-4241-9010-31a71acea8a0",
+      "taskId": "81e814dc640c43d18d90c49b6f6412a5",
+      "submittedAt": "2026-09-21T12:32:41.584Z",
+      "finishedAt": "2026-09-21T12:33:55.614Z",
+      "expectedWidth": 2048,
+      "expectedHeight": 2048,
+      "actualWidth": 2048,
+      "actualHeight": 2048,
+      "meetsResolution": true,
+      "returnedImages": 1,
+      "declaredPriceCNY": 0.15,
+      "billingObservation": {
+        "amount": 0.15,
+        "currency": "CNY",
+        "quantity": 1,
+        "time": "2026-09-21 20:33:50",
+        "source": "https://token.secure-skill.com/usage",
+        "association": "group-model-time; request ID not exposed",
+        "priceComparison": "matches-current-pricing-page"
+      },
+      "chargeStatus": "unknown",
+      "image": "4d6b16ca-687e-40ff-a2ca-7c77edb88a74.jpeg"
+    },
+    {
+      "group": "image-2-1k",
+      "model": "gpt-image-2.5-flare",
+      "tier": "1K",
+      "quality": "max",
+      "status": "failed",
+      "submissions": 1,
+      "requestId": "3a9acbb5-ca53-4664-8497-d1432f644fa2",
+      "serverRequestId": "3a9acbb5-ca53-4664-8497-d1432f644fa2",
+      "taskId": "img-313904be-98c3",
+      "submittedAt": "2026-09-21T12:33:55.615Z",
+      "expectedWidth": 1536,
+      "expectedHeight": 1024,
+      "reason": "{\"code\":\"no_image_output\",\"message\":\"upstream did not return image output\",\"type\":\"upstream_error\"}",
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "image-2-1k",
+      "model": "gpt-image-2.5-sunburst",
+      "tier": "1K",
+      "quality": "max",
+      "status": "failed",
+      "submissions": 1,
+      "requestId": "a56fe27e-e07f-4326-9ebe-64e6ce506ef4",
+      "serverRequestId": "a56fe27e-e07f-4326-9ebe-64e6ce506ef4",
+      "taskId": "img-942b57a1-557b",
+      "submittedAt": "2026-09-21T12:34:01.230Z",
+      "expectedWidth": 1536,
+      "expectedHeight": 1024,
+      "reason": "{\"code\":\"no_image_output\",\"message\":\"upstream did not return image output\",\"type\":\"upstream_error\"}",
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow",
+      "model": "gemini-3.0-pro-image",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "failed",
+      "submissions": 1,
+      "requestId": "3dc40c2d-1562-4e44-96b5-8488a73a6401",
+      "serverRequestId": "3dc40c2d-1562-4e44-96b5-8488a73a6401",
+      "submittedAt": "2026-09-21T12:34:40.357Z",
+      "finishedAt": "2026-09-21T12:34:40.960Z",
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "reason": "{\"code\":403,\"message\":\"Image generation is not enabled for this group\",\"status\":\"PERMISSION_DENIED\"}",
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow",
+      "model": "nano-banana-2",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "failed",
+      "submissions": 1,
+      "requestId": "e26db71c-1e60-4967-bc5c-65504fc873e5",
+      "serverRequestId": "e26db71c-1e60-4967-bc5c-65504fc873e5",
+      "submittedAt": "2026-09-21T12:35:13.698Z",
+      "finishedAt": "2026-09-21T12:35:14.107Z",
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "reason": "{\"message\":\"Image generation is not enabled for this group\",\"type\":\"permission_error\"}",
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow",
+      "model": "gemini-3.1-flash-image",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "skipped",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "reason": "同一分组的 Google 原生与原生图片接口均明确返回 403 未开通图片生成，停止该分组后续提交",
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow",
+      "model": "gemini-3.1-flash-lite-image",
+      "tier": "1K",
+      "quality": "由分组/模型决定",
+      "status": "skipped",
+      "submissions": 0,
+      "expectedWidth": 1024,
+      "expectedHeight": 1024,
+      "reason": "同一分组的 Google 原生与原生图片接口均明确返回 403 未开通图片生成，停止该分组后续提交",
+      "declaredPriceCNY": 0.03,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow",
+      "model": "nano-banana-pro",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "skipped",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "reason": "同一分组的 Google 原生与原生图片接口均明确返回 403 未开通图片生成，停止该分组后续提交",
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-全系列",
+      "model": "nano-banana-2",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "succeeded",
+      "submissions": 1,
+      "requestId": "35bd39e9-def9-4a0b-904b-dc3f60a5c8d7",
+      "serverRequestId": "35bd39e9-def9-4a0b-904b-dc3f60a5c8d7",
+      "taskId": "job_3db7d191b6874c668665e7f53adf2f0e",
+      "submittedAt": "2026-09-21T12:35:36.080Z",
+      "finishedAt": "2026-09-21T12:37:17.308Z",
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "actualWidth": 4096,
+      "actualHeight": 4096,
+      "meetsResolution": true,
+      "returnedImages": 1,
+      "declaredPriceCNY": 0.05,
+      "billingObservation": {
+        "amount": 0.05,
+        "currency": "CNY",
+        "quantity": 1,
+        "time": "2026-09-21 20:37:10",
+        "source": "https://token.secure-skill.com/usage",
+        "association": "group-model-time; request ID not exposed by bill table",
+        "priceComparison": "matches-current-pricing-page"
+      },
+      "chargeStatus": "unknown",
+      "image": "d33fe7be-aeec-45b5-894e-49bd81b5f026.jpeg"
+    },
+    {
+      "group": "banana-全系列",
+      "model": "nano-banana-pro",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "needs_attention",
+      "submissions": 1,
+      "requestId": "0f44697f-d72e-4874-982e-3c9d4b25a07a",
+      "submittedAt": "2026-09-21T12:37:49.199Z",
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "reason": "The operation was aborted due to timeout",
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-全系列",
+      "model": "N nano-banana-pro",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-全系列",
+      "model": "gemini-3-pro-image-as",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-全系列",
+      "model": "gemini-3.0-pro-image",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-全系列",
+      "model": "gemini-3.0-pro-image-preview",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-全系列",
+      "model": "gemini-3.1-flash-image",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-全系列",
+      "model": "gemini-3.1-flash-image-preview",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.05,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-pro统一价格",
+      "model": "nano-banana-2",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.07,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-pro统一价格",
+      "model": "nano-banana-pro",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.07,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-pro统一价格",
+      "model": "N nano-banana-pro",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.07,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-pro统一价格",
+      "model": "gemini-3-pro-image-as",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.07,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-pro统一价格",
+      "model": "gemini-3.0-pro-image",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.07,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-pro统一价格",
+      "model": "gemini-3.0-pro-image-preview",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.07,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-pro统一价格",
+      "model": "gemini-3.1-flash-image",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.07,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "banana-pro统一价格",
+      "model": "gemini-3.1-flash-image-preview",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "declaredPriceCNY": 0.07,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "gpt",
+      "model": "gpt-image-2",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "declaredPriceCNY": 0.051,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "image2-官key",
+      "model": "gpt-image-2",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 3840,
+      "expectedHeight": 2160,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow-大户",
+      "model": "gemini-2.5-flash-image",
+      "tier": "2K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 2048,
+      "expectedHeight": 2048,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow-大户",
+      "model": "gemini-2.5-flash-image",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow-大户",
+      "model": "gemini-3.1-flash-image",
+      "tier": "2K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 2048,
+      "expectedHeight": 2048,
+      "chargeStatus": "unknown"
+    },
+    {
+      "group": "flow-大户",
+      "model": "gemini-3.1-flash-image",
+      "tier": "4K",
+      "quality": "由分组/模型决定",
+      "status": "queued",
+      "submissions": 0,
+      "expectedWidth": 4096,
+      "expectedHeight": 4096,
+      "chargeStatus": "unknown"
+    }
+  ],
+  "recovered": {
+    "id": "809404cd-3caa-471d-9a8c-8718b96b8952",
+    "group": "image-2-1k",
+    "model": "gpt-image-2",
+    "requestId": "5e71c4b7-c8ba-4c3f-92b8-63357abe6a12",
+    "submissions": 0,
+    "originalSubmittedAt": "2026-09-21T11:56:51.284Z",
+    "source": "Original saved response; no generation resubmission",
+    "status": "recovered",
+    "width": 1536,
+    "height": 1024,
+    "image": "809404cd-3caa-471d-9a8c-8718b96b8952.png"
+  },
+  "skipped": [
+    {
+      "group": "image-2-1k",
+      "model": "gpt-image-2",
+      "reason": "已有一次已扣费的 1K 结果，优先恢复原图，不重复生成"
+    },
+    {
+      "group": "adobe-image2-mid",
+      "model": "gpt-image-2-ad2",
+      "reason": "当前目录列出，但供应商文档没有该公开型号的可执行协议，暂不付费猜测"
+    },
+    {
+      "group": "grok",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "video-企业版",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "cc-max",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "grok-企业",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "gemini",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "seedance-2.5",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "grok视频特价",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "grok视频-备用",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "minimax-h3-优化版",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "seedance-官方token版",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "wan3视频",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "image2-官key",
+      "model": "gpt-image-1",
+      "reason": "当前目录列出，但供应商文档没有该公开型号的可执行协议，暂不付费猜测"
+    },
+    {
+      "group": "image2-官key",
+      "model": "gpt-image-1.5",
+      "reason": "当前目录列出，但供应商文档没有该公开型号的可执行协议，暂不付费猜测"
+    },
+    {
+      "group": "sd-2.5-特价",
+      "reason": "对话或视频分组；本轮不提交生成"
+    },
+    {
+      "group": "gpt-image-2.5",
+      "model": "gpt-image-1",
+      "reason": "当前目录列出，但供应商文档没有该公开型号的可执行协议，暂不付费猜测"
+    },
+    {
+      "group": "gpt-image-2.5",
+      "model": "gpt-image-1.5",
+      "reason": "当前目录列出，但供应商文档没有该公开型号的可执行协议，暂不付费猜测"
+    },
+    {
+      "group": "gpt-image-2.5",
+      "model": "gpt-image-2",
+      "reason": "分组与当前 Key 模型目录冲突，未向错误型号发起生成"
+    }
+  ]
+}

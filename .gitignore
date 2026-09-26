@@ -18,14 +18,19 @@ coverage/
 /项目/
 /apps/*/storage/
 /apps/*/data/
+/apps/desktop/renderer/data/
+/apps/desktop/renderer/storage/
+/apps/desktop/renderer/项目/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 playwright-report/
 test-results/
-apps/web/test-results-mention/
-apps/web/test-results-suppliers/
-apps/web/.active-live-slot
+test-results-*/
+.ui-*-results/
+project development*.codex-temp*/
+apps/desktop/renderer/test-results-mention/
+apps/desktop/renderer/test-results-suppliers/
 
 # local secrets & tool artifacts
 .claude/
@@ -35,8 +40,12 @@ apps/web/.active-live-slot
 .codex-logs/
 .codex-temp-*.json
 .release-stage/
-/apps/web/canvas-*.png
+/apps/desktop/renderer/canvas-*.png
 .agents/
 _to_delete/
 /ui-vertical-v6.png
 /video-models-live.png
+/apps/desktop/stage/
+/apps/desktop/release/
+/apps/desktop/assets/icon.ico
+/apps/超级画布桌面版*/

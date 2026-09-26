@@ -1,8 +1,10 @@
 # 超级画布
 
-超级画布是一个面向个人创作的生图/生视频工作流 Web 应用。它把素材、结构化 Prompt、图片生成、视频生成和结果预览组织在一张类型化 DAG 画布上，并通过统一 Provider Adapter 接入外部 API。
+超级画布是一个面向个人创作的 Windows 桌面 App。它把素材、结构化 Prompt、图片生成、视频生成和结果预览组织在一张类型化 DAG 画布上，并通过统一 Provider Adapter 接入外部 API。
 
-当前仓库包含可运行的单用户版本：开发环境可用内置 Fake Provider 快速体验；完整自托管模式使用 PostgreSQL 保存画布与运行快照、Redis/BullMQ 调度任务、MinIO 保存上传素材和生成结果。第三方结果会先归档到自己的对象存储，再释放下游节点。
+当前专注 Windows 10/11 x64 桌面版：安装包内置运行环境，提供独立窗口、托盘后台运行、旧资料迁移和应用内更新。画布、素材、连接与运行历史保存在本机；AI 生成通过已配置的供应商 API 联网执行，也可用内置 Fake Provider 验证流程。第三方结果先归档到本地，再释放下游节点。
+
+安装、资料备份及更新说明见 [Windows 桌面 App](docs/windows-desktop.md)。项目仅保留桌面 App；画布界面和本地 API 位于 `apps/desktop/renderer`，由 Electron 启动，不提供独立网页服务。
 
 ## 已实现能力
 
@@ -11,29 +13,31 @@
 - Tiptap 结构化 `@素材`，保存不可变 `assetId` 和引用角色，不依赖素材 URL 或名称。
 - 单节点运行、下游运行和整张画布运行；节点右键可直接运行、复制、原地复制和删除。
 - 自动保存并在顶栏显示真实保存状态、撤销/重做、结构 JSON 与含素材完整项目包导入/导出、运行历史和结果版本保留。
+- 平面设计工作台：制作海报、宣传图和活动物料，填写文案与品牌要求，添加 Logo/主体/风格参考，按模型支持的尺寸准备多个版式或直接生成，也可带入旧图改版。使用说明见 [平面设计](docs/graphic-design.md)。
+- 图片设计评审：历史图片支持按名称、备注和状态筛选，2–4 图并排比稿、同步缩放查看，保存候选/定稿/淘汰及修改备注，并从选定版本创建新的图片编辑工作流。使用说明见 [图片比稿与定稿](docs/image-design.md)。
 - 画布画笔图层：自由涂鸦、框选、拖动，并可把选中笔画合并成图片素材节点。
 - 右侧「超级导演」智能体：固定一个 GPT、Claude、Grok、Gemini 或 OpenAI-compatible 导演大脑，按需求研究、规划并比较图片/视频模型；所有媒体生成调用先给出方案和最高费用，确认后才写入并运行画布。
 - 左侧「智能体」面板：使用独立的 `usage: agent` 连接直接进行多轮对话，可按沧元分组选择模型、推理强度，并上传图片、音频或视频附件；不会复用画布生图/生视频连接。
 - 素材管理拖入桥接：从外部素材管理器拖动文件到画布即可登记为素材节点。
 - OpenAI 图片、We-AI 图片、Runway 视频、喵呜视频、沧元算力图像、赛博阿飞、辰途、MikotoPro、FriModel、通用 REST 和 Fake Provider。
 - 沧元、赛博阿飞、辰途、喵呜实时抓取模型广场目录与价格；五家国内网关另按当前 Key 实时扫描可调用模型，设置面板提供“刷新目录”按钮，已下架或无权限的模型在付费提交前拦截。
-- PostgreSQL 运行快照、客户端幂等 ID、Worker 恢复、取消、轮询、SSE 状态和输出归档。
-- API Key 仅在服务端解密使用，数据库保存 AES-256-GCM 密文，浏览器只看到掩码。
-- 可选的单账号登录：配置后所有主机名都需要会话，登录接口有失败限流，写接口有跨站 Origin 校验。
+- 本地运行快照、客户端幂等 ID、任务恢复、取消、轮询、SSE 状态和输出归档。
+- API Key 仅在本地后端解密使用，数据库保存 AES-256-GCM 密文；主密钥由 Windows DPAPI 保护，界面只显示掩码。
 
 ## 工作台与供应商管理
 
-打开 `/` 进入工作台，可创建、搜索、排序、重命名和删除画布；每张画布使用独立的 `/canvas/{id}` 地址，支持直接打开和浏览器前进、后退。编辑器采用浅色界面，顶部显示实际保存状态。未完成保存的编辑会写入当前浏览器标签页的本地草稿，刷新后尝试恢复；若服务器已被其他窗口更新，则暂停自动保存并保留本地内容，可先导出当前副本，再选择放弃本地改动并载入服务器版本。
+启动 App 进入工作台，可创建、搜索、排序、重命名和删除画布。编辑器采用深色点阵画布、悬浮创作工具栏与可收起的右侧导演面板，顶部显示实际保存状态。连线使用平滑曲线，只有点选节点或连线后，对应路径才显示柔和的连续渐变流光；点空白处取消。底部可切换连线、小地图、暂停动效并查看缩放比例。支持系统减少动态效果偏好。导演面板的创作灵感按钮只填写可编辑草稿，不自动发送或生成。未完成保存的编辑会写入当前窗口的本地草稿，重新加载界面后尝试恢复；若资料已被其他窗口更新，则暂停自动保存并保留本地内容，可先导出当前副本，再选择放弃本地改动并载入已保存版本。
 
 在首页或编辑器的「API 设置」中添加供应商名称、站点地址和 API 地址后，可「保存并扫描」或「仅保存」。扫描先识别 NewAPI、Sub2API 或兼容站点的公开分组与模型，再用各分组已保存的独立 Key 读取实际可用模型；公开目录、Key 结果和手动配置分别展示。扫描失败保留已有配置与历史结果，目录不再返回的分组会标记为历史，未扫描到时仍可手动添加分组。临时站点登录令牌仅用于明确站点的目录鉴权重试，不作为模型 Key，也不保存到数据库。
 
 - 手动模型必须填写准确 ID，并匹配当前连接的能力与协议；手动添加标记为未验证，不代表 Key 已获得权限。普通图片可使用 OpenAI Images，对话可使用 Chat Completions 或 Responses；Gemini 遵循已有分组协议和模型限制，REST 图片/视频必须先通过高级配置建立对应模型的调用协议。
 - 画布生成与智能体对话使用独立连接和 Key。Key 扫描成功但结果为空时保持为空，不使用公开目录伪装成可调用模型。
-- PostgreSQL 部署升级需设置目标数据库的 `DATABASE_URL`，再在仓库根目录执行 `pnpm db:migrate`，应用包括 `0008_bright_charles_xavier.sql` 供应商表在内的迁移；Docker Compose 的 `migrate` 服务会自动执行迁移。
 
-## 快速体验
+## 安装与启动
 
-需要 Node.js 24 和 pnpm 11。首次安装：
+普通使用请安装 `SuperCanvas-Setup-版本-x64.exe`，从桌面或开始菜单打开“超级画布”。无需安装 Node.js、pnpm 或 Docker；首次启动可创建空白资料库，也可迁移旧仓库或旧安装目录中的资料。具体步骤见 [Windows 桌面 App](docs/windows-desktop.md)。
+
+从源码启动需要 Windows x64、Node.js 24 和 pnpm 11。在仓库根目录执行：
 
 ```powershell
 corepack enable
@@ -42,63 +46,15 @@ pnpm install
 pnpm dev
 ```
 
-打开 <http://localhost:3210>。这个模式不要求 Docker：未设置环境变量时使用本地 JSON 数据库、本地文件存储、进程内执行器和 Fake Provider。画布、素材索引、连接和运行历史默认保存在 `apps/web/data/super-canvas.json`，素材文件默认保存在 `apps/web/storage`，重启 Web 进程不会丢失。
+`pnpm dev` 构建共享包和 Electron 主进程后启动带鉴权的 Next 开发服务，界面与本地 API 支持热更新，共享包自动监听编译；修改 Electron 外壳后重新运行。开发资料独立保存在 `%LOCALAPPDATA%\SuperCanvasDesktopDevelopment\profile`，首次自动创建空白库，关闭开发窗口会安全退出并停止服务与编译监听器。
 
-> 本地模式适合单机使用和开发。正式公网部署、多人共享或需要独立数据库备份时，请使用下面的完整自托管模式。
+需要检查生产构建时运行 `pnpm desktop:dev:production`。生产桌面 App 使用 `%LOCALAPPDATA%\SuperCanvasDesktop\profile` 保存资料，完整的历史资料可通过首次启动迁移导入。本次清理的旧网页资料保存在 `backups/legacy-web-profile-20260921`；已从历史归档找回 22 份素材，仍有 173 条缺少原文件的记录，需补齐后才能通过完整迁移校验。详见[桌面工程整理记录](docs/desktop-only-cleanup-2026-09-21.md)。
 
-## Docker 自托管
-
-需要 Docker Engine 或 Docker Desktop，且 Docker Compose v2 可用。
-
-1. 创建部署环境文件并生成独立主密钥：
-
-```powershell
-Copy-Item .env.example .env
-node -e "console.log('base64:' + require('node:crypto').randomBytes(32).toString('base64'))"
-```
-
-2. 把命令输出写入 `.env` 的 `MASTER_KEY`，并填写 `POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD`、`MINIO_APP_USER`、`MINIO_APP_PASSWORD`、`DATABASE_URL` 和 `REDIS_URL`。Compose 不提供默认密码；连接串中的密码必须 URL 编码。MinIO root 凭据只用于初始化，Web/Worker 使用受限 app user。
-3. 启动完整服务：
-
-```powershell
-docker compose up -d --build
-docker compose ps
-```
-
-打开 <http://localhost:3000>。一次性的 `migrate` 服务会先应用 Drizzle migrations，成功后 Web 和 Worker 才启动。查看日志：
-
-```powershell
-docker compose logs -f web worker
-```
-
-默认只将 Web、MinIO API 和 MinIO Console 绑定到 `127.0.0.1`；PostgreSQL 与 Redis 只在 Compose 内部网络可见，Redis 启用 AUTH。镜像使用固定版本 tag，Web/Worker 以非 root 用户运行。密码修改、升级和备份步骤见 [自托管与运维](docs/self-hosting.md)。
-
-## 单账号登录
-
-不配置时应用完全没有登录，适合只在本机使用。要在本机以外访问，请设置这三个变量：
-
-```powershell
-$env:SUPERCANVAS_PUBLIC_AUTH_USER = "你的用户名"
-$env:SUPERCANVAS_PUBLIC_AUTH_PASSWORD = "一个足够长的密码"
-node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
-# 把输出写入 SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN
-```
-
-三者齐备后：
-
-- **所有主机名都需要登录**，只有回环地址（`localhost`、`127.0.0.0/8`、`[::1]`）默认豁免。想让本机也要求登录，设置 `SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK=false`。
-- 需要额外免登录的可信内网机器，用 `SUPERCANVAS_PUBLIC_AUTH_TRUSTED_HOSTS=studio.lan,192.168.1.20` 逐个列出。
-- 登录失败按来源 IP 限流（15 分钟内 8 次），并有全局上限抵挡分布式撞库。
-- 携带 `Origin` 的跨站写请求（`POST`/`PUT`/`DELETE`）会被拒绝；Provider Webhook 走自己的 HMAC 校验，不受影响。
-- 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，生产模式下附带 `Secure`。
-
-> 反向代理若把 `Host` 改写成 `localhost`，回环豁免会让登录形同虚设。这种部署必须设置 `SUPERCANVAS_PUBLIC_AUTH_ALLOW_LOOPBACK=false`，或让代理透传原始 `Host`。
->
-> 会话令牌是一个静态共享密钥：修改 `SUPERCANVAS_PUBLIC_AUTH_SESSION_TOKEN` 会立即让所有已登录会话失效，这也是唯一的“强制登出所有设备”手段。
+运行资源已经准备好且源码未变化时，可用 `pnpm start` 或 `pnpm desktop:start` 直接启动。开发桌面壳不安装在线更新；安装版通过 App 内的更新器升级。
 
 ## 基本工作流
 
-1. 在左侧素材库上传图片、视频或音频。使用 MinIO/S3 时，浏览器通过 10 分钟有效的预签名 URL 直传；预签名响应还带有绑定素材 ID、对象键、大小和 MIME 的短期 upload intent token，确认接口会再次校验对象头和文件魔数；本地存储时自动退回 Web 代理上传。
+1. 在左侧素材库添加图片、视频或音频，素材会归档到当前桌面资料库；也可从外部素材管理器拖动文件到画布。
 2. 添加“素材输入”节点并选定素材，或添加 Prompt 节点，在编辑器输入 `@` 选择素材。Mention 可标记为参考素材、首帧或尾帧。
 3. 从输出端口拖到兼容输入端口。拖到画布空白处会出现兼容节点菜单；不兼容端口、重复单输入和环路会被拒绝。
 4. 添加图片或视频生成节点，在右侧“节点参数”中选择供应商、连接、模型与参数；左侧“智能体”适合直接对话和分析素材，右侧“超级导演”则会研究、规划并报价后再生成。
@@ -107,7 +63,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 ## 超级导演
 
-`NEXT_PUBLIC_DIRECTOR_ENABLED` 是前端构建开关，默认启用：变量未设置或不是精确的 `false` 时都会显示超级导演。只有确实需要回退旧导演台时，才在执行 `pnpm dev` 或 `pnpm build` 的环境中设置 `NEXT_PUBLIC_DIRECTOR_ENABLED=false`，然后重启开发服务或重新构建前端。
+`NEXT_PUBLIC_DIRECTOR_ENABLED` 是内嵌界面的构建开关，默认启用：变量未设置或不是精确的 `false` 时都会显示超级导演。只有确实需要回退旧导演台时，才在执行 `pnpm dev` 或 `pnpm build` 的环境中设置 `NEXT_PUBLIC_DIRECTOR_ENABLED=false`，重新构建桌面运行资源后生效。
 
 首次使用按以下顺序配置：
 
@@ -139,20 +95,20 @@ pnpm director:sync -- --source "D:\path\to\超级导演" --allow-dirty
 
 常用快捷键（应用内按 `?` 或 `Ctrl+/` 可随时打开这张表）：
 
-| 操作               | Windows / Linux            | macOS                    |
-| ------------------ | -------------------------- | ------------------------ |
-| 运行当前节点       | `Ctrl+Enter`               | `Cmd+Enter`              |
-| 从当前节点运行下游 | `Ctrl+Shift+Enter`         | `Cmd+Shift+Enter`        |
-| 撤销               | `Ctrl+Z`                   | `Cmd+Z`                  |
-| 重做               | `Ctrl+Y` 或 `Ctrl+Shift+Z` | `Cmd+Y` 或 `Cmd+Shift+Z` |
-| 复制 / 粘贴节点    | `Ctrl+C` / `Ctrl+V`        | `Cmd+C` / `Cmd+V`        |
-| 原地复制选中节点   | `Ctrl+D`                   | `Cmd+D`                  |
-| 选中全部节点       | `Ctrl+A`                   | `Cmd+A`                  |
-| 立即保存画布       | `Ctrl+S`                   | `Cmd+S`                  |
-| 删除选中对象       | `Delete`                   | `Delete`                 |
-| 抓手 / 画笔 / 选择 | `1` / `2` / `3`            | `1` / `2` / `3`          |
-| 缩放到适合全部节点 | `F`                        | `F`                      |
-| 快捷键帮助         | `?` 或 `Ctrl+/`            | `?` 或 `Cmd+/`           |
+| 操作               | Windows                    |
+| ------------------ | -------------------------- |
+| 运行当前节点       | `Ctrl+Enter`               |
+| 从当前节点运行下游 | `Ctrl+Shift+Enter`         |
+| 撤销               | `Ctrl+Z`                   |
+| 重做               | `Ctrl+Y` 或 `Ctrl+Shift+Z` |
+| 复制 / 粘贴节点    | `Ctrl+C` / `Ctrl+V`        |
+| 原地复制选中节点   | `Ctrl+D`                   |
+| 选中全部节点       | `Ctrl+A`                   |
+| 立即保存画布       | `Ctrl+S`                   |
+| 删除选中对象       | `Delete`                   |
+| 抓手 / 画笔 / 选择 | `1` / `2` / `3`            |
+| 缩放到适合全部节点 | `F`                        |
+| 快捷键帮助         | `?` 或 `Ctrl+/`            |
 
 输入框和 Prompt 编辑器内不会触发画布快捷键。
 
@@ -165,11 +121,13 @@ pnpm director:sync -- --source "D:\path\to\超级导演" --allow-dirty
 
 导入会先显示节点、连线、涂鸦、素材缺失等预检结果，不会直接覆盖当前画布；默认会先下载当前画布的 JSON 备份。只有素材齐全的完整项目包才允许继续，且新画布成功保存前不会替换界面；中途上传的素材会尽量自动回滚。
 
-两种格式都不包含运行历史、供应商密钥、数据库 revision 或未被画布引用的素材，因此不能替代系统级备份。完整备份与恢复请参阅 `docs/self-hosting.md`。
+两种格式都不包含运行历史、供应商密钥、数据库 revision 或未被画布引用的素材，因此不能替代完整资料备份。备份桌面资料库及跨电脑迁移的注意事项见 [Windows 桌面 App](docs/windows-desktop.md#资料备份)。
 
 ## 供应商连接
 
-在右上角“设置”中新建连接，保存后先执行“测试连接”，再在生成节点中选择该连接。API Key 不应写入画布参数、项目 JSON、浏览器代码或 Connector 模板。
+个人网站还可通过「设置 → 个人 AI 网站」添加本地 CLI 连接，沿用 CLI 登录状态，并同步模型、分辨率和时长等参数。即梦提供待接入模板；模拟连接用于验证完整流程。接入协议和使用说明见 [个人 AI 网站 CLI](docs/personal-ai-cli.md)。
+
+在右上角“设置”中新建连接，保存后先执行“测试连接”，再在生成节点中选择该连接。API Key 不应写入画布参数、项目 JSON、界面代码或 Connector 模板。
 
 所有内置供应商共用一套实时目录机制：
 
@@ -249,7 +207,7 @@ pnpm director:sync -- --source "D:\path\to\超级导演" --allow-dirty
 - 供应商选择 `喵呜 API（视频）`，填写喵呜 API Key；默认 Base URL 为 `https://api.miaowuai.store`。
 - 按 OpenAI Videos 文档使用 `POST /v1/videos` 创建任务，并轮询 `GET /v1/videos/{id}`；请求只发送 `model`、`prompt`、`seconds`、`ratio`、`resolution`、`image_urls`、`video_urls` 和 `audio_urls`。
 - 模型列表与价格实时抓取喵呜模型广场（`/api/pricing`，60 秒缓存），并与当前 Key 的 `/v1/models` 实时扫描合并：广场有价但 Key 无权限的模型会被移出可调用列表，Key 可见但广场未标价的（如 vip 专属线路）保留调用并显示“价格以平台为准”。人民币价格按平台 ¥7/$1 折算。上游不可用时退回 2026-08-17 内置快照。
-- 喵呜不接受文件字段或 `data:` URL。使用参考图片、视频或音频时，画布会生成带 24 小时时效签名的只读公网素材地址；因此必须配置同一服务可被公网访问的 `PUBLIC_BASE_URL` 和稳定的 `MASTER_KEY`。纯文生视频不依赖该素材出口。
+- 喵呜不接受文件字段或 `data:` URL，参考图片、视频或音频必须使用供应商可访问的公网素材地址。可在桌面创作设置的「素材通道」连接自有域名与现有 Cloudflare 隧道，由本机提供 1 小时有效的签名素材链接；未连接时会在付费提交前提示。纯文生视频不依赖该通道。
 - 文档没有提供无扣费鉴权端点，“测试连接”只验证连接配置与密钥可正常解密，不会发起付费生成请求。
 
 ### Runway 视频
@@ -279,42 +237,37 @@ pnpm director:sync -- --source "D:\path\to\超级导演" --allow-dirty
 - `allowedHosts` 应始终填写精确主机名；默认只允许 HTTPS。仅在可信的本地服务场景设置 `allowInsecureHttp: true`。
 - 只有远端明确支持 `Idempotency-Key` 去重时，才可把请求定义标记为 `idempotent: true`。
 
-设置面板会提供一份可编辑的起始配置。Connector 的完整字段、SSRF 边界和部署建议见 [自托管与运维](docs/self-hosting.md#通用-rest-connector)。
+设置面板会提供一份可编辑的起始配置。Connector 的字段定义见 `packages/providers/src/rest.ts`；请求由 App 本地运行服务执行。
 
 ## 运行可靠性
 
 - 每次运行冻结当前画布图，并使用 `canvasId + clientRequestId` 去重创建请求。
-- 队列任务只携带不透明的 `node_run_id`；Provider 密钥、任务响应和素材不会进入 Redis Job payload。
-- PostgreSQL 是运行状态的唯一真相。Worker 启动时会恢复 `queued` / `running` 运行，已有远端任务 ID 和持久化任务快照时只恢复轮询或归档，不重新提交。
+- 运行记录、任务快照和归档素材保存在本地资料库。重启 App 后根据已有远端任务 ID 和快照恢复轮询或归档。
 - 远端是否已收到请求无法确定时，节点进入 `needs_attention`，系统不会盲目重提付费任务。
-- 输出 URL 或 Base64 会先复制到 MinIO/S3/本地存储；归档成功后节点才变为 `succeeded`。供应商已完成但解析/归档失败会保留任务快照并进入 `needs_attention`。
-- 取消请求在 Worker 停机期间会保留为 `cancel_requested`，下次 Worker 启动时继续向供应商发送取消。
+- 输出 URL 或 Base64 会先复制到本地存储；归档成功后节点才变为 `succeeded`。供应商已完成但解析或归档失败时保留任务快照并进入 `needs_attention`。
 - 运行创建时会把自动选择的模型解析并写入冻结 revision；之后修改连接默认模型不会改变该运行。
-- Redis 无需备份。丢失 Redis 队列后，Worker 可根据 PostgreSQL 中的运行记录恢复。
-- 局部运行从 PostgreSQL 的成功 `node_run` 查找最近输出，不依赖编辑稿中的临时 URL 或缓存字段。
+- 局部运行从保存的成功节点记录查找最近输出，不依赖编辑稿中的临时 URL 或缓存字段。
+- 关闭窗口后生成继续在托盘运行；从托盘退出时先保存画布，未完成任务需等待完成或返回 App。
 
-## HTTP API
+## 内部 HTTP API
 
-主要接口如下。未配置单账号登录时它们没有任何鉴权，只能在可信本机使用；配置后除 `/api/public-auth/*` 和 `/api/webhooks/*` 外都需要会话 Cookie。
+以下接口由 App 内置本地后端提供，供内嵌界面使用。后端仅监听回环地址，桌面主进程为请求附加本次启动的访问令牌；这些接口不是对外部署或远程访问入口。
 
-| 方法            | 路径                                    | 用途                                                                   |
-| --------------- | --------------------------------------- | ---------------------------------------------------------------------- |
-| `GET`           | `/api/health`                           | Web、数据库与对象存储探针                                              |
-| `GET`, `POST`   | `/api/canvas`                           | 读取默认画布、创建画布                                                 |
-| `GET`, `PUT`    | `/api/canvas/:id`                       | 读取或保存画布                                                         |
-| `GET`           | `/api/assets`                           | 素材列表                                                               |
-| `POST`          | `/api/assets/presign`                   | 获取预签名上传指令                                                     |
-| `POST`          | `/api/assets/complete`                  | 确认直传并登记素材                                                     |
-| `POST`          | `/api/assets/upload`                    | Web 代理上传                                                           |
-| `GET`           | `/api/assets/:id/content`               | 读取归档素材内容                                                       |
-| `GET`, `POST`   | `/api/providers`                        | 列出或保存供应商连接                                                   |
-| `DELETE`        | `/api/providers/:id`                    | 删除供应商连接                                                         |
-| `POST`          | `/api/providers/:id/test`               | 测试连接                                                               |
-| `GET`           | `/api/providers/:id/models`             | 查询模型列表                                                           |
-| `GET`, `POST`   | `/api/runs`                             | 查询历史或创建运行                                                     |
-| `GET`, `DELETE` | `/api/runs/:id`                         | 查询或取消运行                                                         |
-| `GET`           | `/api/runs/:id/events`                  | SSE 运行状态                                                           |
-| `POST`          | `/api/webhooks/:provider/:connectionId` | Provider Webhook 入口（需配置 `PUBLIC_BASE_URL`；REST 可用 HMAC 验签） |
+| 方法            | 路径                        | 用途                       |
+| --------------- | --------------------------- | -------------------------- |
+| `GET`           | `/api/health`               | 本地服务、数据库与存储探针 |
+| `GET`, `POST`   | `/api/canvas`               | 读取默认画布、创建画布     |
+| `GET`, `PUT`    | `/api/canvas/:id`           | 读取或保存画布             |
+| `GET`           | `/api/assets`               | 素材列表                   |
+| `POST`          | `/api/assets/upload`        | 上传素材到本地资料库       |
+| `GET`           | `/api/assets/:id/content`   | 读取归档素材内容           |
+| `GET`, `POST`   | `/api/providers`            | 列出或保存供应商连接       |
+| `DELETE`        | `/api/providers/:id`        | 删除供应商连接             |
+| `POST`          | `/api/providers/:id/test`   | 测试连接                   |
+| `GET`           | `/api/providers/:id/models` | 查询模型列表               |
+| `GET`, `POST`   | `/api/runs`                 | 查询历史或创建运行         |
+| `GET`, `DELETE` | `/api/runs/:id`             | 查询或取消运行             |
+| `GET`           | `/api/runs/:id/events`      | SSE 运行状态               |
 
 创建运行必须传入客户端生成且重试时保持不变的 `clientRequestId`：
 
@@ -331,107 +284,50 @@ pnpm director:sync -- --source "D:\path\to\超级导演" --allow-dirty
 
 ## 开发与验证
 
-```powershell
-pnpm typecheck
-pnpm test
-pnpm build
-pnpm --filter @super-canvas/web e2e
-```
+常用命令均在仓库根目录执行：
 
-Playwright 默认在独立的 <http://localhost:3211> 启停生产测试服务，执行 E2E 前需要先完成生产构建；也可用 `PLAYWRIGHT_BASE_URL` 指向外部服务。Docker 镜像分别提供 `web`、`worker` 和迁移所用的 `base` target。
+| 命令                                         | 用途                                          |
+| -------------------------------------------- | --------------------------------------------- |
+| `pnpm dev`                                   | 启动独立开发资料库、界面热更新和共享包监听 |
+| `pnpm desktop:dev:production`                | 构建生产运行资源并启动 Electron |
+| `pnpm desktop:lock`                           | 显式更新桌面运行依赖锁文件，需先构建界面 |
+| `pnpm benchmark:repository`                  | 用隔离合成资料测试历史查询与全量保存 |
+| `pnpm start` / `pnpm desktop:start`          | 启动已准备好的桌面运行资源                    |
+| `pnpm build` / `pnpm desktop:build`          | 构建 Windows x64 安装包                       |
+| `pnpm desktop:build --unpacked`              | 构建未安装版                                  |
+| `pnpm desktop:test`                          | 运行桌面测试                                  |
+| `pnpm build:runtime`                         | 仅构建内嵌 UI、API 与共享包，供跨平台质量校验 |
+| `pnpm typecheck` / `pnpm test` / `pnpm lint` | 类型检查、单元测试、代码检查                  |
 
-维护命令：
+安装包输出到 `apps/desktop/release`。桌面运行与打包需要 Windows；`build:runtime` 用于共享代码和内嵌界面的构建验证，不产出安装包。
 
-```powershell
-pnpm clean                 # 清理可重新生成的构建与测试缓存
-pnpm clean:deep            # 额外清理依赖目录，之后需要重新 pnpm install
-pnpm gc:storage            # 只读检查孤儿素材，不会删除文件
-pnpm gc:storage:apply      # 实际删除；必须先停服务并备份 data/storage
-```
+需要验证画布交互时，先执行 `pnpm build:runtime`，再执行 `pnpm --filter @super-canvas/desktop-ui e2e`。Playwright 会在独立的 `http://localhost:3211` 启停测试服务；它是内嵌界面的测试工具，不是用户启动入口。桌面发布验收项目见 [Windows 桌面 App](docs/windows-desktop.md#开发与验证)。
 
-`gc:storage:apply` 不属于日常清理命令。确认 dry-run 清单无误并完成备份前，不要执行。
+`pnpm clean:check` 预览可清理的路径、文件数和空间；`pnpm clean` 清理旧构建、测试输出、开发日志及旧测试部署的重复依赖，保留当前 `.next-desktop`、桌面 stage 和编译输出，清理后仍可 `pnpm start`。`pnpm clean:deep` 额外删除开发依赖和桌面打包中间产物，之后需要 `pnpm install` 和 `pnpm dev`。执行前先停止源码开发服务和测试；独立安装的 App 不受影响。
+
+清理脚本不会删除画布、素材、密钥、备份、历史测试中的数据与原图、已安装 App 或安装包，也不会沿目录链接删除其他位置。完整资料备份使用 [桌面资料备份流程](docs/windows-desktop.md#资料备份)；历史存储清理脚本默认指向旧仓库数据目录，不用于日常桌面资料清理。目录用途与维护约定见 [项目维护](docs/project-maintenance.md)。
 
 仓库结构：
 
 ```text
-apps/web          Next.js 画布和 HTTP API
-apps/worker       BullMQ Worker
-packages/core     图、端口、Prompt、状态机与重试规则
-packages/db       Drizzle schema、本地 JSON/PostgreSQL Repository
+apps/desktop       Electron 主进程、托盘、资料迁移、更新与打包
+apps/desktop/renderer           桌面内嵌 Next.js 画布界面与本地 HTTP API（仍是 App 必需源码）
+packages/core      图、端口、Prompt、状态机与重试规则
+packages/db        本地 JSON Repository 与内存测试存储
+packages/director  超级导演规划与内置知识库
 packages/providers Provider Adapter 与密钥加密
-packages/runtime  DAG 运行、恢复、归档与事件
-packages/storage  本地文件和 S3/MinIO 存储
-infra/minio       本地直传 CORS 配置
+packages/runtime   DAG 运行、恢复、归档与事件
+packages/storage   本地素材与项目存储
+infra/minio        历史对象存储配置，桌面运行不依赖
 ```
 
-## Windows 本地常驻与自动更新
-
-完成上面的 `pnpm install` 后，运行以下命令会在 3210 端口启动带进程守护的本地服务：
-
-```powershell
-pnpm public:watch
-```
-
-### GitHub Release 更新
-
-如果要把本地运行目录与开发仓库分开，先在开发仓库发布一个与根目录
-`package.json` 一致的 GitHub Release，例如 `package.json` 为 `0.2.0` 时创建
-`v0.2.0`：
-
-```powershell
-pnpm public:install
-```
-
-该命令会从公开仓库 `moshangqingchen/CanvasMind` 下载并校验 Windows x64
-运行包，安装到 `%LOCALAPPDATA%\SuperCanvas`，并生成独立的数据、素材和环境配置目录。
-之后用安装目录中的 `start-local-public.ps1` 启动，或在仓库中运行：
-
-```powershell
-pnpm public:start:installed
-```
-
-画布启动时和配置的检查间隔会检查更新。源码目录运行时会通过 `git ls-remote` 读取配置分支的
-最新提交；独立安装包没有 `.git` 元数据，会匿名查询公开 GitHub Releases，并在 REST API 不可用时
-回退到 `releases.atom`。私有仓库仍需配置 Token。
-本地分支匹配、工作区干净且远程提交可以快进时，管理器会自动执行 `git pull --ff-only`，然后
-重建并切换 Web 服务。检测到未提交改动、分支不匹配或无法安全快进时只报告状态，不会覆盖本地文件。
-项目菜单中的“检查更新”会显示远程分支和提交标识。正式 Release 仍会显示版本号、发布时间、
-提交标识和 Release 正文；确认下载后，更新包会在后台校验，有生成任务时会等任务结束再切换。
-失败时保留旧版本并恢复服务。应用更新不会覆盖画布 JSON、素材、密钥或 `.local-public.env`。
-
-更新检查可通过以下环境变量调整：
-
-```text
-SUPERCANVAS_UPDATE_ENABLED=true
-SUPERCANVAS_UPDATE_REPOSITORY=moshangqingchen/CanvasMind
-SUPERCANVAS_UPDATE_BRANCH=main
-SUPERCANVAS_AUTO_SYNC_SOURCE=true
-SUPERCANVAS_UPDATE_INTERVAL_SECONDS=60
-SUPERCANVAS_GITHUB_TOKEN=
-```
-
-源码部署跟踪普通分支 push，不要求创建 Release；默认每 60 秒读取一次远程提交。公开仓库的独立安装包
-无需 Token，私有仓库在查询正式 GitHub Release 和下载 Windows 更新包时需要 Token。若要让独立安装包获得新版本，仍需发布
-带 `v` 前缀且与 `package.json` 对齐的 Release。开发源码热更新仍使用 `pnpm public:watch`。
-
-首次运行会先构建密钥迁移工具、生成 `.local-public.env` 和本地 JSON 数据库；已有配置项会原样保留，只补齐缺失的本地默认项和空的 `MASTER_KEY`。脚本不再写入固定公网域名；如需反向代理，请自行设置 `PUBLIC_BASE_URL` 和登录变量。只有确实迁移旧开发主密钥加密的连接时才会在 `backups` 中留下备份。
-
-管理器会监听 Web 运行代码、共享 packages 源码、项目依赖配置和 `.local-public.env`。文件停止变化 2 秒后，它会在备用 `.next-live-*` 目录完成生产构建；只有构建成功且源码在构建期间未再次变化时，才会停止旧进程并使用新进程接管 3210 端口。构建失败时保留当前可用服务，修改源码后自动重试。`apps/web/data`、`apps/web/storage`、测试文件和构建产物不参与监听，因此画布自动保存和素材写入不会触发服务重启。
-
-本地 JSON 持久化会合并并发快照写入，避免自动保存排队持有多份完整数据库。每个画布保留最近 20 条失败或待处理运行的完整恢复快照；更早的运行记录、状态、错误和输出仍保留，但不再允许从旧快照恢复。管理器默认给 Web 进程设置 2048 MB 堆上限，必要时可通过 `SUPERCANVAS_NODE_MAX_OLD_SPACE_MB` 调整；进程异常退出后会自动重启。
-
-该常驻管理器依赖 Windows PowerShell、`Get-NetTCPConnection`、CIM 和 Windows 命名互斥体，只支持 Windows。macOS/Linux 请使用 `pnpm dev` 或 Docker Compose。Windows 当前用户的登录自启动项可调用同一个 `scripts/start-local-public-managed.ps1`；重复启动的实例会作为热备等待，主管理器退出后自动接管。
-
-`apps/web/proxy.ts` 是 Next.js 的请求前置层，负责登录门禁、跨站写请求拦截和安全响应头；对应的用例在 `apps/web/proxy.test.ts`。
+独立网站的登录、部署、网页更新、Docker、Worker、PostgreSQL 和 S3 实现已移除。内部界面沿用 React / Next.js，但仅供桌面 App 使用；所有请求均需 Electron 本次启动的会话令牌。
 
 ## 当前边界
 
-- 单用户、手动运行；只有一个共享账号，没有多用户、权限、协作、计费、循环/条件分支或时间线剪辑。
-- 登录限流是单进程内存实现，只覆盖默认的单容器部署；多副本部署需要换成共享存储的限流器。
-- `PUBLIC_BASE_URL` 未配置时 Webhook 路由返回 404；OpenAI、Runway 和 Fake 默认依赖轮询，通用 REST 可按 Connector 配置使用 HMAC-SHA256 Webhook。公网部署仍需自行提供 HTTPS 和域名白名单。
+- 当前支持 Windows 10/11 x64、单用户手动运行；没有多用户协作、计费、循环或条件分支、时间线剪辑。
+- 通过供应商 API 联网生成，不附带本地 AI 模型。需要公网参考素材链接时，可使用「素材通道」接入自己的域名与 Cloudflare 隧道；无需 R2，原素材保存在本机。详见 [桌面使用说明](docs/windows-desktop.md)。
+- 本地后端只监听回环地址，并使用每次启动生成的访问令牌；桌面资料库不提供远程共享入口。
+- 电脑睡眠、关机或断网期间无法保证供应商任务完成；重启后按已保存记录恢复，提交结果不确定时需人工处理。
 - 归档下载器自动兼容 Clash/Mihomo 的 HTTPS Fake-IP DNS，并逐跳校验海外 CDN 跳转；IP 直连、HTTP Fake-IP、HTTPS 降级和真实私网地址仍会被拒绝。
-- `/api/health` 检查数据库与对象存储；Redis 由 Compose 自身健康检查覆盖，仍不探测外部 Provider。
-- 单个 Docker Worker 是默认部署边界。跨多个 Worker 实例的严格分布式执行租约尚未实现，因此不要水平扩容 Worker。
-- CORS 默认只允许 `localhost:3000` 和 `localhost:3210`；修改 Web 端口时要同步更新 MinIO CORS。
-
-这些限制及上线前检查清单详见 [自托管与运维](docs/self-hosting.md)。
+- `/api/health` 检查本地数据库与存储，不探测外部 Provider。

@@ -1,40 +1,13 @@
-import { describe, expect, it } from "vitest";
-import {
-  createProviderAssetToken,
-  verifyProviderAssetToken,
-} from "./provider-asset-token.js";
-
-describe("provider asset tokens", () => {
-  it("signs one asset id with an expiry", () => {
-    const token = createProviderAssetToken({
-      assetId: "asset-1",
-      secret: "test-secret",
-      expiresInSeconds: 60,
-      nowSeconds: 1_000,
-    });
-    expect(
-      verifyProviderAssetToken({
-        assetId: "asset-1",
-        secret: "test-secret",
-        token,
-        nowSeconds: 1_059,
-      }),
-    ).toBe(true);
-    expect(
-      verifyProviderAssetToken({
-        assetId: "asset-2",
-        secret: "test-secret",
-        token,
-        nowSeconds: 1_059,
-      }),
-    ).toBe(false);
-    expect(
-      verifyProviderAssetToken({
-        assetId: "asset-1",
-        secret: "test-secret",
-        token,
-        nowSeconds: 1_061,
-      }),
-    ).toBe(false);
+import { describe, it, expect } from "vitest";
+import { createProviderAssetToken, verifyProviderAssetToken } from "./provider-asset-token.js";
+describe("desktop reference links", () => {
+  it("binds access to one asset and signing key and rejects the expiration boundary", () => {
+    const input = { assetId: "reference-1", secret: "test-secret", nowSeconds: 1000 };
+    const token = createProviderAssetToken(input);
+    expect(verifyProviderAssetToken({ ...input, token })).toBe(true);
+    expect(verifyProviderAssetToken({ ...input, token, assetId: "reference-2" })).toBe(false);
+    expect(verifyProviderAssetToken({ ...input, token, secret: "another" })).toBe(false);
+    expect(verifyProviderAssetToken({ ...input, token, nowSeconds: 4600 })).toBe(false);
+    expect(verifyProviderAssetToken({ ...input, token: token + "extra" })).toBe(false);
   });
 });

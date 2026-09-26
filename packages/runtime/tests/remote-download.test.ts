@@ -1,12 +1,165 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   downloadRemoteArtifact,
+  consumeRemoteArtifact,
   isPublicNetworkAddress,
 } from "../src/remote-download.js";
 
 const publicResolver = async () => [{ address: "93.184.216.34", family: 4 }];
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
 describe("remote artifact download", () => {
+  it("delivers chunks before the remote response finishes instead of buffering the whole file", async () => {
+    vi.stubEnv("PROVIDER_HTTP_PROXY", "http://127.0.0.1:7897");
+    let feed!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        feed = controller;
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(body, { headers: { "content-type": "video/mp4" } }),
+        ),
+    );
+    let received!: () => void;
+    const firstChunk = new Promise<void>((resolve) => {
+      received = resolve;
+    });
+    const result = consumeRemoteArtifact(
+      "https://cdn.example/output",
+      async (chunks, contentType) => {
+        let size = 0;
+        for await (const chunk of chunks) {
+          size += chunk.byteLength;
+          received();
+        }
+        return { size, contentType };
+      },
+      { resolve: publicResolver },
+    );
+    feed.enqueue(Uint8Array.of(1, 2));
+    await firstChunk;
+    feed.enqueue(Uint8Array.of(3));
+    feed.close();
+    expect(await result).toEqual({ size: 3, contentType: "video/mp4" });
+  });
+
+  it("cancels the network stream when its storage consumer fails", async () => {
+    vi.stubEnv("PROVIDER_HTTP_PROXY", "http://127.0.0.1:7897");
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(Uint8Array.of(1));
+      },
+      cancel,
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
+    await expect(
+      consumeRemoteArtifact(
+        "https://cdn.example/output",
+        async (chunks) => {
+          for await (const _chunk of chunks) throw new Error("disk full");
+        },
+        { resolve: publicResolver },
+      ),
+    ).rejects.toThrow("disk full");
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["PROVIDER_HTTP_PROXY", "ARTIFACT_HTTP_PROXY"])(
+    "uses %s for Fake-IP outputs without credentials or automatic redirects",
+    async (key) => {
+      vi.stubEnv(key, "http://127.0.0.1:7897");
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(new Uint8Array([1, 2, 3]), {
+            headers: { "content-type": "image/png" },
+          }),
+        );
+      vi.stubGlobal("fetch", fetch);
+      const result = await downloadRemoteArtifact(
+        "https://cdn.example/output.png",
+        {
+          resolve: async () => [{ address: "198.18.0.247", family: 4 }],
+        },
+      );
+      expect(result).toEqual({
+        bytes: new Uint8Array([1, 2, 3]),
+        contentType: "image/png",
+      });
+      expect(fetch).toHaveBeenCalledWith(
+        "https://cdn.example/output.png",
+        expect.objectContaining({
+          method: "GET",
+          redirect: "manual",
+          signal: expect.any(AbortSignal),
+        }),
+      );
+      expect(
+        new Headers(fetch.mock.calls[0]![1].headers).has("authorization"),
+      ).toBe(false);
+    },
+  );
+
+  it("still rejects private redirects on the proxy path", async () => {
+    vi.stubEnv("PROVIDER_HTTP_PROXY", "http://127.0.0.1:7897");
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://private.example/output" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetch);
+    await expect(
+      downloadRemoteArtifact("https://cdn.example/output", {
+        resolve: async (host) =>
+          host === "private.example"
+            ? [{ address: "10.0.0.1", family: 4 }]
+            : publicResolver(),
+      }),
+    ).rejects.toThrow(/private address/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds streamed proxy responses even without Content-Length", async () => {
+    vi.stubEnv("PROVIDER_HTTP_PROXY", "http://127.0.0.1:7897");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3, 4]))),
+    );
+    await expect(
+      downloadRemoteArtifact("https://cdn.example/output", {
+        resolve: publicResolver,
+        maxBytes: 3,
+      }),
+    ).rejects.toThrow(/exceeds 3 bytes/);
+  });
+
+  it("stops a stalled proxy response body at the total deadline", async () => {
+    vi.stubEnv("PROVIDER_HTTP_PROXY", "http://127.0.0.1:7897");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(new ReadableStream())),
+    );
+    await expect(
+      downloadRemoteArtifact("https://cdn.example/output", {
+        resolve: publicResolver,
+        timeoutMs: 20,
+      }),
+    ).rejects.toThrow(/timed out/);
+  });
+
   it.each([
     "0.0.0.0",
     "10.1.2.3",

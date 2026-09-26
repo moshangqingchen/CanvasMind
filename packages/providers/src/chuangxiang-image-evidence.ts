@@ -1,0 +1,170 @@
+import type { ImageSizeTier } from "./image-size-presets.js";
+
+export interface ChuangxiangImageEvidence {
+  tiers: readonly ImageSizeTier[];
+  qualities: readonly string[];
+  testedSizes: readonly string[];
+  mismatchedSizes: readonly string[];
+  failedSizes: readonly string[];
+  note: string;
+}
+
+// Derived from docs/chuangxiang-image-verification-2026-09-21.json.
+// Only decoded images with matching ratio and nearest resolution tier qualify.
+export const chuangxiangImageVerification: Readonly<
+  Record<string, ChuangxiangImageEvidence>
+> = {
+  "gpt-image-2-cf": {
+    tiers: ["1K"],
+    qualities: ["high"],
+    testedSizes: [
+      "1024x1024",
+      "1360x768",
+      "768x1360",
+      "1184x880",
+      "880x1184",
+      "1248x832",
+      "832x1248",
+      "1136x912",
+      "1552x672",
+      "672x1552",
+    ],
+    mismatchedSizes: ["912x1136"],
+    failedSizes: ["2048x2048"],
+    note: "1K 已出图；实际像素可能调整。4K 请求实际仅 1672×941，本轮不列为 4K。2K 尚无成功尺寸证据；服务错误不代表参数不支持。xhigh、max 本轮遇服务错误，暂未确认。比例仅用 high 测试。本轮 4:5 出现比例偏差。",
+  },
+  "gpt-image-2-yf": {
+    tiers: ["1K"],
+    qualities: ["high"],
+    testedSizes: [
+      "1024x1024",
+      "1360x768",
+      "768x1360",
+      "1184x880",
+      "880x1184",
+      "1248x832",
+      "832x1248",
+      "1136x912",
+      "912x1136",
+      "1552x672",
+      "672x1552",
+    ],
+    mismatchedSizes: [],
+    failedSizes: ["2048x2048"],
+    note: "1K 已出图；实际像素可能调整。4K 请求实际仅 1672×941，本轮不列为 4K。2K 尚无成功尺寸证据；服务错误不代表参数不支持。xhigh、max 本轮遇服务错误，暂未确认。比例仅用 high 测试。",
+  },
+  "gpt-image-2.5-cf": {
+    tiers: ["1K"],
+    qualities: ["high"],
+    testedSizes: [
+      "1360x768",
+      "1184x880",
+      "880x1184",
+      "1248x832",
+      "832x1248",
+      "1136x912",
+      "912x1136",
+      "1552x672",
+      "672x1552",
+    ],
+    mismatchedSizes: [],
+    failedSizes: ["1024x1024", "2048x2048", "768x1360"],
+    note: "1K 已出图；实际像素可能调整。4K 请求实际仅 1672×941，本轮不列为 4K。2K 尚无成功尺寸证据；服务错误不代表参数不支持。xhigh、max 本轮遇服务错误，暂未确认。比例仅用 high 测试。",
+  },
+  "gpt-image-2.5-yf": {
+    tiers: ["1K"],
+    qualities: ["high"],
+    testedSizes: [
+      "1024x1024",
+      "768x1360",
+      "1184x880",
+      "880x1184",
+      "1248x832",
+      "832x1248",
+      "1136x912",
+      "912x1136",
+      "1552x672",
+      "672x1552",
+    ],
+    mismatchedSizes: [],
+    failedSizes: ["2048x2048", "1360x768"],
+    note: "1K 已出图；实际像素可能调整。4K 请求实际仅 1672×941，本轮不列为 4K。2K 尚无成功尺寸证据；服务错误不代表参数不支持。xhigh、max 本轮遇服务错误，暂未确认。比例仅用 high 测试。",
+  },
+  "gpt-image-2.5-flare-cf": {
+    tiers: ["1K", "2K", "4K"],
+    qualities: ["high", "xhigh", "max"],
+    testedSizes: [
+      "1024x1024",
+      "2048x2048",
+      "3840x2160",
+      "1360x768",
+      "1184x880",
+      "880x1184",
+      "1248x832",
+      "832x1248",
+      "1136x912",
+      "912x1136",
+      "1552x672",
+      "672x1552",
+    ],
+    mismatchedSizes: ["768x1360"],
+    failedSizes: [],
+    note: "1K、2K、4K 已出图；实际像素可能调整。high、xhigh、max 均可提交，不保证三种独立画质。比例仅用 high 测试。本轮 9:16 出现比例偏差。",
+  },
+  "gpt-image-2.5-flare-yf": {
+    tiers: ["1K", "2K", "4K"],
+    qualities: ["high", "xhigh", "max"],
+    testedSizes: [
+      "1024x1024",
+      "2048x2048",
+      "3840x2160",
+      "1360x768",
+      "1184x880",
+      "880x1184",
+      "1248x832",
+      "832x1248",
+      "1136x912",
+      "912x1136",
+      "1552x672",
+      "672x1552",
+    ],
+    mismatchedSizes: ["768x1360"],
+    failedSizes: [],
+    note: "1K、2K、4K 已出图；实际像素可能调整。high、xhigh、max 均可提交，不保证三种独立画质。比例仅用 high 测试。本轮 9:16 出现比例偏差。曾出现请求 1 张返回多张并按多张计费。",
+  },
+  "gpt-image-2.5-sunburst-cf": {
+    tiers: ["1K", "2K"],
+    qualities: ["high", "xhigh", "max"],
+    testedSizes: [
+      "1024x1024",
+      "2048x2048",
+      "1360x768",
+      "768x1360",
+      "1184x880",
+      "880x1184",
+      "1248x832",
+      "832x1248",
+      "1136x912",
+      "912x1136",
+    ],
+    mismatchedSizes: [],
+    failedSizes: ["1552x672", "672x1552"],
+    note: "1K、2K 已出图；实际像素可能调整。4K 请求实际仅 1672×941，本轮不列为 4K。high、xhigh、max 均可提交，不保证三种独立画质。比例仅用 high 测试。",
+  },
+  "gpt-image-2.5-sunburst-yf": {
+    tiers: ["1K"],
+    qualities: ["high", "xhigh", "max"],
+    testedSizes: [
+      "1024x1024",
+      "1360x768",
+      "768x1360",
+      "1184x880",
+      "880x1184",
+      "1248x832",
+      "832x1248",
+    ],
+    mismatchedSizes: [],
+    failedSizes: ["2048x2048", "1136x912", "912x1136", "1552x672", "672x1552"],
+    note: "1K 已出图；实际像素可能调整。4K 请求实际仅 1672×940，本轮不列为 4K。2K 尚无成功尺寸证据；服务错误不代表参数不支持。high、xhigh、max 均可提交，不保证三种独立画质。比例仅用 high 测试。",
+  },
+};

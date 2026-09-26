@@ -2,6 +2,10 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import {
+  hasProviderHttpProxy,
+  fetchWithProviderHttpProxy,
+} from "@super-canvas/providers";
 import { readRecoveredArtifact } from "./recovered-artifacts.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -40,6 +44,18 @@ export interface RemoteDownloadOptions {
 export interface RemoteDownloadResult {
   bytes: Uint8Array;
   contentType?: string;
+}
+
+interface RemoteStreamResponse {
+  status: number;
+  location?: string;
+  contentType?: string;
+  chunks: AsyncIterable<Uint8Array>;
+  close(): void | Promise<void>;
+}
+
+async function* singleChunk(bytes: Uint8Array): AsyncIterable<Uint8Array> {
+  yield bytes;
 }
 
 function positiveInteger(value: string | undefined, fallback: number): number {
@@ -155,7 +171,7 @@ function requestPinned(
   resolved: ResolvedAddress,
   signal: AbortSignal,
   maxBytes: number,
-): Promise<RemoteTransportResponse> {
+): Promise<RemoteStreamResponse> {
   return new Promise((resolve, reject) => {
     const hostname = url.hostname.replace(/^\[|\]$/gu, "");
     const options: RequestOptions = {
@@ -179,9 +195,14 @@ function requestPinned(
       const status = response.statusCode ?? 0;
       const location = response.headers.location;
       const contentType = response.headers["content-type"];
-      if (status >= 300 && status < 400 && location) {
-        response.resume();
-        resolve({ status, location, bytes: new Uint8Array() });
+      if (status < 200 || status >= 300) {
+        response.destroy();
+        resolve({
+          status,
+          location,
+          chunks: singleChunk(new Uint8Array()),
+          close() {},
+        });
         return;
       }
       const declaredLength = Number(response.headers["content-length"]);
@@ -190,26 +211,15 @@ function requestPinned(
         reject(new Error(`Provider output exceeds ${maxBytes} bytes`));
         return;
       }
-      const chunks: Buffer[] = [];
-      let size = 0;
-      response.on("data", (chunk: Buffer | Uint8Array | string) => {
-        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        size += bytes.byteLength;
-        if (size > maxBytes) {
-          response.destroy(
-            new Error(`Provider output exceeds ${maxBytes} bytes`),
-          );
-          return;
-        }
-        chunks.push(bytes);
-      });
-      response.once("error", reject);
-      response.once("end", () => {
-        resolve({
-          status,
-          ...(contentType ? { contentType } : {}),
-          bytes: new Uint8Array(Buffer.concat(chunks, size)),
-        });
+      // Keep the socket paused until the storage consumer requests bytes.
+      response.on("error", () => {});
+      resolve({
+        status,
+        contentType,
+        chunks: response,
+        close: () => {
+          response.destroy();
+        },
       });
     });
     request.once("error", (error) => {
@@ -221,6 +231,69 @@ function requestPinned(
     });
     request.end();
   });
+}
+
+// The user-configured proxy owns DNS/routing on this path (including Fake-IP
+// mappings). Keep URL/DNS checks and redirect handling in downloadRemoteArtifact;
+// never send provider credentials or automatically follow an unchecked redirect.
+async function requestThroughProviderProxy(
+  url: URL,
+  _resolved: ResolvedAddress,
+  signal: AbortSignal,
+  maxBytes: number,
+): Promise<RemoteStreamResponse> {
+  const response = await fetchWithProviderHttpProxy(
+    url.href,
+    {
+      method: "GET",
+      redirect: "manual",
+      signal,
+      headers: {
+        accept: "image/*,video/*,application/octet-stream;q=0.8,*/*;q=0.1",
+      },
+    },
+    process.env.ARTIFACT_HTTP_PROXY,
+  );
+  const status = response.status;
+  const location = response.headers.get("location") ?? undefined;
+  const contentType = response.headers.get("content-type") ?? undefined;
+  if (status < 200 || status >= 300) {
+    await response.body?.cancel();
+    return {
+      status,
+      location,
+      contentType,
+      chunks: singleChunk(new Uint8Array()),
+      close() {},
+    };
+  }
+  if (Number(response.headers.get("content-length")) > maxBytes) {
+    await response.body?.cancel();
+    throw new Error(`Provider output exceeds ${maxBytes} bytes`);
+  }
+  const chunks = (async function* () {
+    const reader = response.body?.getReader();
+    if (!reader) return;
+    try {
+      while (true) {
+        const { done, value } = await abortable(reader.read(), signal);
+        if (done) break;
+        yield value;
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+  })();
+  return {
+    status,
+    contentType,
+    chunks,
+    close: async () => {
+      await chunks.return(undefined);
+      await response.body?.cancel().catch(() => undefined);
+    },
+  };
 }
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -246,6 +319,38 @@ export async function downloadRemoteArtifact(
   value: string,
   options: RemoteDownloadOptions = {},
 ): Promise<RemoteDownloadResult> {
+  return consumeRemoteArtifact(
+    value,
+    async (source, contentType) => {
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for await (const chunk of source) {
+        chunks.push(chunk);
+        size += chunk.byteLength;
+      }
+      const joined = Buffer.concat(chunks, size);
+      return {
+        bytes: new Uint8Array(
+          joined.buffer,
+          joined.byteOffset,
+          joined.byteLength,
+        ),
+        ...(contentType ? { contentType } : {}),
+      };
+    },
+    options,
+  );
+}
+
+/** The consumer must exhaust the iterable before committing its result. */
+export async function consumeRemoteArtifact<T>(
+  value: string,
+  consume: (
+    chunks: AsyncIterable<Uint8Array>,
+    contentType?: string,
+  ) => Promise<T>,
+  options: RemoteDownloadOptions = {},
+): Promise<T> {
   const timeoutMs =
     options.timeoutMs ??
     positiveInteger(
@@ -257,10 +362,19 @@ export async function downloadRemoteArtifact(
   const resolve =
     options.resolve ??
     ((hostname: string) => dnsLookup(hostname, { all: true, verbatim: true }));
-  const transport = options.transport ?? requestPinned;
+  const transport = options.transport
+    ? async (
+        ...args: Parameters<RemoteDownloadTransport>
+      ): Promise<RemoteStreamResponse> => {
+        const response = await options.transport!(...args);
+        return { ...response, chunks: singleChunk(response.bytes), close() {} };
+      }
+    : hasProviderHttpProxy(process.env.ARTIFACT_HTTP_PROXY)
+      ? requestThroughProviderProxy
+      : requestPinned;
+  let current = parseRemoteUrl(value);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  let current = parseRemoteUrl(value);
 
   try {
     for (let redirect = 0; redirect <= maxRedirects; redirect += 1) {
@@ -269,50 +383,73 @@ export async function downloadRemoteArtifact(
         controller.signal,
       );
       const recovered = await abortable(
-        readRecoveredArtifact(current.href, maxBytes, options.recoveryDirectory),
+        readRecoveredArtifact(
+          current.href,
+          maxBytes,
+          options.recoveryDirectory,
+        ),
         controller.signal,
       );
-      if (recovered) return recovered;
-      const response = await transport(
-        current,
-        resolved,
+      if (recovered)
+        return await consume(
+          singleChunk(recovered.bytes),
+          recovered.contentType,
+        );
+      const response = await abortable(
+        transport(current, resolved, controller.signal, maxBytes),
         controller.signal,
-        maxBytes,
       );
-      if (response.status >= 300 && response.status < 400) {
-        if (!response.location) {
-          throw new Error("Provider output redirect is missing a location");
+      try {
+        if (response.status >= 300 && response.status < 400) {
+          if (!response.location) {
+            throw new Error("Provider output redirect is missing a location");
+          }
+          if (redirect === maxRedirects) {
+            throw new Error("Provider output redirected too many times");
+          }
+          const next = parseRemoteUrl(new URL(response.location, current).href);
+          if (current.protocol === "https:" && next.protocol !== "https:") {
+            throw new Error(
+              "Provider output redirect must not downgrade HTTPS",
+            );
+          }
+          if (
+            next.origin !== current.origin &&
+            (current.protocol !== "https:" || next.protocol !== "https:")
+          ) {
+            throw new Error(
+              "Provider output cross-origin redirects must use HTTPS",
+            );
+          }
+          current = next;
+          continue;
         }
-        if (redirect === maxRedirects) {
-          throw new Error("Provider output redirected too many times");
-        }
-        const next = parseRemoteUrl(new URL(response.location, current).href);
-        if (current.protocol === "https:" && next.protocol !== "https:") {
-          throw new Error("Provider output redirect must not downgrade HTTPS");
-        }
-        if (
-          next.origin !== current.origin &&
-          (current.protocol !== "https:" || next.protocol !== "https:")
-        ) {
+        if (response.status < 200 || response.status >= 300) {
           throw new Error(
-            "Provider output cross-origin redirects must use HTTPS",
+            `Provider output download failed with HTTP ${response.status}`,
           );
         }
-        current = next;
-        continue;
+        const bounded = (async function* () {
+          let size = 0;
+          for await (const chunk of response.chunks) {
+            if (controller.signal.aborted)
+              throw new Error("Provider output download timed out");
+            size += chunk.byteLength;
+            if (size > maxBytes)
+              throw new Error(`Provider output exceeds ${maxBytes} bytes`);
+            yield chunk;
+          }
+          if (controller.signal.aborted)
+            throw new Error("Provider output download timed out");
+        })();
+        try {
+          return await consume(bounded, response.contentType);
+        } finally {
+          await bounded.return(undefined);
+        }
+      } finally {
+        await response.close();
       }
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(
-          `Provider output download failed with HTTP ${response.status}`,
-        );
-      }
-      if (response.bytes.byteLength > maxBytes) {
-        throw new Error(`Provider output exceeds ${maxBytes} bytes`);
-      }
-      return {
-        bytes: response.bytes,
-        ...(response.contentType ? { contentType: response.contentType } : {}),
-      };
     }
     throw new Error("Provider output redirected too many times");
   } finally {

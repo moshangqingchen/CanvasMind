@@ -17,6 +17,7 @@ export interface ProviderErrorPresentation {
   docsUrl?: string;
   actionUrl?: string;
   actionLabel?: string;
+  transport?: NonNullable<ProviderHttpError["details"]["transport"]>;
 }
 
 export interface ProviderErrorContext {
@@ -292,6 +293,19 @@ function classifiedPresentation(input: {
     message = "API 请求过于频繁或已达到用量限制，请稍后重试。";
     type = "速率限制错误";
     fallbackCode = "HTTP 429";
+  } else if (includesAny(searchable, ["system under load", "model is overloaded", "adobe throttled"])) {
+    message = "供应商模型当前繁忙，未能完成本次生成，请稍后重试。";
+    type = "供应商繁忙";
+    fallbackCode = "provider_overloaded";
+  } else if (effectiveStatus === 524) {
+    message =
+      "请求链路中的网关等待上游响应超时（HTTP 524）。" +
+      (phase === "submit"
+        ? "请求可能仍在生成或已扣费，请先核对供应商任务与扣费记录，不要重复提交。"
+        : "请稍后核对供应商服务或原任务状态。") +
+      "延长本地等待时间无法解除此网关限制。";
+    type = "请求链路网关超时";
+    fallbackCode = "HTTP 524";
   } else if (
     includesAny(searchable, [
       "generation timed out",
@@ -316,6 +330,16 @@ function classifiedPresentation(input: {
       "赛博阿飞或其上游在生成过程中断开了长连接；鉴权和接口地址正常。请求可能已经被受理，请先核对供应商日志与扣费记录，不要立即重复提交。";
     type = "供应商连接中断";
     fallbackCode = "UND_ERR_SOCKET";
+  } else if (kind === "network" && extracted.code === "UND_ERR_SOCKET") {
+    message = phase === "submit"
+      ? "API 提交过程中连接中断，未收到完整响应。供应商可能仍在生成或已扣费，请先核对原任务和账单，不要重复提交。"
+      : `API ${phaseLabel(phase)}时连接中断，未收到完整响应。请核对网络和供应商服务。`;
+    type = "连接中断";
+    fallbackCode = "UND_ERR_SOCKET";
+  } else if (kind === "network" && extracted.code === "PROVIDER_NETWORK_DISCOVERY_FAILED") {
+    message = "暂时无法确认可用的生图连接，尚未向供应商提交请求。请检查网络后重试。";
+    type = "连接准备失败";
+    fallbackCode = "PROVIDER_NETWORK_DISCOVERY_FAILED";
   } else if (kind === "network" && extracted.code === "EACCES") {
     message =
       "API 提交时本机拒绝了网络连接（EACCES）。请确认服务端已加载 HTTP_PROXY/HTTPS_PROXY 代理，或关闭 TUN/Fake-IP 直连后重试。";
@@ -434,6 +458,7 @@ export function presentProviderError(
         : undefined;
     return {
       ...presentation,
+      ...(error.details.transport ? { transport: error.details.transport } : {}),
       ...(error.details.status === undefined
         ? {}
         : { statusCode: error.details.status }),
@@ -452,6 +477,7 @@ export function presentProviderError(
   const providerMessage = safeProviderMessage(extracted.message);
   const shouldExposeProviderMessage =
     presentation.type === "供应商生成错误" ||
+    presentation.type === "供应商繁忙" ||
     presentation.type === "供应商任务超时";
   return {
     ...presentation,

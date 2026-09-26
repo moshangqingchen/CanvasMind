@@ -6,7 +6,7 @@ import { join } from "node:path";
 export async function readRecoveredArtifact(
   url: string,
   maxBytes: number,
-  directory = join(process.cwd(), "data", "artifact-recovery"),
+  directory = process.env.SUPERCANVAS_RECOVERY_ROOT ?? join(process.cwd(), "data", "artifact-recovery"),
 ): Promise<{ bytes: Uint8Array; contentType: string } | undefined> {
   const id = createHash("sha256").update(url).digest("hex");
   let manifest: { url?: string; sha256?: string; contentType?: string };

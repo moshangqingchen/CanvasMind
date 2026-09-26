@@ -1,4 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
+import { consumeCliArtifact } from "./cli-artifact.js";
+import { repositoryScheduler, runtimeConcurrency, scheduleReadyNodes, type RuntimeConcurrency, type RuntimeScheduler } from "./scheduler.js";
+import { assertDesktopPublicAssets } from "./desktop-preflight.js";
+import { localReferenceChannelConfigured, localReferenceUrls } from "./reference-channel.js";
+import { cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
 import {
   extractPromptAssetIds,
   getEdgeTargetPortId,
@@ -12,6 +18,7 @@ import {
 } from "@super-canvas/core";
 import type {
   Repository,
+  AssetRecord,
   JsonObject,
   NodeRunRecord,
   NodeRunUpdateOptions,
@@ -21,16 +28,27 @@ import type {
 import { getRepository, isRunRecoveryExpired } from "@super-canvas/db";
 import {
   decryptSecret,
+  CliProviderAdapter,
+  cliJobKey,
   FakeProviderAdapter,
+  imageSizeForTier,
   GenericRestAdapter,
+  AutoInterfaceAdapter,
+  restRequestRequiresPublicAssets,
+  secureSkillRequiresPublicAssets,
+  bananaImageRoute,
+  bananaRequiresPublicAssets,
+  normalizeBananaParameters,
+  referenceImageHostingEnabled,
   OPENAI_DEFAULT_IMAGE_MODEL,
   OpenAIImageAdapter,
   WEAI_GEMINI_DEFAULT_IMAGE_MODEL,
   WEAI_DEFAULT_IMAGE_MODEL,
   WeAIImageAdapter,
   presentProviderError,
-  createProviderAssetToken,
   ProviderHttpError,
+  withProviderSubmissionProgress,
+  type ProviderSubmissionPhase,
   RunwayAdapter,
   RUNWAY_DEFAULT_VIDEO_MODEL,
   type NormalizedRequest,
@@ -48,6 +66,7 @@ import {
   getObjectStorage,
   getProjectFileStore,
   type ObjectStorage,
+  type StoredObjectMetadata,
   type ProjectFileStore,
 } from "@super-canvas/storage";
 import {
@@ -58,6 +77,7 @@ import {
 import {
   artifactDownloadMaxBytes,
   downloadRemoteArtifact,
+  consumeRemoteArtifact,
 } from "./remote-download.js";
 import {
   aspectRatioFromPrompt,
@@ -95,6 +115,7 @@ interface FrozenProviderConnection {
   provider: string;
   encryptedSecret?: string | null;
   config: JsonObject;
+  cloudGeneration?: CloudGenerationConfig;
 }
 
 interface OutputValue {
@@ -124,9 +145,14 @@ export interface RuntimeOptions {
   eventBus?: RuntimeEventBus;
   pollIntervalMs?: number;
   retryBaseDelayMs?: number;
+  concurrency?: Partial<RuntimeConcurrency>;
   executionMode?: "inline" | "queue";
   enqueueRun?: (runId: string) => Promise<void>;
   projectFileStore?: ProjectFileStore | null;
+  /** Durable task files, adjacent to the desktop profile's object storage. */
+  cliJobRoot?: string;
+  /** Stop local work without cancelling the durable supplier task. */
+  shutdownSignal?: AbortSignal;
 }
 
 const WEAI_RUNTIME_MODELS_BY_GROUP: Readonly<
@@ -299,8 +325,31 @@ function normalizeRestImageBatchParameter(
   return normalized;
 }
 
-const delay = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason); return; }
+    const abort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+
+/** A read-only poll may finish after local shutdown; it must not mutate a stopped run. */
+function abortablePoll<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
+}
 
 function inputAssetKind(kind: string): "image" | "video" | "audio" {
   return kind === "video" ? "video" : kind === "audio" ? "audio" : "image";
@@ -601,6 +650,15 @@ function compactCompletedInput(input: JsonObject): JsonObject {
   return completed;
 }
 
+function cliStopsTracking(task: ProviderTask): boolean {
+  return isRecord(task.result) && isRecord(task.result.cli) && task.result.cli.supportsCancel !== true;
+}
+
+function cliTiming(config: JsonObject | undefined, key: "pollIntervalMs" | "taskTimeoutMs", fallback: number): number {
+  const value = isRecord(config?.cli) ? config.cli[key] : undefined;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
 function operationFor(
   node: WorkflowNode,
   hasImage: boolean,
@@ -636,41 +694,6 @@ function masterKeyForRuntime(): string | undefined {
     : "local-development-master-key";
 }
 
-function connectorRequiresPublicAssetUrls(
-  config: JsonObject | undefined,
-): boolean {
-  const connector = config?.connector;
-  return (
-    typeof connector === "object" &&
-    connector !== null &&
-    !Array.isArray(connector) &&
-    (connector as Record<string, unknown>).assetsRequirePublicUrls === true
-  );
-}
-
-function providerAssetUrl(assetId: string): string {
-  const publicBaseUrl = process.env.PUBLIC_BASE_URL;
-  const secret = masterKeyForRuntime();
-  if (!publicBaseUrl || !secret) {
-    throw new Error(
-      "该供应商的参考素材必须使用公网 URL；请先配置 PUBLIC_BASE_URL 和 MASTER_KEY",
-    );
-  }
-  let url: URL;
-  try {
-    url = new URL(
-      `/api/provider-assets/${encodeURIComponent(assetId)}`,
-      publicBaseUrl,
-    );
-  } catch {
-    throw new Error("PUBLIC_BASE_URL 不是有效的公网 http(s) 地址");
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:")
-    throw new Error("PUBLIC_BASE_URL 必须是 http(s) 地址");
-  url.searchParams.set("token", createProviderAssetToken({ assetId, secret }));
-  return url.toString();
-}
-
 function freezeConnection(
   record: ProviderConnectionRecord,
 ): FrozenProviderConnection {
@@ -704,6 +727,8 @@ function frozenConnectionFromUnknown(
     provider: value.provider,
     encryptedSecret: value.encryptedSecret ?? null,
     config: structuredClone(value.config),
+    ...(isRecord(value.cloudGeneration) && typeof value.cloudGeneration.endpoint === "string" && typeof value.cloudGeneration.encryptedToken === "string"
+      ? { cloudGeneration: { endpoint: value.cloudGeneration.endpoint, encryptedToken: value.cloudGeneration.encryptedToken } } : {}),
   };
 }
 
@@ -719,6 +744,10 @@ function frozenConnectionsFromGraph(
   }
   return snapshots;
 }
+
+// Multiple API/service instances can share one local repository. Coalesce
+// archive-only requests without restarting its cancelled/failed execution.
+const runOutputRecoveries = new WeakMap<Repository, Map<string, Promise<WorkflowRunRecord | null>>>();
 
 class RepoConnectionResolver implements ProviderConnectionResolver {
   constructor(
@@ -768,24 +797,32 @@ export class RunService {
   readonly repository: Repository;
   readonly storage: ObjectStorage;
   readonly eventBus: RuntimeEventBus;
-  private readonly cancelled = new Set<string>();
   private readonly running = new Map<string, Promise<void>>();
   private readonly starting = new Set<string>();
+  private readonly scheduler: RuntimeScheduler;
+  private readonly nodeConcurrency: number;
   private readonly pollIntervalMs?: number;
   private readonly retryBaseDelayMs: number;
   private readonly executionMode?: "inline" | "queue";
   private readonly enqueueRunOverride?: (runId: string) => Promise<void>;
   private readonly projectFileStore?: ProjectFileStore | null;
+  private readonly cliJobRoot: string;
+  private readonly shutdownSignal?: AbortSignal;
 
   constructor(options: RuntimeOptions = {}) {
     this.repository = options.repository ?? getRepository();
     this.storage = options.storage ?? getObjectStorage();
+    const concurrency = runtimeConcurrency(options.concurrency);
+    this.scheduler = repositoryScheduler(this.repository, concurrency);
+    this.nodeConcurrency = concurrency.perRun;
     this.eventBus = options.eventBus ?? getEventBus();
     this.pollIntervalMs = options.pollIntervalMs;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? 500;
     this.executionMode = options.executionMode;
     this.enqueueRunOverride = options.enqueueRun;
     this.projectFileStore = options.projectFileStore;
+    this.shutdownSignal = options.shutdownSignal;
+    this.cliJobRoot = resolve(/* turbopackIgnore: true */ options.cliJobRoot ?? join(/* turbopackIgnore: true */ dirname(resolve(/* turbopackIgnore: true */ process.env.LOCAL_STORAGE_PATH ?? "storage")), "cli-jobs"));
   }
 
   public adapters(
@@ -796,10 +833,11 @@ export class RunService {
     const fake = new FakeProviderAdapter(resolver);
     return new Map<string, ProviderAdapter>([
       ["fake", fake],
-      ["openai", new OpenAIImageAdapter(resolver)],
-      ["weai", new WeAIImageAdapter(resolver)],
-      ["runway", new RunwayAdapter(resolver)],
-      ["rest", new GenericRestAdapter(resolver)],
+      ["openai", new AutoInterfaceAdapter(resolver, new OpenAIImageAdapter(resolver))],
+      ["weai", new AutoInterfaceAdapter(resolver, new WeAIImageAdapter(resolver))],
+      ["runway", new AutoInterfaceAdapter(resolver, new RunwayAdapter(resolver))],
+      ["rest", new AutoInterfaceAdapter(resolver, new GenericRestAdapter(resolver))],
+      ["cli", new CliProviderAdapter(resolver, { jobRoot: this.cliJobRoot })],
     ]);
   }
 
@@ -854,6 +892,8 @@ export class RunService {
     await Promise.all(
       frozen.nodes.map(async (node) => {
         const data = nodeData(node);
+        // Canvas/project JSON is untrusted. Only this server may mint execution snapshots.
+        delete data.__runtimeConnection;
         const type = semanticType(node);
         if (type !== "image-generation" && type !== "video-generation") return;
         const provider =
@@ -870,9 +910,19 @@ export class RunService {
             connections.set(connectionId, pending);
           }
           connection = await pending;
-          if (connection)
-            data.__runtimeConnection = freezeConnection(connection);
+          if (connection) {
+            const supplierId = connection.config.supplierId;
+            const supplier = typeof supplierId === "string" ? await this.repository.getSupplier(supplierId) : null;
+            const useCloud = type === "image-generation" && supplier?.state?.generationTransport === "cloudflare";
+            if (useCloud && !["openai", "weai", "rest"].includes(connection.provider))
+              throw new Error("该供应商接口暂不支持云端生图，请取消云端选项后使用本机方式");
+            const cloud = useCloud ? await readCloudGenerationConfig() : null;
+            if (useCloud) await testCloudGeneration(cloud);
+            data.__runtimeConnection = { ...freezeConnection(connection), ...(cloud ? { cloudGeneration: cloud } : {}) };
+          }
         }
+        if (provider === "cli" && (!connection || connection.provider !== "cli"))
+          throw new Error("个人 AI 网站连接不存在，请在设置中重新绑定本机连接");
         const requestedModel =
           typeof data.model === "string" ? data.model : undefined;
         const model = await this.configuredModel(
@@ -1059,6 +1109,7 @@ export class RunService {
       input.nodeIds,
     );
     const selected = new Set(nodeIds);
+    assertDesktopPublicAssets(graph, selected);
     const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
     const missingRequiredInputs = validateGraph(graph, {
       checkPorts: true,
@@ -1119,6 +1170,7 @@ export class RunService {
       clientRequestId,
     );
     if (!run) {
+      assertDesktopPublicAssets(asGraph(prepared.revisionGraph), new Set(prepared.nodeIds));
       run = await this.repository.createRun({
         id: randomUUID(),
         canvasId: prepared.canvasId,
@@ -1171,6 +1223,7 @@ export class RunService {
         input.nodeIds,
       );
       const selected = new Set(nodeIds);
+      assertDesktopPublicAssets(graph, selected);
       const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
       const missingRequiredInputs = validateGraph(graph, {
         checkPorts: true,
@@ -1220,65 +1273,25 @@ export class RunService {
   }
 
   private async scheduleRun(runId: string): Promise<void> {
-    const inline =
-      this.executionMode === "inline" ||
-      (this.executionMode === undefined &&
-        (process.env.RUN_IN_PROCESS !== "false" || !process.env.REDIS_URL));
-    if (inline) {
-      await this.resumeRun(runId);
+    if (this.executionMode === "queue" && this.enqueueRunOverride) {
+      await this.enqueueRunOverride(runId);
       return;
     }
-    await (this.enqueueRunOverride ?? ((id) => this.enqueue(id)))(runId);
+    await this.resumeRun(runId);
   }
 
   private startExecution(runId: string): void {
-    const execution = this.execute(runId);
+    if (this.shutdownSignal?.aborted) return;
+    const admission = this.scheduler.beginRun(runId);
+    if (!admission) return;
+    const signal = this.shutdownSignal
+      ? AbortSignal.any([admission.signal, this.shutdownSignal]) : admission.signal;
+    const execution = this.execute(runId, signal).finally(admission.dispose);
     this.running.set(runId, execution);
     void execution.then(
       () => this.running.delete(runId),
       () => this.running.delete(runId),
     );
-  }
-
-  private async enqueue(runId: string): Promise<void> {
-    const { Queue } = await import("bullmq");
-    const connection = { url: process.env.REDIS_URL };
-    const queue = new Queue("super-canvas-runs", { connection });
-    try {
-      const existing = await queue.getJob(runId);
-      if (existing) {
-        const state = await existing.getState();
-        if (state === "failed" || state === "completed") {
-          await existing.retry(state, {
-            resetAttemptsMade: true,
-            resetAttemptsStarted: true,
-          });
-          return;
-        }
-        if (state !== "unknown") return;
-        await existing.remove();
-      }
-      const nodeRuns = await this.repository.listNodeRuns(runId);
-      const nodeRunId = nodeRuns[0]?.id;
-      if (!nodeRunId) throw new Error(`Run ${runId} has no node runs`);
-      await queue.add(
-        "run",
-        { nodeRunId },
-        {
-          jobId: runId,
-          attempts: 3,
-          backoff: { type: "exponential", delay: 1_000 },
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
-      );
-    } finally {
-      await queue.close();
-    }
-  }
-
-  public async enqueueRunJob(runId: string): Promise<void> {
-    await this.enqueue(runId);
   }
 
   public async resumeRun(runId: string): Promise<void> {
@@ -1309,6 +1322,12 @@ export class RunService {
     for (const nodeRun of nodeRuns) {
       if (nodeRun.status !== "cancel_requested") continue;
       try {
+        if (isCloudSubmission(nodeRun.providerTaskId)) {
+          await this.repository.updateNodeRun(nodeRun.id, {
+            status: "cancelled", errorJson: { code: "cloud_tracking_stopped", message: "已停止本机跟踪；云端可能仍在生成并保存原任务结果" },
+          });
+          continue;
+        }
         if (!nodeRun.providerTaskId) {
           await this.repository.updateNodeRun(nodeRun.id, {
             errorJson: {
@@ -1340,11 +1359,14 @@ export class RunService {
             provider,
             connectionId,
             nodeRun.providerTaskId,
+            { adapter, idempotencyKey: `${runId}:${nodeRun.id}` },
           ));
         await adapter.cancel?.(task);
         await this.repository.updateNodeRun(nodeRun.id, {
           status: "cancelled",
-          errorJson: null,
+          errorJson: provider === "cli" && cliStopsTracking(task)
+            ? { code: "cli_tracking_stopped", message: "已停止跟踪；该网站不支持远端取消，生成可能仍在继续" }
+            : null,
         });
         this.publish({
           type: "node",
@@ -1353,6 +1375,24 @@ export class RunService {
           payload: { nodeId: nodeRun.nodeId, status: "cancelled" },
         });
       } catch (error) {
+        const provider = nodeRun.inputJson.provider;
+        const connectionId = nodeRun.inputJson.connectionId;
+        const adapter = adapters.get("cli");
+        // Cancellation can race a completed website task. Preserve that response for archive-only recovery.
+        if (provider === "cli" && typeof connectionId === "string" && adapter instanceof CliProviderAdapter) {
+          try {
+            const task = await adapter.restoreTask(connectionId, `${runId}:${nodeRun.id}`, nodeRun.providerTaskId ?? undefined);
+            if (task.status === "succeeded") {
+              await this.repository.updateNodeRun(nodeRun.id, {
+                status: "cancelled",
+                inputJson: { ...nodeRun.inputJson, providerTask: providerTaskJson(task) },
+                errorJson: { code: "cli_completed_after_cancel", message: "已停止跟踪；网站任务已经完成，可取回已有结果" },
+              });
+              this.publish({ type: "node", runId, nodeRunId: nodeRun.id, payload: { nodeId: nodeRun.nodeId, status: "cancelled" } });
+              continue;
+            }
+          } catch { /* Keep cancellation pending when the local task cannot be restored. */ }
+        }
         await this.repository.updateNodeRun(nodeRun.id, {
           errorJson: {
             message: `远端取消暂未完成：${error instanceof Error ? error.message : String(error)}`,
@@ -1364,6 +1404,8 @@ export class RunService {
 
   /** Resume a failed or indeterminate run without creating a new provider task. */
   public async retryRun(runId: string): Promise<WorkflowRunRecord | null> {
+    if (runOutputRecoveries.get(this.repository)?.has(runId))
+      throw new Error("正在取回已有结果，请等待归档完成");
     const run = await this.repository.getRun(runId);
     if (!run) return null;
     if (!["failed", "needs_attention"].includes(run.status)) {
@@ -1387,11 +1429,15 @@ export class RunService {
       );
     }
     const retryNodeIds = new Set<string>();
-    for (const nodeRun of nodeRuns) {
+    for (let nodeRun of nodeRuns) {
       if (
         nodeRun.status === "needs_attention" ||
         (run.status === "needs_attention" && nodeRun.status === "archiving")
       ) {
+        if (!nodeRun.providerTaskId && nodeRun.inputJson.provider === "cli") {
+          const adapters = this.adapters(new RepoConnectionResolver(this.repository, frozenConnectionsFromGraph(asGraph(run.revisionGraph))));
+          nodeRun = await this.recoverCliSubmission(runId, nodeRun, adapters.get("cli")) ?? nodeRun;
+        }
         if (!nodeRun.providerTaskId) {
           throw new Error(
             `节点 ${nodeRun.nodeId} 没有可恢复的供应商任务 ID；请人工核对后新建运行`,
@@ -1439,7 +1485,6 @@ export class RunService {
       }
     }
 
-    this.cancelled.delete(runId);
     const queued = await this.repository.transitionRunStatus(
       runId,
       ["failed", "needs_attention"],
@@ -1451,19 +1496,113 @@ export class RunService {
     return queued;
   }
 
+  /** Archive a stored successful response without submitting, polling, or resuming the graph. */
+  public recoverRunOutputs(runId: string): Promise<WorkflowRunRecord | null> {
+    let recoveries = runOutputRecoveries.get(this.repository);
+    if (!recoveries) {
+      recoveries = new Map();
+      runOutputRecoveries.set(this.repository, recoveries);
+    }
+    const existing = recoveries.get(runId);
+    if (existing) return existing;
+    const recovery = this.recoverStoredRunOutputs(runId).finally(() => {
+      recoveries.delete(runId);
+    });
+    recoveries.set(runId, recovery);
+    return recovery;
+  }
+
+  private async recoverStoredRunOutputs(runId: string): Promise<WorkflowRunRecord | null> {
+    const run = await this.repository.getRun(runId);
+    if (!run) return null;
+    const isTerminal = (status: WorkflowRunRecord["status"]) =>
+      status === "cancelled" || status === "failed" || status === "needs_attention";
+    if (!isTerminal(run.status))
+      throw new Error("仅已取消、失败或待处理的运行可取回已有结果");
+    const candidates = (await this.repository.listNodeRuns(runId)).flatMap(node => {
+      const task = storedProviderTask(node.inputJson.providerTask);
+      return task?.status === "succeeded" && task.providerTaskId.trim() && task.result != null
+        ? [{ node, task }] : [];
+    });
+    if (!candidates.length)
+      throw new Error("没有已保存的成功结果可取回；超时或 524 记录不能重新生成或推测恢复");
+    // A compacted cancelled graph is deliberately unnecessary. Result parsing
+    // uses the saved response and provider recorded on the node itself.
+    const adapters = this.adapters();
+    for (const { node, task } of candidates) {
+      if (node.providerTaskId && node.providerTaskId !== task.providerTaskId)
+        throw new Error(`节点 ${node.nodeId} 的已存结果与任务 ID 不匹配`);
+      const provider = node.inputJson.provider;
+      const adapter = typeof provider === "string" ? adapters.get(provider) : undefined;
+      if (!adapter) throw new Error(`节点 ${node.nodeId} 缺少可解析已有结果的供应商协议`);
+      let artifacts: RemoteArtifact[];
+      try {
+        artifacts = await adapter.extractOutputs(task.result);
+      } catch (error) {
+        throw new Error("已有结果解析失败，原始结果仍保留，可修复后再次取回", { cause: error });
+      }
+      if (!artifacts.length || artifacts.some(artifact =>
+        !artifact.data?.byteLength && !artifact.localFile && !(typeof artifact.url === "string" && artifact.url.trim())))
+        throw new Error(`节点 ${node.nodeId} 的已存响应没有可归档的图片或视频；未重新生成`);
+      const ids: string[] = [];
+      for (const [index, artifact] of artifacts.entries()) {
+        const latestRun = await this.repository.getRun(runId);
+        if (!latestRun || !isTerminal(latestRun.status))
+          throw new Error("运行状态已变化，已停止取回；已存结果仍保留");
+        const id = createHash("sha256").update(`${runId}\0${node.nodeId}\0${index}`).digest("hex");
+        const asset = await this.repository.getAsset(id);
+        if (asset) {
+          if (asset.metadata.runId !== runId || asset.metadata.nodeId !== node.nodeId)
+            throw new Error("已有输出资产与运行不匹配，已停止取回");
+          if (await this.hasValidArchivedObject(asset)) {
+            await this.archiveProjectAsset(asset, runId);
+            ids.push(id);
+            continue;
+          }
+        }
+        try {
+          ids.push(await this.archiveArtifact(artifact, runId, node.nodeId, index));
+        } catch (error) {
+          throw new Error("已有结果归档失败，原始结果仍保留，可再次取回；未重新生成", { cause: error });
+        }
+      }
+      const latestRun = await this.repository.getRun(runId);
+      if (!latestRun || !isTerminal(latestRun.status))
+        throw new Error("运行状态已变化，原始结果与已归档文件仍保留");
+      const outputAssetIds = [...new Set([...node.outputAssetIds, ...ids])];
+      await adapter.cleanup?.(task.result);
+      if (outputAssetIds.length === node.outputAssetIds.length &&
+        outputAssetIds.every((id, index) => id === node.outputAssetIds[index])) continue;
+      // Preserve cancellation/failure and its original diagnostic. In particular,
+      // do not remove the response snapshot or enqueue any descendant nodes.
+      const updated = await this.repository.updateNodeRun(node.id, { outputAssetIds }, {
+        expectedStatus: node.status, expectedUpdatedAt: node.updatedAt,
+      });
+      if (!updated) throw new Error("节点记录已变化，已归档文件仍保留，请刷新后再次取回");
+      this.publish({ type: "node", runId, nodeRunId: node.id, payload: {
+        nodeId: node.nodeId, status: updated.status, recovered: true,
+        output: { kind: artifacts[0]!.kind, assetIds: outputAssetIds },
+      } });
+    }
+    return this.repository.getRun(runId);
+  }
+
   async cancelRun(runId: string): Promise<WorkflowRunRecord | null> {
     const current = await this.repository.getRun(runId);
     if (!current) return null;
+    const nodeRuns = await this.repository.listNodeRuns(runId);
+    const cliAttention = current.status === "needs_attention" && nodeRuns.some(node =>
+      node.status === "needs_attention" && node.inputJson.provider === "cli");
     if (
       ["succeeded", "failed", "cancelled", "needs_attention"].includes(
         current.status,
-      )
+      ) && !cliAttention
     ) {
       throw new Error(`Cannot cancel terminal run in status ${current.status}`);
     }
     const run = await this.repository.transitionRunStatus(
       runId,
-      ["queued", "running"],
+      cliAttention ? ["queued", "running", "needs_attention"] : ["queued", "running"],
       "cancelled",
     );
     if (!run) {
@@ -1472,8 +1611,7 @@ export class RunService {
         `Cannot cancel run in status ${latest?.status ?? "missing"}`,
       );
     }
-    this.cancelled.add(runId);
-    const nodeRuns = await this.repository.listNodeRuns(runId);
+    this.scheduler.cancelRun(runId);
     await Promise.all(
       nodeRuns
         .filter((node) =>
@@ -1483,13 +1621,15 @@ export class RunService {
             "running",
             "archiving",
             "cancel_requested",
-          ].includes(node.status),
+          ].includes(node.status) || (cliAttention && node.status === "needs_attention" && node.inputJson.provider === "cli"),
         )
-        .map((node) =>
-          this.repository.updateNodeRun(node.id, {
-            status: node.status === "queued" ? "cancelled" : "cancel_requested",
-          }),
-        ),
+        .map((node) => {
+          const stopsUnknownCli = node.inputJson.provider === "cli" && !node.providerTaskId && node.status === "needs_attention";
+          return this.repository.updateNodeRun(node.id, {
+            status: node.status === "queued" || stopsUnknownCli ? "cancelled" : "cancel_requested",
+            ...(stopsUnknownCli ? { errorJson: { code: "cli_tracking_stopped", message: "已停止跟踪；提交结果未知，请在网站核对生成任务" } } : {}),
+          });
+        }),
     );
     this.publish({ type: "run", runId, payload: { status: "cancelled" } });
     return run;
@@ -1579,10 +1719,11 @@ export class RunService {
    * this boundary is for failures that happen before/after that loop (for
    * example a malformed frozen graph or a database error during finalization).
    */
-  private async execute(runId: string): Promise<void> {
+  private async execute(runId: string, signal: AbortSignal): Promise<void> {
     try {
-      await this.executeInternal(runId);
+      await this.executeInternal(runId, signal);
     } catch (error) {
+      if (this.shutdownSignal?.aborted) return;
       await this.handleExecutionFailure(runId, error);
     }
   }
@@ -1688,7 +1829,7 @@ export class RunService {
     });
   }
 
-  private async executeInternal(runId: string): Promise<void> {
+  private async executeInternal(runId: string, signal: AbortSignal): Promise<void> {
     const run = await this.repository.transitionRunStatus(
       runId,
       ["queued", "running"],
@@ -1781,16 +1922,18 @@ export class RunService {
         }),
     );
 
-    for (const nodeId of orderedNodeIds) {
+    let executionLost = false;
+    const executeScheduledNode = async (nodeId: string): Promise<boolean> => {
+      if (executionLost) return false;
       const persistedRun = await this.repository.getRun(runId);
-      if (this.cancelled.has(runId) || persistedRun?.status === "cancelled") {
+      if (persistedRun?.status === "cancelled") {
         overall = "cancelled";
-        break;
+        return false;
       }
       const node = nodeMap.get(nodeId);
-      const nodeRun = nodeRunByNodeId.get(nodeId);
-      if (!node || !nodeRun) continue;
-      if (nodeRun.status === "succeeded") continue;
+      let nodeRun = nodeRunByNodeId.get(nodeId);
+      if (!node || !nodeRun) return true;
+      if (nodeRun.status === "succeeded") return true;
       if (
         nodeRun.status === "failed" ||
         nodeRun.status === "needs_attention" ||
@@ -1804,7 +1947,7 @@ export class RunService {
               ? "cancelled"
               : "failed";
         overall = combineRunStatus(overall, existingOutcome);
-        continue;
+        return true;
       }
 
       const missingHistoricalDependencies = graph.edges
@@ -1828,7 +1971,7 @@ export class RunService {
           nodeRunId: nodeRun.id,
           payload: { nodeId, status: "failed", error: message },
         });
-        continue;
+        return true;
       }
 
       const unavailableDependencies = graph.edges
@@ -1866,13 +2009,15 @@ export class RunService {
           nodeRunId: nodeRun.id,
           payload: { nodeId, status: "blocked", error: message },
         });
-        continue;
+        return true;
       }
       try {
         if (nodeRun.status === "submitting" && !nodeRun.providerTaskId) {
-          throw new NeedsAttentionError(
-            "供应商提交结果未知；为避免重复扣费，任务已暂停等待人工确认",
-          );
+          nodeRun = await this.recoverCliSubmission(runId, nodeRun, adapters.get("cli")) ?? nodeRun;
+          if (!nodeRun.providerTaskId)
+            throw new NeedsAttentionError(
+              "供应商提交结果未知；为避免重复扣费，任务已暂停等待人工确认",
+            );
         }
         const claimed = await this.repository.updateNodeRun(
           nodeRun.id,
@@ -1899,7 +2044,8 @@ export class RunService {
           }
           // Another executor or cancellation changed this row after our
           // snapshot. It now owns the node; do not submit the provider twice.
-          return;
+          executionLost = true;
+          return false;
         }
         this.publish({
           type: "node",
@@ -1915,6 +2061,7 @@ export class RunService {
           adapters,
           runId,
           claimed,
+          signal,
         );
         const currentRun = await this.repository.getRun(runId);
         if (currentRun?.status === "cancelled") {
@@ -1944,6 +2091,13 @@ export class RunService {
           this.repository.getRun(runId),
           this.repository.getNodeRun(nodeRun.id),
         ]);
+        if (this.shutdownSignal?.aborted && authoritativeRun?.status !== "cancelled" &&
+            authoritativeNode?.status !== "cancel_requested" && authoritativeNode?.status !== "cancelled") {
+          // Keep the task ID and running/archiving checkpoint available to the
+          // next process. Shutdown is not a provider failure or user cancel.
+          executionLost = true;
+          return false;
+        }
         await this.quarantineUnknownProviderModel(
           error,
           authoritativeNode ?? nodeRun,
@@ -1956,6 +2110,18 @@ export class RunService {
           authoritativeRun?.status === "cancelled" ||
           authoritativeNode?.status === "cancel_requested" ||
           authoritativeNode?.status === "cancelled";
+        if (cancellationWon && authoritativeNode?.inputJson.provider === "cli" && authoritativeNode.status === "cancel_requested") {
+          // Keep an acknowledged-but-pending remote cancellation eligible for reconciliation.
+          // In particular, the generic catch below must not turn it into a confirmed cancellation.
+          await this.reconcileCancellation(runId);
+          const reconciled = await this.repository.getNodeRun(nodeRun.id);
+          if (reconciled) {
+            overall = "cancelled";
+            statuses.set(nodeId, reconciled.status);
+            this.publish({ type: "node", runId, nodeRunId: nodeRun.id, payload: { nodeId, status: reconciled.status } });
+            return false;
+          }
+        }
         const nodeOutcome: WorkflowRunRecord["status"] =
           cancellationWon || error instanceof CancelledError
             ? "cancelled"
@@ -1968,9 +2134,12 @@ export class RunService {
           node,
           authoritativeNode ?? nodeRun,
         );
-        const message =
-          providerFailure?.message ??
-          (error instanceof Error ? error.message : String(error));
+        const cancelledTask = storedProviderTask(authoritativeNode?.inputJson.providerTask);
+        const stoppedCliTracking = nodeOutcome === "cancelled" &&
+          authoritativeNode?.inputJson.provider === "cli" && cancelledTask && cliStopsTracking(cancelledTask);
+        const message = stoppedCliTracking
+          ? "已停止跟踪；该网站不支持远端取消，生成可能仍在继续"
+          : providerFailure?.message ?? (error instanceof Error ? error.message : String(error));
         const nodeStatus =
           nodeOutcome === "cancelled"
             ? "cancelled"
@@ -2000,9 +2169,48 @@ export class RunService {
           nodeRunId: nodeRun.id,
           payload: { nodeId, status: effectiveStatus, error: message },
         });
-        if (nodeOutcome === "cancelled") break;
+        if (nodeOutcome === "cancelled") return false;
       }
+      return true;
+    };
+    const dependencies = new Map<string, string[]>();
+    for (const edge of graph.edges) {
+      const inputs = dependencies.get(edge.target) ?? [];
+      inputs.push(edge.source);
+      dependencies.set(edge.target, inputs);
     }
+    const stopAdmission = new AbortController();
+    const admissionSignal = AbortSignal.any([signal, stopAdmission.signal]);
+    const completed = await scheduleReadyNodes(orderedNodeIds, dependencies, this.nodeConcurrency, async (nodeId) => {
+      const node = nodeMap.get(nodeId);
+      const record = nodeRunByNodeId.get(nodeId);
+      const data = node ? nodeData(node) : {};
+      const generation = node && !["prompt", "asset-input", "preview"].includes(semanticType(node));
+      const provider = generation
+        ? (typeof record?.inputJson.provider === "string" ? record.inputJson.provider : data.provider ?? "fake")
+        : undefined;
+      const connection = generation
+        ? (typeof record?.inputJson.connectionId === "string" ? record.inputJson.connectionId : data.connectionId ?? "fake-default")
+        : undefined;
+      // Claim only after admission; queued cancellation is checked inside the callback.
+      try {
+        return await this.scheduler.withCapacity({ provider, connection, ...(provider === "cli" ? { connectionLimit: 1 } : {}) }, async () => {
+          try {
+            const proceed = await executeScheduledNode(nodeId);
+            if (!proceed) { executionLost = true; stopAdmission.abort(); }
+            return proceed;
+          } catch (error) {
+            executionLost = true;
+            stopAdmission.abort();
+            throw error;
+          }
+        }, admissionSignal);
+      } catch (error) {
+        if (admissionSignal.aborted && error === admissionSignal.reason) return false;
+        throw error;
+      }
+    });
+    if (!completed) return;
 
     // The repository has no compare-and-swap node patch. Keep outputs in
     // node_run/assets instead of writing a frozen revision over live edits.
@@ -2086,7 +2294,18 @@ export class RunService {
     provider: string,
     connectionId: string,
     providerTaskId: string,
+    cliRecovery?: { adapter: ProviderAdapter; idempotencyKey: string },
   ): Promise<ProviderTask> {
+    if (provider === "cli") {
+      if (cliRecovery?.adapter instanceof CliProviderAdapter) {
+        try {
+          return await cliRecovery.adapter.restoreTask(connectionId, cliRecovery.idempotencyKey, providerTaskId);
+        } catch (error) {
+          throw new NeedsAttentionError("无法恢复 CLI 任务：本机任务记录缺失或不匹配，请人工核对网站任务", { cause: error });
+        }
+      }
+      throw new NeedsAttentionError("CLI 任务缺少可恢复的本机任务记录；禁止自动重新生成");
+    }
     if (provider === "runway") {
       return {
         providerTaskId,
@@ -2358,6 +2577,7 @@ export class RunService {
     nodeRun: NodeRunRecord,
   ): Promise<ProviderTask> {
     const maximumAttempts =
+      nodeRun.inputJson.provider === "cli" || adapter instanceof CliProviderAdapter ||
       nodeRun.inputJson.paidRetryPolicy === "approval-required" ? 1 : 3;
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       try {
@@ -2381,19 +2601,66 @@ export class RunService {
     throw new Error("供应商提交重试耗尽");
   }
 
+  /** Restart only cloud lookups for interrupted jobs, never new paid submissions. */
+  public async resumeInterruptedCloudRuns(): Promise<void> {
+    for (const run of await this.repository.listRunsByStatus(["needs_attention"])) {
+      if (Date.now() - Date.parse(run.updatedAt) > 26 * 60 * 60_000) continue;
+      const nodes = await this.repository.listNodeRuns(run.id);
+      const waiting = nodes.filter(node => node.status === "needs_attention");
+      if (waiting.length && waiting.every(node => isCloudSubmission(node.providerTaskId))) {
+        await this.retryRun(run.id).catch(() => {});
+      }
+    }
+  }
+
+  /** Recover the manifest/DB checkpoint gap without ever invoking submit again. */
+  private async recoverCliSubmission(runId: string, node: NodeRunRecord, adapter: ProviderAdapter | undefined): Promise<NodeRunRecord | null> {
+    if (node.inputJson.provider !== "cli" || typeof node.inputJson.connectionId !== "string" || !(adapter instanceof CliProviderAdapter)) return null;
+    let task: ProviderTask;
+    try {
+      task = await adapter.restoreTask(node.inputJson.connectionId, `${runId}:${node.id}`);
+    } catch { return null; }
+    return this.repository.updateNodeRun(node.id, {
+      providerTaskId: task.providerTaskId,
+      inputJson: { ...node.inputJson, providerTask: providerTaskJson(task) },
+    }, { expectedUpdatedAt: node.updatedAt });
+  }
+
+  /** A remote CLI job still occupies its account after local polling has paused. */
+  private async assertCliConnectionAvailable(connectionId: string, nodeRunId: string): Promise<void> {
+    const runs = await this.repository.listRunsByStatus(["queued", "running", "needs_attention"]);
+    for (const run of runs) {
+      for (const node of await this.repository.listNodeRuns(run.id)) {
+        if (node.id === nodeRunId || node.inputJson.provider !== "cli" || node.inputJson.connectionId !== connectionId ||
+          node.errorJson?.code === "cli_connection_busy" || !["submitting", "running", "needs_attention"].includes(node.status)) continue;
+        const task = storedProviderTask(node.inputJson.providerTask);
+        if (task && ["succeeded", "failed", "cancelled"].includes(task.status)) continue;
+        // Also retain the reservation when submit may have happened without returning an id.
+        throw new NeedsAttentionError("该个人 AI 网站账号仍有未确认结束的任务，请先处理原任务或在网站核对后停止跟踪", { code: "cli_connection_busy" });
+      }
+    }
+  }
+
   private async pollWithRetry(
     adapter: ProviderAdapter,
     state: ProviderTask,
+    options: { persistent?: boolean; signal?: AbortSignal; beforePoll?: () => Promise<void> } = {},
   ): Promise<ProviderTask> {
     if (!adapter.poll)
       throw new NeedsAttentionError(
         "供应商任务仍在运行，但 Adapter 未提供轮询能力",
       );
 
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    for (let attempt = 1; options.persistent || attempt <= 3; attempt += 1) {
       try {
-        return await adapter.poll(state);
+        options.signal?.throwIfAborted();
+        await options.beforePoll?.();
+        options.signal?.throwIfAborted();
+        return options.persistent
+          ? await abortablePoll(adapter.poll(state), options.signal)
+          : await adapter.poll(state);
       } catch (error) {
+        if (options.signal?.aborted || error instanceof CancelledError) throw error;
         const details =
           error instanceof ProviderHttpError ? error.details : undefined;
         const explicitlyRetryable =
@@ -2404,8 +2671,8 @@ export class RunService {
             details.kind === "rate_limit" ||
             (details.status !== undefined && details.status >= 500));
 
-        if (explicitlyRetryable && attempt < 3) {
-          await delay(this.retryBaseDelayMs * 2 ** (attempt - 1));
+        if (explicitlyRetryable && (options.persistent || attempt < 3)) {
+          await delay(Math.min(30_000, this.retryBaseDelayMs * 2 ** Math.min(attempt - 1, 16)), options.signal);
           continue;
         }
 
@@ -2430,6 +2697,7 @@ export class RunService {
     adapters: Map<string, ProviderAdapter>,
     runId: string,
     nodeRun: NodeRunRecord,
+    signal: AbortSignal,
   ): Promise<OutputValue> {
     const nodeRunId = nodeRun.id;
     const data = nodeData(node);
@@ -2474,6 +2742,7 @@ export class RunService {
       ]),
     ];
     const assets: ProviderAssetInput[] = [];
+    const resumingCli = (nodeRun.inputJson.provider ?? data.provider) === "cli" && Boolean(nodeRun.providerTaskId);
     const connectedRoles = new Map<
       string,
       "reference" | "firstFrame" | "lastFrame"
@@ -2482,7 +2751,7 @@ export class RunService {
       for (const [assetId, role] of Object.entries(value.assetRoles ?? {}))
         connectedRoles.set(assetId, role);
     }
-    for (const assetId of assetIds) {
+    for (const assetId of resumingCli ? [] : assetIds) {
       const asset = await this.repository.getAsset(assetId);
       if (!asset) throw new Error(`素材 ${assetId} 不存在`);
       const stored = await this.storage.get(asset.storageKey);
@@ -2525,12 +2794,6 @@ export class RunService {
         : (frozenConnection ??
           (await this.repository.getConnection(connectionId)));
     const connectionConfig = connectionRecord?.config;
-    if (
-      assets.length > 0 &&
-      connectorRequiresPublicAssetUrls(connectionConfig)
-    ) {
-      for (const asset of assets) asset.url = providerAssetUrl(asset.id);
-    }
     const modelGroup = connectionConfigString(connectionConfig, "modelGroup");
     const connectionName = connectionRecord?.name.trim() || undefined;
     const configuredSupplier = connectionRecord?.config.supplierKey;
@@ -2572,28 +2835,30 @@ export class RunService {
         /cangyuansuanli\.cn/iu.test(
           connectionConfigString(connectionConfig, "baseUrl") ?? "",
         ));
-    const operation = operationFor(
-      node,
-      values.some((value) => value.kind === "image") ||
-        assets.some((asset) => asset.kind === "image"),
-    );
+    const storedOperation = nodeRun.inputJson.operation;
+    const operation = resumingCli && typeof storedOperation === "string" &&
+      ["image.generate", "image.edit", "video.generate", "video.image-to-video"].includes(storedOperation)
+      ? storedOperation as NormalizedRequest["operation"]
+      : operationFor(node, values.some((value) => value.kind === "image") || assets.some((asset) => asset.kind === "image"));
     if (!operation) throw new Error(`不支持的节点类型: ${semanticType(node)}`);
-    if (
-      supplier === "chentu" &&
-      operation === "image.edit" &&
-      assets.some((asset) => asset.kind === "image")
-    ) {
-      // 辰途文档推荐图生图使用 image_url。为本地素材生成短期签名 URL，
-      // 让辰途服务端直接下载真实图片，避免部分渠道把 multipart image
-      // 字节误当成 JSON 后返回 invalid character 400。
-      for (const asset of assets) {
-        if (asset.kind !== "image" || asset.url) continue;
-        try {
-          asset.url = providerAssetUrl(asset.id);
-        } catch {
-          // If a local/dev runtime has no public base URL, retain the bytes;
-          // the Chentu adapter still supports its documented file fallback.
-        }
+    if (assets.length > 0 &&
+        ((providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation)) ||
+          secureSkillRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
+          bananaRequiresPublicAssets(providerName, connectionConfig, model))) {
+      if (frozenConnection?.cloudGeneration) {
+        const savedUrls = nodeRun.inputJson.cloudReferenceUrls;
+        const urls = Array.isArray(savedUrls) && savedUrls.length === assets.length && savedUrls.every(value => typeof value === "string")
+          ? savedUrls as string[]
+          : isCloudSubmission(nodeRun.providerTaskId)
+            ? assets.map(() => `${frozenConnection.cloudGeneration!.endpoint}/expired-reference`)
+            : await uploadCloudReferences(frozenConnection.cloudGeneration, `${runId}:${nodeRunId}`, assets);
+        nodeRun.inputJson.cloudReferenceUrls = urls;
+        assets.forEach((asset, index) => { asset.url = urls[index]!; });
+      } else if (localReferenceChannelConfigured()) {
+        const urls = await localReferenceUrls(assets.map(asset => asset.id));
+        assets.forEach((asset, index) => { asset.url = urls[index]!; });
+      } else if (!referenceImageHostingEnabled(connectionConfig)) {
+        throw new Error("该模型需要参考图链接，请在设置的“素材通道”中连接本机通道，或选择支持直接上传素材的模型");
       }
     }
     const providerErrorContext: ProviderErrorContext = {
@@ -2605,9 +2870,12 @@ export class RunService {
     let parameters =
       providerName === "weai"
         ? normalizeWeAiParameters(rawParameters, requestedModel, modelGroup)
-        : supplier === "chentu"
+        : providerName !== "cli" && supplier === "chentu"
           ? normalizeChentuParameters(rawParameters)
           : { ...rawParameters };
+    const bananaRoute = model && connectionConfig
+      ? bananaImageRoute({ provider: providerName, config: connectionConfig }, model) : undefined;
+    if (bananaRoute) parameters = normalizeBananaParameters(bananaRoute, parameters);
     if (providerName === "rest" && semanticType(node) === "image-generation") {
       parameters = normalizeRestImageBatchParameter(
         parameters,
@@ -2615,21 +2883,22 @@ export class RunService {
         connectionConfig,
       );
     }
-    const prompt = renderPromptParts(parts, {
+    const prompt = resumingCli && typeof nodeRun.inputJson.prompt === "string" ? nodeRun.inputJson.prompt : renderPromptParts(parts, {
       resolveAsset: (id) => {
         const index = assets.findIndex((asset) => asset.id === id);
         return index < 0 ? "" : `[参考素材 ${index + 1}]`;
       },
       unresolvedAsset: "empty",
     });
-    if (semanticType(node) === "image-generation") {
+    if (providerName !== "cli" && semanticType(node) === "image-generation") {
       const imageDescriptor = configuredImageDescriptor(
         connectionConfig,
         model,
       );
-      const verifiedImage25 =
+      const verifiedImageSizes =
         isRecord(imageDescriptor?.metadata) &&
-        imageDescriptor.metadata.image25VerifiedAt !== undefined;
+        (imageDescriptor.metadata.image25VerifiedAt !== undefined ||
+          imageDescriptor.metadata.imageCapabilitiesVerifiedAt !== undefined);
       const selectedWeAiTier =
         providerName === "weai"
           ? weAiResolutionTier(parameters.size_tier)
@@ -2649,8 +2918,10 @@ export class RunService {
         supplier === "mikoto"
           ? weAiResolutionTier(parameters.size_tier)
           : undefined;
+      const selectedOpenAiTier = providerName === "openai" && /^gpt-image/iu.test(model ?? "")
+        ? weAiResolutionTier(parameters.size_tier) : undefined;
       const selectedConnectorTier =
-        providerName === "rest" && (supplier !== "cyberafei" || verifiedImage25)
+        providerName === "rest" && (supplier !== "cyberafei" || verifiedImageSizes)
           ? weAiResolutionTier(parameters.size_tier)
           : undefined;
       const selectedResolutionTier =
@@ -2659,19 +2930,30 @@ export class RunService {
         selectedFriModelTier ??
         selectedMikotoTier ??
         selectedConnectorTier ??
-        (verifiedImage25
+        selectedOpenAiTier ??
+        (verifiedImageSizes
           ? weAiResolutionTier(parameters.size_tier)
           : undefined) ??
         (parameters.size === "auto"
           ? singleConfiguredSizeTier(imageDescriptor)
           : undefined) ??
-        (verifiedImage25 && parameters.size === "auto" ? "1K" : undefined);
+        (verifiedImageSizes && parameters.size === "auto" ? "1K" : undefined);
       const autoAspectKey =
         parameters.aspect_ratio === "auto"
           ? "aspect_ratio"
           : parameters.size === "auto"
             ? "size"
             : undefined;
+      if (isRecord(imageDescriptor?.metadata) &&
+          imageDescriptor.metadata.imageCapabilitiesVerifiedAt !== undefined &&
+          selectedResolutionTier &&
+          (parameters.size === undefined || parameters.size === "auto") &&
+          !connectorSizeForResolutionTier(connectionConfig, model, selectedResolutionTier)) {
+        throw new ProviderTaskFailedError(
+          `该模型尚未验证 ${selectedResolutionTier}，请选择已提供的分辨率档位`,
+          providerErrorContext,
+        );
+      }
       const inferredRatio =
         autoAspectKey || selectedResolutionTier
           ? (aspectRatioFromPrompt(prompt) ??
@@ -2716,11 +2998,14 @@ export class RunService {
             : typeof parameters.aspect_ratio === "string"
               ? parameters.aspect_ratio
               : inferredRatio;
+        const selectedTierSize = connectorSizeForResolutionTier(
+          connectionConfig, model, parameters.size_tier, selectedRatio,
+        );
         const automaticSize = explicitAllowed
           ? explicit
-          : selectedRatio
+          : selectedTierSize ?? (selectedRatio
             ? cyberAfei4KSizeForAspectRatio(selectedRatio)
-            : undefined;
+            : undefined);
         if (automaticSize) parameters.size = automaticSize;
         else delete parameters.size;
         delete parameters.aspect_ratio;
@@ -2750,7 +3035,9 @@ export class RunService {
                       selectedMikotoTier,
                       inferredRatio,
                     )
-                  : undefined);
+                  : selectedOpenAiTier
+                    ? imageSizeForTier(selectedOpenAiTier, inferredRatio)
+                    : undefined);
         delete parameters.aspect_ratio;
       } else if (autoAspectKey) {
         const resolvedRatio = inferredRatio;
@@ -2802,16 +3089,19 @@ export class RunService {
       model,
       prompt,
       assets,
-      parameters,
+      parameters: resumingCli && isRecord(nodeRun.inputJson.parameters) ? nodeRun.inputJson.parameters : parameters,
       idempotencyKey: `${runId}:${nodeRunId}`,
       metadata: { fakeScenario: data.fakeScenario },
     };
-    const validation = await adapter.validate(request);
+    // Querying/archiving an existing CLI task must not depend on still having its original input files.
+    const validation = resumingCli ? { valid: true, issues: [] } : await adapter.validate(request);
     if (!validation.valid)
       throw new ProviderRequestValidationError(
         validation.issues,
         providerErrorContext,
       );
+    if (providerName === "cli" && !nodeRun.providerTaskId)
+      await this.assertCliConnectionAvailable(connectionId, nodeRunId);
     const inputJson: JsonObject = {
       ...nodeRun.inputJson,
       provider: providerName,
@@ -2823,10 +3113,28 @@ export class RunService {
       operation,
       model: request.model ?? null,
       prompt: request.prompt,
-      assetIds,
+      assetIds: resumingCli ? nodeRun.inputJson.assetIds ?? assetIds : assetIds,
+      inputAssets: resumingCli ? nodeRun.inputJson.inputAssets ?? [] : assets.map((asset) => ({
+        id: asset.id,
+        name: asset.filename ?? asset.id,
+        kind: asset.kind,
+        role: asset.role ?? "reference",
+      })),
       parameters: request.parameters ?? {},
+      ...(providerName === "cli" ? {
+        cliDeadlineAt: typeof nodeRun.inputJson.cliDeadlineAt === "number"
+          ? nodeRun.inputJson.cliDeadlineAt
+          : Date.now() + cliTiming(connectionConfig, "taskTimeoutMs", 7_200_000),
+      } : {}),
     };
     const savedTask = storedProviderTask(nodeRun.inputJson.providerTask);
+    const submissionProgress = async (phase: ProviderSubmissionPhase) => {
+      if (inputJson.submissionPhase === phase) return;
+      inputJson.submissionPhase = phase;
+      const status = inputJson.cloudAccepted === true || phase === "generating" ? "running" : "submitting";
+      await this.updateNodeRunOrCancel(runId, nodeRunId, { status, inputJson });
+      this.publish({ type: "node", runId, nodeRunId, payload: { nodeId: node.id, status } });
+    };
     await this.updateNodeRunOrCancel(runId, nodeRunId, {
       status:
         nodeRun.status === "archiving" || savedTask?.status === "succeeded"
@@ -2837,34 +3145,60 @@ export class RunService {
       inputJson,
     });
     let task: ProviderTask;
-    if (nodeRun.providerTaskId) {
+    if (nodeRun.providerTaskId && !isCloudSubmission(nodeRun.providerTaskId)) {
       task =
         savedTask ??
         (await this.restoreProviderTask(
           providerName,
           connectionId,
           nodeRun.providerTaskId,
+          { adapter, idempotencyKey: request.idempotencyKey },
         ));
     } else {
       try {
-        task = await this.submitWithRetry(adapter, request, nodeRun);
+        const cloud = isRecord(inputJson.cloudGeneration) ? inputJson.cloudGeneration : frozenConnection?.cloudGeneration;
+        if ((isCloudSubmission(nodeRun.providerTaskId) || cloud) && operation.startsWith("image.")) {
+          if (!isRecord(cloud) || typeof cloud.endpoint !== "string" || typeof cloud.encryptedToken !== "string")
+            throw new NeedsAttentionError("原任务的云端连接配置缺失，已停止，不能回退本机重复生成");
+          task = await runCloudGeneration(request.idempotencyKey, cloud as unknown as CloudGenerationConfig,
+            () => adapter.submit(request), {
+              resumeOnly: isCloudSubmission(nodeRun.providerTaskId),
+              checkpoint: async config => {
+                inputJson.cloudGeneration = config as unknown as JsonObject;
+                await this.updateNodeRunOrCancel(runId, nodeRunId, {
+                  status: "submitting", providerTaskId: cloudSubmissionId(request.idempotencyKey), inputJson,
+                });
+              },
+              accepted: async () => {
+                inputJson.cloudAccepted = true;
+                await this.updateNodeRunOrCancel(runId, nodeRunId, { status: "running", inputJson });
+              },
+              progress: submissionProgress,
+            });
+        } else task = await withProviderSubmissionProgress(submissionProgress, () => this.submitWithRetry(adapter, request, nodeRun), signal);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (
+          (error instanceof ProviderHttpError && error.details.submissionMayHaveOccurred) ||
+          (isRecord(error) && error.code === "CLI_ACTION_REQUIRED") ||
           message.includes("uncertain") ||
           data.fakeScenario === "submit_uncertain"
-        )
-          throw new NeedsAttentionError(message);
+        ) {
+          if (isRecord(error) && typeof error.providerTaskId === "string")
+            await this.repository.updateNodeRun(nodeRunId, { providerTaskId: error.providerTaskId });
+          throw new NeedsAttentionError(message, { ...(providerName === "cli" ? { code: "cli_submit_uncertain" } : {}), cause: error });
+        }
         throw error;
       }
     }
+    inputJson.submissionPhase = task.status === "running" || task.status === "queued" ? "generating" : "downloading";
     const taskSnapshot = {
       ...inputJson,
       providerTask: providerTaskJson(task),
     };
     const persistedTask = await this.repository.updateNodeRun(nodeRunId, {
       status: task.status === "succeeded" ? "archiving" : "running",
-      providerTaskId: task.providerTaskId,
+      providerTaskId: inputJson.cloudGeneration ? cloudSubmissionId(request.idempotencyKey) : task.providerTaskId,
       inputJson: taskSnapshot,
     });
     if (!persistedTask) {
@@ -2896,27 +3230,52 @@ export class RunService {
       );
     }
     let state = task;
+    const persistentImagePolling = operation.startsWith("image.") && providerName !== "cli";
+    const assertPollingActive = async () => {
+      const current = await this.repository.getRun(runId);
+      if (current?.status === "cancelled") throw new CancelledError("运行已取消");
+      signal.throwIfAborted();
+    };
+    const cliDeadline = providerName === "cli" ? Number(inputJson.cliDeadlineAt) : undefined;
     for (
       let attempt = 0;
-      attempt < 240 &&
+      (providerName === "cli" || persistentImagePolling || attempt < 240) &&
       (state.status === "running" || state.status === "queued");
       attempt += 1
     ) {
-      if (this.cancelled.has(runId)) {
-        await adapter.cancel?.(state);
-        throw new CancelledError("运行已取消");
-      }
       const persistedRun = await this.repository.getRun(runId);
       if (persistedRun?.status === "cancelled") {
         await adapter.cancel?.(state);
-        throw new CancelledError("运行已取消");
+        throw new CancelledError(providerName === "cli" && cliStopsTracking(state)
+          ? "已停止跟踪；该网站不支持远端取消，生成可能仍在继续" : "运行已取消");
       }
-      await delay(
-        this.pollIntervalMs ??
+      // A manual/restart recovery may query an expired task once, but never extends its deadline.
+      if (cliDeadline !== undefined && Date.now() >= cliDeadline && (attempt > 0 || !nodeRun.providerTaskId)) break;
+      const interval = this.pollIntervalMs ??
+          (providerName === "cli" ? cliTiming(connectionConfig, "pollIntervalMs", 10_000) : undefined) ??
           state.pollAfterMs ??
-          (providerName === "fake" ? 250 : 1_500),
-      );
-      state = await this.pollWithRetry(adapter, state);
+          (providerName === "fake" ? 250 : 1_500);
+      if (persistentImagePolling) {
+        try {
+          await delay(interval, signal);
+          await assertPollingActive();
+          state = await this.pollWithRetry(adapter, state, {
+            persistent: true, signal, beforePoll: assertPollingActive,
+          });
+        } catch (error) {
+          if (error instanceof CancelledError || signal.aborted) {
+            const current = await this.repository.getRun(runId);
+            if (current?.status === "cancelled") {
+              await adapter.cancel?.(state);
+              throw new CancelledError("运行已取消");
+            }
+          }
+          throw error;
+        }
+      } else {
+        await delay(cliDeadline === undefined ? interval : Math.max(0, Math.min(interval, cliDeadline - Date.now())));
+        state = await this.pollWithRetry(adapter, state);
+      }
       // The provider task id is durably stored immediately after submission.
       // Avoid rewriting the entire local JSON database for every 1.5-second
       // running poll; only terminal provider state needs another checkpoint.
@@ -2982,6 +3341,7 @@ export class RunService {
           await this.archiveArtifact(artifact, runId, node.id, index),
         );
       }
+      await adapter.cleanup?.(state.result);
       return archivedIds;
     };
     let ids: string[];
@@ -3032,6 +3392,43 @@ export class RunService {
     };
   }
 
+  private async hasValidArchivedObject(asset: AssetRecord): Promise<boolean> {
+    if (asset.deleted) return false;
+    const stored = this.storage.head
+      ? await this.storage.head(asset.storageKey)
+      : await this.storage.get(asset.storageKey).then((value) => value && ({
+          size: value.bytes.byteLength, contentType: value.contentType,
+          etag: createHash("sha256").update(value.bytes).digest("hex"),
+        }));
+    return Boolean(stored && stored.size === asset.size && stored.size > 0 &&
+      (!asset.metadata.etag || stored.etag === asset.metadata.etag) &&
+      (!stored.contentType || stored.contentType === asset.mimeType));
+  }
+
+  private async archiveProjectAsset(asset: AssetRecord, runId: string, bytes?: Uint8Array): Promise<void> {
+    if (!this.projectFileStore || asset.kind === "text") return;
+    try {
+      const run = await this.repository.getRun(runId);
+      const canvas = run ? await this.repository.getCanvas(run.canvasId) : null;
+      if (!canvas) return;
+      const storage = this.storage;
+      // Defer opening/reading the object: an existing project file consumes nothing.
+      const projectBytes = bytes ?? storage.stream?.(asset.storageKey) ?? (async function* () {
+        const stored = await storage.get(asset.storageKey);
+        if (!stored) throw new Error("Archived asset is missing from storage");
+        yield stored.bytes;
+      })();
+      await this.projectFileStore.archiveDraft({
+        projectName: canvas.title, assetId: asset.id, name: asset.name,
+        mimeType: asset.mimeType, kind: asset.kind, bytes: projectBytes, source: "generated",
+      });
+    } catch (error) {
+      // Keep the durable original available; later output recovery repairs this mirror.
+      console.error("[super-canvas] unable to archive generated asset",
+        error instanceof Error ? error.message : String(error));
+    }
+  }
+
   private async archiveArtifact(
     artifact: RemoteArtifact,
     runId: string,
@@ -3042,6 +3439,24 @@ export class RunService {
     // also accepts audio artifacts from compatible adapters.
     const artifactKind = (artifact as { kind: "image" | "video" | "audio" })
       .kind;
+    const id = createHash("sha256")
+      .update(`${runId}\0${nodeId}\0${outputIndex}`)
+      .digest("hex");
+    const existing = await this.repository.getAsset(id);
+    if (existing && !existing.deleted && existing.metadata.archiveComplete === true &&
+        existing.metadata.runId === runId && existing.metadata.nodeId === nodeId &&
+        existing.metadata.outputIndex === outputIndex) {
+      if (await this.hasValidArchivedObject(existing)) {
+        await this.archiveProjectAsset(existing, runId);
+        return id;
+      }
+    }
+    const localExtension = artifact.localFile && artifact.mimeType
+      ? ({ "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as Record<string, string>)[artifact.mimeType]
+      : undefined;
+    const extension = localExtension ?? (artifactKind === "video" ? "mp4" : artifactKind === "audio" ? "mp3" : "png");
+    const storageKey = `assets/${id}/original.${extension}`;
+    let persisted: StoredObjectMetadata | undefined;
     let bytes = artifact.data;
     const maxBytes = artifactDownloadMaxBytes();
     let mime =
@@ -3051,6 +3466,21 @@ export class RunService {
         : artifactKind === "audio"
           ? "audio/mpeg"
           : "image/png");
+    if (artifact.localFile) {
+      const node = (await this.repository.listNodeRuns(runId)).find(value => value.nodeId === nodeId);
+      if (!node || node.inputJson.provider !== "cli" || typeof node.inputJson.connectionId !== "string")
+        throw new Error("本地输出仅允许已绑定任务的 CLI 连接归档");
+      const expectedRoot = join(this.cliJobRoot, cliJobKey(node.inputJson.connectionId, `${runId}:${node.id}`), "output");
+      await consumeCliArtifact(artifact.localFile, expectedRoot, maxBytes, async chunks => {
+        if (this.storage.putStream) {
+          persisted = await this.storage.putStream(storageKey, chunks, mime);
+        } else {
+          const parts: Uint8Array[] = [];
+          for await (const chunk of chunks) parts.push(chunk);
+          bytes = Buffer.concat(parts);
+        }
+      });
+    }
     if (!bytes && artifact.url?.startsWith("data:")) {
       const match = artifact.url.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
       if (match) {
@@ -3061,13 +3491,18 @@ export class RunService {
       }
     }
     if (!bytes && artifact.url) {
-      const downloaded = await retryOperation(() =>
-        downloadRemoteArtifact(artifact.url!, { maxBytes }),
-      );
-      bytes = downloaded.bytes;
-      mime = downloaded.contentType ?? mime;
+      if (this.storage.putStream) {
+        persisted = await retryOperation(() => consumeRemoteArtifact(artifact.url!, async (chunks, contentType) => {
+          mime = contentType ?? mime;
+          return this.storage.putStream!(storageKey, chunks, mime);
+        }, { maxBytes }));
+      } else {
+        const downloaded = await retryOperation(() => downloadRemoteArtifact(artifact.url!, { maxBytes }));
+        bytes = downloaded.bytes;
+        mime = downloaded.contentType ?? mime;
+      }
     }
-    if (!bytes && artifact.metadata?.fake === true) {
+    if (!bytes && !persisted && artifact.metadata?.fake === true) {
       bytes =
         artifactKind === "image"
           ? new Uint8Array(fakePngBytes)
@@ -3075,23 +3510,10 @@ export class RunService {
             ? new TextEncoder().encode("SUPER_CANVAS_FAKE_VIDEO")
             : new TextEncoder().encode("SUPER_CANVAS_FAKE_AUDIO");
     }
-    if (!bytes)
-      throw new Error(
-        "Provider output did not include bytes or a downloadable URL",
-      );
-    if (bytes.byteLength > maxBytes) {
-      throw new Error(`Provider output exceeds ${maxBytes} bytes`);
-    }
-    const id = createHash("sha256")
-      .update(`${runId}\0${nodeId}\0${outputIndex}`)
-      .digest("hex");
-    const extension =
-      artifactKind === "video"
-        ? "mp4"
-        : artifactKind === "audio"
-          ? "mp3"
-          : "png";
-    const storageKey = `assets/${id}/original.${extension}`;
+    const size = bytes?.byteLength ?? persisted?.size;
+    if (size === undefined)
+      throw new Error("Provider output did not include bytes or a downloadable URL");
+    if (size > maxBytes) throw new Error(`Provider output exceeds ${maxBytes} bytes`);
     const kindLabel =
       artifactKind === "video"
         ? "视频"
@@ -3099,46 +3521,25 @@ export class RunService {
           ? "音频"
           : "图片";
     const assetName = `${kindLabel} ${new Date().toLocaleString("zh-CN")}`;
-    await retryOperation(() => this.storage.put(storageKey, bytes!, mime));
-    await this.repository.saveAsset({
+    if (!persisted) await retryOperation(() => this.storage.put(storageKey, bytes!, mime));
+    const etag = persisted?.etag ?? (bytes ? createHash("sha256").update(bytes).digest("hex") : undefined);
+    const archivedAsset = await this.repository.saveAsset({
       id,
       name: assetName,
       kind: artifactKind,
       mimeType: mime,
-      size: bytes.byteLength,
+      size,
       storageKey,
       metadata: {
+        ...(etag ? { etag } : {}),
         runId,
         nodeId,
+        outputIndex,
+        archiveComplete: true,
         fake: Boolean(artifact.url?.includes("example.invalid")),
       },
     });
-    if (this.projectFileStore) {
-      try {
-        const run = await this.repository.getRun(runId);
-        const canvas = run
-          ? await this.repository.getCanvas(run.canvasId)
-          : null;
-        if (canvas) {
-          await this.projectFileStore.archiveDraft({
-            projectName: canvas.title,
-            assetId: id,
-            name: assetName,
-            mimeType: mime,
-            kind: artifactKind,
-            bytes,
-            source: "generated",
-          });
-        }
-      } catch (error) {
-        // A filesystem archive must not turn a successful provider result into
-        // a failed workflow. The asset remains available in object storage.
-        console.error(
-          "[super-canvas] unable to archive generated asset",
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
+    await this.archiveProjectAsset(archivedAsset, runId, bytes);
     this.publish({
       type: "asset",
       runId,

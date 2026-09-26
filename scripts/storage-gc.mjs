@@ -1,17 +1,19 @@
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { readdir, readFile, rm, rmdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateCleanupTarget } from "./clean.mjs";
 
 const workspaceRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const desktopProfile = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "SuperCanvasDesktop", "profile") : path.join(workspaceRoot, "desktop-profile");
 const apply = process.argv.includes("--apply");
 const verbose = process.argv.includes("--verbose");
 const databasePath = path.resolve(
   process.env.LOCAL_DATABASE_PATH ??
-    path.join(workspaceRoot, "apps", "web", "data", "super-canvas.json"),
+    path.join(desktopProfile, "data", "super-canvas.json"),
 );
 const storageRoot = path.resolve(
   process.env.LOCAL_STORAGE_PATH ??
-    path.join(workspaceRoot, "apps", "web", "storage"),
+    path.join(desktopProfile, "storage"),
 );
 const managedRoots = ["assets", "previews"].map((name) =>
   path.join(storageRoot, name),
@@ -44,7 +46,12 @@ async function filesUnder(root) {
       }),
     );
   };
-  await visit(root);
+  try {
+    const safeRoot = await validateCleanupTarget(storageRoot, path.relative(storageRoot, root));
+    if (safeRoot) await visit(safeRoot);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   return result;
 }
 
@@ -59,12 +66,14 @@ async function pruneEmptyDirectories(root) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const target = path.join(root, entry.name);
-    await pruneEmptyDirectories(target);
-    if ((await readdir(target)).length === 0) await rm(target, { recursive: false });
+    const safeTarget = await validateCleanupTarget(storageRoot, path.relative(storageRoot, target));
+    if (!safeTarget) continue;
+    await pruneEmptyDirectories(safeTarget);
+    if ((await readdir(safeTarget)).length === 0) await rmdir(safeTarget);
   }
 }
 
-const snapshot = JSON.parse(await readFile(databasePath, "utf8"));
+const snapshot = JSON.parse((await readFile(databasePath, "utf8")).replace(/^\uFEFF/u, ""));
 if (!Array.isArray(snapshot.assets))
   throw new Error(`Unsupported local database format: ${databasePath}`);
 
@@ -95,9 +104,17 @@ for (const file of candidates) bytes += (await stat(file)).size;
 if (apply) {
   for (const file of candidates) {
     assertInsideManagedRoot(file);
-    await rm(file, { force: true });
+    const safeFile = await validateCleanupTarget(storageRoot, path.relative(storageRoot, file));
+    if (safeFile) await rm(safeFile, { force: true });
   }
-  for (const root of managedRoots) await pruneEmptyDirectories(root);
+  for (const root of managedRoots) {
+    try {
+      const safeRoot = await validateCleanupTarget(storageRoot, path.relative(storageRoot, root));
+      if (safeRoot) await pruneEmptyDirectories(safeRoot);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
 }
 
 const report = {

@@ -1,0 +1,24 @@
+{
+  "name": "super-canvas-generation",
+  "main": "src/worker.ts",
+  "account_id": "423a8e22551d871d7bd0d63c086ed9e5",
+  "compatibility_date": "2026-09-24",
+  "workers_dev": true,
+  "preview_urls": false,
+  "r2_buckets": [{ "binding": "RESULTS", "bucket_name": "super-canvas-generation" }],
+  "observability": {
+    "enabled": false
+  },
+  "workflows": [
+    {
+      "name": "super-canvas-generation",
+      "binding": "GENERATION",
+      "class_name": "GenerationWorkflow"
+    }
+  ],
+  "vars": {
+    "ALLOWED_HOSTS": "ai.cangyuansuanli.cn,api.3365api.cn,api.eaheng.com,api.frimodel.com,api.hangzhale.com,api.miaowuai.store,api.mikoto.vip,asian-acc.we-token.cc,direct-api.cangyuansuanli.cn,genimage.pro,pool.chaozhiyuanai.com,sub2api.we-token.cc,token.secure-skill.com,tu.988236.xyz,us-la.we-token.cc,vapi.chuangxiangai.asia,vip-api.cangyuansuanli.cn"
+  }
+}
+
+

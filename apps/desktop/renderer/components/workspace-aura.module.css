@@ -1,0 +1,212 @@
+.aura {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 270px;
+  isolation: isolate;
+  pointer-events: none;
+  user-select: none;
+}
+
+.halo {
+  position: absolute;
+  inset: 9% 10% 4%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 48% 45%,
+    rgb(121 76 223 / 13%),
+    rgb(87 49 175 / 7%) 42%,
+    transparent 70%
+  );
+  filter: blur(20px);
+}
+
+.floor {
+  position: absolute;
+  left: 21%;
+  right: 21%;
+  bottom: 15%;
+  height: 20px;
+  border-radius: 50%;
+  background: rgb(132 90 251 / 17%);
+  filter: blur(22px);
+  transform: rotate(-8deg);
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.core {
+  position: absolute;
+  left: 50%;
+  top: 49%;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  color: rgb(225 214 255 / 90%);
+  filter: drop-shadow(0 0 12px rgb(164 127 255 / 50%));
+}
+
+.badge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 41px;
+  padding: 8px 13px 8px 9px;
+  border: 1px solid rgb(189 168 249 / 14%);
+  border-radius: 11px;
+  background: linear-gradient(125deg, rgb(40 35 62 / 89%), rgb(21 21 33 / 86%));
+  box-shadow:
+    0 7px 25px rgb(0 0 0 / 18%),
+    inset 0 1px 0 rgb(255 255 255 / 4%);
+  backdrop-filter: blur(16px);
+  color: #d2cde1;
+  font-size: 12px;
+  font-weight: 450;
+  letter-spacing: 0.045em;
+  white-space: nowrap;
+  animation: float 7s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+.badgeIcon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgb(184 160 255 / 12%);
+  border-radius: 7px;
+  background: rgb(129 94 221 / 10%);
+  color: #c4b0ff;
+}
+
+.badgeDot {
+  width: 4px;
+  height: 4px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: #ae93f2;
+  box-shadow: 0 0 8px rgb(172 125 255 / 70%);
+}
+
+.imageBadge {
+  left: 8%;
+  top: 26%;
+  animation-delay: -1.5s;
+}
+
+.videoBadge {
+  right: 7%;
+  top: 53%;
+  animation-delay: -4s;
+}
+
+.videoBadge .badgeIcon {
+  color: #a3d4e4;
+  background: rgb(92 179 206 / 8%);
+  border-color: rgb(143 205 224 / 12%);
+}
+
+.textBadge {
+  top: 9%;
+  right: 17%;
+  min-height: 34px;
+  padding: 6px 11px 6px 7px;
+  color: #a8a0bc;
+  font-size: 12px;
+  animation-delay: -2.7s;
+}
+
+.textBadge .badgeIcon {
+  height: 23px;
+  width: 23px;
+}
+
+.coordinate {
+  position: absolute;
+  bottom: 6%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  color: #787085;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.19em;
+  white-space: nowrap;
+}
+
+.coordinate span {
+  height: 3px;
+  width: 3px;
+  border-radius: 50%;
+  background: #a090c7;
+}
+
+.aura[data-animating="true"] .badge {
+  animation-play-state: running;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@media (max-width: 700px) {
+  .aura {
+    min-height: 235px;
+  }
+  .badge {
+    gap: 6px;
+    min-height: 35px;
+    padding: 6px 9px 6px 6px;
+    font-size: 12px;
+  }
+  .badgeIcon {
+    width: 22px;
+    height: 22px;
+  }
+  .imageBadge {
+    left: 1%;
+    top: 26%;
+  }
+  .videoBadge {
+    right: 0;
+    top: 57%;
+  }
+  .textBadge {
+    top: 8%;
+    right: 10%;
+  }
+  .textBadge .badgeIcon {
+    width: 20px;
+    height: 20px;
+  }
+  .core svg {
+    width: 18px;
+    height: 18px;
+  }
+  .coordinate {
+    bottom: 6%;
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge {
+    animation: none;
+  }
+}

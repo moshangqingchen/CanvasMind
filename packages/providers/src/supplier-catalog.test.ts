@@ -1,7 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
-import { discoverSupplierCatalog, normalizeSupplierSiteBase, normalizeSupplierUrl, parseSupplierCatalog, parseSupplierKeyGroups, supplierModelUrls } from "./supplier-catalog.js";
+import { discoverSupplierCatalog, normalizeSupplierSiteBase, normalizeSupplierUrl, parseSupplierCatalog, parseSupplierKeyGroups, parseSupplierPricingChannels, supplierModelUrls } from "./supplier-catalog.js";
 
 describe("supplier discovery", () => {
+  it("reads the separate model-price page and isolates prices by exact group/model", async () => {
+    const data = [{name:"Images",description:"支持low、high、max",platforms:[{
+      groups:[{name:"gpt-image-2.5",rate_multiplier:1},{name:"discount",rate_multiplier:0.5}],
+      supported_models:[{name:"gpt-image-2.5-flare",pricing:{billing_mode:"image",per_request_price:0.16}}],
+    }]}];
+    const groups = parseSupplierPricingChannels({code:0,data}, "CNY");
+    expect(groups.map(group => group.models[0]?.priceLabel)).toEqual(["¥0.16/张", "¥0.08/张"]);
+    expect(groups[0]?.models[0]?.metadata?.supplierChannelDescription).toBe("支持low、high、max");
+    const result = await discoverSupplierCatalog({siteUrl:"https://token.secure-skill.com",apiUrl:"https://token.secure-skill.com/v1",kind:"sub2api"}, async url => {
+      if (String(url).endsWith("/pricing/channels")) return Response.json({code:0,data});
+      if (String(url).endsWith("/groups/available")) return Response.json({data:[{name:"gpt-image-2.5"}]});
+      return Response.json({data:{groups:[]}});
+    });
+    expect(result.groups.find(group=>group.id==="gpt-image-2.5")?.models[0]?.priceLabel).toBe("¥0.16/张");
+  });
+  it("preserves model plaza modalities, documented input limits and reasoning without changing group membership", () => {
+    const result = parseSupplierCatalog({ data: { groups: [
+      { name: "vision", models: [{ id: "image-understanding-pro", input_modalities: ["text", "image", "video"], output_modalities: ["text"],
+        limits: { maxInputImages: 16 }, description: "最多上传2个视频", reasoning_efforts: ["high", "xhigh"], protocol: "responses" }] },
+      { name: "text", models: [{ id: "image-understanding-pro", capabilities: { vision: false } }] },
+    ] } });
+    expect(result.groups[0]?.models[0]).toMatchObject({ id: "image-understanding-pro", capability: "chat", protocol: "responses",
+      inputKinds: ["text", "image", "video"], outputKinds: ["text"], limits: { maxInputImages: 16, maxInputVideos: 2 },
+      metadata: { modelFactsSource: "supplier-catalog", agentCapabilities: { imageInput: true, videoInput: true, audioInput: false },
+        reasoningOptions: [{ value: "high" }, { value: "xhigh" }] } });
+    expect(result.groups[1]?.models[0]?.limits).toBeUndefined();
+    expect(result.groups[1]?.models[0]?.metadata?.agentCapabilities).toEqual({ imageInput: false });
+  });
+
   it("retains overlapping New API group membership and empty published groups", () => {
     const result = parseSupplierCatalog({ group_ratio: { vip: 1, basic: 2, empty: 1 }, usable_group: { vip: "VIP", empty: "Empty" }, data: [{ model_name: "gpt-image-2", enable_groups: ["vip", "basic"], supported_endpoint_types: ["openai-images"], price_label: "0.1/张" }] });
     expect(result.kind).toBe("newapi");
@@ -33,6 +62,7 @@ describe("supplier discovery", () => {
     expect(calls).toEqual([
       { url: "https://site.example.com/gateway/api/pricing", auth: null, user: null },
       { url: "https://site.example.com/gateway/api/pricing", auth: "Bearer test-token", user: "42" },
+      { url: "https://site.example.com/gateway/api/user/self/groups", auth: "Bearer test-token", user: "42" },
     ]);
   });
   it("stops at a login-gated NewAPI site rather than inferring another platform", async () => {
@@ -51,7 +81,7 @@ describe("supplier discovery", () => {
     });
     const result = await discoverSupplierCatalog({ siteUrl: "https://example.com/gateway", apiUrl: "https://api.example.com/v1" }, fetcher);
     expect(result).toMatchObject({ kind: "sub2api", status: "failed", groups: [] });
-    expect(calls).toEqual(["https://example.com/gateway/api/pricing", "https://example.com/gateway/api/v1/model-plaza", "https://example.com/gateway/api/status", "https://example.com/gateway/setup/status", "https://example.com/gateway/api/v1/groups/available"]);
+    expect(calls).toEqual(["https://example.com/gateway/api/pricing", "https://example.com/gateway/api/v1/model-plaza", "https://example.com/gateway/api/status", "https://example.com/gateway/setup/status", "https://example.com/gateway/api/v1/groups/available", "https://example.com/gateway/api/v1/pricing/channels"]);
   });
   it("recognizes NewAPI status before querying a Sub2API fingerprint", async () => {
     const calls: string[] = [];
@@ -82,7 +112,7 @@ describe("supplier discovery", () => {
   });
 });
 
-it.each(["/dashboard", "/pricing/", "/api/v1/model-plaza", "/model-plaza", "/v1", "/keys", "/console/token"])("preserves gateway prefixes while stripping the %s page suffix", async (suffix) => {
+it.each(["/dashboard", "/pricing/", "/api/v1/model-plaza", "/model-plaza", "/channel-plaza", "/v1", "/keys", "/console/token"])("preserves gateway prefixes while stripping the %s page suffix", async (suffix) => {
   const urls: string[] = [];
   const result = await discoverSupplierCatalog({ siteUrl: `https://example.com/gateway${suffix}`, apiUrl: "", kind: "newapi" }, async input => { urls.push(String(input)); return Response.json({ data: [] }); });
   expect(urls).toEqual(["https://example.com/gateway/api/pricing", "https://example.com/gateway/api/user/self/groups"]);
@@ -90,6 +120,14 @@ it.each(["/dashboard", "/pricing/", "/api/v1/model-plaza", "/model-plaza", "/v1"
 });
 
 describe("API-key page group fallback", () => {
+  it.each(["newapi", "sub2api"] as const)("supplements %s model prices with group descriptions without cross-group leakage", async (kind) => {
+    const result = await discoverSupplierCatalog({ kind, siteUrl: "https://fixture.example", apiUrl: "" }, async url => {
+      if (String(url).endsWith("/pricing")) return Response.json({ success: true, data: [{ model_name: "gpt-image-2", enable_groups: ["images"], price_label: "$0.2/张" }] });
+      if (String(url).endsWith("/model-plaza")) return Response.json({ data: { groups: [{ name: "images", description: "旧说明支持4K", models: [{ id: "gpt-image-2", price_label: "$0.2/张" }] }] } });
+      return Response.json({ data: kind === "sub2api" ? [{name:"images", description:"仅支持1K2K，不支持4K", image_price_4k: 0.2}] : { images: { desc: "仅支持1K2K，不支持4K", ratio: 1 } } });
+    });
+    expect(result.groups[0]).toMatchObject({ id:"images", models:[{id:"gpt-image-2",priceLabel:"$0.2/张"}], details:{ source:"key-groups", supportedResolutions:["1K","2K"], unsupportedResolutions:["4K"], exclusiveResolutions:true } });
+  });
   it.each(["empty", "disabled", "gated"])("reads Sub2API group options when model plaza is %s", async (mode) => {
     const calls: string[] = [];
     const result = await discoverSupplierCatalog({ siteUrl: "https://site.example.com/gateway/keys", apiUrl: "https://api.example.com/v1", kind: "sub2api", token: "temporary-login-token" }, async (url, init) => {
@@ -125,11 +163,28 @@ describe("API-key page group fallback", () => {
     expect(result).toMatchObject({ status: "live", groups: [{ id: "default", label: "默认分组", models: [] }, { id: "vip", models: [] }] });
   });
 
-  it("keeps model plaza first and does not request group options when it succeeds", async () => {
-    const fetcher = vi.fn(async () => Response.json({ data: { groups: [{ name: "image", models: ["gpt-image-2"] }] } }));
+  it("merges account groups even when model plaza already returned models", async () => {
+    const fetcher = vi.fn(async (url) => String(url).endsWith("/model-plaza")
+      ? Response.json({ data: { groups: [{ name: "image", models: ["gpt-image-2"] }, { name: "catalog-only", models: [] }] } })
+      : Response.json({ data: [{ name: "image" }, ...Array.from({length: 8}, (_, i) => ({name: `account-${i}`}))] }));
     const result = await discoverSupplierCatalog({ siteUrl: "https://site.example.com", apiUrl: "", kind: "sub2api" }, fetcher);
+    expect(result.groups).toHaveLength(10);
     expect(result.groups[0]?.models).toHaveLength(1);
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.groups.slice(1).every(group => group.models.length === 0)).toBe(true);
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://site.example.com/api/v1/model-plaza",
+      "https://site.example.com/api/v1/pricing/channels",
+      "https://site.example.com/api/v1/groups/available",
+    ]);
+  });
+
+  it.each([401, 503])("marks a model-only result partial when account groups fail with %s", async (status) => {
+    const result = await discoverSupplierCatalog({ siteUrl: "https://site.example.com", apiUrl: "", kind: "sub2api" }, async (url) =>
+      String(url).endsWith("/model-plaza")
+        ? Response.json({ data: { groups: [{ name: "image", models: ["gpt-image-2"] }] } })
+        : Response.json({}, { status }));
+    expect(result).toMatchObject({status: "live", complete: false, groups: [{id: "image"}]});
+    expect(result.error).toContain("保留历史分组");
   });
 
   it("asks for a site login token when the key-page group list is gated", async () => {

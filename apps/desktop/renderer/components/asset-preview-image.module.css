@@ -1,0 +1,52 @@
+.message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: 76px;
+  box-sizing: border-box;
+  padding: 16px;
+  color: #a5acbf;
+  background: #13151e;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.message strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.message span {
+  max-width: 220px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.failure {
+  color: #d3a3af;
+  background: #211b24;
+}
+.compact {
+  min-height: 0;
+  gap: 3px;
+  padding: 3px 1px;
+}
+.compact strong {
+  font-size: 8px;
+  line-height: 1.1;
+  font-weight: 500;
+}
+.spin {
+  animation: asset-preview-spin 1s linear infinite;
+}
+@keyframes asset-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}

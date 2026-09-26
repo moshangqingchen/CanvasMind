@@ -1,0 +1,5786 @@
+{
+  "date": "2026-09-21",
+  "provider": "创想 AI",
+  "baseUrl": "https://vapi.chuangxiangai.asia",
+  "group": "生图",
+  "scope": "8 个 GPT 图像型号；质量仅 high / xhigh / max；11 种比例统一用 high；2K 方图及 4K 横图抽测；不包含 Grok、编辑与图生图。",
+  "planned": 120,
+  "submitted": 120,
+  "images": 98,
+  "errors": 22,
+  "notSubmitted": 0,
+  "savedImages": 99,
+  "budgetCredits": 80,
+  "ratioTolerance": 0.025,
+  "billing": {
+    "auditedAt": "2026-09-21T02:46:02.762Z",
+    "initialBalance": 100,
+    "finalBalance": 40,
+    "balanceDecrease": 60,
+    "ledgerEntries": 98,
+    "billedImages": 100,
+    "ledgerCredits": 60,
+    "estimatedYuan": 6,
+    "conversion": "按站点公开模型标价：cf 每张 0.04 元对应 0.4 额度，yf 每张 0.08 元对应 0.8 额度；不是外币汇率。",
+    "ledger": [
+      {
+        "id": 7704862,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "832x1248",
+        "at": "2026-09-21T10:43:18.314888+08:00"
+      },
+      {
+        "id": 7704774,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "912x1136",
+        "at": "2026-09-21T10:42:58.100557+08:00"
+      },
+      {
+        "id": 7704667,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1248x832",
+        "at": "2026-09-21T10:42:35.905915+08:00"
+      },
+      {
+        "id": 7704582,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1136x912",
+        "at": "2026-09-21T10:42:23.51506+08:00"
+      },
+      {
+        "id": 7704455,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "672x1552",
+        "at": "2026-09-21T10:42:04.542672+08:00"
+      },
+      {
+        "id": 7704326,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "832x1248",
+        "at": "2026-09-21T10:41:41.47167+08:00"
+      },
+      {
+        "id": 7704288,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1552x672",
+        "at": "2026-09-21T10:41:23.97447+08:00"
+      },
+      {
+        "id": 7704255,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "672x1552",
+        "at": "2026-09-21T10:41:09.455935+08:00"
+      },
+      {
+        "id": 7704198,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "912x1136",
+        "at": "2026-09-21T10:40:49.592413+08:00"
+      },
+      {
+        "id": 7704159,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1552x672",
+        "at": "2026-09-21T10:40:36.712542+08:00"
+      },
+      {
+        "id": 7704058,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "912x1136",
+        "at": "2026-09-21T10:40:03.847161+08:00"
+      },
+      {
+        "id": 7704032,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1136x912",
+        "at": "2026-09-21T10:39:54.476733+08:00"
+      },
+      {
+        "id": 7703971,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1136x912",
+        "at": "2026-09-21T10:39:27.052048+08:00"
+      },
+      {
+        "id": 7703893,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 1.6,
+        "totalCost": 1.6,
+        "imageCount": 2,
+        "imageSize": "2K",
+        "inputSize": "832x1248",
+        "at": "2026-09-21T10:38:54.566729+08:00"
+      },
+      {
+        "id": 7703833,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "832x1248",
+        "at": "2026-09-21T10:38:29.392968+08:00"
+      },
+      {
+        "id": 7703778,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1248x832",
+        "at": "2026-09-21T10:38:01.097325+08:00"
+      },
+      {
+        "id": 7703771,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1248x832",
+        "at": "2026-09-21T10:37:57.469171+08:00"
+      },
+      {
+        "id": 7703709,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "880x1184",
+        "at": "2026-09-21T10:37:30.599022+08:00"
+      },
+      {
+        "id": 7703692,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "880x1184",
+        "at": "2026-09-21T10:37:23.92137+08:00"
+      },
+      {
+        "id": 7703622,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "672x1552",
+        "at": "2026-09-21T10:36:58.360415+08:00"
+      },
+      {
+        "id": 7703572,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "672x1552",
+        "at": "2026-09-21T10:36:40.831462+08:00"
+      },
+      {
+        "id": 7703445,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1552x672",
+        "at": "2026-09-21T10:36:04.153748+08:00"
+      },
+      {
+        "id": 7703401,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1552x672",
+        "at": "2026-09-21T10:35:43.475852+08:00"
+      },
+      {
+        "id": 7703286,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "912x1136",
+        "at": "2026-09-21T10:35:11.099837+08:00"
+      },
+      {
+        "id": 7703137,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "912x1136",
+        "at": "2026-09-21T10:34:51.032022+08:00"
+      },
+      {
+        "id": 7702701,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1136x912",
+        "at": "2026-09-21T10:34:17.392956+08:00"
+      },
+      {
+        "id": 7702695,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1136x912",
+        "at": "2026-09-21T10:34:17.3174+08:00"
+      },
+      {
+        "id": 7701569,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "832x1248",
+        "at": "2026-09-21T10:33:19.714901+08:00"
+      },
+      {
+        "id": 7701566,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "832x1248",
+        "at": "2026-09-21T10:33:19.58782+08:00"
+      },
+      {
+        "id": 7699638,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1248x832",
+        "at": "2026-09-21T10:32:26.976711+08:00"
+      },
+      {
+        "id": 7699568,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1248x832",
+        "at": "2026-09-21T10:32:25.627267+08:00"
+      },
+      {
+        "id": 7697069,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "880x1184",
+        "at": "2026-09-21T10:31:33.740673+08:00"
+      },
+      {
+        "id": 7696976,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "880x1184",
+        "at": "2026-09-21T10:31:30.576426+08:00"
+      },
+      {
+        "id": 7696263,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1184x880",
+        "at": "2026-09-21T10:30:48.963467+08:00"
+      },
+      {
+        "id": 7696192,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1184x880",
+        "at": "2026-09-21T10:30:36.502899+08:00"
+      },
+      {
+        "id": 7695971,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "768x1360",
+        "at": "2026-09-21T10:29:54.645152+08:00"
+      },
+      {
+        "id": 7695698,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1360x768",
+        "at": "2026-09-21T10:29:00.85911+08:00"
+      },
+      {
+        "id": 7695388,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "4K",
+        "inputSize": "3840x2160",
+        "at": "2026-09-21T10:28:15.194272+08:00"
+      },
+      {
+        "id": 7695356,
+        "model": "gpt-image-2.5-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "4K",
+        "inputSize": "3840x2160",
+        "at": "2026-09-21T10:28:07.896934+08:00"
+      },
+      {
+        "id": 7695208,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "672x1552",
+        "at": "2026-09-21T10:27:40.462978+08:00"
+      },
+      {
+        "id": 7695158,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "672x1552",
+        "at": "2026-09-21T10:27:33.341782+08:00"
+      },
+      {
+        "id": 7694971,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1552x672",
+        "at": "2026-09-21T10:27:04.290654+08:00"
+      },
+      {
+        "id": 7694852,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1552x672",
+        "at": "2026-09-21T10:26:42.959905+08:00"
+      },
+      {
+        "id": 7694777,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "912x1136",
+        "at": "2026-09-21T10:26:28.965023+08:00"
+      },
+      {
+        "id": 7694731,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "912x1136",
+        "at": "2026-09-21T10:26:19.299576+08:00"
+      },
+      {
+        "id": 7694579,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1136x912",
+        "at": "2026-09-21T10:25:50.861036+08:00"
+      },
+      {
+        "id": 7694571,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1136x912",
+        "at": "2026-09-21T10:25:50.0596+08:00"
+      },
+      {
+        "id": 7694440,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "832x1248",
+        "at": "2026-09-21T10:25:24.860446+08:00"
+      },
+      {
+        "id": 7694437,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "832x1248",
+        "at": "2026-09-21T10:25:24.162735+08:00"
+      },
+      {
+        "id": 7694314,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1248x832",
+        "at": "2026-09-21T10:25:01.957508+08:00"
+      },
+      {
+        "id": 7694295,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1248x832",
+        "at": "2026-09-21T10:25:00.175988+08:00"
+      },
+      {
+        "id": 7694185,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "880x1184",
+        "at": "2026-09-21T10:24:39.640973+08:00"
+      },
+      {
+        "id": 7694168,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "880x1184",
+        "at": "2026-09-21T10:24:37.504664+08:00"
+      },
+      {
+        "id": 7694033,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1184x880",
+        "at": "2026-09-21T10:24:13.153069+08:00"
+      },
+      {
+        "id": 7694031,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1184x880",
+        "at": "2026-09-21T10:24:12.820107+08:00"
+      },
+      {
+        "id": 7693887,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "768x1360",
+        "at": "2026-09-21T10:23:46.946365+08:00"
+      },
+      {
+        "id": 7693874,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "768x1360",
+        "at": "2026-09-21T10:23:44.758318+08:00"
+      },
+      {
+        "id": 7693768,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1360x768",
+        "at": "2026-09-21T10:23:22.373264+08:00"
+      },
+      {
+        "id": 7693767,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1360x768",
+        "at": "2026-09-21T10:23:22.272291+08:00"
+      },
+      {
+        "id": 7693646,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "4K",
+        "inputSize": "3840x2160",
+        "at": "2026-09-21T10:22:58.441891+08:00"
+      },
+      {
+        "id": 7693645,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "4K",
+        "inputSize": "3840x2160",
+        "at": "2026-09-21T10:22:58.415718+08:00"
+      },
+      {
+        "id": 7693032,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "880x1184",
+        "at": "2026-09-21T10:20:50.1514+08:00"
+      },
+      {
+        "id": 7692963,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1248x832",
+        "at": "2026-09-21T10:20:36.279471+08:00"
+      },
+      {
+        "id": 7692855,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1184x880",
+        "at": "2026-09-21T10:20:13.437631+08:00"
+      },
+      {
+        "id": 7692812,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 1.6,
+        "totalCost": 1.6,
+        "imageCount": 2,
+        "imageSize": "2K",
+        "inputSize": "1184x880",
+        "at": "2026-09-21T10:20:05.817026+08:00"
+      },
+      {
+        "id": 7692799,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "880x1184",
+        "at": "2026-09-21T10:20:02.823689+08:00"
+      },
+      {
+        "id": 7692788,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1184x880",
+        "at": "2026-09-21T10:20:00.509356+08:00"
+      },
+      {
+        "id": 7692687,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "768x1360",
+        "at": "2026-09-21T10:19:41.079621+08:00"
+      },
+      {
+        "id": 7692600,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1184x880",
+        "at": "2026-09-21T10:19:27.417921+08:00"
+      },
+      {
+        "id": 7692586,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "768x1360",
+        "at": "2026-09-21T10:19:26.243611+08:00"
+      },
+      {
+        "id": 7692562,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "768x1360",
+        "at": "2026-09-21T10:19:21.021038+08:00"
+      },
+      {
+        "id": 7692483,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1360x768",
+        "at": "2026-09-21T10:19:07.747352+08:00"
+      },
+      {
+        "id": 7692406,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "768x1360",
+        "at": "2026-09-21T10:18:55.138794+08:00"
+      },
+      {
+        "id": 7692388,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1360x768",
+        "at": "2026-09-21T10:18:51.434174+08:00"
+      },
+      {
+        "id": 7692348,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1360x768",
+        "at": "2026-09-21T10:18:45.623861+08:00"
+      },
+      {
+        "id": 7692210,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "4K",
+        "inputSize": "3840x2160",
+        "at": "2026-09-21T10:18:23.228029+08:00"
+      },
+      {
+        "id": 7692206,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "1360x768",
+        "at": "2026-09-21T10:18:22.862375+08:00"
+      },
+      {
+        "id": 7692171,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "4K",
+        "inputSize": "3840x2160",
+        "at": "2026-09-21T10:18:17.864473+08:00"
+      },
+      {
+        "id": 7692155,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "4K",
+        "inputSize": "3840x2160",
+        "at": "2026-09-21T10:18:14.518048+08:00"
+      },
+      {
+        "id": 7692071,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "4K",
+        "inputSize": "3840x2160",
+        "at": "2026-09-21T10:17:55.009834+08:00"
+      },
+      {
+        "id": 7692037,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "2048x2048",
+        "at": "2026-09-21T10:17:46.607597+08:00"
+      },
+      {
+        "id": 7691955,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "2048x2048",
+        "at": "2026-09-21T10:17:31.504426+08:00"
+      },
+      {
+        "id": 7691947,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "2K",
+        "inputSize": "2048x2048",
+        "at": "2026-09-21T10:17:30.197593+08:00"
+      },
+      {
+        "id": 7691799,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:17:06.503561+08:00"
+      },
+      {
+        "id": 7691699,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:16:51.335354+08:00"
+      },
+      {
+        "id": 7691686,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:16:49.276544+08:00"
+      },
+      {
+        "id": 7691671,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:16:46.755336+08:00"
+      },
+      {
+        "id": 7691493,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:16:13.615828+08:00"
+      },
+      {
+        "id": 7691492,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:16:13.560453+08:00"
+      },
+      {
+        "id": 7691479,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:16:10.830936+08:00"
+      },
+      {
+        "id": 7691478,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:16:10.757842+08:00"
+      },
+      {
+        "id": 7690183,
+        "model": "gpt-image-2.5-sunburst-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:12:19.698587+08:00"
+      },
+      {
+        "id": 7690119,
+        "model": "gpt-image-2.5-sunburst-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:12:08.40672+08:00"
+      },
+      {
+        "id": 7690001,
+        "model": "gpt-image-2.5-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:11:47.091667+08:00"
+      },
+      {
+        "id": 7689888,
+        "model": "gpt-image-2.5-flare-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:11:26.566158+08:00"
+      },
+      {
+        "id": 7689883,
+        "model": "gpt-image-2.5-flare-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:11:25.68497+08:00"
+      },
+      {
+        "id": 7689863,
+        "model": "gpt-image-2-cf",
+        "actualCost": 0.4,
+        "totalCost": 0.4,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:11:21.605671+08:00"
+      },
+      {
+        "id": 7689312,
+        "model": "gpt-image-2-yf",
+        "actualCost": 0.8,
+        "totalCost": 0.8,
+        "imageCount": 1,
+        "imageSize": "1K",
+        "inputSize": "1024x1024",
+        "at": "2026-09-21T10:09:35.319988+08:00"
+      }
+    ]
+  },
+  "interpretation": [
+    "出图成功只确认请求参数可提交，不证明 high / xhigh / max 有三种独立画质，也不认证上游模型身份。",
+    "502 / 503 / 连接超时记录为服务错误；没有可用兼容账号不等于该质量或比例不支持。未自动重试已提交的测试项。",
+    "实际尺寸按解码后的原图记录，未做本地放大、裁剪或重新编码。K 档位按与 App 同比例预设的像素距离就近归类，不宣称原生分辨率。",
+    "比例通过阈值为相对误差 2.5%，允许像素取整；大图比例与多档质量的所有组合没有穷举。"
+  ],
+  "models": [
+    {
+      "model": "gpt-image-2-cf",
+      "submitted": 15,
+      "images": 12,
+      "acceptedQualities": [
+        "high"
+      ],
+      "verifiedTiers": [
+        "1K"
+      ],
+      "ratios": [
+        {
+          "ratio": "1:1",
+          "matched": true,
+          "actual": "1254x1254"
+        },
+        {
+          "ratio": "16:9",
+          "matched": true,
+          "actual": "1672x941"
+        },
+        {
+          "ratio": "9:16",
+          "matched": true,
+          "actual": "943x1668"
+        },
+        {
+          "ratio": "4:3",
+          "matched": true,
+          "actual": "1454x1082"
+        },
+        {
+          "ratio": "3:4",
+          "matched": true,
+          "actual": "1080x1456"
+        },
+        {
+          "ratio": "3:2",
+          "matched": true,
+          "actual": "1536x1024"
+        },
+        {
+          "ratio": "2:3",
+          "matched": true,
+          "actual": "1024x1536"
+        },
+        {
+          "ratio": "5:4",
+          "matched": true,
+          "actual": "1402x1122"
+        },
+        {
+          "ratio": "4:5",
+          "matched": false,
+          "actual": "1191x1321"
+        },
+        {
+          "ratio": "21:9",
+          "matched": true,
+          "actual": "1906x825"
+        },
+        {
+          "ratio": "9:21",
+          "matched": true,
+          "actual": "825x1906"
+        }
+      ],
+      "credits": 4.8
+    },
+    {
+      "model": "gpt-image-2-yf",
+      "submitted": 15,
+      "images": 12,
+      "acceptedQualities": [
+        "high"
+      ],
+      "verifiedTiers": [
+        "1K"
+      ],
+      "ratios": [
+        {
+          "ratio": "1:1",
+          "matched": true,
+          "actual": "1254x1254"
+        },
+        {
+          "ratio": "16:9",
+          "matched": true,
+          "actual": "1672x941"
+        },
+        {
+          "ratio": "9:16",
+          "matched": true,
+          "actual": "943x1667"
+        },
+        {
+          "ratio": "4:3",
+          "matched": true,
+          "actual": "1454x1082"
+        },
+        {
+          "ratio": "3:4",
+          "matched": true,
+          "actual": "1080x1456"
+        },
+        {
+          "ratio": "3:2",
+          "matched": true,
+          "actual": "1536x1024"
+        },
+        {
+          "ratio": "2:3",
+          "matched": true,
+          "actual": "1024x1536"
+        },
+        {
+          "ratio": "5:4",
+          "matched": true,
+          "actual": "1402x1122"
+        },
+        {
+          "ratio": "4:5",
+          "matched": true,
+          "actual": "1123x1401"
+        },
+        {
+          "ratio": "21:9",
+          "matched": true,
+          "actual": "1903x826"
+        },
+        {
+          "ratio": "9:21",
+          "matched": true,
+          "actual": "826x1905"
+        }
+      ],
+      "credits": 9.6
+    },
+    {
+      "model": "gpt-image-2.5-cf",
+      "submitted": 15,
+      "images": 10,
+      "acceptedQualities": [
+        "high"
+      ],
+      "verifiedTiers": [
+        "1K"
+      ],
+      "ratios": [
+        {
+          "ratio": "16:9",
+          "matched": true,
+          "actual": "1672x941"
+        },
+        {
+          "ratio": "4:3",
+          "matched": true,
+          "actual": "1454x1082"
+        },
+        {
+          "ratio": "3:4",
+          "matched": true,
+          "actual": "1080x1456"
+        },
+        {
+          "ratio": "3:2",
+          "matched": true,
+          "actual": "1536x1024"
+        },
+        {
+          "ratio": "2:3",
+          "matched": true,
+          "actual": "1024x1536"
+        },
+        {
+          "ratio": "5:4",
+          "matched": true,
+          "actual": "1399x1124"
+        },
+        {
+          "ratio": "4:5",
+          "matched": true,
+          "actual": "1124x1399"
+        },
+        {
+          "ratio": "21:9",
+          "matched": true,
+          "actual": "1905x825"
+        },
+        {
+          "ratio": "9:21",
+          "matched": true,
+          "actual": "826x1905"
+        }
+      ],
+      "credits": 4
+    },
+    {
+      "model": "gpt-image-2.5-yf",
+      "submitted": 15,
+      "images": 11,
+      "acceptedQualities": [
+        "high"
+      ],
+      "verifiedTiers": [
+        "1K"
+      ],
+      "ratios": [
+        {
+          "ratio": "1:1",
+          "matched": true,
+          "actual": "1254x1254"
+        },
+        {
+          "ratio": "9:16",
+          "matched": true,
+          "actual": "943x1667"
+        },
+        {
+          "ratio": "4:3",
+          "matched": true,
+          "actual": "1454x1082"
+        },
+        {
+          "ratio": "3:4",
+          "matched": true,
+          "actual": "1082x1454"
+        },
+        {
+          "ratio": "3:2",
+          "matched": true,
+          "actual": "1536x1024"
+        },
+        {
+          "ratio": "2:3",
+          "matched": true,
+          "actual": "1024x1536"
+        },
+        {
+          "ratio": "5:4",
+          "matched": true,
+          "actual": "1398x1125"
+        },
+        {
+          "ratio": "4:5",
+          "matched": true,
+          "actual": "1125x1398"
+        },
+        {
+          "ratio": "21:9",
+          "matched": true,
+          "actual": "1905x825"
+        },
+        {
+          "ratio": "9:21",
+          "matched": true,
+          "actual": "825x1905"
+        }
+      ],
+      "credits": 8.8
+    },
+    {
+      "model": "gpt-image-2.5-flare-cf",
+      "submitted": 15,
+      "images": 15,
+      "acceptedQualities": [
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "verifiedTiers": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "ratios": [
+        {
+          "ratio": "1:1",
+          "matched": true,
+          "actual": "1254x1254"
+        },
+        {
+          "ratio": "16:9",
+          "matched": true,
+          "actual": "1670x942"
+        },
+        {
+          "ratio": "9:16",
+          "matched": false,
+          "actual": "1088x1445"
+        },
+        {
+          "ratio": "4:3",
+          "matched": true,
+          "actual": "1454x1082"
+        },
+        {
+          "ratio": "3:4",
+          "matched": true,
+          "actual": "1081x1455"
+        },
+        {
+          "ratio": "3:2",
+          "matched": true,
+          "actual": "1536x1024"
+        },
+        {
+          "ratio": "2:3",
+          "matched": true,
+          "actual": "1024x1536"
+        },
+        {
+          "ratio": "5:4",
+          "matched": true,
+          "actual": "1398x1125"
+        },
+        {
+          "ratio": "4:5",
+          "matched": true,
+          "actual": "1124x1399"
+        },
+        {
+          "ratio": "21:9",
+          "matched": true,
+          "actual": "1905x825"
+        },
+        {
+          "ratio": "9:21",
+          "matched": true,
+          "actual": "825x1906"
+        }
+      ],
+      "credits": 6
+    },
+    {
+      "model": "gpt-image-2.5-flare-yf",
+      "submitted": 15,
+      "images": 15,
+      "acceptedQualities": [
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "verifiedTiers": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "ratios": [
+        {
+          "ratio": "1:1",
+          "matched": true,
+          "actual": "1254x1254"
+        },
+        {
+          "ratio": "16:9",
+          "matched": true,
+          "actual": "1668x943"
+        },
+        {
+          "ratio": "9:16",
+          "matched": false,
+          "actual": "1088x1445"
+        },
+        {
+          "ratio": "4:3",
+          "matched": true,
+          "actual": "1454x1082"
+        },
+        {
+          "ratio": "3:4",
+          "matched": true,
+          "actual": "1081x1455"
+        },
+        {
+          "ratio": "3:2",
+          "matched": true,
+          "actual": "1536x1024"
+        },
+        {
+          "ratio": "2:3",
+          "matched": true,
+          "actual": "1024x1536"
+        },
+        {
+          "ratio": "5:4",
+          "matched": true,
+          "actual": "1399x1124"
+        },
+        {
+          "ratio": "4:5",
+          "matched": true,
+          "actual": "1124x1399"
+        },
+        {
+          "ratio": "21:9",
+          "matched": true,
+          "actual": "1905x825"
+        },
+        {
+          "ratio": "9:21",
+          "matched": true,
+          "actual": "826x1905"
+        }
+      ],
+      "credits": 13.6
+    },
+    {
+      "model": "gpt-image-2.5-sunburst-cf",
+      "submitted": 15,
+      "images": 13,
+      "acceptedQualities": [
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "verifiedTiers": [
+        "1K",
+        "2K"
+      ],
+      "ratios": [
+        {
+          "ratio": "1:1",
+          "matched": true,
+          "actual": "1254x1254"
+        },
+        {
+          "ratio": "16:9",
+          "matched": true,
+          "actual": "1672x941"
+        },
+        {
+          "ratio": "9:16",
+          "matched": true,
+          "actual": "943x1668"
+        },
+        {
+          "ratio": "4:3",
+          "matched": true,
+          "actual": "1454x1082"
+        },
+        {
+          "ratio": "3:4",
+          "matched": true,
+          "actual": "1081x1455"
+        },
+        {
+          "ratio": "3:2",
+          "matched": true,
+          "actual": "1536x1024"
+        },
+        {
+          "ratio": "2:3",
+          "matched": true,
+          "actual": "1024x1536"
+        },
+        {
+          "ratio": "5:4",
+          "matched": true,
+          "actual": "1401x1123"
+        },
+        {
+          "ratio": "4:5",
+          "matched": true,
+          "actual": "1124x1399"
+        }
+      ],
+      "credits": 5.2
+    },
+    {
+      "model": "gpt-image-2.5-sunburst-yf",
+      "submitted": 15,
+      "images": 10,
+      "acceptedQualities": [
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "verifiedTiers": [
+        "1K"
+      ],
+      "ratios": [
+        {
+          "ratio": "1:1",
+          "matched": true,
+          "actual": "1254x1254"
+        },
+        {
+          "ratio": "16:9",
+          "matched": true,
+          "actual": "1672x941"
+        },
+        {
+          "ratio": "9:16",
+          "matched": true,
+          "actual": "943x1668"
+        },
+        {
+          "ratio": "4:3",
+          "matched": true,
+          "actual": "1454x1082"
+        },
+        {
+          "ratio": "3:4",
+          "matched": true,
+          "actual": "1081x1455"
+        },
+        {
+          "ratio": "3:2",
+          "matched": true,
+          "actual": "1536x1024"
+        },
+        {
+          "ratio": "2:3",
+          "matched": true,
+          "actual": "1024x1536"
+        }
+      ],
+      "credits": 8
+    }
+  ],
+  "cases": [
+    {
+      "id": "gpt-image-2-cf-high-1k-1-1",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:10:52.815Z",
+      "elapsedMs": 30439,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "11585abd299c0e70ec4740fcc0430ce35e5aa79060d625dbab24a15e1c49c697",
+      "file": "gpt-image-2-cf-high-1k-1-1.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-1-1.jpeg",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "11585abd299c0e70ec4740fcc0430ce35e5aa79060d625dbab24a15e1c49c697"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7689863
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-xhigh-1k-1-1",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "xhigh",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:15:05.969Z",
+      "elapsedMs": 30809,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2-cf-max-1k-1-1",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "max",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:15:37.481Z",
+      "elapsedMs": 233,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2-cf-high-2k-1-1",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "2K",
+      "requestedRatio": "1:1",
+      "requestedSize": "2048x2048",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:15:38.405Z",
+      "elapsedMs": 235,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2-cf-high-4k-16-9",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "4K",
+      "requestedRatio": "16:9",
+      "requestedSize": "3840x2160",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:22:36.319Z",
+      "elapsedMs": 23643,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0005313496280551222,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "b6b4767a77b069149d72fbec8c99758d6d2d0234ab2d24f8775bb1a06e1816ec",
+      "file": "gpt-image-2-cf-high-4k-16-9.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-4k-16-9.jpeg",
+          "width": 1672,
+          "height": 941,
+          "sha256": "b6b4767a77b069149d72fbec8c99758d6d2d0234ab2d24f8775bb1a06e1816ec"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7693645
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-16-9",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "16:9",
+      "requestedSize": "1360x768",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:23:00.924Z",
+      "elapsedMs": 22583,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0033881352753641902,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "ff5423644aa138996dbaf19f81a873105ce7635794c372b02e0395ee4d6705d6",
+      "file": "gpt-image-2-cf-high-1k-16-9.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-16-9.jpeg",
+          "width": 1672,
+          "height": 941,
+          "sha256": "ff5423644aa138996dbaf19f81a873105ce7635794c372b02e0395ee4d6705d6"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7693768
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-9-16",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:16",
+      "requestedSize": "768x1360",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:23:24.185Z",
+      "elapsedMs": 21703,
+      "width": 943,
+      "height": 1668,
+      "nearestTier": "1K",
+      "aspectError": 0.0011365907274181186,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "f9951ecd8ce8d8177b8c94586d0dde7283e97eb10a366f034288c11ec74f3262",
+      "file": "gpt-image-2-cf-high-1k-9-16.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-9-16.jpeg",
+          "width": 943,
+          "height": 1668,
+          "sha256": "f9951ecd8ce8d8177b8c94586d0dde7283e97eb10a366f034288c11ec74f3262"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7693874
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-4-3",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:3",
+      "requestedSize": "1184x880",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:23:46.835Z",
+      "elapsedMs": 27116,
+      "width": 1454,
+      "height": 1082,
+      "nearestTier": "1K",
+      "aspectError": 0.0012239596343108783,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "669929e8a613332f3be64faec14ba9b8e54c48f55785248dd7ba3af0197fed7f",
+      "file": "gpt-image-2-cf-high-1k-4-3.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-4-3.jpeg",
+          "width": 1454,
+          "height": 1082,
+          "sha256": "669929e8a613332f3be64faec14ba9b8e54c48f55785248dd7ba3af0197fed7f"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7694031
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-3-4",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:4",
+      "requestedSize": "880x1184",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:24:14.629Z",
+      "elapsedMs": 24046,
+      "width": 1080,
+      "height": 1456,
+      "nearestTier": "1K",
+      "aspectError": 0.0019980019980019303,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "5c2fe42b229d4bff6e82385e5ca3597ce30445292c8301fac826810676dc494f",
+      "file": "gpt-image-2-cf-high-1k-3-4.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-3-4.jpeg",
+          "width": 1080,
+          "height": 1456,
+          "sha256": "5c2fe42b229d4bff6e82385e5ca3597ce30445292c8301fac826810676dc494f"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7694168
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-3-2",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:2",
+      "requestedSize": "1248x832",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:24:39.343Z",
+      "elapsedMs": 21976,
+      "width": 1536,
+      "height": 1024,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "3503a4ab1778681e0db2a10bf8cfd48691af7fbaf1d0235e7d925a0fefbbbf79",
+      "file": "gpt-image-2-cf-high-1k-3-2.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-3-2.jpeg",
+          "width": 1536,
+          "height": 1024,
+          "sha256": "3503a4ab1778681e0db2a10bf8cfd48691af7fbaf1d0235e7d925a0fefbbbf79"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7694295
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-2-3",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "2:3",
+      "requestedSize": "832x1248",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:25:02.006Z",
+      "elapsedMs": 23984,
+      "width": 1024,
+      "height": 1536,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "0d7701c7652f33156b01d2d18b460a97420bca213ebb795bf4ad4f500d53150d",
+      "file": "gpt-image-2-cf-high-1k-2-3.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-2-3.jpeg",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "0d7701c7652f33156b01d2d18b460a97420bca213ebb795bf4ad4f500d53150d"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7694440
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-5-4",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "5:4",
+      "requestedSize": "1136x912",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:25:26.682Z",
+      "elapsedMs": 24529,
+      "width": 1402,
+      "height": 1122,
+      "nearestTier": "1K",
+      "aspectError": 0.0031633652180460547,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "6ad4072f40853e211f34e6af3bca9e3db512ceea754f38e0be39d652a4fec2f1",
+      "file": "gpt-image-2-cf-high-1k-5-4.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-5-4.jpeg",
+          "width": 1402,
+          "height": 1122,
+          "sha256": "6ad4072f40853e211f34e6af3bca9e3db512ceea754f38e0be39d652a4fec2f1"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7694571
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-4-5",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:5",
+      "requestedSize": "912x1136",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:25:51.874Z",
+      "elapsedMs": 38223,
+      "width": 1191,
+      "height": 1321,
+      "nearestTier": "1K",
+      "aspectError": 0.12303279015100199,
+      "ratioMatches": false,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "7d4b3cb508db35e1f783afd2dd38d924dbd409e705f415ad41410e8e0ee071a0",
+      "file": "gpt-image-2-cf-high-1k-4-5.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-4-5.jpeg",
+          "width": 1191,
+          "height": 1321,
+          "sha256": "7d4b3cb508db35e1f783afd2dd38d924dbd409e705f415ad41410e8e0ee071a0"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7694777
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-21-9",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "21:9",
+      "requestedSize": "1552x672",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:26:30.777Z",
+      "elapsedMs": 34810,
+      "width": 1906,
+      "height": 825,
+      "nearestTier": "1K",
+      "aspectError": 0.0003373945641989007,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "01af00c8762b8551873194185b698b9188f2cb3e7e7c8b839fdfb62435a6278b",
+      "file": "gpt-image-2-cf-high-1k-21-9.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-21-9.png",
+          "width": 1906,
+          "height": 825,
+          "sha256": "01af00c8762b8551873194185b698b9188f2cb3e7e7c8b839fdfb62435a6278b"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7694971
+      ]
+    },
+    {
+      "id": "gpt-image-2-cf-high-1k-9-21",
+      "model": "gpt-image-2-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:21",
+      "requestedSize": "672x1552",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:27:06.234Z",
+      "elapsedMs": 35493,
+      "width": 825,
+      "height": 1906,
+      "nearestTier": "1K",
+      "aspectError": 0.00033728076750105807,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "60d00bea6956d5de645cf7c773bfb03682a4ab1906bc6dba461ecfd56a7f954d",
+      "file": "gpt-image-2-cf-high-1k-9-21.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-cf-high-1k-9-21.png",
+          "width": 825,
+          "height": 1906,
+          "sha256": "60d00bea6956d5de645cf7c773bfb03682a4ab1906bc6dba461ecfd56a7f954d"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7695208
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-1-1",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:09:10.488Z",
+      "elapsedMs": 26423,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "fd2223f17ed86ad54a7a91a4d12c4b6912e5da885d7131eaf7d0d957482100f9",
+      "file": "gpt-image-2-yf-high-1k-1-1.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-1-1.jpeg",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "fd2223f17ed86ad54a7a91a4d12c4b6912e5da885d7131eaf7d0d957482100f9"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7689312
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-xhigh-1k-1-1",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "xhigh",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:15:06.412Z",
+      "elapsedMs": 30359,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2-yf-max-1k-1-1",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "max",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:15:37.443Z",
+      "elapsedMs": 227,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2-yf-high-2k-1-1",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "2K",
+      "requestedRatio": "1:1",
+      "requestedSize": "2048x2048",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:15:38.346Z",
+      "elapsedMs": 219,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2-yf-high-4k-16-9",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "4K",
+      "requestedRatio": "16:9",
+      "requestedSize": "3840x2160",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:22:36.443Z",
+      "elapsedMs": 23209,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0005313496280551222,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "b1275225de46ca8199e7e2a168e3a4192637f99c1758fe6474703fa8ce328d9c",
+      "file": "gpt-image-2-yf-high-4k-16-9.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-4k-16-9.jpeg",
+          "width": 1672,
+          "height": 941,
+          "sha256": "b1275225de46ca8199e7e2a168e3a4192637f99c1758fe6474703fa8ce328d9c"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7693646
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-16-9",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "16:9",
+      "requestedSize": "1360x768",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:23:00.323Z",
+      "elapsedMs": 23104,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0033881352753641902,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "5293729ce749a47bda2d74abf5bb7e3f8a4577a7ce4b057febd24b82f08e2e48",
+      "file": "gpt-image-2-yf-high-1k-16-9.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-16-9.jpeg",
+          "width": 1672,
+          "height": 941,
+          "sha256": "5293729ce749a47bda2d74abf5bb7e3f8a4577a7ce4b057febd24b82f08e2e48"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7693767
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-9-16",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:16",
+      "requestedSize": "768x1360",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:23:24.106Z",
+      "elapsedMs": 23991,
+      "width": 943,
+      "height": 1667,
+      "nearestTier": "1K",
+      "aspectError": 0.0017371525694860335,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "09ab14902950c918c549f1f58f9989665a8221464c67725cdd97e555c51a0be4",
+      "file": "gpt-image-2-yf-high-1k-9-16.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-9-16.jpeg",
+          "width": 943,
+          "height": 1667,
+          "sha256": "09ab14902950c918c549f1f58f9989665a8221464c67725cdd97e555c51a0be4"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7693887
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-4-3",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:3",
+      "requestedSize": "1184x880",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:23:48.756Z",
+      "elapsedMs": 25559,
+      "width": 1454,
+      "height": 1082,
+      "nearestTier": "1K",
+      "aspectError": 0.0012239596343108783,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "a2183c6eb18a6a27f4776453edc08e0be23808bc1bf18bf974ee2ec29e0c6c67",
+      "file": "gpt-image-2-yf-high-1k-4-3.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-4-3.jpeg",
+          "width": 1454,
+          "height": 1082,
+          "sha256": "a2183c6eb18a6a27f4776453edc08e0be23808bc1bf18bf974ee2ec29e0c6c67"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7694033
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-3-4",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:4",
+      "requestedSize": "880x1184",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:24:14.990Z",
+      "elapsedMs": 25783,
+      "width": 1080,
+      "height": 1456,
+      "nearestTier": "1K",
+      "aspectError": 0.0019980019980019303,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "d535e10310bd755b8605bf5c475987866aa7a55c6002d9f8836dbb150e3f0718",
+      "file": "gpt-image-2-yf-high-1k-3-4.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-3-4.jpeg",
+          "width": 1080,
+          "height": 1456,
+          "sha256": "d535e10310bd755b8605bf5c475987866aa7a55c6002d9f8836dbb150e3f0718"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7694185
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-3-2",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:2",
+      "requestedSize": "1248x832",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:24:41.456Z",
+      "elapsedMs": 21659,
+      "width": 1536,
+      "height": 1024,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "b8bac112a6d9ca333b0ea579f384046347a1c754c9bd229f01044f99771cfcf2",
+      "file": "gpt-image-2-yf-high-1k-3-2.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-3-2.jpeg",
+          "width": 1536,
+          "height": 1024,
+          "sha256": "b8bac112a6d9ca333b0ea579f384046347a1c754c9bd229f01044f99771cfcf2"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7694314
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-2-3",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "2:3",
+      "requestedSize": "832x1248",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:25:03.808Z",
+      "elapsedMs": 21492,
+      "width": 1024,
+      "height": 1536,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "fb16e83c78aebb8338b0393b5627c86feedf966668bdae771fffc794532f634d",
+      "file": "gpt-image-2-yf-high-1k-2-3.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-2-3.jpeg",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "fb16e83c78aebb8338b0393b5627c86feedf966668bdae771fffc794532f634d"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7694437
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-5-4",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "5:4",
+      "requestedSize": "1136x912",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:25:25.978Z",
+      "elapsedMs": 26050,
+      "width": 1402,
+      "height": 1122,
+      "nearestTier": "1K",
+      "aspectError": 0.0031633652180460547,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "cf7e713ad5762672b480c009287257fd9b0d36c71675a4c046f4a20f212a454a",
+      "file": "gpt-image-2-yf-high-1k-5-4.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-5-4.jpeg",
+          "width": 1402,
+          "height": 1122,
+          "sha256": "cf7e713ad5762672b480c009287257fd9b0d36c71675a4c046f4a20f212a454a"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7694579
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-4-5",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:5",
+      "requestedSize": "912x1136",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:25:52.694Z",
+      "elapsedMs": 28118,
+      "width": 1123,
+      "height": 1401,
+      "nearestTier": "1K",
+      "aspectError": 0.0015527755863606885,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "083cd2e5f854dbce8d7681b695f10a64090b338c43bc173a9ce1872ab3867137",
+      "file": "gpt-image-2-yf-high-1k-4-5.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-4-5.jpeg",
+          "width": 1123,
+          "height": 1401,
+          "sha256": "083cd2e5f854dbce8d7681b695f10a64090b338c43bc173a9ce1872ab3867137"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7694731
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-21-9",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "21:9",
+      "requestedSize": "1552x672",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:26:21.484Z",
+      "elapsedMs": 22615,
+      "width": 1903,
+      "height": 826,
+      "nearestTier": "1K",
+      "aspectError": 0.0024462694391053086,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "jpeg",
+      "sha256": "813d08e279b996b2215fdfba3ebc007dbc59fd71bd3f9dca49ecfca02e5509c1",
+      "file": "gpt-image-2-yf-high-1k-21-9.jpeg",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-21-9.jpeg",
+          "width": 1903,
+          "height": 826,
+          "sha256": "813d08e279b996b2215fdfba3ebc007dbc59fd71bd3f9dca49ecfca02e5509c1"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7694852
+      ]
+    },
+    {
+      "id": "gpt-image-2-yf-high-1k-9-21",
+      "model": "gpt-image-2-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:21",
+      "requestedSize": "672x1552",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:26:44.775Z",
+      "elapsedMs": 50190,
+      "width": 826,
+      "height": 1905,
+      "nearestTier": "1K",
+      "aspectError": 0.001399825021872303,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "dc0f64397a45c3f25a896b0194e77ab5d9cd9f229c908e218858090e13ec9afb",
+      "file": "gpt-image-2-yf-high-1k-9-21.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2-yf-high-1k-9-21.png",
+          "width": 826,
+          "height": 1905,
+          "sha256": "dc0f64397a45c3f25a896b0194e77ab5d9cd9f229c908e218858090e13ec9afb"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7695158
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-1-1",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:07:24.991Z",
+      "elapsedMs": 60694,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-cf-xhigh-1k-1-1",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "xhigh",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:15:06.238Z",
+      "elapsedMs": 30530,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-cf-max-1k-1-1",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "max",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:15:37.466Z",
+      "elapsedMs": 243,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-2k-1-1",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "2K",
+      "requestedRatio": "1:1",
+      "requestedSize": "2048x2048",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:15:38.377Z",
+      "elapsedMs": 226,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-4k-16-9",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "4K",
+      "requestedRatio": "16:9",
+      "requestedSize": "3840x2160",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:27:35.622Z",
+      "elapsedMs": 33642,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0005313496280551222,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "bc9132b87aad7a362fead8486d6c02849d466a9c48ab8725d96e6feac6679493",
+      "file": "gpt-image-2.5-cf-high-4k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-4k-16-9.png",
+          "width": 1672,
+          "height": 941,
+          "sha256": "bc9132b87aad7a362fead8486d6c02849d466a9c48ab8725d96e6feac6679493"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7695356
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-16-9",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "16:9",
+      "requestedSize": "1360x768",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:28:09.933Z",
+      "elapsedMs": 52327,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0033881352753641902,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "11535b98ea4dfb4c11472b284c4468915643b58c538307dacf5c3e77f49c453c",
+      "file": "gpt-image-2.5-cf-high-1k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-16-9.png",
+          "width": 1672,
+          "height": 941,
+          "sha256": "11535b98ea4dfb4c11472b284c4468915643b58c538307dacf5c3e77f49c453c"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7695698
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-9-16",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:16",
+      "requestedSize": "768x1360",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:29:02.933Z",
+      "elapsedMs": 60394,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-4-3",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:3",
+      "requestedSize": "1184x880",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:30:04.510Z",
+      "elapsedMs": 33312,
+      "width": 1454,
+      "height": 1082,
+      "nearestTier": "1K",
+      "aspectError": 0.0012239596343108783,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "e9a4402753fcdb2625bee0e15405bc6035baef1ac8ba6907643bb48ae448df07",
+      "file": "gpt-image-2.5-cf-high-1k-4-3.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-4-3.png",
+          "width": 1454,
+          "height": 1082,
+          "sha256": "e9a4402753fcdb2625bee0e15405bc6035baef1ac8ba6907643bb48ae448df07"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7696192
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-3-4",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:4",
+      "requestedSize": "880x1184",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:30:38.483Z",
+      "elapsedMs": 53413,
+      "width": 1080,
+      "height": 1456,
+      "nearestTier": "1K",
+      "aspectError": 0.0019980019980019303,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "fec7852ee20dbabc3f8a869e9f3f3564c293f97d83934aa222ba93683393dc9f",
+      "file": "gpt-image-2.5-cf-high-1k-3-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-3-4.png",
+          "width": 1080,
+          "height": 1456,
+          "sha256": "fec7852ee20dbabc3f8a869e9f3f3564c293f97d83934aa222ba93683393dc9f"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7696976
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-3-2",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:2",
+      "requestedSize": "1248x832",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:31:32.561Z",
+      "elapsedMs": 55715,
+      "width": 1536,
+      "height": 1024,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "5de72b6bbd29dfb7a919bd14eb1ffa0e8c35ae5dae7eb49f3e4b6b7754469b95",
+      "file": "gpt-image-2.5-cf-high-1k-3-2.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-3-2.png",
+          "width": 1536,
+          "height": 1024,
+          "sha256": "5de72b6bbd29dfb7a919bd14eb1ffa0e8c35ae5dae7eb49f3e4b6b7754469b95"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7699638
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-2-3",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "2:3",
+      "requestedSize": "832x1248",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:32:28.952Z",
+      "elapsedMs": 52225,
+      "width": 1024,
+      "height": 1536,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "123e77c30db857bc2892ef22d53a94fae730784514c527ab041f955721196a70",
+      "file": "gpt-image-2.5-cf-high-1k-2-3.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-2-3.png",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "123e77c30db857bc2892ef22d53a94fae730784514c527ab041f955721196a70"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7701566
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-5-4",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "5:4",
+      "requestedSize": "1136x912",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:33:22.737Z",
+      "elapsedMs": 56062,
+      "width": 1399,
+      "height": 1124,
+      "nearestTier": "1K",
+      "aspectError": 0.0007643727131472211,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "287cb6ae6c8598d5ce9c056d2ec2aa6119f54b79e70132705bf1a5fac0e2cb42",
+      "file": "gpt-image-2.5-cf-high-1k-5-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-5-4.png",
+          "width": 1399,
+          "height": 1124,
+          "sha256": "287cb6ae6c8598d5ce9c056d2ec2aa6119f54b79e70132705bf1a5fac0e2cb42"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7702701
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-4-5",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:5",
+      "requestedSize": "912x1136",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:34:19.442Z",
+      "elapsedMs": 33249,
+      "width": 1124,
+      "height": 1399,
+      "nearestTier": "1K",
+      "aspectError": 0.0007649574257300173,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "e41064102593c9be61c463e3277547af1c931e9dff60162b807fc4c82759eb49",
+      "file": "gpt-image-2.5-cf-high-1k-4-5.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-4-5.png",
+          "width": 1124,
+          "height": 1399,
+          "sha256": "e41064102593c9be61c463e3277547af1c931e9dff60162b807fc4c82759eb49"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7703137
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-21-9",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "21:9",
+      "requestedSize": "1552x672",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:34:53.344Z",
+      "elapsedMs": 51579,
+      "width": 1905,
+      "height": 825,
+      "nearestTier": "1K",
+      "aspectError": 0.00018744142455473511,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "f3e45e2d0f009da4367c3c14b70aad6e4c22f4d6845627e49891bccf83c30dc2",
+      "file": "gpt-image-2.5-cf-high-1k-21-9.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-21-9.png",
+          "width": 1905,
+          "height": 825,
+          "sha256": "f3e45e2d0f009da4367c3c14b70aad6e4c22f4d6845627e49891bccf83c30dc2"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7703401
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-cf-high-1k-9-21",
+      "model": "gpt-image-2.5-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:21",
+      "requestedSize": "672x1552",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:35:45.589Z",
+      "elapsedMs": 56534,
+      "width": 826,
+      "height": 1905,
+      "nearestTier": "1K",
+      "aspectError": 0.001399825021872303,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "9d093da48ca251f48eaf537b1bdec2cc112ad2cba7ec293d19164f89fff67bb2",
+      "file": "gpt-image-2.5-cf-high-1k-9-21.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-cf-high-1k-9-21.png",
+          "width": 826,
+          "height": 1905,
+          "sha256": "9d093da48ca251f48eaf537b1bdec2cc112ad2cba7ec293d19164f89fff67bb2"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7703572
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-1-1",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:10:53.081Z",
+      "elapsedMs": 55653,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "3e2e08cbed3968a5a698dd851194767ef612556dbc46b65516f05ea0f9ee152c",
+      "file": "gpt-image-2.5-yf-high-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "3e2e08cbed3968a5a698dd851194767ef612556dbc46b65516f05ea0f9ee152c"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7690001
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-xhigh-1k-1-1",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "xhigh",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:15:06.434Z",
+      "elapsedMs": 30333,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-yf-max-1k-1-1",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "max",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:15:38.115Z",
+      "elapsedMs": 246,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-2k-1-1",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "2K",
+      "requestedRatio": "1:1",
+      "requestedSize": "2048x2048",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:15:39.026Z",
+      "elapsedMs": 234,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-4k-16-9",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "4K",
+      "requestedRatio": "16:9",
+      "requestedSize": "3840x2160",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:27:42.407Z",
+      "elapsedMs": 34035,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0005313496280551222,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "a376f8271c968aa3acd04ac8948bfd15a5d15129466d77bed55846091c0ad53e",
+      "file": "gpt-image-2.5-yf-high-4k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-4k-16-9.png",
+          "width": 1672,
+          "height": 941,
+          "sha256": "a376f8271c968aa3acd04ac8948bfd15a5d15129466d77bed55846091c0ad53e"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7695388
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-16-9",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "16:9",
+      "requestedSize": "1360x768",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:28:17.088Z",
+      "elapsedMs": 60374,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-9-16",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:16",
+      "requestedSize": "768x1360",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:29:18.647Z",
+      "elapsedMs": 37250,
+      "width": 943,
+      "height": 1667,
+      "nearestTier": "1K",
+      "aspectError": 0.0017371525694860335,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "480d57009b6b18238b3341ca4cabab68317a93ab944acfb5a8afed845432ccc3",
+      "file": "gpt-image-2.5-yf-high-1k-9-16.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-9-16.png",
+          "width": 943,
+          "height": 1667,
+          "sha256": "480d57009b6b18238b3341ca4cabab68317a93ab944acfb5a8afed845432ccc3"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7695971
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-4-3",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:3",
+      "requestedSize": "1184x880",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:29:56.557Z",
+      "elapsedMs": 53702,
+      "width": 1454,
+      "height": 1082,
+      "nearestTier": "1K",
+      "aspectError": 0.0012239596343108783,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "d30cba8e7c13c0ab240a55220c55aab603f505f0fc3ec908e0523ba4a906bc8f",
+      "file": "gpt-image-2.5-yf-high-1k-4-3.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-4-3.png",
+          "width": 1454,
+          "height": 1082,
+          "sha256": "d30cba8e7c13c0ab240a55220c55aab603f505f0fc3ec908e0523ba4a906bc8f"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7696263
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-3-4",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:4",
+      "requestedSize": "880x1184",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:30:50.920Z",
+      "elapsedMs": 44146,
+      "width": 1082,
+      "height": 1454,
+      "nearestTier": "1K",
+      "aspectError": 0.001225459547330221,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "c6385df58d3bdf47ebe2c4c78dc0dff6a1609378d8eb5cb3aa769fcd9051023a",
+      "file": "gpt-image-2.5-yf-high-1k-3-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-3-4.png",
+          "width": 1082,
+          "height": 1454,
+          "sha256": "c6385df58d3bdf47ebe2c4c78dc0dff6a1609378d8eb5cb3aa769fcd9051023a"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7697069
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-3-2",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:2",
+      "requestedSize": "1248x832",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:31:35.720Z",
+      "elapsedMs": 51222,
+      "width": 1536,
+      "height": 1024,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "a05c30116b1e81ddde3972ef5a89b439bec61573f332326ff9557c0152e6bd27",
+      "file": "gpt-image-2.5-yf-high-1k-3-2.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-3-2.png",
+          "width": 1536,
+          "height": 1024,
+          "sha256": "a05c30116b1e81ddde3972ef5a89b439bec61573f332326ff9557c0152e6bd27"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7699568
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-2-3",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "2:3",
+      "requestedSize": "832x1248",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:32:27.644Z",
+      "elapsedMs": 53710,
+      "width": 1024,
+      "height": 1536,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "5902ec5b7579a1cd3dc0f23dc414a1d80ada2fd9eae470e5f66f3029d8905cca",
+      "file": "gpt-image-2.5-yf-high-1k-2-3.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-2-3.png",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "5902ec5b7579a1cd3dc0f23dc414a1d80ada2fd9eae470e5f66f3029d8905cca"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7701569
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-5-4",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "5:4",
+      "requestedSize": "1136x912",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:33:22.039Z",
+      "elapsedMs": 56513,
+      "width": 1398,
+      "height": 1125,
+      "nearestTier": "1K",
+      "aspectError": 0.002366197183098717,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "1eab83b3af81f226508db24efa49e2f12d79d8ee8ec3d31b8a5913ae350f7393",
+      "file": "gpt-image-2.5-yf-high-1k-5-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-5-4.png",
+          "width": 1398,
+          "height": 1125,
+          "sha256": "1eab83b3af81f226508db24efa49e2f12d79d8ee8ec3d31b8a5913ae350f7393"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7702695
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-4-5",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:5",
+      "requestedSize": "912x1136",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:34:19.199Z",
+      "elapsedMs": 53194,
+      "width": 1125,
+      "height": 1398,
+      "nearestTier": "1K",
+      "aspectError": 0.002371809351705556,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "fd92819912cbd7dfad2eb7559286bdc25f9ea9efb7e1a96c29276adac40f3fc6",
+      "file": "gpt-image-2.5-yf-high-1k-4-5.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-4-5.png",
+          "width": 1125,
+          "height": 1398,
+          "sha256": "fd92819912cbd7dfad2eb7559286bdc25f9ea9efb7e1a96c29276adac40f3fc6"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7703286
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-21-9",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "21:9",
+      "requestedSize": "1552x672",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:35:13.080Z",
+      "elapsedMs": 52484,
+      "width": 1905,
+      "height": 825,
+      "nearestTier": "1K",
+      "aspectError": 0.00018744142455473511,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "5c027f24384496f63eb46ee2d7878325c6965e0f0c558fc5143228a9790cc380",
+      "file": "gpt-image-2.5-yf-high-1k-21-9.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-21-9.png",
+          "width": 1905,
+          "height": 825,
+          "sha256": "5c027f24384496f63eb46ee2d7878325c6965e0f0c558fc5143228a9790cc380"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7703445
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-yf-high-1k-9-21",
+      "model": "gpt-image-2.5-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:21",
+      "requestedSize": "672x1552",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:36:06.230Z",
+      "elapsedMs": 53510,
+      "width": 825,
+      "height": 1905,
+      "nearestTier": "1K",
+      "aspectError": 0.0001874765654292787,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "fdba96dfbe198877f19cb354fa4f4e5303e89fd4331afc95e58040952e8bab0f",
+      "file": "gpt-image-2.5-yf-high-1k-9-21.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-yf-high-1k-9-21.png",
+          "width": 825,
+          "height": 1905,
+          "sha256": "fdba96dfbe198877f19cb354fa4f4e5303e89fd4331afc95e58040952e8bab0f"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7703622
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-1-1",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:10:53.104Z",
+      "elapsedMs": 34816,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "26d32bc128d9ab3d7eb6ad421a50541f9289dd9a877c97126dc651816c6e8bc5",
+      "file": "gpt-image-2.5-flare-cf-high-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "26d32bc128d9ab3d7eb6ad421a50541f9289dd9a877c97126dc651816c6e8bc5"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7689888
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-xhigh-1k-1-1",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "xhigh",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:15:39.224Z",
+      "elapsedMs": 35973,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "aadf047d424f881da317758788ab2783d29833d2dfdca6149f4e161327252983",
+      "file": "gpt-image-2.5-flare-cf-xhigh-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-xhigh-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "aadf047d424f881da317758788ab2783d29833d2dfdca6149f4e161327252983"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7691492
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-max-1k-1-1",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "max",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:16:15.839Z",
+      "elapsedMs": 51953,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "3596034d92cbaf33a562da5594f976317f43b7909d6f517d98a8b1a04378d172",
+      "file": "gpt-image-2.5-flare-cf-max-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-max-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "3596034d92cbaf33a562da5594f976317f43b7909d6f517d98a8b1a04378d172"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7691799
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-2k-1-1",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "2K",
+      "requestedRatio": "1:1",
+      "requestedSize": "2048x2048",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:17:08.699Z",
+      "elapsedMs": 39057,
+      "width": 2048,
+      "height": 2048,
+      "nearestTier": "2K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": true,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "f12b783fc655b330c4070ffe9f42851d8c1b4c2d0757a744e3c41e134c7000aa",
+      "file": "gpt-image-2.5-flare-cf-high-2k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-2k-1-1.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "f12b783fc655b330c4070ffe9f42851d8c1b4c2d0757a744e3c41e134c7000aa"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692037
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-4k-16-9",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "4K",
+      "requestedRatio": "16:9",
+      "requestedSize": "3840x2160",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:17:48.388Z",
+      "elapsedMs": 35847,
+      "width": 3840,
+      "height": 2160,
+      "nearestTier": "4K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": true,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "73fd2518eb9c16533336db0fb25ecce9b2774c29aac985b518ca92c46db37e8f",
+      "file": "gpt-image-2.5-flare-cf-high-4k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-4k-16-9.png",
+          "width": 3840,
+          "height": 2160,
+          "sha256": "73fd2518eb9c16533336db0fb25ecce9b2774c29aac985b518ca92c46db37e8f"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692210
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-16-9",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "16:9",
+      "requestedSize": "1360x768",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:18:24.898Z",
+      "elapsedMs": 44005,
+      "width": 1670,
+      "height": 942,
+      "nearestTier": "1K",
+      "aspectError": 0.0011240164855752521,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "ed1ba161a1a76419afc5700f9611f0e288e853704501f01e33be7caec8a0b7f5",
+      "file": "gpt-image-2.5-flare-cf-high-1k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-16-9.png",
+          "width": 1670,
+          "height": 942,
+          "sha256": "ed1ba161a1a76419afc5700f9611f0e288e853704501f01e33be7caec8a0b7f5"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692483
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-9-16",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:16",
+      "requestedSize": "768x1360",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:19:09.549Z",
+      "elapsedMs": 32690,
+      "width": 1088,
+      "height": 1445,
+      "nearestTier": "1K",
+      "aspectError": 0.33333333333333326,
+      "ratioMatches": false,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "94015a2dd9f4b1a2bf2c0403922437470b7d10e0ef61c1f8976cec9e1d8028fe",
+      "file": "gpt-image-2.5-flare-cf-high-1k-9-16.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-9-16.png",
+          "width": 1088,
+          "height": 1445,
+          "sha256": "94015a2dd9f4b1a2bf2c0403922437470b7d10e0ef61c1f8976cec9e1d8028fe"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692687
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-4-3",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:3",
+      "requestedSize": "1184x880",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:19:42.889Z",
+      "elapsedMs": 31766,
+      "width": 1454,
+      "height": 1082,
+      "nearestTier": "1K",
+      "aspectError": 0.0012239596343108783,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "439b03bcabaeb9cf6196b3142fe567b5e75d3de939f337ccb8242ffac1dadb05",
+      "file": "gpt-image-2.5-flare-cf-high-1k-4-3.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-4-3.png",
+          "width": 1454,
+          "height": 1082,
+          "sha256": "439b03bcabaeb9cf6196b3142fe567b5e75d3de939f337ccb8242ffac1dadb05"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692855
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-3-4",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:4",
+      "requestedSize": "880x1184",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:36:42.779Z",
+      "elapsedMs": 43175,
+      "width": 1081,
+      "height": 1455,
+      "nearestTier": "1K",
+      "aspectError": 0.00038737894407991913,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "16466a4ff76f382ef49d713d46516ec4466d87e11bfaa8feac3fd4a50ce9c286",
+      "file": "gpt-image-2.5-flare-cf-high-1k-3-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-3-4.png",
+          "width": 1081,
+          "height": 1455,
+          "sha256": "16466a4ff76f382ef49d713d46516ec4466d87e11bfaa8feac3fd4a50ce9c286"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7703692
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-3-2",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:2",
+      "requestedSize": "1248x832",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:37:26.627Z",
+      "elapsedMs": 32123,
+      "width": 1536,
+      "height": 1024,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "9e7df7eac38647dfb11ed2a8aaf82a226682a1966bf0c76e6292599f74443122",
+      "file": "gpt-image-2.5-flare-cf-high-1k-3-2.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-3-2.png",
+          "width": 1536,
+          "height": 1024,
+          "sha256": "9e7df7eac38647dfb11ed2a8aaf82a226682a1966bf0c76e6292599f74443122"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7703771
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-2-3",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "2:3",
+      "requestedSize": "832x1248",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:37:59.401Z",
+      "elapsedMs": 31254,
+      "width": 1024,
+      "height": 1536,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "31bd8114bc5e48c9ff580660cce5b411c8372ba7edf97157afa5a3914592f8ed",
+      "file": "gpt-image-2.5-flare-cf-high-1k-2-3.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-2-3.png",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "31bd8114bc5e48c9ff580660cce5b411c8372ba7edf97157afa5a3914592f8ed"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7703833
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-5-4",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "5:4",
+      "requestedSize": "1136x912",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:38:31.345Z",
+      "elapsedMs": 56948,
+      "width": 1398,
+      "height": 1125,
+      "nearestTier": "1K",
+      "aspectError": 0.002366197183098717,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "019cc6abe3a7de1c6e284a11cba5d06424af28c09becbac76d8f2130ecee7596",
+      "file": "gpt-image-2.5-flare-cf-high-1k-5-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-5-4.png",
+          "width": 1398,
+          "height": 1125,
+          "sha256": "019cc6abe3a7de1c6e284a11cba5d06424af28c09becbac76d8f2130ecee7596"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7703971
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-4-5",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:5",
+      "requestedSize": "912x1136",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:39:29.218Z",
+      "elapsedMs": 35874,
+      "width": 1124,
+      "height": 1399,
+      "nearestTier": "1K",
+      "aspectError": 0.0007649574257300173,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "27ee337648169c4df84366a3fcf798c10bdc9913bfc0b522115586e78aec8b3b",
+      "file": "gpt-image-2.5-flare-cf-high-1k-4-5.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-4-5.png",
+          "width": 1124,
+          "height": 1399,
+          "sha256": "27ee337648169c4df84366a3fcf798c10bdc9913bfc0b522115586e78aec8b3b"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7704058
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-21-9",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "21:9",
+      "requestedSize": "1552x672",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:40:05.745Z",
+      "elapsedMs": 32228,
+      "width": 1905,
+      "height": 825,
+      "nearestTier": "1K",
+      "aspectError": 0.00018744142455473511,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "cdf11812d6423d8710ef47f65fe986a8a5ed5754e83900368871bbb43df52624",
+      "file": "gpt-image-2.5-flare-cf-high-1k-21-9.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-21-9.png",
+          "width": 1905,
+          "height": 825,
+          "sha256": "cdf11812d6423d8710ef47f65fe986a8a5ed5754e83900368871bbb43df52624"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7704159
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-cf-high-1k-9-21",
+      "model": "gpt-image-2.5-flare-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:21",
+      "requestedSize": "672x1552",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:40:38.629Z",
+      "elapsedMs": 32125,
+      "width": 825,
+      "height": 1906,
+      "nearestTier": "1K",
+      "aspectError": 0.00033728076750105807,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "c51825a464c69a5586c9b8699bdd26c2383cc2b55abc05526f0cc1da961d9bce",
+      "file": "gpt-image-2.5-flare-cf-high-1k-9-21.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-cf-high-1k-9-21.png",
+          "width": 825,
+          "height": 1906,
+          "sha256": "c51825a464c69a5586c9b8699bdd26c2383cc2b55abc05526f0cc1da961d9bce"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7704255
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-1-1",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:10:53.074Z",
+      "elapsedMs": 33934,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "fc86647201e18c1d27ce3a9e4a5aeb50e1946a176c9938768bc574d9efbda90d",
+      "file": "gpt-image-2.5-flare-yf-high-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "fc86647201e18c1d27ce3a9e4a5aeb50e1946a176c9938768bc574d9efbda90d"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7689883
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-xhigh-1k-1-1",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "xhigh",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:15:39.278Z",
+      "elapsedMs": 36076,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "7130dab3e1fdb928b8ce80acc11947bb802588b1de0e45d5885a61d7eb7f7e0b",
+      "file": "gpt-image-2.5-flare-yf-xhigh-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-xhigh-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "7130dab3e1fdb928b8ce80acc11947bb802588b1de0e45d5885a61d7eb7f7e0b"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7691493
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-max-1k-1-1",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "max",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:16:16.043Z",
+      "elapsedMs": 36972,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "4079024c9b95c1e2989c6a40d14647e1d58292700bdcceeba73ec0179c665a50",
+      "file": "gpt-image-2.5-flare-yf-max-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-max-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "4079024c9b95c1e2989c6a40d14647e1d58292700bdcceeba73ec0179c665a50"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7691699
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-2k-1-1",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "2K",
+      "requestedRatio": "1:1",
+      "requestedSize": "2048x2048",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:16:53.705Z",
+      "elapsedMs": 40155,
+      "width": 2048,
+      "height": 2048,
+      "nearestTier": "2K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": true,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "3b6e457c4915ea1334d83ff082a56db50379c4e539775d261020fc077866a5f3",
+      "file": "gpt-image-2.5-flare-yf-high-2k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-2k-1-1.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "3b6e457c4915ea1334d83ff082a56db50379c4e539775d261020fc077866a5f3"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7691955
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-4k-16-9",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "4K",
+      "requestedRatio": "16:9",
+      "requestedSize": "3840x2160",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:17:34.542Z",
+      "elapsedMs": 42894,
+      "width": 3840,
+      "height": 2160,
+      "nearestTier": "4K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": true,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "211edb84b149c2c31051d52f9e65da34fb5ae489d1a6594d020ab988cfcd8871",
+      "file": "gpt-image-2.5-flare-yf-high-4k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-4k-16-9.png",
+          "width": 3840,
+          "height": 2160,
+          "sha256": "211edb84b149c2c31051d52f9e65da34fb5ae489d1a6594d020ab988cfcd8871"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7692155
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-16-9",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "16:9",
+      "requestedSize": "1360x768",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:18:18.128Z",
+      "elapsedMs": 34702,
+      "width": 1668,
+      "height": 943,
+      "nearestTier": "1K",
+      "aspectError": 0.0011353003555610863,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "9dc99a599d35a47d964f26db096f256e5c76580e5ed0bd16c9ee2ccd57d7c100",
+      "file": "gpt-image-2.5-flare-yf-high-1k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-16-9.png",
+          "width": 1668,
+          "height": 943,
+          "sha256": "9dc99a599d35a47d964f26db096f256e5c76580e5ed0bd16c9ee2ccd57d7c100"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7692388
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-9-16",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:16",
+      "requestedSize": "768x1360",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:18:53.524Z",
+      "elapsedMs": 34135,
+      "width": 1088,
+      "height": 1445,
+      "nearestTier": "1K",
+      "aspectError": 0.33333333333333326,
+      "ratioMatches": false,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "65aed2bbf8ef61c55554cd26cb6c27ea4da93037f33780e2edf5ec0fa6feffa7",
+      "file": "gpt-image-2.5-flare-yf-high-1k-9-16.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-9-16.png",
+          "width": 1088,
+          "height": 1445,
+          "sha256": "65aed2bbf8ef61c55554cd26cb6c27ea4da93037f33780e2edf5ec0fa6feffa7"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7692586
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-4-3",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:3",
+      "requestedSize": "1184x880",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:19:28.615Z",
+      "elapsedMs": 38870,
+      "width": 1454,
+      "height": 1082,
+      "nearestTier": "1K",
+      "aspectError": 0.0012239596343108783,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "a8d4b5cffdff0e9ede00c733273e3508e30ae0cd41524512d2ee1832bd96a880",
+      "file": "gpt-image-2.5-flare-yf-high-1k-4-3.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-4-3.png",
+          "width": 1454,
+          "height": 1082,
+          "sha256": "a8d4b5cffdff0e9ede00c733273e3508e30ae0cd41524512d2ee1832bd96a880"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 1.6,
+      "ledgerIds": [
+        7692812
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-3-4",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:4",
+      "requestedSize": "880x1184",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:37:00.387Z",
+      "elapsedMs": 31687,
+      "width": 1081,
+      "height": 1455,
+      "nearestTier": "1K",
+      "aspectError": 0.00038737894407991913,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "6294038183aea663c1abfb94cf3a27f3edad3d816cd0abf1f02cad15747d82b1",
+      "file": "gpt-image-2.5-flare-yf-high-1k-3-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-3-4.png",
+          "width": 1081,
+          "height": 1455,
+          "sha256": "6294038183aea663c1abfb94cf3a27f3edad3d816cd0abf1f02cad15747d82b1"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7703709
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-3-2",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:2",
+      "requestedSize": "1248x832",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:37:32.770Z",
+      "elapsedMs": 29704,
+      "width": 1536,
+      "height": 1024,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "b7c9835602309839c9908f35abb29fc34a0edc6da857cc80b7ea57be34629af8",
+      "file": "gpt-image-2.5-flare-yf-high-1k-3-2.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-3-2.png",
+          "width": 1536,
+          "height": 1024,
+          "sha256": "b7c9835602309839c9908f35abb29fc34a0edc6da857cc80b7ea57be34629af8"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7703778
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-2-3",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "2:3",
+      "requestedSize": "832x1248",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:38:03.127Z",
+      "elapsedMs": 53875,
+      "width": 1024,
+      "height": 1536,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "e475a62d3207d72c4d76666a975210584ab1e2242b4df49a185d9797418aea7e",
+      "file": "gpt-image-2.5-flare-yf-high-1k-2-3.png",
+      "requestedCount": 1,
+      "responseImageCount": 2,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-2-3.png",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "e475a62d3207d72c4d76666a975210584ab1e2242b4df49a185d9797418aea7e"
+        },
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-2-3-2.png",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "10e77e0cd9fadbfad65ef3af6e372fc99dfece231cb929b6149aba88527c4f88"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 1.6,
+      "ledgerIds": [
+        7703893
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-5-4",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "5:4",
+      "requestedSize": "1136x912",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:38:57.646Z",
+      "elapsedMs": 58169,
+      "width": 1399,
+      "height": 1124,
+      "nearestTier": "1K",
+      "aspectError": 0.0007643727131472211,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "e4ade4672e204c6c826cfe8861a4572d430563996ba13573f7a9d0e30bdaa7c8",
+      "file": "gpt-image-2.5-flare-yf-high-1k-5-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-5-4.png",
+          "width": 1399,
+          "height": 1124,
+          "sha256": "e4ade4672e204c6c826cfe8861a4572d430563996ba13573f7a9d0e30bdaa7c8"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7704032
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-4-5",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:5",
+      "requestedSize": "912x1136",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:39:56.684Z",
+      "elapsedMs": 54569,
+      "width": 1124,
+      "height": 1399,
+      "nearestTier": "1K",
+      "aspectError": 0.0007649574257300173,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "fcbca12049383d99b789eee424c7bd29d5ed0a53171d4c547ba8d1e0be0ded5b",
+      "file": "gpt-image-2.5-flare-yf-high-1k-4-5.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-4-5.png",
+          "width": 1124,
+          "height": 1399,
+          "sha256": "fcbca12049383d99b789eee424c7bd29d5ed0a53171d4c547ba8d1e0be0ded5b"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7704198
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-21-9",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "21:9",
+      "requestedSize": "1552x672",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:40:52.123Z",
+      "elapsedMs": 33242,
+      "width": 1905,
+      "height": 825,
+      "nearestTier": "1K",
+      "aspectError": 0.00018744142455473511,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "79f56128468a74421a74a6d6e0e056a0260de548ad78954ffc102457d2cf8e27",
+      "file": "gpt-image-2.5-flare-yf-high-1k-21-9.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-21-9.png",
+          "width": 1905,
+          "height": 825,
+          "sha256": "79f56128468a74421a74a6d6e0e056a0260de548ad78954ffc102457d2cf8e27"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7704288
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-flare-yf-high-1k-9-21",
+      "model": "gpt-image-2.5-flare-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:21",
+      "requestedSize": "672x1552",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:41:26.069Z",
+      "elapsedMs": 39829,
+      "width": 826,
+      "height": 1905,
+      "nearestTier": "1K",
+      "aspectError": 0.001399825021872303,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "e83a1074ca81d8690c1201b831653c031491565f5e3cca7074e05ed796594133",
+      "file": "gpt-image-2.5-flare-yf-high-1k-9-21.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-flare-yf-high-1k-9-21.png",
+          "width": 826,
+          "height": 1905,
+          "sha256": "e83a1074ca81d8690c1201b831653c031491565f5e3cca7074e05ed796594133"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7704455
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-1-1",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:11:23.948Z",
+      "elapsedMs": 57601,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "e6de7bd46138f4a448810ac9eff15f512958ce0b4b81a0089754281905f1ddf4",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "e6de7bd46138f4a448810ac9eff15f512958ce0b4b81a0089754281905f1ddf4"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7690183
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-xhigh-1k-1-1",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "xhigh",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:15:39.339Z",
+      "elapsedMs": 33304,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "f8b8cc942d5a721d55bfaba475a3528a0989fbe51e86b41e2388adbe1279f0fd",
+      "file": "gpt-image-2.5-sunburst-cf-xhigh-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-xhigh-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "f8b8cc942d5a721d55bfaba475a3528a0989fbe51e86b41e2388adbe1279f0fd"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7691478
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-max-1k-1-1",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "max",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:16:13.346Z",
+      "elapsedMs": 35319,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "73fcb294dd40341dacbddedd695039a5c5b248dd4d45134dd7ba72f50a71ed9c",
+      "file": "gpt-image-2.5-sunburst-cf-max-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-max-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "73fcb294dd40341dacbddedd695039a5c5b248dd4d45134dd7ba72f50a71ed9c"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7691671
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-2k-1-1",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "2K",
+      "requestedRatio": "1:1",
+      "requestedSize": "2048x2048",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:16:49.354Z",
+      "elapsedMs": 42707,
+      "width": 2048,
+      "height": 2048,
+      "nearestTier": "2K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": true,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "cf7f5a4622f8012f88b1d226d96ffc315409a2eac714460164d02eeaa0bc8a28",
+      "file": "gpt-image-2.5-sunburst-cf-high-2k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-2k-1-1.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "cf7f5a4622f8012f88b1d226d96ffc315409a2eac714460164d02eeaa0bc8a28"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7691947
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-4k-16-9",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "4K",
+      "requestedRatio": "16:9",
+      "requestedSize": "3840x2160",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:17:32.746Z",
+      "elapsedMs": 23595,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0005313496280551222,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": "high",
+      "format": "png",
+      "sha256": "5698c5f8a6c55e8eebf81cda0cb199a11f843bf27f9d97971b597c87fbe5f9be",
+      "file": "gpt-image-2.5-sunburst-cf-high-4k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-4k-16-9.png",
+          "width": 1672,
+          "height": 941,
+          "sha256": "5698c5f8a6c55e8eebf81cda0cb199a11f843bf27f9d97971b597c87fbe5f9be"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692071
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-16-9",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "16:9",
+      "requestedSize": "1360x768",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:17:57.020Z",
+      "elapsedMs": 27123,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0033881352753641902,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": "high",
+      "format": "png",
+      "sha256": "f8146ca182c49e74e793f618725537f8d74262d2b60ac689b2400d007cd7eaaa",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-16-9.png",
+          "width": 1672,
+          "height": 941,
+          "sha256": "f8146ca182c49e74e793f618725537f8d74262d2b60ac689b2400d007cd7eaaa"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692206
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-9-16",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:16",
+      "requestedSize": "768x1360",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:18:24.806Z",
+      "elapsedMs": 31625,
+      "width": 943,
+      "height": 1668,
+      "nearestTier": "1K",
+      "aspectError": 0.0011365907274181186,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": "high",
+      "format": "png",
+      "sha256": "889230c3c76e2ff3f50a74abdd2700d705fe3a7ed5cfac9d12a6b12bf11b4a40",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-9-16.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-9-16.png",
+          "width": 943,
+          "height": 1668,
+          "sha256": "889230c3c76e2ff3f50a74abdd2700d705fe3a7ed5cfac9d12a6b12bf11b4a40"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692406
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-4-3",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:3",
+      "requestedSize": "1184x880",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:18:57.111Z",
+      "elapsedMs": 31592,
+      "width": 1454,
+      "height": 1082,
+      "nearestTier": "1K",
+      "aspectError": 0.0012239596343108783,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "cec827973f71ad0d60ace0b16d17e398f19830a538578e491fc9841fe889d2d4",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-4-3.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-4-3.png",
+          "width": 1454,
+          "height": 1082,
+          "sha256": "cec827973f71ad0d60ace0b16d17e398f19830a538578e491fc9841fe889d2d4"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692600
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-3-4",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:4",
+      "requestedSize": "880x1184",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:19:29.364Z",
+      "elapsedMs": 34772,
+      "width": 1081,
+      "height": 1455,
+      "nearestTier": "1K",
+      "aspectError": 0.00038737894407991913,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "e0bdabd0ec417a4e65d37863bb7a52e77055c010f0b15647cb5b25aab65dcdb6",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-3-4.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-3-4.png",
+          "width": 1081,
+          "height": 1455,
+          "sha256": "e0bdabd0ec417a4e65d37863bb7a52e77055c010f0b15647cb5b25aab65dcdb6"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692799
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-3-2",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:2",
+      "requestedSize": "1248x832",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:20:04.816Z",
+      "elapsedMs": 32808,
+      "width": 1536,
+      "height": 1024,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "584cc5c1eb0095a654412cc153969c898d0cc1d734f9585756cafc157caae53f",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-3-2.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-3-2.png",
+          "width": 1536,
+          "height": 1024,
+          "sha256": "584cc5c1eb0095a654412cc153969c898d0cc1d734f9585756cafc157caae53f"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7692963
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-2-3",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "2:3",
+      "requestedSize": "832x1248",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:41:11.425Z",
+      "elapsedMs": 31404,
+      "width": 1024,
+      "height": 1536,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "f2aec829003cbdc336c4cd8e85c0f42c097099f86333bfab7fc316ffda497dea",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-2-3.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-2-3.png",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "f2aec829003cbdc336c4cd8e85c0f42c097099f86333bfab7fc316ffda497dea"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7704326
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-5-4",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "5:4",
+      "requestedSize": "1136x912",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:41:43.482Z",
+      "elapsedMs": 41330,
+      "width": 1401,
+      "height": 1123,
+      "nearestTier": "1K",
+      "aspectError": 0.0015551904481205803,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "64f8b4f0c4b50aeecb926e5f4b747e8a457ca4f49dbaa9381eb1c31eb48998f2",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-5-4.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-5-4.png",
+          "width": 1401,
+          "height": 1123,
+          "sha256": "64f8b4f0c4b50aeecb926e5f4b747e8a457ca4f49dbaa9381eb1c31eb48998f2"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7704582
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-4-5",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:5",
+      "requestedSize": "912x1136",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:42:25.465Z",
+      "elapsedMs": 33941,
+      "width": 1124,
+      "height": 1399,
+      "nearestTier": "1K",
+      "aspectError": 0.0007649574257300173,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "3a2f468fac5c569bc7dac0a55517a9d4888f32113774f58b2a5cf1d1914c10cf",
+      "file": "gpt-image-2.5-sunburst-cf-high-1k-4-5.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-cf-high-1k-4-5.png",
+          "width": 1124,
+          "height": 1399,
+          "sha256": "3a2f468fac5c569bc7dac0a55517a9d4888f32113774f58b2a5cf1d1914c10cf"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.4,
+      "ledgerIds": [
+        7704774
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-21-9",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "21:9",
+      "requestedSize": "1552x672",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:43:00.065Z",
+      "elapsedMs": 19097,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-cf-high-1k-9-21",
+      "model": "gpt-image-2.5-sunburst-cf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:21",
+      "requestedSize": "672x1552",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:43:20.493Z",
+      "elapsedMs": 17456,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-1-1",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:11:27.635Z",
+      "elapsedMs": 41941,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "c46d374e4e2d6b04a32a019889af47cbcfa92d93cc862176da146300038e737d",
+      "file": "gpt-image-2.5-sunburst-yf-high-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-high-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "c46d374e4e2d6b04a32a019889af47cbcfa92d93cc862176da146300038e737d"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7690119
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-xhigh-1k-1-1",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "xhigh",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:15:39.905Z",
+      "elapsedMs": 32663,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "4737c0bad3f430a65fb3943a865c37e49e21184712d1707cdf7b08bf6ec4b0dd",
+      "file": "gpt-image-2.5-sunburst-yf-xhigh-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-xhigh-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "4737c0bad3f430a65fb3943a865c37e49e21184712d1707cdf7b08bf6ec4b0dd"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7691479
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-max-1k-1-1",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "max",
+      "requestedTier": "1K",
+      "requestedRatio": "1:1",
+      "requestedSize": "1024x1024",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:16:13.272Z",
+      "elapsedMs": 37307,
+      "width": 1254,
+      "height": 1254,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "93b05dc6c4b6ae3abe9a3de89a98bfdf9fa449d0e34d8177346feff445a6c5e0",
+      "file": "gpt-image-2.5-sunburst-yf-max-1k-1-1.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-max-1k-1-1.png",
+          "width": 1254,
+          "height": 1254,
+          "sha256": "93b05dc6c4b6ae3abe9a3de89a98bfdf9fa449d0e34d8177346feff445a6c5e0"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7691686
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-2k-1-1",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "2K",
+      "requestedRatio": "1:1",
+      "requestedSize": "2048x2048",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:16:51.241Z",
+      "elapsedMs": 60644,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-4k-16-9",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "4K",
+      "requestedRatio": "16:9",
+      "requestedSize": "3840x2160",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:17:52.860Z",
+      "elapsedMs": 26209,
+      "width": 1672,
+      "height": 940,
+      "nearestTier": "1K",
+      "aspectError": 0.0005319148936169249,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": "high",
+      "format": "png",
+      "sha256": "e6c5a6e31994891fbee7396ca292c21dbb51dc53c390658fe65a3d81fae6d354",
+      "file": "gpt-image-2.5-sunburst-yf-high-4k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-high-4k-16-9.png",
+          "width": 1672,
+          "height": 940,
+          "sha256": "e6c5a6e31994891fbee7396ca292c21dbb51dc53c390658fe65a3d81fae6d354"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7692171
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-16-9",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "16:9",
+      "requestedSize": "1360x768",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:18:19.712Z",
+      "elapsedMs": 27150,
+      "width": 1672,
+      "height": 941,
+      "nearestTier": "1K",
+      "aspectError": 0.0033881352753641902,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": "high",
+      "format": "png",
+      "sha256": "47715c1885562237ed0de9991d51479e9a5af415f11e9a6bd3c626cb2b7c0d69",
+      "file": "gpt-image-2.5-sunburst-yf-high-1k-16-9.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-high-1k-16-9.png",
+          "width": 1672,
+          "height": 941,
+          "sha256": "47715c1885562237ed0de9991d51479e9a5af415f11e9a6bd3c626cb2b7c0d69"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7692348
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-9-16",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:16",
+      "requestedSize": "768x1360",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:18:47.511Z",
+      "elapsedMs": 34761,
+      "width": 943,
+      "height": 1668,
+      "nearestTier": "1K",
+      "aspectError": 0.0011365907274181186,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "1cb6ac6c6b909408dfd799d9a0453a4370340bd180bd70873cf8764519b21268",
+      "file": "gpt-image-2.5-sunburst-yf-high-1k-9-16.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-high-1k-9-16.png",
+          "width": 943,
+          "height": 1668,
+          "sha256": "1cb6ac6c6b909408dfd799d9a0453a4370340bd180bd70873cf8764519b21268"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7692562
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-4-3",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:3",
+      "requestedSize": "1184x880",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:19:22.930Z",
+      "elapsedMs": 38829,
+      "width": 1454,
+      "height": 1082,
+      "nearestTier": "1K",
+      "aspectError": 0.0012239596343108783,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "52bbfd3315293865dde04e6ae5a2648988cf6a4c473d6bd576dd5423a6737ea3",
+      "file": "gpt-image-2.5-sunburst-yf-high-1k-4-3.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-high-1k-4-3.png",
+          "width": 1454,
+          "height": 1082,
+          "sha256": "52bbfd3315293865dde04e6ae5a2648988cf6a4c473d6bd576dd5423a6737ea3"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7692788
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-3-4",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:4",
+      "requestedSize": "880x1184",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:20:02.414Z",
+      "elapsedMs": 49024,
+      "width": 1081,
+      "height": 1455,
+      "nearestTier": "1K",
+      "aspectError": 0.00038737894407991913,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "c7b7ee65e84eee7daa8f32d0bcfb8ea024da97f5fbb5df54b70d783851543d81",
+      "file": "gpt-image-2.5-sunburst-yf-high-1k-3-4.png",
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-high-1k-3-4.png",
+          "width": 1081,
+          "height": 1455,
+          "sha256": "c7b7ee65e84eee7daa8f32d0bcfb8ea024da97f5fbb5df54b70d783851543d81"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7693032
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-3-2",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "3:2",
+      "requestedSize": "1248x832",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:42:06.563Z",
+      "elapsedMs": 30805,
+      "width": 1536,
+      "height": 1024,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "9338ac4347ba4581df065de9d31fb04519d91b1ef3ae8ac5027e7fb82cd5f299",
+      "file": "gpt-image-2.5-sunburst-yf-high-1k-3-2.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-high-1k-3-2.png",
+          "width": 1536,
+          "height": 1024,
+          "sha256": "9338ac4347ba4581df065de9d31fb04519d91b1ef3ae8ac5027e7fb82cd5f299"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7704667
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-2-3",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "2:3",
+      "requestedSize": "832x1248",
+      "outcome": "image",
+      "httpStatus": 200,
+      "startedAt": "2026-09-21T02:42:38.040Z",
+      "elapsedMs": 41801,
+      "width": 1024,
+      "height": 1536,
+      "nearestTier": "1K",
+      "aspectError": 0,
+      "ratioMatches": true,
+      "exactSize": false,
+      "returnedQuality": null,
+      "format": "png",
+      "sha256": "f6e73dd47812feb1d08ded0c7dc4b471ae2f082344e1729ff5298f092f4b3b5c",
+      "file": "gpt-image-2.5-sunburst-yf-high-1k-2-3.png",
+      "requestedCount": 1,
+      "responseImageCount": 1,
+      "decodedImages": [
+        {
+          "file": "gpt-image-2.5-sunburst-yf-high-1k-2-3.png",
+          "width": 1024,
+          "height": 1536,
+          "sha256": "f6e73dd47812feb1d08ded0c7dc4b471ae2f082344e1729ff5298f092f4b3b5c"
+        }
+      ],
+      "error": null,
+      "chargedCredits": 0.8,
+      "ledgerIds": [
+        7704862
+      ]
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-5-4",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "5:4",
+      "requestedSize": "1136x912",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:43:20.515Z",
+      "elapsedMs": 17429,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-4-5",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "4:5",
+      "requestedSize": "912x1136",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:43:39.254Z",
+      "elapsedMs": 243,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": 0,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-21-9",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "21:9",
+      "requestedSize": "1552x672",
+      "outcome": "error",
+      "httpStatus": 503,
+      "startedAt": "2026-09-21T02:43:40.162Z",
+      "elapsedMs": 221,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": 0,
+      "decodedImages": [],
+      "error": "{\"message\":\"No available compatible accounts\",\"type\":\"api_error\"}",
+      "chargedCredits": null,
+      "ledgerIds": []
+    },
+    {
+      "id": "gpt-image-2.5-sunburst-yf-high-1k-9-21",
+      "model": "gpt-image-2.5-sunburst-yf",
+      "requestedQuality": "high",
+      "requestedTier": "1K",
+      "requestedRatio": "9:21",
+      "requestedSize": "672x1552",
+      "outcome": "error",
+      "httpStatus": 502,
+      "startedAt": "2026-09-21T02:44:59.643Z",
+      "elapsedMs": 10678,
+      "width": null,
+      "height": null,
+      "nearestTier": null,
+      "aspectError": null,
+      "ratioMatches": null,
+      "exactSize": null,
+      "returnedQuality": null,
+      "format": null,
+      "sha256": null,
+      "file": null,
+      "requestedCount": 1,
+      "responseImageCount": null,
+      "decodedImages": [],
+      "error": "Non-JSON response",
+      "chargedCredits": null,
+      "ledgerIds": []
+    }
+  ]
+}

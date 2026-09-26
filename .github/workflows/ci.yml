@@ -31,26 +31,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate Docker Compose configuration
-        run: |
-          docker compose config --quiet
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
-        env:
-          POSTGRES_PASSWORD: ci-postgres-password
-          REDIS_PASSWORD: ci-redis-password
-          MINIO_ROOT_USER: ci-minio-root
-          MINIO_ROOT_PASSWORD: ci-minio-root-password
-          MINIO_APP_USER: ci-minio-app
-          MINIO_APP_PASSWORD: ci-minio-app-password
-          DATABASE_URL: postgresql://supercanvas:ci-postgres-password@postgres:5432/supercanvas
-          REDIS_URL: redis://:ci-redis-password@redis:6379
-          MASTER_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level high
 
-      - name: Build packages and web app
-        run: pnpm build
+      - name: Build shared packages and embedded UI for quality checks
+        run: pnpm build:runtime
 
       - name: Typecheck
         run: pnpm typecheck
@@ -61,10 +46,33 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Cleanup boundary tests
+        run: pnpm test:maintenance
+
       - name: Install Playwright Chromium
-        run: pnpm --filter @super-canvas/web exec playwright install --with-deps chromium
+        run: pnpm --filter @super-canvas/desktop-ui exec playwright install --with-deps chromium
 
       - name: End-to-end tests
-        run: pnpm --filter @super-canvas/web e2e
+        run: pnpm --filter @super-canvas/desktop-ui e2e
         env:
           PLAYWRIGHT_CHANNEL: chromium
+
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build unpacked Windows app
+        run: pnpm desktop:build --unpacked
+      - name: Desktop regression tests
+        run: pnpm desktop:test
+      - name: Packaged desktop smoke test
+        run: pnpm --filter @super-canvas/desktop run smoke -- --packaged

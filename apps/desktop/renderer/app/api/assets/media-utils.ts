@@ -1,0 +1,415 @@
+export type MediaKind = "image" | "video" | "audio";
+
+export const MAX_PROXY_UPLOAD_BYTES = 500 * 1024 * 1024;
+export const MEDIA_MAGIC_PROBE_BYTES = 4 * 1024;
+
+const MIME_ALIASES: Readonly<Record<string, string>> = {
+  "image/jpg": "image/jpeg",
+  "video/x-quicktime": "video/quicktime",
+  "audio/x-wav": "audio/wav",
+  "audio/x-m4a": "audio/mp4",
+};
+
+const EXTENSIONS: Readonly<Record<string, string>> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/webm": "webm",
+  "audio/mpeg": "mp3",
+  "audio/wav": "wav",
+  "audio/mp4": "m4a",
+};
+
+// Keep the accepted set finite. In particular, SVG is intentionally excluded
+// because it is an active document when served directly by a browser.
+export const SUPPORTED_MEDIA_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/mp4",
+]);
+
+export function normalizeMimeType(value: string): string {
+  const normalized = value.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  return MIME_ALIASES[normalized] ?? normalized;
+}
+
+export function mediaKindForMime(value: string): MediaKind | null {
+  const mimeType = normalizeMimeType(value);
+  if (!SUPPORTED_MEDIA_MIME_TYPES.has(mimeType)) return null;
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return null;
+}
+
+export function isSupportedMediaMimeType(value: string): boolean {
+  return SUPPORTED_MEDIA_MIME_TYPES.has(normalizeMimeType(value));
+}
+
+export function areMimeTypesCompatible(
+  declaredMimeType: string,
+  storedMimeType: string,
+): boolean {
+  const declared = normalizeMimeType(declaredMimeType);
+  const stored = normalizeMimeType(storedMimeType);
+  return Boolean(
+    declared &&
+    stored &&
+    mediaKindForMime(declared) &&
+    mediaKindForMime(stored) &&
+    declared === stored,
+  );
+}
+
+export type CompletedUploadValidation =
+  | { valid: true; kind: MediaKind; mimeType: string }
+  | {
+      valid: false;
+      reason:
+        | "size_mismatch"
+        | "invalid_content_type"
+        | "mime_mismatch"
+        | "content_mismatch";
+    };
+
+export function validateCompletedUpload(
+  declaredSize: number,
+  declaredMimeType: string,
+  metadata: { size: number; contentType?: string },
+  probeBytes?: Uint8Array,
+): CompletedUploadValidation {
+  if (metadata.size !== declaredSize)
+    return { valid: false, reason: "size_mismatch" };
+  const storedMimeType = normalizeMimeType(metadata.contentType ?? "");
+  const kind = mediaKindForMime(storedMimeType);
+  if (!kind) return { valid: false, reason: "invalid_content_type" };
+  if (!areMimeTypesCompatible(declaredMimeType, storedMimeType))
+    return { valid: false, reason: "mime_mismatch" };
+  if (probeBytes !== undefined) {
+    const magic = validateMediaMagic(probeBytes, storedMimeType);
+    if (!magic.valid) return { valid: false, reason: "content_mismatch" };
+  }
+  return { valid: true, kind, mimeType: storedMimeType };
+}
+
+export function sanitizedAssetExtension(
+  name: string,
+  mimeType: string,
+): string {
+  const canonical = EXTENSIONS[normalizeMimeType(mimeType)];
+  if (canonical) return canonical;
+  const candidate = name.includes(".")
+    ? (name.split(".").pop() ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/gu, "")
+        .slice(0, 10)
+    : "";
+  const kind = mediaKindForMime(mimeType);
+  return (
+    candidate ||
+    (kind === "video" ? "video" : kind === "audio" ? "audio" : "image")
+  );
+}
+
+function startsWith(bytes: Uint8Array, signature: readonly number[]): boolean {
+  return signature.every((value, index) => bytes[index] === value);
+}
+
+function endsWith(bytes: Uint8Array, signature: readonly number[]): boolean {
+  if (bytes.byteLength < signature.length) return false;
+  const offset = bytes.byteLength - signature.length;
+  return signature.every((value, index) => bytes[offset + index] === value);
+}
+
+function indexAfterSignature(
+  bytes: Uint8Array,
+  signature: readonly number[],
+  start = 0,
+): number | null {
+  const lastStart = bytes.byteLength - signature.length;
+  for (let offset = Math.max(0, start); offset <= lastStart; offset += 1) {
+    if (signature.every((value, index) => bytes[offset + index] === value))
+      return offset + signature.length;
+  }
+  return null;
+}
+
+function asciiAt(bytes: Uint8Array, offset: number, value: string): boolean {
+  if (offset + value.length > bytes.byteLength) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (bytes[offset + index] !== value.charCodeAt(index)) return false;
+  }
+  return true;
+}
+
+function containsAscii(
+  bytes: Uint8Array,
+  value: string,
+  limit: number,
+): boolean {
+  const end = Math.min(bytes.byteLength, limit) - value.length;
+  for (let offset = 0; offset <= end; offset += 1) {
+    if (asciiAt(bytes, offset, value)) return true;
+  }
+  return false;
+}
+
+export function detectMediaMimeType(bytes: Uint8Array): string | null {
+  if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    return "image/png";
+  if (startsWith(bytes, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  if (asciiAt(bytes, 0, "GIF87a") || asciiAt(bytes, 0, "GIF89a"))
+    return "image/gif";
+  if (asciiAt(bytes, 0, "RIFF") && asciiAt(bytes, 8, "WEBP"))
+    return "image/webp";
+  if (asciiAt(bytes, 0, "RIFF") && asciiAt(bytes, 8, "WAVE"))
+    return "audio/wav";
+  if (
+    asciiAt(bytes, 0, "ID3") ||
+    (bytes[0] === 0xff && (bytes[1] ?? 0) >= 0xe0)
+  )
+    return "audio/mpeg";
+  if (asciiAt(bytes, 4, "ftyp")) {
+    const brand = new TextDecoder("ascii").decode(bytes.slice(8, 12));
+    if (new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]).has(brand))
+      return "image/heic";
+    if (brand === "avif" || brand === "avis") return "image/avif";
+    return brand === "qt  "
+      ? "video/quicktime"
+      : brand === "M4A " || brand === "M4B "
+        ? "audio/mp4"
+        : "video/mp4";
+  }
+  if (
+    startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3]) &&
+    containsAscii(bytes, "webm", 4096)
+  )
+    return "video/webm";
+  return null;
+}
+
+export interface MagicValidationResult {
+  valid: boolean;
+  declaredMimeType: string;
+  detectedMimeType: string | null;
+}
+
+export function validateMediaMagic(
+  bytes: Uint8Array,
+  declaredMimeType: string,
+): MagicValidationResult {
+  const declared = normalizeMimeType(declaredMimeType);
+  const detected = detectMediaMimeType(bytes);
+  return {
+    valid: detected !== null && areMimeTypesCompatible(declared, detected),
+    declaredMimeType: declared,
+    detectedMimeType: detected,
+  };
+}
+
+/**
+ * Find the outer JPEG's EOI by walking marker segments and entropy scans.
+ * APP/EXIF data may contain an entire thumbnail JPEG (including its own EOI),
+ * so searching the raw bytes for either the first or last FF D9 is unsafe.
+ * This verifies framing, not Huffman/pixel decoding; callers may additionally
+ * decode the returned payload when they need to establish image readability.
+ */
+function completeJpegPayload(bytes: Uint8Array): Uint8Array | null {
+  if (!startsWith(bytes, [0xff, 0xd8])) return null;
+  let offset = 2;
+  let inScan = false;
+  let scanHasData = false;
+  let sawScan = false;
+  let frameHeight = 0;
+  let frameComponents: Set<number> | null = null;
+
+  while (offset < bytes.byteLength) {
+    if (inScan && bytes[offset] !== 0xff) {
+      scanHasData = true;
+      offset += 1;
+      continue;
+    }
+    if (bytes[offset] !== 0xff) return null;
+    // Fill FF bytes are permitted between marker segments and before markers.
+    while (offset < bytes.byteLength && bytes[offset] === 0xff) offset += 1;
+    if (offset >= bytes.byteLength) return null;
+    const marker = bytes[offset++]!;
+    if (inScan && marker === 0x00) {
+      // Byte stuffing represents a literal FF in compressed image data.
+      scanHasData = true;
+      continue;
+    }
+    if (marker === 0x00 || marker === 0xd8) return null;
+    if (marker >= 0xd0 && marker <= 0xd7) {
+      if (!inScan) return null;
+      continue;
+    }
+    if (marker === 0x01) continue; // TEM has no length field.
+    if (inScan && !scanHasData) return null;
+    if (marker === 0xd9) {
+      return frameComponents && frameHeight > 0 && sawScan && scanHasData
+        ? bytes.slice(0, offset)
+        : null;
+    }
+    if (marker < 0xc0 || offset + 2 > bytes.byteLength) return null;
+    const length = bytes[offset]! * 256 + bytes[offset + 1]!;
+    const end = offset + length;
+    if (length < 2 || end > bytes.byteLength) return null;
+
+    const isFrame =
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
+      marker !== 0xc4 &&
+      marker !== 0xc8 &&
+      marker !== 0xcc;
+    if (isFrame) {
+      if (frameComponents || length < 8) return null;
+      const components = bytes[offset + 7]!;
+      const width = bytes[offset + 5]! * 256 + bytes[offset + 6]!;
+      frameHeight = bytes[offset + 3]! * 256 + bytes[offset + 4]!;
+      if (components === 0 || width === 0 || length !== 8 + components * 3)
+        return null;
+      frameComponents = new Set<number>();
+      for (let component = 0; component < components; component += 1) {
+        const id = bytes[offset + 8 + component * 3]!;
+        if (frameComponents.has(id)) return null;
+        frameComponents.add(id);
+      }
+    }
+    if (marker === 0xda) {
+      if (!frameComponents || length < 6) return null;
+      const components = bytes[offset + 2]!;
+      if (
+        components === 0 ||
+        components > frameComponents.size ||
+        length !== 6 + components * 2
+      )
+        return null;
+      const scanComponents = new Set<number>();
+      for (let component = 0; component < components; component += 1) {
+        const id = bytes[offset + 3 + component * 2]!;
+        if (!frameComponents.has(id) || scanComponents.has(id)) return null;
+        scanComponents.add(id);
+      }
+      sawScan = true;
+      inScan = true;
+      scanHasData = false;
+    } else if (marker === 0xdc) {
+      // A DNL segment may define the height after the first scan's first line.
+      // It does not terminate that scan, unlike tables/APP data between scans.
+      if (!inScan || !frameComponents || frameHeight !== 0 || length !== 4)
+        return null;
+      frameHeight = bytes[offset + 2]! * 256 + bytes[offset + 3]!;
+      if (frameHeight === 0) return null;
+    } else {
+      inScan = false;
+    }
+    offset = end;
+  }
+  return null;
+}
+
+/**
+ * Returns the complete media payload and removes bytes desktop apps append
+ * after an image's real end marker. WeChat commonly exposes such virtual
+ * files; strict `endsWith` checks incorrectly classify them as truncated.
+ */
+export function completeMediaPayload(
+  bytes: Uint8Array,
+  mimeType: string,
+): Uint8Array | null {
+  switch (normalizeMimeType(mimeType)) {
+    case "image/png": {
+      const end = indexAfterSignature(
+        bytes,
+        [
+          0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60,
+          0x82,
+        ],
+        8,
+      );
+      return end === null ? null : bytes.slice(0, end);
+    }
+    case "image/jpeg": {
+      return completeJpegPayload(bytes);
+    }
+    case "image/gif": {
+      if (endsWith(bytes, [0x3b])) return bytes;
+      // A GIF trailer is a single byte and can also occur inside image data.
+      // Accept trailing desktop metadata, but keep the original bytes rather
+      // than risk cutting at a coincidental byte inside a frame.
+      return bytes.lastIndexOf(0x3b) >= 6 ? bytes : null;
+    }
+    case "image/webp": {
+      if (bytes.byteLength < 12) return null;
+      const declaredPayloadBytes =
+        (bytes[4] ?? 0) |
+        ((bytes[5] ?? 0) << 8) |
+        ((bytes[6] ?? 0) << 16) |
+        ((bytes[7] ?? 0) << 24);
+      const expectedBytes = declaredPayloadBytes + 8;
+      return expectedBytes >= 12 && expectedBytes <= bytes.byteLength
+        ? bytes.slice(0, expectedBytes)
+        : null;
+    }
+    default:
+      return bytes;
+  }
+}
+
+/** Detects common image truncation after the full upload body is available. */
+export function validateMediaCompleteness(
+  bytes: Uint8Array,
+  mimeType: string,
+): boolean {
+  return completeMediaPayload(bytes, mimeType) !== null;
+}
+
+export type ParsedByteRange =
+  { valid: true; start: number; end: number } | { valid: false };
+
+function parseRangeInteger(value: string): number | null {
+  if (!/^\d+$/u.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+export function parseByteRange(
+  header: string,
+  totalSize: number,
+): ParsedByteRange {
+  if (!Number.isSafeInteger(totalSize) || totalSize <= 0)
+    return { valid: false };
+  const match = /^bytes=(\d*)-(\d*)$/iu.exec(header.trim());
+  if (!match) return { valid: false };
+  const startText = match[1] ?? "";
+  const endText = match[2] ?? "";
+  if (!startText && !endText) return { valid: false };
+
+  if (!startText) {
+    const suffixLength = parseRangeInteger(endText);
+    if (suffixLength === null || suffixLength <= 0) return { valid: false };
+    return {
+      valid: true,
+      start: Math.max(totalSize - suffixLength, 0),
+      end: totalSize - 1,
+    };
+  }
+
+  const start = parseRangeInteger(startText);
+  if (start === null || start >= totalSize) return { valid: false };
+  if (!endText) return { valid: true, start, end: totalSize - 1 };
+  const requestedEnd = parseRangeInteger(endText);
+  if (requestedEnd === null || requestedEnd < start) return { valid: false };
+  return { valid: true, start, end: Math.min(requestedEnd, totalSize - 1) };
+}

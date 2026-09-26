@@ -16,6 +16,9 @@ export interface StructuredPriceTier {
   price: number;
   dimension?: "quality" | "resolution" | "duration" | "fixed";
   value?: string | number;
+  conditions?: readonly { parameter: string; operator: "equals" | "contains"; value: string }[];
+  conditionMode?: "any" | "none";
+  otherwise?: boolean;
 }
 
 /** Machine-readable billing data. Human-readable price labels are not ranked. */
@@ -27,6 +30,7 @@ export interface StructuredModelPricing {
   outputPerMillion?: number;
   imageOutputPerMillion?: number;
   tiers?: readonly StructuredPriceTier[];
+  billingUnit?: "image" | "request" | "second";
   sourceUrl?: string;
   checkedAt: string;
   validUntil?: string;
@@ -36,6 +40,19 @@ export interface StructuredModelPricing {
 export interface ModelParameterOption {
   label: string;
   value: ModelParameterValue;
+}
+
+export interface ModelParameterCondition {
+  parameter: string;
+  values: readonly ModelParameterValue[];
+}
+
+export interface ModelParameterConstraint {
+  when: readonly ModelParameterCondition[];
+  options?: readonly ModelParameterOption[];
+  min?: number;
+  max?: number;
+  required?: boolean;
 }
 
 /**
@@ -56,6 +73,9 @@ export interface ModelParameterDescriptor {
   operations?: readonly ProviderOperation[];
   placeholder?: string;
   description?: string;
+  required?: boolean;
+  visibleWhen?: readonly ModelParameterCondition[];
+  constraints?: readonly ModelParameterConstraint[];
 }
 
 export type ArtifactKind = "image" | "video";
@@ -165,6 +185,8 @@ export interface RemoteArtifact {
   kind: ArtifactKind;
   url?: string;
   data?: Uint8Array;
+  /** Local CLI output. Archive as a stream after rechecking both real paths. */
+  localFile?: { path: string; root: string };
   mimeType?: string;
   filename?: string;
   metadata?: Readonly<Record<string, unknown>>;
@@ -182,9 +204,11 @@ export interface ProviderAdapter {
     connectionId?: string,
   ): Promise<NormalizedTaskState>;
   extractOutputs(result: unknown): Promise<RemoteArtifact[]>;
+  /** Called only after every output has been durably archived. */
+  cleanup?(result: unknown): Promise<void>;
 }
 
-export type ProviderName = "openai" | "weai" | "runway" | "rest" | "fake";
+export type ProviderName = "openai" | "weai" | "runway" | "rest" | "fake" | "cli";
 
 export interface ResolvedProviderConnection {
   id: string;

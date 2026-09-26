@@ -1,1 +1,0 @@
-ALTER TABLE "asset" ALTER COLUMN "size" SET DATA TYPE bigint;

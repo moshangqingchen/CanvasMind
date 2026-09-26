@@ -1,6 +1,8 @@
 import { fetchProviderJson, providerFetch, ProviderHttpError } from "./http.js";
-import type { FetchImplementation } from "./contracts.js";
+import type { FetchImplementation, ModelDescriptor } from "./contracts.js";
 import { catalogPriceLabel } from "./catalog-pricing.js";
+import { parseProviderModelFacts } from "./model-catalog.js";
+import { parseSupplierGroupDetails, type SupplierGroupDetails } from "./supplier-group-details.js";
 
 export type SupplierSiteKind =
   "auto" | "newapi" | "sub2api" | "openai-compatible";
@@ -16,18 +18,26 @@ export interface DiscoveredSupplierModel {
     | "gemini"
     | "unknown";
   priceLabel?: string;
+  /** Descriptive evidence only; a public listing does not grant a Key access. */
+  inputKinds?: ModelDescriptor["inputKinds"];
+  outputKinds?: ModelDescriptor["outputKinds"];
+  limits?: ModelDescriptor["limits"];
+  metadata?: ModelDescriptor["metadata"];
 }
 export interface DiscoveredSupplierGroup {
   id: string;
   label: string;
   source: "catalog";
   models: DiscoveredSupplierModel[];
+  details?: SupplierGroupDetails;
 }
 export interface SupplierCatalogDiscovery {
   groups: DiscoveredSupplierGroup[];
   kind: SupplierSiteKind;
   status: "live" | "empty" | "failed" | "unauthorized";
   checkedAt: string;
+  /** A partial directory must not hide groups found by previous scans. */
+  complete?: boolean;
   error?: string;
 }
 
@@ -65,7 +75,7 @@ export function normalizeSupplierSiteBase(value: string): string {
 export function supplierDirectoryBase(value: string): string {
   return normalizeSupplierSiteBase(
     value.replace(
-      /\/(?:api\/pricing|api\/v1\/model-plaza|api\/v1\/groups\/available|api\/user\/self\/groups|api\/status|setup\/status|v1\/models|console\/token|dashboard|model-plaza|model-market|marketplace|models|pricing|keys)\/?$/iu,
+      /\/(?:api\/pricing|api\/v1\/model-plaza|api\/v1\/groups\/available|api\/user\/self\/groups|api\/status|setup\/status|v1\/models|console\/token|dashboard|channel-plaza|model-plaza|model-market|marketplace|models|pricing|keys)\/?$/iu,
       "",
     ),
   );
@@ -84,9 +94,10 @@ export function parseSupplierKeyGroups(
     return null;
   const data: unknown = root?.data ?? payload;
   const groups = new Map<string, DiscoveredSupplierGroup>();
-  const add = (id: string, label: string) => {
+  const add = (id: string, label: string, raw: Record<string, unknown>) => {
+    const details = parseSupplierGroupDetails(raw, "key-groups");
     if (id && groups.size < 500 && !groups.has(id))
-      groups.set(id, { id, label: label || id, source: "catalog", models: [] });
+      groups.set(id, { id, label: label || id, source: "catalog", models: [], ...(details ? { details } : {}) });
   };
   if (kind === "sub2api") {
     const entries = Array.isArray(data) ? data : record(data)?.groups;
@@ -96,7 +107,7 @@ export function parseSupplierKeyGroups(
       if (!group) continue;
       // Keep the same name-based identity as model-plaza and saved connections.
       const name = text(group.name);
-      add(name, text(group.label) || name);
+      add(name, text(group.label) || name, group);
     }
     if (entries.length && !groups.size) return null;
   } else {
@@ -106,7 +117,7 @@ export function parseSupplierKeyGroups(
     for (const [id, value] of Object.entries(entries)) {
       const group = record(value);
       if (group && ("desc" in group || "ratio" in group))
-        add(text(id), text(group.desc) || text(id));
+        add(text(id), text(group.desc) || text(id), { ...group, name: id });
     }
     if (Object.keys(entries).length && !groups.size) return null;
   }
@@ -124,8 +135,12 @@ function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
     text(item.protocol),
   ].join(" ");
   const hint = `${id} ${text(item.type)} ${text(item.capability)} ${endpoints}`;
+  const facts = parseProviderModelFacts(item, "supplier-catalog");
   const capability: DiscoveredSupplierModel["capability"] =
-    /video|kling|sora|veo|seedance|hailuo|视频/iu.test(hint)
+    facts.outputKinds?.some(kind => kind === "video" || kind === "video[]") ? "video"
+      : facts.outputKinds?.some(kind => kind === "image" || kind === "image[]") ? "image"
+      : facts.outputKinds?.includes("text") ? "chat"
+      : /video|kling|sora|veo|seedance|hailuo|视频/iu.test(hint)
       ? "video"
       : /image|dall[-_ ]?e|flux|seedream|imagen|sdxl|图像|绘图/iu.test(hint)
         ? "image"
@@ -160,6 +175,7 @@ function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
     name: text(item.display_name ?? item.name) || id,
     capability,
     protocol,
+    ...facts,
     ...(priceLabel ? { priceLabel } : {}),
   };
 }
@@ -200,6 +216,9 @@ export function parseSupplierCatalog(
       const id = text(group.name ?? group.id);
       const label = text(group.label ?? group.description ?? group.name) || id;
       add(id, label);
+      const saved = byGroup.get(id);
+      const details = parseSupplierGroupDetails(group, "model-plaza");
+      if (saved && details) saved.details = details;
       for (const model of Array.isArray(group.models) ? group.models : [])
         add(id, label, modelFrom(model));
     }
@@ -307,6 +326,48 @@ export function supplierModelUrls(apiUrl: string): string[] {
         : [`${base}/v1/models`, `${base}/models`],
     ),
   ];
+}
+
+/** The separate model-price page groups models under channels and platforms. */
+export function parseSupplierPricingChannels(payload: unknown, currency?: string): DiscoveredSupplierGroup[] {
+  const root = record(payload);
+  if (root?.success === false || (typeof root?.code === "number" && ![0, 200].includes(root.code))) return [];
+  const channels = Array.isArray(root?.data) ? root.data : record(root?.data)?.channels;
+  if (!Array.isArray(channels)) return [];
+  const groups = new Map<string, DiscoveredSupplierGroup>();
+  for (const value of channels.slice(0, 500)) {
+    const channel = record(value);
+    if (!channel || !Array.isArray(channel.platforms)) continue;
+    for (const value of channel.platforms) {
+      const platform = record(value);
+      if (!platform || !Array.isArray(platform.groups) || !Array.isArray(platform.supported_models)) continue;
+      for (const value of platform.groups) {
+        const rawGroup = record(value);
+        const id = text(rawGroup?.name);
+        if (!rawGroup || !id) continue;
+        const group = groups.get(id) ?? { id, label: id, source: "catalog" as const, models: [] };
+        const details = parseSupplierGroupDetails(rawGroup, "model-plaza");
+        if (details) group.details = details;
+        const multiplier = typeof rawGroup.rate_multiplier === "number" ? rawGroup.rate_multiplier : 1;
+        for (const raw of platform.supported_models.slice(0, 3000)) {
+          const row = record(raw);
+          const model = modelFrom(row);
+          if (!row || !model || group.models.some(item => item.id === model.id)) continue;
+          const pricing = record(row.pricing);
+          const intervals = Array.isArray(pricing?.intervals) ? pricing.intervals.map(record).filter(item => item && typeof item.per_request_price === "number") : [];
+          const priceLabel = intervals.length
+            ? intervals.map(tier => `${text(tier!.tier_label)} ${catalogPriceLabel({ pricing: { ...pricing, per_request_price: tier!.per_request_price } }, { ...(currency ? { currency } : {}), multiplier }) ?? ""}`).join(" · ")
+            : catalogPriceLabel(row, { ...(currency ? { currency } : {}), multiplier });
+          group.models.push({ ...model, ...(priceLabel ? { priceLabel } : {}), metadata: { ...model.metadata,
+            supplierChannelDescription: typeof channel.description === "string" ? channel.description.slice(0, 8000) : "",
+            priceSource: "supplier-price-page",
+          } });
+        }
+        groups.set(id, group);
+      }
+    }
+  }
+  return [...groups.values()];
 }
 
 export async function discoverSupplierCatalog(
@@ -418,10 +479,55 @@ export async function discoverSupplierCatalog(
       };
     return undefined;
   };
+  const pricePage = async (groups: DiscoveredSupplierGroup[]) => {
+    const response = await probe(`${siteUrl}/api/v1/pricing/channels`, siteHeaders("sub2api"));
+    // Secure Skill's current price page explicitly displays CNY (see the
+    // 2026-09-23 price/usage audit); this is a currency convention, not a price.
+    const currency = new URL(siteUrl).hostname === "token.secure-skill.com" ? "CNY" : undefined;
+    const prices = parseSupplierPricingChannels(response.payload, currency);
+    const merged = new Map(groups.map(group => [group.id, group]));
+    for (const price of prices) {
+      const previous = merged.get(price.id);
+      if (!previous) { merged.set(price.id, price); continue; }
+      const models = new Map(previous.models.map(model => [model.id, model]));
+      for (const model of price.models) {
+        const old = models.get(model.id);
+        models.set(model.id, old ? { ...model, ...old, ...((old.priceLabel || model.priceLabel) ? { priceLabel: old.priceLabel || model.priceLabel! } : {}),
+          metadata: { ...model.metadata, ...old.metadata } } : model);
+      }
+      merged.set(price.id, { ...price, ...previous, ...((previous.details || price.details) ? { details: previous.details ?? price.details! } : {}), models: [...models.values()] });
+    }
+    return [...merged.values()];
+  };
   const fallbackGroups = async (
     platform: "newapi" | "sub2api",
     fallback: SupplierCatalogDiscovery,
-  ) => (await keyGroups(platform)) ?? fallback;
+  ) => {
+    const result = (await keyGroups(platform)) ?? fallback;
+    if (platform !== "sub2api") return result;
+    const groups = await pricePage(result.groups);
+    return groups.length ? { ...result, groups, status: "live" as const, complete: result.status !== "failed" && result.status !== "unauthorized" } : result;
+  };
+  const supplementGroups = async (parsed: ReturnType<typeof parseSupplierCatalog>, platform: "newapi" | "sub2api") => {
+    if (platform === "sub2api") parsed = { ...parsed, groups: await pricePage(parsed.groups) };
+    const available = await keyGroups(platform);
+    if (available?.status === "live" || available?.status === "empty") {
+      const groups = new Map(parsed.groups.map(group => [group.id, group]));
+      for (const group of available.groups) {
+        const previous = groups.get(group.id);
+        if (previous) groups.set(group.id, { ...previous,
+          ...((previous.details || group.details) ? { details: { ...previous.details, ...group.details,
+            ...(group.details?.description ? { referencePrice: group.details.referencePrice,
+              supportedResolutions: group.details.supportedResolutions, unsupportedResolutions: group.details.unsupportedResolutions,
+              exclusiveResolutions: group.details.exclusiveResolutions } : {}),
+          } as SupplierGroupDetails } : {}) });
+        else if (groups.size < 500) groups.set(group.id, group);
+      }
+      return success({ ...parsed, groups: [...groups.values()] }, platform);
+    }
+    return { ...success(parsed, platform), complete: false,
+      error: "模型目录已读取；账号分组说明暂不可用，保留历史分组，请稍后重试或检查站点登录" };
+  };
 
   // CDR probe order is significant: a recognized (including login-gated) platform stops inference.
   if (kind === "auto" || kind === "newapi") {
@@ -456,7 +562,7 @@ export async function discoverSupplierCatalog(
           const currency = text(settings?.quota_display_type);
           const exchange = Number(settings?.usd_exchange_rate);
           if (currency === "CNY" && Number.isFinite(exchange) && exchange > 0)
-            return success(
+            return supplementGroups(
               parseSupplierCatalog(pricing.payload, {
                 currency,
                 multiplier: exchange,
@@ -464,7 +570,7 @@ export async function discoverSupplierCatalog(
               "newapi",
             );
         }
-        return success(parsed, "newapi");
+        return supplementGroups(parsed, "newapi");
       }
       return fallbackGroups("newapi", success(parsed, "newapi"));
     }
@@ -488,7 +594,11 @@ export async function discoverSupplierCatalog(
     const data = record(record(plaza.payload)?.data);
     if (plaza.status === 200 && data && Array.isArray(data.groups)) {
       const parsed = parseSupplierCatalog(plaza.payload);
-      if (parsed.groups.length) return success(parsed, "sub2api");
+      if (parsed.groups.length) {
+        // Model plaza can publish prices for only a subset of an account's
+        // groups. Always include the API-key page's selectable groups too.
+        return supplementGroups(parsed, "sub2api");
+      }
       return fallbackGroups("sub2api", success(parsed, "sub2api"));
     }
     if (plaza.status === 401 || plaza.status === 403) {

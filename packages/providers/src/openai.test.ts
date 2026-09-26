@@ -10,6 +10,30 @@ function jsonResponse(value: unknown): Response {
 }
 
 describe("OpenAIImageAdapter", () => {
+  it("allows Chuangxiang 2K and 4K requests despite historical output undersizing", async () => {
+    const adapter=new OpenAIImageAdapter(new StaticConnectionResolver([{id:"cx-probe",provider:"openai",apiKey:"test-key",baseUrl:"https://vapi.chuangxiangai.asia",settings:{modelGroup:"生图"}}]));
+    const request={connectionId:"cx-probe",operation:"image.generate" as const,model:"gpt-image-2.5-yf",prompt:"Test",idempotencyKey:"capability-probe",metadata:{purpose:"supplier-verification"}};
+    expect((await adapter.validate({...request,parameters:{size:"2720x1536",quality:"high",n:1}})).valid).toBe(true);
+    expect((await adapter.validate({...request,parameters:{size:"3840x2160",quality:"high",n:1}})).valid).toBe(true);
+  });
+  it.each([["生图（2k4k 高质量）", "high"], ["生图（2k4k 中质量）", "medium"]])(
+    "sends documented Mikoto pixels and only the group's quality: %s", async (modelGroup, quality) => {
+      const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: Buffer.from("mock-image").toString("base64") }] }));
+      const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{
+        id: "mikoto-declared", provider: "openai", apiKey: "test-key", baseUrl: "https://api.mikoto.vip",
+        settings: { supplierKey: "mikoto", modelGroup },
+      }]), { fetch: fetchMock });
+      const request = { connectionId: "mikoto-declared", operation: "image.generate" as const, model: "gpt-image-2", prompt: "Test", idempotencyKey: "declared-size" };
+      for (const size of ["2560x1440", "3840x2160"]) {
+        await adapter.submit({ ...request, parameters: { size, quality } });
+        const call = fetchMock.mock.calls.at(-1) as unknown[];
+        expect(String(call[0])).toBe("https://api.mikoto.vip/v1/images/generations");
+        expect(JSON.parse(String((call[1] as RequestInit).body))).toMatchObject({ size, quality, model: "gpt-image-2" });
+      }
+      expect((await adapter.validate({ ...request, parameters: { size: "3840x2160", quality: quality === "high" ? "max" : "high" } })).issues).toContainEqual(expect.objectContaining({ code: "invalid_quality" }));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
   it("validates Chentu exact sizes against this connection's live capability list", async () => {
     const model = "gpt-image-2-2k";
     const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{
@@ -221,6 +245,19 @@ describe("OpenAIImageAdapter", () => {
     });
   });
 
+  it("forwards all six FriModel Sunburst quality options after max evidence", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ url: "https://cdn.frimodel.test/test.png" }] }));
+    const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{
+      id: "fri", provider: "openai", apiKey: "fixture", baseUrl: "https://api.frimodel.com/v1",
+      settings: { supplierKey: "frimodel", modelGroup: "gpt_image_adobe" },
+    }]), { fetch: fetchMock });
+    for (const quality of ["auto", "low", "medium", "high", "xhigh", "max"]) {
+      await adapter.submit({ connectionId: "fri", operation: "image.generate", model: "gpt-image-2.5-sunburst-adobe",
+        prompt: "test", idempotencyKey: `test-${quality}`, parameters: { size: "1024x1024", quality } });
+      const call = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+      expect(JSON.parse(String(call[1].body))).toMatchObject({ model: "gpt-image-2.5-sunburst-adobe", quality });
+    }
+  });
   it("uses FriModel's documented Images API image protocol", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -262,7 +299,7 @@ describe("OpenAIImageAdapter", () => {
         output_format: "png",
       },
     });
-    expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), 300_000);
+    expect(timeoutSpy).not.toHaveBeenCalled();
     timeoutSpy.mockRestore();
 
     const listed = await adapter.listModels("frimodel");
@@ -1404,6 +1441,42 @@ describe("WeAIImageAdapter", () => {
         }),
       ]),
     );
+  });
+
+  it("forces URL output for the marketplace Image2.5 Adobe group", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ data: [{ url: "https://cdn.test/image25.png" }] }),
+    ) as unknown as typeof fetch;
+    const adapter = new WeAIImageAdapter(
+      new StaticConnectionResolver([
+        {
+          id: "weai-image25-marketplace",
+          provider: "weai",
+          apiKey: "sk-weai",
+          settings: {
+            modelGroup: "生图-openai-adobe-image2.5专属",
+            defaultModel: "gpt-image-2.5-sunburst",
+          },
+        },
+      ]),
+      { fetch: fetchMock },
+    );
+
+    await adapter.submit({
+      connectionId: "weai-image25-marketplace",
+      operation: "image.generate",
+      model: "gpt-image-2.5-sunburst",
+      prompt: "A product poster",
+      idempotencyKey: "weai-image25-marketplace",
+      parameters: { size: "2880x2880", quality: "max" },
+    });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      model: "gpt-image-2.5-sunburst",
+      prompt: "A product poster",
+      size: "2880x2880",
+      response_format: "url",
+    });
   });
 
   it("rejects fabricated Adobe resolution model IDs and validates exact pixel sizes", async () => {

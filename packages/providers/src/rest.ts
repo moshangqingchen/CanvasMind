@@ -15,6 +15,7 @@ import type {
   ValidationIssue,
   ValidationResult,
 } from "./contracts.js";
+import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
 import {
   assertValidResult,
   getProviderTaskId,
@@ -26,6 +27,8 @@ import {
   fetchProviderJson,
   mergeHeaders,
   providerFetch,
+  providerSubmitTransportActive,
+  type ProviderFetchOptions,
   requireApiKey,
 } from "./http.js";
 import {
@@ -46,7 +49,7 @@ export type RestSource =
       /** Skip the first N matching assets before applying `select`. */
       offset?: number;
       /** Optional provider-native JSON encoding for selected assets. */
-      encoding?: "default" | "gemini-part";
+      encoding?: "default" | "gemini-part" | "gemini-inline-part";
     }
   | {
       /** Build one OpenAI-style user message from the prompt and input images. */
@@ -181,6 +184,21 @@ interface RestTaskEnvelope {
   config: RestConnectorConfig;
   remote: unknown;
   baseUrl?: string;
+}
+
+/** The selected request, not a mixed group's blanket flag, decides transport. */
+export function restRequestRequiresPublicAssets(value: unknown, model?: string, operation?: ProviderOperation): boolean {
+  if (!isRecord(value) || value.assetsRequirePublicUrls !== true) return false;
+  const config = value as unknown as RestConnectorConfig;
+  const modelOverride = model ? config.modelOverrides?.[model] : undefined;
+  const submit = (operation ? modelOverride?.operationOverrides?.[operation]?.submit : undefined)
+    ?? (operation ? config.operationOverrides?.[operation]?.submit : undefined)
+    ?? modelOverride?.submit ?? config.submit;
+  const assets = submit?.mappings?.filter(mapping => mapping.source.kind === "assets") ?? [];
+  if (assets.length > 0 && submit.bodyMode === "multipart") return false;
+  if (assets.length > 0 && submit.bodyMode === "json" && assets.every(mapping =>
+    mapping.source.kind === "assets" && ["gemini-part", "gemini-inline-part"].includes(mapping.source.encoding ?? ""))) return false;
+  return true;
 }
 
 export interface GenericRestAdapterOptions {
@@ -371,7 +389,7 @@ function assertRequestDefinition(
       if (
         mapping.source.encoding !== undefined &&
         mapping.source.encoding !== "default" &&
-        mapping.source.encoding !== "gemini-part"
+        mapping.source.encoding !== "gemini-part" && mapping.source.encoding !== "gemini-inline-part"
       ) {
         throw new Error(
           `${label}.mappings[${index}].source.encoding is invalid`,
@@ -695,8 +713,10 @@ function sourceValue(
     const selectedAssets =
       source.offset === undefined ? assets : assets.slice(source.offset);
     const encode = (asset: ProviderAssetInput): unknown => {
-      if (source.encoding !== "gemini-part") return asset;
+      if (source.encoding !== "gemini-part" && source.encoding !== "gemini-inline-part") return asset;
+      const camelCase = source.encoding === "gemini-inline-part";
       if (asset.data) {
+        if (camelCase) return { inlineData: { mimeType: asset.mimeType, data: Buffer.from(asset.data).toString("base64") } };
         return {
           inline_data: {
             mime_type: asset.mimeType,
@@ -709,6 +729,7 @@ function sourceValue(
         throw new Error(`Asset ${asset.id} has neither bytes nor a URL`);
       const dataUri = /^data:([^;,]+);base64,(.+)$/su.exec(encoded);
       if (dataUri) {
+        if (camelCase) return { inlineData: { mimeType: dataUri[1] || asset.mimeType, data: dataUri[2] } };
         return {
           inline_data: {
             mime_type: dataUri[1] || asset.mimeType,
@@ -716,6 +737,7 @@ function sourceValue(
           },
         };
       }
+      if (camelCase) return { fileData: { mimeType: asset.mimeType, fileUri: encoded } };
       return {
         file_data: {
           mime_type: asset.mimeType,
@@ -945,6 +967,7 @@ function validatePath(path: string | undefined, relative = false): void {
 export class GenericRestAdapter implements ProviderAdapter {
   private readonly fetchImpl: FetchImplementation;
   private readonly requestTimeoutMs: number;
+  private readonly imageSubmitTimeoutMs: number;
   private readonly fixedConfig: RestConnectorConfig | undefined;
 
   public constructor(
@@ -953,6 +976,7 @@ export class GenericRestAdapter implements ProviderAdapter {
   ) {
     this.fetchImpl = options.fetch ?? providerFetch;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
+    this.imageSubmitTimeoutMs = options.requestTimeoutMs ?? 0;
     this.fixedConfig = options.config;
   }
 
@@ -998,13 +1022,16 @@ export class GenericRestAdapter implements ProviderAdapter {
 
   private timeoutFor(
     connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>,
+    imageSubmit = false,
   ): number {
-    const configured = connection.settings?.["requestTimeoutMs"];
+    // Marketplace requestTimeoutMs defaults belong to metadata/poll requests;
+    // paid image submits only honor an explicitly dedicated image deadline.
+    const configured = connection.settings?.[imageSubmit ? "imageSubmitTimeoutMs" : "requestTimeoutMs"];
     return typeof configured === "number" &&
       Number.isFinite(configured) &&
-      configured > 0
+      configured >= 0
       ? configured
-      : this.requestTimeoutMs;
+      : imageSubmit ? this.imageSubmitTimeoutMs : this.requestTimeoutMs;
   }
 
   private resolveUrl(
@@ -1179,6 +1206,26 @@ export class GenericRestAdapter implements ProviderAdapter {
       // would make multipart uploads unreadable by most APIs.
       headers.delete("content-type");
     }
+    let cloudPolling: ProviderFetchOptions["cloudPolling"];
+    if (phase === "submit" && config.poll && providerSubmitTransportActive()) {
+      const placeholder = "__SUPER_CANVAS_CLOUD_TASK__";
+      if ((config.poll.mappings ?? []).some(mapping => mapping.source.kind !== "literal" &&
+        !(mapping.source.kind === "task" && ["$.id", "$.providerTaskId"].includes(mapping.source.path))))
+        throw new Error("该接口的查询依赖额外返回字段，暂不支持云端后台，请使用本机方式");
+      const pollBody = await this.buildBody(config.poll, undefined, { providerTaskId: placeholder, id: placeholder, status: "running", result: { remote: {} } });
+      if (pollBody !== undefined && typeof pollBody !== "string") throw new Error("该接口的查询格式暂不支持云端后台，请使用本机方式");
+      const pollHeaders = this.headers(connection, config, config.poll);
+      if (pollBody !== undefined) pollHeaders.set("content-type", "application/json");
+      cloudPolling = {
+        urlTemplate: this.resolveUrl(connection.baseUrl, config.poll.path, config, placeholder),
+        method: config.poll.method ?? (pollBody === undefined ? "GET" : "POST"),
+        headers: Object.fromEntries(pollHeaders), ...(pollBody === undefined ? {} : { body: pollBody }),
+        ...(config.submit.response ? { submitMapping: config.submit.response as Record<string, unknown> } : {}),
+        ...(config.poll.response ? { pollMapping: config.poll.response as Record<string, unknown> } : {}),
+        ...(config.statusMap ? { statusMap: config.statusMap } : {}),
+        ...(config.pollIntervalMs === undefined ? {} : { intervalMs: config.pollIntervalMs }),
+      };
+    }
     return fetchProviderJson<unknown>(
       this.fetchImpl,
       this.resolveUrl(connection.baseUrl, definition.path, config, taskId),
@@ -1190,10 +1237,11 @@ export class GenericRestAdapter implements ProviderAdapter {
       },
       {
         phase,
-        timeoutMs: this.timeoutFor(connection),
+        timeoutMs: this.timeoutFor(connection, phase === "submit" && request?.operation.startsWith("image.") === true),
         ...(maxResponseBytes === undefined ? {} : { maxResponseBytes }),
         idempotent: definition.idempotent === true,
         allowEmpty: phase === "cancel",
+        ...(cloudPolling ? { cloudPolling } : {}),
       },
     );
   }
@@ -1458,22 +1506,30 @@ export class GenericRestAdapter implements ProviderAdapter {
       request.model,
       request.operation,
     );
-    const outboundRequest = withNearestSupportedAspectRatio(request, config);
-    const remote = await this.execute(
+    let outboundRequest = withNearestSupportedAspectRatio(request, config);
+    if (request.assets?.length && restRequestRequiresPublicAssets(config)) {
+      const needsHosting = request.assets.some(asset => !asset.url?.startsWith("https://"));
+      if (needsHosting && !referenceImageHostingEnabled(connection.settings))
+        throw new Error("该模型需要参考图 HTTPS 链接。请在供应商分组中启用参考图临时链接，再重新运行；当前生成尚未提交。");
+      if (needsHosting) outboundRequest = { ...outboundRequest, assets: await uploadTemporaryReferenceImages(request.assets, this.fetchImpl) };
+    }
+    const received = await this.execute(
       connection,
       config,
       config.submit,
       "submit",
       outboundRequest,
     );
-    const mapping = config.submit.response;
+    const cloudTask = isRecord(received) && typeof received.__superCanvasCloudPoll === "string" ? received.__superCanvasCloudPoll : undefined;
+    const remote = cloudTask ? (received as Record<string, unknown>).remote : received;
+    const mapping = cloudTask ? config.poll?.response : config.submit.response;
     const rawTaskId = mapping
       ? responseValue(remote, mapping.taskIdPath, mapping.taskIdFallbackPaths)
       : undefined;
     const providerTaskId =
-      typeof rawTaskId === "string" || typeof rawTaskId === "number"
+      cloudTask ?? (typeof rawTaskId === "string" || typeof rawTaskId === "number"
         ? String(rawTaskId)
-        : `rest:sync:${request.idempotencyKey}`;
+        : `rest:sync:${request.idempotencyKey}`);
     const rawStatus = mapping
       ? responseValue(remote, mapping.statusPath, mapping.statusFallbackPaths)
       : undefined;

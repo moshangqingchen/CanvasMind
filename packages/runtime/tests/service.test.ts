@@ -1,13 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { MemoryRepository, type JsonObject } from "@super-canvas/db";
+import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
+import { MemoryRepository, type JsonObject, type WorkflowRunRecord } from "@super-canvas/db";
 import {
   ProviderHttpError,
+  fetchProviderJson,
   imageSizeOptions,
+  createDefaultProviderRegistry,
+  StaticConnectionResolver,
   type ProviderAdapter,
   type ProviderTask,
 } from "@super-canvas/providers";
 import type { ObjectStorage, StoredObject } from "@super-canvas/storage";
-import { RunService } from "../src/service.js";
+import { RunService, type RuntimeOptions } from "../src/service.js";
+import * as remoteDownloads from "../src/remote-download.js";
 
 async function testRepository() {
   const repository = new MemoryRepository();
@@ -550,7 +555,7 @@ function independentBranchesGraph(): JsonObject {
   };
 }
 
-function resumableNodeGraph(): JsonObject {
+function resumableNodeGraph(kind: "image" | "video" = "image"): JsonObject {
   return {
     schemaVersion: 1,
     nodes: [
@@ -558,11 +563,11 @@ function resumableNodeGraph(): JsonObject {
         id: "image",
         type: "workflow",
         data: {
-          nodeType: "image-generation",
+          nodeType: `${kind}-generation`,
           provider: "runway",
           connectionId: "runway-test",
           parts: [{ type: "text", text: "resumable image" }],
-          outputs: [port("image", "image")],
+          outputs: [port(kind, kind)],
         },
       },
     ],
@@ -737,6 +742,7 @@ class AdapterRunService extends RunService {
     storage: ObjectStorage,
     executionMode: "inline" | "queue" = "inline",
     private readonly providerName = "runway",
+    options: Pick<RuntimeOptions, "shutdownSignal" | "retryBaseDelayMs" | "pollIntervalMs"> = {},
   ) {
     super({
       repository,
@@ -745,6 +751,7 @@ class AdapterRunService extends RunService {
       retryBaseDelayMs: 1,
       executionMode,
       ...(executionMode === "queue" ? { enqueueRun: async () => {} } : {}),
+      ...options,
     });
   }
 
@@ -1021,8 +1028,9 @@ async function seedCancelledProviderRun(
 async function seedResumableRun(
   repository: MemoryRepository,
   canvasId: string,
+  kind: "image" | "video" = "image",
 ) {
-  const revisionGraph = resumableNodeGraph();
+  const revisionGraph = resumableNodeGraph(kind);
   await repository.createRun({
     id: "resumable-run",
     canvasId,
@@ -1062,6 +1070,60 @@ async function waitForRun(service: RunService, runId: string) {
 }
 
 describe("RunService", () => {
+  it("keeps concurrent runs of one generation node independent when the newer run finishes first", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    const graphFor = (prompt: string, size: string): JsonObject => ({
+      schemaVersion: 1,
+      nodes: [{ id: "image", type: "workflow", data: {
+        nodeType: "image-generation", provider: "runway", connectionId: "runway-test",
+        model: "test-image", parts: [{ type: "text", text: prompt }],
+        parameters: { size }, outputs: [port("image", "image")],
+      } }],
+      edges: [],
+    });
+    let releaseFirst = () => {};
+    const gate = new Promise<void>(resolve => { releaseFirst = resolve; });
+    const submitted: Array<{ prompt: string | undefined; size: unknown; key: string }> = [];
+    const adapter: ProviderAdapter = {
+      async testConnection() {},
+      async listModels() { return []; },
+      async validate() { return { valid: true, issues: [] }; },
+      async submit(request) {
+        submitted.push({ prompt: request.prompt, size: request.parameters?.size, key: request.idempotencyKey });
+        if (request.prompt === "first image") await gate;
+        return { providerTaskId: request.idempotencyKey, status: "succeeded", result: { completed: true } };
+      },
+      async extractOutputs() {
+        return [{ kind: "image", data: new Uint8Array([1, 2, 3]), mimeType: "image/png" }];
+      },
+    };
+    const service = new AdapterRunService(adapter, repository, new MemoryStorage());
+    await repository.saveCanvas({ id: canvas.id, graph: graphFor("first image", "1024x1024") });
+    const first = await service.createRun({ canvasId: canvas.id, clientRequestId: "parallel-first", scope: "node", nodeId: "image" });
+    try {
+      await expect.poll(() => submitted.length).toBe(1);
+      await repository.saveCanvas({ id: canvas.id, graph: graphFor("second image", "1536x1024") });
+      const second = await service.createRun({ canvasId: canvas.id, clientRequestId: "parallel-second", scope: "node", nodeId: "image" });
+      const secondResult = await waitForRun(service, second.id);
+      expect(secondResult.run.status).toBe("succeeded");
+      expect((await service.getRun(first.id))?.run.status).toBe("running");
+      expect(submitted.map(({ prompt, size }) => ({ prompt, size }))).toEqual([
+        { prompt: "first image", size: "1024x1024" },
+        { prompt: "second image", size: "1536x1024" },
+      ]);
+      expect(new Set(submitted.map(item => item.key)).size).toBe(2);
+      releaseFirst();
+      const firstResult = await waitForRun(service, first.id);
+      expect(firstResult.run.status).toBe("succeeded");
+      expect(firstResult.nodes[0]?.outputAssetIds).toHaveLength(1);
+      expect(secondResult.nodes[0]?.outputAssetIds).toHaveLength(1);
+      expect(firstResult.nodes[0]?.outputAssetIds).not.toEqual(secondResult.nodes[0]?.outputAssetIds);
+    } finally {
+      releaseFirst();
+    }
+  });
+
   it("reports local request validation failures without blaming the supplier", async () => {
     const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
@@ -1421,6 +1483,150 @@ describe("RunService", () => {
     expect(provider.calls()).toEqual({ submit: 0, poll: 3 });
   });
 
+  it("keeps querying an image task past 240 running responses without resubmitting", async () => {
+    const repository = await testRepository();
+    const storage = new MemoryStorage();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    const provider = pollingAdapter([]);
+    const finish = provider.adapter.poll!;
+    let polls = 0;
+    provider.adapter.poll = async task => ++polls <= 245 ? { ...task, status: "running" } : finish(task);
+    const service = new AdapterRunService(provider.adapter, repository, storage);
+
+    await service.resumeRun("resumable-run");
+    const snapshot = await waitForRun(service, "resumable-run");
+
+    expect(snapshot.run.status).toBe("succeeded");
+    expect(polls).toBe(246);
+    expect(provider.calls().submit).toBe(0);
+    expect(snapshot.nodes[0]?.providerTaskId).toBe("remote-task-1");
+  });
+
+  it("keeps an image task running through more than three transient poll failures", async () => {
+    const repository = await testRepository();
+    const storage = new MemoryStorage();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    const failures = Array.from({ length: 5 }, () => new ProviderHttpError("temporarily unavailable", {
+      kind: "provider", phase: "poll", status: 503, retryable: true, submissionMayHaveOccurred: false,
+    }));
+    const provider = pollingAdapter(failures);
+    const service = new AdapterRunService(provider.adapter, repository, storage);
+    const statuses: unknown[] = [];
+    const unsubscribe = service.subscribe(event => { if (event.type === "node") statuses.push(event.payload.status); });
+
+    await service.resumeRun("resumable-run");
+    const snapshot = await waitForRun(service, "resumable-run");
+    unsubscribe();
+
+    expect(snapshot.run.status).toBe("succeeded");
+    expect(provider.calls()).toEqual({ submit: 0, poll: 6 });
+    expect(statuses).not.toContain("needs_attention");
+  });
+
+  it("stops persistent image polling promptly when the user cancels during backoff", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    const provider = pollingAdapter([]);
+    let started!: () => void;
+    const polling = new Promise<void>(resolve => { started = resolve; });
+    const cancel = vi.fn(async () => {});
+    provider.adapter.cancel = cancel;
+    provider.adapter.poll = vi.fn(async () => {
+      started();
+      throw new ProviderHttpError("offline", { kind: "network", phase: "poll", retryable: true, submissionMayHaveOccurred: false });
+    });
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage(), "inline", "runway", { retryBaseDelayMs: 60_000 });
+
+    await service.resumeRun("resumable-run");
+    await polling;
+    await service.cancelRun("resumable-run");
+    await expect.poll(async () => (await service.getRun("resumable-run"))?.nodes[0]?.status, { timeout: 2_000 }).toBe("cancelled");
+
+    expect(provider.adapter.poll).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(provider.calls().submit).toBe(0);
+  });
+
+  it("propagates user cancellation into a waiting local image submission", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+    let started!: () => void;
+    const waiting = new Promise<void>(resolve => { started = resolve; });
+    let requestSignal: AbortSignal | null | undefined;
+    const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      requestSignal = init?.signal;
+      started();
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
+      });
+    });
+    const adapter = synchronousAdapter();
+    adapter.submit = () => fetchProviderJson(fetch, "https://supplier.example.test/v1/images/generations", {
+      method: "POST", body: "{}",
+    }, { phase: "submit", timeoutMs: 0 });
+    const service = new AdapterRunService(adapter, repository, new MemoryStorage());
+
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "cancel-open-submit", scope: "node", nodeId: "image" });
+    await waiting;
+    await service.cancelRun(run.id);
+    await expect.poll(async () => (await service.getRun(run.id))?.nodes[0]?.status, { timeout: 2_000 }).toBe("cancelled");
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect((await service.getRun(run.id))?.run.status).toBe("cancelled");
+  });
+
+  it("preserves the task checkpoint on shutdown and resumes querying after restart", async () => {
+    const repository = await testRepository();
+    const storage = new MemoryStorage();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    const provider = pollingAdapter([]);
+    let started!: () => void;
+    const polling = new Promise<void>(resolve => { started = resolve; });
+    const cancel = vi.fn(async () => {});
+    provider.adapter.cancel = cancel;
+    provider.adapter.poll = vi.fn(async () => {
+      started();
+      throw new ProviderHttpError("offline", { kind: "network", phase: "poll", retryable: true, submissionMayHaveOccurred: false });
+    });
+    const shutdown = new AbortController();
+    const first = new AdapterRunService(provider.adapter, repository, storage, "inline", "runway", { shutdownSignal: shutdown.signal, retryBaseDelayMs: 60_000 });
+
+    await first.resumeRun("resumable-run");
+    await polling;
+    shutdown.abort();
+    expect((await first.getRun("resumable-run"))?.nodes[0]).toMatchObject({ status: "running", providerTaskId: "remote-task-1", errorJson: null });
+
+    const resumedProvider = pollingAdapter([]);
+    const resumed = new AdapterRunService(resumedProvider.adapter, repository, storage);
+    await expect.poll(async () => {
+      await resumed.resumeRun("resumable-run");
+      return (await resumed.getRun("resumable-run"))?.run.status;
+    }, { timeout: 2_000 }).toBe("succeeded");
+    expect(cancel).not.toHaveBeenCalled();
+    expect(resumedProvider.calls()).toEqual({ submit: 0, poll: 1 });
+  });
+
+  it("pauses an image task on a non-retryable authentication failure", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    const provider = pollingAdapter([new ProviderHttpError("expired credential", {
+      kind: "authentication", phase: "poll", status: 401, retryable: false, submissionMayHaveOccurred: false,
+    })]);
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await service.resumeRun("resumable-run");
+    const snapshot = await waitForRun(service, "resumable-run");
+    expect(snapshot.run.status).toBe("needs_attention");
+    expect(snapshot.nodes[0]?.providerTaskId).toBe("remote-task-1");
+    expect(provider.calls()).toEqual({ submit: 0, poll: 1 });
+  });
+
   it("quarantines a We-AI model only after three consecutive unknown-model rejections", async () => {
     const repository = await testRepository();
     const storage = new MemoryStorage();
@@ -1700,7 +1906,11 @@ describe("RunService", () => {
     });
   });
 
-  it("resolves Cyber Afei 4K automatic size from the prompt before submit", async () => {
+  it.each([
+    { prompt: "生成一张 A4 竖版印刷海报", tier: undefined, expected: "2416x3424" },
+    { prompt: "生成一张 9:16 海报", tier: "2K", expected: "1152x2048" },
+    { prompt: "生成一张 9:16 海报", tier: "4K", expected: "2160x3840" },
+  ])("resolves Cyber Afei automatic size using tier $tier and prompt $prompt", async ({ prompt, tier, expected }) => {
     const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
@@ -1714,6 +1924,9 @@ describe("RunService", () => {
         supplierKey: "cyberafei",
         modelGroup: "image-2",
         defaultModel: "gpt-image-2-4K",
+        modelCatalogModels: [{ id: "gpt-image-2-4K", parameters: [{ key: "size", control: "dimensions", options: [
+          { label: "2K 9:16", value: "1152x2048" }, { label: "4K 9:16", value: "2160x3840" },
+        ] }] }],
       },
     });
     await repository.saveCanvas({
@@ -1729,8 +1942,8 @@ describe("RunService", () => {
               provider: "rest",
               connectionId: "cyberafei-4k-auto",
               model: "gpt-image-2-4K",
-              parts: [{ type: "text", text: "生成一张 A4 竖版印刷海报" }],
-              parameters: { size: "auto", quality: "high", n: 1 },
+              parts: [{ type: "text", text: prompt }],
+              parameters: { size: "auto", quality: "high", n: 1, ...(tier ? { size_tier: tier } : {}) },
               outputs: [port("image", "image")],
             },
           },
@@ -1781,7 +1994,7 @@ describe("RunService", () => {
 
     expect(snapshot.run.status).toBe("succeeded");
     expect(submittedParameters).toMatchObject({
-      size: "2416x3424",
+      size: expected,
       quality: "high",
       n: 1,
     });
@@ -1974,6 +2187,14 @@ describe("RunService", () => {
       model: "gpt-image-2",
       prompt: "生成一张 16:9 横版海报",
       expected: "3840x2160",
+      connector: undefined,
+    },
+    {
+      provider: "openai",
+      supplier: "secure-skill",
+      model: "gpt-image-2",
+      prompt: "生成一张 9:16 竖版海报",
+      expected: "2160x3840",
       connector: undefined,
     },
     {
@@ -2188,6 +2409,48 @@ describe("RunService", () => {
       expected: "3840x2160",
     },
     {
+      supplier: "custom-verified-images",
+      provider: "openai",
+      prompt: "生成 16:9 海报",
+      tier: "4K",
+      size: "auto",
+      expected: "",
+      twoKOnly: true,
+    },
+    {
+      supplier: "custom-verified-images",
+      provider: "openai",
+      prompt: "生成 16:9 海报",
+      tier: "4K",
+      size: "2048x2048",
+      expected: "2048x2048",
+      twoKOnly: true,
+    },
+    {
+      supplier: "custom-verified-images",
+      provider: "openai",
+      prompt: "生成 9:16 海报",
+      tier: "4K",
+      size: "auto",
+      expected: "2160x3840",
+    },
+    {
+      supplier: "custom-verified-images",
+      provider: "openai",
+      prompt: "生成 16:9 海报",
+      tier: "2K",
+      size: "auto",
+      expected: "2720x1536",
+    },
+    {
+      supplier: "custom-verified-images",
+      provider: "openai",
+      prompt: "生成 9:16 海报",
+      tier: "4K",
+      size: "2048x2048",
+      expected: "2048x2048",
+    },
+    {
       supplier: "cangyuan",
       provider: "rest",
       prompt: "生成 1:1 海报",
@@ -2254,7 +2517,7 @@ describe("RunService", () => {
     },
   ])(
     "resolves verified 2.5 $supplier $tier $size with prompt priority over references",
-    async ({ supplier, provider, prompt, tier, size, expected, modelId }) => {
+    async ({ supplier, provider, prompt, tier, size, expected, modelId, twoKOnly }) => {
       const repository = await testRepository();
       const storage = new MemoryStorage();
       const canvas = await repository.ensureDefaultCanvas();
@@ -2273,7 +2536,9 @@ describe("RunService", () => {
         metadata: {
           ...(supplier === "cangyuan"
             ? {}
-            : { image25VerifiedAt: "2026-09-10" }),
+            : supplier === "custom-verified-images"
+              ? { imageCapabilitiesVerifiedAt: "2026-09-20" }
+              : { image25VerifiedAt: "2026-09-10" }),
           supportsImageEdit: true,
         },
         parameters: [
@@ -2282,7 +2547,7 @@ describe("RunService", () => {
             control: "dimensions",
             max: supplier === "cyberafei" ? 2048 : 3840,
             options: imageSizeOptions(
-              supplier === "cyberafei"
+              supplier === "cyberafei" || twoKOnly
                 ? ["1K", "2K"]
                 : supplier === "cangyuan"
                   ? ["4K"]
@@ -2404,6 +2669,11 @@ describe("RunService", () => {
         clientRequestId: "image25-run",
         scope: "all",
       });
+      if (twoKOnly && size === "auto") {
+        expect((await waitForRun(service, run.id)).run.status).toBe("failed");
+        expect(submitted).toBeUndefined();
+        return;
+      }
       expect((await waitForRun(service, run.id)).run.status).toBe("succeeded");
       expect(submitted).toMatchObject({ size: expected });
       expect(submitted).not.toHaveProperty("size_tier");
@@ -2549,10 +2819,8 @@ describe("RunService", () => {
     expect(submittedParameters).not.toHaveProperty("quality");
   });
 
-  it("gives 辰途 image edits a signed public reference URL", async () => {
-    const previousBaseUrl = process.env.PUBLIC_BASE_URL;
+  it("gives 辰途 image edits local reference bytes without a public server", async () => {
     const previousMasterKey = process.env.MASTER_KEY;
-    process.env.PUBLIC_BASE_URL = "https://canvas.example.test";
     process.env.MASTER_KEY = "runtime-test-master-key";
     try {
       const repository = await testRepository();
@@ -2624,6 +2892,7 @@ describe("RunService", () => {
         },
       });
       let submittedAssetUrl: string | undefined;
+      let submittedAssetBytes: Uint8Array | undefined;
       const adapter: ProviderAdapter = {
         async testConnection() {},
         async listModels() {
@@ -2634,6 +2903,7 @@ describe("RunService", () => {
         },
         async submit(request) {
           submittedAssetUrl = request.assets[0]?.url;
+          submittedAssetBytes = request.assets[0]?.data;
           return {
             providerTaskId: "chentu-reference-task",
             status: "succeeded",
@@ -2664,15 +2934,70 @@ describe("RunService", () => {
       });
       const snapshot = await waitForRun(service, run.id);
       expect(snapshot.run.status).toBe("succeeded");
-      expect(submittedAssetUrl).toMatch(
-        /^https:\/\/canvas\.example\.test\/api\/provider-assets\/chentu-reference-image\?token=/u,
-      );
+      expect(submittedAssetUrl).toBeUndefined();
+      expect(submittedAssetBytes).toEqual(new Uint8Array([1, 2, 3]));
     } finally {
-      if (previousBaseUrl === undefined) delete process.env.PUBLIC_BASE_URL;
-      else process.env.PUBLIC_BASE_URL = previousBaseUrl;
       if (previousMasterKey === undefined) delete process.env.MASTER_KEY;
       else process.env.MASTER_KEY = previousMasterKey;
     }
+  });
+
+  it.each([
+    { prompt: "跟随参考图生成海报", expected: "2160x3840" },
+    { prompt: "生成 16:9 横图，沿用参考图风格", expected: "3840x2160" },
+  ])("preserves generic OpenAI 4K with prompt/reference precedence: $prompt", async ({ prompt, expected }) => {
+    const repository = await testRepository();
+    const storage = new MemoryStorage();
+    const canvas = await repository.ensureDefaultCanvas();
+    await storage.put("reference.png", new Uint8Array([1, 2, 3]), "image/png");
+    await repository.saveAsset({ id: "reference", name: "比例参考", kind: "image", mimeType: "image/png", size: 3, storageKey: "reference.png", metadata: {} });
+    await repository.saveConnection({ id: "generic", name: "generic", provider: "openai", encryptedSecret: null, config: { supplierKey: "secure-skill", defaultModel: "gpt-image-2" } });
+    await repository.saveCanvas({ id: canvas.id, graph: { schemaVersion: 1, nodes: [
+      { id: "asset", type: "workflow", data: { nodeType: "asset-input", assetId: "reference", assetKind: "image", mediaAspectRatio: 9 / 16, outputs: [port("asset", "image")] } },
+      { id: "image", type: "workflow", data: { nodeType: "image-generation", provider: "openai", connectionId: "generic", model: "gpt-image-2", parts: [{ type: "text", text: prompt }], parameters: { size: "auto", size_tier: "4K" }, inputs: [port("references", "image[]")], outputs: [port("image", "image")] } },
+    ], edges: [{ id: "ref", source: "asset", sourceHandle: "asset", target: "image", targetHandle: "references" }] } });
+    let submitted: Readonly<Record<string, unknown>> | undefined;
+    const adapter: ProviderAdapter = {
+      async testConnection() {}, async listModels() { return []; }, async validate() { return { valid: true, issues: [] }; },
+      async submit(request) { submitted = request.parameters; return { providerTaskId: "test", status: "succeeded", result: {} }; },
+      async extractOutputs() { return [{ kind: "image", data: new Uint8Array([1, 2, 3]), mimeType: "image/png" }]; },
+    };
+    const service = new AdapterRunService(adapter, repository, storage, "inline", "openai");
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "auto-reference", scope: "all" });
+    expect((await waitForRun(service, run.id)).run.status).toBe("succeeded");
+    expect(submitted).toMatchObject({ size: expected });
+    expect(submitted).not.toHaveProperty("size_tier");
+  });
+
+  it.each([
+    { prompt: "跟随参考图生成海报", ratio: "9:16", size: "4K" },
+    { prompt: "生成 16:9 横图，沿用参考图风格", ratio: "16:9", size: "2K" },
+  ])("sends saved Banana tiers and connected reference bytes through the native API: $prompt", async ({ prompt, ratio, size }) => {
+    const repository = await testRepository();
+    const storage = new MemoryStorage();
+    const canvas = await repository.ensureDefaultCanvas();
+    const model = "gemini-3-pro-image-preview";
+    const bytes = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKcAAAAASUVORK5CYII=", "base64"));
+    await storage.put("banana-ref.png", bytes, "image/png");
+    await repository.saveAsset({ id: "banana-ref", name: "参考图", kind: "image", mimeType: "image/png", size: bytes.length, storageKey: "banana-ref.png", metadata: {} });
+    const config = { baseUrl: "https://genimage.pro/v1", defaultModel: model, modelCatalogModels: [{ id: model, name: model, operations: ["image.generate"], metadata: { canvasRunnable: true } }] };
+    await repository.saveConnection({ id: "banana", name: "Banana", provider: "openai", encryptedSecret: null, config });
+    await repository.saveCanvas({ id: canvas.id, graph: { schemaVersion: 1, nodes: [
+      { id: "asset", type: "workflow", data: { nodeType: "asset-input", assetId: "banana-ref", assetKind: "image", mediaAspectRatio: 9 / 16, outputs: [port("asset", "image")] } },
+      { id: "image", type: "workflow", data: { nodeType: "image-generation", provider: "openai", connectionId: "banana", model, parts: [{ type: "text", text: prompt }], parameters: { size: "auto", size_tier: size, quality: "max" }, inputs: [port("references", "image[]")], outputs: [port("image", "image")] } },
+    ], edges: [{ id: "ref", source: "asset", sourceHandle: "asset", target: "image", targetHandle: "references" }] } });
+    const fetch = vi.fn(async () => Response.json({ candidates: [{ content: { parts: [{ text: "result" }, { inlineData: { mimeType: "image/png", data: Buffer.from(bytes).toString("base64") } }] } }] }));
+    const adapter = createDefaultProviderRegistry(new StaticConnectionResolver([{ id: "banana", provider: "openai", baseUrl: config.baseUrl, apiKey: "fixture-key", settings: config }]), { fetch }).get("openai");
+    const service = new AdapterRunService(adapter, repository, storage, "inline", "openai");
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "banana-native-reference", scope: "all" });
+    expect((await waitForRun(service, run.id)).run.status).toBe("succeeded");
+    expect(fetch).toHaveBeenCalledOnce();
+    const call = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(call[0])).toBe(`https://genimage.pro/v1beta/models/${model}:generateContent`);
+    const body = JSON.parse(String(call[1].body));
+    expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: ratio, imageSize: size });
+    expect(body.contents[0].parts[1]).toEqual({ inlineData: { mimeType: "image/png", data: Buffer.from(bytes).toString("base64") } });
+    expect(body).not.toHaveProperty("quality");
   });
 
   it("uploads a connected image to the Cyber Afei 4K edit route and follows its ratio", async () => {
@@ -2806,11 +3131,11 @@ describe("RunService", () => {
     });
   });
 
-  it("moves an indeterminate task to needs_attention after three poll failures", async () => {
+  it("preserves the three-failure pause for video polling", async () => {
     const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
-    await seedResumableRun(repository, canvas.id);
+    await seedResumableRun(repository, canvas.id, "video");
     const unavailable = () =>
       new ProviderHttpError("provider unavailable", {
         kind: "provider",
@@ -3597,5 +3922,201 @@ describe("RunService", () => {
 
     expect(snapshot.run.status).toBe("succeeded");
     expect(submittedParameters).not.toHaveProperty("n");
+  });
+});
+
+describe("RunService archive-only result recovery", () => {
+  const savedSuccess: JsonObject = {
+    providerTaskId: "saved-success-task", status: "succeeded",
+    result: { completed: true },
+  };
+  async function seed(repository: MemoryRepository, options: {
+    status?: WorkflowRunRecord["status"];
+    task?: JsonObject | null;
+  } = {}) {
+    const status = options.status ?? "cancelled";
+    const task = Object.hasOwn(options, "task") ? options.task : savedSuccess;
+    const canvas = await repository.ensureDefaultCanvas();
+    const run = await repository.createRun({
+      id: "archive-only-run", canvasId: canvas.id, clientRequestId: "archive-only-request",
+      scope: "all", status,
+      revisionGraph: { schemaVersion: 1, nodes: [], edges: [], localRecoveryExpired: true },
+    });
+    const node = await repository.createNodeRun({
+      id: "archive-only-node", workflowRunId: run.id, nodeId: "image", status, attempt: 1,
+      providerTaskId: typeof task?.providerTaskId === "string" ? task.providerTaskId : null,
+      inputJson: { provider: "runway", connectionId: "deleted-connection", ...(task ? { providerTask: task } : {}) },
+      outputAssetIds: [], errorJson: { message: status === "cancelled" ? "运行已取消" : "原始运行错误" },
+    });
+    const downstream = await repository.createNodeRun({
+      id: "archive-only-downstream", workflowRunId: run.id, nodeId: "next-image", status: "blocked", attempt: 0,
+      providerTaskId: null, inputJson: {}, outputAssetIds: [], errorJson: null,
+    });
+    return { run, node, downstream };
+  }
+  function neverGenerateAdapter(outputs = [{ kind: "image" as const, data: new Uint8Array([1, 2, 3]), mimeType: "image/png" }]) {
+    const submit = vi.fn(async (): Promise<ProviderTask> => { throw new Error("Recovery must not submit"); });
+    const poll = vi.fn(async (): Promise<ProviderTask> => { throw new Error("Recovery must not poll"); });
+    const extractOutputs = vi.fn(async () => outputs);
+    const adapter: ProviderAdapter = {
+      async testConnection() {}, async listModels() { return []; },
+      async validate() { throw new Error("Recovery must not validate a new request"); },
+      submit, poll, extractOutputs,
+    };
+    return { adapter, submit, poll, extractOutputs };
+  }
+
+  it("recovers a synchronous success that actually arrives after cancellation and graph compaction", async () => {
+    const repository = await testRepository();
+    const storage = new MemoryStorage();
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+    const provider = gatedSubmitAdapter();
+    const submit = vi.spyOn(provider.adapter, "submit");
+    const poll = vi.fn(async (): Promise<ProviderTask> => { throw new Error("Must not poll a completed response"); });
+    provider.adapter.poll = poll;
+    const service = new AdapterRunService(provider.adapter, repository, storage);
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "recover-late-success", scope: "node", nodeId: "image" });
+    await provider.submitStarted;
+    await service.cancelRun(run.id);
+    provider.release();
+    await vi.waitFor(async () => expect((await repository.listNodeRuns(run.id))[0]?.status).toBe("cancelled"));
+    const snapshot = repository.exportSnapshot();
+    snapshot.runs.find(item => item.id === run.id)!.revisionGraph = { schemaVersion: 1, nodes: [], edges: [] };
+    const reloaded = new MemoryRepository(snapshot);
+    const before = (await reloaded.listNodeRuns(run.id))[0]!;
+    expect(before.outputAssetIds).toEqual([]);
+    const recovery = new AdapterRunService(provider.adapter, reloaded, storage);
+    expect((await recovery.recoverRunOutputs(run.id))?.status).toBe("cancelled");
+    const after = (await reloaded.listNodeRuns(run.id))[0]!;
+    expect(after.status).toBe("cancelled");
+    expect(after.errorJson).toEqual(before.errorJson);
+    expect(after.inputJson.providerTask).toEqual(before.inputJson.providerTask);
+    expect(after.outputAssetIds).toHaveLength(1);
+    expect((await reloaded.getRun(run.id))?.revisionGraph.nodes).toEqual([]);
+    expect(await reloaded.listAssets()).toHaveLength(1);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(poll).not.toHaveBeenCalled();
+    expect(provider.calls().cancel).toBe(1);
+  });
+
+  it.each(["cancelled", "failed", "needs_attention"] as const)("archives %s results without changing statuses or executing descendants", async status => {
+    const repository = await testRepository();
+    const { run, node, downstream } = await seed(repository, { status });
+    const provider = neverGenerateAdapter();
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    expect(await service.recoverRunOutputs(run.id)).toEqual(run);
+    const current = await repository.getNodeRun(node.id);
+    expect(current?.status).toBe(node.status);
+    expect(current?.errorJson).toEqual(node.errorJson);
+    expect(current?.inputJson).toEqual(node.inputJson);
+    expect(current?.outputAssetIds).toHaveLength(1);
+    expect(await repository.getNodeRun(downstream.id)).toEqual(downstream);
+    expect(provider.submit).not.toHaveBeenCalled();
+    expect(provider.poll).not.toHaveBeenCalled();
+    expect(provider.extractOutputs).toHaveBeenCalledWith(savedSuccess.result);
+  });
+
+  it("coalesces simultaneous service instances and reuses the archived output on later calls", async () => {
+    const repository = await testRepository();
+    const { run, node } = await seed(repository);
+    const storage = new GatedStorage();
+    const put = vi.spyOn(storage, "put");
+    const provider = neverGenerateAdapter();
+    const firstService = new AdapterRunService(provider.adapter, repository, storage);
+    const secondService = new AdapterRunService(provider.adapter, repository, storage);
+    const first = firstService.recoverRunOutputs(run.id);
+    await storage.putStarted;
+    const concurrent = secondService.recoverRunOutputs(run.id);
+    expect(concurrent).toBe(first);
+    await expect(firstService.retryRun(run.id)).rejects.toThrow("正在取回");
+    storage.release();
+    await Promise.all([first, concurrent]);
+    expect(provider.extractOutputs).toHaveBeenCalledTimes(1);
+    const completedNode = await repository.getNodeRun(node.id);
+    await secondService.recoverRunOutputs(run.id);
+    expect(await repository.getNodeRun(node.id)).toEqual(completedNode);
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(await repository.listAssets()).toHaveLength(1);
+    expect(provider.submit).not.toHaveBeenCalled();
+    expect(provider.poll).not.toHaveBeenCalled();
+  });
+
+  it("links an already archived original without downloading its now-expired provider URL", async () => {
+    const repository = await testRepository();
+    const { run, node } = await seed(repository);
+    const storage = new MemoryStorage();
+    const id = createHash("sha256").update(`${run.id}\0${node.nodeId}\0${0}`).digest("hex");
+    const storageKey = `assets/${id}/original.png`;
+    await storage.put(storageKey, new Uint8Array([1, 2, 3]), "image/png");
+    await repository.saveAsset({ id, name: "Already archived", kind: "image", mimeType: "image/png", size: 3, storageKey,
+      metadata: { runId: run.id, nodeId: node.nodeId } });
+    const provider = neverGenerateAdapter();
+    provider.adapter.extractOutputs = async () => [{ kind: "image", url: "https://expired.example.test/image.png" }];
+    const download = vi.spyOn(remoteDownloads, "downloadRemoteArtifact").mockRejectedValue(new Error("Must reuse local original"));
+    const put = vi.spyOn(storage, "put");
+    try {
+      await new AdapterRunService(provider.adapter, repository, storage).recoverRunOutputs(run.id);
+      expect((await repository.getNodeRun(node.id))?.outputAssetIds).toEqual([id]);
+      expect(download).not.toHaveBeenCalled();
+      expect(put).not.toHaveBeenCalled();
+    } finally { download.mockRestore(); }
+  });
+
+  it("preserves the success snapshot and cancellation diagnostic after an archive error, then retries only archiving", async () => {
+    const repository = await testRepository();
+    const { run, node } = await seed(repository);
+    const storage = new RecoverableStorage(3);
+    const provider = neverGenerateAdapter();
+    const service = new AdapterRunService(provider.adapter, repository, storage);
+    await expect(service.recoverRunOutputs(run.id)).rejects.toThrow("原始结果仍保留");
+    expect(await repository.getNodeRun(node.id)).toEqual(node);
+    expect(await repository.getRun(run.id)).toEqual(run);
+    storage.recover();
+    await service.recoverRunOutputs(run.id);
+    expect((await repository.getNodeRun(node.id))?.outputAssetIds).toHaveLength(1);
+    expect(provider.submit).not.toHaveBeenCalled();
+    expect(provider.poll).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    null,
+    { providerTaskId: "request-524", status: "running", result: { error: "HTTP 524" } },
+    { providerTaskId: "request-524", status: "failed", result: { error: "HTTP 524" } },
+    { providerTaskId: "missing-body", status: "succeeded" },
+    { providerTaskId: "null-body", status: "succeeded", result: null },
+  ])("refuses absent or unconfirmed response evidence: %o", async task => {
+    const repository = await testRepository();
+    const { run, node } = await seed(repository, { task });
+    const provider = neverGenerateAdapter();
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await expect(service.recoverRunOutputs(run.id)).rejects.toThrow("没有已保存的成功结果");
+    expect(await repository.getNodeRun(node.id)).toEqual(node);
+    expect(provider.extractOutputs).not.toHaveBeenCalled();
+    expect(provider.submit).not.toHaveBeenCalled();
+    expect(provider.poll).not.toHaveBeenCalled();
+  });
+
+  it.each([{ outputs: [] }, { outputs: [{ kind: "image" as const, data: new Uint8Array(), mimeType: "image/png" }] }])("refuses empty parsed output instead of fabricating an image", async ({ outputs }) => {
+    const repository = await testRepository();
+    const { run, node } = await seed(repository);
+    const provider = neverGenerateAdapter(outputs);
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await expect(service.recoverRunOutputs(run.id)).rejects.toThrow("没有可归档");
+    expect(await repository.getNodeRun(node.id)).toEqual(node);
+    expect(await repository.listAssets()).toEqual([]);
+    expect(provider.submit).not.toHaveBeenCalled();
+    expect(provider.poll).not.toHaveBeenCalled();
+  });
+
+  it.each(["queued", "running", "succeeded"] as const)("rejects run status %s without touching the provider", async status => {
+    const repository = await testRepository();
+    const { run } = await seed(repository, { status });
+    const provider = neverGenerateAdapter();
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await expect(service.recoverRunOutputs(run.id)).rejects.toThrow("仅已取消");
+    expect(provider.extractOutputs).not.toHaveBeenCalled();
+    expect(provider.submit).not.toHaveBeenCalled();
+    expect(provider.poll).not.toHaveBeenCalled();
   });
 });

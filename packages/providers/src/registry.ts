@@ -12,7 +12,10 @@ import {
   type WeAIImageAdapterOptions,
 } from "./openai.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions } from "./rest.js";
+import { AutoInterfaceAdapter } from "./auto-interface-adapter.js";
 import { RunwayAdapter, type RunwayAdapterOptions } from "./runway.js";
+import { CliProviderAdapter, type CliProviderAdapterOptions } from "./cli.js";
+import { resolve } from "node:path";
 
 export interface ProviderRegistryOptions {
   fetch?: FetchImplementation;
@@ -21,6 +24,7 @@ export interface ProviderRegistryOptions {
   runway?: Omit<RunwayAdapterOptions, "fetch">;
   rest?: Omit<GenericRestAdapterOptions, "fetch">;
   fake?: FakeProviderOptions;
+  cli?: CliProviderAdapterOptions;
   adapters?: Readonly<
     Partial<Record<ProviderName | (string & {}), ProviderAdapter>>
   >;
@@ -65,6 +69,9 @@ export function createDefaultProviderRegistry(
 ): ProviderRegistry {
   const registry = new ProviderRegistry(connections, options.adapters ?? {});
   const fetchImpl = options.fetch;
+  if (!options.adapters?.cli) {
+    registry.register("cli", new CliProviderAdapter(connections, options.cli ?? { jobRoot: resolve(".super-canvas-cli-jobs") }));
+  }
   if (!options.adapters?.openai) {
     registry.register(
       "openai",
@@ -106,6 +113,11 @@ export function createDefaultProviderRegistry(
       "fake",
       new FakeProviderAdapter(connections, options.fake),
     );
+  }
+  for (const name of ["openai", "weai", "runway", "rest"] as const) {
+    if (!options.adapters?.[name]) registry.register(name, new AutoInterfaceAdapter(connections, registry.get(name), {
+      ...options.rest, ...(fetchImpl ? { fetch: fetchImpl } : {}),
+    }));
   }
   return registry;
 }

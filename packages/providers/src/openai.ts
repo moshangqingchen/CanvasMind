@@ -1,6 +1,3 @@
-import { Resolver } from "node:dns";
-import type { LookupFunction } from "node:net";
-
 import type {
   FetchImplementation,
   ModelDescriptor,
@@ -16,8 +13,11 @@ import type {
   ValidationIssue,
   ValidationResult,
 } from "./contracts.js";
-import { Agent, Dispatcher1Wrapper } from "undici";
 import { chentuAzImageDescriptor, isChentuAzImageModel, CHENTU_AZ_IMAGE_SIZES } from "./chentu-az.js";
+import { monsterImageEvidence } from "./monster-image-capabilities.js";
+import { chuangxiangImageEvidence } from "./chuangxiang-image-capabilities.js";
+import { isSecureSkillImageConnection, isSecureSkillImageResult, SecureSkillImageAdapter } from "./secure-skill-image.js";
+import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
   assetToBlob,
@@ -34,81 +34,7 @@ import {
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-image-2";
-const FRIMODEL_REQUEST_TIMEOUT_MS = 5 * 60 * 1_000;
 const WEAI_DEFAULT_BASE_URL = "https://asian-acc.we-token.cc/v1";
-const WEAI_REQUEST_TIMEOUT_MS = 30 * 60 * 1_000;
-const WEAI_TCP_KEEPALIVE_INITIAL_DELAY_MS = 30 * 1_000;
-const WEAI_DIRECT_LOCAL_ADDRESS =
-  process.env["WEAI_DIRECT_LOCAL_ADDRESS"]?.trim() ?? "";
-const WEAI_DIRECT_DNS_SERVERS = (
-  process.env["WEAI_DIRECT_DNS_SERVERS"] ?? "223.5.5.5,119.29.29.29"
-)
-  .split(",")
-  .map((value) => value.trim())
-  .filter(Boolean);
-
-function weAITransportAgent(
-  connect?: NonNullable<ConstructorParameters<typeof Agent>[0]>["connect"],
-  localAddress?: string,
-): Dispatcher1Wrapper {
-  return new Dispatcher1Wrapper(
-    new Agent({
-      headersTimeout: WEAI_REQUEST_TIMEOUT_MS,
-      bodyTimeout: WEAI_REQUEST_TIMEOUT_MS,
-      ...(connect === undefined ? {} : { connect }),
-      ...(localAddress === undefined ? {} : { localAddress }),
-    }),
-  );
-}
-
-function createWeAIDirectDispatcher(): Dispatcher1Wrapper | undefined {
-  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(WEAI_DIRECT_LOCAL_ADDRESS))
-    return undefined;
-
-  const resolver = new Resolver();
-  resolver.setServers(WEAI_DIRECT_DNS_SERVERS);
-  resolver.setLocalAddress(WEAI_DIRECT_LOCAL_ADDRESS);
-  const lookup: LookupFunction = (hostname, options, callback) => {
-    resolver.resolve4(hostname, (error, addresses) => {
-      if (error) {
-        callback(error, "", 4);
-        return;
-      }
-      if (options.all) {
-        callback(
-          null,
-          addresses.map((address) => ({ address, family: 4 })),
-        );
-        return;
-      }
-      const address = addresses[0];
-      if (address === undefined) {
-        const noAddress = Object.assign(
-          new Error(`No direct IPv4 address found for ${hostname}`),
-          { code: "ENODATA" },
-        );
-        callback(noAddress, "", 4);
-        return;
-      }
-      callback(null, address, 4);
-    });
-  };
-
-  return weAITransportAgent(
-    {
-      keepAlive: true,
-      keepAliveInitialDelay: WEAI_TCP_KEEPALIVE_INITIAL_DELAY_MS,
-      lookup,
-    },
-    WEAI_DIRECT_LOCAL_ADDRESS,
-  );
-}
-
-const WEAI_TRANSPORT_DISPATCHER = weAITransportAgent({
-  keepAlive: true,
-  keepAliveInitialDelay: WEAI_TCP_KEEPALIVE_INITIAL_DELAY_MS,
-});
-const WEAI_DIRECT_TRANSPORT_DISPATCHER = createWeAIDirectDispatcher();
 
 function isWeAITokenEndpoint(
   input: Parameters<FetchImplementation>[0],
@@ -132,22 +58,7 @@ function isWeAITokenEndpoint(
  * web app can refresh the official pricing catalogue without falling back to
  * the machine-wide proxy path.
  */
-export const weAIFetch: FetchImplementation = (input, init) =>
-  process.env["PROVIDER_HTTP_PROXY"] ||
-  process.env["HTTPS_PROXY"] ||
-  process.env["HTTP_PROXY"]
-    ? providerFetch(input, init)
-    : fetch(
-        input,
-        {
-          ...init,
-          dispatcher:
-            WEAI_DIRECT_TRANSPORT_DISPATCHER !== undefined &&
-            isWeAITokenEndpoint(input)
-              ? WEAI_DIRECT_TRANSPORT_DISPATCHER
-              : WEAI_TRANSPORT_DISPATCHER,
-        } as RequestInit & { dispatcher: Dispatcher1Wrapper },
-      );
+export const weAIFetch: FetchImplementation = providerFetch;
 const IMAGE_JSON_ENVELOPE_BYTES = 2 * 1024 * 1024;
 const IMAGE_JSON_BYTES_PER_BASE64_OUTPUT = 48 * 1024 * 1024;
 const IMAGE_URL_JSON_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -170,11 +81,11 @@ function imageJsonMaxResponseBytes(
   returnsUrl: boolean,
   supplierKey?: string,
 ): number {
-  // The 辰途 gateway is documented as URL-capable, but some model groups
+  // These gateways are documented as URL-capable, but some model groups
   // still return a Base64 payload even when response_format=url is requested.
   // Use the normal Base64 budget for that supplier instead of the smaller URL
   // envelope limit, so successful 4K results are not rejected locally.
-  if (returnsUrl && supplierKey !== "chentu")
+  if (returnsUrl && supplierKey !== "chentu" && supplierKey !== "weai")
     return IMAGE_URL_JSON_MAX_RESPONSE_BYTES;
   const requested = parameters?.["n"];
   const count =
@@ -617,7 +528,7 @@ function friModelImageParameterDescriptors(
             { label: "中（medium）", value: "medium" },
             { label: "高（high）", value: "high" },
             ...(isFriModelImage25(modelId) ? [
-              ...(modelId === "gpt-image-2.5-flare-adobe" ? [{ label: "超高（xhigh）", value: "xhigh" }] : []),
+              { label: "超高（xhigh）", value: "xhigh" },
               { label: "最高（max）", value: "max" },
             ] : []),
           ],
@@ -1256,6 +1167,30 @@ const WEAI_RESPONSE_FORMAT_DESCRIPTOR: ModelParameterDescriptor = {
   operations: ["image.generate", "image.edit"],
 };
 
+/** Marketplace Image2.5 groups use the Adobe URL response contract. */
+function isWeAIAdobeUrlOutputGroup(
+  group?: string,
+  model?: string,
+): boolean {
+  if (
+    group === WEAI_ADOBE_PER_REQUEST_GROUP ||
+    group === WEAI_ADOBE_PER_REQUEST_URL_GROUP
+  )
+    return true;
+  const isImage25Group = isWeAIImage25Group(group);
+  const isImage25Model =
+    typeof model === "string" &&
+    /^gpt-image-2\.5-(?:flare|sunburst)$/iu.test(model.trim());
+  return isImage25Group && (model === undefined || isImage25Model);
+}
+
+function isWeAIImage25Group(group?: string): boolean {
+  return (
+    typeof group === "string" &&
+    /^生图-openai-adobe-.*(?:image\s*2\.5|2\.5)/iu.test(group)
+  );
+}
+
 const WEAI_MODEL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   "gpt-image-1": "GPT Image 1",
   "gpt-image-1.5": "GPT Image 1.5",
@@ -1375,7 +1310,7 @@ function weAIParametersForModel(
     group === WEAI_ADOBE_TOKEN_GROUP ||
     group === WEAI_AZURE_GROUP ||
     group === WEAI_ADOBE_PER_REQUEST_URL_GROUP;
-  const supportsUrlResponse = group === WEAI_ADOBE_PER_REQUEST_GROUP;
+  const supportsUrlResponse = isWeAIAdobeUrlOutputGroup(group, model);
   // Adobe per-request supports response_format: url, but We-AI only documents
   // the standard output_format/output_compression extensions for the other
   // compatible image routes.
@@ -1679,12 +1614,12 @@ function weAIImageParameterKeys(
   group?: string,
 ): readonly WeAIImageParameterKey[] {
   if (group === WEAI_CODEX_TOKEN_GROUP) return ["n", "size"];
-  if (group === WEAI_ADOBE_PER_REQUEST_GROUP)
+  if (group === WEAI_ADOBE_PER_REQUEST_GROUP || isWeAIImage25Group(group))
     return ["n", "size", "response_format"];
-  if (group === WEAI_ADOBE_TOKEN_GROUP || group === WEAI_AZURE_GROUP)
-    return OPENAI_IMAGE_PARAMETER_KEYS;
   if (group === WEAI_ADOBE_PER_REQUEST_URL_GROUP)
     return ["n", "quality", "size"];
+  if (group === WEAI_ADOBE_TOKEN_GROUP || group === WEAI_AZURE_GROUP)
+    return OPENAI_IMAGE_PARAMETER_KEYS;
   return ["n", "size"];
 }
 
@@ -1816,9 +1751,7 @@ function imageParameters(
   // large Base64 payloads. The supplier requires this group to request URL
   // output. Treat the legacy `auto` value and missing values as URL too so
   // saved canvases are migrated at execution time without another paid retry.
-  if (profile === "weai" && group === WEAI_ADOBE_PER_REQUEST_GROUP)
-    result.response_format = "url";
-  if (profile === "weai" && group === WEAI_ADOBE_PER_REQUEST_URL_GROUP)
+  if (profile === "weai" && isWeAIAdobeUrlOutputGroup(group, model))
     result.response_format = "url";
   if (supplierKey === "chentu" && result.response_format === undefined)
     result.response_format = "url";
@@ -1971,8 +1904,9 @@ function isWeAIGeminiConnection(
 function configuredRequestTimeout(
   connection: ResolvedProviderConnection,
   fallback: number,
+  setting: "requestTimeoutMs" | "imageSubmitTimeoutMs" = "requestTimeoutMs",
 ): number {
-  const direct = connection.settings?.["requestTimeoutMs"];
+  const direct = connection.settings?.[setting];
   const value =
     typeof direct === "number"
       ? direct
@@ -1980,7 +1914,7 @@ function configuredRequestTimeout(
         ? Number(direct)
         : Number.NaN;
   return Number.isSafeInteger(value) &&
-    value >= 1_000 &&
+    (value === 0 || value >= 1_000) &&
     value <= 30 * 60 * 1_000
     ? value
     : fallback;
@@ -1992,9 +1926,11 @@ function configuredBaseUrl(
   profile: ImageProviderProfile,
 ): string {
   const value = connection.baseUrl?.trim() || fallback;
-  if (profile !== "weai") return value;
   try {
     const parsed = new URL(value);
+    // Newly imported Mikoto image groups store the site root, while its
+    // documented OpenAI Images endpoint is under /v1. Preserve custom paths.
+    if (profile !== "weai" && !(configuredSupplierKey(connection) === "mikoto" && parsed.hostname === "api.mikoto.vip")) return value;
     if (parsed.pathname === "" || parsed.pathname === "/") {
       parsed.pathname = "/v1";
       return parsed.href.replace(/\/$/u, "");
@@ -2630,8 +2566,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   private readonly fetchImpl: FetchImplementation;
   private readonly defaultModel: string;
   private readonly requestTimeoutMs: number;
+  private readonly submitTimeoutMs: number;
   private readonly profile: ImageProviderProfile;
   private readonly defaultBaseUrl: string;
+  private readonly secureSkill: SecureSkillImageAdapter;
 
   public constructor(
     private readonly connections: ProviderConnectionResolver,
@@ -2645,7 +2583,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       this.profile === "weai" ? WEAI_DEFAULT_BASE_URL : DEFAULT_BASE_URL;
     this.requestTimeoutMs =
       options.requestTimeoutMs ??
-      (this.profile === "weai" ? WEAI_REQUEST_TIMEOUT_MS : 120_000);
+      120_000;
+    this.submitTimeoutMs = options.requestTimeoutMs ?? 0;
+    this.secureSkill = new SecureSkillImageAdapter(connections, { fetch: this.fetchImpl,
+      ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
   }
 
   public async testConnection(connectionId: string): Promise<void> {
@@ -2940,6 +2881,44 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       useGemini && resolvedSupplierKey !== "mikoto"
         ? canonicalWeAIGeminiModel(requestedModel)
         : requestedModel;
+    const monster = this.profile === "openai" && resolvedConnection
+      ? monsterImageEvidence({
+          ...(isRecord(resolvedConnection.settings?.config) ? resolvedConnection.settings.config : {}),
+          ...resolvedConnection.settings,
+          baseUrl: resolvedConnection.baseUrl,
+        }, resolvedModel)
+      : undefined;
+    const chuangxiang = this.profile === "openai" && resolvedConnection
+      ? chuangxiangImageEvidence({
+          ...(isRecord(resolvedConnection.settings?.config) ? resolvedConnection.settings.config : {}),
+          ...resolvedConnection.settings,
+          baseUrl: resolvedConnection.baseUrl,
+        }, resolvedModel)
+      : undefined;
+    const verifiedImage = monster ?? chuangxiang;
+    const mikotoModelGroup = resolvedSupplierKey === "mikoto" && resolvedConnection
+      ? configuredModelGroup(resolvedConnection) : undefined;
+    if (resolvedSupplierKey === "mikoto" && resolvedModel === "gpt-image-2" &&
+      ["生图（2k4k 高质量）", "生图（2k4k 中质量）"].includes(mikotoModelGroup ?? "")) {
+      const declaredQuality = mikotoModelGroup === "生图（2k4k 中质量）" ? "medium" : "high";
+      const quality = request.parameters?.quality;
+      if (quality !== undefined && quality !== declaredQuality)
+        issues.push({ path: "parameters.quality", code: "invalid_quality", message: `MikotoPro 当前分组仅开放 ${declaredQuality} 质量，请使用对应档位` });
+    }
+    if (verifiedImage) {
+      const quality = request.parameters?.quality;
+      const allowedQualities = [...verifiedImage.qualities,
+        ...(imageQualityPresetsAfterSuccess(resolvedModel, verifiedImage.qualities) ?? []).map(option => String(option.value))];
+      if (allowedQualities.length && quality !== undefined && (typeof quality !== "string" || !allowedQualities.includes(quality)))
+        issues.push({ path: "parameters.quality", code: "invalid_quality", message: `请选择${monster ? "怪兽 AI" : "创想 AI"}当前分组、型号可用的质量参数` });
+      const size = request.parameters?.size;
+      const match = typeof size === "string" ? /^(\d+)x(\d+)$/iu.exec(size) : undefined;
+      // A prior undersized response must not block a valid later 4K request.
+      const maxPixels = chuangxiang ? 3840 * 2160
+        : verifiedImage.tiers.includes("4K") ? 3840 * 2160 : verifiedImage.tiers.includes("2K") ? 2048 ** 2 : 1024 ** 2;
+      if (verifiedImage.tiers.length && match && (Number(match[1]) * Number(match[2]) > maxPixels || Math.max(Number(match[1]), Number(match[2])) > 3840))
+        issues.push({ path: "parameters.size", code: "invalid_image_size", message: `当前分组、型号仅验证 ${verifiedImage.tiers.join(" / ")}，请选择对应档位内的尺寸` });
+    }
     const azModel = resolvedSupplierKey === "chentu"
       ? chentuAzImageDescriptor(resolvedModel, resolvedConnection ? configuredModelGroup(resolvedConnection) : undefined)
       : undefined;
@@ -3350,7 +3329,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       }
       const quality = request.parameters?.["quality"];
       if (
-        !isFriModel &&
+        !isFriModel && !verifiedImage?.qualities.length &&
         permittedParameters.has("quality") &&
         quality !== undefined &&
         !(
@@ -3401,15 +3380,15 @@ export class OpenAIImageAdapter implements ProviderAdapter {
             // Legacy canvas values; friModelImageParameters normalizes them.
             "standard",
             "hd",
-            ...(isFriModelImage25(resolvedModel) ? ["max"] : []),
-            ...(resolvedModel === "gpt-image-2.5-flare-adobe" ? ["xhigh"] : []),
+            ...(isFriModelImage25(resolvedModel) ? ["xhigh", "max"] : []),
           ].includes(quality.trim().toLowerCase()))
       )
         issues.push({
           path: "parameters.quality",
           code: "invalid_quality",
-          message:
-            "FriModel quality must be auto, low, medium, or high",
+          message: isFriModelImage25(resolvedModel)
+            ? "FriModel quality must be auto, low, medium, high, xhigh, or max"
+            : "FriModel quality must be auto, low, medium, or high",
         });
       const style = request.parameters?.["style"];
       if (
@@ -3454,15 +3433,18 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       this.defaultBaseUrl,
       this.profile,
     );
-    const requestTimeoutMs = configuredRequestTimeout(
-      connection,
-      supplierKey === "frimodel"
-        ? FRIMODEL_REQUEST_TIMEOUT_MS
-        : this.requestTimeoutMs,
-    );
     const selectedModel =
       request.model ??
       configuredImageModel(connection, this.defaultModel, this.profile);
+    if (this.profile === "openai" && isSecureSkillImageConnection({ ...connection.settings, baseUrl }, selectedModel)) {
+      return this.secureSkill.submit({ ...request, model: selectedModel });
+    }
+    const useWeAITransport = isWeAITokenEndpoint(baseUrl);
+    // Existing marketplace connections carry generated requestTimeoutMs values
+    // for metadata reads. They must not cut off paid image generation. Only a
+    // dedicated image deadline overrides the default unlimited response wait.
+    const requestTimeoutMs = configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs");
+    const submitFetch = this.fetchImpl;
     const modelGroup =
       this.profile === "weai" || supplierKey === "chentu"
         ? configuredModelGroup(connection)
@@ -3475,19 +3457,28 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         ? canonicalWeAIGeminiModel(selectedModel)
         : selectedModel;
     const effectiveParameters = request.parameters;
+    // Marketplace Image2.5 connections use the generic OpenAI profile, whose
+    // parameter allowlist omits response_format. Apply the Adobe URL contract
+    // after that filtering, for both JSON generation and multipart editing.
+    const forceWeAIUrlOutput = useWeAITransport &&
+      isWeAIAdobeUrlOutputGroup(configuredModelGroup(connection), model);
+    const imageRequestParameters = {
+      ...imageParameters(effectiveParameters, model, this.profile, modelGroup, supplierKey),
+      ...(forceWeAIUrlOutput ? { response_format: "url" } : {}),
+    };
     const geminiProtocol = useGemini
       ? configuredGeminiProtocol(connection)
       : undefined;
     const returnsUrl =
       (useGemini && geminiProtocol === "gemini-openai-compatible") ||
-      modelGroup === WEAI_ADOBE_PER_REQUEST_GROUP ||
-      modelGroup === WEAI_ADOBE_PER_REQUEST_URL_GROUP ||
+      forceWeAIUrlOutput ||
+      isWeAIAdobeUrlOutputGroup(modelGroup, model) ||
       supplierKey === "chentu" ||
       effectiveParameters?.["response_format"] === "url";
     const maxResponseBytes = imageJsonMaxResponseBytes(
       effectiveParameters,
       returnsUrl,
-      supplierKey,
+      useWeAITransport ? "weai" : supplierKey,
     );
     const acceptsOutputFormat =
       (useFriModel || this.profile !== "weai") ||
@@ -3505,7 +3496,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       // compression path can close the connection before Undici finishes
       // reading that response; requesting the identity representation keeps
       // the long-lived image response intact.
-      ...(this.profile === "weai" ? { "Accept-Encoding": "identity" } : {}),
+      // New OpenAI-compatible groups must retain the same response transport.
+      ...(this.profile === "weai" || useWeAITransport
+        ? { "Accept-Encoding": "identity" }
+        : {}),
       "Idempotency-Key": request.idempotencyKey,
     });
     let response:
@@ -3717,13 +3711,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       form.set("model", model);
       form.set("prompt", request.prompt);
       for (const [key, value] of Object.entries(
-        imageParameters(
-          effectiveParameters,
-          model,
-          this.profile,
-          modelGroup,
-          supplierKey,
-        ),
+        imageRequestParameters,
       )) {
         form.set(key, String(value));
       }
@@ -3770,13 +3758,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       form.set("model", model);
       form.set("prompt", request.prompt);
       for (const [key, value] of Object.entries(
-        imageParameters(
-          effectiveParameters,
-          model,
-          this.profile,
-          modelGroup,
-          supplierKey,
-        ),
+        imageRequestParameters,
       )) {
         form.set(key, String(value));
       }
@@ -3793,7 +3775,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         );
       }
       response = await fetchProviderJson<OpenAIImageResponse>(
-        this.fetchImpl,
+        submitFetch,
         joinUrl(baseUrl, "/images/edits"),
         { method: "POST", headers: commonHeaders, body: form },
         {
@@ -3810,7 +3792,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     } else {
       commonHeaders.set("content-type", "application/json");
       response = await fetchProviderJson<OpenAIImageResponse>(
-        this.fetchImpl,
+        submitFetch,
         joinUrl(baseUrl, "/images/generations"),
         {
           method: "POST",
@@ -3818,13 +3800,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           body: JSON.stringify({
             model,
             prompt: request.prompt,
-            ...imageParameters(
-              effectiveParameters,
-              model,
-              this.profile,
-              modelGroup,
-              supplierKey,
-            ),
+            ...imageRequestParameters,
           }),
         },
         {
@@ -3850,7 +3826,13 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     };
   }
 
+  public async poll(task: ProviderTask): Promise<ProviderTask> {
+    if (!isSecureSkillImageResult(task.result)) throw new Error("当前图片接口没有可查询的异步任务");
+    return this.secureSkill.poll(task);
+  }
+
   public async extractOutputs(result: unknown): Promise<RemoteArtifact[]> {
+    if (isSecureSkillImageResult(result)) return this.secureSkill.extractOutputs(result);
     if (!result || typeof result !== "object") return [];
     const envelope =
       isRecord(result) && isRecord(result.response)
@@ -3928,7 +3910,7 @@ export const OPENAI_DEFAULT_IMAGE_MODEL = DEFAULT_MODEL;
 export const WEAI_DEFAULT_IMAGE_MODEL = DEFAULT_MODEL;
 export const WEAI_GEMINI_DEFAULT_IMAGE_MODEL = WEAI_GEMINI_DEFAULT_MODEL;
 export const WEAI_DEFAULT_IMAGE_BASE_URL = WEAI_DEFAULT_BASE_URL;
-export const WEAI_IMAGE_REQUEST_TIMEOUT_MS = WEAI_REQUEST_TIMEOUT_MS;
+export const WEAI_IMAGE_REQUEST_TIMEOUT_MS = 0;
 
 export type WeAIImageAdapterOptions = Omit<
   OpenAIImageAdapterOptions,
@@ -3943,7 +3925,6 @@ export class WeAIImageAdapter extends OpenAIImageAdapter {
     super(connections, {
       ...options,
       profile: "weai",
-      requestTimeoutMs: options.requestTimeoutMs ?? WEAI_REQUEST_TIMEOUT_MS,
     });
   }
 }

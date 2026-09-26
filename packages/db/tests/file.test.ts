@@ -22,6 +22,17 @@ afterEach(async () => {
 });
 
 describe("FileRepository", () => {
+  it("opens imported UTF-8 snapshots with a byte order mark", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json");
+    const repository = new FileRepository(path);
+    const canvas = await repository.ensureDefaultCanvas();
+    await writeFile(path, `\uFEFF${await readFile(path, "utf8")}`, "utf8");
+    const restored = new FileRepository(path);
+    expect(await restored.getCanvas(canvas.id)).toEqual(canvas);
+  });
+
   it("persists canvas deletion across restarts", async () => {
     const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
     temporaryDirectories.push(directory);

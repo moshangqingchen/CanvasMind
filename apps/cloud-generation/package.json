@@ -1,0 +1,10 @@
+{
+  "name": "super-canvas-cloud-generation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "deploy": "pnpm dlx wrangler deploy",
+    "check": "pnpm dlx wrangler deploy --dry-run"
+  }
+}

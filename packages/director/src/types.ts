@@ -83,13 +83,21 @@ export interface DirectorAdapterInput {
   readonly useNativeSearch?: boolean;
   readonly maxSearchCalls?: number;
   readonly responseJsonSchema?: Readonly<Record<string, unknown>>;
+  /** Optional output budget; omitted callers retain the protocol defaults. */
+  readonly maxOutputTokens?: number;
+  /** Reject incomplete/unknown provider termination, even when JSON is valid. */
+  readonly requireComplete?: boolean;
   readonly signal?: AbortSignal;
 }
+
+export type DirectorFinishReason =
+  "complete" | "length" | "blocked" | "tool_call" | "unknown";
 
 export interface DirectorAdapterResult {
   readonly output: unknown;
   readonly text?: string;
   readonly sources: readonly DirectorSource[];
+  readonly finishReason?: DirectorFinishReason;
   readonly usage?: {
     readonly inputTokens?: number;
     readonly outputTokens?: number;
@@ -197,7 +205,8 @@ export interface RoutedDirectorCall extends DirectorCallDraft {
 }
 
 export interface DirectorCanvasNodeData extends Record<string, unknown> {
-  readonly nodeType: "prompt" | "asset-input" | "image-generation" | "video-generation";
+  readonly nodeType:
+    "prompt" | "asset-input" | "image-generation" | "video-generation";
   readonly label: string;
   readonly directorDraft: boolean;
   readonly directorCallId: string;

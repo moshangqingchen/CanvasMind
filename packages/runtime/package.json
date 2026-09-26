@@ -20,12 +20,11 @@
     "@super-canvas/core": "workspace:*",
     "@super-canvas/db": "workspace:*",
     "@super-canvas/providers": "workspace:*",
-    "@super-canvas/storage": "workspace:*",
-    "bullmq": "^5.80.9"
+    "@super-canvas/storage": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "4.1.11"
   }
 }

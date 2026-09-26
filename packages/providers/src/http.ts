@@ -1,7 +1,11 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { channel } from "node:diagnostics_channel";
+import { createAutoNetworkConnector } from "./direct-network.js";
 
 import {
+  Agent,
   fetch as undiciFetch,
   FormData as UndiciFormData,
   ProxyAgent,
@@ -39,6 +43,21 @@ export class ProviderHttpError extends Error {
       status?: number;
       responseBody?: unknown;
       cause?: unknown;
+      /** Non-sensitive transport evidence; never request headers, URLs or bodies. */
+      transport?: {
+        elapsedMs: number;
+        stage: "awaiting_headers" | "reading_body";
+        responseBytes: number;
+        errorCode?: string;
+        socketBytesRead?: number;
+        socketBytesWritten?: number;
+        localAddress?: string;
+        remoteAddress?: string;
+        localPort?: number;
+        remotePort?: number;
+        route?: "physical-direct" | "system" | "system-fake-ip" | "explicit-proxy";
+        fallbackReason?: "normal_dns" | "transport_constraints" | "physical_tls_unreachable";
+      };
     },
   ) {
     super(message);
@@ -47,7 +66,9 @@ export class ProviderHttpError extends Error {
 
 export interface ProviderFetchOptions {
   phase: ProviderRequestPhase;
+  /** Zero waits for the response until completion or explicit cancellation. */
   timeoutMs?: number;
+  signal?: AbortSignal;
   /** Explicitly allow an exact loopback host for a user-managed local gateway. */
   allowLoopback?: boolean;
   /** Upper bound for the response body. Defaults are suitable for provider task metadata. */
@@ -55,45 +76,149 @@ export interface ProviderFetchOptions {
   /** Set only when the remote endpoint honors this request's idempotency key. */
   idempotent?: boolean;
   allowEmpty?: boolean;
+  cloudPolling?: {
+    urlTemplate: string; method: string; headers: Record<string, string>; body?: string;
+    submitMapping?: Record<string, unknown>; pollMapping?: Record<string, unknown>;
+    statusMap?: Readonly<Record<string, string>>; intervalMs?: number;
+  };
+}
+
+export type ProviderSubmitTransport = (url: string, init: RequestInit, options: ProviderFetchOptions) => Promise<Response>;
+const submitTransport = new AsyncLocalStorage<ProviderSubmitTransport>();
+
+/** Scoped to one paid submission, never to catalog reads or other concurrent runs. */
+export function withProviderSubmitTransport<T>(transport: ProviderSubmitTransport, work: () => Promise<T>): Promise<T> {
+  return submitTransport.run(transport, work);
+}
+export const providerSubmitTransportActive = () => Boolean(submitTransport.getStore());
+export type ProviderSubmissionPhase = "cloud_queued" | "waiting_provider" | "generating" | "receiving" | "cloud_saving" | "downloading";
+const submissionProgress = new AsyncLocalStorage<(phase: ProviderSubmissionPhase) => Promise<void>>();
+const submissionSignal = new AsyncLocalStorage<AbortSignal>();
+export function withProviderSubmissionProgress<T>(progress: (phase: ProviderSubmissionPhase) => Promise<void>, work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  return submissionProgress.run(progress, () => signal ? submissionSignal.run(signal, work) : work());
 }
 
 const DEFAULT_JSON_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_BINARY_RESPONSE_BYTES = 200 * 1024 * 1024;
 
-let providerProxyUrl = "";
-let providerProxy: ProxyAgent | undefined;
+const providerProxies = new Map<string, ProxyAgent>();
+const providerTimeoutAgents = new Map<number, Agent>();
+const requestTransportTimeout = new AsyncLocalStorage<number>();
+const TCP_KEEPALIVE = { keepAlive: true, keepAliveInitialDelay: 30_000 };
+const autoNetworkConnector = createAutoNetworkConnector();
+
+type TransportPath = Pick<NonNullable<ProviderHttpError["details"]["transport"]>, "localAddress" | "remoteAddress" | "localPort" | "remotePort" | "route" | "fallbackReason">;
+interface RequestTransportTrace { origin: string; path: TransportPath }
+interface TransportTraceRegistry {
+  scope: AsyncLocalStorage<RequestTransportTrace>;
+  requests: WeakMap<object, RequestTransportTrace>;
+}
+const traceGlobal = globalThis as typeof globalThis & { __superCanvasProviderTransportTrace?: TransportTraceRegistry };
+const transportTrace = traceGlobal.__superCanvasProviderTransportTrace ??= (() => {
+  const registry: TransportTraceRegistry = { scope: new AsyncLocalStorage(), requests: new WeakMap() };
+  channel("undici:request:create").subscribe(message => {
+    const request = (message as { request?: object & { origin?: unknown } }).request;
+    const trace = registry.scope.getStore();
+    // Connector DNS reads share the async context but are not this request.
+    if (request && trace && String(request.origin) === trace.origin) registry.requests.set(request, trace);
+  });
+  channel("undici:client:sendHeaders").subscribe(message => {
+    const { request, socket } = message as { request?: object; socket?: object };
+    const trace = request && registry.requests.get(request);
+    if (!trace || !socket) return;
+    recordSocketPath(trace.path, socket);
+    const route = (socket as Record<symbol, unknown>)[Symbol.for("super-canvas.provider-route")];
+    if (trace.path.route !== "explicit-proxy" && ["physical-direct", "system", "system-fake-ip"].includes(String(route)))
+      trace.path.route = route as NonNullable<TransportPath["route"]>;
+    const fallback = (socket as Record<symbol, unknown>)[Symbol.for("super-canvas.provider-fallback-reason")];
+    if (["normal_dns", "transport_constraints", "physical_tls_unreachable"].includes(String(fallback)))
+      trace.path.fallbackReason = fallback as NonNullable<TransportPath["fallbackReason"]>;
+  });
+  return registry;
+})();
+
+function recordSocketPath(path: TransportPath, socket: object): void {
+  for (const field of ["localAddress", "remoteAddress"] as const) {
+    const address = (socket as Record<string, unknown>)[field];
+    if (typeof address === "string" && isIP(address)) path[field] = address;
+  }
+  for (const field of ["localPort", "remotePort"] as const) {
+    const port = (socket as Record<string, unknown>)[field];
+    if (typeof port === "number" && Number.isInteger(port) && port > 0 && port <= 65535) path[field] = port;
+  }
+  if (path.route !== "explicit-proxy" && /^198\.(?:18|19)\./u.test(path.remoteAddress ?? "")) path.route = "system-fake-ip";
+}
+
+class ProviderProxyConfigurationError extends Error {
+  public readonly code = "INVALID_PROVIDER_PROXY";
+  constructor() { super("Configured provider proxy is invalid; no provider request was sent"); }
+}
+
+function transportTimeoutOptions(timeoutMs?: number): {
+  headersTimeout: number;
+  bodyTimeout: number;
+} | undefined {
+  if (
+    typeof timeoutMs !== "number" ||
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs < 0
+  ) return undefined;
+  return { headersTimeout: timeoutMs, bodyTimeout: timeoutMs };
+}
+
+function currentProviderTimeoutAgent(timeoutMs?: number): Agent | undefined {
+  const options = transportTimeoutOptions(timeoutMs);
+  if (!options) return undefined;
+  const cached = providerTimeoutAgents.get(options.headersTimeout);
+  if (cached) return cached;
+  const agent = new Agent({ ...options, connect: autoNetworkConnector });
+  providerTimeoutAgents.set(options.headersTimeout, agent);
+  return agent;
+}
 
 /**
- * Resolve the proxy at request time instead of module-load time. Next.js can
- * initialize the provider bundle before the local launcher has finished
- * loading `.local-public.env`; a one-time lookup would then silently fall
- * back to a direct connection (which commonly fails with EACCES on TUN/Fake-IP
- * networks).
+ * An explicitly configured proxy always takes precedence over automatic
+ * network selection. Invalid proxy settings must never enable direct access.
  */
-function currentProviderProxy(): ProxyAgent | undefined {
+function currentProviderProxy(
+  override?: string,
+  timeoutMs?: number,
+): ProxyAgent | undefined {
   const configured =
+    override?.trim() ||
     process.env["PROVIDER_HTTP_PROXY"]?.trim() ||
     process.env["HTTPS_PROXY"]?.trim() ||
     process.env["HTTP_PROXY"]?.trim() ||
     "";
-  if (configured === providerProxyUrl) return providerProxy;
-  providerProxyUrl = configured;
-  if (!configured) {
-    providerProxy = undefined;
-    return undefined;
-  }
+  if (!configured) return undefined;
+  const timeoutOptions = transportTimeoutOptions(timeoutMs);
+  const cacheKey = JSON.stringify([configured, timeoutOptions?.headersTimeout]);
+  const cached = providerProxies.get(cacheKey);
+  if (cached) return cached;
   try {
-    providerProxy = new ProxyAgent(configured);
+    if (!["http:", "https:", "socks:", "socks5:"].includes(new URL(configured).protocol))
+      throw new ProviderProxyConfigurationError();
+    const proxy = new ProxyAgent({ uri: configured, ...timeoutOptions,
+      ...(timeoutOptions ? { requestTls: TCP_KEEPALIVE, proxyTls: TCP_KEEPALIVE } : {}),
+    });
+    providerProxies.set(cacheKey, proxy);
+    return proxy;
   } catch {
-    providerProxy = undefined;
+    // URL parser errors may contain proxy credentials. Do not retain their
+    // messages or causes, and never fall through to the direct dispatcher.
+    throw new ProviderProxyConfigurationError();
   }
-  return providerProxy;
+}
+
+/** Whether downloads should use the same explicitly configured provider proxy. */
+export function hasProviderHttpProxy(override?: string): boolean {
+  return currentProviderProxy(override) !== undefined;
 }
 
 /**
- * Provider requests must use the same local proxy as the browser on machines
- * with a TUN/Fake-IP adapter. A caller can still inject a fetch implementation
- * in tests or for a provider-specific transport.
+ * Explicit proxy settings remain authoritative. Otherwise, the shared
+ * connector selects the local network before sending any provider bytes.
+ * Callers can inject a fetch implementation for tests or custom transports.
  */
 const undiciProviderFetch = undiciFetch as unknown as FetchImplementation;
 
@@ -134,7 +259,12 @@ function normalizeProviderRequestInit(
   return { ...init, body: form as unknown as BodyInit };
 }
 
-export const providerFetch: FetchImplementation = (input, init) => {
+export const fetchWithProviderHttpProxy = (
+  input: Parameters<FetchImplementation>[0],
+  init?: Parameters<FetchImplementation>[1],
+  proxyOverride?: string,
+  timeoutMs?: number,
+): ReturnType<FetchImplementation> => {
   // Keep test-injected/global fetch semantics unchanged. Production requests
   // use the npm undici client so the configured ProxyAgent remains supported.
   if (process.env["NODE_ENV"] === "test" || process.env["VITEST"] === "true") {
@@ -142,16 +272,25 @@ export const providerFetch: FetchImplementation = (input, init) => {
   }
 
   const normalizedInit = normalizeProviderRequestInit(init);
-  const proxy = currentProviderProxy();
+  const effectiveTimeoutMs = timeoutMs ?? requestTransportTimeout.getStore();
+  // Undici's default header/body timers are 300 seconds, independent of the
+  // caller's AbortSignal. An explicit request budget must reach the transport
+  // for long synchronous generations, including those using a CONNECT proxy.
+  const proxy = currentProviderProxy(proxyOverride, effectiveTimeoutMs);
+  const dispatcher = proxy ?? currentProviderTimeoutAgent(effectiveTimeoutMs);
+  const trace = transportTrace.scope.getStore();
+  if (trace) trace.path.route = proxy ? "explicit-proxy" : "system";
   return undiciProviderFetch(
     input,
-    proxy === undefined
+    dispatcher === undefined
       ? normalizedInit
-      : ({ ...normalizedInit, dispatcher: proxy } as RequestInit & {
-          dispatcher: ProxyAgent;
+      : ({ ...normalizedInit, dispatcher } as RequestInit & {
+          dispatcher: Agent | ProxyAgent;
         }),
   );
 };
+
+export const providerFetch: FetchImplementation = fetchWithProviderHttpProxy;
 
 class ProviderResponseTooLargeError extends Error {
   public constructor(public readonly maxBytes: number) {
@@ -166,6 +305,7 @@ class UnsafeProviderEndpointError extends Error {
 }
 
 const DEFINITELY_PRE_SUBMISSION_CODES = new Set([
+  "PROVIDER_NETWORK_DISCOVERY_FAILED",
   "ECONNREFUSED",
   "ENETUNREACH",
   "EHOSTUNREACH",
@@ -225,10 +365,16 @@ function isBlockedIpv4(address: string): boolean {
 }
 
 function isBlockedIpv6(address: string): boolean {
-  const normalized = address.toLowerCase().replace(/^\[|\]$/gu, "");
+  // URL normalization also compresses expanded DNS answers and converts an
+  // IPv4-mapped dotted suffix to its two hexadecimal words.
+  const normalized = new URL(`http://[${address.replace(/^\[|\]$/gu, "")}]`)
+    .hostname.toLowerCase().replace(/^\[|\]$/gu, "");
   if (normalized === "::" || normalized === "::1") return true;
-  if (normalized.startsWith("::ffff:")) {
-    return isBlockedIpv4(normalized.slice("::ffff:".length));
+  const mapped = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/u.exec(normalized);
+  if (mapped) {
+    const high = Number.parseInt(mapped[1]!, 16);
+    const low = Number.parseInt(mapped[2]!, 16);
+    return isBlockedIpv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
   }
   return (
     normalized.startsWith("fc") ||
@@ -320,14 +466,17 @@ function responseContentLength(response: Response): number | undefined {
 async function readResponseBytes(
   response: Response,
   maxBytes: number,
+  progress?: (bytes: number) => void,
 ): Promise<Uint8Array> {
   const declaredLength = responseContentLength(response);
   if (declaredLength !== undefined && declaredLength > maxBytes) {
+    await response.body?.cancel().catch(() => undefined);
     throw new ProviderResponseTooLargeError(maxBytes);
   }
 
   if (!response.body) {
     const data = new Uint8Array(await response.arrayBuffer());
+    progress?.(data.byteLength);
     if (data.byteLength > maxBytes)
       throw new ProviderResponseTooLargeError(maxBytes);
     return data;
@@ -341,8 +490,9 @@ async function readResponseBytes(
       const next = await reader.read();
       if (next.done) break;
       length += next.value.byteLength;
+      progress?.(length);
       if (length > maxBytes) {
-        await reader.cancel();
+        await reader.cancel().catch(() => undefined);
         throw new ProviderResponseTooLargeError(maxBytes);
       }
       chunks.push(next.value);
@@ -382,6 +532,37 @@ export function providerTransportErrorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+function transportEvidence(
+  error: unknown,
+  startedAt: number,
+  stage: "awaiting_headers" | "reading_body",
+  responseBytes: number,
+  path?: TransportPath,
+): NonNullable<ProviderHttpError["details"]["transport"]> {
+  const evidence: NonNullable<ProviderHttpError["details"]["transport"]> = {
+    elapsedMs: Math.max(0, Date.now() - startedAt), stage, responseBytes, ...path,
+  };
+  const code = providerTransportErrorCode(error);
+  if (code && /^[A-Z0-9_]{1,80}$/u.test(code)) evidence.errorCode = code;
+  let current = error;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (typeof current !== "object" || current === null || seen.has(current)) break;
+    seen.add(current);
+    const value = current as Record<string, unknown>;
+    const socket = value["socket"];
+    if (typeof socket === "object" && socket !== null) {
+      for (const [field, target] of [["bytesRead", "socketBytesRead"], ["bytesWritten", "socketBytesWritten"]] as const) {
+        const count = (socket as Record<string, unknown>)[field];
+        if (typeof count === "number" && Number.isSafeInteger(count) && count >= 0) evidence[target] = count;
+      }
+      recordSocketPath(evidence, socket);
+    }
+    current = value["cause"];
+  }
+  return evidence;
+}
+
 function submissionMayHaveOccurred(
   phase: ProviderRequestPhase,
   status?: number,
@@ -404,10 +585,11 @@ function submissionMayHaveOccurred(
 async function readResponseBody(
   response: Response,
   maxBytes: number,
+  progress?: (bytes: number) => void,
 ): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
   const text = new TextDecoder().decode(
-    await readResponseBytes(response, maxBytes),
+    await readResponseBytes(response, maxBytes, progress),
   );
   if (text.length === 0) return undefined;
   if (contentType.includes("json")) {
@@ -426,6 +608,7 @@ export async function fetchProviderJson<T>(
   init: RequestInit,
   options: ProviderFetchOptions,
 ): Promise<T> {
+  const startedAt = Date.now();
   try {
     await assertSafeProviderEndpoint(
       url,
@@ -440,74 +623,121 @@ export async function fetchProviderJson<T>(
       cause: error,
     });
   }
+  const signals = [init.signal, options.signal, submissionSignal.getStore()].filter((signal): signal is AbortSignal => Boolean(signal));
+  const callerSignal = signals.length ? AbortSignal.any(signals) : undefined;
+  if (callerSignal?.aborted) {
+    throw new ProviderHttpError("Provider request was cancelled", {
+      kind: "network",
+      phase: options.phase,
+      retryable: false,
+      submissionMayHaveOccurred: false,
+      cause: callerSignal.reason,
+    });
+  }
   const controller = new AbortController();
-  const timeoutMs = options.timeoutMs ?? 60_000;
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const trace: RequestTransportTrace = { origin: new URL(url).origin, path: {} };
+  const cloudTransport = options.phase === "submit" ? submitTransport.getStore() : undefined;
+  const timeoutMs = cloudTransport ? 31 * 60_000 : options.timeoutMs ?? 60_000;
+  const timeout = timeoutMs === 0 ? undefined : setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
-    response = await fetchImpl(url, {
+    const requestInit: RequestInit = {
       ...init,
-      signal: controller.signal,
+      signal: callerSignal
+        ? AbortSignal.any([controller.signal, callerSignal])
+        : controller.signal,
       redirect: "error",
-    });
+    };
+    if (options.phase === "submit" && !cloudTransport) await submissionProgress.getStore()?.("waiting_provider");
+    response = cloudTransport
+      ? await cloudTransport(url, requestInit, options)
+      : await transportTrace.scope.run(trace, () => requestTransportTimeout.run(timeoutMs, () => fetchImpl(url, requestInit)));
+    if (options.phase === "submit" && !cloudTransport && response.ok) await submissionProgress.getStore()?.("receiving");
   } catch (error) {
+    if (error instanceof ProviderProxyConfigurationError) {
+      clearTimeout(timeout);
+      throw new ProviderHttpError(error.message, {
+        kind: "invalid_request", phase: options.phase, retryable: false,
+        submissionMayHaveOccurred: false,
+        transport: transportEvidence(error, startedAt, "awaiting_headers", 0, trace.path),
+      });
+    }
     const timedOut = controller.signal.aborted;
+    const cancelled = !timedOut && callerSignal?.aborted === true;
     const mayHaveOccurred = submissionMayHaveOccurred(
       options.phase,
       undefined,
       error,
     );
     clearTimeout(timeout);
+    if (error instanceof ProviderHttpError) throw error;
     throw new ProviderHttpError(
       timedOut
         ? "Provider request timed out"
-        : "Provider network request failed",
+        : cancelled
+          ? "Provider request was cancelled"
+          : "Provider network request failed",
       {
         kind: timedOut ? "timeout" : "network",
         phase: options.phase,
         retryable:
-          !mayHaveOccurred ||
-          options.phase !== "submit" ||
-          options.idempotent === true,
+          !cancelled &&
+          (!mayHaveOccurred ||
+            options.phase !== "submit" ||
+            options.idempotent === true),
         submissionMayHaveOccurred: mayHaveOccurred,
+        transport: transportEvidence(error, startedAt, "awaiting_headers", 0, trace.path),
         cause: error,
       },
     );
   }
 
   let body: unknown;
+  let responseBytes = 0;
   try {
     body = await readResponseBody(
       response,
       options.maxResponseBytes ?? DEFAULT_JSON_RESPONSE_BYTES,
+      bytes => { responseBytes = bytes; },
     );
   } catch (error) {
     clearTimeout(timeout);
     if (error instanceof ProviderResponseTooLargeError && !response.ok) {
       body = `Provider response exceeded ${error.maxBytes} bytes`;
     } else {
-      throw new ProviderHttpError("Unable to read provider response", {
-        kind:
-          error instanceof ProviderResponseTooLargeError
-            ? "invalid_response"
-            : "network",
-        phase: options.phase,
-        retryable: options.phase !== "submit" || options.idempotent === true,
-        submissionMayHaveOccurred: submissionMayHaveOccurred(
-          options.phase,
-          response.status,
-        ),
-        status: response.status,
-        ...(error instanceof ProviderResponseTooLargeError
-          ? {
-              responseBody: {
-                code: "response_too_large",
-                message: error.message,
-              },
-            }
-          : {}),
-        cause: error,
-      });
+      const timedOut = controller.signal.aborted;
+      const cancelled = !timedOut && callerSignal?.aborted === true;
+      throw new ProviderHttpError(
+        timedOut
+          ? "Provider request timed out"
+          : cancelled
+            ? "Provider request was cancelled"
+            : "Unable to read provider response",
+        {
+          kind:
+            error instanceof ProviderResponseTooLargeError
+              ? "invalid_response"
+              : timedOut ? "timeout" : "network",
+          phase: options.phase,
+          retryable: !cancelled && !(error instanceof ProviderResponseTooLargeError) &&
+            (options.phase !== "submit" || options.idempotent === true),
+          submissionMayHaveOccurred: submissionMayHaveOccurred(
+            options.phase,
+            response.status,
+          ),
+          status: response.status,
+          transport: transportEvidence(error, startedAt, "reading_body", responseBytes, trace.path),
+          ...(error instanceof ProviderResponseTooLargeError
+            ? {
+                responseBody: {
+                  code: "response_too_large",
+                  message: error.message,
+                },
+              }
+            : {}),
+          cause: error,
+        },
+      );
     }
   }
   clearTimeout(timeout);
@@ -522,6 +752,7 @@ export async function fetchProviderJson<T>(
         response.status,
       ),
       responseBody: body,
+      transport: transportEvidence(undefined, startedAt, "reading_body", responseBytes, trace.path),
     });
   }
   if (body === undefined && options.allowEmpty !== true) {
@@ -540,6 +771,9 @@ export async function fetchProviderJson<T>(
       },
     });
   }
+  if (cloudTransport && response.headers.has("x-supercanvas-upstream-task")) {
+    return { __superCanvasCloudPoll: decodeURIComponent(response.headers.get("x-supercanvas-upstream-task")!), remote: body } as T;
+  }
   return body as T;
 }
 
@@ -548,6 +782,7 @@ export async function fetchProviderBytes(
   url: string,
   options: Omit<ProviderFetchOptions, "allowEmpty">,
 ): Promise<{ data: Uint8Array; mimeType?: string }> {
+  const startedAt = Date.now();
   try {
     await assertSafeProviderEndpoint(
       url,
@@ -563,16 +798,24 @@ export async function fetchProviderBytes(
     });
   }
   const controller = new AbortController();
-  const timeout = setTimeout(
+  const trace: RequestTransportTrace = { origin: new URL(url).origin, path: {} };
+  const timeoutMs = options.timeoutMs ?? 60_000;
+  const timeout = timeoutMs === 0 ? undefined : setTimeout(
     () => controller.abort(),
-    options.timeoutMs ?? 60_000,
+    timeoutMs,
   );
+  const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+  let stage: "awaiting_headers" | "reading_body" = "awaiting_headers";
+  let responseBytes = 0;
   try {
-    const response = await fetchImpl(url, {
-      signal: controller.signal,
+    signal.throwIfAborted();
+    const response = await transportTrace.scope.run(trace, () => requestTransportTimeout.run(timeoutMs, () => fetchImpl(url, {
+      signal,
       redirect: "error",
-    });
+    })));
+    stage = "reading_body";
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       throw new ProviderHttpError(
         `Asset download returned HTTP ${response.status}`,
         {
@@ -581,21 +824,32 @@ export async function fetchProviderBytes(
           status: response.status,
           retryable: statusRetryable(response.status, options),
           submissionMayHaveOccurred: false,
+          transport: transportEvidence(undefined, startedAt, stage, responseBytes, trace.path),
         },
       );
     }
     const data = await readResponseBytes(
       response,
       options.maxResponseBytes ?? DEFAULT_BINARY_RESPONSE_BYTES,
+      bytes => { responseBytes = bytes; },
     );
     const mimeType = response.headers.get("content-type") ?? undefined;
     return mimeType === undefined ? { data } : { data, mimeType };
   } catch (error) {
     if (error instanceof ProviderHttpError) throw error;
+    if (error instanceof ProviderProxyConfigurationError) {
+      throw new ProviderHttpError(error.message, {
+        kind: "invalid_request", phase: options.phase, retryable: false,
+        submissionMayHaveOccurred: false,
+        transport: transportEvidence(error, startedAt, stage, responseBytes, trace.path),
+      });
+    }
     const timedOut = controller.signal.aborted;
+    const cancelled = !timedOut && options.signal?.aborted === true;
     throw new ProviderHttpError(
       timedOut
         ? "Asset download timed out"
+        : cancelled ? "Asset download was cancelled"
         : error instanceof ProviderResponseTooLargeError
           ? "Provider asset response is too large"
           : "Asset download failed",
@@ -606,8 +860,9 @@ export async function fetchProviderBytes(
             ? "invalid_response"
             : "network",
         phase: options.phase,
-        retryable: true,
+        retryable: !cancelled && !(error instanceof ProviderResponseTooLargeError),
         submissionMayHaveOccurred: false,
+        transport: transportEvidence(error, startedAt, stage, responseBytes, trace.path),
         cause: error,
       },
     );

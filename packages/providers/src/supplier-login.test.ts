@@ -15,6 +15,51 @@ const credentials = {
 };
 
 describe("supplier website login", () => {
+  it.each([
+    { status: 429, code: "rate_limited" },
+    { status: 503, code: "network" },
+  ])("does not mislabel HTTP $status during auto detection as an unsupported platform", async ({ status, code }) => {
+    const fetcher = vi.fn(async () => Response.json({}, { status }));
+    await expect(loginSupplierSite({ siteUrl, kind: "auto", credentials }, fetcher))
+      .rejects.toMatchObject({ code, retryable: true });
+    expect(fetcher.mock.calls).toHaveLength(2);
+  });
+  it.each([
+    { status: 429, code: "rate_limited", retryable: true },
+    { status: 403, code: "verification_required", retryable: false },
+    { status: 401, code: "invalid_credentials", retryable: false },
+    { status: 503, code: "network", retryable: true },
+  ])("classifies HTTP $status login failures for the appropriate recovery action", async ({ status, code, retryable }) => {
+    await expect(loginSupplierSite({ siteUrl, kind: "sub2api", credentials }, async () =>
+      Response.json({ message: "private echoed content" }, { status }),
+    )).rejects.toMatchObject({ code, retryable });
+  });
+  it.each(["newapi", "sub2api"] as const)("authenticates bounded %s billing reads without forwarding credentials elsewhere", async kind => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ success: true, data: { access_token: "session-secret", user: { id: 42 } } }));
+    const session = await loginSupplierSite({ siteUrl, kind, credentials }, fetcher);
+    const base = "https://site.example.com/gateway";
+    const profile = kind === "newapi" ? "/api/user/self" : "/api/v1/user/profile";
+    const usage = kind === "newapi" ? "/api/log/self/" : "/api/v1/usage";
+    for (const path of [profile, usage + "?p=0&page_size=100&type=2&request_id=request-123", ...(kind === "sub2api" ? ["/api/v1/usage/dashboard/stats"] : [])]) {
+      await session.fetch(base + path);
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer session-secret");
+      expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    }
+    for (const [url, method] of [
+      [base + usage, "POST"], [base + profile + "?redirect=https://other.example", "GET"],
+      [base + usage + "?callback=leak", "GET"], [base + usage + "?page=all", "GET"],
+      [base + usage + "?request_id=a#fragment", "GET"],
+      [base + "/api/v1/usage/dashboard/stats?redirect=leak", "GET"],
+      [base + "/api/v1/usage/dashboard/stats", "POST"],
+      ["https://other.example" + usage, "GET"], [base + "/api/log/", "GET"],
+    ]) {
+      await session.fetch(url!, { method });
+      const headers = new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers);
+      expect(headers.get("authorization")).toBeNull();
+      expect(headers.get("cookie")).toBeNull();
+    }
+  });
   it("logs into Sub2API and falls back to key groups with a session confined to that site", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetcher = vi.fn(
@@ -202,7 +247,7 @@ describe("supplier website login", () => {
     );
     await expect(
       loginSupplierSite({ siteUrl, kind: "auto", credentials }, fetcher),
-    ).rejects.toThrow("无法识别");
+    ).rejects.toMatchObject({ code: "unsupported_platform", retryable: false });
     expect(fetcher.mock.calls.every(([, init]) => init?.method === "GET")).toBe(
       true,
     );

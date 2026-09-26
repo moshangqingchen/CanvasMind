@@ -50,7 +50,13 @@ describe("FriModel verified 2.5 transport", () => {
           ...request,
           parameters: { ...request.parameters, quality: "xhigh" },
         }),
-      ).toMatchObject({ valid: model === "gpt-image-2.5-flare-adobe" });
+      ).toMatchObject({ valid: true });
+      expect(
+        await adapter.validate({
+          ...request,
+          parameters: { ...request.parameters, quality: "ultra" },
+        }),
+      ).toMatchObject({ valid: false });
       const catalog = await adapter.listModels("fri");
       expect(catalog[0]?.operations).toContain("image.edit");
       expect(
@@ -58,6 +64,11 @@ describe("FriModel verified 2.5 transport", () => {
           ?.find((p) => p.key === "quality")
           ?.options?.map((o) => o.value),
       ).toContain("max");
+      expect(
+        catalog[0]?.parameters
+          ?.find((p) => p.key === "quality")
+          ?.options?.map((o) => o.value),
+      ).toContain("xhigh");
       await adapter.submit(request);
       const call = (
         fetch.mock.calls as unknown as [RequestInfo | URL, RequestInit][]

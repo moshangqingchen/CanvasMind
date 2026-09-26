@@ -1,46 +1,18 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  LocalObjectStorage,
-  S3ObjectStorage,
-  getObjectStorage,
-} from "./index.js";
+import { LocalObjectStorage, getObjectStorage } from "./index.js";
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((path) =>
-      rm(path, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
   );
-});
-
-describe("S3ObjectStorage", () => {
-  it("includes the expected content length in the signed PUT headers", async () => {
-    const storage = new S3ObjectStorage("test-bucket", {
-      endpoint: "https://storage.example.test",
-      region: "us-east-1",
-      forcePathStyle: true,
-      credentials: {
-        accessKeyId: "test-access-key",
-        secretAccessKey: "test-secret-key",
-      },
-    });
-    Object.assign(storage, { ensured: Promise.resolve() });
-
-    const signedUrl = await storage.presignPut(
-      "assets/id/original.png",
-      "image/png",
-      123,
-      600,
-    );
-    expect(new URL(signedUrl).searchParams.get("X-Amz-SignedHeaders")).toContain(
-      "content-length",
-    );
-  });
 });
 
 async function createStorage(): Promise<LocalObjectStorage> {
@@ -50,17 +22,109 @@ async function createStorage(): Promise<LocalObjectStorage> {
 }
 
 describe("LocalObjectStorage", () => {
+  it("streams through a temporary file and publishes complete bytes with a checksum", async () => {
+    const storage = await createStorage();
+    let release!: () => void;
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = storage.putStream(
+      "stream.bin",
+      (async function* () {
+        yield Uint8Array.of(1, 2);
+        started();
+        await wait;
+        yield Uint8Array.of(3, 4);
+      })(),
+      "video/mp4",
+    );
+    await ready;
+    let readCompleted = false;
+    const read = storage.head("stream.bin").then((value) => {
+      readCompleted = true;
+      return value;
+    });
+    await Promise.resolve();
+    expect(readCompleted).toBe(false);
+    release();
+    const result = await pending;
+    expect(await read).toMatchObject({ size: 4, contentType: "video/mp4" });
+    expect(result).toMatchObject({
+      size: 4,
+      etag: createHash("sha256")
+        .update(Uint8Array.of(1, 2, 3, 4))
+        .digest("hex"),
+    });
+    expect(await storage.head("stream.bin")).toMatchObject(result);
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of storage.stream("stream.bin")) chunks.push(chunk);
+    expect([...Buffer.concat(chunks)]).toEqual([1, 2, 3, 4]);
+  });
+
+  it("preserves the previous object and removes temporary files after a broken stream", async () => {
+    const root = await mkdtemp(join(tmpdir(), "super-canvas-storage-"));
+    temporaryDirectories.push(root);
+    const storage = new LocalObjectStorage(root);
+    await storage.put("original.bin", Uint8Array.of(7), "image/png");
+    const before = await storage.head("original.bin");
+    await expect(
+      storage.putStream(
+        "original.bin",
+        (async function* () {
+          yield Uint8Array.of(8, 9);
+          throw new Error("source interrupted");
+        })(),
+        "video/mp4",
+      ),
+    ).rejects.toThrow("source interrupted");
+    expect(await storage.head("original.bin")).toEqual(before);
+    expect([...(await storage.get("original.bin"))!.bytes]).toEqual([7]);
+    expect((await readdir(root)).sort()).toEqual([
+      "original.bin",
+      "original.bin.metadata.json",
+    ]);
+  });
+
+  it("serializes replacement streams and never trusts stale metadata after external mutation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "super-canvas-storage-"));
+    temporaryDirectories.push(root);
+    const storage = new LocalObjectStorage(root);
+    await Promise.all([
+      storage.put("same.bin", Uint8Array.of(1, 2), "image/png"),
+      storage.put("same.bin", Uint8Array.of(3), "video/mp4"),
+    ]);
+    expect(await storage.head("same.bin")).toMatchObject({
+      size: 1,
+      contentType: "video/mp4",
+    });
+    expect([...(await storage.get("same.bin"))!.bytes]).toEqual([3]);
+    await writeFile(join(root, "same.bin"), Uint8Array.of(4, 5, 6));
+    expect((await storage.head("same.bin"))?.etag).toBeUndefined();
+  });
+
+  it("does not hide metadata deletion failures when the object is already missing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "super-canvas-storage-"));
+    temporaryDirectories.push(root);
+    await mkdir(join(root, "missing.bin.metadata.json"));
+    const storage = new LocalObjectStorage(root);
+    await expect(storage.delete("missing.bin")).rejects.toThrow();
+  });
+
   it("stores and returns object metadata without changing get compatibility", async () => {
     const storage = await createStorage();
     const bytes = Uint8Array.from([0, 1, 2, 3, 4, 5]);
     await storage.put("assets/example/original.bin", bytes, "video/mp4");
 
-    await expect(storage.head("assets/example/original.bin")).resolves.toMatchObject(
-      {
-        size: 6,
-        contentType: "video/mp4",
-      },
-    );
+    await expect(
+      storage.head("assets/example/original.bin"),
+    ).resolves.toMatchObject({
+      size: 6,
+      contentType: "video/mp4",
+    });
     const stored = await storage.get("assets/example/original.bin");
     expect(stored?.contentType).toBe("video/mp4");
     expect(Array.from(stored?.bytes ?? [])).toEqual(Array.from(bytes));
@@ -92,51 +156,11 @@ describe("LocalObjectStorage", () => {
 });
 
 describe("getObjectStorage", () => {
-  const originalEnv = {
-    NODE_ENV: process.env.NODE_ENV,
-    S3_ENDPOINT: process.env.S3_ENDPOINT,
-    S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
-    S3_SECRET_KEY: process.env.S3_SECRET_KEY,
-    S3_BUCKET: process.env.S3_BUCKET,
-  };
-
   afterEach(() => {
-    for (const [key, value] of Object.entries(originalEnv)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
     delete (globalThis as { __superCanvasObjectStorage?: unknown })
       .__superCanvasObjectStorage;
   });
-
-  it("rejects missing S3 credentials in production", () => {
-    process.env.NODE_ENV = "production";
-    process.env.S3_ENDPOINT = "https://storage.example.test";
-    delete process.env.S3_ACCESS_KEY;
-    delete process.env.S3_SECRET_KEY;
-
-    expect(() => getObjectStorage()).toThrow(
-      "S3_ACCESS_KEY and S3_SECRET_KEY are required in production",
-    );
-  });
-
-  it("keeps the development fallback when both S3 credentials are absent", () => {
-    process.env.NODE_ENV = "development";
-    process.env.S3_ENDPOINT = "https://storage.example.test";
-    delete process.env.S3_ACCESS_KEY;
-    delete process.env.S3_SECRET_KEY;
-
-    expect(getObjectStorage()).toBeInstanceOf(S3ObjectStorage);
-  });
-
-  it("rejects partially configured S3 credentials in development", () => {
-    process.env.NODE_ENV = "development";
-    process.env.S3_ENDPOINT = "https://storage.example.test";
-    process.env.S3_ACCESS_KEY = "configured-access-key";
-    delete process.env.S3_SECRET_KEY;
-
-    expect(() => getObjectStorage()).toThrow(
-      "S3_ACCESS_KEY and S3_SECRET_KEY must be configured together",
-    );
+  it("uses the local desktop store", () => {
+    expect(getObjectStorage()).toBeInstanceOf(LocalObjectStorage);
   });
 });

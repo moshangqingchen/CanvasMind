@@ -1,3 +1,4 @@
+import { mediaExpressionPricing, mediaPricingLabel } from "./media-billing.js";
 type Row = Record<string, unknown>;
 const record = (v: unknown): Row =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Row) : {};
@@ -44,6 +45,13 @@ export function catalogPriceLabel(
           : "";
   const suffix = currency ? "" : "（币种未注明）";
   const money = (v: number) => `${symbol}${display(v * multiplier)}`;
+  if (row.billing_mode === "tiered_expr") {
+    const media = mediaExpressionPricing(row.billing_expr, {
+      currency: currency ?? "币种未注明", multiplier, checkedAt: "",
+      unit: row.request_unit === "image" ? "image" : "request",
+    });
+    return media ? mediaPricingLabel(media) : "按条件/用量计费，详见供应商规则";
+  }
   if (options.newApi && Number(row.quota_type) === 0) {
     const input = amount(row.model_ratio),
       completion = amount(row.completion_ratio);
@@ -70,10 +78,10 @@ export function catalogPriceLabel(
         .join(" · ") + suffix
     );
   const raw = amount(
-    pricing.unitAmount ?? pricing.unit_price ?? row.model_price ?? row.price,
+    pricing.unitAmount ?? pricing.unit_price ?? pricing.per_request_price ?? row.model_price ?? row.price,
   );
   const unit = text(
-    row.request_unit ?? pricing.unit ?? pricing.kind ?? row.billing_mode,
+    row.request_unit ?? pricing.unit ?? pricing.kind ?? pricing.billing_mode ?? row.billing_mode,
   )?.toLowerCase();
   const label =
     unit &&
@@ -83,6 +91,7 @@ export function catalogPriceLabel(
         "per-image": "张",
         second: "秒",
         "per-second": "秒",
+        per_second: "秒",
         request: "请求",
         per_request: "请求",
         "per-request": "请求",

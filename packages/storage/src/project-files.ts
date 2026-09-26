@@ -32,12 +32,14 @@ export interface ProjectAssetFileInput {
   name: string;
   mimeType: string;
   kind: ProjectMediaKind;
-  bytes: Uint8Array;
+  bytes: Uint8Array | AsyncIterable<Uint8Array>;
   source: ProjectArchiveSource;
 }
 
-export interface ProjectFinishedFileInput
-  extends Omit<ProjectAssetFileInput, "source"> {}
+export interface ProjectFinishedFileInput extends Omit<
+  ProjectAssetFileInput,
+  "source"
+> {}
 
 export interface ProjectFileResult {
   path: string;
@@ -92,15 +94,24 @@ function configuredRoot(): string {
     join(/* turbopackIgnore: true */ workingDirectory, "..", "项目"),
     join(/* turbopackIgnore: true */ workingDirectory, "..", "..", "项目"),
   ];
-  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
+  return (
+    candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!
+  );
 }
 
-function cleanSegment(value: string, fallback: string, maxLength: number): string {
-  const cleaned = value
+function cleanSegment(
+  value: string,
+  fallback: string,
+  maxLength: number,
+): string {
+  let cleaned = value
     .trim()
     .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/gu, "_")
-    .replace(/[. ]+$/gu, "")
-    .slice(0, maxLength);
+    .slice(0, maxLength)
+    .replace(/[. ]+$/gu, "");
+  // Windows treats these names as devices even when followed by an extension.
+  if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(cleaned))
+    cleaned = `_${cleaned}`.slice(0, maxLength).replace(/[. ]+$/gu, "");
   return cleaned || fallback;
 }
 
@@ -146,9 +157,15 @@ async function removeDraftEntry(path: string): Promise<void> {
 
 export class ProjectFileStore {
   readonly root: string;
+  private readonly pendingArchives = new Map<
+    string,
+    Promise<ProjectFileResult>
+  >();
 
   constructor(options: ProjectFileStoreOptions = {}) {
-    this.root = resolve(/* turbopackIgnore: true */ options.root ?? configuredRoot());
+    this.root = resolve(
+      /* turbopackIgnore: true */ options.root ?? configuredRoot(),
+    );
   }
 
   projectDirectory(projectName: string): string {
@@ -168,7 +185,12 @@ export class ProjectFileStore {
   ): string {
     const project = this.projectDirectory(projectName);
     const target = source
-      ? join(/* turbopackIgnore: true */ project, area, sourceFolders[source], mediaFolders[kind])
+      ? join(
+          /* turbopackIgnore: true */ project,
+          area,
+          sourceFolders[source],
+          mediaFolders[kind],
+        )
       : join(/* turbopackIgnore: true */ project, area, mediaFolders[kind]);
     assertWithin(this.root, target);
     return target;
@@ -191,7 +213,8 @@ export class ProjectFileStore {
         this.categoryDirectory(projectName, "成品", kind as ProjectMediaKind),
       ),
     ];
-    for (const directory of directories) await this.ensureSafeDirectory(directory);
+    for (const directory of directories)
+      await this.ensureSafeDirectory(directory);
     return project;
   }
 
@@ -278,10 +301,15 @@ export class ProjectFileStore {
   private async ensureSafeDirectory(directory: string): Promise<void> {
     await mkdir(this.root, { recursive: true });
     const rootDetails = await lstat(this.root);
-    if (rootDetails.isSymbolicLink()) throw new Error("项目目录不能包含符号链接");
+    if (rootDetails.isSymbolicLink())
+      throw new Error("项目目录不能包含符号链接");
     if (!rootDetails.isDirectory()) throw new Error("项目路径不是目录");
     const relativePath = relative(this.root, directory);
-    if (relativePath === "" || relativePath === ".." || relativePath.startsWith(`..${sep}`))
+    if (
+      relativePath === "" ||
+      relativePath === ".." ||
+      relativePath.startsWith(`..${sep}`)
+    )
       throw new Error("项目路径越界");
     let current = this.root;
     for (const segment of relativePath.split(sep)) {
@@ -289,11 +317,23 @@ export class ProjectFileStore {
       current = join(/* turbopackIgnore: true */ current, segment);
       try {
         const details = await lstat(current);
-        if (details.isSymbolicLink()) throw new Error("项目目录不能包含符号链接");
+        if (details.isSymbolicLink())
+          throw new Error("项目目录不能包含符号链接");
         if (!details.isDirectory()) throw new Error("项目路径不是目录");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        await mkdir(current);
+        try {
+          await mkdir(current);
+        } catch (creationError) {
+          if ((creationError as NodeJS.ErrnoException).code !== "EEXIST")
+            throw creationError;
+          // Concurrent workspace reads can create the same path after lstat.
+          // Recheck instead of accepting an existing file or directory link.
+          const details = await lstat(current);
+          if (details.isSymbolicLink())
+            throw new Error("项目目录不能包含符号链接");
+          if (!details.isDirectory()) throw new Error("项目路径不是目录");
+        }
       }
     }
   }
@@ -303,7 +343,12 @@ export class ProjectFileStore {
     area: "草稿" | "成品",
   ): string {
     const source = "source" in input ? input.source : undefined;
-    const directory = this.categoryDirectory(input.projectName, area, input.kind, source);
+    const directory = this.categoryDirectory(
+      input.projectName,
+      area,
+      input.kind,
+      source,
+    );
     const extension = extensionFor(input.name, input.mimeType);
     const filename = `${fileBase(input.name, input.kind)}--${cleanSegment(input.assetId, "asset", 96)}.${extension}`;
     const target = resolve(/* turbopackIgnore: true */ directory, filename);
@@ -312,6 +357,28 @@ export class ProjectFileStore {
   }
 
   private async writeAsset(
+    input: ProjectAssetFileInput | ProjectFinishedFileInput,
+    area: "草稿" | "成品",
+  ): Promise<ProjectFileResult> {
+    const directory = dirname(this.assetPath(input, area));
+    const key = join(
+      /* turbopackIgnore: true */ directory,
+      cleanSegment(input.assetId, "asset", 96),
+    );
+    const previous = this.pendingArchives.get(key);
+    const pending = (previous ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => this.writeAssetOnce(input, area));
+    this.pendingArchives.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.pendingArchives.get(key) === pending)
+        this.pendingArchives.delete(key);
+    }
+  }
+
+  private async writeAssetOnce(
     input: ProjectAssetFileInput | ProjectFinishedFileInput,
     area: "草稿" | "成品",
   ): Promise<ProjectFileResult> {
@@ -337,7 +404,7 @@ export class ProjectFileStore {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
 
-    const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
+    const temporary = `${target}.${randomUUID()}.tmp`;
     try {
       await writeFile(temporary, input.bytes);
       try {

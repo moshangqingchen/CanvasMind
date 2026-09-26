@@ -1,3 +1,4 @@
+import type { SupplierVerificationRecord } from "./supplier-verification.js";
 export type JsonObject = Record<string, unknown>;
 
 export interface CanvasRecord {
@@ -44,6 +45,29 @@ export interface AssetRecord {
   createdAt: string;
 }
 
+/** Structurally matches the public core contract without coupling storage to it. */
+export interface AssetImageDesignReviewInput {
+  status: "unreviewed" | "candidate" | "approved" | "rejected";
+  note: string;
+  expectedRevision: number;
+}
+
+export class ImageDesignReviewConflictError extends Error {
+  readonly code = "IMAGE_DESIGN_REVIEW_CONFLICT";
+
+  constructor(readonly asset: AssetRecord) {
+    super("图片评审已被其他操作更新，请检查最新内容后重试");
+    this.name = "ImageDesignReviewConflictError";
+  }
+}
+
+export class ImageDesignReviewValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImageDesignReviewValidationError";
+  }
+}
+
 export interface ProviderConnectionRecord {
   id: string;
   name: string;
@@ -67,6 +91,24 @@ export interface SupplierCatalogModel {
     | "rest"
     | "unknown";
   priceLabel?: string;
+  /** Model declarations do not grant a saved Key access to the public directory. */
+  inputKinds?: readonly ("text" | "image" | "image[]" | "video" | "video[]" | "audio" | "audio[]")[];
+  outputKinds?: readonly ("text" | "image" | "image[]" | "video" | "video[]")[];
+  metadata?: Readonly<Record<string, unknown>>;
+  limits?: {
+    maxPromptCharacters?: number;
+    maxInputImages?: number;
+    maxInputVideos?: number;
+    maxInputAudios?: number;
+    maxInputAssets?: number;
+    maxOutputImages?: number;
+    maxInputVideoDurationSeconds?: number;
+    maxTotalInputVideoDurationSeconds?: number;
+    maxInputAudioDurationSeconds?: number;
+    requiresInputImage?: boolean;
+    requiresInputVideo?: boolean;
+    supportedMimeTypes?: readonly string[];
+  };
 }
 
 export interface SupplierRecord {
@@ -84,11 +126,29 @@ export interface SupplierRecord {
       source?: "manual" | "catalog";
       status?: "available" | "missing";
       models: SupplierCatalogModel[];
+      details?: {
+        source: "model-plaza" | "key-groups";
+        description?: string;
+        referencePrice?: string;
+        supportedResolutions?: string[];
+        unsupportedResolutions?: string[];
+        exclusiveResolutions?: boolean;
+        imagePrices?: Array<{ resolution: string; amount: number }>;
+        rateMultiplier?: number;
+        imageRateMultiplier?: number;
+        concurrencyLimit?: number;
+        rpmLimit?: number;
+        stale?: boolean;
+      };
     }>;
   };
   scanStatus: "unscanned" | "live" | "empty" | "failed" | "unauthorized";
   scannedAt?: string;
+  /** Last confirmed directory result; failed attempts never advance this timestamp. */
+  scanLastSuccessAt?: string;
   scanError?: string;
+  scanErrorCode?: "invalid_credentials" | "verification_required" | "unsupported_platform" | "invalid_configuration" | "rate_limited" | "network" | "directory_unavailable";
+  scanRetryable?: boolean;
   state?: SupplierState;
   createdAt: string;
   updatedAt: string;
@@ -185,9 +245,35 @@ export interface SupplierState {
   sourceId: string;
   fingerprint: string;
   scanId?: string;
+  generationTransport?: "local" | "cloudflare";
+  billing?: SupplierBillingSnapshot;
   /** Server-only website login, encrypted with MASTER_KEY and scoped to this source. */
   siteLogin?: { username: string; encryptedPassword: string; siteUrl: string };
+  keySync?: {
+    status: "live" | "partial" | "failed";
+    imported: number;
+    preserved: number;
+    skipped: number;
+    multipleGroups: number;
+    checkedAt: string;
+    error?: string;
+  };
   history: SupplierSourceArchive[];
+}
+
+/** Account totals returned by this supplier, never summed across currencies or Keys. */
+export interface SupplierBillingSnapshot {
+  sourceId: string;
+  status: "live" | "partial" | "failed" | "unconfigured";
+  checkedAt: string;
+  lastSuccessAt?: string;
+  balance?: number;
+  used?: number;
+  todayUsed?: number;
+  requests?: number;
+  unit: string;
+  sourceUrl: string;
+  error?: string;
 }
 export interface SupplierCommit {
   supplier: Omit<SupplierRecord, "createdAt" | "updatedAt">;
@@ -269,6 +355,9 @@ export interface WebhookEventRecord {
 }
 
 export interface Repository {
+  listSupplierVerifications(): Promise<SupplierVerificationRecord[]>;
+  getSupplierVerification(id: string): Promise<SupplierVerificationRecord | null>;
+  saveSupplierVerification(record: SupplierVerificationRecord, expectedRevision: number): Promise<SupplierVerificationRecord>;
   listSuppliers(): Promise<SupplierRecord[]>;
   getSupplier(id: string): Promise<SupplierRecord | null>;
   saveSupplier(
@@ -295,6 +384,11 @@ export interface Repository {
       deleted?: boolean;
     },
   ): Promise<AssetRecord>;
+  /** Updates only review metadata; never creates or revives an asset. */
+  updateImageDesignReview(
+    id: string,
+    input: AssetImageDesignReviewInput,
+  ): Promise<AssetRecord | null>;
   deleteAsset(id: string): Promise<void>;
   deleteAssets(ids: readonly string[]): Promise<void>;
   listConnections(): Promise<ProviderConnectionRecord[]>;

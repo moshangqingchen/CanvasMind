@@ -161,7 +161,7 @@ function compactSnapshot(snapshot: MemoryRepositorySnapshot | undefined): {
 
 function readSnapshot(path: string): MemoryRepositorySnapshotInput | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as {
+    const parsed = JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/u, "")) as {
       version?: unknown;
       canvases?: unknown;
       revisions?: unknown;
@@ -233,12 +233,12 @@ export class FileRepository extends MemoryRepository {
     contents: string,
   ): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
-    await writeFile(temporaryPath, contents, "utf8");
 
     // Windows can briefly hold the destination while another reader closes it.
     // Retry the atomic replacement instead of poisoning the save queue.
     const retryableCodes = new Set(["EPERM", "EACCES", "EBUSY", "ETXTBSY"]);
     try {
+      await writeFile(temporaryPath, contents, "utf8");
       for (let attempt = 0; ; attempt += 1) {
         try {
           await this.replaceFile(temporaryPath, this.path);
@@ -319,6 +319,17 @@ export class FileRepository extends MemoryRepository {
     return result;
   }
 
+  /** Explicit durability barrier used before a desktop process exits. */
+  async flush(): Promise<void> {
+    await this.persist();
+  }
+
+  override async saveSupplierVerification(input: Parameters<MemoryRepository["saveSupplierVerification"]>[0], expectedRevision: number) {
+    const result = await super.saveSupplierVerification(input, expectedRevision);
+    await this.persist();
+    return result;
+  }
+
   override async ensureDefaultCanvas(): Promise<CanvasRecord> {
     const existing = await this.listCanvases();
     const result = await super.ensureDefaultCanvas();
@@ -348,6 +359,15 @@ export class FileRepository extends MemoryRepository {
   ): Promise<AssetRecord> {
     const result = await super.saveAsset(input);
     await this.persist();
+    return result;
+  }
+
+  override async updateImageDesignReview(
+    id: string,
+    input: Parameters<MemoryRepository["updateImageDesignReview"]>[1],
+  ): Promise<AssetRecord | null> {
+    const result = await super.updateImageDesignReview(id, input);
+    if (result) await this.persist();
     return result;
   }
 

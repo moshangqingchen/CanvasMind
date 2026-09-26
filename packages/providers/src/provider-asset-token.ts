@@ -1,61 +1,22 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
-
-function message(assetId: string, expiresAt: number): string {
-  return `${assetId}\n${expiresAt}`;
-}
-
 function digest(secret: string, assetId: string, expiresAt: number): Buffer {
-  return createHmac("sha256", secret)
-    .update(message(assetId, expiresAt))
-    .digest();
+  return createHmac("sha256", secret).update(`supercanvas-reference-v1\n${assetId}\n${expiresAt}`).digest();
 }
 
-export function createProviderAssetToken(input: {
-  assetId: string;
-  secret: string;
-  expiresInSeconds?: number;
-  nowSeconds?: number;
-}): string {
-  if (!input.assetId.trim()) throw new Error("Provider asset id is required");
-  if (!input.secret)
-    throw new Error("Provider asset signing secret is required");
-  const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
-  const expiresAt =
-    now +
-    Math.min(
-      Math.max(input.expiresInSeconds ?? DEFAULT_TTL_SECONDS, 30),
-      7 * 24 * 60 * 60,
-    );
+export function createProviderAssetToken(input: { assetId: string; secret: string; expiresInSeconds?: number; nowSeconds?: number }): string {
+  if (!input.assetId || !input.secret) throw new Error("Missing reference signing credentials");
+  const expiresAt = (input.nowSeconds ?? Math.floor(Date.now() / 1000)) + Math.min(3600, Math.max(30, input.expiresInSeconds ?? 3600));
   return `${expiresAt}.${digest(input.secret, input.assetId, expiresAt).toString("base64url")}`;
 }
 
-export function verifyProviderAssetToken(input: {
-  assetId: string;
-  secret: string;
-  token: string;
-  nowSeconds?: number;
-}): boolean {
-  const separator = input.token.indexOf(".");
-  if (separator <= 0 || !input.assetId.trim() || !input.secret) return false;
-  const expiresAt = Number(input.token.slice(0, separator));
-  const encoded = input.token.slice(separator + 1);
+export function verifyProviderAssetToken(input: { assetId: string; secret: string; token: string; nowSeconds?: number }): boolean {
+  const match = /^(\d{1,12})\.([A-Za-z0-9_-]{43})$/.exec(input.token);
+  if (!match || !input.assetId || !input.secret) return false;
+  const expiresAt = Number(match[1]);
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
-  if (
-    !Number.isSafeInteger(expiresAt) ||
-    expiresAt < now ||
-    !/^[A-Za-z0-9_-]{40,}$/u.test(encoded)
-  )
-    return false;
-  let supplied: Buffer;
-  try {
-    supplied = Buffer.from(encoded, "base64url");
-  } catch {
-    return false;
-  }
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + 3600) return false;
+  const supplied = Buffer.from(match[2]!, "base64url");
   const expected = digest(input.secret, input.assetId, expiresAt);
-  return (
-    supplied.length === expected.length && timingSafeEqual(supplied, expected)
-  );
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }

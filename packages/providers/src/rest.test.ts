@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import { StaticConnectionResolver } from "./credentials";
 import type { RestConnectorConfig } from "./rest";
-import { GenericRestAdapter } from "./rest";
+import { GenericRestAdapter, restRequestRequiresPublicAssets } from "./rest";
+import { withProviderSubmitTransport, withProviderSubmissionProgress } from "./http";
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -52,6 +53,98 @@ const asyncConfig: RestConnectorConfig = {
 };
 
 describe("GenericRestAdapter", () => {
+  it.each(["image.generate", "image.edit"] as const)("keeps %s waiting beyond legacy connection request deadlines", async operation => {
+    vi.useFakeTimers();
+    try {
+      for (const requestTimeoutMs of [300_000, 600_000]) {
+        const fetcher = vi.fn<typeof fetch>((_, init) => new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(jsonResponse({ job: { id: "one", state: "COMPLETE" },
+            outputs: [{ url: "https://provider.test/image.png", mime: "image/png" }] })), 601_000);
+          init?.signal?.addEventListener("abort", () => { clearTimeout(timer); reject(init.signal?.reason); }, { once: true });
+        }));
+        const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "legacy-timeout", provider: "rest", apiKey: "key",
+          baseUrl: "https://provider.test", settings: { connector: asyncConfig, requestTimeoutMs } }]), { fetch: fetcher });
+        let state: string | undefined;
+        const done = adapter.submit({ connectionId: "legacy-timeout", operation, prompt: "offline", idempotencyKey: "one" })
+          .then(task => { state = task.status; }, error => { state = String(error); });
+        await vi.advanceTimersByTimeAsync(requestTimeoutMs);
+        expect(state).toBeUndefined();
+        expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+        await vi.advanceTimersByTimeAsync(601_000 - requestTimeoutMs);
+        await done;
+        expect(state).toBe("succeeded");
+        expect(fetcher).toHaveBeenCalledOnce();
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally { vi.clearAllTimers(); vi.useRealTimers(); }
+  });
+
+  it("honors a dedicated image deadline without changing the normal poll deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetcher = vi.fn<typeof fetch>((_, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }));
+      const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "dedicated-timeout", provider: "rest", apiKey: "key",
+        baseUrl: "https://provider.test", settings: { connector: asyncConfig, imageSubmitTimeoutMs: 45_000, requestTimeoutMs: 20_000 } }]), { fetch: fetcher });
+      const submit = adapter.submit({ connectionId: "dedicated-timeout", operation: "image.generate", prompt: "offline", idempotencyKey: "one" });
+      const rejected = expect(submit).rejects.toMatchObject({ details: { kind: "timeout", phase: "submit", submissionMayHaveOccurred: true, retryable: false } });
+      await vi.advanceTimersByTimeAsync(44_999);
+      expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1); await rejected;
+      fetcher.mockResolvedValueOnce(jsonResponse({ job: { id: "accepted", state: "ACCEPTED" } }));
+      const task = await adapter.submit({ connectionId: "dedicated-timeout", operation: "image.generate", prompt: "offline", idempotencyKey: "two" });
+      const poll = adapter.poll(task);
+      const pollRejected = expect(poll).rejects.toMatchObject({ details: { kind: "timeout", phase: "poll", submissionMayHaveOccurred: false, retryable: true } });
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(fetcher.mock.calls[2]?.[1]?.signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1); await pollRejected;
+      expect(fetcher).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.clearAllTimers(); vi.useRealTimers(); }
+  });
+
+  it("keeps synchronous image generation waiting beyond two hours and still accepts cancellation", async () => {
+    vi.useFakeTimers();
+    try {
+      const config = { ...asyncConfig, submit: { ...asyncConfig.submit, response: { statusPath: "$.status" } } };
+      const abort = new AbortController();
+      const fetcher = vi.fn<typeof fetch>((_, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }));
+      const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "long", provider: "rest", apiKey: "key", baseUrl: "https://provider.test", settings: { connector: config } }]), { fetch: fetcher });
+      const done = withProviderSubmissionProgress(async () => {}, () => adapter.submit({ connectionId: "long", operation: "image.generate", prompt: "offline", idempotencyKey: "one" }), abort.signal);
+      const rejected = expect(done).rejects.toMatchObject({ details: { submissionMayHaveOccurred: true, retryable: false } });
+      await vi.advanceTimersByTimeAsync(7_200_000);
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+      abort.abort(); await rejected;
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
+  it("uses the cloud's completed polling response and retains the native task id", async () => {
+    const direct = vi.fn<typeof fetch>();
+    const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "cloud", provider: "rest", apiKey: "key", baseUrl: "https://provider.test", settings: { connector: asyncConfig } }]), { fetch: direct });
+    const task = await withProviderSubmitTransport(async (_url, _init, options) => {
+      expect(options.cloudPolling?.urlTemplate).toBe("https://provider.test/jobs/__SUPER_CANVAS_CLOUD_TASK__");
+      return new Response(JSON.stringify({ job: { state: "COMPLETE" }, outputs: [{ url: "https://cdn.example.com/image.png", mime: "image/png" }] }), { headers: { "content-type": "application/json", "x-supercanvas-upstream-task": "original-id" } });
+    }, () => adapter.submit({ connectionId: "cloud", operation: "image.generate", prompt: "offline", idempotencyKey: "one" }));
+    expect(task.status).toBe("succeeded"); expect(task.providerTaskId).toBe("original-id");
+    expect((await adapter.extractOutputs(task.result))[0]?.url).toBe("https://cdn.example.com/image.png"); expect(direct).not.toHaveBeenCalled();
+  });
+  it("checks asset transport after model and operation overrides", () => {
+    const multipart = { path: "/edits", method: "POST" as const, bodyMode: "multipart" as const,
+      mappings: [{ target: "/image", source: { kind: "assets" as const, assetKind: "image" as const } }] };
+    const config = { ...asyncConfig, assetsRequirePublicUrls: true,
+      operationOverrides: { "image.edit": { submit: multipart } },
+      modelOverrides: { "url-only": { operationOverrides: { "image.edit": { submit: asyncConfig.submit } } } } };
+    expect(restRequestRequiresPublicAssets(config, "image", "image.edit")).toBe(false);
+    expect(restRequestRequiresPublicAssets(config, "url-only", "image.edit")).toBe(true);
+    expect(restRequestRequiresPublicAssets(config, "video", "video.image-to-video")).toBe(true);
+    expect(restRequestRequiresPublicAssets({ ...config, submit: { ...multipart, bodyMode: "json", mappings: [
+      { target: "/parts", source: { kind: "assets", encoding: "gemini-part" } },
+    ] } }, "gemini", "image.generate")).toBe(false);
+  });
   it("accepts large synchronous Base64 image responses above the metadata limit", async () => {
     const encoded = Buffer.from("large-image-result").toString("base64");
     const fetchMock = vi.fn(async () =>
