@@ -33,4 +33,7 @@ if (workspace.version !== desktop.version) throw new Error("Desktop package vers
 const releaseNotes = await readFile(join(root, "../../docs/releases/v" + workspace.version + ".md"), "utf8");
 if (!releaseNotes.trim()) throw new Error("Versioned release notes must not be empty");
 await writeFile(join(root, "dist/release-notes.md"), releaseNotes);
+// --dir does not generate updater metadata. NSIS may augment this with signing
+// policy later; every distribution must still include the base feed and cache.
+await writeFile(join(root, "dist/app-update.yml"), JSON.stringify({ ...desktop.build.publish, updaterCacheDirName: "@super-canvasdesktop-updater" }));
 console.log("Desktop shell built.");

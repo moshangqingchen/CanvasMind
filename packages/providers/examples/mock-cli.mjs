@@ -45,7 +45,12 @@ try {
   if (message.version !== 1) throw new Error("Unsupported protocol version");
   if (scenario === "invalid-json") { process.stdout.write("not JSON"); process.exit(0); }
   if (scenario === "exit") { process.stderr.write("access_token=example-private-secret password=example-password\n"); process.exit(2); }
-  if (scenario === "large-output") { process.stdout.write("x".repeat(3 * 1024 * 1024)); process.exit(0); }
+  if (scenario === "large-output") {
+    // Pipes are asynchronous on Linux. Exiting before the callback can truncate
+    // this fixture below the output limit and exercise the wrong error branch.
+    await new Promise(resolve => process.stdout.write("x".repeat(3 * 1024 * 1024), resolve));
+    process.exit(0);
+  }
   if (scenario === "timeout" || (scenario === "submit-timeout" && message.action === "submit")) await new Promise(resolve => setTimeout(resolve, 60_000));
   if (scenario === "login-required") { fail("LOGIN_REQUIRED", "模拟账号登录已失效，请在原 CLI 中重新登录"); process.exit(0); }
   const supportsCancel = scenario !== "no-cancel";

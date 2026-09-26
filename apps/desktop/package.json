@@ -31,6 +31,7 @@
     "directories": { "output": "release", "buildResources": "assets" },
     "files": ["dist/**", "package.json"],
     "extraResources": [
+      { "from": "dist/app-update.yml", "to": "app-update.yml" },
       { "from": "stage", "to": "runtime" },
       { "from": "assets/icon.ico", "to": "app-icon.ico" },
       { "from": "src/runtime-hook.cjs", "to": "runtime/runtime-hook.cjs" }
