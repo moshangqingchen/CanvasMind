@@ -1,6 +1,6 @@
 {
   "name": "@super-canvas/desktop",
-  "version": "0.2.38",
+  "version": "0.2.39",
   "private": true,
   "description": "超级画布 Windows 桌面版",
   "type": "module",

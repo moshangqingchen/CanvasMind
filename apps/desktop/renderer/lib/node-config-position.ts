@@ -12,16 +12,10 @@ export function nodeConfigPosition(node: Rect, viewport: Rect) {
   const panelWidth = Math.min(420, viewportWidth);
   const below = Math.max(0, viewport.bottom - node.bottom - gap);
   const above = Math.max(0, node.top - viewport.top - gap);
-  const maxHeight = Math.min(560, viewportHeight);
-  // Keep a comfortable panel when possible. If the node is close to the
-  // bottom edge, use the space above it instead of shrinking to a few pixels.
-  // A 240px body is still usable and lets the inspector stay below nodes in
-  // the common zoomed canvas case. Only switch sides when the lower space is
-  // genuinely too small for the header and a useful first field.
-  const preferredMinimum = Math.min(240, maxHeight);
-  const placeAbove = below < preferredMinimum && above > below;
-  const available = placeAbove ? above : below;
-  const height = Math.max(1, Math.min(maxHeight, Math.max(preferredMinimum, available)));
+  // Canvas zoom changes the anchor, never the inspector's dimensions. Only
+  // a smaller window may shrink the panel; edge collisions change position.
+  const height = Math.min(560, viewportHeight);
+  const placeAbove = below < height && above > below;
   const desiredTop = placeAbove ? node.top - height - gap : node.bottom + gap;
   const top = Math.max(viewport.top, Math.min(viewport.bottom - height, desiredTop));
   const left = Math.min(

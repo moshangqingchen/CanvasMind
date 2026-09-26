@@ -250,6 +250,11 @@ import {
   parametersWithDefaults,
 } from "../lib/model-parameters";
 import {
+  connectionModelItemsForDisplay,
+  pendingConnectionModelScan,
+  type ConnectionModelSnapshot,
+} from "../lib/connection-model-snapshot";
+import {
   weAiCanvasModelDescriptors,
   weAiCanvasModelDescriptorsFromSavedScan,
   weAiSizePresetForTier,
@@ -2454,12 +2459,7 @@ function CanvasShell({
     setModelEditorSelectionId(selectedId);
     setModelEditorNodeId(null);
   }
-  const [connectionModels, setConnectionModels] = useState<{
-    connectionId: string;
-    items: ModelDescriptor[];
-    authoritative?: boolean;
-    loading?: boolean;
-  }>({
+  const [connectionModels, setConnectionModels] = useState<ConnectionModelSnapshot>({
     connectionId: "",
     items: [],
     authoritative: false,
@@ -4904,7 +4904,7 @@ function CanvasShell({
       );
       const listedModel =
         connectionModels.connectionId === node.data.connectionId
-          ? connectionModels.items.find((model) => model.id === modelId)
+          ? connectionModelItemsForDisplay(connectionModels).find((model) => model.id === modelId)
           : undefined;
       const configuredModel = connection
         ? modelDescriptorsForConnection(connection).find(
@@ -4920,7 +4920,7 @@ function CanvasShell({
         return;
       }
       const currentModel = (connectionModels.connectionId === node.data.connectionId
-        ? connectionModels.items.find(model => model.id === node.data.model)
+        ? connectionModelItemsForDisplay(connectionModels).find(model => model.id === node.data.model)
         : undefined) ?? (connection
         ? modelDescriptorsForConnection(connection).find(
             (model) => model.id === node.data.model,
@@ -6876,7 +6876,7 @@ function CanvasShell({
       const modelOptions = modelOptionsForNode(
         node,
         connections,
-        connectionModels,
+        { ...connectionModels, items: connectionModelItemsForDisplay(connectionModels) },
       );
       const effectiveModel =
         modelDescriptorForSavedSelectionOrDefault(
@@ -7353,12 +7353,9 @@ function CanvasShell({
     ) {
       void Promise.resolve().then(() => {
         if (cancelled) return;
-        setConnectionModels({
-          connectionId: modelScanConnectionId,
-          items: [],
-          authoritative: true,
-          loading: true,
-        });
+        setConnectionModels((current) =>
+          pendingConnectionModelScan(current, modelScanConnectionId),
+        );
         setModelLoadError(null);
       });
     }
