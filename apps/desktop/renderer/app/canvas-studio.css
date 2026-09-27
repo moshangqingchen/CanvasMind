@@ -455,6 +455,7 @@
 .canvas-pointer-trail { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; }
 .canvas-editor .is-interacting .studio-edge-beam,
 .canvas-editor .effects-paused .studio-edge-beam { visibility: hidden; }
+.canvas-editor .is-interacting .studio-edge-beam { display: none; }
 .canvas-editor .is-interacting .studio-edge-light,
 .canvas-editor .effects-paused *, .canvas-editor .effects-paused *::before,
 .canvas-editor .effects-paused *::after { animation-play-state: paused !important; }
@@ -519,6 +520,7 @@
 .canvas-editor .low-detail .port-label,.canvas-editor .low-detail .node-config-copy small { visibility: hidden; }
 .canvas-editor .low-detail .node-card,
 .canvas-editor .low-detail .node-card.selected::after { box-shadow: none; }
+.canvas-editor .low-detail.is-node-dragging .react-flow__viewport { will-change: auto; }
 .canvas-editor .low-detail .generated-result-state .result-info-button { font-size: 15px; }
 .canvas-prompt-content { height: 100%; min-height: 0; }
 .canvas-editor .prompt-overview { height: 100%; min-height: 54px; padding: 9px; overflow: hidden; color: #b9beca; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
