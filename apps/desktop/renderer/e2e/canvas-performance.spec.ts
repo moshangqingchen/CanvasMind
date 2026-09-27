@@ -32,7 +32,7 @@ async function uploadPerformanceImages(request: APIRequestContext) {
 }
 
 // DOM snapshots on every pointer/wheel action materially distort large-graph timings.
-test.use({ trace: process.env.CANVAS_PERF_TRACE === "1" ? "retain-on-failure" : "off", screenshot: "off", video: "off" });
+test.use({ trace: process.env.CANVAS_PERF_TRACE === "1" ? "retain-on-failure" : "off", screenshot: "only-on-failure", video: "off" });
 
 test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
   page,
@@ -71,6 +71,7 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
       };
     });
   for (const { scene, count } of (["prompt", "mixed"] as const).flatMap((scene) => [50, 200, 500].map((count) => ({ scene, count })))) {
+    console.log(`Preparing canvas performance scene: ${scene}/${count}`);
     if (scene === "mixed" && imageIds.length === 0) imageIds = await uploadPerformanceImages(request);
     await page.goto("about:blank");
     const graph: CanvasDocument = {

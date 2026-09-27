@@ -1,0 +1,37 @@
+name: Release regression diagnostics
+
+on:
+  push:
+    branches: [codex/release-verification-0.2.41]
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:runtime
+      - run: pnpm --filter @super-canvas/desktop-ui exec playwright install --with-deps chromium
+      - name: Reproduce gallery and mixed canvas regressions
+        run: pnpm --filter @super-canvas/desktop-ui exec playwright test e2e/image-design.spec.ts e2e/canvas-performance.spec.ts --retries=0
+        env:
+          PLAYWRIGHT_CHANNEL: chromium
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-diagnostics
+          path: |
+            apps/desktop/renderer/test-results
+            apps/desktop/renderer/playwright-report
+          retention-days: 3
