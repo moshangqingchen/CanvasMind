@@ -2908,6 +2908,7 @@ test.describe("超级画布完整验收", () => {
     request,
   }, testInfo) => {
     await openWorkspace(page);
+    await openLibrary(page);
     await page.locator('.upload-label input[type="file"]').setInputFiles({
       name: REFERENCE_ASSET_NAME,
       mimeType: "image/png",
@@ -3064,6 +3065,7 @@ test.describe("超级画布完整验收", () => {
     request,
   }, testInfo) => {
     await openWorkspace(page);
+    await openLibrary(page);
     const videoName = "e2e unsupported reference.mp4";
     await page.locator('.upload-label input[type="file"]').setInputFiles({
       name: videoName,
