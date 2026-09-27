@@ -24,10 +24,9 @@ jobs:
       - run: pnpm build:runtime
       - run: pnpm --filter @super-canvas/desktop-ui exec playwright install --with-deps chromium
       - name: Reproduce gallery and mixed canvas regressions
-        run: pnpm --filter @super-canvas/desktop-ui exec playwright test e2e/image-design.spec.ts --grep 新版图片库 --retries=0
+        run: pnpm --filter @super-canvas/desktop-ui exec playwright test e2e/image-design.spec.ts e2e/canvas-performance.spec.ts --retries=0
         env:
           PLAYWRIGHT_CHANNEL: chromium
-          CANVAS_CPU_PROFILE: "1"
           DEBUG: pw:browser
       - uses: actions/upload-artifact@v4
         if: always()
