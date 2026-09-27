@@ -542,7 +542,7 @@ test("低缩放与窄窗口能用键盘读取完整中文名称、来源与实�
   const canvas = await create(request, value);
   await page.setViewportSize({ width: 650, height: 780 });
   await open(page, canvas.id);
-  await page.locator(".readable-name").first().focus();
+  await page.locator('.react-flow__node[data-id="source"] .readable-name').focus();
   await expect(page.getByRole("tooltip")).toHaveText(longName);
   const info = page.getByRole("button", {
     name: "查看 原图结果 来源",

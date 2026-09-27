@@ -272,6 +272,7 @@ import { ShortcutsModal } from "./shortcuts-modal";
 import { AppUpdateModal } from "./app-update-modal";
 import { useCanvasStore } from "./canvas-store";
 import { WorkflowNode } from "./workflow-node";
+import { ReadableName } from "./result-information";
 import { StudioEdge } from "./studio-edge";
 import { presentCanvasEdges } from "../lib/canvas-edge-presentation";
 import {
@@ -8740,7 +8741,7 @@ function CanvasShell({
         </button>
         <div className="brand">
           <span className="brand-mark">✦</span>
-          <span className="editor-project-title" title={title}>{title}</span>
+          <span className="editor-project-title" title={title}><ReadableName text={title} /></span>
           <span className="brand-version">节点 {nodes.length}</span>
         </div>
         <nav className="top-create-actions" aria-label="生成工具">

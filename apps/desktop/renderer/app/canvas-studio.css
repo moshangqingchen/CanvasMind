@@ -15,6 +15,7 @@
   --ui-panel-border: #34363a;
   --ui-panel-border-strong: #a99af0;
   --ui-glow-purple: #ac9cf51a;
+  --canvas-topbar-height: 64px;
   position: relative;
   display: block;
   background: var(--bg);
@@ -40,6 +41,7 @@
 .canvas-editor .canvas-wrap {
   grid-column: 1;
   grid-row: 1;
+  margin-top: var(--canvas-topbar-height);
   background: var(--bg);
   border: 0;
   border-radius: 0;
@@ -47,31 +49,37 @@
 .canvas-editor .topbar {
   position: absolute;
   inset: 0 0 auto;
-  height: 64px;
+  height: var(--canvas-topbar-height);
   width: auto;
   padding: 0 18px;
   gap: 10px;
-  background: linear-gradient(#101112f2, #101112b3 65%, #10111200);
+  background: var(--bg);
   border: 0;
+  border-bottom: 1px solid var(--line);
   box-shadow: none;
-  pointer-events: none;
+  pointer-events: auto;
+  container-name: canvas-topbar;
   container-type: inline-size;
 }
 .canvas-editor.inspector-visible .topbar { right: var(--inspector-width, 380px); }
 .canvas-editor .topbar > * { pointer-events: auto; }
 .canvas-editor .editor-home { color: #b5b8c0; background: transparent; }
-.canvas-editor .brand { gap: 12px; color: var(--text); min-width: 0; }
+.canvas-editor .brand { flex: 1 1 0; gap: 10px; color: var(--text); min-width: 0; }
 .canvas-editor .brand-mark {
   display: grid;
-  width: 26px;
+  flex: 0 0 auto;
+  width: 28px;
   height: 28px;
+  border: 0;
   background: transparent;
   color: #c0b4ff;
   font-size: 28px;
+  line-height: 1;
   filter: drop-shadow(0 0 9px #b4a0ff55);
 }
-.canvas-editor .editor-project-title { font-size: 13px; font-weight: 550; max-width: 190px; }
-.canvas-editor .brand-version { color: var(--muted); font-size: 10px; }
+.canvas-editor .editor-project-title { display: flex; min-width: 0; max-width: none; font-size: 13px; font-weight: 550; line-height: 1.5; }
+.canvas-editor .editor-project-title .readable-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-editor .brand-version { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
 .canvas-editor .top-actions { gap: 5px; min-width: 0; }
 .canvas-editor :is(.button, .icon-button, .pill) {
   background: var(--panel-2);
@@ -166,7 +174,7 @@
   box-shadow: var(--shadow);
   animation: studio-panel-enter 200ms ease-out;
 }
-.canvas-editor .mobile-backdrop { inset: 0; background: #0003; backdrop-filter: none; }
+.canvas-editor .mobile-backdrop { inset: var(--canvas-topbar-height) 0 0; background: #0003; backdrop-filter: none; }
 .canvas-editor :is(.project-sidebar-head, .project-sidebar-foot) { background: var(--panel); border-color: var(--line); }
 .canvas-editor :is(.project-row, .asset-row) { color: var(--text); }
 .canvas-editor :is(.project-row.active, .project-row:hover, .asset-row:hover) { background: var(--panel-3); border-color: var(--line); }
@@ -391,20 +399,17 @@
 @keyframes studio-node-breathe { 0%, 100% { opacity: .22; } 50% { opacity: .7; } }
 @keyframes studio-connect-flow { to { stroke-dashoffset: -20; } }
 @keyframes studio-panel-enter { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
-@container (max-width: 700px) {
+@container canvas-topbar (max-width: 700px) {
   .canvas-editor .top-actions > .icon-button:is([aria-label="撤销"], [aria-label="重做"]) { display: none; }
   .canvas-editor .brand-version { display: none; }
-  .canvas-editor .editor-project-title { max-width: 120px; }
   .canvas-editor .top-actions .api-settings-button { font-size: 0; gap: 0; padding: 8px; }
 }
-@container (max-width: 480px) {
-  .canvas-editor .editor-project-title { max-width: 85px; }
+@container canvas-topbar (max-width: 480px) {
   .canvas-editor .editor-run { font-size: 0; gap: 0; }
   .canvas-editor .save-state { font-size: 0; gap: 0; }
   .canvas-editor .top-actions > .project-toggle { display: none; }
 }
 @media (max-width: 1350px) {
-  .canvas-editor .editor-project-title { max-width: 140px; }
   .canvas-editor .brand-version { display: none; }
   .canvas-editor .top-actions .api-settings-button { font-size: 0; gap: 0; padding: 8px; }
 }
@@ -415,10 +420,11 @@
   .canvas-editor .workspace:has(.inspector.mobile-open) > .mobile-backdrop { display: block; }
 }
 @media (max-width: 700px) {
-  .canvas-editor .topbar { height: 58px; padding: 0 8px; gap: 5px; }
+  .canvas-editor { --canvas-topbar-height: 58px; }
+  .canvas-editor .topbar { padding: 0 8px; gap: 5px; }
   .canvas-editor .brand { gap: 6px; }
   .canvas-editor .brand-mark { font-size: 23px; width: 21px; }
-  .canvas-editor .editor-project-title { max-width: 98px; font-size: 12px; }
+  .canvas-editor .editor-project-title { font-size: 12px; }
   .canvas-editor .top-actions { gap: 3px; }
   .canvas-editor .editor-run { font-size: 0; gap: 0; padding: 8px; }
   .canvas-editor .save-state { font-size: 0; padding: 0; }
@@ -625,6 +631,11 @@
 .canvas-editor .node-config-parameter-section .parameter-dimensions-align input { width: 13px; height: 13px; min-height: 0; margin: 0; padding: 0; accent-color: #a495e8; }
 .canvas-editor .parameter-dimensions-shortcuts { gap: 4px; padding: 4px; border: 1px solid var(--config-border); border-radius: 10px; background: var(--config-input); }
 .canvas-editor .parameter-dimensions-shortcut { height: 30px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #aab3c8; font-size: 12px; }
+.canvas-editor .parameter-dimensions-shortcut.model-resolution-choice { height: auto; min-height: 64px; padding: 8px 6px; align-items: center; justify-content: flex-start; gap: 4px; white-space: normal; }
+.canvas-editor .model-resolution-choice > strong { flex: 0 0 auto; line-height: 1.5; }
+.canvas-editor .model-resolution-choice > small { flex: 0 0 auto; width: 100%; min-width: 0; font-weight: 400; text-wrap: balance; }
+.canvas-editor .model-resolution-price-note { display: block; font-size: 11px; }
+.canvas-editor .model-resolution-family { margin-bottom: 0; }
 .canvas-editor .parameter-dimensions-shortcut:hover { background: #b9a7ff0c; color: #eee8ff; }
 .canvas-editor .parameter-dimensions-shortcut[aria-pressed="true"] { border-color: #9683d64a; background: #7863b447; color: #eee8ff; box-shadow: 0 1px 4px #0003; }
 .canvas-editor .parameter-dimensions-inputs { gap: 8px; }
