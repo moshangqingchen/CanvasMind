@@ -158,7 +158,7 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
       .locator(".react-flow__viewport")
       .getAttribute("style");
     let duringZoom = beforeZoom;
-    const profiler = process.env.CANVAS_CPU_PROFILE && count === 200
+    const profiler = process.env.CANVAS_CPU_PROFILE && count === 500
       ? await page.context().newCDPSession(page) : null;
     if (profiler) { await profiler.send("Profiler.enable"); await profiler.send("Profiler.start"); }
     await start();
@@ -193,6 +193,7 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
       .toBeGreaterThan(1);
     if (scene === "mixed") {
       await page.waitForTimeout(250);
+      await expect(page.getByRole("toolbar", { name: "生成结果操作" })).toHaveCount(0);
       const sizes = await page.locator(".generated-result-node img").evaluateAll((images) => images.map((image) => Number(new URL((image as HTMLImageElement).src).searchParams.get("size"))));
       expect(sizes.length).toBeGreaterThan(0);
       expect(sizes.every((size) => size > 0 && size < 3840), "Selecting a whole overview must not upgrade every result to 3840px").toBe(true);
