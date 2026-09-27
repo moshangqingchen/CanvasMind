@@ -1661,5 +1661,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   );
 }
 
-export const WorkflowNode = memo(WorkflowNodeComponent);
-
+// Position and dragging belong to React Flow's wrapper. The node content only
+// reads these three props; geometry-aware children subscribe to the store.
+export const WorkflowNode = memo(WorkflowNodeComponent, (previous, next) =>
+  previous.id === next.id && previous.data === next.data && previous.selected === next.selected,
+);

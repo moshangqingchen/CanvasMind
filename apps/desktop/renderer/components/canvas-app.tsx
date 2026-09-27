@@ -7312,13 +7312,7 @@ function CanvasShell({
   // React Flow memoizes its node wrappers. Keep their event props stable when
   // viewport/save state changes so a wheel gesture does not render every node.
   const dismissNodeMenu = useCallback(() => setNodeMenu(null), []);
-  const onNodeDragStart = useCallback(() => {
-    canvasWrapRef.current?.classList.add("is-node-dragging");
-    checkpoint(true);
-  }, [checkpoint]);
-  const onNodeDragStop = useCallback(() => {
-    canvasWrapRef.current?.classList.remove("is-node-dragging");
-  }, []);
+  const onNodeDragStart = useCallback(() => checkpoint(true), [checkpoint]);
 
   // An open node editor can remain usable after canvas selection is cleared.
   // Load its models independently without selecting the node or opening a sidebar.
@@ -9483,7 +9477,6 @@ function CanvasShell({
             onNodesChange={onNodesChangeWrapped}
             onEdgesChange={onEdgesChangeWrapped}
             onNodeDragStart={onNodeDragStart}
-            onNodeDragStop={onNodeDragStop}
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}

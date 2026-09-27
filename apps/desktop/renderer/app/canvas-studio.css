@@ -520,7 +520,11 @@
 .canvas-editor .low-detail .port-label,.canvas-editor .low-detail .node-config-copy small { visibility: hidden; }
 .canvas-editor .low-detail .node-card,
 .canvas-editor .low-detail .node-card.selected::after { box-shadow: none; }
-.canvas-editor .low-detail.is-node-dragging .react-flow__viewport { will-change: auto; }
+/* Cache selected overview cards independently while the group is moved. */
+.canvas-editor .low-detail .react-flow__node.selected { will-change: transform; }
+.canvas-editor .low-detail.is-interacting .studio-edge-terminals { display: none; }
+.canvas-editor .low-detail.is-interacting .studio-edge.is-focused .react-flow__edge-path { stroke: #55dff3 !important; }
+.canvas-editor .low-detail.is-interacting .studio-edge.is-error .react-flow__edge-path { stroke: #ee8e9e !important; }
 .canvas-editor .low-detail .generated-result-state .result-info-button { font-size: 15px; }
 .canvas-prompt-content { height: 100%; min-height: 0; }
 .canvas-editor .prompt-overview { height: 100%; min-height: 54px; padding: 9px; overflow: hidden; color: #b9beca; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }

@@ -198,7 +198,7 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
     await page.keyboard.press("Control+a");
     await expect
       .poll(() => page.locator(".react-flow__node.selected").count())
-      .toBeGreaterThan(1);
+      .toBe(count);
     if (scene === "mixed") {
       await page.waitForTimeout(250);
       await expect(page.getByRole("toolbar", { name: "生成结果操作" })).toHaveCount(0);
@@ -206,9 +206,12 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
       expect(sizes.length).toBeGreaterThan(0);
       expect(sizes.every((size) => size > 0 && size < 3840), "Selecting a whole overview must not upgrade every result to 3840px").toBe(true);
     }
-    const selected = page
-      .locator(".react-flow__node.selected .node-head")
-      .first();
+    // The first node was moved into the grid by the single-node measurement.
+    // Use an unobstructed header instead of accidentally clicking an editor on
+    // an overlapping node and collapsing the selection during the benchmark.
+    const groupAnchor = page.locator('.react-flow__node[data-id="perf-24"]');
+    const selected = groupAnchor.locator(".node-head");
+    const groupBefore = await groupAnchor.getAttribute("style");
     const groupBox = await selected.boundingBox();
     expect(groupBox).not.toBeNull();
     await page.mouse.move(
@@ -224,6 +227,8 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
     );
     await page.mouse.up();
     rows.push({ scene, count, gesture: "multiselect-drag", ...(await stop()) });
+    expect(await groupAnchor.getAttribute("style")).not.toBe(groupBefore);
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(count);
   const reportPath = testInfo.outputPath("performance.json");
   await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(reportPath, JSON.stringify(rows, null, 2));

@@ -4,8 +4,18 @@ import { memo, useId } from "react";
 import { BaseEdge, getBezierPath, useStore, type EdgeProps } from "@xyflow/react";
 import type { StudioEdgeState } from "../lib/canvas-edge-presentation";
 
+// A group drag translates both endpoints equally. Keep the curve and its SVG
+// mask in local coordinates so those expensive descendants stay memoized.
+export const StudioEdge = memo(function StudioEdge(props: EdgeProps) {
+  const targetX = Math.round((props.targetX - props.sourceX) * 1000) / 1000;
+  const targetY = Math.round((props.targetY - props.sourceY) * 1000) / 1000;
+  return <g transform={`translate(${props.sourceX} ${props.sourceY})`}>
+    <StudioEdgeContent {...props} sourceX={0} sourceY={0} targetX={targetX} targetY={targetY} />
+  </g>;
+});
+
 /** Selection-only light, drawn with a continuous vector mask instead of stepped dashes. */
-export const StudioEdge = memo(function StudioEdge({
+const StudioEdgeContent = memo(function StudioEdgeContent({
   id, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
   selected, data, style, markerStart, markerEnd,
 }: EdgeProps) {
