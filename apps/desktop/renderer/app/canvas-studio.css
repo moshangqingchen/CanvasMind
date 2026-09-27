@@ -517,6 +517,8 @@
 .result-info-actions .button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 @media (max-width: 480px) { .result-info-body { padding: 14px; } .result-info-body dl { gap: 8px; } }
 .canvas-editor .low-detail .port-label,.canvas-editor .low-detail .node-config-copy small { visibility: hidden; }
+.canvas-editor .low-detail .node-card,
+.canvas-editor .low-detail .node-card.selected::after { box-shadow: none; }
 .canvas-editor .low-detail .generated-result-state .result-info-button { font-size: 15px; }
 .canvas-prompt-content { height: 100%; min-height: 0; }
 .canvas-editor .prompt-overview { height: 100%; min-height: 54px; padding: 9px; overflow: hidden; color: #b9beca; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }

@@ -69,6 +69,7 @@ import {
   KeyRound,
   LayoutGrid,
   Map as MapIcon,
+  Maximize,
   GitBranch,
   MessageSquarePlus,
   MousePointer2,
@@ -4813,8 +4814,16 @@ function CanvasShell({
       showToast("画布还没有节点");
       return;
     }
+    const canvas = canvasWrapRef.current;
+    const canvasBounds = canvas?.getBoundingClientRect();
+    const toolbarBounds = canvas?.querySelector(".canvas-toolbar")?.getBoundingClientRect();
+    // Fit into the usable canvas above the floating tools, including when a
+    // sidebar moves those tools into two rows.
+    const bottomPadding = canvasBounds && toolbarBounds
+      ? Math.min(canvasBounds.height / 2, Math.max(canvasBounds.height * 0.1, canvasBounds.bottom - toolbarBounds.top + 16))
+      : 140;
     void instance.fitView({
-      padding: 0.24,
+      padding: { top: "10%", x: "10%", bottom: `${Math.ceil(bottomPadding)}px` },
       minZoom: CANVAS_MIN_ZOOM,
       maxZoom: CANVAS_MAX_ZOOM,
       duration: canvasMotionEnabled() ? 320 : 0,
@@ -7300,6 +7309,10 @@ function CanvasShell({
     },
     [scheduleSave, setViewport],
   );
+  // React Flow memoizes its node wrappers. Keep their event props stable when
+  // viewport/save state changes so a wheel gesture does not render every node.
+  const dismissNodeMenu = useCallback(() => setNodeMenu(null), []);
+  const onNodeDragStart = useCallback(() => checkpoint(true), [checkpoint]);
 
   // An open node editor can remain usable after canvas selection is cleared.
   // Load its models independently without selecting the node or opening a sidebar.
@@ -9463,7 +9476,7 @@ function CanvasShell({
             connectionLineStyle={{ stroke: "#55dff3", strokeWidth: 2, strokeDasharray: "5 5" }}
             onNodesChange={onNodesChangeWrapped}
             onEdgesChange={onEdgesChangeWrapped}
-            onNodeDragStart={() => checkpoint(true)}
+            onNodeDragStart={onNodeDragStart}
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
@@ -9488,8 +9501,8 @@ function CanvasShell({
               setCanvasMenu(null);
               setNodeMenu(null);
             }}
-            onNodeClick={() => setNodeMenu(null)}
-            onMoveStart={() => setNodeMenu(null)}
+            onNodeClick={dismissNodeMenu}
+            onMoveStart={dismissNodeMenu}
             onInit={(instance) => {
               reactFlowRef.current = instance;
               instance.setViewport(viewport);
@@ -9571,12 +9584,9 @@ function CanvasShell({
             />
             <Controls
               showInteractive={false}
-              fitViewOptions={{
-                padding: 0.25,
-                minZoom: CANVAS_MIN_ZOOM,
-                maxZoom: CANVAS_MAX_ZOOM,
-              }}
+              showFitView={false}
             >
+              <button className="react-flow__controls-button react-flow__controls-fitview" type="button" onClick={fitViewToCanvas} title="Fit View" aria-label="Fit View"><Maximize size={14} /></button>
               <button className="canvas-zoom-value" type="button" onClick={fitViewToCanvas} title="适应画布 (F)" aria-label="缩放比例，点击适应画布">{Math.round(viewport.zoom * 100)}%</button>
               <button className="react-flow__controls-button" type="button" title={showMinimap ? "收起小地图" : "显示小地图"} aria-label="小地图" aria-pressed={showMinimap} onClick={() => setShowMinimap((shown) => !shown)}><MapIcon size={14} /></button>
               <button className="react-flow__controls-button" type="button" title="显示连线" aria-label="显示连线" aria-pressed={showConnections} onClick={() => setShowConnections((shown) => !shown)}><GitBranch size={14} /></button>

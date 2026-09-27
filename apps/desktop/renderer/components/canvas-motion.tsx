@@ -72,6 +72,9 @@ export const CanvasPointerTrail = memo(function CanvasPointerTrail({
       ratio = 1,
       interactionTimer = 0;
     const clear = () => {
+      // Dragging repeatedly enters this path with an already empty trail.
+      // Avoid invalidating the full overlay canvas for every pointer frame.
+      if (!raf && points.length === 0 && canvas.dataset.active !== "true") return;
       cancelAnimationFrame(raf);
       raf = 0;
       points = [];

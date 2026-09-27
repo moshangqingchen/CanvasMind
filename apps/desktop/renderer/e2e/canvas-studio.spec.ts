@@ -56,8 +56,6 @@ test("studio canvas keeps navigation, view toggles and draft starters usable", a
 
 test("only selected connections have continuous feathered light, switching and clearing selection updates it", async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
-  const created = await request.post("/api/projects", { data: { title: "森林序曲 · 视觉创作" } });
-  const { project } = await created.json();
   const graph = {
     schemaVersion: 1,
     nodes: [
@@ -70,7 +68,9 @@ test("only selected connections have continuous feathered light, switching and c
       { id: "idea-story", source: "idea", sourceHandle: "prompt", target: "story", targetHandle: "prompt", type: "smoothstep" },
     ], viewport: { x: 10, y: 20, zoom: .88 },
   };
-  expect((await request.put(`/api/canvas/${project.id}`, { data: { graph } })).ok()).toBeTruthy();
+  const created = await request.post("/api/canvas", { data: { title: "森林序曲 · 视觉创作", graph } });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
   await page.goto(`/canvas/${project.id}`);
   await expect(page.locator(".studio-edge")).toHaveCount(2);
   const edge = page.locator('.react-flow__edge[data-id="idea-image"]');
@@ -113,7 +113,7 @@ test("only selected connections have continuous feathered light, switching and c
   await expect(edge.locator(".studio-edge-beam")).toHaveCount(0);
   await expect(otherEdge.locator(".studio-edge-beam")).toHaveCount(1);
   if (process.env.STUDIO_RECORD_VIDEO === "1") await page.waitForTimeout(3700);
-  await page.locator(".react-flow__pane").click({ position: { x: 550, y: 850 } });
+  await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
   await expect(page.locator(".studio-edge-beam")).toHaveCount(0);
   // Clicking an edge lights that edge alone; clicking its source lights both outgoing edges.
   await edge.locator(".react-flow__edge-interaction").click();
@@ -141,7 +141,7 @@ test("only selected connections have continuous feathered light, switching and c
   await page.screenshot({ path: testInfo.outputPath("studio-feathered-detail.png") });
   await page.getByRole("button", { name: "显示连线", exact: true }).click();
   await expect(page.locator(".react-flow__edges")).toHaveCSS("visibility", "hidden");
-  await page.locator(".react-flow__pane").click({ position: { x: 550, y: 850 } });
+  await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
   const saved = await (await request.get(`/api/canvas/${project.id}`)).json();
   expect(saved.graph.edges).toEqual(graph.edges);
 });

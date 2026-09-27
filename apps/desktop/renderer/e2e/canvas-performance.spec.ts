@@ -158,7 +158,9 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
     expect(pane).not.toBeNull();
     await page.mouse.move(
       pane!.x + pane!.width * 0.5,
-      pane!.y + pane!.height * 0.5,
+      // Fit View leaves space above the graph. The center can be a prompt's
+      // scrollable editor, which intentionally consumes wheel input.
+      pane!.y + 16,
     );
     const beforeZoom = await page
       .locator(".react-flow__viewport")
