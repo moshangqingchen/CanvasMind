@@ -58,6 +58,16 @@ jobs:
         env:
           PLAYWRIGHT_CHANNEL: chromium
 
+      - name: Preserve browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-diagnostics
+          path: |
+            apps/desktop/renderer/test-results
+            apps/desktop/renderer/playwright-report
+          retention-days: 7
+
   desktop:
     runs-on: windows-latest
     timeout-minutes: 45

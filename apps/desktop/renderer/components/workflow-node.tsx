@@ -1056,7 +1056,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           </div>
         </div>
       </NodeToolbar> : null}
-      {selected && generatedResult && !generatedPending ? <ResultToolbar nodeId={id}>
+      {selected && (data.selectionSize ?? 1) <= 1 && generatedResult && !generatedPending ? <ResultToolbar nodeId={id}>
         <div className="generated-result-actions-wrap nodrag nopan nowheel">
           <div
             className="generated-result-actions"

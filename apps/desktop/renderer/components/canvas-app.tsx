@@ -9127,7 +9127,7 @@ function CanvasShell({
             }
           }}
         /> : null}
-        <aside className={`sidebar ${mobileLibraryOpen ? "mobile-open" : ""}`}>
+        {mobileLibraryOpen ? <aside className="sidebar mobile-open">
           <button
             className="icon-button mobile-panel-close mobile-only"
             type="button"
@@ -9238,6 +9238,8 @@ function CanvasShell({
                       <img
                         src={`/api/assets/${encodeURIComponent(asset.id)}/preview?size=160`}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
                       />
                     ) : asset.kind === "video" ? (
                       <Video size={15} />
@@ -9253,7 +9255,7 @@ function CanvasShell({
               ))
             )}
           </div>
-        </aside>
+        </aside> : null}
         <section
           ref={canvasWrapRef}
           className={`canvas-wrap ${dropActive ? "drop-active" : ""} ${showConnections ? "" : "connections-hidden"} ${showEffects ? "" : "effects-paused"} ${viewport.zoom < .55 ? "low-detail" : ""}`}

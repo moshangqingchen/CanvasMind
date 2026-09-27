@@ -32,7 +32,7 @@ async function uploadPerformanceImages(request: APIRequestContext) {
 }
 
 // DOM snapshots on every pointer/wheel action materially distort large-graph timings.
-test.use({ trace: process.env.CANVAS_PERF_TRACE === "1" ? "retain-on-failure" : "off", screenshot: "off", video: "off" });
+test.use({ trace: process.env.CANVAS_PERF_TRACE === "1" ? "retain-on-failure" : "off", screenshot: "only-on-failure", video: "off" });
 
 test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
   page,
@@ -71,6 +71,7 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
       };
     });
   for (const { scene, count } of (["prompt", "mixed"] as const).flatMap((scene) => [50, 200, 500].map((count) => ({ scene, count })))) {
+    console.log(`Preparing canvas performance scene: ${scene}/${count}`);
     if (scene === "mixed" && imageIds.length === 0) imageIds = await uploadPerformanceImages(request);
     await page.goto("about:blank");
     const graph: CanvasDocument = {
@@ -157,7 +158,7 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
       .locator(".react-flow__viewport")
       .getAttribute("style");
     let duringZoom = beforeZoom;
-    const profiler = process.env.CANVAS_CPU_PROFILE && count === 200
+    const profiler = process.env.CANVAS_CPU_PROFILE && count === 500
       ? await page.context().newCDPSession(page) : null;
     if (profiler) { await profiler.send("Profiler.enable"); await profiler.send("Profiler.start"); }
     await start();
@@ -192,6 +193,7 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
       .toBeGreaterThan(1);
     if (scene === "mixed") {
       await page.waitForTimeout(250);
+      await expect(page.getByRole("toolbar", { name: "生成结果操作" })).toHaveCount(0);
       const sizes = await page.locator(".generated-result-node img").evaluateAll((images) => images.map((image) => Number(new URL((image as HTMLImageElement).src).searchParams.get("size"))));
       expect(sizes.length).toBeGreaterThan(0);
       expect(sizes.every((size) => size > 0 && size < 3840), "Selecting a whole overview must not upgrade every result to 3840px").toBe(true);

@@ -852,12 +852,15 @@ test("项目成果隔离、版本查看与评审意见带入修改节点", async
 
 test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 数量", async ({ page, designFixture }) => {
   test.setTimeout(90000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
   const icons = await readFile(new URL("../../assets/icon.png", import.meta.url));
   const base = designFixture.images[0];
   const gallery = Array.from({ length: 1000 }, (_, index) => ({ ...base, id: `virtual-image-${index}`, metadata: { runId: `virtual-history-${index}` }, name: `城市建筑与自然光影的探索作品 ${String(index).padStart(4, "0")}`, createdAt: new Date(2026, 8, 21, 12, 0, index).toISOString() }));
   await page.route("**/api/assets", route => route.fulfill({ json: gallery }));
   await page.route("**/api/assets/virtual-image-*/preview?*", route => route.fulfill({ contentType: "image/png", body: icons }));
   const history = await openHistory(page, designFixture);
+  await expect(page.locator("aside.sidebar")).toHaveCount(0);
   await history.getByLabel("作品范围").selectOption("all");
   await expect(history.getByText("1000 张作品", { exact: true })).toBeVisible();
   expect(await history.locator(".library-card").count()).toBeLessThan(40);
@@ -909,4 +912,5 @@ test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 
     return {images:1000,samples:samples.length,p50:samples[Math.floor(samples.length*.5)],p95:samples[Math.floor(samples.length*.95)],max:samples.at(-1),mountedCards:document.querySelectorAll('.library-card').length};
   });
   await writeFile(new URL("../../../../.codex-temp/redesign-gallery-1000-performance.json",import.meta.url),JSON.stringify(frames,null,2));
+  expect(pageErrors).toEqual([]);
 });
