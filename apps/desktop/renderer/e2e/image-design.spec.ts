@@ -850,11 +850,10 @@ test("项目成果隔离、版本查看与评审意见带入修改节点", async
   expect(designFixture.browserRunSubmissions).toEqual([]);
 });
 
-test.describe("大图库滚动性能", () => {
 // Recording every DOM snapshot changes the memory and frame cost of this
 // thousand-asset fixture. Keep assertions, screenshots and page-error checks.
-test.use({ trace: "off" });
-test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 数量", async ({ page, designFixture }) => {
+const galleryPerformanceTest = test.extend({ trace: "off" as const });
+galleryPerformanceTest("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 数量", async ({ page, designFixture }) => {
   test.setTimeout(90000);
   const pageErrors: string[] = [];
   page.on("pageerror", error => pageErrors.push(error.message));
@@ -916,5 +915,4 @@ test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 
   });
   await writeFile(new URL("../../../../.codex-temp/redesign-gallery-1000-performance.json",import.meta.url),JSON.stringify(frames,null,2));
   expect(pageErrors).toEqual([]);
-});
 });
