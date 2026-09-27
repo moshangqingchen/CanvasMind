@@ -857,6 +857,7 @@ galleryPerformanceTest("新版图片库保留浏览、侧边评审草稿并限�
   test.setTimeout(90000);
   const pageErrors: string[] = [];
   page.on("pageerror", error => pageErrors.push(error.message));
+  page.on("crash", () => console.error("Gallery browser page crashed"));
   const icons = await readFile(new URL("../../assets/icon.png", import.meta.url));
   const base = designFixture.images[0];
   const gallery = Array.from({ length: 1000 }, (_, index) => ({ ...base, id: `virtual-image-${index}`, metadata: { runId: `virtual-history-${index}` }, name: `城市建筑与自然光影的探索作品 ${String(index).padStart(4, "0")}`, createdAt: new Date(2026, 8, 21, 12, 0, index).toISOString() }));
