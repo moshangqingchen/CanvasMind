@@ -532,6 +532,19 @@ async function openLibrary(page: Page): Promise<void> {
   await expect(sidebar).toBeVisible();
 }
 
+async function openNodeParameters(node: Locator, connection?: ProviderConnectionResponse): Promise<Locator> {
+  await node.getByRole("button", { name: /^打开 .* 模型与参数$/u }).click();
+  const panel = node.getByRole("dialog");
+  await expect(panel).toBeVisible();
+  if (connection) {
+    await panel.getByRole("combobox", { name: / 供应商$/u }).selectOption(String(connection.config.supplierKey ?? connection.provider));
+    await panel.getByRole("combobox", { name: / 模型群组$/u }).selectOption(String(connection.config.modelGroup ?? "默认群组"));
+    const connections = panel.getByRole("combobox", { name: / API 连接$/u });
+    if (await connections.count()) await connections.selectOption(connection.id);
+  }
+  return panel;
+}
+
 async function savedCanvas(page: Page): Promise<CanvasResponse> {
   const response = await page.request.get("/api/canvas");
   expect(response.ok()).toBeTruthy();
@@ -1537,7 +1550,7 @@ test.describe("超级画布完整验收", () => {
     await page.getByRole("menuitem", { name: "运行历史", exact: true }).click();
     const runHistory = page.getByRole("dialog", { name: "运行历史" });
     await expect(
-      runHistory.getByRole("heading", { name: "运行历史", exact: true }),
+      runHistory.getByRole("heading", { name: "任务中心", exact: true }),
     ).toBeVisible();
   });
 
@@ -1743,7 +1756,7 @@ test.describe("超级画布完整验收", () => {
     page,
     request,
   }) => {
-    await createImageModelFixture(request);
+    const connection = await createImageModelFixture(request);
     await openWorkspace(page);
 
     await page.locator(".react-flow__pane").click({
@@ -1761,8 +1774,10 @@ test.describe("超级画布完整验收", () => {
     await menu.getByRole("menuitem", { name: "图片节点" }).click();
 
     await expect(page.locator(".react-flow__node")).toHaveCount(5);
-    const inspector = page.locator("aside.inspector");
-    await inspector.getByLabel("尺寸").fill("1536x1024");
+    await page.getByRole("button", { name: "Fit View", exact: true }).click();
+    const created = page.locator('.react-flow__node:has(.node-card[data-node-type="image-generation"])').last();
+    const inspector = await openNodeParameters(created, connection);
+    await inspector.getByLabel("尺寸", { exact: true }).fill("1536x1024");
     await inspector.getByLabel("质量").selectOption("high");
     await inspector.getByLabel("生成张数").fill("3");
 
@@ -1876,7 +1891,7 @@ test.describe("超级画布完整验收", () => {
     expect(submissions).toBe(0);
   });
 
-  test("图片和视频节点内可编辑提示词，右侧统一配置并保存参数", async ({
+  test("图片和视频节点内编辑提示词，通过节点参数面板保存并恢复配置", async ({
     page,
     request,
   }) => {
@@ -1889,21 +1904,10 @@ test.describe("超级画布完整验收", () => {
     await expect(imageEditor).toBeVisible();
     await imageEditor.pressSequentially("节点内的电影感城市海报", { delay: 5 });
 
-    const inspector = page.locator("aside.inspector");
-    const connectionSelect = inspector.getByLabel("API 连接");
-    await connectionSelect.selectOption(connection.id);
-    const modelInput = inspector.getByLabel("模型");
-    await expect(modelInput).toBeVisible();
-    await modelInput.fill("e2e-image-cinematic");
-    await inspector.getByLabel("尺寸").fill("2160x3840");
-    const imageConfigButton = imageNode.getByRole("button", {
-      name: /打开 E2E 图片生成 模型与参数/u,
-    });
-    await imageConfigButton.click();
-    const imageConfigPopover = page.getByRole("dialog", {
-      name: "E2E 图片生成 模型与参数",
-    });
-    await expect(imageConfigPopover).toBeVisible();
+    const imageConfigPopover = await openNodeParameters(imageNode, connection);
+    await imageConfigPopover.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true }).click();
+    await imageConfigPopover.getByRole("option", { name: "E2E Image Cinematic", exact: true }).click();
+    await imageConfigPopover.getByLabel("尺寸", { exact: true }).fill("2160x3840");
     await expect(
       imageConfigPopover.getByLabel("E2E 图片生成 模型", { exact: true }),
     ).toContainText("E2E Image Cinematic");
@@ -1918,10 +1922,10 @@ test.describe("超级画布完整验收", () => {
     const videoEditor = videoNode.locator(".tiptap-prompt");
     await expect(videoEditor).toBeVisible();
     await videoEditor.pressSequentially("镜头缓慢向前推进", { delay: 5 });
-    await expect(inspector.getByLabel("API 连接")).toHaveValue("fake-default");
-    await expect(inspector.getByLabel("模型")).toHaveValue("fake-video-v1");
-    await inspector.getByLabel("时长（秒）").fill("8");
-    await inspector.getByLabel("画面比例").fill("720:1280");
+    const videoConfig = await openNodeParameters(videoNode);
+    await expect(videoConfig.getByRole("combobox", { name: "E2E 视频生成 模型", exact: true })).toContainText("Fake");
+    await videoConfig.getByLabel("时长（秒）").fill("8");
+    await videoConfig.getByLabel("画面比例").fill("720:1280");
 
     await expect
       .poll(async () => {
@@ -1969,14 +1973,9 @@ test.describe("超级画布完整验收", () => {
     await expect(restoredImage.locator(".tiptap-prompt")).toContainText(
       "节点内的电影感城市海报",
     );
-    const restoredInspector = page.locator("aside.inspector");
-    await expect(restoredInspector.getByLabel("API 连接")).toHaveValue(
-      connection.id,
-    );
-    await expect(restoredInspector.getByLabel("模型")).toHaveValue(
-      "e2e-image-cinematic",
-    );
-    await expect(restoredInspector.getByLabel("尺寸")).toHaveValue("");
+    const restoredInspector = await openNodeParameters(restoredImage);
+    await expect(restoredInspector.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true })).toContainText("E2E Image Cinematic");
+    await expect(restoredInspector.getByLabel("尺寸", { exact: true })).toHaveValue("");
     await expect(restoredInspector.getByLabel("质量")).toHaveValue("high");
     await expect(restoredInspector.getByLabel("画面比例")).toHaveValue("9:16");
   });
@@ -3239,18 +3238,18 @@ test.describe("超级画布完整验收", () => {
       '.react-flow__node:has(.node-card[data-node-type="image-generation"])',
     );
     await expect(imageNodes).toHaveCount(2);
+    await page.getByRole("button", { name: "Fit View", exact: true }).click();
     const createdNode = imageNodes.last();
     const createdId = await createdNode.getAttribute("data-id");
     expect(createdId).toBeTruthy();
 
     const editor = createdNode.locator(".tiptap-prompt");
     await editor.pressSequentially("一张可以立即运行的霓虹街景", { delay: 5 });
-    const inspector = page.locator("aside.inspector");
-    await inspector.getByLabel("API 连接").selectOption(connection.id);
-    await inspector.getByLabel("模型").fill("fake-image-v1");
-    await inspector.getByLabel("尺寸").fill("1536x1024");
+    const inspector = await openNodeParameters(createdNode, connection);
+    await inspector.getByLabel("精确尺寸", { exact: true }).fill("1536x1024");
     await inspector.getByLabel("质量").selectOption("high");
     await inspector.getByLabel("数量").fill("2");
+    await inspector.getByRole("button", { name: "关闭模型与参数面板" }).click();
 
     const runResponsePromise = page.waitForResponse(
       (response) =>
@@ -3258,7 +3257,7 @@ test.describe("超级画布完整验收", () => {
         response.request().method() === "POST",
     );
     await createdNode
-      .getByRole("button", { name: "运行 图片生成 节点" })
+      .getByRole("button", { name: /^运行 .* 节点$/u })
       .click();
     const runResponse = await runResponsePromise;
     expect(runResponse.status()).toBe(201);
@@ -3367,7 +3366,7 @@ test.describe("超级画布完整验收", () => {
     await page.getByRole("menuitem", { name: "运行历史", exact: true }).click();
     const reloadedHistory = page.getByRole("dialog", { name: "运行历史" });
     await expect(reloadedHistory.locator(".history-row").first()).toContainText(
-      "succeeded",
+      "已完成",
     );
     await reloadedHistory.getByRole("button", { name: "关闭" }).click();
     // Result materialization is persisted through the same 650ms save queue as
@@ -3770,7 +3769,6 @@ test.describe("超级画布完整验收", () => {
 
     const promptNode = page.locator('.react-flow__node[data-id="e2e-image"]');
     await promptNode.click();
-    const inspector = page.locator("aside.inspector");
     const editor = promptNode.locator(".tiptap-prompt");
     await expect(editor).toBeVisible();
     await editor.fill("保留建筑轮廓，生成雨夜电影镜头 ");
@@ -3785,9 +3783,7 @@ test.describe("超级画布完整验收", () => {
     await editor.press("Enter");
     await page.getByRole("button", { name: "运行全部" }).focus();
 
-    const roleRow = inspector.locator(".mention-role-row");
-    await expect(roleRow).toContainText(`@${REFERENCE_ASSET_NAME}`);
-    await roleRow.locator("select").selectOption("reference");
+    await expect(editor.locator('.mention-chip')).toContainText(REFERENCE_ASSET_NAME);
 
     await expect
       .poll(
@@ -3860,7 +3856,7 @@ test.describe("超级画布完整验收", () => {
       "整张画布",
     );
     await expect(history.locator(".history-row").first()).toContainText(
-      "succeeded",
+      "已完成",
     );
     await history.getByRole("button", { name: "关闭" }).click();
 
