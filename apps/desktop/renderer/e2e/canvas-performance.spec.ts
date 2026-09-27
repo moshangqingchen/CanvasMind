@@ -34,7 +34,10 @@ async function uploadPerformanceImages(request: APIRequestContext) {
 // DOM snapshots on every pointer/wheel action materially distort large-graph timings.
 test.use({ trace: process.env.CANVAS_PERF_TRACE === "1" ? "retain-on-failure" : "off", screenshot: "only-on-failure", video: "off" });
 
-test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
+// Give each graph size its own Playwright context so previous large documents
+// cannot remain in Chromium's navigation cache during the next measurement.
+for (const { scene, count } of (["prompt", "mixed"] as const).flatMap((scene) => [50, 200, 500].map((count) => ({ scene, count })))) {
+test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${count}`, async ({
   page,
   request,
 }, testInfo) => {
@@ -70,7 +73,6 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
         over50ms: frames.filter((x) => x > 50).length,
       };
     });
-  for (const { scene, count } of (["prompt", "mixed"] as const).flatMap((scene) => [50, 200, 500].map((count) => ({ scene, count })))) {
     console.log(`Preparing canvas performance scene: ${scene}/${count}`);
     if (scene === "mixed" && imageIds.length === 0) imageIds = await uploadPerformanceImages(request);
     await page.goto("about:blank");
@@ -216,7 +218,6 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
     );
     await page.mouse.up();
     rows.push({ scene, count, gesture: "multiselect-drag", ...(await stop()) });
-  }
   const reportPath = testInfo.outputPath("performance.json");
   await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(reportPath, JSON.stringify(rows, null, 2));
@@ -229,3 +230,4 @@ test("画布 50/200/500 提示词与混合图片节点性能门槛", async ({
     }
   }
 });
+}
