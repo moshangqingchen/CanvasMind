@@ -55,14 +55,14 @@ test("已取消任务从历史取回已有图片，不恢复生成或重复提�
   await recover.click();
   await expect(history.getByRole("button", { name: "固定输出 1", exact: true })).toBeVisible();
   await expect(recover).toHaveCount(0);
-  await expect(history.locator(".status-label")).toHaveText("cancelled");
+  await expect(history.locator(".status-label")).toHaveText("已取消");
   await history.getByRole("button", { name: "固定输出 1", exact: true }).click();
   await expect.poll(async () => {
     const saved = await (await request.get(`/api/canvas/${canvas.id}`)).json();
     return saved.graph.nodes.filter((node: { data: { assetId?: string; generatedResult?: boolean } }) =>
       node.data.assetId === asset.id && !node.data.generatedResult).length;
   }).toBe(1);
-  await history.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(history).toBeHidden();
   await page.reload();
   const fixed = page.locator(".react-flow__node").filter({ hasText: "固定输出 · 已取回原图.png" });
   await expect(fixed).toBeVisible();
@@ -70,4 +70,3 @@ test("已取消任务从历史取回已有图片，不恢复生成或重复提�
   expect(recoveries).toBe(1);
   expect(submissions).toBe(0);
 });
-
