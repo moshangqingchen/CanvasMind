@@ -83,11 +83,15 @@ test(`画布 50/200/500 提示词与混合图片节点性能门槛 ${scene}/${co
         id: `perf-${i}`,
         type: "workflow",
         position: { x: (i % 25) * 350, y: Math.floor(i / 25) * 230 },
+        // Saved image results already carry their measured geometry. Omitting it
+        // makes every image load serialize and save the whole graph again.
+        ...(scene === "mixed" && i % 3 !== 0 ? { style: { width: 300, height: 225 } } : {}),
         data: scene === "mixed" && i % 3 !== 0 ? {
           nodeType: "asset-input",
           label: `图片结果 ${i + 1}`,
           assetId: imageIds[i % imageIds.length],
           assetKind: "image",
+          mediaAspectRatio: 4 / 3,
           generatedResult: true,
           generatedStatus: "succeeded",
           inputs: [],
