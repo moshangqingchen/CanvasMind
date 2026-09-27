@@ -419,13 +419,9 @@ test("Ctrl 连线增选、取消选择与批量删除保持一致", async ({ pag
     const path = page.locator(
       `.react-flow__edge[data-id="${id}"] .react-flow__edge-interaction`,
     );
-    const point = await path.evaluate((element) => {
-      const path = element as SVGPathElement,
-        p = path.getPointAtLength(path.getTotalLength() / 2);
-      const q = new DOMPoint(p.x, p.y).matrixTransform(path.getScreenCTM()!);
-      return { x: q.x, y: q.y };
-    });
-    await page.mouse.click(point.x, point.y);
+    // Locator clicks wait for Fit View's animation to settle before hitting
+    // the curve; raw screen coordinates can become stale during that motion.
+    await path.click();
   };
   await clickEdge("edge-a");
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(1);
