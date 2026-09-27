@@ -1,0 +1,13 @@
+.task-progress li {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 0;
+}
+.task-progress li strong,
+.task-progress li span {
+  color: var(--text, #ddd);
+}
+.task-progress li small {
+  color: var(--muted, #999);
+}

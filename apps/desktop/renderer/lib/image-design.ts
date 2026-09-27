@@ -44,7 +44,7 @@ export function filterDesignImages(
 ): AssetView[] {
   const term = query.trim().toLocaleLowerCase();
   return assets.filter((asset) => {
-    if (asset.kind !== "image" || typeof asset.metadata.runId !== "string")
+    if (asset.kind !== "image" || (typeof asset.metadata.runId !== "string" && readImageDesignReview(asset.metadata).revision === 0))
       return false;
     const review = readImageDesignReview(asset.metadata);
     return (
@@ -117,12 +117,12 @@ export function createImageEditDraft(input: {
     data: {
       nodeType: "image-generation",
       label: "继续修改图片",
-      description: "填写本次修改要求后运行，沿用原图的模型与尺寸设置",
+      description: "已带入保存的评审意见，核对修改要求后运行",
       provider: source.provider,
       connectionId: source.connectionId,
       model: source.model,
       parameters: { ...source.parameters, n: 1 },
-      parts: [{ type: "text", text: "" }],
+      parts: [{ type: "text", text: readImageDesignReview(asset.metadata).note }],
       inputs: [
         { id: "prompt", kind: "text", label: "修改要求", required: false },
         { id: "references", kind: "image[]", label: "参考图", multiple: true },

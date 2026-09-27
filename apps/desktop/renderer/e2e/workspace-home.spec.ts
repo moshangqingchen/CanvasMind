@@ -16,6 +16,16 @@ const older: HomeProject = {
   createdAt: "2026-09-01T08:00:00.000Z",
   updatedAt: "2026-09-02T08:00:00.000Z",
 };
+
+test("首页设计任务入口创建项目后直接打开工作台", async ({ page }) => {
+  await mockWorkspace(page, []);
+  await page.goto("/");
+  await page.getByRole("button", { name: "做活动海报", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "平面设计", exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/canvas\/home-created$/u);
+});
 const newer: HomeProject = {
   id: "home-newer",
   title: "秋日视频分镜",
@@ -98,7 +108,12 @@ async function mockWorkspace(page: Page, initial: HomeProject[]) {
         },
       });
     }
-    if (pathname === "/api/assets" || pathname === "/api/providers")
+    if (
+      pathname === "/api/assets" ||
+      pathname === "/api/providers" ||
+      pathname === "/api/agent/models" ||
+      pathname === "/api/agent/sessions"
+    )
       return route.fulfill({ json: [] });
     if (pathname.includes("/preview"))
       return route.fulfill({
@@ -122,12 +137,18 @@ async function expectReadableWorkspace(page: Page, viewportWidth: number) {
     const bounds = await area.boundingBox();
     expect(bounds, `${label}应有可见布局`).not.toBeNull();
     expect(bounds!.x, `${label}左侧不应越界`).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x, `${label}左侧不应保留固定宽度空白`).toBeLessThanOrEqual(100);
+    expect(bounds!.x, `${label}左侧不应保留固定宽度空白`).toBeLessThanOrEqual(
+      100,
+    );
     const rightMargin = viewportWidth - bounds!.x - bounds!.width;
     expect(rightMargin, `${label}右侧不应越界`).toBeGreaterThanOrEqual(-1);
-    expect(rightMargin, `${label}右侧不应保留固定宽度空白`).toBeLessThanOrEqual(100);
+    expect(rightMargin, `${label}右侧不应保留固定宽度空白`).toBeLessThanOrEqual(
+      100,
+    );
     expect(
-      await area.evaluate((element) => element.scrollWidth - element.clientWidth),
+      await area.evaluate(
+        (element) => element.scrollWidth - element.clientWidth,
+      ),
       `${label}不应横向溢出`,
     ).toBeLessThanOrEqual(1);
   }
@@ -136,7 +157,7 @@ async function expectReadableWorkspace(page: Page, viewportWidth: number) {
   const brand = header.getByRole("link", { name: /首页$/u });
   const brandText = brand.locator('[class*="brandText"]');
   const headerActions = header.locator('[class*="headerActions"]');
-  const capabilities = page.locator('[aria-label="支持文字、图像和视频创作"]');
+  const capabilities = page.locator('[aria-label="按设计任务开始"]');
   // These checks catch markup shipped without its matching CSS module rules.
   await expect(brandText).toHaveCSS("display", "grid");
   await expect(headerActions).toHaveCSS("display", "flex");
@@ -150,7 +171,9 @@ async function expectReadableWorkspace(page: Page, viewportWidth: number) {
       brandBounds!.y + brandBounds!.height <= actionsBounds!.y,
     "品牌与右侧操作区不应重叠",
   ).toBe(true);
-  expect(actionsBounds!.x + actionsBounds!.width).toBeLessThanOrEqual(viewportWidth);
+  expect(actionsBounds!.x + actionsBounds!.width).toBeLessThanOrEqual(
+    viewportWidth,
+  );
 
   const eyebrow = main.locator('[class*="eyebrow"]').filter({
     has: page.getByText("灵感无界 · 创作不止", { exact: true }),
@@ -163,32 +186,42 @@ async function expectReadableWorkspace(page: Page, viewportWidth: number) {
   });
   expect(lineCount, "标题上方文字应保持单行，不应被挤成竖排").toBe(1);
   const eyebrowBounds = await eyebrow.boundingBox();
-  const headingBounds = await page.getByRole("heading", { level: 1 }).boundingBox();
+  const headingBounds = await page
+    .getByRole("heading", { level: 1 })
+    .boundingBox();
   expect(eyebrowBounds).not.toBeNull();
   expect(headingBounds).not.toBeNull();
-  expect(eyebrowBounds!.y + eyebrowBounds!.height).toBeLessThanOrEqual(headingBounds!.y);
+  expect(eyebrowBounds!.y + eyebrowBounds!.height).toBeLessThanOrEqual(
+    headingBounds!.y,
+  );
 
-  const readableText = page.locator([
-    'main [class*="heroDescription"]',
-    'main [class*="capabilities"] > span',
-    'header [class*="settingsButton"]',
-    'main [class*="primaryButton"]',
-    'main [class*="continueLink"]',
-    'main [class*="sectionHeadingCopy"] > p',
-    'input[aria-label="搜索画布"]',
-    'select[aria-label="画布排序"]',
-    'article h3',
-    'article [class*="cardMeta"] > span',
-  ].join(", "));
+  const readableText = page.locator(
+    [
+      'main [class*="heroDescription"]',
+      'main [class*="capabilities"] > span',
+      'header [class*="settingsButton"]',
+      'main [class*="primaryButton"]',
+      'main [class*="continueLink"]',
+      'main [class*="sectionHeadingCopy"] > p',
+      'input[aria-label="搜索画布"]',
+      'select[aria-label="画布排序"]',
+      "article h3",
+      'article [class*="cardMeta"] > span',
+    ].join(", "),
+  );
   const sizes = await readableText.evaluateAll((elements) =>
-    elements.filter((element) => element.getClientRects().length > 0).map((element) => ({
-      text: element.textContent?.trim() || element.getAttribute("aria-label"),
-      size: Number.parseFloat(getComputedStyle(element).fontSize),
-    })),
+    elements
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => ({
+        text: element.textContent?.trim() || element.getAttribute("aria-label"),
+        size: Number.parseFloat(getComputedStyle(element).fontSize),
+      })),
   );
   expect(sizes.length).toBeGreaterThan(10);
   for (const { text, size } of sizes) {
-    expect(size, `“${text}”的正文或控件字号不应过小`).toBeGreaterThanOrEqual(12);
+    expect(size, `“${text}”的正文或控件字号不应过小`).toBeGreaterThanOrEqual(
+      12,
+    );
   }
 }
 
@@ -321,14 +354,21 @@ test.describe("画布工作台", () => {
       { width: 1280, height: 800, name: "restored" },
     ]) {
       await test.step(`${viewport.name}: ${viewport.width}×${viewport.height}`, async () => {
-        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.setViewportSize({
+          width: viewport.width,
+          height: viewport.height,
+        });
         await page.screenshot({
-          path: testInfo.outputPath(`workspace-home-${viewport.width}-${viewport.name}.png`),
+          path: testInfo.outputPath(
+            `workspace-home-${viewport.width}-${viewport.name}.png`,
+          ),
           fullPage: true,
         });
         await expectReadableWorkspace(page, viewport.width);
         await expect(page.getByLabel("画布排序")).toHaveValue("name");
-        await expect(page.getByRole("article").first()).toHaveAccessibleName(older.title);
+        await expect(page.getByRole("article").first()).toHaveAccessibleName(
+          older.title,
+        );
       });
     }
     expect(state.mutations).toEqual([]);
@@ -413,22 +453,30 @@ test.describe("画布工作台", () => {
       .toContain("/api/canvas/home-older");
   });
 
-  test("鼠标流光可见，滚动后仍跟随指针，并在停留、输入和弹窗时收起", async ({ page }, testInfo) => {
+  test("鼠标流光可见，滚动后仍跟随指针，并在停留、输入和弹窗时收起", async ({
+    page,
+  }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 680 });
     await page.emulateMedia({ reducedMotion: "no-preference" });
     const state = await mockWorkspace(page, [older, newer]);
     await page.goto("/");
     await expect(page.getByRole("article")).toHaveCount(2);
     const trail = page.locator('canvas[class*="pointerTrail"]');
-    const hasInkAtPointer = () => trail.evaluate((element) => {
-      const canvas = element as HTMLCanvasElement;
-      const scale = canvas.width / (canvas.getBoundingClientRect().width || innerWidth);
-      const pixels = canvas.getContext("2d")!.getImageData(
-        Math.round(480 * scale), Math.round(190 * scale),
-        Math.round(24 * scale), Math.round(24 * scale),
-      ).data;
-      return pixels.some((value, index) => index % 4 === 3 && value > 12);
-    });
+    const hasInkAtPointer = () =>
+      trail.evaluate((element) => {
+        const canvas = element as HTMLCanvasElement;
+        const scale =
+          canvas.width / (canvas.getBoundingClientRect().width || innerWidth);
+        const pixels = canvas
+          .getContext("2d")!
+          .getImageData(
+            Math.round(480 * scale),
+            Math.round(190 * scale),
+            Math.round(24 * scale),
+            Math.round(24 * scale),
+          ).data;
+        return pixels.some((value, index) => index % 4 === 3 && value > 12);
+      });
     const movePointer = async () => {
       await page.mouse.move(330, 202);
       // Distinct animation frames catch a trail that erases its first point too early.
@@ -439,12 +487,18 @@ test.describe("画布工作台", () => {
     };
     await movePointer();
     await expect.poll(hasInkAtPointer).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath("workspace-home-pointer.png") });
+    await page.screenshot({
+      path: testInfo.outputPath("workspace-home-pointer.png"),
+    });
     await expect.poll(hasInkAtPointer).toBe(false);
 
     const home = page.locator("div[data-motion]");
-    await home.evaluate((element) => { element.scrollTop = 70; });
-    await expect.poll(() => home.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await home.evaluate((element) => {
+      element.scrollTop = 70;
+    });
+    await expect
+      .poll(() => home.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
     await movePointer();
     await expect.poll(hasInkAtPointer).toBe(true);
     await page.getByLabel("搜索画布", { exact: true }).focus();
@@ -452,7 +506,9 @@ test.describe("画布工作台", () => {
     expect(await hasInkAtPointer()).toBe(false);
 
     await page.getByRole("button", { name: "创建画布", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "创建新画布" })).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: "创建新画布" }),
+    ).toBeVisible();
     await movePointer();
     expect(await hasInkAtPointer()).toBe(false);
     await page.getByRole("button", { name: "关闭弹窗" }).click();

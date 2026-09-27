@@ -513,15 +513,6 @@ function attachedPanelGeometry(panel: Locator) {
   });
 }
 
-async function openAdvancedSettings(page: Page): Promise<Locator> {
-  const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
-  await expect(settings).toBeVisible();
-  await settings.getByRole("button", { name: "高级连接与旧版配置" }).click();
-  const legacy = page.getByRole("dialog", { name: "供应商设置", exact: true });
-  await expect(legacy).toBeVisible();
-  return legacy;
-}
-
 async function expectInsideViewport(
   locator: Locator,
   viewportWidth: number,
@@ -3955,64 +3946,33 @@ test.describe("超级画布完整验收", () => {
     await expect(page.locator("#run-error-panel")).toHaveCount(0);
   });
 
-  test("供应商设置可保存、掩码返回并测试 Fake 连接", async ({ page }) => {
+  test("统一设置移除旧版入口，已有连接和密钥保持可用", async ({ page }) => {
+    const savedResponse = await page.request.post("/api/providers", { data: { name: "E2E Fake 连接", provider: "fake", apiKey: "e2e-secret-value", config: {defaultModel: "fake-image-v1"} } });
+    expect(savedResponse.status()).toBe(201);
+    const saved = await savedResponse.json();
+    expect(saved.apiKeySet).toBe(true);
+    expect(JSON.stringify(saved)).not.toContain("e2e-secret-value");
     await openWorkspace(page);
     await page.getByRole("button", { name: "API 设置", exact: true }).click();
-
-    const dialog = await openAdvancedSettings(page);
+    const dialog = page.getByRole("dialog", {name: "供应商与模型设置", exact: true});
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: /Fake/ }).click();
-    await dialog.getByRole("button", { name: "新建连接", exact: true }).click();
-    await dialog
-      .locator(".field")
-      .filter({ hasText: "供应商" })
-      .locator("select")
-      .selectOption("fake");
-    await dialog
-      .locator(".field")
-      .filter({ hasText: "连接名称" })
-      .locator("input")
-      .fill("E2E Fake 连接");
-    await dialog.locator('input[type="password"]').fill("e2e-secret-value");
-    await dialog.getByRole("button", { name: "保存连接" }).click();
-    await expect(dialog.getByText("连接已加密保存")).toBeVisible();
-
-    const connections = await getJson<
-      Array<{
-        id: string;
-        name: string;
-        apiKeySet: boolean;
-        apiKey: string;
-      }>
-    >(page.request, "/api/providers");
-    const saved = connections.find(
-      (connection) => connection.name === "E2E Fake 连接",
-    );
-    expect(saved).toMatchObject({ apiKeySet: true });
-    expect(saved?.apiKey).not.toContain("e2e-secret-value");
-
-    await dialog.getByRole("button", { name: "测试连接" }).click();
-    await expect(dialog.getByText("连接测试成功")).toBeVisible();
+    await expect(dialog.getByRole("button", {name: "高级连接与旧版配置"})).toHaveCount(0);
+    await expect(dialog.getByRole("tab", {name: "供应商与模型", exact: true})).toBeVisible();
+    await dialog.getByRole("button", {name: "关闭设置"}).click();
+    const after = await getJson<Array<{id: string; apiKeySet: boolean}>>(page.request, "/api/providers");
+    expect(after.find(item => item.id === saved.id)?.apiKeySet).toBe(true);
+    const tested = await page.request.post(`/api/providers/${saved.id}/test`);
+    expect(tested.ok()).toBeTruthy();
   });
-
   test("沧元算力预设按供应分组隔离模型", async ({ page }) => {
     await mockCangyuanBackupCatalog(page);
     await openWorkspace(page);
-    await page.getByRole("button", { name: "API 设置", exact: true }).click();
-
-    const dialog = await openAdvancedSettings(page);
-    await dialog.getByRole("button", { name: "沧元算力" }).click();
-    await dialog
-      .getByRole("button", { name: new RegExp(CANGYUAN_BACKUP_IMAGE_GROUP) })
-      .click();
-    const modelList = dialog.locator('[aria-label="分组模型列表"]');
-    await expect(modelList.getByRole("button")).toHaveCount(3);
-    await dialog.getByLabel("当前分组 API Key").fill("cangyuan-test-secret");
-    await dialog
-      .getByRole("button", { name: /接入画布分组|更新画布分组/ })
-      .click();
-    await expect(dialog.getByText(/API Key 已独立加密保存/)).toBeVisible();
-
+    const created = await page.request.post("/api/providers", { data: {
+      name: `沧元 ${CANGYUAN_BACKUP_IMAGE_GROUP}`, provider: "rest", apiKey: "cangyuan-test-secret",
+      config: { preset: "cangyuan-gpt-image-2", baseUrl: "https://ai.cangyuansuanli.cn", modelGroup: CANGYUAN_BACKUP_IMAGE_GROUP, defaultModel: "codex-gpt-image-2-1k", connector: cangyuanImageConnectorForGroup(CANGYUAN_BACKUP_IMAGE_GROUP) },
+    } });
+    expect(created.status()).toBe(201);
+    await page.reload();
     const connections = await getJson<
       Array<{
         id: string;
@@ -4041,22 +4001,19 @@ test.describe("超级画布完整验收", () => {
       "gemini-banana-pro-4k",
     ]);
 
-    await dialog.getByRole("button", { name: "关闭" }).click();
-    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
-    await page.locator('.react-flow__node[data-id="e2e-image"]').click();
-    const inspector = page.locator("aside.inspector");
-    await inspector.getByLabel("API 连接").selectOption(connection!.id);
-    await expect(inspector.getByLabel("API 连接")).toContainText(
-      CANGYUAN_BACKUP_IMAGE_GROUP,
-    );
-    // This preset keeps a non-authoritative catalog and therefore retains the
-    // editable model ID next to the shared catalog browser.
-    await expect(inspector.getByRole("textbox", { name: "模型", exact: true })).toHaveValue("codex-gpt-image-2-1k");
-    await expect(inspector.getByRole("combobox", { name: "浏览目录", exact: true })).toContainText("codex-gpt-image-2-1k");
-    await expect(inspector.getByLabel("画面比例")).toHaveValue("auto");
-    // This model offers 1K (low) and 2K (medium); default to its highest tier.
-    await expect(inspector.getByLabel("分辨率")).toHaveValue("medium");
-    await expect(inspector.getByLabel("生成张数")).toHaveValue("1");
+
+    const canvas = await savedCanvas(page);
+    const image = canvas.graph.nodes.find(node => node.id === "e2e-image")!;
+    Object.assign(image.data, { provider: "rest", connectionId: connection!.id, model: "codex-gpt-image-2-1k", parameters: { size: "auto", quality: "medium", n: 1 } });
+    expect((await page.request.put(`/api/canvas/${canvas.id}`, { data: { graph: canvas.graph } })).ok()).toBeTruthy();
+    await page.reload();
+    await page.getByRole("button", { name: "打开 E2E 图片生成 模型与参数", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "E2E 图片生成 模型与参数", exact: true });
+    await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型群组", exact: true })).toContainText(CANGYUAN_BACKUP_IMAGE_GROUP);
+    await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true })).toContainText("codex-gpt-image-2-1k");
+    await expect(panel.getByLabel("画面比例", { exact: true })).toHaveValue("auto");
+    await expect(panel.getByLabel("分辨率", { exact: true })).toHaveValue("medium");
+    await expect(panel.getByLabel("生成张数", { exact: true })).toHaveValue("1");
     await expect
       .poll(async () => {
         const canvas = await savedCanvas(page);
@@ -4311,39 +4268,10 @@ test.describe("超级画布完整验收", () => {
     await page.getByRole("button", { name: "抓手模式", exact: true }).click();
 
     await page.getByRole("button", { name: "API 设置", exact: true }).click();
-    const settings = await openAdvancedSettings(page);
+    const settings = page.getByRole("dialog", {name: "供应商与模型设置", exact: true});
     await expectInsideViewport(settings, viewportWidth);
-    await settings.getByRole("button", { name: /Fake（离线演示）/ }).click();
-    await settings
-      .getByRole("button", { name: "新建连接", exact: true })
-      .click();
-    const settingsForm = settings.locator(".settings-form");
-    await expect(settingsForm.getByLabel("连接名称")).toBeVisible();
-    const formBounds = await settingsForm.boundingBox();
-    const controlBounds = await settingsForm
-      .locator("input, select, textarea")
-      .evaluateAll((controls) =>
-        controls.map((control) => {
-          const bounds = control.getBoundingClientRect();
-          return {
-            x: bounds.x,
-            right: bounds.right,
-            width: bounds.width,
-          };
-        }),
-      );
-    expect(formBounds).not.toBeNull();
-    expect(controlBounds.length).toBeGreaterThan(0);
-    for (const bounds of controlBounds) {
-      expect(bounds.width).toBeGreaterThan(0);
-      expect(bounds.x).toBeGreaterThanOrEqual(formBounds!.x - 0.5);
-      expect(bounds.right).toBeLessThanOrEqual(
-        formBounds!.x + formBounds!.width + 0.5,
-      );
-    }
-    await settings.getByRole("button", { name: "关闭" }).click();
-    await page.getByRole("dialog", { name: "供应商与模型设置", exact: true }).getByRole("button", { name: "关闭设置" }).click();
-
+    await expect(settings.getByRole("button", {name: "高级连接与旧版配置"})).toHaveCount(0);
+    await settings.getByRole("button", {name: "关闭设置"}).click();
     await page.getByRole("button", { name: "打开项目菜单" }).click();
     const projectMenu = page.getByRole("menu", { name: "项目操作" });
     await expect(projectMenu).toBeVisible();

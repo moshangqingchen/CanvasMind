@@ -529,3 +529,12 @@
     transition: none !important;
   }
 }
+.library-project-context { padding: 16px; border-bottom: 1px solid #ffffff16; }
+.library-project-context details { margin-top: 12px; font-size: 12px; }
+.library-brief-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; line-height: 1.7; }
+.library-versions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.library-versions button { border: 1px solid #ffffff26; border-radius: 6px; padding: 5px 8px; color: inherit; background: transparent; font-size: 11px; cursor: pointer; }
+.library-versions button[aria-pressed="true"] { background: #a78bfa24; border-color: #a78bfa; }
+.library-delivery { padding: 16px; border-bottom: 1px solid #ffffff16; font-size: 12px; }
+.library-delivery label { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; line-height: 1.6; }
+.library-delivery p { line-height: 1.7; color: #b9b5c9; }

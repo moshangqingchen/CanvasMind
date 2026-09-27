@@ -9,11 +9,9 @@ import {
   Check,
   ChevronDown,
   Clock3,
-  Clapperboard,
   FolderOpen,
   Grid2X2,
   HardDrive,
-  ImageIcon,
   Layers3,
   LoaderCircle,
   List,
@@ -26,7 +24,6 @@ import {
   Settings2,
   Sparkles,
   Trash2,
-  Type,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -231,6 +228,8 @@ export function WorkspaceHome() {
   const [dialog, setDialog] = useState<ProjectDialog | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [startingDesign, setStartingDesign] = useState(false);
+  const startingDesignRef = useRef(false);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [motionEnabled, toggleMotion] = useCanvasMotion();
   const pointerEffectsEnabled =
@@ -497,24 +496,42 @@ export function WorkspaceHome() {
                 <span className={styles.heroHint}>从一张空白画布开始</span>
               )}
             </div>
-            <div
-              className={styles.capabilities}
-              aria-label="支持文字、图像和视频创作"
-            >
-              <span>
-                <Type size={13} />
-                文字灵感
-              </span>
-              <i />
-              <span>
-                <ImageIcon size={13} />
-                图像生成
-              </span>
-              <i />
-              <span>
-                <Clapperboard size={13} />
-                视频创作
-              </span>
+            <div className={styles.quickDesigns} aria-label="按设计任务开始">
+              {(
+                [
+                  ["event-poster", "做活动海报"],
+                  ["revise", "修改客户原图"],
+                  ["event-material", "制作多尺寸物料"],
+                ] as const
+              ).map(([kind, label]) => (
+                <button
+                  type="button"
+                  key={kind}
+                  disabled={startingDesign}
+                  onClick={async () => {
+                    if (startingDesignRef.current) return;
+                    startingDesignRef.current = true;
+                    setStartingDesign(true);
+                    try {
+                      const project = await createProject(label);
+                      router.push(`${projectUrl(project.id)}?design=${kind}`);
+                    } catch (error) {
+                      setNotice({
+                        message:
+                          error instanceof Error
+                            ? error.message
+                            : "项目创建失败",
+                        error: true,
+                      });
+                      startingDesignRef.current = false;
+                      setStartingDesign(false);
+                    }
+                  }}
+                >
+                  {label}
+                  <ArrowUpRight size={13} />
+                </button>
+              ))}
             </div>
           </div>
           <div className={styles.heroVisual}>

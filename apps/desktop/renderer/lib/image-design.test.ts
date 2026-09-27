@@ -136,7 +136,7 @@ describe("image design workflow", () => {
       model: "original-model",
       parameters: { size: "1536x1024", quality: "high", n: 1 },
       designSourceAssetId: asset.id,
-      parts: [{ type: "text", text: "" }],
+      parts: [{ type: "text", text: "保留品牌蓝色" }],
     });
     expect(edit?.id).toBe(draft.editNodeId);
     expect(edit?.id).not.toBe("node-original");

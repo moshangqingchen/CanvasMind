@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { consumeCliArtifact } from "./cli-artifact.js";
+import { recordSubmissionPhase } from "./submission-timeline.js";
 import { repositoryScheduler, runtimeConcurrency, scheduleReadyNodes, type RuntimeConcurrency, type RuntimeScheduler } from "./scheduler.js";
 import { assertDesktopPublicAssets } from "./desktop-preflight.js";
 import { localReferenceChannelConfigured, localReferenceUrls } from "./reference-channel.js";
@@ -3130,7 +3131,7 @@ export class RunService {
     const savedTask = storedProviderTask(nodeRun.inputJson.providerTask);
     const submissionProgress = async (phase: ProviderSubmissionPhase) => {
       if (inputJson.submissionPhase === phase) return;
-      inputJson.submissionPhase = phase;
+      recordSubmissionPhase(inputJson, phase);
       const status = inputJson.cloudAccepted === true || phase === "generating" ? "running" : "submitting";
       await this.updateNodeRunOrCancel(runId, nodeRunId, { status, inputJson });
       this.publish({ type: "node", runId, nodeRunId, payload: { nodeId: node.id, status } });
@@ -3191,7 +3192,7 @@ export class RunService {
         throw error;
       }
     }
-    inputJson.submissionPhase = task.status === "running" || task.status === "queued" ? "generating" : "downloading";
+    recordSubmissionPhase(inputJson, task.status === "running" || task.status === "queued" ? "generating" : "downloading");
     const taskSnapshot = {
       ...inputJson,
       providerTask: providerTaskJson(task),
@@ -3523,6 +3524,10 @@ export class RunService {
     const assetName = `${kindLabel} ${new Date().toLocaleString("zh-CN")}`;
     if (!persisted) await retryOperation(() => this.storage.put(storageKey, bytes!, mime));
     const etag = persisted?.etag ?? (bytes ? createHash("sha256").update(bytes).digest("hex") : undefined);
+    const originRun = await this.repository.getRun(runId);
+    const originNode = Array.isArray(originRun?.revisionGraph.nodes)
+      ? originRun.revisionGraph.nodes.find(value => isRecord(value) && value.id === nodeId) : undefined;
+    const originData = isRecord(originNode) && isRecord(originNode.data) ? originNode.data : {};
     const archivedAsset = await this.repository.saveAsset({
       id,
       name: assetName,
@@ -3535,6 +3540,9 @@ export class RunService {
         runId,
         nodeId,
         outputIndex,
+        ...(originRun ? { canvasId: originRun.canvasId } : {}),
+        ...(typeof originData.designSourceAssetId === "string" ? { designSourceAssetId: originData.designSourceAssetId } : {}),
+        ...(typeof originData.label === "string" ? { designNodeLabel: originData.label } : {}),
         archiveComplete: true,
         fake: Boolean(artifact.url?.includes("example.invalid")),
       },

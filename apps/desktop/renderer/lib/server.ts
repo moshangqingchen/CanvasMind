@@ -99,6 +99,7 @@ export interface PublicRunSnapshot {
 
 export interface PublicRunRequest {
   submissionPhase?: string;
+  submissionTimeline?: Array<{ phase: string; at: string }>;
   provider?: string;
   supplier?: string;
   connectionId?: string;
@@ -206,6 +207,11 @@ export function publicRunRequest(input: JsonObject, includePrompt = false): Publ
     }
   }
   const request: PublicRunRequest = {
+    ...(Array.isArray(input.submissionTimeline) ? { submissionTimeline: input.submissionTimeline.slice(-32).flatMap(value => {
+      const entry = safeJsonObject(value);
+      return ["cloud_queued", "waiting_provider", "generating", "receiving", "cloud_saving", "downloading"].includes(String(entry.phase)) && typeof entry.at === "string" && Number.isFinite(Date.parse(entry.at))
+        ? [{ phase: String(entry.phase), at: entry.at }] : [];
+    }) } : {}),
     ...(["cloud_queued", "waiting_provider", "generating", "receiving", "cloud_saving", "downloading"].includes(String(input.submissionPhase)) ? { submissionPhase: String(input.submissionPhase) } : {}),
     ...(text("provider") ? { provider: text("provider") } : {}),
     ...(text("supplier") ? { supplier: text("supplier") } : {}),

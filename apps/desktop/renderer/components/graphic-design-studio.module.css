@@ -942,3 +942,10 @@
     margin: 6px 0 0 14px;
   }
 }
+.batchPrice { font-size: 11px; max-height: 140px; overflow: auto; margin-top: 8px; line-height: 1.6; }
+.batchPrice p { margin: 4px 0; }
+.recipeBox { border: 1px solid #ffffff20; border-radius: 10px; padding: 12px; margin-bottom: 16px; font-size: 12px; line-height: 1.7; }
+.recipeBox label { display: block; margin: 10px 0; }
+.recipeBox button { margin: 4px 8px 4px 0; }
+.recipeBox input, .recipeBox select { display: block; width: 100%; margin-top: 6px; min-height: 36px; padding: 8px 10px; border: 1px solid #ffffff25; border-radius: 8px; background: #ffffff06; color: inherit; font: inherit; }
+.recipeBox input:focus, .recipeBox select:focus { outline: 2px solid #bba8ef; outline-offset: 2px; }

@@ -290,7 +290,7 @@ test("保存 Key 后自动读取模型，读取失败保留新 Key 并显示可�
   expect(api.writes[0]).toMatchObject({ id: "connection-fixture", apiKey: "replacement-test-key" });
   await expect(group.getByLabel("vip API Key", { exact: true })).toHaveValue("");
   await group.getByRole("button", { name: "测试并读取", exact: true }).click();
-  await expect(group.getByText("已读取 1 个模型。目录返回不代表已经完成生成核验。", { exact: true })).toBeVisible();
+  await expect(group.getByRole("status")).toContainText("已读取 1 个模型。");
   expect(reads).toBe(2);
   expect(api.writes).toHaveLength(1);
 });

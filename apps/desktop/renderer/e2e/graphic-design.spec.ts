@@ -588,6 +588,25 @@ async function addReference(
     .selectOption(role);
 }
 
+test("常用方案保存、套用与包含素材的方案包导出不提交生成", async ({page, graphicFixture}, testInfo) => {
+  const studio = await openStudio(page, graphicFixture);
+  await chooseModel(studio, graphicFixture);
+  await fillEvent(studio);
+  await studio.getByText("我的常用方案", {exact: true}).click();
+  await studio.getByLabel("方案名称", {exact: true}).fill("活动海报复用方案");
+  await studio.getByRole("button", {name: "保存为常用方案", exact: true}).click();
+  await studio.getByLabel("主标题", {exact: true}).fill("临时修改");
+  await studio.getByRole("button", {name: "套用方案", exact: true}).click();
+  await expect(studio.getByLabel("主标题", {exact: true})).toHaveValue("秋日创意市集 2026");
+  const downloaded = page.waitForEvent("download");
+  await studio.getByRole("button", {name: "导出方案与素材", exact: true}).click();
+  const download = await downloaded;
+  expect(download.suggestedFilename()).toBe("常用设计方案.supercanvas");
+  expect(await download.failure()).toBeNull();
+  await page.screenshot({path: testInfo.outputPath("design-recipe.png"), fullPage: true});
+  expect(graphicFixture.browserRunSubmissions).toEqual([]);
+});
+
 test.describe("平面设计工作台", () => {
   test("活动文案和品牌生成四个独立尺寸方案，放入画布不提交生成", async ({
     page,

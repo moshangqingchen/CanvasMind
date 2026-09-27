@@ -4,9 +4,10 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_call:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

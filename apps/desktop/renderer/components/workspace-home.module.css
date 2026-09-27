@@ -1746,3 +1746,11 @@
 .home[data-motion="off"] .pointerTrail {
   display: none;
 }
+.quickDesigns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.quickDesigns button { display: inline-flex; align-items: center; gap: 8px; background: #ffffff08; border: 1px solid #ffffff1a; padding: 9px 12px; border-radius: 8px; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.quickDesigns button:hover { background: #ffffff14; }
+.quickDesigns button:disabled { opacity: .5; cursor: wait; }
+@media (min-width: 1001px) and (max-height: 850px) {
+  .quickDesigns { margin-top: 6px; }
+  .heroDescription { margin-bottom: 8px; }
+}

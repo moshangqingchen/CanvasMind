@@ -1,4 +1,4 @@
-import { validateGraph } from "@super-canvas/core";
+import { readImageDesignReview, validateGraph, type ImageReviewStatus } from "@super-canvas/core";
 import { Unzip, UnzipInflate, Zip, ZipPassThrough, strToU8 } from "fflate";
 import { z } from "zod";
 
@@ -12,7 +12,7 @@ import { CanvasGraphSchema } from "./api-validation";
 import { withoutLocalExecutionConfig } from "./project-local-config";
 
 export const PROJECT_PACKAGE_FORMAT = "super-canvas-project";
-export const PROJECT_PACKAGE_VERSION = 1;
+export const PROJECT_PACKAGE_VERSION = 2;
 export const PROJECT_PACKAGE_EXTENSION = ".supercanvas";
 export const PROJECT_JSON_FORMAT = "super-canvas-project-json";
 export const PROJECT_JSON_VERSION = 1;
@@ -56,13 +56,14 @@ const PackageAssetSchema = z
     mimeType: z.string().trim().min(1).max(255),
     size: z.number().int().positive().max(MAX_PROJECT_PACKAGE_BYTES),
     path: PackagePathSchema,
+    imageDesignReview: z.object({ status: z.enum(["unreviewed", "candidate", "approved", "rejected"]), note: z.string().max(2000) }).strict().optional(),
   })
   .strict();
 
 const PackageManifestSchema = z
   .object({
     format: z.literal(PROJECT_PACKAGE_FORMAT),
-    version: z.literal(PROJECT_PACKAGE_VERSION),
+    version: z.union([z.literal(1), z.literal(PROJECT_PACKAGE_VERSION)]),
     exportedAt: z.string().datetime({ offset: true }),
     title: z.string().trim().min(1).max(160),
     graph: CanvasGraphSchema,
@@ -77,6 +78,7 @@ export interface ProjectPackageAsset {
   mimeType: string;
   size: number;
   path: string;
+  imageDesignReview?: { status: ImageReviewStatus; note: string };
 }
 
 export interface PreparedProjectImport {
@@ -250,6 +252,7 @@ export function collectReferencedAssetIds(graph: CanvasDocument): string[] {
   for (const node of graph.nodes as CanvasNode[]) {
     const data = node.data;
     addAssetId(ids, data?.assetId);
+    addAssetId(ids, data?.designSourceAssetId);
     addAssetIds(ids, data?.lastOutputAssetIds);
     addAssetIds(ids, data?.materializedOutputAssetIds);
     if (isRecord(data?.graphicDesignBrief)) {
@@ -327,6 +330,9 @@ export function remapGraphAssetIds(
             : {}),
           ...(typeof data.assetId === "string"
             ? { assetId: assetIds.get(data.assetId) ?? data.assetId }
+            : {}),
+          ...(typeof data.designSourceAssetId === "string"
+            ? { designSourceAssetId: assetIds.get(data.designSourceAssetId) ?? data.designSourceAssetId }
             : {}),
           ...(data.lastOutputAssetIds === undefined
             ? {}
@@ -472,6 +478,8 @@ export async function createPortableProjectPackage(
       mimeType: asset.mimeType,
       size: asset.size,
       path: `assets/${String(index + 1).padStart(4, "0")}.${extensionForAsset(asset)}`,
+      ...(asset.kind === "image" && (typeof asset.metadata.runId === "string" || readImageDesignReview(asset.metadata).revision > 0)
+        ? { imageDesignReview: { status: readImageDesignReview(asset.metadata).status, note: readImageDesignReview(asset.metadata).note } } : {}),
     };
   });
   const manifest = PackageManifestSchema.parse({
@@ -723,7 +731,7 @@ async function preparePackageImport(
   if (!isRecord(raw)) throw new Error("完整项目包清单无效");
   if (raw.format !== PROJECT_PACKAGE_FORMAT)
     throw new Error("不支持的完整项目包格式");
-  if (raw.version !== PROJECT_PACKAGE_VERSION)
+  if (raw.version !== 1 && raw.version !== PROJECT_PACKAGE_VERSION)
     throw new Error(`不支持的完整项目包版本：${String(raw.version)}`);
   if (
     !isRecord(raw.graph) ||
@@ -828,7 +836,7 @@ export async function prepareProjectImport(input: {
 
 export async function uploadPreparedPackageAssets(input: {
   prepared: PreparedProjectImport;
-  upload: (file: File) => Promise<AssetView>;
+  upload: (file: File, review?: ProjectPackageAsset["imageDesignReview"]) => Promise<AssetView>;
   onProgress?: (completed: number, total: number) => void;
 }): Promise<{ graph: CanvasDocument; uploadedAssets: AssetView[] }> {
   if (input.prepared.source !== "package")
@@ -845,6 +853,7 @@ export async function uploadPreparedPackageAssets(input: {
       if (!blob) throw new Error(`完整项目包缺少素材：${descriptor.name}`);
       const uploaded = await input.upload(
         new File([blob], descriptor.name, { type: descriptor.mimeType }),
+        descriptor.imageDesignReview,
       );
       uploadedAssets.push(uploaded);
       assertAssetId(uploaded.id, `已上传素材 ${descriptor.name}`);

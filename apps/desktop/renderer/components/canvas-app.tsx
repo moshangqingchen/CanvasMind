@@ -92,6 +92,7 @@ import {
   arePortKindsCompatible,
   wouldCreateCycle,
   renderPromptParts,
+  readImageDesignReview,
   type NodeRunStatus,
   type PortKind,
   type PromptPart,
@@ -4340,6 +4341,24 @@ function CanvasShell({
     });
   }, [assets, canvasId, graphicDesignModels, initialization.status, projectId]);
 
+  const consumedDesignEntry = useRef(false);
+  useEffect(() => {
+    if (initialization.status !== "ready" || consumedDesignEntry.current) return;
+    const url = new URL(window.location.href);
+    const entry = url.searchParams.get("design");
+    if (!["event-poster", "revise", "event-material"].includes(entry ?? "")) return;
+    const frame = requestAnimationFrame(() => {
+      consumedDesignEntry.current = true;
+      const brief = createDefaultGraphicDesignBrief();
+      if (entry === "revise") brief.mode = "revise";
+      else brief.templateId = entry!;
+      setGraphicDesignSession({ id: crypto.randomUUID(), draftKey: canvasId ?? projectId, initialBrief: brief });
+      url.searchParams.delete("design");
+      window.history.replaceState(window.history.state, "", url.toString());
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initialization.status, canvasId, projectId]);
+
   const addNewNode = useCallback(
     (type: string) => {
       const position = reactFlowRef.current?.screenToFlowPosition({
@@ -4419,6 +4438,14 @@ function CanvasShell({
     async (assetId: string) => {
       if (preparingImageEdit.current) return;
       const asset = assets.find((item) => item.id === assetId);
+      if (asset?.kind === "image" && typeof asset.metadata.runId !== "string" && readImageDesignReview(asset.metadata).revision > 0) {
+        if (saveConflictRef.current || saveSuspended.current) { showToast("请先处理画布保存状态", "error"); return; }
+        setGraphicDesignSession({ id: crypto.randomUUID(), draftKey: `${activeProjectIdRef.current}:imported:${asset.id}`, initialBrief: {
+          ...createDefaultGraphicDesignBrief(), mode: "revise", references: [{ assetId: asset.id, role: "source" }], revisionInstruction: readImageDesignReview(asset.metadata).note,
+        } });
+        setHistoryOpen(false);
+        return;
+      }
       if (
         !asset ||
         asset.kind !== "image" ||
@@ -4520,7 +4547,7 @@ function CanvasShell({
               maxZoom: 1,
             });
         });
-        showToast("已保留原图并创建编辑节点，请填写修改要求后生成", "success");
+        showToast("已保留原图并带入保存的评审意见，请核对修改要求后生成", "success");
       } catch (error) {
         if (instanceActive.current)
           showToast(
@@ -8605,15 +8632,16 @@ function CanvasShell({
       if (projectImportBackup) exportProject();
       const materialized = await uploadPreparedPackageAssets({
         prepared,
-        upload: async (assetFile) => {
+        upload: async (assetFile, review) => {
           const uploaded = await uploadAsset(assetFile);
           void archiveProjectAssets(canvasId, [uploaded.id]).catch(() => undefined);
           uploadedForRollback.push(uploaded);
+          const restored = review ? await saveImageDesignReview(uploaded.id, { ...review, expectedRevision: 0 }) : uploaded;
           setAssets((current) => [
-            uploaded,
+            restored,
             ...current.filter((asset) => asset.id !== uploaded.id),
           ]);
-          return uploaded;
+          return restored;
         },
         onProgress: (completed, totalCount) =>
           setProjectImportProgress({ completed, total: totalCount }),
@@ -9933,6 +9961,7 @@ function CanvasShell({
       ) : null}
       <GenerationHistoryModal
         key={canvasId ?? "image-library"}
+        canvasId={canvasId}
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         assets={assets}

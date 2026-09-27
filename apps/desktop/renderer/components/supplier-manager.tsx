@@ -13,7 +13,6 @@ import { billingCompact } from "../lib/supplier-billing-display";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUpRight,
   Check,
   ChevronDown,
   ChevronRight,
@@ -28,7 +27,6 @@ import {
   Search,
   Server,
   ShieldCheck,
-  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -161,11 +159,9 @@ function savedModels(connection?: ProviderConnectionView): ModelDescriptor[] {
 export function SupplierManager({
   initialCangyuanGroup,
   onConnectionsChanged,
-  onOpenAdvanced,
 }: {
   initialCangyuanGroup?: string | null;
   onConnectionsChanged?: (connections: ProviderConnectionView[]) => void;
-  onOpenAdvanced?: () => void;
 }) {
   const { requestLeave, confirmDiscard } = useSettingsLeaveGuard();
   const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
@@ -592,15 +588,6 @@ export function SupplierManager({
             画布与智能体共用已保存 Key
           </span>
         </div>
-        {onOpenAdvanced && (
-          <button
-            className="sm-advanced-link"
-            type="button"
-            onClick={onOpenAdvanced}
-          >
-            <SlidersHorizontal size={13} /> 高级连接与旧版配置
-          </button>
-        )}
       </aside>
       <main className="sm-main">
         {(refresh.running || refresh.results.length > 0) && (
@@ -644,7 +631,6 @@ export function SupplierManager({
             initialGroup={initialCangyuanGroup}
             onUpdated={(record) => updateRecord(record, selected.id)}
             onConnectionsChanged={updateConnections}
-            onOpenAdvanced={onOpenAdvanced}
           />
         ) : (
           <div className="sm-empty">
@@ -900,14 +886,12 @@ function SupplierDetail({
   initialGroup,
   onUpdated,
   onConnectionsChanged,
-  onOpenAdvanced,
 }: {
   entry: SupplierEntry;
   allConnections: ProviderConnectionView[];
   initialGroup?: string | null;
   onUpdated: (record: SupplierRecord) => void;
   onConnectionsChanged: () => Promise<void>;
-  onOpenAdvanced?: () => void;
 }) {
   const { requestLeave, confirmDiscard } = useSettingsLeaveGuard();
   const [name, setName] = useState(entry.name);
@@ -1607,7 +1591,6 @@ function SupplierDetail({
                     connections={connections}
                     ensureSupplier={saveBasics}
                     onConnectionsChanged={onConnectionsChanged}
-                    onOpenAdvanced={onOpenAdvanced}
                     onDelete={
                       manual ? () => requestLeave(() => void removeManualGroup(group), { ids: [`supplier-group:${entry.id}:${group.id}`] }) : undefined
                     }
@@ -1672,7 +1655,6 @@ function SupplierGroup({
   connections,
   ensureSupplier,
   onConnectionsChanged,
-  onOpenAdvanced,
   onDelete,
   deleting,
 }: {
@@ -1683,7 +1665,6 @@ function SupplierGroup({
   connections: ProviderConnectionView[];
   ensureSupplier: () => Promise<SupplierRecord>;
   onConnectionsChanged: () => Promise<void>;
-  onOpenAdvanced?: () => void;
   onDelete?: () => void;
   deleting?: boolean;
 }) {
@@ -1793,7 +1774,6 @@ function SupplierGroup({
         connection={connection}
         ensureSupplier={ensureSupplier}
         onConnectionsChanged={onConnectionsChanged}
-        onOpenAdvanced={onOpenAdvanced}
       />}
       </div>
     </article>
@@ -1808,7 +1788,6 @@ function GroupConnectionEditor({
   connection,
   ensureSupplier,
   onConnectionsChanged,
-  onOpenAdvanced,
 }: {
   supplier: SupplierEntry;
   group: SupplierCatalogGroup;
@@ -1817,7 +1796,6 @@ function GroupConnectionEditor({
   connection?: ProviderConnectionView;
   ensureSupplier: () => Promise<SupplierRecord>;
   onConnectionsChanged: () => Promise<void>;
-  onOpenAdvanced?: () => void;
 }) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -2075,7 +2053,7 @@ function GroupConnectionEditor({
       !capabilities.includes(effectiveCapability)
     ) {
       setFailed(true);
-      setMessage("此连接不支持所选协议，请使用高级连接配置。");
+      setMessage("此连接不支持所选协议，请选择该分组支持的协议或刷新模型目录。");
       return;
     }
     if (manualModels.some((model) => model.id === id)) {
@@ -2318,24 +2296,10 @@ function GroupConnectionEditor({
                   ? "复用当前连接已配置的协议。模型 ID 须在连接器目录内，图片与视频能力分别验证。"
                   : "模型绑定当前连接的 Key。图片和对话可直接配置，视频需使用已有 REST 连接器协议。"}
               </p>
-              {provider !== "rest" && onOpenAdvanced && (
-                <button
-                  className="sm-text-button"
-                  type="button"
-                  onClick={onOpenAdvanced}
-                >
-                  配置视频 / 其他 REST 协议 <ArrowUpRight size={12} />
-                </button>
-              )}
             </>
           ) : (
             <div className="sm-notice">
-              此连接使用专用协议，请在高级连接中配置准确模型与调用方式。
-              {onOpenAdvanced && (
-                <button type="button" onClick={onOpenAdvanced}>
-                  打开高级连接 <ArrowUpRight size={12} />
-                </button>
-              )}
+              此连接使用专用协议，模型与调用方式沿用已保存配置。可刷新目录获取当前模型。
             </div>
           )}
         </div>

@@ -96,6 +96,67 @@ function packageFile(
 }
 
 describe("project transfer", () => {
+  it("carries review state and remaps edit ancestry while accepting old packages", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const sourceGraph = structuredClone(graph);
+    sourceGraph.nodes[1]!.data.designSourceAssetId = "asset-old";
+    const original = asset("asset-old", bytes);
+    const generated = {
+      ...asset("generated-old", bytes),
+      metadata: {
+        runId: "old-run",
+        imageDesignReview: {
+          status: "approved",
+          note: "保留第二版日期",
+          revision: 3,
+          updatedAt: "2026-09-27T00:00:00Z",
+        },
+      },
+    };
+    const blob = await createPortableProjectPackage({
+      title: "设计迁移",
+      graph: sourceGraph,
+      assets: [original, generated],
+      fetchAsset: async () => new Response(bytes),
+    });
+    const prepared = await prepareProjectImport({
+      file: new File([blob], "design.supercanvas"),
+      fallbackTitle: "导入",
+      fallbackViewport: graph.viewport,
+      availableAssetIds: new Set(),
+    });
+    expect(
+      prepared.packageAssets.find((value) => value.id === "generated-old")
+        ?.imageDesignReview,
+    ).toEqual({ status: "approved", note: "保留第二版日期" });
+    const upload = vi.fn(async (file: File, review?: unknown) => {
+      void review;
+      return asset(`new-${file.name}`, bytes);
+    });
+    const restored = await uploadPreparedPackageAssets({ prepared, upload });
+    expect(upload.mock.calls[1]?.[1]).toEqual({
+      status: "approved",
+      note: "保留第二版日期",
+    });
+    expect(restored.graph.nodes[1]!.data.designSourceAssetId).toBe(
+      "new-asset-old.png",
+    );
+    const legacy = await prepareProjectImport({
+      file: packageFile({
+        ...packageManifest({
+          schemaVersion: 1,
+          nodes: [],
+          edges: [],
+          viewport: graph.viewport,
+        }),
+        version: 1,
+      }),
+      fallbackTitle: "旧项目",
+      fallbackViewport: graph.viewport,
+      availableAssetIds: new Set(),
+    });
+    expect(legacy.source).toBe("package");
+  });
   it("keeps customer image transcripts bound to imported assets without rewriting customer text", () => {
     const source = structuredClone(graph);
     source.nodes[1]!.data!.graphicDesignBrief = {
@@ -290,7 +351,7 @@ describe("project transfer", () => {
     };
     await expect(
       prepareProjectImport({
-        file: packageFile({ ...packageManifest(emptyGraph), version: 2 }),
+        file: packageFile({ ...packageManifest(emptyGraph), version: 999 }),
         fallbackTitle: "当前项目",
         fallbackViewport: graph.viewport,
         availableAssetIds: new Set(),

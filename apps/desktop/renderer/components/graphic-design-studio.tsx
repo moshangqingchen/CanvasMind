@@ -18,6 +18,7 @@ import {
   GRAPHIC_DESIGN_STYLES,
   GRAPHIC_DESIGN_TEMPLATES,
   createDefaultGraphicDesignBrief,
+  createGraphicDesignDraft,
   graphicDesignFormats,
   graphicDesignLayout,
   graphicDesignLayoutNotice,
@@ -29,6 +30,8 @@ import {
   loadGraphicDesignExtractionModels,
 } from "../lib/graphic-design-intake-client";
 import styles from "./graphic-design-studio.module.css";
+import { designBatchPrice } from "../lib/design-batch-price";
+import { createPortableProjectPackage } from "../lib/project-transfer";
 
 type ModelOption = {
   key: string;
@@ -66,6 +69,21 @@ type BrandPreset = {
 };
 
 const BRANDS_KEY = "supercanvas.graphic-design.brands.v1";
+const RECIPES_KEY = "supercanvas.graphic-design.recipes.v1";
+type DesignRecipe = { id: string; name: string; modelKey: string; brief: GraphicDesignBrief };
+function readRecipes(): { items: DesignRecipe[]; error: string } {
+  if (typeof window === "undefined") return { items: [], error: "" };
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(RECIPES_KEY) ?? "[]");
+    if (!Array.isArray(value) || value.length > 30) throw new Error();
+    const items = value.map(item => {
+      if (!item || typeof item.id !== "string" || typeof item.name !== "string" || typeof item.modelKey !== "string") throw new Error();
+      const brief = restoreBrief(item.brief); if (!brief) throw new Error();
+      return {id: item.id, name: item.name, modelKey: item.modelKey, brief};
+    });
+    return { items, error: "" };
+  } catch { return { items: [], error: "常用方案暂时无法读取，原有数据已保留。" }; }
+}
 const CUSTOMER_TEXT_LIMIT = 60_000;
 const CUSTOMER_IMAGE_TYPES = [
   "image/png",
@@ -256,13 +274,16 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
   const [initial] = useState(() => initialState(props, storageKey));
   const [brief, setBrief] = useState(initial.brief);
   const [modelKey, setModelKey] = useState(initial.modelKey);
+  const [recipeState, setRecipeState] = useState(readRecipes);
+  const [recipeName, setRecipeName] = useState("");
+  const [recipeId, setRecipeId] = useState("");
   const [brands, setBrands] = useState(initial.brands);
   const [brandId, setBrandId] = useState("");
   const [notice, setNotice] = useState(initial.notice);
   const [storageError, setStorageError] = useState(initial.storageError);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<
-    "upload" | "extract" | "draft" | "generate" | null
+    "upload" | "extract" | "draft" | "generate" | "export" | null
   >(null);
   const [uploadAssets, setUploadAssets] = useState<AssetView[]>([]);
   const [referenceId, setReferenceId] = useState("");
@@ -297,6 +318,13 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
     return [...unique.values()];
   }, [assets, uploadAssets]);
   const outputCount = brief.formatIds.length * brief.variantCount;
+  const batchPrice = (() => {
+    if (!selectedModel) return null;
+    try {
+      const draft = createGraphicDesignDraft({ brief, model: selectedModel.model, connection: { id: selectedModel.connectionId, provider: selectedModel.provider }, assets: imageAssets, position: {x: 0, y: 0} });
+      return designBatchPrice(selectedModel.model, draft.nodes);
+    } catch { return null; }
+  })();
   const template = GRAPHIC_DESIGN_TEMPLATES.find(
     (item) => item.id === brief.templateId,
   );
@@ -975,6 +1003,41 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
         </header>
         <div className={styles.body}>
           <fieldset className={styles.form} disabled={!!busy}>
+            <details className={styles.recipeBox}>
+              <summary>我的常用方案</summary>
+              <p>保存文案结构、品牌参考、尺寸组合和模型选择，下次套用后替换客户内容。</p>
+              {recipeState.error && <p role="alert">{recipeState.error}</p>}
+              <label>已保存方案<select aria-label="已保存方案" value={recipeId} onChange={event => setRecipeId(event.target.value)}><option value="">选择常用方案</option>{recipeState.items.map(recipe => <option key={recipe.id} value={recipe.id}>{recipe.name}</option>)}</select></label>
+              <button type="button" className={styles.secondary} disabled={!recipeId} onClick={() => {
+                const recipe = recipeState.items.find(item => item.id === recipeId); if (!recipe) return;
+                const missing = [...recipe.brief.references.map(item => item.assetId), ...(recipe.brief.customerImageAssetIds ?? [])].filter(id => !imageAssets.some(asset => asset.id === id));
+                if (missing.length) { setError("方案中的参考素材已不可用，请先导入包含素材的完整方案包。"); return; }
+                setBrief(structuredClone(recipe.brief)); setModelKey(recipe.modelKey); setRecipeName(recipe.name); setError("");
+                setNotice("已套用常用方案，请替换本次客户内容并核对模型与尺寸。");
+              }}>套用方案</button>
+              <label>方案名称<input aria-label="方案名称" maxLength={80} value={recipeName} onChange={event => setRecipeName(event.target.value)} placeholder="例如：活动海报三版比稿" /></label>
+              <button type="button" className={styles.secondary} disabled={!recipeName.trim() || !!recipeState.error || !selectedModel} onClick={() => {
+                try {
+                  const existing = recipeState.items.find(item => item.name === recipeName.trim());
+                  const recipe = { id: existing?.id ?? crypto.randomUUID(), name: recipeName.trim(), modelKey, brief: structuredClone(brief) };
+                  const next = [...recipeState.items.filter(item => item.id !== recipe.id), recipe];
+                  if (next.length > 30) throw new Error("最多保存 30 个常用方案，可使用同名方案更新。");
+                  const serialized = JSON.stringify(next); if (serialized.length > 4_000_000) throw new Error("常用方案容量已满，请导出方案包保存。");
+                  localStorage.setItem(RECIPES_KEY, serialized); setRecipeState({items: next, error: ""}); setRecipeId(recipe.id); setNotice("常用方案已保存，同名方案会更新。");
+                } catch (cause) { setError(cause instanceof Error ? cause.message : "方案保存失败"); }
+              }}>保存为常用方案</button>
+              <button type="button" className={styles.secondary} disabled={!selectedModel} onClick={async () => {
+                if (!selectedModel || busyRef.current) return;
+                busyRef.current = true; setBusy("export"); setError("");
+                try {
+                  const draft = createGraphicDesignDraft({ brief, model: selectedModel.model, connection: {id: selectedModel.connectionId, provider: selectedModel.provider}, assets: imageAssets, position: {x: 100, y: 100} });
+                  const blob = await createPortableProjectPackage({title: recipeName.trim() || brief.headline || "常用设计方案", graph: { schemaVersion: 1, nodes: draft.nodes, edges: draft.edges }, assets: imageAssets});
+                  const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "常用设计方案.supercanvas"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  setNotice("已导出包含需求与参考素材的方案包，可通过项目菜单导入后继续使用。");
+                } catch (cause) { setError(cause instanceof Error ? cause.message : "方案导出失败"); }
+                finally { busyRef.current = false; setBusy(null); }
+              }}>导出方案与素材</button>
+            </details>
             <div
               className={styles.segment}
               role="radiogroup"
@@ -1979,6 +2042,12 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
                 : "选择模型后可放入画布或生成。"}{" "}
               点击生成会向供应商提交任务，费用以供应商实际计费为准。
             </small>
+            {batchPrice && <details className={styles.batchPrice}>
+              <summary>本次 {batchPrice.rows.length} 张 · {batchPrice.unknown ? `${batchPrice.unknown} 张费用待确认` : `预计合计 ${batchPrice.total} ${batchPrice.currency === "credits" ? "额度" : batchPrice.currency}`}</summary>
+              {batchPrice.rows.map((row, index) => <p key={index}>{row.label} · {row.price}</p>)}
+              {batchPrice.unknown > 0 && batchPrice.unknown < batchPrice.rows.length && <p>已知部分小计 {batchPrice.total} {batchPrice.currency}，不含待确认费用。</p>}
+              <p>{batchPrice.checkedAt ? `价格资料时间：${new Date(batchPrice.checkedAt).toLocaleString("zh-CN")}。` : "尚无完整价格资料。"}按当前型号和参数估算，实际扣费以供应商为准。</p>
+            </details>}
           </div>
           <div className={styles.actions}>
             {busy === "extract" && (

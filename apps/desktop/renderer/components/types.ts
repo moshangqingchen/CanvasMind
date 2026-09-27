@@ -201,6 +201,7 @@ export interface RunSnapshot {
     errorJson?: RunErrorDetails | null;
     request?: {
       submissionPhase?: string;
+      submissionTimeline?: Array<{ phase: string; at: string }>;
       provider?: string;
       supplier?: string;
       connectionId?: string;

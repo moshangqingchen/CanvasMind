@@ -24,6 +24,8 @@ import {
 import type { AssetView } from "./types";
 import type { DeleteAssetsResult } from "../lib/client-api";
 import { filterDesignImages } from "../lib/image-design";
+import { imageResultVersions, type ProjectResult } from "../lib/project-results";
+import { DesignDeliveryCheck } from "./design-delivery-check";
 import { ImageDesignCompare, type ImageDesignCompareHandle } from "./image-design-compare";
 import { useDialogFocus } from "./use-dialog-focus";
 import { registerDesktopSave } from "../lib/desktop-client";
@@ -36,6 +38,7 @@ import { ReadableName } from "./result-information";
 import "./image-library.css";
 
 type Props = {
+  canvasId: string | null;
   open: boolean;
   onClose: () => void;
   assets: AssetView[];
@@ -68,6 +71,9 @@ function ImageDetails({
   onCompare,
   onReload,
   onRebase,
+  context: summaryContext,
+  versions,
+  onSelectVersion,
 }: {
   asset: AssetView;
   draft?: Draft;
@@ -82,14 +88,35 @@ function ImageDetails({
   onCompare: () => void;
   onReload: () => void;
   onRebase: () => void;
+  context?: ProjectResult;
+  versions: AssetView[];
+  onSelectVersion: (id: string) => void;
 }) {
   const review = readImageDesignReview(asset.metadata);
+  const [fullContext, setFullContext] = useState<ProjectResult>();
+  const [contextError, setContextError] = useState("");
+  const context = fullContext ?? summaryContext;
+  const contextCanvasId = summaryContext?.canvasId;
+  useEffect(() => {
+    if (!contextCanvasId) return;
+    const controller = new AbortController();
+    void fetch(`/api/projects/${encodeURIComponent(contextCanvasId)}/results?assetId=${encodeURIComponent(asset.id)}`, {signal: controller.signal, cache: "no-store"})
+      .then(async response => {
+        if (!response.ok) throw new Error("暂时无法读取这版的完整要求，请重新打开详情");
+        const entries: ProjectResult[] = await response.json();
+        const source = entries.find(entry => entry.assetId === asset.id);
+        if (!source) throw new Error("这版来源暂不可用，请重新打开详情");
+        if (!controller.signal.aborted) { setFullContext(source); setContextError(""); }
+      }).catch((error: unknown) => { if (!controller.signal.aborted) setContextError(error instanceof Error ? error.message : "读取来源失败"); });
+    return () => controller.abort();
+  }, [asset.id, contextCanvasId]);
   const value = draft ?? {
     status: review.status,
     note: review.note,
     expectedRevision: review.revision,
   };
   const [dimensions, setDimensions] = useState("正在读取…");
+  const [actualDimensions, setActualDimensions] = useState<{width: number; height: number} | null>(null);
   const [copied, setCopied] = useState(false);
   const [provenance, setProvenance] = useState<Record<string, unknown>>({});
   const m = { ...asset.metadata, ...provenance };
@@ -114,6 +141,7 @@ function ImageDetails({
             : "暂无尺寸信息",
         );
         setProvenance(data.provenance ?? {});
+        setActualDimensions(data.actualDimensions ?? null);
       })
       .catch(() => {
         if (!controller.signal.aborted) setDimensions("暂时无法读取");
@@ -133,6 +161,23 @@ function ImageDetails({
         </button>
       </header>
       <div className="library-inspector-content">
+      <DesignDeliveryCheck key={`${asset.id}:${review.revision}`} asset={asset} context={context} dimensions={actualDimensions} sourceReady={!summaryContext || Boolean(fullContext)} />
+      {contextError && <p role="alert" className="library-feedback">{contextError}</p>}
+      {context && (
+        <div className="library-project-context">
+          <strong>{context.label}</strong>
+          {versions.length > 1 && <nav aria-label="作品版本" className="library-versions">
+            {versions.map((version, index) => <button type="button" key={version.id}
+              aria-pressed={version.id === asset.id} onClick={() => onSelectVersion(version.id)}>
+              第 {index + 1} 版 · {IMAGE_REVIEW_LABELS[readImageDesignReview(version.metadata).status]}
+            </button>)}
+          </nav>}
+          {context.sourceAssetId && <p>基于原图继续修改</p>}
+          {context.instruction && <details><summary>这版的生成 / 修改要求</summary><p className="library-brief-text">{context.instruction}</p></details>}
+          {context.requirements && <details><summary>客户需求与品牌要求</summary><p className="library-brief-text">{context.requirements}</p></details>}
+        </div>
+      )}
+
         <button
           className="library-detail-preview"
           onClick={onPreview}
@@ -265,6 +310,7 @@ function ImageDetails({
 
 export function GenerationHistoryModal(props: Props) {
   const {
+    canvasId,
     open,
     assets,
     onClose,
@@ -275,6 +321,25 @@ export function GenerationHistoryModal(props: Props) {
     onSaveReview,
     onContinueEditing,
   } = props;
+  const [scope, setScope] = useState<"project" | "all">(canvasId ? "project" : "all");
+  const [results, setResults] = useState<ProjectResult[] | null>(null);
+  const [resultsError, setResultsError] = useState("");
+  const [resultsRevision, setResultsRevision] = useState(0);
+  useEffect(() => {
+    if (!open || !canvasId) return;
+    const controller = new AbortController();
+    void fetch(`/api/projects/${encodeURIComponent(canvasId)}/results`, { signal: controller.signal, cache: "no-store" })
+      .then(async response => {
+        if (!response.ok) throw new Error("项目成果读取失败，请重试");
+        const data: unknown = await response.json();
+        if (!Array.isArray(data)) throw new Error("项目成果响应无效，请重试");
+        if (!controller.signal.aborted) { setResults(data as ProjectResult[]); setResultsError(""); }
+      }).catch((error: unknown) => {
+        if (!controller.signal.aborted) setResultsError(error instanceof Error ? error.message : "项目成果读取失败");
+      });
+    return () => controller.abort();
+  }, [open, canvasId, resultsRevision]);
+  const resultById = useMemo(() => new Map((results ?? []).map(result => [result.assetId, result])), [results]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ImageReviewStatus | "all">("all");
   const [tab, setTab] = useState<"all" | "starred" | "review">("all");
@@ -320,14 +385,14 @@ export function GenerationHistoryModal(props: Props) {
       assets.filter(
         (asset) =>
           asset.kind === "image" &&
-          typeof asset.metadata.runId === "string" &&
+          (typeof asset.metadata.runId === "string" || readImageDesignReview(asset.metadata).revision > 0) &&
           asset.metadata.purpose !== "supplier-verification",
       ),
     [assets],
   );
   const images = useMemo(
     () =>
-      filterDesignImages(all, query, filter)
+      filterDesignImages(all.filter(asset => scope === "all" || resultById.has(asset.id)), query, filter)
         .filter((asset) =>
           tab === "starred"
             ? starred.has(asset.id)
@@ -338,7 +403,7 @@ export function GenerationHistoryModal(props: Props) {
         .sort(
           (a, b) => (oldest ? 1 : -1) * a.createdAt.localeCompare(b.createdAt),
         ),
-    [all, query, filter, tab, starred, oldest],
+    [all, query, filter, tab, starred, oldest, scope, resultById],
   );
   const selectedImages = images.filter((asset) => selected.has(asset.id));
   const selectedIds = new Set(selectedImages.map((asset) => asset.id));
@@ -553,8 +618,8 @@ export function GenerationHistoryModal(props: Props) {
             <header className="library-header">
               <div className="library-title">
                 <ImageIcon size={23} />
-                <h2>图片库</h2>
-                <span>{all.length} 张</span>
+                <h2>{scope === "project" ? "项目成果" : "图片库"}</h2>
+                <span>{images.length} 张</span>
               </div>
               <nav className="library-tabs" aria-label="图片分类">
                 {(
@@ -599,6 +664,13 @@ export function GenerationHistoryModal(props: Props) {
             <div className="library-body">
               <div className="library-browser">
                 <div className="library-filter-row">
+                  <select aria-label="作品范围" value={scope} onChange={event => {
+                    const nextScope = event.target.value as typeof scope;
+                    leave(() => { setScope(nextScope); setSelected(new Set()); setFocused(null); resetScroll(); });
+                  }}>
+                    <option value="project" disabled={!canvasId}>当前项目</option>
+                    <option value="all">全部项目</option>
+                  </select>
                   <span>{images.length} 张作品</span>
                   <select
                     aria-label="筛选评审状态"
@@ -634,6 +706,10 @@ export function GenerationHistoryModal(props: Props) {
                     全选
                   </button>
                 </div>
+                {scope === "project" && resultsError && <div role="alert" className="library-feedback">{resultsError}
+                  <button type="button" className="button small" onClick={() => setResultsRevision(value => value + 1)}>重新读取项目成果</button>
+                </div>}
+                {scope === "project" && results === null && !resultsError && <p role="status">正在读取项目成果…</p>}
                 <div
                   className="library-scroll"
                   ref={scrollRef}
@@ -936,6 +1012,9 @@ export function GenerationHistoryModal(props: Props) {
                 <ImageDetails
                   key={detail.id}
                   asset={detail}
+                  context={resultById.get(detail.id)}
+                  versions={imageResultVersions(detail.id, all, results ?? [])}
+                  onSelectVersion={id => leave(() => setFocused(id))}
                   draft={drafts[detail.id]}
                   onDraft={(draft) =>
                     setDrafts((current) => ({ ...current, [detail.id]: draft }))

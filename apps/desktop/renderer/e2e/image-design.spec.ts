@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { unzipSync, strFromU8 } from "fflate";
 import {
   expect,
   test as base,
@@ -322,7 +323,7 @@ test.describe("图片设计比稿与定稿", () => {
     await history.getByRole("button", { name: "丢弃更改并继续", exact: true }).click();
     await expect(history).toHaveCount(0);
     await page.getByRole("button", { name: "历史生成", exact: true }).click();
-    await expect(history.getByRole("heading", { name: "图片库", exact: true })).toBeVisible();
+    await expect(history.getByRole("heading", { name: "项目成果", exact: true })).toBeVisible();
   });
 
   test("比稿保存过程中遮罩不能关闭窗口", async ({ page, request, designFixture }) => {
@@ -773,6 +774,82 @@ test("图片库保存评审期间保护输入，备注长度与服务端一致",
   }
 });
 
+test("定稿交付包保留原图字节、实际尺寸和已确认评审", async ({page, request, designFixture}) => {
+  const assetId = String(designFixture.canvas.graph.nodes[0]!.data.assetId);
+  expect((await request.patch(`/api/assets/${assetId}/design-review`, { data: { status: "approved", note: "已确认最终版本", expectedRevision: 0 } })).ok()).toBeTruthy();
+  const history = await openHistory(page, designFixture);
+  const original = await getJson<DesignAsset>(request, `/api/assets/${assetId}`);
+  await historyCard(history, original).getByRole("button", { name: `查看详情 ${original.name}` }).click();
+  const details = history.getByRole("complementary", { name: "作品详情" });
+  await details.getByText("交付检查与导出", { exact: true }).click();
+  const exportButton = details.getByRole("button", { name: "导出定稿交付包" });
+  await expect(exportButton).toBeDisabled();
+  for (const label of ["标题、日期、电话、地址与价格已逐项核对", "客户要求的文字、标志和主体完整，无遗漏", "实际像素、比例和安全范围符合交付要求", "这张图片是本次确认交付的最终版本"]) {
+    await details.getByRole("checkbox", { name: label, exact: true }).check();
+  }
+  await expect(exportButton).toBeEnabled();
+  const download = page.waitForEvent("download");
+  await exportButton.click();
+  const archive = unzipSync(new Uint8Array(await readFile((await (await download).path())!)));
+  expect(Buffer.from(archive["final.png"]!)).toEqual(await readFile(new URL("../../assets/icon.png", import.meta.url)));
+  const record = JSON.parse(strFromU8(archive["delivery.json"]!));
+  expect(record.review).toMatchObject({status: "approved", note: "已确认最终版本"});
+  expect(record.image.width).toBeGreaterThan(0);
+  expect(record.image.height).toBeGreaterThan(0);
+  expect(record.checks).toHaveLength(4);
+  expect(designFixture.browserRunSubmissions).toEqual([]);
+});
+
+test("任务中心展示当前项目状态并导出不含提示词的诊断", async ({page, designFixture}, testInfo) => {
+  await page.goto(`/canvas/${encodeURIComponent(designFixture.canvas.id)}`);
+  await page.getByRole("button", {name: "打开项目菜单"}).click();
+  await page.getByRole("menuitem", {name: "运行历史"}).click();
+  const center = page.getByRole("dialog", {name: "运行历史", exact: true});
+  await expect(center.getByRole("heading", {name: "任务中心"})).toBeVisible();
+  await center.getByLabel("筛选任务状态").selectOption("succeeded");
+  await expect(center.getByText("已完成", {exact: true}).last()).toBeVisible();
+  await center.getByText("查看任务进度", {exact: true}).click();
+  const downloaded = page.waitForEvent("download");
+  await center.getByRole("button", {name: "导出诊断信息"}).click();
+  const file = await downloaded;
+  const output = JSON.parse(await readFile((await file.path())!, "utf8"));
+  expect(output.run.id).toBe(designFixture.runId);
+  expect(JSON.stringify(output)).not.toContain("保持商品轮廓");
+  expect(JSON.stringify(output)).not.toContain("e2e-offline-image-design");
+  await page.screenshot({path: testInfo.outputPath("task-center.png"), fullPage: true});
+});
+
+test("项目成果隔离、版本查看与评审意见带入修改节点", async ({ page, request, designFixture }, testInfo) => {
+  const [asset] = designFixture.images;
+  const note = "日期调整为10月1日，保持其他内容";
+  const reviewed = await request.patch(`/api/assets/${asset.id}/design-review`, {data: {status: "approved", note, expectedRevision: 0}});
+  expect(reviewed.ok()).toBeTruthy();
+  await page.route("**/api/assets", async route => {
+    const response = await route.fetch(); const assets = await response.json();
+    await route.fulfill({json: [...assets, {...asset, id: "foreign-project-image", name: "其他项目图片", metadata: {runId: "other-run", nodeId: "other-node"}}]});
+  });
+  const history = await openHistory(page, designFixture);
+  await expect(history.getByLabel("作品范围")).toHaveValue("project");
+  await expect(history.locator(".library-card")).toHaveCount(2);
+  await history.getByLabel("作品范围").selectOption("all");
+  await expect(history.getByText("其他项目图片", {exact: true})).toBeVisible();
+  await history.getByLabel("作品范围").selectOption("project");
+  await expect(history.getByText("其他项目图片", {exact: true})).toHaveCount(0);
+  await historyCard(history, asset).getByRole("button", {name: `查看详情 ${asset.name}`}).click();
+  const details = history.getByRole("complementary", {name: "作品详情"});
+  await expect(details.getByRole("navigation", {name: "作品版本"}).getByRole("button")).toHaveCount(2);
+  await details.getByText("交付检查与导出", {exact: true}).click();
+  await expect(details.getByRole("button", {name: "导出定稿交付包"})).toBeDisabled();
+  await page.screenshot({path: testInfo.outputPath("project-results.png"), fullPage: true});
+  await details.getByRole("button", {name: "继续创作", exact: true}).click();
+  await expect(history).toBeHidden();
+  await expect.poll(async () => {
+    const response = await request.get(`/api/canvas/${designFixture.canvas.id}`); const canvas = await response.json();
+    return canvas.graph.nodes.find((node: CanvasNode) => node.data.designSourceAssetId === asset.id)?.data.parts;
+  }).toEqual([{type: "text", text: note}]);
+  expect(designFixture.browserRunSubmissions).toEqual([]);
+});
+
 test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 数量", async ({ page, designFixture }) => {
   test.setTimeout(90000);
   const icons = await readFile(new URL("../../assets/icon.png", import.meta.url));
@@ -781,6 +858,7 @@ test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 
   await page.route("**/api/assets", route => route.fulfill({ json: gallery }));
   await page.route("**/api/assets/virtual-image-*/preview?*", route => route.fulfill({ contentType: "image/png", body: icons }));
   const history = await openHistory(page, designFixture);
+  await history.getByLabel("作品范围").selectOption("all");
   await expect(history.getByText("1000 张作品", { exact: true })).toBeVisible();
   expect(await history.locator(".library-card").count()).toBeLessThan(40);
   const scroller = history.locator(".library-scroll");
