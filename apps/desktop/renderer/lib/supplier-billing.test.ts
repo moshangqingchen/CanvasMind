@@ -12,7 +12,7 @@ async function fixture() {
   const created = await createSupplierRecord({ name: "Billing", siteUrl: "https://site.invalid", kind: "newapi" });
   const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "user", password: "private-test-password" } });
   await mocks.repository.saveConnection({ id: "owned", name: "Group", provider: "openai", encryptedSecret: "unchanged", config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId } });
-  mocks.read.mockResolvedValue({ sourceId: supplier.state!.sourceId, status: "live", balance: 10, used: 2, unit: "credits", checkedAt: "2026-09-25T00:00:00Z", lastSuccessAt: "2026-09-25T00:00:00Z", sourceUrl: "https://site.invalid/api/user/self" });
+  mocks.read.mockResolvedValue({ sourceId: supplier.state!.sourceId, status: "live", balance: 10, used: 2, todayUsed: .5, todayStatus: "live", unit: "credits", checkedAt: "2026-09-25T00:00:00Z", lastSuccessAt: "2026-09-25T00:00:00Z", sourceUrl: "https://site.invalid/api/user/self" });
   return supplier;
 }
 describe("supplier billing persistence", () => {
@@ -22,7 +22,7 @@ describe("supplier billing persistence", () => {
     expect(a).toBe(b); await a;
     expect(mocks.login).toHaveBeenCalledTimes(1);
     const saved = (await mocks.repository.getSupplier(supplier.id))!;
-    expect(saved.state?.billing).toMatchObject({ balance: 10, used: 2, status: "live" });
+    expect(saved.state?.billing).toMatchObject({ balance: 10, used: 2, todayUsed: .5, todayStatus: "live", status: "live" });
     expect(saved.state?.revision).toBe(supplier.state!.revision + 1);
     expect(await mocks.repository.listConnections()).toEqual(before);
     expect(JSON.stringify(publicSupplierRecord(saved))).not.toMatch(/private-test-password|encryptedPassword|unchanged/);
@@ -31,7 +31,7 @@ describe("supplier billing persistence", () => {
     const supplier = await fixture(); const previous = await refreshSupplierBilling(supplier.id);
     mocks.login.mockRejectedValue(Error("password=private-test-password"));
     const failed = await refreshSupplierBilling(supplier.id);
-    expect(failed).toMatchObject({ status: "failed", balance: 10, used: 2, lastSuccessAt: previous.lastSuccessAt });
+    expect(failed).toMatchObject({ status: "failed", balance: 10, used: 2, todayUsed: .5, lastSuccessAt: previous.lastSuccessAt });
     expect(JSON.stringify(failed)).not.toContain("private-test-password");
   });
   it.each(["source", "login"])("discards an old response after %s changed", async change => {

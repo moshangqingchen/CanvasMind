@@ -270,6 +270,10 @@ export interface SupplierBillingSnapshot {
   balance?: number;
   used?: number;
   todayUsed?: number;
+  todayStatus?: "live" | "missing" | "unsupported" | "failed";
+  todayError?: string;
+  /** Explicit query range for sites that accept a local-day usage window. */
+  todayWindow?: { startAt: string; endAt: string; timeZone: string };
   requests?: number;
   unit: string;
   sourceUrl: string;

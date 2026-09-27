@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { refreshSupplierAccount, useSupplierBillingOverview } from "../lib/client-supplier-billing";
-import { billingAmount } from "../lib/supplier-billing-display";
+import { billingAmount, billingTodayAmount } from "../lib/supplier-billing-display";
 import styles from "./supplier-billing-summary.module.css";
 
 export function SupplierBillingSummary({ supplierId, compact = false, onRefreshed }: { supplierId?: string; compact?: boolean; onRefreshed?: () => void }) {
@@ -23,9 +23,11 @@ export function SupplierBillingSummary({ supplierId, compact = false, onRefreshe
     <div className={styles.amounts}>
       <span>余额 <strong>{billingAmount(billing?.balance, billing?.unit)}</strong></span>
       <span>累计消耗 <strong>{billingAmount(billing?.used, billing?.unit)}</strong></span>
-      {billing?.todayUsed !== undefined && <span>今日消耗 <strong>{billingAmount(billing.todayUsed, billing.unit)}</strong></span>}
+      <span title={billing?.todayError}>今日消耗 <strong>{billingTodayAmount(billing)}</strong></span>
     </div>
     <small>{billing?.lastSuccessAt ? `${stale ? "上次成功" : "数据更新"}：${new Date(billing.lastSuccessAt).toLocaleString("zh-CN")}` : "从供应商后台读取，尚未取得数据"}</small>
+    {billing?.todayWindow ? <small>今日消耗按本机时区（{billing.todayWindow.timeZone}）从零点统计至读取时刻。</small>
+      : billing?.todayUsed !== undefined ? <small>今日消耗按供应商后台统计口径显示。</small> : null}
     {(error || billing?.error) && <p role="status">{error || billing?.error}</p>}
     {!billing && account && !account.configured && <p>请先在连接配置中保存站点登录，再读取账号余额与消耗。</p>}
     {!compact && <small>账号累计值包含该账号在其他客户端的用量；本次生成报价另列，金额不自动换算。</small>}

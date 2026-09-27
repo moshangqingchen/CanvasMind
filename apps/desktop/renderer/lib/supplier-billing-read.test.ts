@@ -1,6 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseSupplierBilling, readSupplierBilling } from "./supplier-billing-read";
-import { billingAmount, billingCompact } from "./supplier-billing-display";
+import { billingAmount, billingCompact, billingTodayAmount } from "./supplier-billing-display";
+import type { SupplierBillingSnapshot } from "@super-canvas/db";
+
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("supplier account amounts", () => {
   it("converts NewAPI quota only with the site's own divisor", () => {
@@ -46,5 +49,82 @@ describe("supplier account amounts", () => {
       String(url).endsWith("/self") ? Response.json({ data: { quota: 300, used_quota: 200 } }) : new Response("", { status: 503 }));
     expect(result).toMatchObject({ status: "partial", balance: 300, used: 200, unit: "quota" });
     expect(billingCompact({ ...result, status: "failed" })).toBe("余额 300 原始额度（上次）");
+  });
+
+  it.each([
+    [{ quota_per_unit: 500000 }, .25, "credits"],
+    [{ quota_per_unit: 500000, quota_display_type: "CNY", usd_exchange_rate: 7.2 }, 1.8, "CNY"],
+    [{ quota_per_unit: 500000, quota_display_type: "USD" }, .25, "USD"],
+    [{ quota_per_unit: 500000, quota_display_type: "CUSTOM", custom_currency_exchange_rate: 10, custom_currency_symbol: "点" }, 2.5, "点"],
+    [{ quota_per_unit: 500000, quota_display_type: "TOKENS" }, 125000, "quota"],
+    [{}, 125000, "quota"],
+  ])("converts daily NewAPI quota with the same site settings %j", (settings, todayUsed, unit) => {
+    expect(parseSupplierBilling("newapi", { quota: 1000000, used_quota: 500000 }, settings, { success: true, data: { quota: 125000 } }))
+      .toMatchObject({ todayUsed, unit });
+  });
+
+  it.each([
+    ["Asia/Shanghai", "2026-09-27T04:34:56.789Z", "2026-09-26T16:00:00.000Z"],
+    ["America/New_York", "2026-03-08T18:34:56.789Z", "2026-03-08T05:00:00.000Z"],
+  ])("reads all account usage since local midnight in %s", async (timeZone, timestamp, midnight) => {
+    vi.stubEnv("TZ", timeZone);
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date(timestamp));
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(init?.method).toBe("GET");
+      const path = new URL(String(url)).pathname;
+      if (path === "/site/api/user/self") return Response.json({ success: true, data: { quota: 1000000, used_quota: 500000 } });
+      if (path === "/site/api/status") return Response.json({ success: true, data: { quota_per_unit: 500000 } });
+      expect(path).toBe("/site/api/log/self/stat");
+      return Response.json({ success: true, data: { quota: 0, rpm: 10, tpm: 1000 } });
+    });
+    const result = await readSupplierBilling({ siteUrl: "https://site.invalid/site", sourceId: "s", kind: "newapi" }, fetcher);
+    expect(result).toMatchObject({ balance: 2, used: 1, todayUsed: 0, todayStatus: "live", status: "live",
+      todayWindow: { startAt: midnight, endAt: timestamp, timeZone } });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    const query = new URL(String(fetcher.mock.calls.find(call => String(call[0]).includes("/log/self/stat"))![0])).searchParams;
+    expect(Object.fromEntries(query)).toEqual({ type: "2", start_timestamp: String(Date.parse(midnight) / 1000), end_timestamp: String(Math.floor(Date.parse(timestamp) / 1000)) });
+    expect(billingTodayAmount(result)).toBe("0 额度");
+  });
+
+  it.each([404, 405, 501, 403, 429, 503])("keeps account totals when daily stats return HTTP %s", async status => {
+    const result = await readSupplierBilling({ siteUrl: "https://site.invalid", sourceId: "s", kind: "newapi" }, async url => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/user/self") return Response.json({ data: { quota: 1000000, used_quota: 500000 } });
+      if (path === "/api/status") return Response.json({ data: { quota_per_unit: 500000 } });
+      return Response.json({ message: "private-site-error-secret" }, { status });
+    });
+    const unsupported = [404, 405, 501].includes(status);
+    expect(result).toMatchObject({ status: "partial", balance: 2, used: 1, todayUsed: undefined, todayStatus: unsupported ? "unsupported" : "failed" });
+    expect(billingTodayAmount(result)).toBe(unsupported ? "暂不支持" : "未读取");
+    expect(JSON.stringify(result)).not.toContain("private-site-error-secret");
+  });
+
+  it.each([undefined, null, "", " ", false, "NaN", {}, []])("does not treat missing or invalid daily usage %j as zero", async today_actual_cost => {
+    const result = await readSupplierBilling({ siteUrl: "https://site.invalid", sourceId: "s", kind: "sub2api" }, async url =>
+      String(url).endsWith("/profile") ? Response.json({ data: { balance: 8 } }) : Response.json({ data: { total_actual_cost: 2, today_actual_cost } }));
+    expect(result).toMatchObject({ status: "partial", balance: 8, used: 2, todayStatus: "missing", todayUsed: undefined });
+    expect(billingTodayAmount(result)).toBe("未读取");
+    expect(parseSupplierBilling("newapi", { quota: 1 }, {}, { data: { quota: today_actual_cost } }).todayUsed).toBeUndefined();
+  });
+
+  it("rejects daily application errors while keeping valid account totals", async () => {
+    const result = await readSupplierBilling({ siteUrl: "https://site.invalid", sourceId: "s", kind: "newapi" }, async url => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/user/self") return Response.json({ data: { quota: 1000000, used_quota: 500000 } });
+      if (path === "/api/status") return Response.json({ data: { quota_per_unit: 500000 } });
+      return Response.json({ success: false, message: "secret", data: { quota: 0 } });
+    });
+    expect(result).toMatchObject({ status: "partial", todayStatus: "failed", todayUsed: undefined, balance: 2 });
+    expect(JSON.stringify(result)).not.toContain("secret");
+  });
+
+  it("labels retained daily values and yesterday's snapshot as previous data", () => {
+    const billing: SupplierBillingSnapshot = { sourceId: "s", status: "live", checkedAt: "2026-09-27T04:00:00Z", lastSuccessAt: "2026-09-27T04:00:00Z", todayUsed: 0, todayStatus: "live", unit: "credits", sourceUrl: "https://site.invalid" };
+    const now = new Date(billing.checkedAt);
+    expect(billingTodayAmount(billing, now)).toBe("0 额度");
+    expect(billingTodayAmount({ ...billing, status: "failed" }, now)).toBe("0 额度（上次）");
+    const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+    expect(billingTodayAmount(billing, tomorrow)).toBe("0 额度（上次）");
+    expect(billingTodayAmount(undefined, now)).toBe("未读取");
   });
 });

@@ -5,13 +5,15 @@ import type { ProviderConnectionView } from "../lib/client-api";
 
 async function fixture(page: Page, request: APIRequestContext) {
   const suppliers: SupplierRecord[] = [], connections: ProviderConnectionView[] = [];
+  const checkedAt = new Date().toISOString();
   for (const [index, name] of ["报价甲", "报价乙"].entries()) {
     const created = await request.post("/api/suppliers", { data: { name, siteUrl: `https://billing-${index}.invalid` } });
     expect(created.ok()).toBeTruthy();
     const supplier: SupplierRecord = await created.json();
     supplier.siteLogin = { configured: true, username: "test" };
     supplier.state!.billing = { sourceId: supplier.state!.sourceId, status: "live", balance: index ? 22 : 10, used: index ? 8 : 3,
-      unit: index ? "USD" : "CNY", checkedAt: "2026-09-25T00:00:00Z", lastSuccessAt: "2026-09-25T00:00:00Z", sourceUrl: supplier.siteUrl };
+      ...(index ? {} : { todayUsed: 0, todayStatus: "live" as const }),
+      unit: index ? "USD" : "CNY", checkedAt, lastSuccessAt: checkedAt, sourceUrl: supplier.siteUrl };
     const models: ModelDescriptor[] = [{ id: "gpt-image-2.5", name: "计价模型", operations: ["image.generate"], inputKinds: ["text"], outputKinds: ["image"],
       metadata: { canvasRunnable: true }, parameters: [{ key: "quality", label: "质量", control: "select", default: "max", options: [{ value: "high", label: "高" }, { value: "max", label: "最高" }] }],
       pricing: { kind: "per-image", currency: index ? "USD" : "CNY", unitAmount: index ? .8 : .4, confidence: "exact", checkedAt: "2026-09-25T00:00:00Z" } }];
@@ -32,6 +34,9 @@ async function fixture(page: Page, request: APIRequestContext) {
       refreshes.push(supplier.id);
       supplier.state!.billing = { ...supplier.state!.billing!, status: failed ? "failed" : "live",
         balance: failed ? supplier.state!.billing!.balance : 9.6, used: failed ? supplier.state!.billing!.used : 3.4,
+        todayUsed: failed ? supplier.state!.billing!.todayUsed : .4,
+        todayStatus: failed ? supplier.state!.billing!.todayStatus : "live",
+        todayError: failed ? supplier.state!.billing!.todayError : undefined,
         error: failed ? "读取失败；上次成功数据已保留" : undefined };
       await route.fulfill({ json: supplier.state!.billing });
     } else if (url.pathname.endsWith("/verification")) {
@@ -53,15 +58,19 @@ test("供应商管理独立刷新、失败保留数值、批量刷新且不触�
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
   const billing = dialog.getByRole("region", { name: "供应商余额与消耗" });
   await expect(billing).toContainText("10 CNY"); await expect(billing).toContainText("3 CNY");
+  await expect(billing).toContainText("今日消耗 0 CNY");
   await billing.getByRole("button", { name: "重新读取消耗" }).click();
   await expect(billing).toContainText("9.6 CNY"); await expect(billing).toContainText("3.4 CNY");
+  await expect(billing).toContainText("今日消耗 0.4 CNY");
   data.fail();
   await billing.getByRole("button", { name: "重新读取消耗" }).click();
   await expect(billing).toContainText("上次成功"); await expect(billing).toContainText("9.6 CNY");
+  await expect(billing).toContainText("今日消耗 0.4 CNY（上次）");
   await dialog.getByRole("button", { name: "刷新全部余额与消耗", exact: true }).click();
   await expect.poll(() => data.refreshes.length).toBe(4);
   await dialog.locator(".sm-supplier-item").filter({ hasText: "报价乙" }).click();
   await expect(billing).toContainText("22 USD"); await expect(billing).not.toContainText("CNY");
+  await expect(billing).toContainText("今日消耗 未读取");
   await page.screenshot({ path: info.outputPath("supplier-billing-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await billing.scrollIntoViewIfNeeded();
@@ -92,8 +101,25 @@ test("画布供应商选择显示对应报价余额，切换后刷新对应账�
   await expect(panel.getByLabel("当前供应商报价")).toContainText("0.8 USD");
   const billing = panel.getByRole("region", { name: "供应商余额与消耗" });
   await expect(billing).toContainText("22 USD");
+  await expect(billing).toContainText("今日消耗 未读取");
   await billing.getByRole("button", { name: "重新读取消耗" }).click();
   await expect(billing).toContainText("9.6 USD");
+  await expect(billing).toContainText("今日消耗 0.4 USD");
   expect(data.refreshes).toEqual([data.suppliers[1]!.id]); expect(data.forbidden).toEqual([]);
   await page.screenshot({ path: info.outputPath("canvas-supplier-billing.png"), fullPage: true });
+});
+
+test("未提供今日消耗的站点保留字段并解释原因，刷新后可恢复", async ({ page, request }) => {
+  const data = await fixture(page, request);
+  data.suppliers[0]!.state!.billing = { ...data.suppliers[0]!.state!.billing!, status: "partial", todayUsed: undefined,
+    todayStatus: "unsupported", todayError: "此站点暂不支持今日消耗查询", error: "此站点暂不支持今日消耗查询" };
+  await page.goto("/");
+  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  const billing = page.getByRole("dialog", { name: "供应商与模型设置" }).getByRole("region", { name: "供应商余额与消耗" });
+  await expect(billing).toContainText("今日消耗 暂不支持");
+  await expect(billing.getByRole("status")).toContainText("此站点暂不支持今日消耗查询");
+  await billing.getByRole("button", { name: "重新读取消耗" }).click();
+  await expect(billing).toContainText("今日消耗 0.4 CNY");
+  await expect(billing).not.toContainText("暂不支持");
+  expect(data.forbidden).toEqual([]);
 });
