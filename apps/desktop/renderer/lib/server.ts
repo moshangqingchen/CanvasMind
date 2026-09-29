@@ -179,9 +179,23 @@ const PUBLIC_RUN_PARAMETER_KEYS = new Set([
   "width",
   "height",
   "fps",
+  "size_tier",
+  "imageSize",
+  "image_quality",
+  "output_quality",
+  "background",
+  "output_compression",
+  "response_format",
+  "style",
+  "seed",
+  "generate_audio",
+  "audio",
+  "negative_prompt",
+  "reference_mode",
+  "seconds",
 ]);
 
-export function publicRunRequest(input: JsonObject, includePrompt = false): PublicRunRequest | null {
+export function publicRunRequest(input: JsonObject, includePrompt = false, declaredParameterKeys: ReadonlySet<string> = new Set()): PublicRunRequest | null {
   const text = (key: string) => {
     const value = input[key];
     return typeof value === "string"
@@ -196,9 +210,9 @@ export function publicRunRequest(input: JsonObject, includePrompt = false): Publ
     !Array.isArray(rawParameters)
   ) {
     for (const [key, value] of Object.entries(rawParameters)) {
-      if (!PUBLIC_RUN_PARAMETER_KEYS.has(key)) continue;
+      if (!PUBLIC_RUN_PARAMETER_KEYS.has(key) && (!declaredParameterKeys.has(key) || /authorization|cookie|api[-_]?key|token|secret|password|credential|signature|headers/iu.test(key))) continue;
       if (typeof value === "string") {
-        parameters[key] = redactPublicText(value).slice(0, 256);
+        parameters[key] = redactPublicText(value);
       } else if (typeof value === "boolean") {
         parameters[key] = value;
       } else if (typeof value === "number" && Number.isFinite(value)) {
@@ -222,7 +236,7 @@ export function publicRunRequest(input: JsonObject, includePrompt = false): Publ
     ...(text("modelGroup") ? { modelGroup: text("modelGroup") } : {}),
     ...(text("operation") ? { operation: text("operation") } : {}),
     ...(text("model") ? { model: text("model") } : {}),
-    ...(Object.keys(parameters).length > 0 ? { parameters } : {}),
+    ...(rawParameters && typeof rawParameters === "object" && !Array.isArray(rawParameters) ? { parameters } : {}),
     ...(includePrompt && typeof input.prompt === "string" ? { prompt: redactPublicText(input.prompt) } : {}),
     ...(Array.isArray(input.assetIds) ? { inputAssetIds: [...new Set(input.assetIds.filter((id): id is string => typeof id === "string"))] } : {}),
     ...(Array.isArray(input.inputAssets) ? { inputAssets: input.inputAssets.flatMap((value): GenerationInputAsset[] => {
@@ -237,6 +251,18 @@ export function publicRunRequest(input: JsonObject, includePrompt = false): Publ
     }) } : {}),
   };
   return Object.keys(request).length > 0 ? request : null;
+}
+
+function declaredRunParameterKeys(graphNode: JsonObject, model: unknown): Set<string> {
+  const config = safeJsonObject(safeJsonObject(safeJsonObject(graphNode.data).__runtimeConnection).config);
+  const connector = safeJsonObject(config.connector);
+  const models = [
+    ...(Array.isArray(config.modelCatalogModels) ? config.modelCatalogModels : []),
+    ...(Array.isArray(connector.models) ? connector.models : []),
+  ];
+  const descriptor = models.map(safeJsonObject).find(item => item.id === model);
+  return new Set((Array.isArray(descriptor?.parameters) ? descriptor.parameters : [])
+    .map(safeJsonObject).flatMap(parameter => typeof parameter.key === "string" ? [parameter.key] : []));
 }
 
 export function nodeRunRecoveryAction(
@@ -317,6 +343,8 @@ export function publicRunSnapshot(
   includePrompt = false,
 ): PublicRunSnapshot | null {
   if (!snapshot) return null;
+  const graphNodes = new Map((Array.isArray(snapshot.run.revisionGraph.nodes) ? snapshot.run.revisionGraph.nodes : [])
+    .map(safeJsonObject).map(node => [node.id, node]));
   return {
     run: {
       id: snapshot.run.id,
@@ -331,7 +359,8 @@ export function publicRunSnapshot(
       canRecoverOutputs: canRecoverRunOutputs(snapshot.run, snapshot.nodes),
     },
     nodes: snapshot.nodes.map((node) => {
-      const request = publicRunRequest(node.inputJson, includePrompt);
+      const request = publicRunRequest(node.inputJson, includePrompt,
+        declaredRunParameterKeys(graphNodes.get(node.nodeId) ?? {}, node.inputJson.model));
       const recoveryAction = nodeRunRecoveryAction(node);
       const cliTask = safeJsonObject(safeJsonObject(safeJsonObject(node.inputJson.providerTask).result).cli);
       return {

@@ -33,6 +33,27 @@ export function resultPrompt(data: CanvasNodeData, details: GenerationDetails): 
   }).trim();
 }
 
+/** Reuse saved execution settings, never the current source node or app defaults. */
+export function resultGenerationConfiguration(
+  data: CanvasNodeData,
+  request?: RunSnapshot["nodes"][number]["request"],
+): Pick<CanvasNodeData, "provider" | "connectionId" | "model" | "parameters" | "qualityMode"> | undefined {
+  const provider = request?.provider ?? data.generatedProvider;
+  const connectionId = request?.connectionId ?? data.generatedConnectionId;
+  const model = request?.model ?? data.generatedModel;
+  const parameters = request?.parameters ?? data.generatedParameters;
+  if (!provider?.trim() || !connectionId?.trim() || !model?.trim() || parameters === undefined)
+    return undefined;
+  return {
+    provider,
+    connectionId,
+    model,
+    parameters: structuredClone(parameters),
+    // Keep the historical quality even when the catalog's highest quality changes.
+    qualityMode: "custom",
+  };
+}
+
 export function resultElapsed(start?: string, end?: string): string {
   const milliseconds = Date.parse(end ?? "") - Date.parse(start ?? "");
   if (!Number.isFinite(milliseconds) || milliseconds < 0) return "未记录";

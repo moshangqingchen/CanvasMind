@@ -64,6 +64,31 @@ describe("public run snapshots", () => {
     expect(publicRunRequest({ submissionPhase: "generating", cloudGeneration: { endpoint: "https://cloud.example.com", encryptedToken: "private" } })).toEqual({ submissionPhase: "generating" });
     expect(publicRunRequest({ submissionPhase: "private arbitrary value" })).toBeNull();
   });
+  it("preserves reusable image and video settings, including empty parameter sets", () => {
+    const parameters = { size_tier: "2K", image_quality: "low", output_quality: "medium", background: "opaque",
+      output_compression: 0, response_format: "b64_json", style: "natural", seed: 0, generate_audio: false,
+      audio: true, negative_prompt: "avoid artifacts ".repeat(30), reference_mode: "frame", seconds: 10 };
+    expect(publicRunRequest({ parameters })?.parameters).toEqual(parameters);
+    expect(publicRunRequest({ parameters: {} })).toEqual({ parameters: {} });
+    expect(publicRunRequest({ provider: "rest" })?.parameters).toBeUndefined();
+  });
+
+  it("preserves custom model parameters declared in the frozen run without exposing secrets", () => {
+    const snapshot = recoverySnapshot();
+    const result = publicRunSnapshot({
+      ...snapshot,
+      run: { ...snapshot.run, revisionGraph: { nodes: [{ id: "image", data: { __runtimeConnection: { config: {
+        modelCatalogModels: [{ id: "custom-model", parameters: [
+          { key: "motion_strength" }, { key: "camera_fixed" }, { key: "api_key" },
+        ] }],
+      } } } }] } },
+      nodes: [{ ...snapshot.nodes[0]!, inputJson: { model: "custom-model", parameters: {
+        motion_strength: 0.5, camera_fixed: false, api_key: "private-secret", untrusted: "private-value",
+      } } }],
+    });
+    expect(result?.nodes[0]?.request?.parameters).toEqual({ motion_strength: 0.5, camera_fixed: false });
+    expect(JSON.stringify(result)).not.toContain("private");
+  });
   it("publishes reference metadata and only includes the sanitized prompt on a details request", () => {
     const input = {
       prompt: "Use both references. token=private-token",

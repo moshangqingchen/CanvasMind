@@ -1,7 +1,7 @@
 "use client";
 
 import { savedModelAvailabilityError } from "../lib/model-availability";
-import { generationDetailsFromRun, resultPrompt } from "../lib/result-provenance";
+import { generationDetailsFromRun, resultGenerationConfiguration, resultPrompt } from "../lib/result-provenance";
 import { cliConnectionReady, cliStatusLabel } from "../lib/cli-connections";
 import { resolveModelParameters, validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import { withoutLocalExecutionConfig } from "../lib/project-local-config";
@@ -6152,21 +6152,32 @@ function CanvasShell({
     const targetCanvasId = activeProjectIdRef.current;
     try {
       let prompt = resultPrompt({ ...result.data, assets }, result.data.generatedDetails ?? {});
-      // Never substitute the source node's current text for a historical prompt.
-      if (prompt === undefined && result.data.generatedFromRunId) {
-        const snapshot = await fetchRun(result.data.generatedFromRunId, {
-          details: true, signal: AbortSignal.timeout(12_000),
-        });
-        const source = snapshot.nodes.find((node) =>
-          result.data.assetId ? node.outputAssetIds.includes(result.data.assetId)
-            : node.nodeId === result.data.generatedFromNodeId,
-        );
-        prompt = source?.request?.prompt;
+      let configuration = resultGenerationConfiguration(result.data);
+      // Older canvas snapshots omitted some parameters. Prefer the actual run,
+      // while allowing saved results to work when that run is no longer available.
+      if (result.data.generatedFromRunId) {
+        try {
+          const snapshot = await fetchRun(result.data.generatedFromRunId, {
+            details: true, signal: AbortSignal.timeout(12_000),
+          });
+          const source = snapshot.nodes.find((node) =>
+            result.data.assetId ? node.outputAssetIds.includes(result.data.assetId)
+              : node.nodeId === result.data.generatedFromNodeId,
+          );
+          prompt = source?.request?.prompt ?? prompt;
+          configuration = resultGenerationConfiguration(result.data, source?.request);
+        } catch (error) {
+          if (prompt === undefined || !configuration) throw error;
+        }
       }
       if (!instanceActive.current || saveSuspended.current || saveConflictRef.current ||
         activeProjectIdRef.current !== targetCanvasId) return;
       if (!prompt?.trim()) {
         showToast("这张结果没有保存可复用的提示词", "error");
+        return;
+      }
+      if (!configuration) {
+        showToast("这张结果缺少原供应商、模型或生成参数，无法完整复用", "error");
         return;
       }
       flushPendingEditorEdits();
@@ -6175,10 +6186,16 @@ function CanvasShell({
       if (!currentResult) return;
       const kind = result.data.assetKind === "video" ? "video-generation" : "image-generation";
       const base = createNode(kind, generatedResultPosition(currentResult, 420, 210, state.nodes), state.nodes.length);
-      const node = configureNewGenerationNode(base, connections) ?? {
-        ...base, data: { ...base.data, provider: undefined, model: "", parameters: {}, qualityMode: "highest" as const },
+      const node: CanvasNode = {
+        ...base,
+        data: { ...base.data, ...configuration, parts: [{ type: "text", text: prompt }] },
       };
-      node.data = { ...node.data, parts: [{ type: "text", text: prompt }] };
+      const model = modelDescriptorForSavedSelection(
+        modelOptionsForNode(node, connections, connectionModels),
+        node.data.model,
+        node.data.parameters,
+      );
+      node.data.inputs = generationInputsForModel(kind, model, node.data.inputs);
       node.selected = true;
       checkpoint(true);
       const nextNodes = [...state.nodes.map((item) => item.selected ? { ...item, selected: false } : item), node];
@@ -6189,14 +6206,14 @@ function CanvasShell({
         if (instanceActive.current && activeProjectIdRef.current === targetCanvasId)
           void reactFlowRef.current?.fitView({ nodes: [{ id: node.id }], padding: 0.3, maxZoom: 1 });
       });
-      showToast("已复用提示词", "success");
+      showToast("已复用提示词、供应商、模型和生成参数", "success");
     } catch {
       if (instanceActive.current && activeProjectIdRef.current === targetCanvasId)
-        showToast("读取原提示词失败，请重试", "error");
+        showToast("读取原提示词或生成配置失败，请重试", "error");
     } finally {
       preparingPromptReuse.current = false;
     }
-  }, [assets, checkpoint, connections, scheduleSave, setNodes, setSelectedId, showToast]);
+  }, [assets, checkpoint, connectionModels, connections, scheduleSave, setNodes, setSelectedId, showToast]);
 
   const regenerateResult = useCallback(
     (resultNodeId: string) => {
