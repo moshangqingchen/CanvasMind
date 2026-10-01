@@ -344,6 +344,9 @@ const terminalGeneratedResultStatuses = new Set<NodeRunStatus>([
 ]);
 const GENERATED_RESULT_INPUT_HANDLE = "generated";
 const GENERATED_RESULT_EDGE_PREFIX = "edge-generated-";
+// Failed and unknown-result cards have a 280px CSS minimum. Reserve that
+// footprint while a result is empty so a later failure cannot cover its neighbor.
+const GENERATED_RESULT_ERROR_MIN_HEIGHT = 280;
 const MATERIAL_DROP_LEASE_STORAGE_KEY = "super-canvas:material-drop-consumer";
 const INSPECTOR_MIN_WIDTH = 300;
 const INSPECTOR_DEFAULT_WIDTH = 380;
@@ -876,11 +879,17 @@ function generatedResultPosition(
       ...sourceSize,
     },
     { width, height },
-    occupiedNodes.map((node) => ({
-      id: node.id,
-      position: node.position,
-      ...nodeDimensions(node),
-    })),
+    occupiedNodes.map((node) => {
+      const dimensions = nodeDimensions(node);
+      return {
+        id: node.id,
+        position: node.position,
+        ...dimensions,
+        height: node.data.generatedResult === true && !node.data.assetId
+          ? Math.max(dimensions.height, GENERATED_RESULT_ERROR_MIN_HEIGHT)
+          : dimensions.height,
+      };
+    }),
   );
 }
 
@@ -901,7 +910,8 @@ function createGeneratedResultNode(
   return {
     id: `generated-result-${runId}-${source.id}-${outputIndex}`,
     type: "workflow",
-    position: generatedResultPosition(source, width, height, occupiedNodes),
+    position: generatedResultPosition(source, width,
+      assetId ? height : Math.max(height, GENERATED_RESULT_ERROR_MIN_HEIGHT), occupiedNodes),
     style: { width, height },
     data: {
       nodeType: "asset-input",

@@ -2801,7 +2801,7 @@ test.describe("超级画布完整验收", () => {
   test("再次运行多结果批次会原地复用全部失败卡片", async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const sourceNodeId = "e2e-queued-retries";
     const canvas = await getJson<CanvasResponse>(request, "/api/canvas");
     const saved = await request.put(`/api/canvas/${canvas.id}`, {
@@ -2841,6 +2841,7 @@ test.describe("超级画布完整验收", () => {
     await expect(resultNodes).toHaveCount(2);
     const firstResult = resultNodes.nth(0);
     const secondResult = resultNodes.nth(1);
+    await expect(resultNodes.locator('.generated-result-node[data-generated-status="failed"]')).toHaveCount(2);
     await expect(
       firstResult.getByRole("button", {
         name: "再次运行 生成图片 1，原地替换失败结果",
@@ -2851,6 +2852,55 @@ test.describe("超级画布完整验收", () => {
         name: "再次运行 生成图片 2，原地替换失败结果",
       }),
     ).toBeVisible();
+    await expect.poll(async () => {
+      const first = await firstResult.boundingBox();
+      const second = await secondResult.boundingBox();
+      if (!first || !second) return true;
+      return first.x < second.x + second.width && first.x + first.width > second.x &&
+        first.y < second.y + second.height && first.y + first.height > second.y;
+    }, { message: "失败结果卡必须保留独立空间，不能遮挡相邻卡的重试按钮" }).toBe(false);
+    await expect.poll(async () => generatedResultsFor(await savedCanvas(page), sourceNodeId)
+      .map(node => node.data.generatedStatus)).toEqual(["failed", "failed"]);
+    const originalResults = generatedResultsFor(await savedCanvas(page), sourceNodeId);
+    const firstSize = await firstResult.evaluate(element => ({
+      width: (element as HTMLElement).offsetWidth,
+      height: (element as HTMLElement).offsetHeight,
+    }));
+    await firstResult.locator(".result-error-details summary").click();
+    await expect(firstResult.locator(".result-error-details")).toHaveJSProperty("open", true);
+    // Selection can restart the card's translate/scale animation. Measure its
+    // settled footprint rather than an in-flight transform against the wrapper.
+    await expect.poll(() => firstResult.locator(".generated-result-node").evaluate(element =>
+      element.getAnimations().some(animation => animation.playState === "running")))
+      .toBe(false);
+    const expandedLayout = await firstResult.locator(".generated-result-state.failed").evaluate(element => {
+      const state = element.getBoundingClientRect();
+      const wrapper = element.closest(".react-flow__node")!.getBoundingClientRect();
+      return {
+        overflowY: getComputedStyle(element).overflowY,
+        scrollable: element.scrollHeight > element.clientHeight,
+        insideWrapper: state.top >= wrapper.top - 1 && state.bottom <= wrapper.bottom + 1,
+        stateBounds: { top: state.top, bottom: state.bottom, height: state.height },
+        wrapperBounds: { top: wrapper.top, bottom: wrapper.bottom, height: wrapper.height },
+        cardTransform: getComputedStyle(element.closest(".generated-result-node")!).transform,
+      };
+    });
+    expect(await firstResult.evaluate(element => ({
+      width: (element as HTMLElement).offsetWidth,
+      height: (element as HTMLElement).offsetHeight,
+    }))).toEqual(firstSize);
+    expect(firstSize.height).toBeGreaterThanOrEqual(280);
+    await testInfo.attach("failed-result-layout", {
+      body: Buffer.from(JSON.stringify({
+        firstBounds: await firstResult.boundingBox(),
+        secondBounds: await secondResult.boundingBox(),
+        firstSize,
+        expandedLayout,
+        resultPositions: originalResults.map(node => ({ id: node.id, position: node.position })),
+      }, null, 2)),
+      contentType: "application/json",
+    });
+    expect(expandedLayout).toMatchObject({ overflowY: "auto", scrollable: true, insideWrapper: true });
 
     let retryPostCount = 0;
     let continuedRetryPostCount = 0;
@@ -2870,6 +2920,7 @@ test.describe("超级画布完整验收", () => {
       continuedRetryPostCount += 1;
     };
     await page.route(retryRoutePattern, retryHandler);
+    let retryAssertionFailed = false;
     try {
       await firstResult
         .getByRole("button", {
@@ -2892,14 +2943,32 @@ test.describe("超级画布完整验收", () => {
             status: node.data.generatedStatus,
           }));
         })
-        .toEqual([
-          { id: await firstResult.getAttribute("data-id"), status: "failed" },
-          { id: await secondResult.getAttribute("data-id"), status: "failed" },
-        ]);
+        .toEqual(originalResults.map(node => ({ id: node.id, status: "failed" })));
+      expect(generatedResultsFor(await savedCanvas(page), sourceNodeId).map(node => ({
+        id: node.id, position: node.position,
+      }))).toEqual(originalResults.map(node => ({ id: node.id, position: node.position })));
+      await expect(resultNodes.locator('.generated-result-node[data-generated-status="failed"]')).toHaveCount(2);
+      await secondResult.getByRole("button", {
+        name: "再次运行 生成图片 2，原地替换失败结果",
+      }).click();
+      await expect.poll(() => retryPostCount).toBe(2);
+      await expect.poll(() => continuedRetryPostCount).toBe(2);
+      await expect.poll(async () => generatedResultsFor(await savedCanvas(page), sourceNodeId)
+        .map(node => ({ id: node.id, status: node.data.generatedStatus, position: node.position })))
+        .toEqual(originalResults.map(node => ({ id: node.id, status: "failed", position: node.position })));
+    } catch (error) {
+      retryAssertionFailed = true;
+      throw error;
     } finally {
       releaseRetryRequests();
-      await expect.poll(() => continuedRetryPostCount).toBe(retryPostCount);
-      await page.unroute(retryRoutePattern, retryHandler);
+      if (!page.isClosed()) {
+        try {
+          await expect.poll(() => continuedRetryPostCount).toBe(retryPostCount);
+          await page.unroute(retryRoutePattern, retryHandler);
+        } catch (error) {
+          if (!retryAssertionFailed && !page.isClosed()) throw error;
+        }
+      }
     }
   });
 
