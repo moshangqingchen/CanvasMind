@@ -2,11 +2,13 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { channel } from "node:diagnostics_channel";
+import type { Readable } from "node:stream";
 import { createAutoNetworkConnector } from "./direct-network.js";
 
 import {
   Agent,
   fetch as undiciFetch,
+  request as undiciRequest,
   FormData as UndiciFormData,
   ProxyAgent,
 } from "undici";
@@ -289,6 +291,124 @@ export const fetchWithProviderHttpProxy = (
         }),
   );
 };
+
+function providerBodyToWeb(body: Readable): ReadableStream<Uint8Array> {
+  const iterator = body[Symbol.asyncIterator]();
+  let closed = false;
+  // Undici may emit an AbortError when destroyed before the first pull. Its
+  // iterator still observes active read errors; this covers cancellation gaps.
+  body.on("error", () => {});
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await iterator.next();
+        // Cancellation closes the Web controller before an in-flight Node read
+        // settles. Never enqueue or error into that already-closed controller.
+        if (closed) return;
+        if (done) {
+          closed = true;
+          controller.close();
+        } else {
+          controller.enqueue(
+            value instanceof Uint8Array ? value : Buffer.from(value),
+          );
+        }
+      } catch (error) {
+        if (closed) return;
+        closed = true;
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      closed = true;
+      body.destroy(reason instanceof Error ? reason : undefined);
+      await iterator.return?.().catch(() => undefined);
+    },
+  });
+}
+
+/**
+ * Fetch replaces Host with the URL authority. Pinned plain-HTTP artifact
+ * downloads need the validated IP as their authority and the original virtual
+ * host in their headers, so use Undici's lower-level request API on this path.
+ * The runtime remains responsible for validating the destination and redirects.
+ */
+export async function fetchWithPinnedProviderHttpProxy(
+  url: string,
+  options: {
+    host: string;
+    headers?: HeadersInit;
+    signal: AbortSignal;
+    proxyOverride?: string;
+  },
+): Promise<Response> {
+  if (new URL(url).protocol !== "http:") {
+    throw new Error("Pinned proxy artifact download must use HTTP");
+  }
+  const headers = new Headers(options.headers);
+  headers.set("host", options.host);
+  // Unlike fetch, request returns the encoded wire bytes. Keep artifact bytes
+  // in their original media format instead of accidentally archiving gzip.
+  headers.set("accept-encoding", "identity");
+  if (process.env["NODE_ENV"] === "test" || process.env["VITEST"] === "true") {
+    return fetch(url, {
+      method: "GET",
+      headers: Object.fromEntries(headers),
+      redirect: "manual",
+      signal: options.signal,
+    });
+  }
+  const timeoutMs = requestTransportTimeout.getStore();
+  const dispatcher =
+    currentProviderProxy(options.proxyOverride, timeoutMs) ??
+    currentProviderTimeoutAgent(timeoutMs);
+  const response = await undiciRequest(url, {
+    method: "GET",
+    headers: Object.fromEntries(headers),
+    signal: options.signal,
+    // The lower-level request API does not follow redirects. This dispatcher
+    // has no redirect interceptor; each next hop remains the runtime's job.
+    ...(dispatcher ? { dispatcher } : {}),
+  });
+  const contentEncoding = response.headers["content-encoding"];
+  const encodings = (
+    Array.isArray(contentEncoding) ? contentEncoding : [contentEncoding ?? ""]
+  ).flatMap((value) =>
+    value.split(",").map((entry) => entry.trim().toLowerCase()),
+  );
+  const emptyBody = [204, 205, 304].includes(response.statusCode);
+  if (
+    response.statusCode >= 200 &&
+    response.statusCode < 300 &&
+    !emptyBody &&
+    encodings.some((encoding) => encoding && encoding !== "identity")
+  ) {
+    // Undici reports destruction as a body AbortError. Observe it before
+    // cancelling so our explicit encoding error is the only caller failure.
+    response.body.on("error", () => {});
+    response.body.destroy();
+    throw new Error("Provider output Content-Encoding must be identity");
+  }
+  const responseHeaders = new Headers();
+  for (const [name, value] of Object.entries(response.headers)) {
+    if (value === undefined) continue;
+    for (const item of Array.isArray(value) ? value : [value]) {
+      responseHeaders.append(name, item);
+    }
+  }
+  const discardBody =
+    emptyBody || response.statusCode < 200 || response.statusCode >= 300;
+  if (discardBody) {
+    // Only successful entity bodies can be artifacts. Cancel other bodies
+    // directly, retaining status/Location without waiting for error payloads.
+    response.body.on("error", () => {});
+    response.body.destroy();
+  }
+  return new Response(discardBody ? null : providerBodyToWeb(response.body), {
+    status: response.statusCode,
+    headers: responseHeaders,
+  });
+}
 
 export const providerFetch: FetchImplementation = fetchWithProviderHttpProxy;
 

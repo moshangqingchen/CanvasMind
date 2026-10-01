@@ -29,10 +29,48 @@ describe("localizeRunError", () => {
         code: "artifact_archive_failed",
       }),
     ).toEqual({
-      message: "图片已经生成完成，但下载到素材库时中断，可以直接取回现有结果。",
+      message: "图片已生成，但保存到素材库失败，可尝试取回现有结果。",
       type: "结果归档错误",
       code: "artifact_archive_failed",
     });
+  });
+
+  it("explains archive address blocks and retains only the known safe diagnostic", () => {
+    const reason = "Provider output URL resolves to a private address";
+    const localized = localizeRunError({
+      message: `供应商任务已完成，但输出归档失败：${reason}: https://example.com/image.png?token=secret`,
+      code: "artifact_archive_failed",
+    });
+    expect(localized).toEqual({
+      message: "图片已生成，但原图链接解析到了内网或保留地址，下载被安全检查拦截。请检查代理或 DNS 设置，修复后取回现有结果。",
+      type: "结果归档错误",
+      code: "artifact_archive_failed",
+      providerMessage: reason,
+    });
+    expect(JSON.stringify(localized)).not.toMatch(/secret|example\.com/);
+    expect(localized?.message).not.toMatch(/中断|可以直接/);
+  });
+
+  it("uses preserved archive causes without replacing existing provider evidence", () => {
+    const providerMessage = "Provider output URL resolves to a private address";
+    const error = {
+      message: "供应商任务已完成，但输出归档失败",
+      code: "artifact_archive_failed",
+      providerMessage,
+    };
+    expect(localizeRunError(error)).toMatchObject({
+      message: expect.stringContaining("下载被安全检查拦截"),
+      providerMessage,
+    });
+    expect(localizeRunError({
+      ...error,
+      message: `供应商任务已完成，但输出归档失败：${providerMessage}`,
+      providerMessage: "Previously preserved diagnostic",
+    })?.providerMessage).toBe("Previously preserved diagnostic");
+    expect(localizeRunError({
+      message: "供应商任务已完成，但输出归档失败：Download failed for https://example.com/?token=secret",
+      code: "artifact_archive_failed",
+    })).not.toHaveProperty("providerMessage");
   });
 
   it("translates legacy moderation messages from a REST connector", () => {

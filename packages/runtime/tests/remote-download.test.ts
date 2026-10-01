@@ -1,3 +1,7 @@
+import { createServer, type RequestListener } from "node:http";
+import { once } from "node:events";
+import type { AddressInfo } from "node:net";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   downloadRemoteArtifact,
@@ -6,6 +10,27 @@ import {
 } from "../src/remote-download.js";
 
 const publicResolver = async () => [{ address: "93.184.216.34", family: 4 }];
+
+async function withProductionProxy<T>(
+  handle: RequestListener,
+  work: () => Promise<T>,
+): Promise<T> {
+  const server = createServer(handle);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("VITEST", "false");
+  vi.stubEnv(
+    "ARTIFACT_HTTP_PROXY",
+    `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+  );
+  try {
+    return await work();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -78,13 +103,11 @@ describe("remote artifact download", () => {
     "uses %s for Fake-IP outputs without credentials or automatic redirects",
     async (key) => {
       vi.stubEnv(key, "http://127.0.0.1:7897");
-      const fetch = vi
-        .fn()
-        .mockResolvedValue(
-          new Response(new Uint8Array([1, 2, 3]), {
-            headers: { "content-type": "image/png" },
-          }),
-        );
+      const fetch = vi.fn().mockResolvedValue(
+        new Response(new Uint8Array([1, 2, 3]), {
+          headers: { "content-type": "image/png" },
+        }),
+      );
       vi.stubGlobal("fetch", fetch);
       const result = await downloadRemoteArtifact(
         "https://cdn.example/output.png",
@@ -112,14 +135,12 @@ describe("remote artifact download", () => {
 
   it("still rejects private redirects on the proxy path", async () => {
     vi.stubEnv("PROVIDER_HTTP_PROXY", "http://127.0.0.1:7897");
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(null, {
-          status: 302,
-          headers: { location: "https://private.example/output" },
-        }),
-      );
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://private.example/output" },
+      }),
+    );
     vi.stubGlobal("fetch", fetch);
     await expect(
       downloadRemoteArtifact("https://cdn.example/output", {
@@ -222,8 +243,9 @@ describe("remote artifact download", () => {
     await expect(
       downloadRemoteArtifact("http://cdn.provider.example/output.png", {
         resolve: fakeIpResolver,
+        resolvePublic: async () => [],
       }),
-    ).rejects.toThrow(/private address/u);
+    ).rejects.toThrow(/public address/u);
     await expect(
       downloadRemoteArtifact("https://198.18.2.17/output.png"),
     ).rejects.toThrow(/private address/u);
@@ -243,6 +265,286 @@ describe("remote artifact download", () => {
         ],
       }),
     ).rejects.toThrow(/private address/u);
+  });
+
+  it("downloads HTTP Fake-IP outputs using an independently verified public destination", async () => {
+    const resolvePublic = vi.fn(publicResolver);
+    const transport = vi.fn(async () => ({
+      status: 200,
+      contentType: "image/png",
+      bytes: new Uint8Array([4, 5, 6]),
+    }));
+    const result = await downloadRemoteArtifact(
+      "http://cdn.provider.example/output.png?download=1",
+      {
+        resolve: async () => [{ address: "198.18.2.17", family: 4 }],
+        resolvePublic,
+        transport,
+      },
+    );
+    expect(resolvePublic).toHaveBeenCalledWith(
+      "cdn.provider.example",
+      expect.any(AbortSignal),
+    );
+    expect(transport).toHaveBeenCalledWith(
+      new URL("http://cdn.provider.example/output.png?download=1"),
+      expect.objectContaining({ address: "93.184.216.34", family: 4 }),
+      expect.any(AbortSignal),
+      expect.any(Number),
+    );
+    expect(result).toEqual({
+      bytes: new Uint8Array([4, 5, 6]),
+      contentType: "image/png",
+    });
+  });
+
+  it.each(["PROVIDER_HTTP_PROXY", "ARTIFACT_HTTP_PROXY"])(
+    "pins the recovered HTTP destination through %s while preserving the original Host",
+    async (key) => {
+      vi.stubEnv(key, "http://127.0.0.1:7897");
+      const fetch = vi.fn().mockResolvedValue(
+        new Response(new Uint8Array([1, 2, 3]), {
+          headers: { "content-type": "image/png" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetch);
+      await downloadRemoteArtifact(
+        "http://cdn.provider.example:8080/output.png?download=1",
+        {
+          resolve: async () => [{ address: "198.18.2.17", family: 4 }],
+          resolvePublic: publicResolver,
+        },
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        "http://93.184.216.34:8080/output.png?download=1",
+        expect.objectContaining({
+          method: "GET",
+          redirect: "manual",
+          signal: expect.any(AbortSignal),
+        }),
+      );
+      const headers = new Headers(fetch.mock.calls[0]![1].headers);
+      expect(headers.get("host")).toBe("cdn.provider.example:8080");
+      expect(headers.has("authorization")).toBe(false);
+    },
+  );
+
+  it.each(
+    [
+      [],
+      [{ address: "10.0.0.8", family: 4 }],
+      [{ address: "198.18.2.17", family: 4 }],
+      [
+        { address: "93.184.216.34", family: 4 },
+        { address: "169.254.169.254", family: 4 },
+      ],
+    ].map((addresses) => ({ addresses })),
+  )(
+    "does not download when independent HTTP DNS lacks a fully public answer: %j",
+    async ({ addresses }) => {
+      const transport = vi.fn();
+      await expect(
+        downloadRemoteArtifact("http://cdn.provider.example/output.png", {
+          resolve: async () => [{ address: "198.18.2.17", family: 4 }],
+          resolvePublic: async () => addresses,
+          transport,
+        }),
+      ).rejects.toThrow(/public address/u);
+      expect(transport).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(
+    [
+      [{ address: "10.0.0.8", family: 4 }],
+      [
+        { address: "198.18.2.17", family: 4 },
+        { address: "10.0.0.8", family: 4 },
+      ],
+      [
+        { address: "198.18.2.17", family: 4 },
+        { address: "93.184.216.34", family: 4 },
+      ],
+    ].map((addresses) => ({ addresses })),
+  )(
+    "does not reinterpret private or mixed HTTP DNS answers as Fake-IP: %j",
+    async ({ addresses }) => {
+      const resolvePublic = vi.fn(publicResolver);
+      const transport = vi.fn();
+      await expect(
+        downloadRemoteArtifact("http://cdn.provider.example/output.png", {
+          resolve: async () => addresses,
+          resolvePublic,
+          transport,
+        }),
+      ).rejects.toThrow(/private address/u);
+      expect(resolvePublic).not.toHaveBeenCalled();
+      expect(transport).not.toHaveBeenCalled();
+    },
+  );
+
+  it("continues rejecting HTTP Fake-IP literals without independent DNS", async () => {
+    const resolvePublic = vi.fn(publicResolver);
+    const transport = vi.fn();
+    await expect(
+      downloadRemoteArtifact("http://198.18.2.17/output.png", {
+        resolvePublic,
+        transport,
+      }),
+    ).rejects.toThrow(/private address/u);
+    expect(resolvePublic).not.toHaveBeenCalled();
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when independent HTTP DNS fails or stalls", async () => {
+    const transport = vi.fn();
+    const resolve = async () => [{ address: "198.18.2.17", family: 4 }];
+    await expect(
+      downloadRemoteArtifact("http://cdn.provider.example/output.png", {
+        resolve,
+        resolvePublic: async () => {
+          throw new Error("Public DNS unavailable");
+        },
+        transport,
+      }),
+    ).rejects.toThrow("Public DNS unavailable");
+    await expect(
+      downloadRemoteArtifact("http://cdn.provider.example/output.png", {
+        resolve,
+        resolvePublic: () => new Promise(() => undefined),
+        timeoutMs: 10,
+        transport,
+      }),
+    ).rejects.toThrow(/timed out/u);
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("revalidates independent HTTP DNS after a same-origin redirect", async () => {
+    const resolvePublic = vi
+      .fn()
+      .mockResolvedValueOnce(await publicResolver())
+      .mockResolvedValueOnce([{ address: "10.0.0.8", family: 4 }]);
+    const transport = vi.fn(async () => ({
+      status: 302,
+      location: "/next.png",
+      bytes: new Uint8Array(),
+    }));
+    await expect(
+      downloadRemoteArtifact("http://cdn.provider.example/output.png", {
+        resolve: async () => [{ address: "198.18.2.17", family: 4 }],
+        resolvePublic,
+        transport,
+      }),
+    ).rejects.toThrow(/public address/u);
+    expect(resolvePublic).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves HTTP Fake-IP public pinning and the virtual Host through the production proxy", async () => {
+    const requests: {
+      target: string | undefined;
+      host: string | undefined;
+      credentials: boolean;
+    }[] = [];
+    await withProductionProxy(
+      (request, response) => {
+        requests.push({
+          target: request.url,
+          host: request.headers.host,
+          credentials: Boolean(request.headers.authorization),
+        });
+        response.writeHead(200, { "content-type": "image/png" });
+        response.end("image-bytes");
+      },
+      async () => {
+        const result = await downloadRemoteArtifact(
+          "http://cdn.provider.example:8080/output.png?download=1",
+          {
+            resolve: async () => [{ address: "198.18.2.17", family: 4 }],
+            resolvePublic: publicResolver,
+            timeoutMs: 1000,
+          },
+        );
+        expect(Buffer.from(result.bytes).toString()).toBe("image-bytes");
+        expect(requests).toEqual([
+          {
+            target: "http://93.184.216.34:8080/output.png?download=1",
+            host: "cdn.provider.example:8080",
+            credentials: false,
+          },
+        ]);
+      },
+    );
+  });
+
+  it("enforces the byte limit on the real production proxy stream", async () => {
+    await withProductionProxy(
+      (_request, response) => {
+        response.writeHead(200, { "content-type": "image/png" });
+        response.end("1234");
+      },
+      async () => {
+        await expect(
+          downloadRemoteArtifact("http://cdn.provider.example/output.png", {
+            resolve: async () => [{ address: "198.18.2.17", family: 4 }],
+            resolvePublic: publicResolver,
+            maxBytes: 3,
+            timeoutMs: 1000,
+          }),
+        ).rejects.toThrow(/exceeds 3 bytes/u);
+      },
+    );
+  });
+
+  it("cancels an oversized Content-Length before reading without an unhandled stream error", async () => {
+    const unhandled: unknown[] = [];
+    const recordUnhandled = (error: Error) => {
+      unhandled.push(error);
+    };
+    process.on("uncaughtException", recordUnhandled);
+    try {
+      await withProductionProxy(
+        (_request, response) => {
+          response.writeHead(200, {
+            "content-type": "image/png",
+            "content-length": "4",
+          });
+          response.end("1234");
+        },
+        async () => {
+          await expect(
+            downloadRemoteArtifact("http://cdn.provider.example/output.png", {
+              resolve: async () => [{ address: "198.18.2.17", family: 4 }],
+              resolvePublic: publicResolver,
+              maxBytes: 3,
+              timeoutMs: 1000,
+            }),
+          ).rejects.toThrow(/exceeds 3 bytes/u);
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(unhandled).toEqual([]);
+        },
+      );
+    } finally {
+      process.off("uncaughtException", recordUnhandled);
+    }
+  });
+
+  it("cancels a stalled real production proxy body at the total deadline", async () => {
+    await withProductionProxy(
+      (_request, response) => {
+        response.writeHead(200, { "content-type": "image/png" });
+        response.write("first");
+      },
+      async () => {
+        await expect(
+          downloadRemoteArtifact("http://cdn.provider.example/output.png", {
+            resolve: async () => [{ address: "198.18.2.17", family: 4 }],
+            resolvePublic: publicResolver,
+            timeoutMs: 30,
+          }),
+        ).rejects.toThrow(/timed out/u);
+      },
+    );
   });
 
   it("allows HTTPS CDN redirects and revalidates DNS on every hop", async () => {

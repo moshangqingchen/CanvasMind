@@ -86,8 +86,10 @@ interface AssetPreviewImageProps extends Omit<
 }
 
 export function AssetPreviewImage(props: AssetPreviewImageProps) {
-  // A different asset must not inherit a failed preview or a leased Blob URL.
-  return <AssetPreviewImageResource key={JSON.stringify([props.assetId, props.src])} {...props} />;
+  // A preview size change must keep this asset's original fallback and lease.
+  // A different asset (or an untracked source) starts with fresh preview state.
+  const resourceKey = props.assetId ? `asset:${props.assetId}` : `source:${props.src}`;
+  return <AssetPreviewImageResource key={resourceKey} {...props} />;
 }
 
 function AssetPreviewImageResource({

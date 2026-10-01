@@ -6,6 +6,7 @@ export * from "./credentials.js";
 export * from "./error-presentation.js";
 export * from "./fake.js";
 export * from "./http.js";
+export { resolvePublicIpv4Addresses } from "./direct-network.js";
 export * from "./json-mapping.js";
 export * from "./openai.js";
 export * from "./suppliers.js";

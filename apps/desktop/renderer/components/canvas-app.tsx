@@ -203,6 +203,7 @@ import {
   zoomViewportAtPoint,
 } from "../lib/drawing";
 import { localizeRunError } from "../lib/error-localization";
+import { weAiImageGenerationDefault, withWeAiImage25RequestParameters } from "../lib/new-image-generation-default";
 import { removeUnreturnedGeneratedResults } from "../lib/generated-result-sync";
 import {
   collectReferencedAssetIds,
@@ -1402,17 +1403,17 @@ function modelDescriptorsForConnection(
   connection: ProviderConnectionView,
 ): ModelDescriptor[] {
   if (connection.config.supplierArchived === true || ["empty", "unauthorized"].includes(String(connection.config.modelScanStatus))) return [];
-  if (Array.isArray(connection.config.modelCatalogModels)) return connection.config.modelCatalogModels as unknown as ModelDescriptor[];
+  if (Array.isArray(connection.config.modelCatalogModels)) return withWeAiImage25RequestParameters(connection, connection.config.modelCatalogModels as unknown as ModelDescriptor[]);
   if (
     connection.provider === "weai" &&
     providerConnectionSupplierKey(connection) === "weai"
   ) {
     const saved = weAiCanvasModelDescriptorsFromSavedScan(connection.config);
-    if (saved) return saved;
+    if (saved) return withWeAiImage25RequestParameters(connection, saved);
   }
   const verified = verifiedWeAiModelDescriptorsForConnection(connection);
   if (verified.length > 0) return verified;
-  return modelDescriptorsFromConnectionConfig(connection.config);
+  return withWeAiImage25RequestParameters(connection, modelDescriptorsFromConnectionConfig(connection.config));
 }
 
 function modelForConnectionAndNode(
@@ -1463,7 +1464,7 @@ function newGenerationConnectionPriority(
   return 0;
 }
 
-function configureNewGenerationNode(
+export function configureNewGenerationNode(
   node: CanvasNode,
   connections: readonly ProviderConnectionView[],
 ): CanvasNode | null {
@@ -1481,6 +1482,7 @@ function configureNewGenerationNode(
       (left, right) =>
         right.priority - left.priority || left.index - right.index,
     );
+  let fallback: CanvasNode | null = null;
   for (const { connection } of rankedConnections) {
     if (providerConnectionUsage(connection) === "disabled") continue;
     if (!connectionIsConfigured(connection)) continue;
@@ -1496,24 +1498,30 @@ function configureNewGenerationNode(
       preferredModel,
     );
     if (!model) continue;
-    return {
+    const configure = (selectedModel: ModelDescriptor, parameters: Record<string, unknown>): CanvasNode => ({
       ...node,
       data: {
         ...node.data,
         provider: connection.provider,
         connectionId: connection.id,
-        model: model.id,
+        model: selectedModel.id,
         qualityMode: connection.provider === "cli" ? undefined : "highest",
-        inputs: generationInputsForModel(nodeType, model, node.data.inputs),
-        parameters: connection.provider === "cli" ? resolveModelParameters(model, {}, cliOperationForNode(nodeType, false)).parameters : parametersWithDefaults(
-          parameterDescriptorsFor(nodeType, connection.provider, model),
-          {},
-          connection.provider === "cli",
-        ),
+        inputs: generationInputsForModel(nodeType, selectedModel, node.data.inputs),
+        parameters,
       },
-    };
+    });
+    const defaultParameters = connection.provider === "cli" ? resolveModelParameters(model, {}, cliOperationForNode(nodeType, false)).parameters : parametersWithDefaults(
+      parameterDescriptorsFor(nodeType, connection.provider, model),
+      {},
+      connection.provider === "cli",
+    );
+    const configuredNode = configure(model, defaultParameters);
+    if (nodeType === "video-generation") return configuredNode;
+    fallback ??= configuredNode;
+    const preferred = weAiImageGenerationDefault(connection, modelDescriptorsForConnection(connection));
+    if (preferred) return configure(preferred.model, preferred.parameters);
   }
-  return null;
+  return fallback;
 }
 
 function generationInputsForModel(
@@ -1852,7 +1860,7 @@ function modelOptionsForNode(
     weAiCanvasModelDescriptorsFromSavedScan(connection.config) !== null,
   );
   if (listed.connectionId === node.data.connectionId) {
-    const compatible = listed.items.filter((model) =>
+    const compatible = (connection ? withWeAiImage25RequestParameters(connection, listed.items) : listed.items).filter((model) =>
       modelSupportsNodeType(model, nodeType),
     );
     if (
@@ -1902,7 +1910,7 @@ function modelOptionsForNode(
   return configured;
 }
 
-function normalizeGenerationNodeForRun(
+export function normalizeGenerationNodeForRun(
   node: CanvasNode,
   connections: readonly ProviderConnectionView[],
   listed: {
@@ -7450,8 +7458,9 @@ function CanvasShell({
       (requiresAuthoritativeScan
         ? []
         : modelDescriptorsForConnection(selectedConnection));
-    const applyModels = (items: readonly ModelDescriptor[]) => {
+    const applyModels = (received: readonly ModelDescriptor[]) => {
       if (cancelled) return;
+      const items = withWeAiImage25RequestParameters(selectedConnection, received);
       setConnectionModels((current) => {
         if (
           current.connectionId === modelScanConnectionId &&

@@ -5,6 +5,8 @@ import { isIP } from "node:net";
 import {
   hasProviderHttpProxy,
   fetchWithProviderHttpProxy,
+  fetchWithPinnedProviderHttpProxy,
+  resolvePublicIpv4Addresses,
 } from "@super-canvas/providers";
 import { readRecoveredArtifact } from "./recovered-artifacts.js";
 
@@ -15,6 +17,11 @@ const DEFAULT_MAX_REDIRECTS = 3;
 export interface ResolvedAddress {
   address: string;
   family: number;
+}
+
+interface ResolvedArtifactAddress extends ResolvedAddress {
+  /** HTTP Fake-IP recovery must retain the independently validated destination. */
+  pinProxyTarget?: true;
 }
 
 export interface RemoteTransportResponse {
@@ -36,6 +43,11 @@ export interface RemoteDownloadOptions {
   maxBytes?: number;
   maxRedirects?: number;
   resolve?: (hostname: string) => Promise<readonly ResolvedAddress[]>;
+  /** Independent public DNS used only for HTTP hostnames behind Fake-IP DNS. */
+  resolvePublic?: (
+    hostname: string,
+    signal: AbortSignal,
+  ) => Promise<readonly ResolvedAddress[]>;
   transport?: RemoteDownloadTransport;
   /** Local original files staged by an explicit archive recovery operation. */
   recoveryDirectory?: string;
@@ -131,7 +143,9 @@ function parseRemoteUrl(value: string): URL {
 async function resolvePublicAddress(
   url: URL,
   resolve: NonNullable<RemoteDownloadOptions["resolve"]>,
-): Promise<ResolvedAddress> {
+  resolvePublic: NonNullable<RemoteDownloadOptions["resolvePublic"]>,
+  signal: AbortSignal,
+): Promise<ResolvedArtifactAddress> {
   const hostname = url.hostname.replace(/^\[|\]$/gu, "");
   if (
     hostname.toLowerCase() === "localhost" ||
@@ -147,13 +161,28 @@ async function resolvePublicAddress(
   if (addresses.length === 0) {
     throw new Error("Provider output hostname did not resolve");
   }
+  const hasOnlyFakeIpDns =
+    literalFamily === 0 &&
+    addresses.every(({ address }) => isFakeIpDnsAddress(address));
+  if (url.protocol === "http:" && hasOnlyFakeIpDns) {
+    // Plain HTTP cannot authenticate the original hostname over a Fake-IP
+    // route. Resolve it independently and pin the verified public destination
+    // instead; never fall back to the original Fake-IP on discovery failure.
+    const publicAddresses = await resolvePublic(hostname, signal);
+    if (
+      publicAddresses.length === 0 ||
+      publicAddresses.some(({ address }) => !isPublicNetworkAddress(address))
+    ) {
+      throw new Error(
+        "Provider output URL did not resolve to a public address",
+      );
+    }
+    return { ...publicAddresses[0]!, pinProxyTarget: true };
+  }
   // Clash/Mihomo Fake-IP mode maps public hostnames into RFC 2544's
   // 198.18.0.0/15 range. Only permit that mapping for HTTPS hostnames: an IP
   // literal remains blocked, and TLS still authenticates the original host.
-  const canUseFakeIpDns =
-    literalFamily === 0 &&
-    url.protocol === "https:" &&
-    addresses.every(({ address }) => isFakeIpDnsAddress(address));
+  const canUseFakeIpDns = url.protocol === "https:" && hasOnlyFakeIpDns;
   if (
     addresses.some(
       ({ address }) =>
@@ -233,27 +262,36 @@ function requestPinned(
   });
 }
 
-// The user-configured proxy owns DNS/routing on this path (including Fake-IP
-// mappings). Keep URL/DNS checks and redirect handling in downloadRemoteArtifact;
-// never send provider credentials or automatically follow an unchecked redirect.
+// The user-configured proxy owns routing, including HTTPS Fake-IP mappings.
+// HTTP Fake-IP recovery pins its independently verified IP through the proxy.
+// Keep URL/DNS checks and redirect handling in downloadRemoteArtifact; never
+// send provider credentials or automatically follow an unchecked redirect.
 async function requestThroughProviderProxy(
   url: URL,
-  _resolved: ResolvedAddress,
+  resolved: ResolvedArtifactAddress,
   signal: AbortSignal,
   maxBytes: number,
 ): Promise<RemoteStreamResponse> {
-  const response = await fetchWithProviderHttpProxy(
-    url.href,
-    {
-      method: "GET",
-      redirect: "manual",
-      signal,
-      headers: {
-        accept: "image/*,video/*,application/octet-stream;q=0.8,*/*;q=0.1",
-      },
-    },
-    process.env.ARTIFACT_HTTP_PROXY,
-  );
+  const target = new URL(url.href);
+  if (resolved.pinProxyTarget) {
+    target.hostname =
+      isIP(resolved.address) === 6 ? `[${resolved.address}]` : resolved.address;
+  }
+  const headers = {
+    accept: "image/*,video/*,application/octet-stream;q=0.8,*/*;q=0.1",
+  };
+  const response = resolved.pinProxyTarget
+    ? await fetchWithPinnedProviderHttpProxy(target.href, {
+        host: url.host,
+        headers,
+        signal,
+        proxyOverride: process.env.ARTIFACT_HTTP_PROXY,
+      })
+    : await fetchWithProviderHttpProxy(
+        target.href,
+        { method: "GET", redirect: "manual", signal, headers },
+        process.env.ARTIFACT_HTTP_PROXY,
+      );
   const status = response.status;
   const location = response.headers.get("location") ?? undefined;
   const contentType = response.headers.get("content-type") ?? undefined;
@@ -362,6 +400,15 @@ export async function consumeRemoteArtifact<T>(
   const resolve =
     options.resolve ??
     ((hostname: string) => dnsLookup(hostname, { all: true, verbatim: true }));
+  const resolvePublic =
+    options.resolvePublic ??
+    (async (hostname: string, signal: AbortSignal) =>
+      (
+        await resolvePublicIpv4Addresses(
+          hostname,
+          AbortSignal.any([signal, AbortSignal.timeout(6_000)]),
+        )
+      ).map((address) => ({ address, family: 4 })));
   const transport = options.transport
     ? async (
         ...args: Parameters<RemoteDownloadTransport>
@@ -379,7 +426,12 @@ export async function consumeRemoteArtifact<T>(
   try {
     for (let redirect = 0; redirect <= maxRedirects; redirect += 1) {
       const resolved = await abortable(
-        resolvePublicAddress(current, resolve),
+        resolvePublicAddress(
+          current,
+          resolve,
+          resolvePublic,
+          controller.signal,
+        ),
         controller.signal,
       );
       const recovered = await abortable(

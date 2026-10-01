@@ -239,11 +239,22 @@ export function localizeRunError(
     error.code === "artifact_archive_failed" ||
     raw.includes("供应商任务已完成，但输出归档失败")
   ) {
+    const privateAddressReason = "Provider output URL resolves to a private address";
+    const archiveReason = raw.replace(/^供应商任务已完成，但输出归档失败[：:]\s*/u, "");
+    const privateAddressBlocked = [archiveReason, error.providerMessage]
+      .some((reason) => reason?.toLowerCase().includes(privateAddressReason.toLowerCase()));
     return {
       ...error,
-      message: "图片已经生成完成，但下载到素材库时中断，可以直接取回现有结果。",
+      message: privateAddressBlocked
+        ? "图片已生成，但原图链接解析到了内网或保留地址，下载被安全检查拦截。请检查代理或 DNS 设置，修复后取回现有结果。"
+        : "图片已生成，但保存到素材库失败，可尝试取回现有结果。",
       type: "结果归档错误",
       code: "artifact_archive_failed",
+      // Expose only this known diagnostic, never arbitrary URLs or signed data
+      // from an older archive message. Existing provider evidence stays intact.
+      ...(privateAddressBlocked && !error.providerMessage
+        ? { providerMessage: privateAddressReason }
+        : {}),
     };
   }
 
