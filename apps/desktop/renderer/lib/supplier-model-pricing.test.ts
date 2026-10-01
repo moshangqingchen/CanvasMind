@@ -24,11 +24,13 @@ vi.mock("@super-canvas/providers", async (original) => ({
       },
     ],
   })),
+  loginSupplierSite: vi.fn(async () => ({ kind: "newapi", fetch: vi.fn() })),
 }));
-import { discoverSupplierCatalog } from "@super-canvas/providers";
+import { discoverSupplierCatalog, encryptSecret, loginSupplierSite, SupplierLoginError } from "@super-canvas/providers";
 import { getSupplierRecord } from "./supplier-service";
 import { repository } from "./server";
 import { modelPriceSummary } from "./model-display";
+import { requireServerMasterKey } from "./master-key";
 import {
   applySupplierCatalogPrices,
   enrichSupplierModelPrices,
@@ -264,5 +266,43 @@ describe("universal supplier price lookup", () => {
     );
     expect(enriched[0]?.metadata?.priceLabel).toBe("$0.02/张");
     expect(enriched[0]?.name).toBe("new-image");
+  });
+  it("isolates price sessions and cache entries after token, user ID and authentication mode change", async () => {
+    const siteUrl = "https://token-price-cache.invalid", apiUrl = `${siteUrl}/v1`;
+    const encrypted = (secret: string) => encryptSecret(secret, requireServerMasterKey());
+    const token = encrypted("fixture-price-token");
+    const state = { version: 1, revision: 1, visibility: "visible", sourceId: "token-price-source", fingerprint: "fp", history: [],
+      siteLogin: { authMode: "access-token", siteUrl, encryptedAccessToken: token, userId: "42" } };
+    const supplier = { id: "token-price", apiUrl, siteUrl, state, catalog: { groups: [] }, kind: "newapi", scanStatus: "unscanned", updatedAt: "now" };
+    const use = (login: Record<string, unknown>) => vi.mocked(getSupplierRecord).mockResolvedValue({ ...supplier, state: { ...state, siteLogin: login } } as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    const connection = { config: { supplierId: supplier.id, supplierSourceId: state.sourceId, baseUrl: apiUrl, modelGroup: "new-group" } };
+    vi.mocked(loginSupplierSite).mockClear();
+    use(state.siteLogin);
+    await enrichSupplierModelPrices(connection, [model], false, true);
+    await enrichSupplierModelPrices(connection, [model], false, true);
+    expect(loginSupplierSite).toHaveBeenCalledTimes(1);
+    expect(loginSupplierSite).toHaveBeenLastCalledWith({ siteUrl, kind: "newapi", credentials: { accessToken: "fixture-price-token", userId: "42" } });
+    use({ ...state.siteLogin, userId: "43" });
+    await enrichSupplierModelPrices(connection, [model], false, true);
+    expect(loginSupplierSite).toHaveBeenCalledTimes(2);
+    use({ ...state.siteLogin, encryptedAccessToken: encrypted("replacement-price-token") });
+    await enrichSupplierModelPrices(connection, [model], false, true);
+    expect(loginSupplierSite).toHaveBeenCalledTimes(3);
+    use({ authMode: "password", siteUrl, username: "account", encryptedPassword: encrypted("fixture-price-password") });
+    await enrichSupplierModelPrices(connection, [model], false, true);
+    expect(loginSupplierSite).toHaveBeenCalledTimes(4);
+    expect(loginSupplierSite).toHaveBeenLastCalledWith({ siteUrl, kind: "newapi", credentials: { username: "account", password: "fixture-price-password" } });
+    vi.mocked(getSupplierRecord).mockResolvedValue(null);
+  });
+  it("reports a token session network failure as failed pricing rather than expired authentication", async () => {
+    const siteUrl = "https://token-price-network.invalid", apiUrl = `${siteUrl}/v1`;
+    const supplier = { id: "token-network", apiUrl, siteUrl, kind: "newapi", catalog: { groups: [] }, updatedAt: "now", scanStatus: "unscanned",
+      state: { sourceId: "network-source", siteLogin: { authMode: "access-token", siteUrl, encryptedAccessToken: encryptSecret("fixture-network-token", requireServerMasterKey()) } } };
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    vi.mocked(loginSupplierSite).mockRejectedValueOnce(new SupplierLoginError("temporary network error", 502, "network"));
+    const result = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: "network-source", baseUrl: apiUrl } }, [model], false, true);
+    expect(result[0]?.metadata?.priceLabel).toBe("价格查询失败");
+    expect(result[0]?.metadata?.priceStatus).toBe("failed");
+    vi.mocked(getSupplierRecord).mockResolvedValue(null);
   });
 });

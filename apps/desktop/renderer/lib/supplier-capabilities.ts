@@ -156,11 +156,14 @@ export function effectiveImageCapabilities(input: {
   if (exclusive)
     for (const tier of RESOLUTIONS) if (!supported.has(tier)) denied.add(tier);
   const parameters = [...(model.parameters ?? [])];
+  const nativeResolutionKey = typeof model.metadata?.imageNativeResolutionParameter === "string"
+    ? model.metadata.imageNativeResolutionParameter : undefined;
+  const providerDecidedResolution = model.metadata?.imageResolutionMode === "provider-decided";
   const resolutionQuality = parameters.find(p => /^(quality|image_quality|output_quality)$/u.test(p.key)
     && p.options?.length && p.options.every(option => /^[124]k$/iu.test(String(option.value))));
-  const testedSizeKey = ["size", "resolution", "image_size", "imageSize"].find(key =>
+  const testedSizeKey = [nativeResolutionKey, "size", "resolution", "image_size", "imageSize"].find((key): key is string => key !== undefined &&
     typeof successfulParameters?.[key] === "string");
-  const rawSize = parameters.find((p) =>
+  const rawSize = parameters.find(p => nativeResolutionKey && p.key === nativeResolutionKey) ?? parameters.find((p) =>
     ["size", "resolution", "image_size", "imageSize"].includes(p.key),
   ) ?? resolutionQuality ?? (testedSizeKey ? {
     key: testedSizeKey, label: "分辨率", control: "select" as const,
@@ -171,6 +174,7 @@ export function effectiveImageCapabilities(input: {
   const rawQuality = parameters.find((p) =>
     /^(quality|image_quality|output_quality)$/u.test(p.key) && p !== resolutionQuality,
   );
+  const nativeQualityOptions = model.metadata?.imageNativeQualityOptions === true;
   const testedRatioKey = ["aspect_ratio", "aspectRatio", "ratio"].find(key => typeof successfulParameters?.[key] === "string");
   const rawRatio = parameters.find((p) =>
     /^(aspect_ratio|aspectRatio|ratio)$/u.test(p.key),
@@ -185,16 +189,30 @@ export function effectiveImageCapabilities(input: {
   const sizeIsTier = Boolean(
     rawSize?.options?.some((option) => /^[124]k$/iu.test(String(option.value))),
   );
-  const sizeKey = rawSize?.key ?? (isOpenAiImage ? "size" : undefined);
+  const sizeKey = providerDecidedResolution ? undefined : rawSize?.key ?? (isOpenAiImage ? "size" : undefined);
   const groupControlsQuality = /^https:\/\/token\.secure-skill\.com(?:\/|$)/iu.test(supplier.apiUrl) && model.id === "gpt-image-2";
-  const fixedQuality = groupControlsQuality || model.metadata?.qualitySupport === "provider-decided" ||
+  const fixedQualityDescription = /仅支持.*质量|只能.*质量|模型固定|固定.*质量/iu.test(rawQuality?.description ?? "");
+  // B4 publishes high/max as separate priced model IDs. Its generic group
+  // quality list must not replace the quality encoded by these exact SKUs.
+  const monsterFixedQuality = /^https:\/\/api\.eaheng\.com(?:\/|$)/iu.test(supplier.apiUrl) &&
+    group === "B4-GPT生图原生渠道V3（高质量）"
+      ? /^gpt-image-2\.5-(?:flare|sunburst)-(high|max)$/u.exec(model.id)?.[1]
+      : undefined;
+  const fixedQualityValue = typeof model.metadata?.fixedQuality === "string" && model.metadata.fixedQuality.trim()
+    ? model.metadata.fixedQuality.trim()
+    : monsterFixedQuality ?? (fixedQualityDescription && rawQuality?.options?.length === 1
+      ? String(rawQuality.options[0]!.value) : undefined);
+  const fixedQuality = Boolean(fixedQualityValue) || groupControlsQuality || model.metadata?.qualitySupport === "provider-decided" ||
     (model.id === "gpt-image-2" && /^https:\/\/api\.mikoto\.vip(?:\/|$)/iu.test(supplier.apiUrl) &&
       ["生图（2k4k 高质量）", "生图（2k4k 中质量）"].includes(group)) ||
-    /仅支持.*质量|只能.*质量|模型固定|固定.*质量/iu.test(rawQuality?.description ?? "");
-  const implicitQuality = isOpenAiImage && !/dall-e-2/iu.test(model.id) && !groupControlsQuality && !resolutionQuality;
+    fixedQualityDescription;
+  const implicitQuality = isOpenAiImage && !/dall-e-2/iu.test(model.id) && !groupControlsQuality && !resolutionQuality &&
+    model.metadata?.qualitySupport !== "provider-decided";
   const qualityKey =
     rawQuality?.key ?? (implicitQuality ? "quality" : undefined);
-  const options = rawQuality?.options?.length
+  const options = fixedQualityValue
+    ? [rawQuality?.options?.find(option => option.value === fixedQualityValue) ?? { value: fixedQualityValue, label: fixedQualityValue }]
+    : rawQuality?.options?.length
     ? rawQuality.options
     : implicitQuality
       ? [{ value: /dall-e-3/iu.test(model.id) ? "hd" : /^gpt-image-2\.5(?:-|$)/u.test(model.id) ? "max" : "high", label: "最高" }]
@@ -229,8 +247,10 @@ export function effectiveImageCapabilities(input: {
       for (const value of ["low", "medium", "high", "xhigh", "max"]) declaredQualities.add(value);
     }
   }
+  if (fixedQualityValue)
+    for (const value of declaredQualities) if (value !== fixedQualityValue) declaredQualities.delete(value);
   for (const value of deniedQualities) declaredQualities.delete(value);
-  const qualityMention = (declaredQualities.size ? String(withHighestQualityDefault({ key: "quality", label: "质量", control: "select",
+  const qualityMention = fixedQualityValue ?? (declaredQualities.size ? String(withHighestQualityDefault({ key: "quality", label: "质量", control: "select",
     options: [...declaredQualities].map(value => ({ value, label: value })) }).default) : undefined) ??
     // A group's generic Chinese label is not a quality ceiling for Image 2.5.
     // Exact fixed-quality Image 2 channels retain their existing behavior.
@@ -307,21 +327,25 @@ export function effectiveImageCapabilities(input: {
   }));
   // Unknown capability is not a 1K ceiling. Expose the same highest candidate
   // that onboarding will test, without claiming documentation or paid success.
-  const pendingTiers = new Set(tests.filter(test =>
-    ["queued", "submitting", "running", "archiving"].includes(test.status)).map(test => test.resolution));
+  const pendingRequests = tests.filter(test =>
+    ["queued", "submitting", "running", "archiving", "inconclusive", "needs_attention"].includes(test.status) ||
+    (test.status === "unsupported" && test.rejectedParameter === "quality"));
+  const pendingTiers = new Set(pendingRequests.map(test => test.resolution));
   const defaultProbeTier = sizeKey && !tests.length
     ? [...RESOLUTIONS].reverse().find(tier => !denied.has(tier) &&
       (!fixedTier || fixedTier === tier) && (!sizeIsTier || adapterTiers.has(tier)) &&
       !supported.has(tier))
     : undefined;
   for (const tier of RESOLUTIONS) {
+    if (providerDecidedResolution) continue;
+    const pending = [...pendingRequests].reverse().find(test => test.resolution === tier);
     const successful = tests.find(
       (test) => test.resolution === tier && test.status === "succeeded",
     );
     const rejected = tests.find(
       (test) =>
         test.resolution === tier &&
-        test.status === "unsupported" &&
+        (test.status === "unsupported" || test.rejectedParameter === "resolution") &&
         test.rejectedParameter !== "quality",
     );
     // A decoded response proves the request was accepted. For channels with
@@ -360,7 +384,7 @@ export function effectiveImageCapabilities(input: {
       modelId: model.id,
       operation: "image.generate",
       kind:
-        inferred ? "inference" : successful || rejected
+        inferred ? "inference" : successful || rejected || pending
           ? "test"
           : fromDocumentation
             ? "documentation"
@@ -368,7 +392,7 @@ export function effectiveImageCapabilities(input: {
       sourceUrl: fromDocumentation
         ? documentUrl : supplier.siteUrl || supplier.apiUrl,
       checkedAt:
-        successful?.updatedAt ?? inferred?.checkedAt ?? supplier.scannedAt ?? supplier.updatedAt,
+        successful?.updatedAt ?? inferred?.checkedAt ?? pending?.updatedAt ?? supplier.scannedAt ?? supplier.updatedAt,
       excerpt: successful
         ? `请求 ${successful.expectedWidth}×${successful.expectedHeight}，实际 ${successful.actualWidth}×${successful.actualHeight}；仅核验 ${successful.ratio}`
         : inferred ? inferred.excerpt
@@ -377,6 +401,8 @@ export function effectiveImageCapabilities(input: {
         : provisional ? (provisional.resolutionMismatch ? "请求已接受，但图片未达到请求尺寸或比例；保留请求档位与实际像素" : "供应商暂无可用账号，暂按最高请求档位开放，尚未实测通过")
         : requestTiers.has(tier)
           ? String(model.metadata?.imageCapabilityNote ?? "可请求档位，实际输出以返回尺寸为准").slice(0, 2000)
+        : pending && ["inconclusive", "needs_attention"].includes(pending.status)
+          ? `${tier} 待核验：请求 ${pending.requestId}，${pending.reason ?? "原请求结果待核对"}；保留原请求档位，尚未实测通过`
         : pendingTiers.has(tier) || defaultProbeTier === tier
           ? `${tier} 待核验：未见此档位的明确限制，按最高候选档位测试；尚未实测通过`
           : (fromDocumentation ? doc : groupText).slice(0, 2000),
@@ -400,7 +426,7 @@ export function effectiveImageCapabilities(input: {
   if (!qualityMention && priorQuality?.quality) quality = priorQuality.quality;
   const legalQualities = [...tests].reverse().find(test => test.legalQualities?.length)?.legalQualities;
   const successfulQuality = [...tests].reverse().find(
-    (test) => test.status === "succeeded" && test.quality,
+    (test) => test.status === "succeeded" && test.quality && (!fixedQualityValue || test.quality === fixedQualityValue),
   );
   const testedQualities = [
     ...tests.filter(test => test.status === "succeeded" && test.quality).map(test => test.quality!),
@@ -409,11 +435,11 @@ export function effectiveImageCapabilities(input: {
   // Highest legal/default requests open the model's quality presets. Evidence
   // below still distinguishes a declaration/default from a successful request.
   const rejectedQualities = new Set([...deniedQualities, ...tests.filter(test => test.status === "unsupported" && test.rejectedParameter === "quality").map(test => test.quality)]);
-  const qualityPresets = fixedQuality ? undefined : imageQualityPresetsForHighest(model.id, [
+  const qualityPresets = fixedQuality || nativeQualityOptions ? undefined : imageQualityPresetsForHighest(model.id, [
     ...testedQualities, ...(quality ? [quality] : []),
   ].filter(value => !rejectedQualities.has(value) && (!legalQualities || legalQualities.includes(value))));
   const declaredOptions = declaredQualities.size > 1 ? [...declaredQualities].map(value => ({ label: value, value })) : options;
-  const qualityOptions = (qualityPresets ?? (legalQualities ? legalQualities.map(value => options.find(option => option.value === value) ?? { label: value, value }) : declaredOptions))
+  const qualityOptions = (fixedQualityValue || nativeQualityOptions ? options : qualityPresets ?? (legalQualities ? legalQualities.map(value => options.find(option => option.value === value) ?? { label: value, value }) : declaredOptions))
     .filter(option => !rejectedQualities.has(String(option.value)) && (!legalQualities || legalQualities.includes(String(option.value))));
   const needsQualityProbe = Boolean(
     qualityKey &&
@@ -425,6 +451,8 @@ export function effectiveImageCapabilities(input: {
   );
   if (successfulQuality) quality = successfulQuality.quality;
   if (qualityPresets) quality = qualityOptions.length ? String(qualityOptions.at(-1)!.value) : undefined;
+  if (nativeQualityOptions) quality = qualityOptions.length
+    ? String(withHighestQualityDefault({ key: "quality", label: "质量", control: "select", options: qualityOptions }).default) : undefined;
   if (quality && (rejectedQualities.has(quality) || (legalQualities && !legalQualities.includes(quality)))) {
     const remaining = qualityOptions;
     quality = remaining.length ? String(withHighestQualityDefault({ key: "quality", label: "质量", control: "select", options: remaining }).default) : undefined;
@@ -466,8 +494,12 @@ export function effectiveImageCapabilities(input: {
     reason = "当前型号仅支持编辑或非图片生成，自动测试不适用";
   else if (model.metadata?.canvasRunnable === false)
     reason = String(model.metadata.canvasUnavailableReason ?? "执行协议未配置");
+  else if (providerDecidedResolution)
+    reason = "供应商未定义可核验的 K 分辨率档位，保留原生画幅参数";
   else if (!sizeKey && !fixedTier)
     reason = "缺少可映射的分辨率参数，需要配置执行协议";
+  else if (fixedQualityValue && !quality)
+    reason = `固定质量 ${fixedQualityValue} 已被当前渠道明确拒绝，不能改用其他质量提交此型号`;
   const probeTiers: ImageResolutionTier[] = reason || tests.some(test => test.status !== "unsupported" || test.rejectedParameter === "quality")
     ? []
     : [...RESOLUTIONS].reverse().filter(
@@ -491,7 +523,7 @@ export function effectiveImageCapabilities(input: {
   }
   probeTiers.splice(1);
   const updated = parameters.filter(
-    (p) => p.key !== sizeKey && p.key !== qualityKey,
+    (p) => p.key !== sizeKey && p.key !== qualityKey && (!providerDecidedResolution || p !== rawSize),
   );
   if (sizeKey && tiers.length) {
     const sizeOptions = tiers.flatMap((item) => {
@@ -540,6 +572,8 @@ export function effectiveImageCapabilities(input: {
     const autoOption = rawSize?.options?.find(option => option.value === "auto");
     if (!sizeIsTier)
       sizeOptions.unshift(autoOption ?? { label: "自动（提示词优先，其次参考图）", value: "auto" });
+    else if (nativeResolutionKey)
+      sizeOptions.unshift(...(rawSize?.options ?? []).filter(option => !/^[124]k$/iu.test(String(option.value))));
     updated.unshift({
       ...rawSize,
       key: sizeKey,
@@ -571,7 +605,7 @@ export function effectiveImageCapabilities(input: {
       label: "质量",
       control: "select",
       default: quality,
-      options: qualityMention && !qualityPresets && declaredQualities.size <= 1 &&
+      options: nativeQualityOptions ? qualityOptions : qualityMention && !qualityPresets && declaredQualities.size <= 1 &&
         !rejectedQualities.has(qualityMention) && (!legalQualities || legalQualities.includes(qualityMention))
         ? [
             {
@@ -603,6 +637,7 @@ export function effectiveImageCapabilities(input: {
       parameters: updated,
       metadata: {
         ...model.metadata,
+        ...(fixedQualityValue ? { fixedQuality: fixedQualityValue } : {}),
         imageCapabilityEvidence: evidence,
         imageCapabilityPolicy: 2,
         qualitySupport: qualityKey
@@ -616,7 +651,7 @@ export function effectiveImageCapabilities(input: {
     tiers,
     probeTiers,
     quality,
-    qualityOptions: (!rawQuality?.options?.length && implicitQuality
+    qualityOptions: (!fixedQualityValue && !rawQuality?.options?.length && implicitQuality
       ? (/dall-e-3/iu.test(model.id) ? ["standard", "hd"] : /^gpt-image-2\.5(?:-|$)/u.test(model.id) ? ["low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high"])
       : qualityOptions.map(option => String(option.value))).filter(value => !rejectedQualities.has(value)),
     qualityKey,
@@ -647,6 +682,11 @@ export function verificationParameters(
     parameters[capabilities.ratioKey] = capabilities.ratio;
   if (capabilities.qualityKey && capabilities.quality)
     parameters[capabilities.qualityKey] = capabilities.quality;
+  for (const parameter of capabilities.model.parameters ?? [])
+    if (parameters[parameter.key] === undefined && parameter.required && parameter.default !== undefined &&
+      ["string", "number", "boolean"].includes(typeof parameter.default) &&
+      (parameter.visibleWhen ?? []).every(condition => condition.values.includes(parameters[condition.parameter]!)))
+      parameters[parameter.key] = parameter.default;
   return { parameters, width: width!, height: height! };
 }
 
@@ -654,6 +694,7 @@ export function declaredImageCharge(
   model: ModelDescriptor,
   tier: ImageResolutionTier,
   quality?: string,
+  parameters: Readonly<Record<string, unknown>> = {},
 ): VerificationCharge | undefined {
   const pricing = model.pricing;
   if (
@@ -662,7 +703,7 @@ export function declaredImageCharge(
     pricing.confidence !== "exact"
   )
     return undefined;
-  const amount = modelPriceAmount(pricing, { resolution: tier, quality });
+  const amount = modelPriceAmount(pricing, { ...parameters, resolution: tier, quality });
   return amount === undefined
     ? undefined
     : {

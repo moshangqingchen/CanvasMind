@@ -16,8 +16,6 @@ import {
   supplierDirectoryBase,
   PROVIDER_SUPPLIER_PROFILES,
   encryptSecret,
-  decryptSecret,
-  loginSupplierSite,
   SupplierLoginError,
   readSupplierAccountKeys,
   type SupplierAccountKeys,
@@ -28,6 +26,7 @@ import { supplierKeyForConnection } from "./supplier-identity";
 import { requireServerMasterKey } from "./master-key";
 import { planSupplierAccountImport } from "./supplier-account-import";
 import { isScannedSupplierGroup } from "./supplier-group-source";
+import { openSupplierSiteSession } from "./supplier-site-session";
 
 const url = z
   .string()
@@ -136,16 +135,25 @@ export const SupplierInputSchema = z
       .optional(),
   })
   .strict();
+const normalizeSiteAccessToken = (value: string) => value.trim().replace(/^Bearer(?:\s+|$)/iu, "");
+const validSiteAccessToken = (value: string) => Boolean(value) && value.length <= 8192 && !/[\s\u0000-\u001f\u007f]/u.test(value);
+const validSiteUserId = (value: string) => /^[1-9]\d{0,18}$/u.test(value) && BigInt(value) <= 9223372036854775807n;
 export const SupplierPatchSchema = SupplierInputSchema.partial().extend({
   expectedRevision: z.number().int().nonnegative().optional(),
   visibility: z.enum(["visible", "hidden"]).optional(),
   generationTransport: z.enum(["local", "cloudflare"]).optional(),
-  siteLogin: z
-    .object({
+  siteLogin: z.union([
+    z.object({
+      authMode: z.literal("password").optional(),
       username: z.string().trim().min(1).max(256),
       password: z.string().min(1).max(4096),
-    })
-    .strict()
+    }).strict(),
+    z.object({
+      authMode: z.literal("access-token"),
+      accessToken: z.string().transform(normalizeSiteAccessToken).refine(validSiteAccessToken, "请填写有效的后台访问令牌").optional(),
+      userId: z.string().trim().refine(validSiteUserId, "用户 ID 必须是后台账号对应的正整数").nullable().optional(),
+    }).strict(),
+  ])
     .nullable()
     .optional(),
 });
@@ -172,7 +180,9 @@ export function publicSupplierRecord(supplier: SupplierRecord) {
     ...supplier,
     ...(supplier.state ? { state } : {}),
     ...(siteLogin
-      ? { siteLogin: { username: siteLogin.username, configured: true } }
+      ? { siteLogin: siteLogin.authMode === "access-token"
+          ? { authMode: "access-token" as const, configured: Boolean(siteLogin.encryptedAccessToken), ...(siteLogin.userId ? { userId: siteLogin.userId } : {}) }
+          : { authMode: "password" as const, username: siteLogin.username, configured: Boolean(siteLogin.encryptedPassword) } }
       : {}),
   };
 }
@@ -596,13 +606,29 @@ export async function patchSupplierRecord(
   else if (siteLogin) {
     if (!next.siteUrl)
       throw new SupplierServiceError("保存登录信息前请填写站点地址");
-    next.state.siteLogin = {
-      username: siteLogin.username,
-      encryptedPassword: encryptSecret(
-        siteLogin.password,
-        requireServerMasterKey(),
-      ),
-      siteUrl: supplierDirectoryBase(next.siteUrl),
+    const siteUrl = supplierDirectoryBase(next.siteUrl);
+    if (siteLogin.authMode === "access-token") {
+      const accessToken = siteLogin.accessToken === undefined ? undefined : normalizeSiteAccessToken(siteLogin.accessToken);
+      if (accessToken !== undefined && !validSiteAccessToken(accessToken))
+        throw new SupplierServiceError("请填写有效的后台访问令牌");
+      if (siteLogin.userId != null && !validSiteUserId(siteLogin.userId.trim()))
+        throw new SupplierServiceError("用户 ID 必须是后台账号对应的正整数");
+      const previous = !changed && s.state?.siteLogin?.authMode === "access-token" && s.state.siteLogin.siteUrl === siteUrl
+        ? s.state.siteLogin : undefined;
+      if (siteLogin.accessToken === undefined && !previous?.encryptedAccessToken)
+        throw new SupplierServiceError("请填写站点访问令牌后再保存");
+      const userId = siteLogin.userId === undefined ? previous?.userId : siteLogin.userId?.trim() ?? undefined;
+      next.state.siteLogin = {
+        authMode: "access-token",
+        encryptedAccessToken: siteLogin.accessToken === undefined
+          ? previous!.encryptedAccessToken
+          : encryptSecret(accessToken!, requireServerMasterKey()),
+        siteUrl,
+        ...(userId ? { userId } : {}),
+      };
+    } else next.state.siteLogin = {
+      authMode: "password", username: siteLogin.username,
+      encryptedPassword: encryptSecret(siteLogin.password, requireServerMasterKey()), siteUrl,
     };
   }
   if (
@@ -705,22 +731,7 @@ export async function scanSupplierRecord(
   let accountKeys: SupplierAccountKeys | undefined;
   let scanFailure: Pick<SupplierRecord, "scanErrorCode" | "scanRetryable"> = {};
   try {
-    const savedLogin = supplier.state?.siteLogin;
-    const session =
-      savedLogin &&
-      savedLogin.siteUrl === supplierDirectoryBase(supplier.siteUrl)
-        ? await loginSupplierSite({
-            siteUrl: supplier.siteUrl,
-            kind: supplier.kind,
-            credentials: {
-              username: savedLogin.username,
-              password: decryptSecret(
-                savedLogin.encryptedPassword,
-                requireServerMasterKey(),
-              ),
-            },
-          })
-        : undefined;
+    const session = await openSupplierSiteSession(supplier);
     result = await discoverSupplierCatalog(
       {
         siteUrl: supplier.siteUrl,
@@ -743,7 +754,7 @@ export async function scanSupplierRecord(
       checkedAt: new Date().toISOString(),
       status:
         error instanceof SupplierLoginError &&
-          ["invalid_credentials", "verification_required"].includes(error.code)
+          ["invalid_credentials", "invalid_token", "permission_denied", "user_id_required", "verification_required"].includes(error.code)
           ? "unauthorized"
           : "failed",
       error:

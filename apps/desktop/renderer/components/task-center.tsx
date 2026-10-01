@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { fetchRuns } from "../lib/client-api";
 import { localizeRunError } from "../lib/error-localization";
+import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
+import { TaskEvidence } from "./task-evidence";
 import { resultElapsed } from "../lib/result-provenance";
 import { useDialogFocus } from "./use-dialog-focus";
 import type { RunSnapshot } from "./types";
@@ -260,7 +262,7 @@ export function RunHistoryModal({
                               {node.request?.model ?? node.nodeId}
                             </strong>
                             <span>
-                              {statusLabels[node.status] ?? node.status}
+                              {taskOutcomeLabel(node.status, node.taskEvidence, node.recoveryAction) ?? statusLabels[node.status] ?? node.status}
                               {node.request?.submissionPhase &&
                               ![
                                 "succeeded",
@@ -271,6 +273,8 @@ export function RunHistoryModal({
                                 ? ` · ${phaseLabels[node.request.submissionPhase] ?? node.request.submissionPhase}`
                                 : ""}
                             </span>
+                            {node.request?.provider ? <TaskEvidence request={node.request} evidence={node.taskEvidence} /> : null}
+                            {taskOutcomeNote(node.status, node.taskEvidence, node.recoveryAction) ? <small>{taskOutcomeNote(node.status, node.taskEvidence, node.recoveryAction)}</small> : null}
                             {node.request?.submissionTimeline?.map(
                               (entry, index) => (
                                 <small key={index}>
@@ -316,6 +320,9 @@ export function RunHistoryModal({
                               : undefined,
                             model: node.request?.model,
                             supplier: node.request?.supplier,
+                            connectionName: node.request?.connectionName,
+                            modelGroup: node.request?.modelGroup,
+                            taskEvidence: node.taskEvidence,
                             phase: node.request?.submissionPhase,
                             timeline: node.request?.submissionTimeline,
                           })),
@@ -341,7 +348,7 @@ export function RunHistoryModal({
                         </summary>
                         <ul className="history-error-list">
                           {nodeErrors.map((node) => {
-                            const localized = localizeRunError(node.errorJson);
+                            const localized = localizeRunError(node.errorJson, { provider: node.request?.provider, supplier: node.request?.supplier, status: node.status, providerTaskStatus: node.taskEvidence?.status });
                             return (
                               <li key={node.id}>
                                 <strong>{node.nodeId}</strong>

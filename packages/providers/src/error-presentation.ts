@@ -18,6 +18,9 @@ export interface ProviderErrorPresentation {
   actionUrl?: string;
   actionLabel?: string;
   transport?: NonNullable<ProviderHttpError["details"]["transport"]>;
+  phase?: ProviderRequestPhase;
+  retryable?: boolean;
+  submissionMayHaveOccurred?: boolean;
 }
 
 export interface ProviderErrorContext {
@@ -203,9 +206,10 @@ function classifiedPresentation(input: {
   kind?: ProviderErrorKind;
   phase?: ProviderRequestPhase;
   status?: number;
+  submissionMayHaveOccurred?: boolean;
   context: ProviderErrorContext;
 }): ProviderErrorPresentation {
-  const { rawMessage, extracted, kind, phase, status, context } = input;
+  const { rawMessage, extracted, kind, phase, status, submissionMayHaveOccurred, context } = input;
   const api = apiDetails(context);
   const searchable = [
     rawMessage,
@@ -293,14 +297,23 @@ function classifiedPresentation(input: {
     message = "API 请求过于频繁或已达到用量限制，请稍后重试。";
     type = "速率限制错误";
     fallbackCode = "HTTP 429";
+  } else if (includesAny(searchable, ["no available compatible accounts", "no_available_compatible_accounts"])) {
+    message = "供应商当前没有适用于所选模型或线路的可用账号，" +
+      (phase === "submit" && submissionMayHaveOccurred === true
+        ? "本次提交结果未知。请先核对原任务和扣费记录，不要重复提交。"
+        : "未能完成本次生成。请等待供应商恢复或核对该线路状态；本次费用仍需核对。");
+    type = "供应商无可用兼容账号";
+    fallbackCode = "provider_no_compatible_accounts";
   } else if (includesAny(searchable, ["system under load", "model is overloaded", "adobe throttled"])) {
-    message = "供应商模型当前繁忙，未能完成本次生成，请稍后重试。";
+    message = phase === "submit" && submissionMayHaveOccurred === true
+      ? "供应商模型当前繁忙，本次提交结果未知。请先核对原任务和扣费记录，不要重复提交。"
+      : "供应商模型当前繁忙，未能完成本次生成，请稍后重试。";
     type = "供应商繁忙";
     fallbackCode = "provider_overloaded";
   } else if (effectiveStatus === 524) {
     message =
       "请求链路中的网关等待上游响应超时（HTTP 524）。" +
-      (phase === "submit"
+      (phase === "submit" && submissionMayHaveOccurred !== false
         ? "请求可能仍在生成或已扣费，请先核对供应商任务与扣费记录，不要重复提交。"
         : "请稍后核对供应商服务或原任务状态。") +
       "延长本地等待时间无法解除此网关限制。";
@@ -354,7 +367,12 @@ function classifiedPresentation(input: {
     effectiveStatus === 503 ||
     effectiveStatus === 504
   ) {
-    message = `上游 API 暂时不可用（HTTP ${effectiveStatus}），请稍后重试。`;
+    message = `上游 API 暂时不可用（HTTP ${effectiveStatus}）` +
+      (phase === "submit" && submissionMayHaveOccurred !== false
+        ? "，本次提交结果未知。请先核对原任务和扣费记录，不要重复提交。"
+        : phase === "poll"
+          ? "，原任务查询暂时中断。请恢复原任务查询并核对供应商状态。"
+          : "。请核对供应商状态和原任务记录，再决定是否重新生成。");
     type = "网关或上游服务错误";
     fallbackCode = `HTTP ${effectiveStatus}`;
   } else if (effectiveStatus !== undefined && effectiveStatus >= 500) {
@@ -444,6 +462,7 @@ export function presentProviderError(
           : { ...extracted, code: transportCode },
       kind: error.details.kind,
       phase: error.details.phase,
+      submissionMayHaveOccurred: error.details.submissionMayHaveOccurred,
       ...(error.details.status === undefined
         ? {}
         : { status: error.details.status }),
@@ -458,6 +477,9 @@ export function presentProviderError(
         : undefined;
     return {
       ...presentation,
+      phase: error.details.phase,
+      retryable: error.details.retryable,
+      submissionMayHaveOccurred: error.details.submissionMayHaveOccurred,
       ...(error.details.transport ? { transport: error.details.transport } : {}),
       ...(error.details.status === undefined
         ? {}
@@ -477,6 +499,7 @@ export function presentProviderError(
   const providerMessage = safeProviderMessage(extracted.message);
   const shouldExposeProviderMessage =
     presentation.type === "供应商生成错误" ||
+    presentation.type === "供应商无可用兼容账号" ||
     presentation.type === "供应商繁忙" ||
     presentation.type === "供应商任务超时";
   return {

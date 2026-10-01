@@ -48,6 +48,8 @@ import {
   downloadAssetPreferLocal,
 } from "../lib/asset-download";
 import { localizeRunError } from "../lib/error-localization";
+import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
+import { TaskEvidence } from "./task-evidence";
 import { ReadableName, ResultInformation, ResultToolbar, WaitElapsed } from "./result-information";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
 import { cleanModelDisplayName, modelPriceSummary } from "../lib/model-display";
@@ -937,9 +939,6 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   ].includes(generatedStatus);
   const generatedCancelled = generatedStatus === "cancelled";
   const generatedNeedsAttention = generatedStatus === "needs_attention";
-  const generatedArchiveRecoverable =
-    generatedNeedsAttention &&
-    data.generatedRecoveryAction === "resume_archive";
   const generatedRecoveryAvailable =
     generatedNeedsAttention &&
     (data.generatedRecoveryAction === "resume_poll" ||
@@ -954,6 +953,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   const generatedErrorDetails = localizeRunError(data.generatedError, {
     provider: data.generatedProvider,
     supplier: data.generatedSupplier,
+    status: generatedStatus,
+    providerTaskStatus: data.generatedDetails?.taskEvidence?.status,
   }) as RunErrorDetails | null;
   const generatedError = generatedErrorDetails?.message ?? null;
   const generatedProvenance = generatedResult
@@ -1310,19 +1311,14 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                       <strong>
                         {generatedCancelled
                           ? data.generatedProvider === "cli" && data.generatedCliCancelSupported !== true ? "已停止跟踪" : "生成已取消"
-                          : generatedArchiveRecoverable
-                            ? "生成成功，结果待取回"
-                            : generatedNeedsAttention
-                              ? "提交结果未知"
-                              : "生成失败"}
+                          : taskOutcomeLabel(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction)}
                       </strong>
                       <ResultInformation data={data} asset={inputAsset} />
+                      <TaskEvidence request={{ supplier: data.generatedSupplier, connectionName: data.generatedConnectionName, modelGroup: data.generatedGroup }} evidence={data.generatedDetails?.taskEvidence} />
                       {generatedError ? <span className="result-error-summary">{generatedError}</span> : null}
-                      {generatedNeedsAttention ? (
+                      {taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction) ? (
                         <small className="generated-result-attention-note">
-                          {generatedArchiveRecoverable
-                            ? "供应商已经完成生成。取回只会下载现有结果，不会重新提交或再次扣费。"
-                            : "供应商可能已经收到任务。请先核对任务和扣费记录，确认未提交后再从源节点运行。"}
+                          {taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction)}
                         </small>
                       ) : null}
                       {generatedNeedsAttention && data.generatedPendingRequestId ? <button type="button" className="generated-result-retry nodrag nopan" onClick={(event) => {event.stopPropagation();data.onReconcileTask?.();}}>核对任务</button> : null}
@@ -1333,7 +1329,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                       <p>{generatedError}</p>
                       <button type="button" className="result-info-button" onClick={(event) => {
                         const button = event.currentTarget;
-                        void navigator.clipboard.writeText(JSON.stringify(generatedErrorDetails ?? data.generatedError, null, 2)).then(() => {button.textContent = "已复制";}).catch(() => {button.textContent = "复制失败，请手动选择";});
+                        void navigator.clipboard.writeText(JSON.stringify({ error: generatedErrorDetails ?? data.generatedError, connection: data.generatedConnectionName, supplier: data.generatedSupplier, modelGroup: data.generatedGroup, model: data.generatedModel, runId: data.generatedFromRunId, taskEvidence: data.generatedDetails?.taskEvidence }, null, 2)).then(() => {button.textContent = "已复制";}).catch(() => {button.textContent = "复制失败，请手动选择";});
                       }}>复制错误详情</button>
                       {generatedErrorDetails?.type ||
                       generatedErrorDetails?.code ? (
@@ -1352,7 +1348,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                       ) : null}
                       {generatedErrorDetails?.api ? (
                         <small className="generated-result-error-api">
-                          接入 API：{generatedErrorDetails.api}
+                          接口协议：{generatedErrorDetails.api}
                         </small>
                       ) : null}
                       {generatedErrorDetails?.statusCode ||

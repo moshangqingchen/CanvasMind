@@ -4,6 +4,7 @@ import type { AssetView, CanvasNodeData, GenerationDetails, GenerationInputAsset
 export function generationDetailsFromRun(node: RunSnapshot["nodes"][number]): GenerationDetails {
   const request = node.request;
   return {
+    ...(node.taskEvidence ? { taskEvidence: node.taskEvidence } : {}),
     ...(request?.submissionPhase !== undefined ? { submissionPhase: request.submissionPhase } : {}),
     ...(request?.operation !== undefined ? { operation: request.operation } : {}),
     ...(request?.prompt !== undefined ? { prompt: request.prompt } : {}),

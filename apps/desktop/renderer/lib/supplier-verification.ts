@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import {
-  decryptSecret,
-  loginSupplierSite,
   fetchProviderJson,
   type ModelDescriptor,
   type NormalizedRequest,
@@ -24,6 +22,7 @@ import {
 } from "./supplier-verification-service";
 import { effectiveImageCapabilities } from "./supplier-capabilities";
 import { chargeFromVerificationResponse } from "./supplier-verification-failure";
+import { openSupplierSiteSession } from "./supplier-site-session";
 
 const PROMPT =
   "A refined studio product photograph of a matte blue ceramic vase on a light gray pedestal, soft side lighting, fine surface texture, a small leafy branch. Landscape composition. No text, no watermark. Generate exactly one image.";
@@ -39,19 +38,8 @@ async function readCharge(
 ): Promise<VerificationCharge | undefined> {
   const returned = chargeFromVerificationResponse(test);
   if (returned) return returned;
-  const login = supplier.state?.siteLogin;
-  if (!login || !supplier.siteUrl) return undefined;
-  const session = await loginSupplierSite({
-    siteUrl: supplier.siteUrl,
-    kind: supplier.kind,
-    credentials: {
-      username: login.username,
-      password: decryptSecret(
-        login.encryptedPassword,
-        requireServerMasterKey(),
-      ),
-    },
-  });
+  const session = await openSupplierSiteSession(supplier);
+  if (!session) return undefined;
   const taskId =
     typeof test.task?.providerTaskId === "string"
       ? test.task.providerTaskId

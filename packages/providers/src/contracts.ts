@@ -17,7 +17,7 @@ export interface StructuredPriceTier {
   dimension?: "quality" | "resolution" | "duration" | "fixed";
   value?: string | number;
   conditions?: readonly { parameter: string; operator: "equals" | "contains"; value: string }[];
-  conditionMode?: "any" | "none";
+  conditionMode?: "any" | "all" | "none";
   otherwise?: boolean;
 }
 

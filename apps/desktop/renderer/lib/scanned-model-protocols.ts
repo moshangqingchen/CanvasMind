@@ -5,6 +5,8 @@ import {
   type RestConnectorConfig,
   type RestRequestDefinition,
   applyBananaImageCapabilities,
+  cangyuanCurrentModel,
+  canApplyCangyuanCurrentContract,
 } from "@super-canvas/providers";
 import { mikotoGroup } from "./mikoto-presets";
 import { chentuFallbackImageDescriptor } from "./chentu-catalog";
@@ -220,6 +222,11 @@ function bindExistingModelProtocols(
   };
   const models = scanned.map((model): ModelDescriptor => {
     if (!canInherit(model)) return model;
+    // Dedicated contracts execute dynamically for their exact IDs. Do not
+    // inherit and persist a generic sibling route into the shared connector.
+    if (supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection) &&
+      canApplyCangyuanCurrentContract(connection.config, String(connection.config.baseUrl ?? ""), model.id))
+      return cangyuanCurrentModel(model);
     const existing = templates.find((m) => m.id === model.id);
     if (existing) {
       const metadata = { ...existing.metadata, ...model.metadata, canvasRunnable: true };
@@ -338,8 +345,14 @@ export function bindScannedModelProtocols(
       ),
     ),
   );
+  const currentCangyuan = connection.provider === "rest" && supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection);
   const models = applySavedModelInterfaces(connection, compatibleModels)
     .map(model => applyBananaImageCapabilities(connection, model)).map(withHighestModelQualityDefault);
+  if (currentCangyuan) {
+    for (let i = 0; i < models.length; i++) if (canInherit(models[i]!) &&
+      canApplyCangyuanCurrentContract(connection.config, String(connection.config.baseUrl ?? ""), models[i]!.id))
+      models[i] = cangyuanCurrentModel(models[i]!);
+  }
   return {
     ...bound,
     models,

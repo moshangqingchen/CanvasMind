@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ProviderConnectionView } from "../lib/client-api";
-import type { SupplierRecord } from "../lib/client-suppliers";
+import type { SupplierRecord, SupplierSiteLoginSummary } from "../lib/client-suppliers";
 
 function fixtureSupplier(): SupplierRecord {
   return {
@@ -42,9 +42,11 @@ async function mockSuppliers(
     groupCount?: number;
     accountKeySync?: boolean;
     groupDetails?: boolean;
+    siteLogin?: SupplierSiteLoginSummary;
   } = {},
 ) {
   let suppliers = options.existing ? [fixtureSupplier()] : [];
+  if (suppliers[0] && options.siteLogin) suppliers[0].siteLogin = options.siteLogin;
   if (options.groupDetails && suppliers[0]) suppliers[0].catalog.groups[0]!.details = {
     source:"key-groups", description:"1张0.015，量大1分，仅支持1K2K，不支持4K。充值1刀1毛",
     referencePrice:"1张0.015；量大1分", supportedResolutions:["1K","2K"], unsupportedResolutions:["4K"], exclusiveResolutions:true,
@@ -180,18 +182,27 @@ async function mockSuppliers(
         ? { groups: [...current.catalog.groups, ...body.catalog.groups] }
         : current.catalog;
       const { siteLogin, ...patch } = body;
+      const sourceChanged = (patch.siteUrl !== undefined && patch.siteUrl !== current.siteUrl) ||
+        (patch.apiUrl !== undefined && patch.apiUrl !== current.apiUrl);
+      const savedLogin = sourceChanged ? undefined : current.siteLogin;
+      const loginSummary: SupplierSiteLoginSummary | undefined = siteLogin === null
+        ? undefined
+        : siteLogin?.authMode === "access-token"
+          ? {
+              authMode: "access-token", configured: true,
+              ...(siteLogin.userId === null ? {} : siteLogin.userId !== undefined
+                ? { userId: siteLogin.userId }
+                : savedLogin?.authMode === "access-token" && savedLogin.userId ? { userId: savedLogin.userId } : {}),
+            }
+          : siteLogin
+            ? { username: siteLogin.username, configured: true }
+            : savedLogin;
       suppliers = [
         {
           ...current,
           ...patch,
           catalog,
-          ...(siteLogin === null
-            ? { siteLogin: undefined }
-            : siteLogin
-              ? {
-                  siteLogin: { username: siteLogin.username, configured: true },
-                }
-              : {}),
+          siteLogin: loginSummary,
         },
       ];
       await route.fulfill({ json: suppliers[0] });
@@ -267,6 +278,15 @@ async function openSettings(page: Page) {
   await expect(
     page.getByRole("dialog", { name: "供应商与模型设置" }),
   ).toBeVisible();
+}
+
+function supplierMutations(page: Page) {
+  const requests: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/suppliers") && request.method() !== "GET")
+      requests.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.postDataJSON() });
+  });
+  return requests;
 }
 
 test("保存 Key 后自动读取模型，读取失败保留新 Key 并显示可重试结果", async ({ page }) => {
@@ -615,6 +635,230 @@ test("站点账号密码保存后自动用于扫描，留空保留密码并支�
       .siteLogin,
   ).toBeNull();
   await expect(dialog.getByLabel("站点账号", { exact: true })).toHaveValue("");
+});
+
+test("访问令牌保存扫描、留空保留、更新和清除，响应与输入不回填秘密", async ({ page }, testInfo) => {
+  const mock = await mockSuppliers(page, { existing: true, groupCount: 2 });
+  const requests = supplierMutations(page);
+  await openSettings(page);
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  await dialog.getByLabel("登录方式", { exact: true }).selectOption("access-token");
+  const token = dialog.getByLabel("站点访问令牌", { exact: true });
+  const id = dialog.getByLabel("站点用户 ID（选填）", { exact: true });
+  await expect(token).toHaveAttribute("type", "password");
+  await expect(token).toHaveAttribute("maxlength", "8192");
+  await token.fill(" Bearer dummy-site-access-token ");
+  await id.fill("123");
+  await dialog.getByRole("button", { name: "保存并扫描", exact: true }).click();
+  await expect(token).toHaveValue("");
+  await expect(token).toHaveAttribute("placeholder", "已保存，留空保持原令牌");
+  await expect(dialog.getByText("已识别 2 个分组。", { exact: false })).toBeVisible();
+  expect(requests.find((request) => request.method === "PATCH")?.body.siteLogin).toEqual({
+    authMode: "access-token", accessToken: "dummy-site-access-token", userId: "123",
+  });
+  expect(requests.find((request) => request.path.endsWith("/scan"))?.body).not.toHaveProperty("siteLogin");
+  expect(mock.suppliers()[0]?.siteLogin).toEqual({ authMode: "access-token", configured: true, userId: "123" });
+  await page.reload();
+  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  await expect(dialog.getByLabel("登录方式", { exact: true })).toHaveValue("access-token");
+  await expect(token).toHaveValue("");
+  await expect(id).toHaveValue("123");
+  await expect(dialog).not.toContainText("dummy-site-access-token");
+  await token.scrollIntoViewIfNeeded();
+  await dialog.screenshot({ path: testInfo.outputPath("supplier-access-token-saved.png") });
+  requests.length = 0;
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByText("供应商信息已保存。", { exact: true })).toBeVisible();
+  expect(requests.at(-1)?.body).not.toHaveProperty("siteLogin");
+  requests.length = 0;
+  await token.fill("dummy-updated-access-token");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(token).toHaveValue("");
+  expect(requests.at(-1)?.body.siteLogin).toEqual({
+    authMode: "access-token", accessToken: "dummy-updated-access-token", userId: "123",
+  });
+  expect(JSON.stringify(mock.suppliers())).not.toContain("dummy-updated-access-token");
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("dummy-updated-access-token");
+  await dialog.getByRole("button", { name: "清除已保存登录", exact: true }).click();
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByLabel("站点密码", { exact: true })).toHaveValue("");
+  await expect(dialog.getByLabel("站点账号", { exact: true })).toHaveValue("");
+  expect(requests.at(-1)?.body.siteLogin).toBeNull();
+  expect(mock.suppliers()[0]?.siteLogin).toBeUndefined();
+});
+
+test("访问令牌只修改或清空用户 ID 无需重输令牌，格式错误不提交", async ({ page }) => {
+  const mock = await mockSuppliers(page, { existing: true, siteLogin: { authMode: "access-token", configured: true, userId: "123" } });
+  const requests = supplierMutations(page);
+  await openSettings(page);
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  const token = dialog.getByLabel("站点访问令牌", { exact: true });
+  const id = dialog.getByLabel("站点用户 ID（选填）", { exact: true });
+  for (const invalidToken of ["Bearer", "dummy token", "dummy\ttoken"]) {
+    await token.fill(invalidToken);
+    await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+    await expect(dialog.getByText("请填写有效的站点访问令牌，不含内部空白或控制字符。", { exact: true })).toBeVisible();
+    await expect(dialog).not.toContainText(invalidToken);
+  }
+  await token.fill("");
+  for (const invalidId of ["0", "-1", "1.5", "abc", "01", "9223372036854775808"]) {
+    await id.fill(invalidId);
+    await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+    await expect(dialog.getByText("站点用户 ID 必须是 1 至 9223372036854775807 的整数，或留空。", { exact: true })).toBeVisible();
+  }
+  expect(requests).toHaveLength(0);
+  await id.fill("9223372036854775807");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByText("供应商信息已保存。", { exact: true })).toBeVisible();
+  expect(requests.at(-1)?.body.siteLogin).toEqual({ authMode: "access-token", userId: "9223372036854775807" });
+  await expect(token).toHaveValue("");
+  expect(mock.suppliers()[0]?.siteLogin?.userId).toBe("9223372036854775807");
+  await id.fill("");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "仅保存", exact: true })).toBeEnabled();
+  expect(requests.at(-1)?.body.siteLogin).toEqual({ authMode: "access-token", userId: null });
+  expect(mock.suppliers()[0]?.siteLogin).toEqual({ authMode: "access-token", configured: true });
+  requests.length = 0;
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "仅保存", exact: true })).toBeEnabled();
+  expect(requests.at(-1)?.body).not.toHaveProperty("siteLogin");
+  await dialog.getByRole("combobox", { name: "平台类型", exact: true }).selectOption("sub2api");
+  await expect(id).toHaveCount(0);
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "仅保存", exact: true })).toBeEnabled();
+  expect(requests.at(-1)?.body).not.toHaveProperty("siteLogin");
+});
+
+test("访问令牌切换方式清空待输入秘密，空令牌拒绝保存，取消和放弃完整处理草稿", async ({ page }) => {
+  await mockSuppliers(page, { existing: true, siteLogin: { configured: true, username: "saved@example.com" } });
+  const requests = supplierMutations(page);
+  await openSettings(page);
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  const mode = dialog.getByLabel("登录方式", { exact: true });
+  await dialog.getByLabel("站点密码", { exact: true }).fill("dummy-draft-password");
+  await mode.selectOption("access-token");
+  const token = dialog.getByLabel("站点访问令牌", { exact: true });
+  await expect(token).toHaveValue("");
+  await expect(token).toHaveAttribute("placeholder", "请输入站点访问令牌");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByText("首次保存或更换登录方式、连接地址时，请填写站点访问令牌。", { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await token.fill("dummy-draft-token");
+  await mode.selectOption("password");
+  await expect(dialog.getByLabel("站点密码", { exact: true })).toHaveValue("");
+  await mode.selectOption("access-token");
+  await expect(token).toHaveValue("");
+  await token.fill("dummy-draft-token");
+  await dialog.getByLabel("站点用户 ID（选填）", { exact: true }).fill("42");
+  for (const accept of [false, true]) {
+    const nextDialog = page.waitForEvent("dialog");
+    const close = dialog.getByRole("button", { name: "关闭设置", exact: true }).click();
+    const confirmation = await nextDialog;
+    expect(confirmation.type()).toBe("confirm");
+    expect(confirmation.message()).toContain("未保存");
+    expect(confirmation.message()).not.toContain("dummy-draft-token");
+    if (accept) await confirmation.accept(); else await confirmation.dismiss();
+    await close;
+    if (!accept) {
+      await expect(token).toHaveValue("dummy-draft-token");
+      await expect(dialog.getByLabel("站点用户 ID（选填）", { exact: true })).toHaveValue("42");
+    }
+  }
+  await expect(dialog).toBeHidden();
+  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  await expect(mode).toHaveValue("password");
+  await expect(dialog.getByLabel("站点账号", { exact: true })).toHaveValue("saved@example.com");
+  await expect(dialog.getByLabel("站点密码", { exact: true })).toHaveValue("");
+  await expect(dialog.getByText("有未保存的配置", { exact: true })).toHaveCount(0);
+  await mode.selectOption("access-token");
+  await expect(token).toHaveValue("");
+  await expect(dialog.getByLabel("站点用户 ID（选填）", { exact: true })).toHaveValue("");
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("dummy-draft-token");
+  expect(requests).toHaveLength(0);
+});
+
+test("访问令牌仅修改用户 ID 也提示未保存，放弃后恢复公开配置", async ({ page }) => {
+  await mockSuppliers(page, { existing: true, siteLogin: { authMode: "access-token", configured: true, userId: "123" } });
+  const requests = supplierMutations(page);
+  await openSettings(page);
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  await dialog.getByLabel("站点用户 ID（选填）", { exact: true }).fill("456");
+  await expect(dialog.getByText("有未保存的配置", { exact: true })).toBeVisible();
+  const nextDialog = page.waitForEvent("dialog");
+  const close = dialog.getByRole("button", { name: "关闭设置", exact: true }).click();
+  const confirmation = await nextDialog;
+  expect(confirmation.type()).toBe("confirm");
+  expect(confirmation.message()).toContain("未保存");
+  await confirmation.accept();
+  await close;
+  await expect(dialog).toBeHidden();
+  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  await expect(dialog.getByLabel("登录方式", { exact: true })).toHaveValue("access-token");
+  await expect(dialog.getByLabel("站点用户 ID（选填）", { exact: true })).toHaveValue("123");
+  await expect(dialog.getByLabel("站点访问令牌", { exact: true })).toHaveValue("");
+  await expect(dialog.getByText("有未保存的配置", { exact: true })).toHaveCount(0);
+  expect(requests).toHaveLength(0);
+});
+
+test("访问令牌与账号密码双向保存只提交所选方式凭据", async ({ page }) => {
+  const mock = await mockSuppliers(page, { existing: true, siteLogin: { authMode: "access-token", configured: true, userId: "123" } });
+  const requests = supplierMutations(page);
+  await openSettings(page);
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  const mode = dialog.getByLabel("登录方式", { exact: true });
+  await dialog.getByLabel("站点访问令牌", { exact: true }).fill("dummy-abandoned-token");
+  await mode.selectOption("password");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByText("更换登录方式或连接地址时，请重新填写站点账号与密码。", { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await dialog.getByLabel("站点账号", { exact: true }).fill("updated@example.com");
+  await dialog.getByLabel("站点密码", { exact: true }).fill("dummy-password");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByLabel("站点密码", { exact: true })).toHaveValue("");
+  expect(requests.at(-1)?.body.siteLogin).toEqual({ username: "updated@example.com", password: "dummy-password" });
+  expect(mock.suppliers()[0]?.siteLogin).toEqual({ configured: true, username: "updated@example.com" });
+  await dialog.getByLabel("站点密码", { exact: true }).fill("dummy-abandoned-password");
+  await mode.selectOption("access-token");
+  await expect(dialog.getByLabel("站点访问令牌", { exact: true })).toHaveValue("");
+  await expect(dialog.getByLabel("站点用户 ID（选填）", { exact: true })).toHaveValue("");
+  await dialog.getByLabel("站点访问令牌", { exact: true }).fill("dummy-selected-token");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByLabel("站点访问令牌", { exact: true })).toHaveValue("");
+  expect(requests.at(-1)?.body.siteLogin).toEqual({ authMode: "access-token", accessToken: "dummy-selected-token" });
+  expect(mock.suppliers()[0]?.siteLogin).toEqual({ authMode: "access-token", configured: true });
+});
+
+test("访问令牌更换连接来源必须重输，不向新地址复用已保存令牌", async ({ page }) => {
+  await mockSuppliers(page, { existing: true, siteLogin: { authMode: "access-token", configured: true, userId: "123" } });
+  const requests = supplierMutations(page);
+  await openSettings(page);
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  const token = dialog.getByLabel("站点访问令牌", { exact: true });
+  const api = dialog.getByLabel("API 地址", { exact: true });
+  await api.fill("https://other-fixture.example.com/v1");
+  await expect(token).toHaveAttribute("placeholder", "请输入站点访问令牌");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByText("首次保存或更换登录方式、连接地址时，请填写站点访问令牌。", { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await token.fill("dummy-new-source-token");
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(token).toHaveValue("");
+  expect(requests.at(-1)?.body.siteLogin).toEqual({ authMode: "access-token", accessToken: "dummy-new-source-token", userId: "123" });
+  expect(requests.at(-1)?.body.apiUrl).toBe("https://other-fixture.example.com/v1");
+  await dialog.getByLabel("站点地址", { exact: true }).fill("https://new-site-fixture.example.com");
+  requests.length = 0;
+  await dialog.getByRole("button", { name: "仅保存", exact: true }).click();
+  await expect(dialog.getByText("首次保存或更换登录方式、连接地址时，请填写站点访问令牌。", { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(0);
 });
 
 test("分组搜索无匹配时可显示全部，重新扫描不会被旧筛选隐藏", async ({

@@ -117,7 +117,7 @@ async function loadAssets(
     };
     result.push(input);
   }
-  if (result.length && connection.provider === "rest" && restRequestRequiresPublicAssets(connection.config.connector, model, "image.edit")) {
+  if (result.length && connection.provider === "rest" && restRequestRequiresPublicAssets(connection.config.connector, model, "image.edit", connection.config)) {
     if (localReferenceChannelConfigured()) {
       const urls = await localReferenceUrls(result.map(asset => asset.id));
       result.forEach((asset, index) => { asset.url = urls[index]!; });

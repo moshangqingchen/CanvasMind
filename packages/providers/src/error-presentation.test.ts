@@ -220,11 +220,73 @@ describe("provider error presentation", () => {
     });
 
     expect(presentProviderError(error, { provider: "rest" })).toMatchObject({
-      message: "上游 API 暂时不可用（HTTP 502），请稍后重试。",
+      message: "上游 API 暂时不可用（HTTP 502），本次提交结果未知。请先核对原任务和扣费记录，不要重复提交。",
       type: "网关或上游服务错误",
       code: "HTTP 502",
       api: "自定义 REST API",
+      phase: "submit", retryable: false, submissionMayHaveOccurred: true,
     });
+  });
+
+  it("explains an accepted task's unavailable account pool without blaming the prompt or guessing billing", () => {
+    expect(presentProviderError(new Error("No available compatible accounts"), {
+      provider: "openai", operation: "image.edit",
+    })).toMatchObject({
+      message: "供应商当前没有适用于所选模型或线路的可用账号，未能完成本次生成。请等待供应商恢复或核对该线路状态；本次费用仍需核对。",
+      type: "供应商无可用兼容账号", code: "provider_no_compatible_accounts",
+      providerMessage: "No available compatible accounts",
+    });
+  });
+
+  it("keeps account-pool HTTP rejection codes and ambiguous submission evidence", () => {
+    const transport = { elapsedMs: 1532, stage: "reading_body" as const, responseBytes: 91 };
+    const error = new ProviderHttpError("Provider returned HTTP 502", {
+      kind: "provider", phase: "submit", status: 502, retryable: false, submissionMayHaveOccurred: true,
+      transport, responseBody: { error: { code: "pool_unavailable", message: "No available compatible accounts" } },
+    });
+    const presentation = presentProviderError(error, { provider: "openai" });
+    expect(presentation).toMatchObject({
+      type: "供应商无可用兼容账号", code: "pool_unavailable", statusCode: 502,
+      phase: "submit", retryable: false, submissionMayHaveOccurred: true, transport,
+      providerMessage: "No available compatible accounts",
+    });
+    expect(presentation.message).toContain("提交结果未知");
+    expect(presentation.message).not.toMatch(/提示词|请稍后重试/);
+    expect(error.details.retryable).toBe(false);
+  });
+
+  it.each([502, 503, 504])("treats HTTP %i while querying as an interruption of the original task", status => {
+    const presentation = presentProviderError(new ProviderHttpError(`Provider returned HTTP ${status}`, {
+      kind: "provider", phase: "poll", status, retryable: true, submissionMayHaveOccurred: false,
+    }), { provider: "rest" });
+    expect(presentation).toMatchObject({ phase: "poll", retryable: true, submissionMayHaveOccurred: false });
+    expect(presentation.message).toContain("原任务查询暂时中断");
+    expect(presentation.message).not.toMatch(/提交结果未知|请稍后重试|已扣费/);
+  });
+
+  it("does not invent a submission phase for a plain gateway diagnostic", () => {
+    const presentation = presentProviderError(new Error("HTTP 502 Bad Gateway"), { provider: "rest" });
+    expect(presentation.message).toContain("核对供应商状态和原任务记录");
+    expect(presentation).not.toHaveProperty("phase");
+    expect(presentation.message).not.toMatch(/提交结果未知|请稍后重试/);
+  });
+
+  it("preserves explicit evidence that a gateway failure did not accept a task", () => {
+    const presentation = presentProviderError(new ProviderHttpError("Provider returned HTTP 502", {
+      kind: "provider", phase: "submit", status: 502, retryable: true, submissionMayHaveOccurred: false,
+    }), { provider: "rest" });
+    expect(presentation).toMatchObject({ phase: "submit", retryable: true, submissionMayHaveOccurred: false });
+    expect(presentation.message).not.toContain("提交结果未知");
+  });
+
+  it("does not encourage another paid submission when overload is returned with an ambiguous HTTP error", () => {
+    const presentation = presentProviderError(new ProviderHttpError("Provider returned HTTP 503", {
+      kind: "provider", phase: "submit", status: 503, retryable: false, submissionMayHaveOccurred: true,
+      responseBody: { message: "model is overloaded" },
+    }), { provider: "rest" });
+    expect(presentation).toMatchObject({ type: "供应商繁忙", phase: "submit", retryable: false });
+    expect(presentation.message).toContain("提交结果未知");
+    expect(presentation.message).not.toContain("请稍后重试");
   });
 
   it("explains confirmed asynchronous overload failures and retains the provider evidence", () => {

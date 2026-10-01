@@ -5,6 +5,9 @@ import {
   providerFetch,
   mediaExpressionPricing,
   mediaPricingLabel,
+  cangyuanCurrentModel,
+  cangyuanCurrentPricing,
+  isCangyuanCurrentModel,
   type ModelDescriptor,
   type ModelParameterDescriptor,
   type ModelParameterOption,
@@ -348,7 +351,7 @@ function marketplacePriceLabel(
   groupRatio: number,
 ): { priceLabel: string; billingLabel: string } {
   if (record.billing_mode === "tiered_expr") {
-    const pricing = mediaExpressionPricing(record.billing_expr, {
+    const pricing = cangyuanCurrentPricing(String(record.model_name), record.billing_expr, groupRatio, "") ?? mediaExpressionPricing(record.billing_expr, {
       currency: "CNY", multiplier: groupRatio, checkedAt: "",
       unit: priceUnit(record, marketplaceCapability(record) === "video") === "张" ? "image" : "request",
     });
@@ -1034,6 +1037,8 @@ function imageDescriptorForRecord(
   if (typeof record.model_name !== "string" || !record.model_name.trim())
     return null;
   const id = record.model_name.trim();
+  if (isCangyuanCurrentModel(id)) return cangyuanCurrentModel({ id, name: id, operations: IMAGE_OPERATIONS,
+    ...(typeof record.description === "string" ? { description: record.description } : {}) });
   const known = knownModels.get(id);
   const supportsReferences = supportsImageReferences(record);
   const maxInputImages = imageReferenceLimit(record);
@@ -1127,7 +1132,7 @@ export function cangyuanCatalogFromPricing(
         const ratio = ratios[group] ?? ratios[rawGroup] ?? 1;
         const perSecond = providerPriceUnit(record) === "second";
         const expressionPricing = record.billing_mode === "tiered_expr"
-          ? mediaExpressionPricing(record.billing_expr, {
+          ? cangyuanCurrentPricing(descriptor.id, record.billing_expr, ratio, checkedAt) ?? mediaExpressionPricing(record.billing_expr, {
               currency: "CNY", multiplier: ratio, checkedAt,
               sourceUrl: `${CANGYUAN_IMAGE_BASE_URL}/api/pricing`,
               unit: perSecond ? "second" : priceUnit(record, !isImagePricingRecord(record)) === "张" ? "image" : "request",
@@ -1144,7 +1149,7 @@ export function cangyuanCatalogFromPricing(
                 pricing: {
                   kind: perSecond
                     ? "per-second"
-                    : isImagePricingRecord(record)
+                    : descriptor.id === "midjourney-v7" ? "per-request" : isImagePricingRecord(record)
                       ? "per-image"
                       : "per-request",
                   currency: "CNY",
@@ -1631,7 +1636,7 @@ export async function refreshSavedCangyuanPrices(
   const group = normalizeCangyuanImageGroup(connection.config.modelGroup);
   if (!group || !matchesSupplierTemplate(connection) ||
       !/cangyuansuanli\.cn/iu.test(String(connection.config.baseUrl)) ||
-      models.every(model => model.metadata?.cangyuanBillingVersion === 1)) return [...models];
+      models.every(model => model.metadata?.cangyuanBillingVersion === 2)) return [...models];
   const catalog = await loadCangyuanCatalog();
   if (catalog.source !== "live") return [...models];
   const current = new Map(catalog.groups[group].map(model => [model.id, model]));
@@ -1641,7 +1646,7 @@ export async function refreshSavedCangyuanPrices(
     return { ...model, name: fresh.name, pricing: fresh.pricing,
       metadata: { ...model.metadata, priceLabel: fresh.metadata?.priceLabel,
         priceSource: fresh.metadata?.priceSource, priceCheckedAt: catalog.checkedAt,
-        cangyuanBillingVersion: 1 } };
+        cangyuanBillingVersion: 2 } };
   });
 }
 
@@ -1653,9 +1658,12 @@ export function cangyuanConnectorForModels(
   const includesVideoModels = models.some((model) =>
     model.operations.some((operation) => operation.startsWith("video.")),
   );
-  const includesGptImageModels = models.some((model) => /^gpt-image-2(?:[.-]|$)/iu.test(model.id));
+  const includesGptImageModels = models.some((model) => !isCangyuanCurrentModel(model.id) && /^gpt-image-2(?:[.-]|$)/iu.test(model.id));
   const modelOverrides: Record<string, RestModelConnectorOverride> = {};
   for (const model of models) {
+    // The four dedicated contracts are resolved per request by the adapter;
+    // persisting them here would invalidate unrelated models' paid evidence.
+    if (isCangyuanCurrentModel(model.id)) continue;
     if (model.operations.some((operation) => operation.startsWith("video.")))
       modelOverrides[model.id] = videoTransportForModel(model);
     else if (

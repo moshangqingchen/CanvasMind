@@ -38,7 +38,7 @@ export function assertDesktopPublicAssets(graph: WorkflowGraph, selected: Readon
     if (!localReferenceChannelConfigured() && referenceImageHostingEnabled(connection?.config)) continue;
     const operation = (data.nodeType ?? node.type) === "image-generation" ? "image.edit" : "video.image-to-video";
     const model = typeof data.model === "string" && data.model ? data.model : connection?.config?.defaultModel;
-    if (!(provider === "rest" && restRequestRequiresPublicAssets(connection?.config?.connector, model, operation)) &&
+    if (!(provider === "rest" && restRequestRequiresPublicAssets(connection?.config?.connector, model, operation, connection?.config)) &&
         !secureSkillRequiresPublicAssets(provider, connection?.config, model, operation) &&
         !bananaRequiresPublicAssets(provider, connection?.config, model)) continue;
     if (hasAssetReference(data) || graph.edges.filter((edge) => edge.target === node.id).some((edge) => containsMedia(edge.source))) {

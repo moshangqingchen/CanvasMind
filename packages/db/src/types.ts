@@ -147,7 +147,7 @@ export interface SupplierRecord {
   /** Last confirmed directory result; failed attempts never advance this timestamp. */
   scanLastSuccessAt?: string;
   scanError?: string;
-  scanErrorCode?: "invalid_credentials" | "verification_required" | "unsupported_platform" | "invalid_configuration" | "rate_limited" | "network" | "directory_unavailable";
+  scanErrorCode?: "invalid_credentials" | "invalid_token" | "permission_denied" | "user_id_required" | "verification_required" | "unsupported_platform" | "invalid_configuration" | "rate_limited" | "network" | "directory_unavailable";
   scanRetryable?: boolean;
   state?: SupplierState;
   createdAt: string;
@@ -238,6 +238,11 @@ export interface SupplierSourceArchive {
   archivedAt: string;
   reason: "address-change" | "legacy-unverified" | "restored";
 }
+/** Missing authMode is the persisted legacy password format. Never store both secrets. */
+export type SupplierSiteLogin =
+  | { authMode?: "password"; username: string; encryptedPassword: string; siteUrl: string; encryptedAccessToken?: never; userId?: never }
+  | { authMode: "access-token"; encryptedAccessToken: string; siteUrl: string; userId?: string; username?: never; encryptedPassword?: never };
+
 export interface SupplierState {
   version: 1;
   revision: number;
@@ -248,7 +253,7 @@ export interface SupplierState {
   generationTransport?: "local" | "cloudflare";
   billing?: SupplierBillingSnapshot;
   /** Server-only website login, encrypted with MASTER_KEY and scoped to this source. */
-  siteLogin?: { username: string; encryptedPassword: string; siteUrl: string };
+  siteLogin?: SupplierSiteLogin;
   keySync?: {
     status: "live" | "partial" | "failed";
     imported: number;

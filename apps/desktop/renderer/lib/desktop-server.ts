@@ -16,3 +16,17 @@ export function desktopLifecycleState(): DesktopLifecycleState {
   }
   return globalThis.__superCanvasDesktopLifecycle;
 }
+
+/** Keep detached producers protected after their HTTP handler or client exits. */
+export async function trackDesktopBackgroundWrite(work: () => Promise<void>): Promise<void> {
+  const state = process.env.SUPERCANVAS_DESKTOP === "true"
+    ? globalThis.__superCanvasDesktopLifecycle
+    : undefined;
+  if (state) state.writes++;
+  try {
+    await work();
+  } finally {
+    // This captured lease releases once, only after the complete work chain.
+    if (state) state.writes = Math.max(0, state.writes - 1);
+  }
+}

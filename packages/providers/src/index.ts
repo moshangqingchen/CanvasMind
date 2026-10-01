@@ -15,6 +15,7 @@ export * from "./auto-interface-adapter.js";
 export * from "./banana-image.js";
 export * from "./catalog-pricing.js";
 export * from "./media-billing.js";
+export * from "./cangyuan-current-models.js";
 export * from "./image-size-presets.js";
 export * from "./image-quality-presets.js";
 export * from "./chentu-az.js";

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertDesktopPublicAssets } from "../src/desktop-preflight.js";
 import type { WorkflowGraph } from "@super-canvas/core";
+import { cangyuanCurrentTransport } from "@super-canvas/providers";
 
 afterEach(() => vi.unstubAllEnvs());
 const graph = { schemaVersion: 1, nodes: [
@@ -62,5 +63,22 @@ describe("desktop public asset preflight", () => {
     const direct = structuredClone(graph);
     Object.assign(direct.nodes[1]!.data, { provider: "openai", __runtimeConnection: { provider: "openai", config: { connector: { assetsRequirePublicUrls: true } } } });
     expect(() => assertDesktopPublicAssets(direct, new Set(["video"]))).not.toThrow();
+  });
+  it("checks native-only Cangyuan references before payment without persisting a shared flag", () => {
+    vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
+    const native = structuredClone(graph);
+    const model = "gpt-image-2.5-x";
+    const transport = cangyuanCurrentTransport(model)!;
+    const config = { baseUrl: "https://ai.cangyuansuanli.cn", connector: { submit: transport.submit,
+      modelOverrides: { [model]: transport } } };
+    native.nodes[1]!.type = "image-generation";
+    native.nodes[1]!.data = { nodeType: "image-generation", provider: "rest", model,
+      __runtimeConnection: { provider: "rest", config } };
+    expect(() => assertDesktopPublicAssets(native, new Set(["video"]))).toThrow(/未提交付费/);
+    expect(config.connector).not.toHaveProperty("assetsRequirePublicUrls");
+    expect(() => assertDesktopPublicAssets({ ...native, edges: [] }, new Set(["video"]))).not.toThrow();
+    native.nodes[1]!.data = { ...native.nodes[1]!.data,
+      __runtimeConnection: { provider: "rest", config: { ...config, referenceImageHosting: "litterbox-24h" } } };
+    expect(() => assertDesktopPublicAssets(native, new Set(["video"]))).not.toThrow();
   });
 });

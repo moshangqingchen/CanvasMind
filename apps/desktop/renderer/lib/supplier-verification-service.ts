@@ -446,13 +446,33 @@ export class SupplierVerificationService {
         let capabilities = resolveCapabilities();
         let corrected = false;
         for (const queued of record.cases) {
-          if (queued.status === "queued" && queued.connectionId === connection.id && queued.modelId === model.id
-            && capabilities.evidence.some(entry => entry.resolution === queued.resolution &&
+          if (queued.status !== "queued" || queued.submittedAt || queued.connectionId !== connection.id || queued.modelId !== model.id)
+            continue;
+          const rejectedFixedQuality = capabilities.reason && capabilities.qualityKey && !capabilities.quality;
+          if (rejectedFixedQuality || capabilities.evidence.some(entry => entry.resolution === queued.resolution &&
               (["unsupported", "conflict"].includes(entry.status) || (entry.status === "declared" && !capabilities.needsQualityProbe)))) {
             queued.status = "cancelled";
-            queued.reason = "最新分组或文档已明确此档位，已取消未提交测试";
+            queued.reason = rejectedFixedQuality ? capabilities.reason : "最新分组或文档已明确此档位，已取消未提交测试";
             queued.updatedAt = timestamp();
             corrected = true;
+            continue;
+          }
+          // A cached plan may contain a generic group quality that this exact
+          // SKU does not accept. Correct only unsubmitted, no-longer-legal
+          // values; an allowed lower-quality retry retains its selected value.
+          if (capabilities.qualityKey && capabilities.quality && capabilities.qualityOptions?.length) {
+            const selected = queued.quality ?? String(queued.parameters[capabilities.qualityKey] ?? "");
+            if (selected && !capabilities.qualityOptions.includes(selected)) {
+              queued.quality = capabilities.quality;
+              queued.parameters = { ...queued.parameters, [capabilities.qualityKey]: capabilities.quality };
+              queued.dedupeKey = createHash("sha256").update(`${fingerprint}:${model.id}:${queued.resolution}:${capabilities.quality}`).digest("hex");
+              queued.expectedCharge = declaredImageCharge(model, queued.resolution, capabilities.quality, queued.parameters);
+              queued.reason = "最新型号参数已排除原质量值，已校准尚未提交的请求";
+              queued.updatedAt = timestamp();
+              corrected = true;
+            }
+            if (queued.qualityCandidates?.some(value => !capabilities.qualityOptions!.includes(value)))
+              queued.qualityCandidates = [...capabilities.qualityOptions];
           }
         }
         if (corrected) capabilities = resolveCapabilities();
@@ -523,6 +543,7 @@ export class SupplierVerificationService {
               model,
               tier,
               capabilities.quality,
+              parameters,
             ),
             chargeStatus: "unknown",
           });

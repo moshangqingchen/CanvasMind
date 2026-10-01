@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { localizeRunError } from "./error-localization";
+import { presentProviderError } from "../../../../packages/providers/src/error-presentation";
+import { ProviderHttpError } from "../../../../packages/providers/src/http";
 
 describe("localizeRunError", () => {
   it("explains saved socket submission errors without changing their evidence", () => {
@@ -55,10 +57,99 @@ describe("localizeRunError", () => {
     expect(
       localizeRunError("Gateway error (502). Please retry later."),
     ).toEqual({
-      message: "上游 API 暂时不可用（HTTP 502），请稍后重试。",
+      message: "上游 API 暂时不可用（HTTP 502）。请核对供应商状态和原任务记录，再决定是否重新生成。",
       type: "网关或上游服务错误",
       code: "HTTP 502",
     });
+  });
+
+  it("corrects historical structured account-pool failures using the preserved upstream reason", () => {
+    const history = {
+      message: "供应商未能完成生成任务，请根据错误代码和对应 API 文档检查请求内容或服务状态。",
+      type: "供应商生成错误", code: "generation_failed", api: "OpenAI Images API",
+      providerMessage: "No available compatible accounts",
+    };
+    const localized = localizeRunError(history, { status: "failed", providerTaskStatus: "failed" });
+    expect(localized).toMatchObject({
+      message: "供应商当前没有适用于所选模型或线路的可用账号，未能完成本次生成。请等待供应商恢复或核对该线路状态；本次费用仍需核对。",
+      type: "供应商无可用兼容账号", code: "provider_no_compatible_accounts",
+      providerMessage: history.providerMessage,
+    });
+    expect(localized?.message).not.toMatch(/提示词|检查请求内容|未扣费/);
+    expect(history.code).toBe("generation_failed");
+  });
+
+  it("uses an accepted remote failure separately from an unknown HTTP submission", () => {
+    const history = {
+      message: "上游 API 暂时不可用（HTTP 502），请稍后重试。",
+      type: "网关或上游服务错误", code: "HTTP 502", statusCode: 502,
+      providerMessage: "<html><title>502 Bad Gateway</title></html>",
+    };
+    const unknown = localizeRunError(history, { status: "needs_attention" });
+    expect(unknown?.message).toContain("提交结果未知");
+    expect(unknown?.message).not.toContain("请稍后重试");
+    const failed = localizeRunError(history, { status: "failed", providerTaskStatus: "failed" });
+    expect(failed?.message).toContain("供应商已将原任务标记为生成失败");
+    expect(failed?.message).not.toContain("提交结果未知");
+    expect(failed?.providerMessage).toBe(history.providerMessage);
+    expect(failed?.message).not.toContain("<html>");
+    expect(localizeRunError(history, { status: "failed" })?.message).not.toContain("已将原任务");
+  });
+
+  it("retains phase, retry and only safe transport fields for historical structured errors", () => {
+    const safe = { elapsedMs: 1900, stage: "reading_body" as const, responseBytes: 161,
+      remoteAddress: "104.156.154.225", remotePort: 443, route: "physical-direct" as const };
+    const value = {
+      message: "Provider returned HTTP 502", code: "HTTP 502", phase: "submit",
+      retryable: false, submissionMayHaveOccurred: true,
+      transport: { ...safe, headers: { authorization: "secret" }, url: "https://user:secret@example.com/?token=secret" },
+    };
+    const localized = localizeRunError(value);
+    expect(localized).toMatchObject({
+      phase: "submit", retryable: false, submissionMayHaveOccurred: true, transport: safe,
+    });
+    expect(localized?.message).toContain("不要重复提交");
+    expect(JSON.stringify(localized)).not.toContain("secret");
+    expect(localizeRunError({ ...value, transport: { ...safe, responseBytes: -1 }, retryable: "true", phase: "secret" }))
+      .not.toHaveProperty("transport");
+  });
+
+  it("does not relabel query interruptions as unknown submissions even when the run needs attention", () => {
+    const localized = localizeRunError({
+      message: "上游 API 暂时不可用（HTTP 502），请稍后重试。",
+      code: "HTTP 502", phase: "poll", retryable: true, submissionMayHaveOccurred: false,
+    }, { status: "needs_attention" });
+    expect(localized?.message).toContain("原任务查询暂时中断");
+    expect(localized?.message).not.toMatch(/提交结果未知|已扣费|请稍后重试/);
+  });
+
+  it("corrects a historical overload reason stored beside generation_failed", () => {
+    expect(localizeRunError({
+      message: "供应商未能完成生成任务，请检查请求内容。", code: "generation_failed",
+      providerMessage: "model is overloaded",
+    })).toMatchObject({ type: "供应商繁忙", code: "provider_overloaded", providerMessage: "model is overloaded" });
+  });
+
+  it("keeps overload resubmission warnings aligned with uncertain server evidence", () => {
+    const server = presentProviderError(new ProviderHttpError("Provider returned HTTP 503", {
+      kind: "provider", phase: "submit", status: 503, retryable: false, submissionMayHaveOccurred: true,
+      responseBody: { message: "adobe throttled: system under load" },
+    }), { provider: "rest" });
+    expect(localizeRunError(server, { provider: "rest", status: "needs_attention" })).toEqual(server);
+  });
+
+  it.each(["No available compatible accounts", "No_available_compatible_accounts"])("keeps server and legacy client account-pool explanations aligned: %s", raw => {
+    const server = presentProviderError(new Error(raw), { provider: "openai", operation: "image.generate" });
+    expect(localizeRunError(raw, { provider: "openai" })).toEqual(server);
+    expect(localizeRunError(server, { provider: "openai", status: "failed", providerTaskStatus: "failed" })).toEqual(server);
+  });
+
+  it.each(["submit", "poll"] as const)("keeps server and client gateway evidence aligned during %s", phase => {
+    const server = presentProviderError(new ProviderHttpError("Provider returned HTTP 502", {
+      kind: "provider", phase, status: 502, retryable: phase === "poll", submissionMayHaveOccurred: phase === "submit",
+      transport: { elapsedMs: 1700, stage: "reading_body", responseBytes: 100 },
+    }), { provider: "rest" });
+    expect(localizeRunError(server, { provider: "rest", status: "needs_attention" })).toEqual(server);
   });
 
   it("keeps already structured Chinese errors", () => {

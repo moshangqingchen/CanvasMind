@@ -6,6 +6,7 @@ import type { DirectorTurnEvent } from "../../../../lib/director-contracts";
 import { runDirectorTurn } from "../../../../lib/director-service";
 import { DirectorTurnRequestSchema } from "../_schemas";
 import { publicDirectorError } from "../_shared";
+import { trackDesktopBackgroundWrite } from "../../../../lib/desktop-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
         }
       }, 15_000);
       if (request.signal.aborted) abort.abort();
-      void runDirectorTurn(parsed.data, send, abort.signal)
+      void trackDesktopBackgroundWrite(() => runDirectorTurn(parsed.data, send, abort.signal)
         .then((sessionId) => {
           observedSessionId = sessionId;
           if (!doneSent) send({ type: "done", sessionId });
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
             send({ type: "done", sessionId: observedSessionId });
           }
         })
-        .finally(finish);
+        .finally(finish)).catch(() => undefined);
 
       request.signal.addEventListener(
         "abort",

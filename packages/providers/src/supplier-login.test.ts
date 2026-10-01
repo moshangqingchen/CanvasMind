@@ -7,12 +7,207 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { loginSupplierSite } from "./supplier-login.js";
 import { discoverSupplierCatalog } from "./supplier-catalog.js";
+import { readSupplierBilling } from "../../../apps/desktop/renderer/lib/supplier-billing-read.js";
 
 const siteUrl = "https://site.example.com/gateway/keys";
 const credentials = {
   username: " user@example.com ",
   password: " password with spaces ",
 };
+
+describe("supplier website access token", () => {
+  const base = "https://site.example.com/gateway";
+  const accessToken = "fake-dashboard-token";
+
+  it.each(["newapi", "sub2api"] as const)("validates %s with a same-site GET and creates a bounded bearer session", async kind => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ success: true, code: 0, data: { id: 42 } }));
+    const session = await loginSupplierSite({ siteUrl, kind, credentials: { accessToken, userId: "42" } }, fetcher);
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toBe(base + (kind === "newapi" ? "/api/user/self" : "/api/v1/user/profile"));
+    expect(init?.method).toBe("GET");
+    expect(init?.body).toBeUndefined();
+    expect(init?.redirect).toBe("error");
+    const firstHeaders = new Headers(init?.headers);
+    expect(firstHeaders.get("authorization")).toBe(`Bearer ${accessToken}`);
+    expect(firstHeaders.get("New-Api-User")).toBe(kind === "newapi" ? "42" : null);
+    await session.fetch(base + (kind === "newapi" ? "/api/user/self/groups" : "/api/v1/groups/available"));
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe(`Bearer ${accessToken}`);
+    expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    expect(fetcher.mock.calls.every(([, request]) => request?.method !== "POST")).toBe(true);
+  });
+
+  it("supports current NewAPI and OneAPI without requiring a user ID and accepts a copied bearer value", async () => {
+    const fetcher = vi.fn(async (url: string | URL | Request, _init?: RequestInit) =>
+      Response.json(String(url).endsWith("/api/status") ? { data: { system_name: "One API" } }
+        : { success: true, data: { id: 42 } }));
+    const session = await loginSupplierSite({ siteUrl, kind: "auto", credentials: { accessToken: `  Bearer ${accessToken}  ` } }, fetcher);
+    expect(session.kind).toBe("newapi");
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBeNull();
+    const validationHeaders = new Headers(fetcher.mock.calls[1]?.[1]?.headers);
+    expect(validationHeaders.get("authorization")).toBe(`Bearer ${accessToken}`);
+    expect(validationHeaders.get("New-Api-User")).toBeNull();
+    await session.fetch(base + "/api/token/?p=0&page_size=100");
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("New-Api-User")).toBe("42");
+  });
+
+  it.each([200, 401])("explains the missing user ID only when an older NewAPI actually requests it (HTTP %s)", async status => {
+    await expect(loginSupplierSite({ siteUrl, kind: "newapi", credentials: { accessToken } }, async () =>
+      Response.json({ success: false, message: "无权进行此操作，未提供 New-Api-User" }, { status }),
+    )).rejects.toMatchObject({ code: "user_id_required", status: 400, retryable: false, message: expect.stringContaining("用户 ID") });
+  });
+
+  it.each([
+    { status: 401, code: "invalid_token", retryable: false },
+    { status: 403, code: "permission_denied", retryable: false },
+    { status: 429, code: "rate_limited", retryable: true },
+    { status: 503, code: "network", retryable: true },
+    { status: 404, code: "unsupported_platform", retryable: false },
+  ])("classifies token verification HTTP $status without exposing the token or remote error", async ({ status, code, retryable }) => {
+    const pending = loginSupplierSite({ siteUrl, kind: "sub2api", credentials: { accessToken } }, async () =>
+      Response.json({ message: `echo ${accessToken}` }, { status }));
+    await expect(pending).rejects.toMatchObject({ code, retryable });
+    await expect(pending).rejects.not.toThrow(accessToken);
+  });
+
+  it.each([
+    { payload: { success: false, message: "access token 无效" }, code: "invalid_token" },
+    { payload: { success: false, message: "无权进行此操作，权限不足" }, code: "permission_denied" },
+    { payload: { success: false, code: "ACCESS_TOKEN_SCOPE_DENIED", message: "private scope" }, code: "permission_denied" },
+    { payload: { code: 401, message: "expired access token" }, code: "invalid_token" },
+    { payload: { error: { code: "INVALID_TOKEN", message: "private token" } }, code: "invalid_token" },
+  ])("rejects an HTTP 200 failed authentication as $code", async ({ payload, code }) => {
+    await expect(loginSupplierSite({ siteUrl, kind: "newapi", credentials: { accessToken } }, async () =>
+      Response.json(payload),
+    )).rejects.toMatchObject({ code, retryable: false });
+  });
+
+  it.each([
+    { accessToken: "" }, { accessToken: "Bearer " }, { accessToken: "token\r\nprivate-header: secret" },
+    { accessToken, userId: "0" }, { accessToken, userId: "-1" }, { accessToken, userId: "42x" },
+    { accessToken, userId: "9223372036854775808" },
+  ])("rejects malformed token credentials locally before any request", async input => {
+    const fetcher = vi.fn();
+    await expect(loginSupplierSite({ siteUrl, kind: "newapi", credentials: input }, fetcher))
+      .rejects.toMatchObject({ code: "invalid_configuration", retryable: false });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects a mismatched user ID or incomplete account payload without echoing the returned profile", async () => {
+    for (const data of [{ id: 7, access_token: accessToken }, { access_token: accessToken }]) {
+      const pending = loginSupplierSite({ siteUrl, kind: "newapi", credentials: { accessToken, userId: "42" } }, async () =>
+        Response.json({ success: true, data }));
+      await expect(pending).rejects.toMatchObject({ code: "invalid_configuration", retryable: false });
+      await expect(pending).rejects.not.toThrow(accessToken);
+    }
+  });
+
+  it.each(["newapi", "sub2api"] as const)("confines %s tokens to allowed account endpoints and never replaces a generation key", async kind => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ success: true, code: 0, data: { id: 42 } }));
+    const session = await loginSupplierSite({ siteUrl, kind, credentials: { accessToken } }, fetcher);
+    const allowed = kind === "newapi" ? [
+      [base + "/api/pricing", "GET"], [base + "/api/token/?p=0&page_size=10", "GET"],
+      [base + "/api/token/42/key", "POST"], [base + "/api/log/self/?request_id=request-42", "GET"],
+    ] : [
+      [base + "/api/v1/model-plaza", "GET"], [base + "/api/v1/keys?page=1&page_size=10", "GET"],
+      [base + "/api/v1/keys/42", "GET"], [base + "/api/v1/usage?request_id=request-42", "GET"],
+    ];
+    for (const [url, method] of allowed) {
+      await session.fetch(url!, { method });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe(`Bearer ${accessToken}`);
+      expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    }
+    for (const [url, method] of [
+      ["https://api.example.com/v1/images/generations", "POST"],
+      [base + "/v1/images/generations", "POST"], [base + "/v1/models", "GET"],
+      [base + "/api/token/42/key?redirect=leak", "POST"], [base + "/api/token/42/key", "GET"],
+      [base + "/api/pricing#fragment", "GET"], [base + "/api/pricing?redirect=leak", "GET"],
+      [base + "/api/v1/keys/42", "DELETE"], [base + "/api/v1/keys?page=all", "GET"],
+      ["https://other.example/api/user/self", "GET"], ["https://site.example.com/api/user/self", "GET"],
+      ["https://user:pass@site.example.com/gateway/api/user/self", "GET"],
+    ]) {
+      await session.fetch(url!, { method });
+      const headers = new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers);
+      expect(headers.get("authorization")).toBeNull();
+      expect(headers.get("cookie")).toBeNull();
+      expect(headers.get("New-Api-User")).toBeNull();
+    }
+    const request = new Request(base + "/v1/images/generations", { method: "POST", headers: { authorization: "Bearer fake-generation-key" } });
+    await session.fetch(request);
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe(request);
+    expect(request.headers.get("authorization")).toBe("Bearer fake-generation-key");
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+  });
+
+  it("never follows a redirect during token verification and sanitizes fetch failures", async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      expect(init?.redirect).toBe("error");
+      throw new Error(`redirect contained ${accessToken}`);
+    });
+    const pending = loginSupplierSite({ siteUrl, kind: "newapi", credentials: { accessToken } }, fetcher);
+    await expect(pending).rejects.toMatchObject({ code: "network", retryable: true });
+    await expect(pending).rejects.not.toThrow(accessToken);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("NewAPI account today-stat session", () => {
+  const base = "https://site.example.com/gateway";
+  it.each(["token", "password-bearer", "password-cookie"] as const)("authenticates the actual billing reader's today URL with %s", async mode => {
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/encryption-key")) return Response.json({}, { status: 404 });
+      if (path.endsWith("/api/user/login")) return Response.json({ success: true,
+        data: mode === "password-cookie" ? { id: 42 } : { access_token: "fake-session-token", user: { id: 42 } },
+      }, { headers: { "set-cookie": "session=fake-cookie; HttpOnly; Path=/" } });
+      if (path.endsWith("/api/user/self")) return Response.json({ success: true, data: { id: 42, quota: 1000, used_quota: 200 } });
+      if (path.endsWith("/api/status")) return Response.json({ success: true, data: { quota_per_unit: 100, quota_display_type: "USD" } });
+      if (path.endsWith("/api/log/self/stat")) {
+        const headers = new Headers(init?.headers);
+        const authenticated = mode === "password-cookie" ? headers.get("cookie") === "session=fake-cookie"
+          : headers.get("authorization") === "Bearer fake-session-token";
+        return authenticated ? Response.json({ success: true, data: { quota: 50 } }) : Response.json({}, { status: 401 });
+      }
+      return Response.json({});
+    });
+    const session = await loginSupplierSite({ siteUrl, kind: "newapi",
+      credentials: mode === "token" ? { accessToken: "fake-session-token" } : credentials }, fetcher);
+    const billing = await readSupplierBilling({ siteUrl, sourceId: "fake-source", kind: "newapi" }, session.fetch);
+    expect(billing).toMatchObject({ todayStatus: "live", todayUsed: .5, status: "live" });
+    const [statUrl, statInit] = fetcher.mock.calls.find(([url]) => String(url).includes("/api/log/self/stat"))!;
+    const parsed = new URL(String(statUrl));
+    expect(parsed.pathname).toBe("/gateway/api/log/self/stat");
+    expect([...parsed.searchParams.keys()]).toEqual(["type", "start_timestamp", "end_timestamp"]);
+    expect(parsed.searchParams.get("type")).toBe("2");
+    expect(parsed.searchParams.get("start_timestamp")).toMatch(/^[1-9]\d*$/u);
+    expect(parsed.searchParams.get("end_timestamp")).toMatch(/^[1-9]\d*$/u);
+    expect(statInit?.method).toBe("GET");
+    expect(statInit?.redirect).toBe("error");
+    expect(new Headers(statInit?.headers).get("New-Api-User")).toBe("42");
+    for (const [url, method] of [
+      [base + "/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1790810000", "POST"],
+      [base + "/api/log/self/stat", "GET"],
+      [base + "/api/log/self/stat?type=2&end_timestamp=1790810000", "GET"],
+      [base + "/api/log/self/stat?type=0&start_timestamp=1790784000&end_timestamp=1790810000", "GET"],
+      [base + "/api/log/self/stat?type=2&start_timestamp=-1&end_timestamp=1790810000", "GET"],
+      [base + "/api/log/self/stat?type=2&start_timestamp=0&end_timestamp=1790810000", "GET"],
+      [base + "/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1.5", "GET"],
+      [base + "/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1e9", "GET"],
+      [base + "/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1790810000&redirect=leak", "GET"],
+      [base + "/api/log/self/stat?type=2&type=2&start_timestamp=1790784000&end_timestamp=1790810000", "GET"],
+      [base + "/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1790810000#fragment", "GET"],
+      ["https://other.example/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1790810000", "GET"],
+      [base + "/api/log/self/stat/?type=2&start_timestamp=1790784000&end_timestamp=1790810000", "GET"],
+    ]) {
+      await session.fetch(url!, { method });
+      const headers = new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers);
+      expect(headers.get("authorization")).toBeNull();
+      expect(headers.get("cookie")).toBeNull();
+      expect(headers.get("New-Api-User")).toBeNull();
+    }
+  });
+});
 
 describe("supplier website login", () => {
   it.each([

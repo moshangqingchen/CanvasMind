@@ -97,6 +97,6 @@
     "vitest": "4.1.11"
   },
   "dependencies": {
-    "undici": "8.9.0"
+    "undici": "8.10.2"
   }
 }

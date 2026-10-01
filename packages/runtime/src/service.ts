@@ -2843,7 +2843,7 @@ export class RunService {
       : operationFor(node, values.some((value) => value.kind === "image") || assets.some((asset) => asset.kind === "image"));
     if (!operation) throw new Error(`不支持的节点类型: ${semanticType(node)}`);
     if (assets.length > 0 &&
-        ((providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation)) ||
+        ((providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation, connectionConfig)) ||
           secureSkillRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           bananaRequiresPublicAssets(providerName, connectionConfig, model))) {
       if (frozenConnection?.cloudGeneration) {

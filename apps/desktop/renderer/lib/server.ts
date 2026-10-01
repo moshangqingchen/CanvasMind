@@ -3,6 +3,7 @@ import {
   decryptSecret,
   encryptSecret,
   maskSecret,
+  type ProviderErrorPresentation,
 } from "@super-canvas/providers";
 import {
   getRepository,
@@ -15,7 +16,7 @@ import type { RuntimeEvent } from "@super-canvas/runtime";
 import { getObjectStorage } from "@super-canvas/storage";
 import { getRunService } from "@super-canvas/runtime";
 import { requireServerMasterKey, serverMasterKey } from "./master-key";
-import type { GenerationInputAsset } from "../components/types";
+import type { GenerationInputAsset, RunTaskEvidence } from "../components/types";
 
 export const repository = getRepository();
 export const storage = getObjectStorage();
@@ -93,6 +94,7 @@ export interface PublicRunSnapshot {
     errorJson: PublicRunError | null;
     recoveryAction?: "retry" | "resume_poll" | "resume_archive";
     cliCancelSupported?: boolean;
+    taskEvidence?: RunTaskEvidence;
     request?: PublicRunRequest;
   }>;
 }
@@ -121,6 +123,9 @@ export interface PublicRunError {
   statusCode?: number;
   providerMessage?: string;
   docsUrl?: string;
+  phase?: ProviderErrorPresentation["phase"];
+  retryable?: boolean;
+  submissionMayHaveOccurred?: boolean;
 }
 
 function publicError(
@@ -162,6 +167,9 @@ function publicError(
     ...(statusCode === undefined ? {} : { statusCode }),
     ...(providerMessage ? { providerMessage } : {}),
     ...(docsUrl ? { docsUrl } : {}),
+    ...(["connect", "submit", "poll", "cancel", "archive"].includes(String(value.phase)) ? { phase: value.phase as ProviderErrorPresentation["phase"] } : {}),
+    ...(typeof value.retryable === "boolean" ? { retryable: value.retryable } : {}),
+    ...(typeof value.submissionMayHaveOccurred === "boolean" ? { submissionMayHaveOccurred: value.submissionMayHaveOccurred } : {}),
   };
 }
 
@@ -335,6 +343,27 @@ function canRecoverRunOutputs(
   });
 }
 
+function publicTaskEvidence(node: NodeRunRecord): RunTaskEvidence | undefined {
+  const stored = safeJsonObject(node.inputJson.providerTask);
+  const storedId = typeof stored.providerTaskId === "string" ? stored.providerTaskId : undefined;
+  const recordId = node.providerTaskId ?? undefined;
+  // A cloud receipt and synchronous adapter IDs are local tracking identifiers.
+  // Only the original supplier ID can be used to check the supplier's task history.
+  if (node.inputJson.provider === "fake" || node.inputJson.provider === "cli") return undefined;
+  if (storedId && recordId && storedId !== recordId && !recordId.startsWith("cloud:")) return undefined;
+  const taskId = storedId ?? recordId;
+  if (!taskId || taskId.startsWith("cloud:") ||
+      taskId === `openai:${node.workflowRunId}:${node.id}` ||
+      taskId === `weai:${node.workflowRunId}:${node.id}` ||
+      taskId === `rest:sync:${node.workflowRunId}:${node.id}` ||
+      !/^[a-z0-9][a-z0-9._:/-]{0,255}$/iu.test(taskId) ||
+      /^(?:https?:|file:|[a-z]:[\\/])/iu.test(taskId) ||
+      redactPublicText(taskId) !== taskId) return undefined;
+  const status = ["queued", "running", "succeeded", "failed", "cancelled"].includes(String(stored.status))
+    ? stored.status as RunTaskEvidence["status"] : undefined;
+  return { taskId, ...(status ? { status } : {}) };
+}
+
 export function publicRunSnapshot(
   snapshot: {
     run: WorkflowRunRecord;
@@ -362,6 +391,7 @@ export function publicRunSnapshot(
       const request = publicRunRequest(node.inputJson, includePrompt,
         declaredRunParameterKeys(graphNodes.get(node.nodeId) ?? {}, node.inputJson.model));
       const recoveryAction = nodeRunRecoveryAction(node);
+      const taskEvidence = publicTaskEvidence(node);
       const cliTask = safeJsonObject(safeJsonObject(safeJsonObject(node.inputJson.providerTask).result).cli);
       return {
         id: node.id,
@@ -373,6 +403,7 @@ export function publicRunSnapshot(
         ),
         errorJson: publicError(node.errorJson),
         ...(recoveryAction ? { recoveryAction } : {}),
+        ...(taskEvidence ? { taskEvidence } : {}),
         ...(node.inputJson.provider === "cli" ? { cliCancelSupported: cliTask.supportsCancel === true } : {}),
         ...(request ? { request } : {}),
       };

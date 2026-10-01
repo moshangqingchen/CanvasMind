@@ -9,6 +9,7 @@ import {
 } from "../../../../lib/agent-contracts";
 import { runAgentTurn } from "../../../../lib/agent-service";
 import { agentError } from "../_shared";
+import { trackDesktopBackgroundWrite } from "../../../../lib/desktop-server";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   const p = await parseJsonRequest(
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
           }
         }
       }, 15000);
-      void runAgentTurn(p.data, send, abort.signal)
+      void trackDesktopBackgroundWrite(() => runAgentTurn(p.data, send, abort.signal)
         .then(status => { terminalStatus = status; })
         .catch(async (error) => {
           terminalStatus = abort.signal.aborted || (error instanceof Error &&
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
             closed = true;
             controller.close();
           }
-        });
+        })).catch(() => undefined);
     },
     cancel() {
       closed = true;

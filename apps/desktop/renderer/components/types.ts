@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeRunStatus, PromptPart } from "@super-canvas/core";
-import type { ModelDescriptor } from "@super-canvas/providers";
+import type { ModelDescriptor, ProviderErrorPresentation } from "@super-canvas/providers";
 import type { NodeAlignmentAction } from "../lib/graph-ui";
 
 export interface AssetView {
@@ -24,6 +24,10 @@ export interface RunErrorDetails {
   docsUrl?: string;
   actionUrl?: string;
   actionLabel?: string;
+  phase?: ProviderErrorPresentation["phase"];
+  retryable?: boolean;
+  submissionMayHaveOccurred?: boolean;
+  transport?: ProviderErrorPresentation["transport"];
 }
 
 export interface GenerationInputAsset {
@@ -34,6 +38,7 @@ export interface GenerationInputAsset {
 }
 
 export interface GenerationDetails {
+  taskEvidence?: RunTaskEvidence;
   submissionPhase?: string;
   operation?: string;
   prompt?: string;
@@ -41,6 +46,12 @@ export interface GenerationDetails {
   inputAssets?: GenerationInputAsset[];
   outputCount?: number;
   finishedAt?: string;
+}
+
+/** Whitelisted evidence about the original supplier task, without its recovery payload. */
+export interface RunTaskEvidence {
+  taskId: string;
+  status?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
 }
 
 export interface CanvasDrawingPoint {
@@ -198,6 +209,7 @@ export interface RunSnapshot {
     updatedAt?: string;
     cliCancelSupported?: boolean;
     recoveryAction?: "retry" | "resume_poll" | "resume_archive";
+    taskEvidence?: RunTaskEvidence;
     errorJson?: RunErrorDetails | null;
     request?: {
       submissionPhase?: string;

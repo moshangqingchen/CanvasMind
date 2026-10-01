@@ -6,6 +6,7 @@ vi.mock("@super-canvas/providers", async original => ({ ...(await original<typeo
 vi.mock("./supplier-billing-read", () => ({ readSupplierBilling: mocks.read }));
 import { createSupplierRecord, patchSupplierRecord, publicSupplierRecord } from "./supplier-service";
 import { refreshSupplierBilling } from "./supplier-billing";
+import { SupplierLoginError } from "@super-canvas/providers";
 
 beforeEach(() => { mocks.repository = new MemoryRepository(); mocks.login.mockReset().mockResolvedValue({ kind: "newapi", fetch: vi.fn() }); mocks.read.mockReset(); });
 async function fixture() {
@@ -62,5 +63,31 @@ describe("supplier billing persistence", () => {
     const supplier = await createSupplierRecord({ name: "No login", siteUrl: "https://site.invalid" });
     expect(await refreshSupplierBilling(supplier.id)).toMatchObject({ status: "unconfigured" });
     expect(mocks.login).not.toHaveBeenCalled(); expect(mocks.read).not.toHaveBeenCalled();
+  });
+  it("reads account billing with the saved token session and keeps safe token failure messages", async () => {
+    const previous = await fixture();
+    const supplier = await patchSupplierRecord(previous.id, { siteLogin: { authMode: "access-token", accessToken: "fixture-billing-token", userId: "42" } });
+    await refreshSupplierBilling(supplier.id);
+    expect(mocks.login).toHaveBeenCalledWith({ siteUrl: supplier.siteUrl, kind: "newapi", credentials: { accessToken: "fixture-billing-token", userId: "42" } });
+    mocks.login.mockRejectedValue(new SupplierLoginError("Authorization: Bearer fixture-billing-token", 403, "permission_denied"));
+    const failed = await refreshSupplierBilling(supplier.id);
+    expect(failed).toMatchObject({ status: "failed", balance: 10, used: 2 });
+    expect(failed.error).toContain("权限");
+    expect(JSON.stringify(failed)).not.toContain("fixture-billing-token");
+    expect(JSON.stringify(publicSupplierRecord((await mocks.repository.getSupplier(supplier.id))!))).not.toMatch(/fixture-billing-token|encryptedAccessToken/);
+  });
+  it.each(["token", "user-id", "mode", "clear"] as const)("discards billing fetched before a concurrent %s credential change", async change => {
+    const previous = await fixture();
+    const supplier = await patchSupplierRecord(previous.id, { siteLogin: { authMode: "access-token", accessToken: "fixture-billing-token", userId: "42" } });
+    const result = await mocks.read();
+    mocks.read.mockImplementation(async () => {
+      await patchSupplierRecord(supplier.id, { siteLogin: change === "clear" ? null
+        : change === "mode" ? { username: "new-account", password: "new-fixture-password" }
+        : change === "user-id" ? { authMode: "access-token", userId: "43" }
+        : { authMode: "access-token", accessToken: "replacement-fixture-token" } });
+      return result;
+    });
+    await expect(refreshSupplierBilling(supplier.id)).rejects.toBeInstanceOf(SupplierConflictError);
+    expect((await mocks.repository.getSupplier(supplier.id))?.state?.billing).toBeUndefined();
   });
 });

@@ -3,16 +3,15 @@ import {
   discoverSupplierCatalog,
   normalizeSupplierSiteBase,
   supplierDirectoryBase,
-  loginSupplierSite,
-  decryptSecret,
   providerFetch,
+  SupplierLoginError,
   type ModelDescriptor,
   type SupplierCatalogDiscovery,
   parseProviderModelFacts,
 } from "@super-canvas/providers";
 import { parseSupplierGroupDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel } from "@super-canvas/providers/supplier-group-details";
 import { getSupplierRecord } from "./supplier-service";
-import { requireServerMasterKey } from "./master-key";
+import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { repository } from "./server";
 import { readSupplierDocument } from "./supplier-document";
 
@@ -383,8 +382,7 @@ export async function enrichSupplierModelPrices(
     apiUrl,
     kind,
     sameSource ? supplier.state?.sourceId : "",
-    login?.username,
-    login?.encryptedPassword,
+    supplierSiteLoginCacheIdentity(login),
   ]);
   let cached = cache.get(key);
   // Share a short burst across groups while an explicit refresh bypasses older results.
@@ -396,17 +394,7 @@ export async function enrichSupplierModelPrices(
     const result = (async (): Promise<SupplierCatalogDiscovery> => {
       try {
         const session = login
-          ? await loginSupplierSite({
-              siteUrl,
-              kind,
-              credentials: {
-                username: login.username,
-                password: decryptSecret(
-                  login.encryptedPassword,
-                  requireServerMasterKey(),
-                ),
-              },
-            })
+          ? await openSupplierSiteSession({ siteUrl, kind, state: supplier?.state })
           : undefined;
         const deadline = AbortSignal.timeout(12000);
         const fetcher = session?.fetch ?? providerFetch;
@@ -421,11 +409,13 @@ export async function enrichSupplierModelPrices(
               ]),
             }),
         );
-      } catch {
+      } catch (error) {
         return {
           groups: [],
           kind,
-          status: login ? "unauthorized" : "failed",
+          status: error instanceof SupplierLoginError &&
+            ["invalid_credentials", "invalid_token", "permission_denied", "user_id_required", "verification_required"].includes(error.code)
+            ? "unauthorized" : "failed",
           checkedAt: new Date().toISOString(),
         };
       }

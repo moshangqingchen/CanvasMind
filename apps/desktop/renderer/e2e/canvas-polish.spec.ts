@@ -271,6 +271,102 @@ test("输入框保存最新内容、组合输入不生成、两个运行快捷�
   await expect.poll(() => scopes).toEqual(["downstream", "node"]);
 });
 
+for (const scenario of [
+  {
+    shortcut: "Control+Enter",
+    scope: "node",
+    cursor: "中间",
+    lines: ["第一行保留中文与标点：原样提交。", "第二行保留 English 123。"],
+    lineBreak: "Enter",
+  },
+  {
+    shortcut: "Control+Enter",
+    scope: "node",
+    cursor: "末尾",
+    lines: ["单行末尾：中文 English 123 原样提交。"],
+    lineBreak: "Enter",
+  },
+  {
+    shortcut: "Control+Shift+Enter",
+    scope: "downstream",
+    cursor: "中间",
+    lines: ["单行中间：中文 English 123 原样提交。"],
+    lineBreak: "Enter",
+  },
+  {
+    shortcut: "Control+Shift+Enter",
+    scope: "downstream",
+    cursor: "末尾",
+    lines: ["第一行保留中文。", "", "第三行保留空行与 English 123。"],
+    lineBreak: "Shift+Enter",
+  },
+]) {
+  test(`${scenario.shortcut} 在${scenario.cursor}运行时逐字保留提示词与换行`, async ({
+    page,
+    request,
+  }) => {
+    const canvas = await create(request);
+    await open(page, canvas.id);
+    const editor = page.locator(
+      '.react-flow__node[data-id="source"] .tiptap-prompt',
+    );
+    await editor.fill(scenario.lines[0]);
+    for (const line of scenario.lines.slice(1)) {
+      await editor.press(scenario.lineBreak);
+      if (line) await page.keyboard.insertText(line);
+    }
+    // Locate a real DOM caret rather than relying on platform navigation keys.
+    // Let selectionchange reach ProseMirror before pressing the run shortcut.
+    await editor.evaluate(async (element, middle) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      const textNodes: Text[] = [];
+      while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+      const target = middle ? textNodes[0] : textNodes.at(-1);
+      if (!target) throw new Error("提示词编辑器没有文本节点");
+      const range = document.createRange();
+      range.setStart(target, middle ? 2 : target.length);
+      range.collapse(true);
+      const selection = window.getSelection();
+      if (!selection) throw new Error("无法定位提示词光标");
+      selection.removeAllRanges();
+      selection.addRange(range);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }, scenario.cursor === "中间");
+    expect(await editor.evaluate(() => window.getSelection()?.anchorOffset)).toBe(
+      scenario.cursor === "中间" ? 2 : scenario.lines.at(-1)!.length,
+    );
+
+    const submitted = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/runs" &&
+        response.request().method() === "POST",
+    );
+    await editor.press(scenario.shortcut);
+    const response = await submitted;
+    expect(response.ok()).toBeTruthy();
+    expect(response.request().postDataJSON().scope).toBe(scenario.scope);
+    const snapshot = (await response.json()) as RunSnapshot;
+    const expectedPrompt = scenario.lines.join("\n");
+    // The detailed run contains the normalized request actually sent to Fake,
+    // so this checks submission text as well as the editor's saved document.
+    await expect.poll(async () => {
+      const detailed = (await (
+        await request.get(`/api/runs/${snapshot.run.id}?details=1`)
+      ).json()) as RunSnapshot;
+      const source = detailed.nodes.find((node) => node.nodeId === "source");
+      return {
+        provider: source?.request?.provider,
+        prompt: source?.request?.prompt,
+      };
+    }).toEqual({ provider: "fake", prompt: expectedPrompt });
+    expect(
+      (await saved(request, canvas.id)).nodes.find(
+        (node: CanvasNode) => node.id === "source",
+      ).data.parts,
+    ).toEqual([{ type: "text", text: expectedPrompt }]);
+  });
+}
+
 test("任务运行期间保存失败始终可见，点击入口可重试保存", async ({
   page,
   request,

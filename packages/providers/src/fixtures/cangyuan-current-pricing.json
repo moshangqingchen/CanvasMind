@@ -1,0 +1,966 @@
+{
+  "checkedAt": "2026-10-01T00:33:22.743Z",
+  "source": "https://ai.cangyuansuanli.cn/api/pricing",
+  "data": [
+    {
+      "model_name": "gpt-image-2.5-x",
+      "description": "用 series 选择 flare 或 sunburst，再用 tier 选择清晰度。广场标价为 web。",
+      "vendor_id": 2,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.025,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "全模型-无claude/gpt",
+        "IMAGE"
+      ],
+      "supported_endpoint_types": [
+        "openai-image"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "param(\"series\") == \"flare\" ? (param(\"tier\") == \"4k\" ? ((param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"flare 4k xhigh\", n * 0.40) : tier(\"flare 4k\", n * 0.20)) : param(\"tier\") == \"2k\" ? ((param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"flare 2k xhigh\", n * 0.36) : tier(\"flare 2k\", n * 0.18)) : param(\"tier\") == \"1k\" ? ((param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"flare 1k xhigh\", n * 0.32) : tier(\"flare 1k\", n * 0.16)) : tier(\"flare web\", n * 0.025)) : (param(\"tier\") == \"4k\" ? ((param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"sunburst 4k xhigh\", n * 0.44) : tier(\"sunburst 4k\", n * 0.22)) : param(\"tier\") == \"2k\" ? ((param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"sunburst 2k xhigh\", n * 0.40) : tier(\"sunburst 2k\", n * 0.20)) : param(\"tier\") == \"1k\" ? ((param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"sunburst 1k xhigh\", n * 0.36) : tier(\"sunburst 1k\", n * 0.18)) : tier(\"sunburst web\", n * 0.025))",
+      "billing_capability": "image",
+      "request_unit": "image",
+      "image_ui_params": {
+        "hints": [
+          {
+            "text": "series 必须是 flare 或 sunburst。tier 可选 web / 1k / 2k / 4k，缺省 web。张数只能为 1。"
+          }
+        ],
+        "id": "gpt-image-2.5-x",
+        "params": {
+          "aspectRatio": {
+            "enabled": true,
+            "options": [
+              {
+                "height": 1024,
+                "icon": "square",
+                "label": "1:1",
+                "size": "1024x1024",
+                "value": "1:1",
+                "width": 1024
+              },
+              {
+                "height": 1024,
+                "icon": "landscape",
+                "label": "3:2",
+                "size": "1536x1024",
+                "value": "3:2",
+                "width": 1536
+              },
+              {
+                "height": 864,
+                "icon": "landscape",
+                "label": "16:9",
+                "size": "1536x864",
+                "value": "16:9",
+                "width": 1536
+              },
+              {
+                "height": 1152,
+                "icon": "landscape",
+                "label": "4:3",
+                "size": "1536x1152",
+                "value": "4:3",
+                "width": 1536
+              },
+              {
+                "height": 1536,
+                "icon": "portrait",
+                "label": "3:4",
+                "size": "1152x1536",
+                "value": "3:4",
+                "width": 1152
+              },
+              {
+                "height": 1024,
+                "icon": "landscape",
+                "label": "5:4",
+                "size": "1280x1024",
+                "value": "5:4",
+                "width": 1280
+              },
+              {
+                "height": 1280,
+                "icon": "portrait",
+                "label": "4:5",
+                "size": "1024x1280",
+                "value": "4:5",
+                "width": 1024
+              },
+              {
+                "height": 656,
+                "icon": "landscape",
+                "label": "21:9",
+                "size": "1536x656",
+                "value": "21:9",
+                "width": 1536
+              },
+              {
+                "height": 1536,
+                "icon": "portrait",
+                "label": "2:3",
+                "size": "1024x1536",
+                "value": "2:3",
+                "width": 1024
+              },
+              {
+                "height": 0,
+                "icon": "auto",
+                "label": "自动",
+                "value": "auto",
+                "width": 0
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              }
+            ]
+          },
+          "background": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "自动",
+                "value": "auto"
+              },
+              {
+                "label": "不透明",
+                "value": "opaque"
+              },
+              {
+                "label": "透明",
+                "value": "transparent"
+              }
+            ]
+          },
+          "count": {
+            "enabled": true,
+            "max": 1,
+            "min": 1,
+            "quickCount": 1
+          },
+          "customDimensions": {
+            "enabled": true
+          },
+          "moderation": {
+            "enabled": false,
+            "options": []
+          },
+          "outputCompression": {
+            "default": 100,
+            "enabled": false,
+            "max": 100,
+            "min": 0
+          },
+          "outputFormat": {
+            "enabled": false,
+            "options": []
+          },
+          "quality": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "中（默认）",
+                "value": "medium"
+              },
+              {
+                "label": "低",
+                "value": "low"
+              },
+              {
+                "label": "高",
+                "value": "high"
+              },
+              {
+                "label": "超高",
+                "value": "xhigh"
+              },
+              {
+                "label": "最高",
+                "value": "max"
+              }
+            ]
+          },
+          "series": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "flare",
+                "priceModel": {
+                  "1k": "gpt-image-2.5-flare-1k",
+                  "2k": "gpt-image-2.5-flare-2k",
+                  "4k": "gpt-image-2.5-flare-4k",
+                  "web": "gpt-image-2.5-flare"
+                },
+                "value": "flare"
+              },
+              {
+                "label": "sunburst",
+                "priceModel": {
+                  "1k": "gpt-image-2.5-sunburst-1k",
+                  "2k": "gpt-image-2.5-sunburst-2k",
+                  "4k": "gpt-image-2.5-sunburst-4k",
+                  "web": "gpt-image-2.5-sunburst"
+                },
+                "value": "sunburst"
+              }
+            ],
+            "required": true
+          },
+          "tier": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "web",
+                "value": "web"
+              },
+              {
+                "label": "1k",
+                "value": "1k"
+              },
+              {
+                "label": "2k",
+                "value": "2k"
+              },
+              {
+                "label": "4k",
+                "value": "4k"
+              }
+            ],
+            "required": false
+          }
+        },
+        "referenceLimits": {
+          "audios": 0,
+          "images": 9,
+          "mask": 1,
+          "videos": 0
+        }
+      }
+    },
+    {
+      "model_name": "seedream-5.0-pro-x",
+      "description": "Seedream-X，无限制。请自觉遵守您当地法律法规，切勿用于非法用途；本站不承担任何法律责任。",
+      "vendor_id": 12,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.18,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-image"
+      ],
+      "billing_mode": "per_request",
+      "request_unit": "image",
+      "image_ui_params": {
+        "hints": [
+          {
+            "text": "Seedream-X。1K 或 2K。参考图最多 10 张。不支持蒙版。"
+          }
+        ],
+        "id": "seedream-5.0-pro-x",
+        "params": {
+          "aspectRatio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "3:2",
+                "value": "3:2"
+              },
+              {
+                "label": "2:3",
+                "value": "2:3"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              }
+            ]
+          },
+          "count": {
+            "enabled": true,
+            "max": 1,
+            "min": 1,
+            "quickCount": 1
+          },
+          "customDimensions": {
+            "enabled": true
+          }
+        },
+        "referenceLimits": {
+          "audios": 0,
+          "images": 10,
+          "mask": 0,
+          "videos": 0
+        }
+      }
+    },
+    {
+      "model_name": "gpt-image-2-x",
+      "description": "用 tier 选择 web / 1k / 2k / 4k。广场标价为 web。",
+      "vendor_id": 2,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.015,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-image"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "param(\"tier\") == \"4k\" ? tier(\"4k\", n * 0.095) : param(\"tier\") == \"2k\" ? tier(\"2k\", n * 0.075) : param(\"tier\") == \"1k\" ? tier(\"1k\", n * 0.055) : tier(\"web\", n * 0.015)",
+      "billing_capability": "image",
+      "request_unit": "image",
+      "image_ui_params": {
+        "hints": [
+          {
+            "text": "tier 可选 web / 1k / 2k / 4k，缺省 web。series 不支持。张数只能为 1。"
+          }
+        ],
+        "id": "gpt-image-2-x",
+        "params": {
+          "aspectRatio": {
+            "enabled": true,
+            "options": [
+              {
+                "height": 1024,
+                "icon": "square",
+                "label": "1:1",
+                "size": "1024x1024",
+                "value": "1:1",
+                "width": 1024
+              },
+              {
+                "height": 1024,
+                "icon": "landscape",
+                "label": "3:2",
+                "size": "1536x1024",
+                "value": "3:2",
+                "width": 1536
+              },
+              {
+                "height": 864,
+                "icon": "landscape",
+                "label": "16:9",
+                "size": "1536x864",
+                "value": "16:9",
+                "width": 1536
+              },
+              {
+                "height": 1152,
+                "icon": "landscape",
+                "label": "4:3",
+                "size": "1536x1152",
+                "value": "4:3",
+                "width": 1536
+              },
+              {
+                "height": 1536,
+                "icon": "portrait",
+                "label": "3:4",
+                "size": "1152x1536",
+                "value": "3:4",
+                "width": 1152
+              },
+              {
+                "height": 1024,
+                "icon": "landscape",
+                "label": "5:4",
+                "size": "1280x1024",
+                "value": "5:4",
+                "width": 1280
+              },
+              {
+                "height": 1280,
+                "icon": "portrait",
+                "label": "4:5",
+                "size": "1024x1280",
+                "value": "4:5",
+                "width": 1024
+              },
+              {
+                "height": 656,
+                "icon": "landscape",
+                "label": "21:9",
+                "size": "1536x656",
+                "value": "21:9",
+                "width": 1536
+              },
+              {
+                "height": 1536,
+                "icon": "portrait",
+                "label": "2:3",
+                "size": "1024x1536",
+                "value": "2:3",
+                "width": 1024
+              },
+              {
+                "height": 0,
+                "icon": "auto",
+                "label": "自动",
+                "value": "auto",
+                "width": 0
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              }
+            ]
+          },
+          "background": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "自动",
+                "value": "auto"
+              },
+              {
+                "label": "不透明",
+                "value": "opaque"
+              },
+              {
+                "label": "透明",
+                "value": "transparent"
+              }
+            ]
+          },
+          "count": {
+            "enabled": true,
+            "max": 1,
+            "min": 1,
+            "quickCount": 1
+          },
+          "customDimensions": {
+            "enabled": true
+          },
+          "moderation": {
+            "enabled": false,
+            "options": []
+          },
+          "outputCompression": {
+            "default": 100,
+            "enabled": false,
+            "max": 100,
+            "min": 0
+          },
+          "outputFormat": {
+            "enabled": false,
+            "options": []
+          },
+          "quality": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "中（默认）",
+                "value": "medium"
+              },
+              {
+                "label": "低",
+                "value": "low"
+              },
+              {
+                "label": "高",
+                "value": "high"
+              },
+              {
+                "label": "超高",
+                "value": "xhigh"
+              },
+              {
+                "label": "最高",
+                "value": "max"
+              }
+            ]
+          },
+          "series": {
+            "enabled": false,
+            "options": [],
+            "required": false
+          },
+          "tier": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "web",
+                "priceModel": "gpt-image-2",
+                "value": "web"
+              },
+              {
+                "label": "1k",
+                "priceModel": "gpt-image-2-1k",
+                "value": "1k"
+              },
+              {
+                "label": "2k",
+                "priceModel": "gpt-image-2-2k",
+                "value": "2k"
+              },
+              {
+                "label": "4k",
+                "priceModel": "gpt-image-2-4k",
+                "value": "4k"
+              }
+            ],
+            "required": false
+          }
+        },
+        "referenceLimits": {
+          "audios": 0,
+          "images": 9,
+          "mask": 1,
+          "videos": 0
+        }
+      }
+    },
+    {
+      "model_name": "midjourney-v7",
+      "description": "Midjourney V7。",
+      "vendor_id": 34,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.19,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "全模型-无claude/gpt",
+        "IMAGE"
+      ],
+      "supported_endpoint_types": [
+        "openai-image"
+      ],
+      "billing_mode": "per_request",
+      "request_unit": "image",
+      "image_ui_params": {
+        "hints": [
+          {
+            "text": "Midjourney V7。没有 1K/2K，没有速度档。参考图最多 5 张。"
+          }
+        ],
+        "id": "midjourney-v7",
+        "params": {
+          "aspectRatio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "3:2",
+                "value": "3:2"
+              },
+              {
+                "label": "2:3",
+                "value": "2:3"
+              },
+              {
+                "label": "5:4",
+                "value": "5:4"
+              },
+              {
+                "label": "4:5",
+                "value": "4:5"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              }
+            ]
+          },
+          "count": {
+            "enabled": true,
+            "max": 1,
+            "min": 1,
+            "quickCount": 1
+          },
+          "customDimensions": {
+            "enabled": true
+          }
+        },
+        "referenceLimits": {
+          "audios": 0,
+          "images": 5,
+          "mask": 0,
+          "videos": 0
+        }
+      }
+    },
+    {
+      "model_name": "gpt-image-2.5-flare-4k",
+      "description": "GPT Image 2.5 Flare 4K 固定档位。",
+      "vendor_id": 2,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.2,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-image"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"xhigh\", n * 0.40) : tier(\"std\", n * 0.20)",
+      "billing_capability": "image",
+      "request_unit": "image",
+      "image_ui_params": {
+        "hints": [
+          {
+            "text": "GPT Image 2.5 Flare 4K 固定计费档位；quality 默认 medium，可选 low / medium / high / xhigh / max。low / medium / high / 空 / auto 按标准档计费，xhigh / max 按标准档双倍。精确 size 原样发送：16px 对齐、最长边不超过 3840px、比例不超过 3:1、总像素 655360–8294400；比例输入按 4K 预算计算。"
+          }
+        ],
+        "id": "gpt-image-2.5-flare-4k",
+        "params": {
+          "aspectRatio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "5:4",
+                "value": "5:4"
+              },
+              {
+                "label": "7:6",
+                "value": "7:6"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              },
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "3:2",
+                "value": "3:2"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "4:5",
+                "value": "4:5"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "2:3",
+                "value": "2:3"
+              }
+            ]
+          },
+          "background": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "自动",
+                "value": "auto"
+              },
+              {
+                "label": "不透明",
+                "value": "opaque"
+              },
+              {
+                "label": "透明",
+                "value": "transparent"
+              }
+            ]
+          },
+          "count": {
+            "enabled": true,
+            "max": 1,
+            "min": 1,
+            "quickCount": 1
+          },
+          "customDimensions": {
+            "enabled": true
+          },
+          "moderation": {
+            "enabled": false,
+            "options": []
+          },
+          "outputCompression": {
+            "default": 100,
+            "enabled": false,
+            "max": 100,
+            "min": 0
+          },
+          "outputFormat": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "PNG",
+                "value": "png"
+              },
+              {
+                "label": "JPEG",
+                "value": "jpeg"
+              },
+              {
+                "label": "WEBP",
+                "value": "webp"
+              }
+            ]
+          },
+          "quality": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "中（默认）",
+                "value": "medium"
+              },
+              {
+                "label": "低",
+                "value": "low"
+              },
+              {
+                "label": "高",
+                "value": "high"
+              },
+              {
+                "label": "超高",
+                "value": "xhigh"
+              },
+              {
+                "label": "最高",
+                "value": "max"
+              }
+            ]
+          }
+        },
+        "referenceLimits": {
+          "audios": 0,
+          "images": 16,
+          "mask": 0,
+          "videos": 0
+        }
+      }
+    },
+    {
+      "model_name": "gpt-image-2.5-sunburst-4k",
+      "description": "GPT Image 2.5 Sunburst 4K 固定档位。",
+      "vendor_id": 2,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.22,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "IMAGE",
+        "全模型-无claude/gpt"
+      ],
+      "supported_endpoint_types": [
+        "openai-image"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(param(\"quality\") == \"xhigh\" || param(\"quality\") == \"max\") ? tier(\"xhigh\", n * 0.44) : tier(\"std\", n * 0.22)",
+      "billing_capability": "image",
+      "request_unit": "image",
+      "image_ui_params": {
+        "hints": [
+          {
+            "text": "GPT Image 2.5 Sunburst 4K 固定计费档位；quality 默认 medium，可选 low / medium / high / xhigh / max。low / medium / high / 空 / auto 按标准档计费，xhigh / max 按标准档双倍。精确 size 原样发送：16px 对齐、最长边不超过 3840px、比例不超过 3:1、总像素 655360–8294400；比例输入按 4K 预算计算。"
+          }
+        ],
+        "id": "gpt-image-2.5-sunburst-4k",
+        "params": {
+          "aspectRatio": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "1:1",
+                "value": "1:1"
+              },
+              {
+                "label": "5:4",
+                "value": "5:4"
+              },
+              {
+                "label": "7:6",
+                "value": "7:6"
+              },
+              {
+                "label": "9:16",
+                "value": "9:16"
+              },
+              {
+                "label": "21:9",
+                "value": "21:9"
+              },
+              {
+                "label": "16:9",
+                "value": "16:9"
+              },
+              {
+                "label": "3:2",
+                "value": "3:2"
+              },
+              {
+                "label": "4:3",
+                "value": "4:3"
+              },
+              {
+                "label": "4:5",
+                "value": "4:5"
+              },
+              {
+                "label": "3:4",
+                "value": "3:4"
+              },
+              {
+                "label": "2:3",
+                "value": "2:3"
+              }
+            ]
+          },
+          "background": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "自动",
+                "value": "auto"
+              },
+              {
+                "label": "不透明",
+                "value": "opaque"
+              },
+              {
+                "label": "透明",
+                "value": "transparent"
+              }
+            ]
+          },
+          "count": {
+            "enabled": true,
+            "max": 1,
+            "min": 1,
+            "quickCount": 1
+          },
+          "customDimensions": {
+            "enabled": true
+          },
+          "moderation": {
+            "enabled": false,
+            "options": []
+          },
+          "outputCompression": {
+            "default": 100,
+            "enabled": false,
+            "max": 100,
+            "min": 0
+          },
+          "outputFormat": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "PNG",
+                "value": "png"
+              },
+              {
+                "label": "JPEG",
+                "value": "jpeg"
+              },
+              {
+                "label": "WEBP",
+                "value": "webp"
+              }
+            ]
+          },
+          "quality": {
+            "enabled": true,
+            "options": [
+              {
+                "label": "中（默认）",
+                "value": "medium"
+              },
+              {
+                "label": "低",
+                "value": "low"
+              },
+              {
+                "label": "高",
+                "value": "high"
+              },
+              {
+                "label": "超高",
+                "value": "xhigh"
+              },
+              {
+                "label": "最高",
+                "value": "max"
+              }
+            ]
+          }
+        },
+        "referenceLimits": {
+          "audios": 0,
+          "images": 16,
+          "mask": 0,
+          "videos": 0
+        }
+      }
+    }
+  ],
+  "group_ratio": {
+    "IMAGE": 1
+  }
+}

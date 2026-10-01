@@ -85,16 +85,66 @@ describe("supplier API", () => {
     );
     expect(changed.status).toBe(200);
     const saved = await changed.json();
-    expect(saved.siteLogin).toEqual({ username: "user", configured: true });
+    expect(saved.siteLogin).toEqual({ authMode: "password", username: "user", configured: true });
     expect(JSON.stringify(saved)).not.toMatch(
       /encryptedPassword|never-return-this-password/u,
     );
     const listed = await (await GET()).text();
     expect(listed).not.toMatch(/encryptedPassword|never-return-this-password/u);
-    expect(
-      (await mocks.repository.listSuppliers())[0]?.state?.siteLogin
-        ?.encryptedPassword,
-    ).toBeTruthy();
+    const login = (await mocks.repository.listSuppliers())[0]?.state?.siteLogin;
+    expect(login && "encryptedPassword" in login && login.encryptedPassword).toBeTruthy();
+  });
+  it("saves a site access token privately and retains it when updating only the user ID", async () => {
+    const created = await POST(new Request("http://localhost/api/suppliers", {
+      method: "POST",
+      body: JSON.stringify({ name: "Token site", siteUrl: "https://token.example.test", kind: "newapi" }),
+    }));
+    const record = await created.json();
+    const context = { params: Promise.resolve({ id: record.id }) };
+    const patch = (body: unknown) => PATCH(new Request("http://localhost/api/suppliers/id", {
+      method: "PATCH", body: JSON.stringify(body),
+    }), context);
+    const changed = await patch({ expectedRevision: record.state.revision,
+      siteLogin: { authMode: "access-token", accessToken: "mock-site-access-token-private", userId: "42" } });
+    expect(changed.status).toBe(200);
+    const saved = await changed.json();
+    expect(saved.siteLogin).toEqual({ authMode: "access-token", configured: true, userId: "42" });
+    const privateLogin = (await mocks.repository.listSuppliers())[0]?.state?.siteLogin;
+    expect(privateLogin?.authMode).toBe("access-token");
+    if (privateLogin?.authMode !== "access-token") throw new Error("Expected private token credential");
+    expect(privateLogin.encryptedAccessToken).toBeTruthy();
+    expect(privateLogin.encryptedAccessToken).not.toBe("mock-site-access-token-private");
+    expect(JSON.stringify(saved)).not.toMatch(/encryptedAccessToken|accessToken|mock-site-access-token-private/u);
+    const updated = await patch({ expectedRevision: saved.state.revision,
+      siteLogin: { authMode: "access-token", userId: "43" } });
+    expect(updated.status).toBe(200);
+    const metadata = await updated.json();
+    expect(metadata.siteLogin).toEqual({ authMode: "access-token", configured: true, userId: "43" });
+    const kept = (await mocks.repository.listSuppliers())[0]?.state?.siteLogin;
+    expect(kept?.authMode === "access-token" && kept.encryptedAccessToken).toBe(privateLogin.encryptedAccessToken);
+    expect(await (await GET()).text()).not.toMatch(/encryptedAccessToken|accessToken|mock-site-access-token-private/u);
+    const conflict = await patch({ expectedRevision: saved.state.revision,
+      siteLogin: { authMode: "access-token", accessToken: "mock-rejected-token-private" } });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.text()).not.toMatch(/mock-rejected-token-private|mock-site-access-token-private|encryptedAccessToken/u);
+  });
+  it("rejects mixed secrets and metadata-only token configuration without saved credentials", async () => {
+    const created = await POST(new Request("http://localhost/api/suppliers", {
+      method: "POST", body: JSON.stringify({ name: "Empty site", siteUrl: "https://empty.example.test" }),
+    }));
+    const record = await created.json();
+    const context = { params: Promise.resolve({ id: record.id }) };
+    for (const login of [
+      { authMode: "access-token", accessToken: "mock-private-token", username: "user", password: "mock-private-password" },
+      { authMode: "access-token", userId: "42" },
+    ]) {
+      const response = await PATCH(new Request("http://localhost/api/suppliers/id", {
+        method: "PATCH", body: JSON.stringify({ expectedRevision: record.state.revision, siteLogin: login }),
+      }), context);
+      expect(response.status).toBe(400);
+      expect(await response.text()).not.toMatch(/mock-private-token|mock-private-password/u);
+    }
+    expect((await mocks.repository.listSuppliers())[0]?.state?.siteLogin).toBeUndefined();
   });
   it("creates a zero-group supplier, lists it, and manually adds a group", async () => {
     const created = await POST(

@@ -14,6 +14,7 @@ import { discoverSource, initializeProfile, loadProfile } from "./data.mjs";
 import { DesktopUpdater } from "./updater.mjs";
 import { configureUpdates } from "./update-config.mjs";
 import { ReferenceChannel } from "./reference-channel.mjs";
+import { exitWaitPresentation } from "./exit-policy.mjs";
 
 app.setAppUserModelId(APP_ID);
 const smoke = process.argv.includes("--smoke-test");
@@ -234,8 +235,8 @@ async function requestExit(install = false) {
     const current = await runtimeRequest("/api/desktop/lifecycle", { draining: true });
     if (epoch !== exitEpoch) { await runtimeRequest("/api/desktop/lifecycle", { draining: false }); return; }
     if (current.activeRuns || current.activeWrites) {
-      const result = await dialog.showMessageBox(window, { type: "question", title: "仍有任务正在运行", message: install ? "生成完成后重启并更新？" : "任务完成后退出超级画布？",
-        detail: "等待期间暂停新的编辑和生成。你可以随时返回软件。", buttons: ["完成后继续", "返回软件"], defaultId: 0, cancelId: 1 });
+      const result = await dialog.showMessageBox(window, { type: "question", ...exitWaitPresentation(current, install),
+        buttons: ["完成后继续", "返回软件"], defaultId: 0, cancelId: 1 });
       if (epoch !== exitEpoch) return;
       if (result.response === 1) { await cancelExit(); return; }
       if (install) updater.patch({ phase: "waiting_for_idle" });

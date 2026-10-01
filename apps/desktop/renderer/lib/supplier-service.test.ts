@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRepository } from "@super-canvas/db";
+import { MemoryRepository, SupplierConflictError } from "@super-canvas/db";
 
 const mocks = vi.hoisted(() => ({
   repository: undefined as unknown as MemoryRepository,
@@ -37,6 +37,7 @@ import {
   scanSupplierRecord,
   supplierConfigForConnection,
   SupplierInputSchema,
+  SupplierPatchSchema,
   publicSupplierRecord,
 } from "./supplier-service";
 import { decryptSecret, parseSupplierCatalog, SupplierLoginError } from "@super-canvas/providers";
@@ -387,6 +388,96 @@ describe("supplier service", () => {
       changed.state!.revision,
     );
     expect(restored.state?.siteLogin).toBeUndefined();
+  });
+
+  it("encrypts site tokens and retains only same-source token credentials for ID-only edits", async () => {
+    const created = await createSupplierRecord({ name: "Token", siteUrl: "https://token.invalid", kind: "newapi" });
+    let saved = await patchSupplierRecord(created.id, { siteLogin: { authMode: "access-token", accessToken: "  fixture-site-token  ", userId: "42" } });
+    const login = saved.state!.siteLogin!;
+    expect(login.authMode).toBe("access-token");
+    expect(decryptSecret(login.encryptedAccessToken!, requireServerMasterKey())).toBe("fixture-site-token");
+    expect(login).not.toHaveProperty("encryptedPassword");
+    expect(publicSupplierRecord(saved).siteLogin).toEqual({ authMode: "access-token", configured: true, userId: "42" });
+    expect(JSON.stringify(publicSupplierRecord(saved))).not.toMatch(/fixture-site-token|encryptedAccessToken|encryptedPassword/);
+    saved = await patchSupplierRecord(saved.id, { siteLogin: { authMode: "access-token", userId: "43" } });
+    expect(saved.state?.siteLogin).toMatchObject({ encryptedAccessToken: login.encryptedAccessToken, userId: "43" });
+    saved = await patchSupplierRecord(saved.id, { siteLogin: { authMode: "access-token" } });
+    expect(saved.state?.siteLogin?.userId).toBe("43");
+    saved = await patchSupplierRecord(saved.id, { siteLogin: { authMode: "access-token", userId: null } });
+    expect(saved.state?.siteLogin).not.toHaveProperty("userId");
+    saved = await patchSupplierRecord(saved.id, { name: "Renamed" });
+    expect(saved.state?.siteLogin?.encryptedAccessToken).toBe(login.encryptedAccessToken);
+    await expect(patchSupplierRecord(saved.id, { siteUrl: "https://other-token.invalid", siteLogin: { authMode: "access-token", userId: "44" } })).rejects.toThrow("请填写站点访问令牌");
+    expect((await getSupplierRecord(saved.id))?.siteUrl).toBe("https://token.invalid");
+  });
+
+  it("replaces authentication branches and rejects mode switches without a new token", async () => {
+    const created = await createSupplierRecord({ name: "Modes", siteUrl: "https://modes.invalid" });
+    let saved = await patchSupplierRecord(created.id, { siteLogin: { username: "account", password: "fixture-password" } });
+    await expect(patchSupplierRecord(saved.id, { siteLogin: { authMode: "access-token" } })).rejects.toThrow("请填写站点访问令牌");
+    saved = await patchSupplierRecord(saved.id, { siteLogin: { authMode: "access-token", accessToken: "fixture-site-token" } });
+    expect(saved.state?.siteLogin).not.toHaveProperty("encryptedPassword");
+    expect(saved.state?.siteLogin).not.toHaveProperty("username");
+    saved = await patchSupplierRecord(saved.id, { siteLogin: { authMode: "password", username: "account", password: "new-fixture-password" } });
+    expect(saved.state?.siteLogin).not.toHaveProperty("encryptedAccessToken");
+    expect(publicSupplierRecord(saved).siteLogin).toEqual({ authMode: "password", configured: true, username: "account" });
+  });
+
+  it("does not archive or restore token credentials and rejects stale secret updates", async () => {
+    const created = await createSupplierRecord({ name: "History", siteUrl: "https://history-token.invalid" });
+    const saved = await patchSupplierRecord(created.id, { siteLogin: { authMode: "access-token", accessToken: "fixture-site-token", userId: "42" } });
+    const changed = await patchSupplierRecord(saved.id, { siteUrl: "https://new-history-token.invalid" });
+    expect(changed.state?.siteLogin).toBeUndefined();
+    expect(JSON.stringify(changed.state?.history)).not.toMatch(/fixture-site-token|encryptedAccessToken|encryptedPassword|userId/);
+    const restored = await restoreSupplierHistory(changed.id, changed.state!.history[0]!.id, changed.state!.revision);
+    expect(restored.state?.siteLogin).toBeUndefined();
+    await expect(patchSupplierRecord(saved.id, { expectedRevision: saved.state!.revision, siteLogin: { authMode: "access-token", accessToken: "stale-fixture-token" } })).rejects.toBeInstanceOf(SupplierConflictError);
+    expect(JSON.stringify(publicSupplierRecord((await getSupplierRecord(saved.id))!))).not.toContain("stale-fixture-token");
+    const current = await patchSupplierRecord(saved.id, { siteLogin: { authMode: "access-token", accessToken: "fixture-site-token" } });
+    expect((await patchSupplierRecord(current.id, { siteLogin: null })).state?.siteLogin).toBeUndefined();
+  });
+
+  it("validates strict authentication branches and a numeric user ID", () => {
+    for (const siteLogin of [
+      { authMode: "access-token", accessToken: "fixture-token", password: "password" },
+      { authMode: "password", username: "account", password: "password", accessToken: "fixture-token" },
+      { authMode: "access-token", accessToken: " " },
+      { authMode: "access-token", userId: "0" },
+      { authMode: "access-token", userId: "42\r\nAuthorization: injected" },
+      { authMode: "access-token", accessToken: "fixture\ntoken" },
+      { authMode: "access-token", accessToken: "a".repeat(8193) },
+      { authMode: "access-token", userId: "9223372036854775808" },
+      { authMode: "access-token", userId: "99999999999999999999" },
+    ]) expect(SupplierPatchSchema.safeParse({ siteLogin }).success).toBe(false);
+    expect(SupplierPatchSchema.parse({ siteLogin: { authMode: "access-token", accessToken: " fixture-token ", userId: null } }).siteLogin).toEqual({ authMode: "access-token", accessToken: "fixture-token", userId: null });
+    expect(SupplierPatchSchema.parse({ siteLogin: { authMode: "access-token", accessToken: `Bearer ${"a".repeat(8192)}`, userId: "9223372036854775807" } }).siteLogin).toMatchObject({ accessToken: "a".repeat(8192), userId: "9223372036854775807" });
+    expect(SupplierPatchSchema.parse({ siteLogin: { authMode: "access-token", accessToken: " Bearer fixture-token " } }).siteLogin).toMatchObject({ accessToken: "fixture-token" });
+  });
+
+  it("uses the saved token session for scans and discards responses after authentication changes", async () => {
+    const created = await createSupplierRecord({ name: "Scan token", siteUrl: "https://scan-token.invalid", kind: "newapi" });
+    const saved = await patchSupplierRecord(created.id, { siteLogin: { authMode: "access-token", accessToken: "fixture-old-token", userId: "42" }, catalog: { groups: [{ id: "manual", label: "Manual", models: [] }] } });
+    const sessionFetch = vi.fn();
+    mocks.login.mockResolvedValue({ kind: "newapi", fetch: sessionFetch });
+    mocks.discover.mockImplementation(async () => {
+      await patchSupplierRecord(saved.id, { siteLogin: { authMode: "access-token", accessToken: "fixture-new-token" } });
+      return { groups: [{ id: "stale", label: "Stale", models: [] }], kind: "newapi", status: "live", checkedAt: "now" };
+    });
+    const scanned = await scanSupplierRecord(saved.id);
+    expect(mocks.login).toHaveBeenCalledWith({ siteUrl: saved.siteUrl, kind: "newapi", credentials: { accessToken: "fixture-old-token", userId: "42" } });
+    expect(mocks.discover).toHaveBeenCalledWith({ siteUrl: saved.siteUrl, apiUrl: saved.apiUrl, kind: "newapi" }, sessionFetch);
+    expect(scanned.catalog.groups.map(group => group.id)).toEqual(["manual"]);
+    expect(decryptSecret(scanned.state!.siteLogin!.encryptedAccessToken!, requireServerMasterKey())).toBe("fixture-new-token");
+  });
+
+  it.each(["invalid_token", "permission_denied", "user_id_required"] as const)("classifies %s without storing the token in scan errors", async code => {
+    const created = await createSupplierRecord({ name: "Token failure", siteUrl: "https://failed-token.invalid" });
+    const saved = await patchSupplierRecord(created.id, { siteLogin: { authMode: "access-token", accessToken: "fixture-site-token" } });
+    mocks.login.mockRejectedValue(new SupplierLoginError("Bearer fixture-site-token", 403, code));
+    const scanned = await scanSupplierRecord(saved.id);
+    expect(scanned).toMatchObject({ scanStatus: "unauthorized", scanErrorCode: code, scanRetryable: false });
+    expect(scanned.scanError).not.toContain("fixture-site-token");
+    expect(JSON.stringify(publicSupplierRecord(scanned))).not.toContain("fixture-site-token");
   });
 
   it("preserves the existing catalog when saved login cannot be used", async () => {

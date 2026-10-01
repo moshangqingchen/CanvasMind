@@ -16,6 +16,7 @@ import type {
   ValidationResult,
 } from "./contracts.js";
 import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
+import { cangyuanCurrentRequestIssues, cangyuanCurrentTransport, isCangyuanCurrentRequest, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
 import {
   assertValidResult,
   getProviderTaskId,
@@ -81,6 +82,8 @@ export interface RestRequestMapping {
   omitValues?: readonly (string | number | boolean | null)[];
   /** Optional primitive coercion applied after the source value is resolved. */
   coerce?: "string" | "number" | "boolean";
+  /** Send this mapping only when every request JSONPath matches its enum. */
+  when?: readonly { path: string; values: readonly (string | number | boolean | null)[] }[];
 }
 
 export interface RestResponseMapping {
@@ -187,7 +190,9 @@ interface RestTaskEnvelope {
 }
 
 /** The selected request, not a mixed group's blanket flag, decides transport. */
-export function restRequestRequiresPublicAssets(value: unknown, model?: string, operation?: ProviderOperation): boolean {
+export function restRequestRequiresPublicAssets(value: unknown, model?: string, operation?: ProviderOperation, settings?: unknown): boolean {
+  if (operation?.startsWith("image.") && isRecord(settings) &&
+    canApplyCangyuanCurrentContract(settings, typeof settings.baseUrl === "string" ? settings.baseUrl : undefined, model)) return true;
   if (!isRecord(value) || value.assetsRequirePublicUrls !== true) return false;
   const config = value as unknown as RestConnectorConfig;
   const modelOverride = model ? config.modelOverrides?.[model] : undefined;
@@ -232,6 +237,31 @@ function imageJsonMaxResponseBytes(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Repair only a built-in/current contract or an identifiable legacy template. */
+function managesCangyuanCurrentTransport(settings: Readonly<Record<string, unknown>>, baseUrl: string | undefined, config: RestConnectorConfig, model?: string): boolean {
+  if (!isCangyuanCurrentRequest(model, baseUrl)) return false;
+  if ((Array.isArray(settings.manualModels) && settings.manualModels.some(row => isRecord(row) && row.id === model)) ||
+      (isRecord(settings.autoModelInterfaces) && settings.autoModelInterfaces[model!])) return false;
+  const override = config.modelOverrides?.[model!];
+  if (JSON.stringify(override) === JSON.stringify(cangyuanCurrentTransport(model!))) return true;
+  if (!["cangyuan-gpt-image-2", "cangyuan-gpt-image-2-4k"].includes(String(settings.preset))) return false;
+  const definition = override?.submit ?? config.submit;
+  if (definition.path !== "/v1/images/generations" || definition.bodyMode !== "json" || !definition.mappings?.length) return false;
+  if (definition.template && (!isRecord(definition.template) || Object.keys(definition.template).some(k => !["async", "n"].includes(k)))) return false;
+  const expected: Record<string, readonly string[]> = { "/model": ["$.model"], "/prompt": ["$.prompt"], "/size": ["$.parameters.size", "$.parameters.aspect_ratio"],
+    "/quality": ["$.parameters.quality"], "/background": ["$.parameters.background"], "/n": ["$.parameters.n"], "/aspect_ratio": ["$.parameters.aspect_ratio"] };
+  return definition.mappings.every(mapping => !mapping.when && (
+    mapping.source.kind === "request" && expected[mapping.target]?.includes(mapping.source.path) ||
+    mapping.target === "/response_format" && mapping.source.kind === "literal" && mapping.source.value === "url" ||
+    mapping.target === "/images" && mapping.source.kind === "assets" && mapping.source.assetKind === "image"
+  ));
+}
+
+export function canApplyCangyuanCurrentContract(settings: Readonly<Record<string, unknown>>, baseUrl: string | undefined, model?: string): boolean {
+  const connector = settings.connector;
+  return isRecord(connector) && isRecord(connector.submit) && managesCangyuanCurrentTransport(settings, baseUrl, connector as unknown as RestConnectorConfig, model);
 }
 
 function looksLikeAsset(value: unknown): value is ProviderAssetInput {
@@ -321,6 +351,16 @@ function assertRequestDefinition(
     for (const key of ["omitIfUndefined", "omitIfEmpty"] as const) {
       if (mapping[key] !== undefined && typeof mapping[key] !== "boolean") {
         throw new Error(`${label}.mappings[${index}].${key} must be boolean`);
+      }
+    }
+    if (mapping.when !== undefined) {
+      if (!Array.isArray(mapping.when) || mapping.when.length === 0) throw new Error(`${label}.mappings[${index}].when must be a nonempty array`);
+      for (const condition of mapping.when) {
+        if (!isRecord(condition) || typeof condition.path !== "string" || !condition.path.startsWith("$") ||
+          !Array.isArray(condition.values) || condition.values.length === 0 || condition.values.some(item =>
+            item !== null && typeof item !== "string" && typeof item !== "boolean" && (typeof item !== "number" || !Number.isFinite(item))))
+          throw new Error(`${label}.mappings[${index}].when must contain JSONPath and primitive enum values`);
+        readJsonPath(undefined, condition.path);
       }
     }
     if (
@@ -1017,7 +1057,14 @@ export class GenericRestAdapter implements ProviderAdapter {
       model && operation
         ? base.modelOverrides?.[model]?.operationOverrides?.[operation]
         : undefined;
-    return applyOverride(operationConfig, modelOperationOverride);
+    const selected = applyOverride(operationConfig, modelOperationOverride);
+    // Repair stale family-inherited mappings for these exact public IDs only.
+    // Model restrictions and credentials remain owned by the saved connection.
+    if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, base, model)) {
+      const current = cangyuanCurrentTransport(model!)!;
+      return { ...applyOverride(applyOverride(selected, current), operation ? current.operationOverrides?.[operation] : undefined), assetsRequirePublicUrls: true };
+    }
+    return selected;
   }
 
   private timeoutFor(
@@ -1122,6 +1169,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     if (mode === "none") return undefined;
     let value: unknown = cloneJsonValue(definition.template ?? {});
     for (const mapping of definition.mappings ?? []) {
+      if (mapping.when && !mapping.when.every(condition => condition.values.some(value => Object.is(value, readJsonPath(request, condition.path))))) continue;
       const mapped = coerceMappingValue(
         sourceValue(mapping.source, request, task),
         mapping.coerce,
@@ -1277,6 +1325,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     try {
       const connection = await this.connections.resolve(request.connectionId);
       const baseConfig = this.configFrom(connection);
+      if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, baseConfig, request.model)) issues.push(...cangyuanCurrentRequestIssues(request, connection.baseUrl));
       const config = this.configFrom(
         connection,
         request.model,
@@ -1507,6 +1556,8 @@ export class GenericRestAdapter implements ProviderAdapter {
       request.operation,
     );
     let outboundRequest = withNearestSupportedAspectRatio(request, config);
+    if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, this.configFrom(connection), request.model))
+      outboundRequest = withCangyuanCurrentRequestParameters(outboundRequest, connection.baseUrl);
     if (request.assets?.length && restRequestRequiresPublicAssets(config)) {
       const needsHosting = request.assets.some(asset => !asset.url?.startsWith("https://"));
       if (needsHosting && !referenceImageHostingEnabled(connection.settings))

@@ -1,0 +1,15 @@
+.facts {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  color: #b4b9c6;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.facts code {
+  color: #e7e9f0;
+  font-size: inherit;
+}

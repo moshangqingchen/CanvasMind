@@ -155,6 +155,7 @@ const LABELS: Record<string, string> = { none: "无", minimal: "极低", low: "�
 // Exact official model families only. Provider declarations and current-Key
 // evidence remain separate; a documented fallback is never a channel probe.
 const OFFICIAL_REASONING_OPTIONS: Readonly<Record<string, readonly string[]>> = {
+  "gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"],
   "gpt-6-astra": ["low", "medium", "high", "xhigh", "max"],
   "gpt-6-sol": ["none", "low", "medium", "high", "xhigh", "max"],
   "gpt-6-luna": ["none", "low", "medium", "high", "xhigh", "max"],
@@ -193,6 +194,7 @@ const CLAUDE_REASONING_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   "claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
   "claude-opus-5-5": ["low", "medium", "high", "xhigh", "max"],
   "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
+  "claude-sonnet-5-5": ["low", "medium", "high", "xhigh", "max"],
   "claude-fable-5": ["low", "medium", "high", "xhigh", "max"],
   "claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
 };
@@ -209,7 +211,7 @@ function officialReasoningProfile(modelId: string) {
   const sourceUrl = OFFICIAL_REASONING_OPTIONS[canonicalModel] ? `https://developers.openai.com/api/docs/models/${canonicalModel}` :
     CLAUDE_REASONING_OPTIONS[canonicalModel] ? "https://platform.claude.com/docs/en/build-with-claude/effort" :
       canonicalModel === "gemini-3-pro-preview" ? "https://ai.google.dev/gemini-api/docs/thinking" : "https://ai.google.dev/gemini-api/docs/generate-content/thinking";
-  const checkedAt = CLAUDE_REASONING_OPTIONS[canonicalModel] ? "2026-09-24"
+  const checkedAt = ["gpt-6.1-sol", "claude-sonnet-5-5"].includes(canonicalModel) ? "2026-10-01" : CLAUDE_REASONING_OPTIONS[canonicalModel] ? "2026-09-24"
     : ["gpt-6-sol", "gpt-6-luna"].includes(canonicalModel) ? "2026-09-23" : "2026-09-22";
   return { options, sourceUrl, checkedAt };
 }

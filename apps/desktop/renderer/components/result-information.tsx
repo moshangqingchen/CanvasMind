@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { Copy, FileImage, X } from "lucide-react";
 import type { AssetView, CanvasNodeData, RunSnapshot } from "./types";
 import { localizeRunError } from "../lib/error-localization";
+import { taskConnectionLabel, taskOutcomeLabel } from "../lib/task-evidence";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
 import { generationDetailsFromRun, resultElapsed, resultFileSize, resultPrompt, resultReferenceInputs } from "../lib/result-provenance";
 import { useDialogFocus } from "./use-dialog-focus";
@@ -138,7 +139,6 @@ export function ResultInformation({
   const close = () => setOpen(false);
   const dialog = useDialogFocus(open, close);
   const taskId = data.generatedFromRunId ?? data.generatedPendingRequestId;
-  const error = localizeRunError(data.generatedError, { provider: data.generatedProvider, supplier: data.generatedSupplier });
   const [errorCopy, setErrorCopy] = useState("复制错误详情");
   const [loadedRun, setLoadedRun] = useState<{ id: string; node: RunSnapshot["nodes"][number] } | null>(null);
   const [detailsState, setDetailsState] = useState<"loading" | "ready" | "unavailable">("loading");
@@ -152,7 +152,8 @@ export function ResultInformation({
   const prompt = resultPrompt(data, details);
   const parameters = runNode?.request?.parameters ?? data.generatedParameters;
   const status = runNode?.status ?? data.generatedStatus;
-  const statusLabel = status ? pendingGeneratedResultLabel(status, details.submissionPhase) : "未记录";
+  const error = localizeRunError(data.generatedError, { provider: data.generatedProvider, supplier: data.generatedSupplier, status, providerTaskStatus: details.taskEvidence?.status });
+  const statusLabel = taskOutcomeLabel(status, details.taskEvidence, runNode?.recoveryAction ?? data.generatedRecoveryAction) ?? (status ? pendingGeneratedResultLabel(status, details.submissionPhase) : "未记录");
   const operationLabel = ({ "image.generate": "文生图", "image.edit": "参考图生成 / 编辑", "video.generate": "文生视频", "video.image-to-video": "图生视频" } as Record<string, string>)[details.operation ?? ""] ?? details.operation ?? "未记录";
   const unit = data.assetKind === "video" ? "个" : "张";
   const requestedCount = Number(parameters?.n);
@@ -272,10 +273,7 @@ export function ResultInformation({
                     <dd>{runNode?.request?.model ?? data.generatedModel ?? "未记录"}</dd>
                     <dt>供应商 / 连接</dt>
                     <dd>
-                      {runNode?.request?.connectionName ?? data.generatedConnectionName ??
-                        data.generatedSupplier ??
-                        data.generatedProvider ??
-                        "未记录"}
+                      {taskConnectionLabel(runNode?.request ?? { connectionName: data.generatedConnectionName, supplier: data.generatedSupplier, modelGroup: data.generatedGroup })}
                     </dd>
                     {data.generatedGroup ? (
                       <>
@@ -315,7 +313,9 @@ export function ResultInformation({
                     <dd>{details.finishedAt ? new Date(details.finishedAt).toLocaleString("zh-CN") : "未记录"}</dd>
                     <dt>耗时（含排队）</dt>
                     <dd>{resultElapsed(data.generatedCreatedAt, details.finishedAt ?? asset?.createdAt)}</dd>
-                    <dt>任务编号</dt>
+                    <dt>供应商任务号</dt>
+                    <dd>{details.taskEvidence?.taskId ?? "未取得"}{details.taskEvidence?.taskId ? <button type="button" className="icon-button" aria-label="复制供应商任务号" onClick={() => copyDetail(details.taskEvidence!.taskId, "供应商任务号")}><Copy size={15} aria-hidden="true" /></button> : null}</dd>
+                    <dt>本地运行编号</dt>
                     <dd>{taskId ?? "尚未分配"}</dd>
                   </dl>
                   <section aria-label="参考素材详情" className="result-info-section">

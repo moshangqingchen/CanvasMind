@@ -1,0 +1,99 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 24px;
+  background: rgb(16 17 20 / 92%);
+  color: #eef0f5;
+}
+
+.card {
+  width: min(100%, 480px);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid #444954;
+  border-radius: 12px;
+  background: #1e2026;
+  color: #eef0f5;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 35%);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.spinner {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #626978;
+  border-top-color: #d8dce5;
+  border-radius: 50%;
+  animation: feedback-spin 900ms linear infinite;
+}
+
+.title {
+  margin: 0;
+  color: #eef0f5;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.message {
+  margin: 16px 0;
+  color: #bbc1cd;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.error {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #75414d;
+  border-radius: 8px;
+  background: #38232b;
+  color: #ffc0c9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  z-index: 10001;
+  max-width: min(480px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid #75414d;
+  border-radius: 10px;
+  background: #202228;
+  color: #ffc0c9;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+}
+
+@keyframes feedback-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+
+:global(html[data-motion="off"]) .spinner { animation: none; }

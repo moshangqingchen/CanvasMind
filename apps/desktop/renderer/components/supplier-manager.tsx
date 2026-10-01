@@ -68,6 +68,8 @@ import {
   type SupplierKind,
   type SupplierModelProtocol,
   type SupplierRecord,
+  type SupplierSiteAuthMode,
+  type SupplierSiteLoginInput,
 } from "../lib/client-suppliers";
 import { supplierConnectionDraft } from "../lib/supplier-connection-draft";
 import "./supplier-manager.css";
@@ -129,6 +131,21 @@ function catalogStatus(record?: SupplierRecord): string {
   if (record.scanErrorCode === "unsupported_platform") return "平台类型待确认";
   if (record.scanStatus === "unauthorized") return "站点登录待确认";
   return "扫描未完成";
+}
+
+function supplierScanHint(record: SupplierRecord): string {
+  switch (record.scanErrorCode) {
+    case "rate_limited": return "站点正在限流，请稍后重试，无需重新填写账号。";
+    case "verification_required": return "请前往站点完成验证，再回来扫描。";
+    case "unsupported_platform": return "请在连接配置中确认平台类型与地址。";
+    case "invalid_token": return "访问令牌无效、已过期或已撤销，请在站点获取新令牌，再到连接配置中更新。";
+    case "permission_denied": return "访问令牌权限不足，请在站点检查后台账号信息的读取权限后重试。";
+    case "user_id_required": return "该站点需要用户 ID，请在连接配置中填写后台账号对应的用户 ID；已保存令牌可留空保留。";
+    case "invalid_credentials": return record.siteLogin?.authMode === "access-token"
+      ? "请检查站点访问令牌与用户 ID；分组 API Key 单独配置。"
+      : "请检查站点账号与密码；分组 API Key 单独配置。";
+    default: return "已保留上次配置，可在连接配置中查看并重试。";
+  }
 }
 
 function errorMessage(error: unknown, secret?: string): string {
@@ -898,10 +915,15 @@ function SupplierDetail({
   const [siteUrl, setSiteUrl] = useState(entry.siteUrl);
   const [apiUrl, setApiUrl] = useState(entry.apiUrl);
   const [kind, setKind] = useState<SupplierKind>(entry.record?.kind ?? "auto");
+  const [authMode, setAuthMode] = useState<SupplierSiteAuthMode>(
+    entry.record?.siteLogin?.authMode ?? "password",
+  );
   const [username, setUsername] = useState(
     entry.record?.siteLogin?.username ?? "",
   );
   const [password, setPassword] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [userId, setUserId] = useState(entry.record?.siteLogin?.userId ?? "");
   const [clearLogin, setClearLogin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -921,13 +943,37 @@ function SupplierDetail({
     setAppliedGroupQuery("");
   }
   const record = entry.record;
+  const savedAuthMode = record?.siteLogin?.authMode ?? "password";
+  const showUserId = kind === "auto" || kind === "newapi";
+  const sameLoginSource = (() => {
+    if (!record) return false;
+    try {
+      return cleanSupplierAddress(siteUrl || apiUrl) === cleanSupplierAddress(record.siteUrl || record.apiUrl) &&
+        cleanSupplierAddress(apiUrl || siteUrl) === cleanSupplierAddress(record.apiUrl || record.siteUrl);
+    } catch {
+      return false;
+    }
+  })();
+  const keepSavedLogin = Boolean(record?.siteLogin?.configured && authMode === savedAuthMode && sameLoginSource && !clearLogin);
   const [detailTab, setDetailTab] = useState<"models" | "connection" | "verification">(record?.catalog.groups.length ? "models" : "connection");
   const basicsDirty = name !== entry.name || siteUrl !== entry.siteUrl || apiUrl !== entry.apiUrl ||
-    kind !== (record?.kind ?? "auto") || username !== (record?.siteLogin?.username ?? "") || Boolean(password || clearLogin || groupName);
+    kind !== (record?.kind ?? "auto") || authMode !== savedAuthMode ||
+    (authMode === "password" ? username !== (record?.siteLogin?.username ?? "") || Boolean(password) :
+      Boolean(accessToken) || (showUserId && userId !== (record?.siteLogin?.userId ?? ""))) || Boolean(clearLogin || groupName);
   useSettingsDraft({ label: `${entry.name} 的地址与登录配置`, dirty: basicsDirty, busy, onDiscard: () => {
     setName(entry.name); setSiteUrl(entry.siteUrl); setApiUrl(entry.apiUrl); setKind(record?.kind ?? "auto");
-    setUsername(record?.siteLogin?.username ?? ""); setPassword(""); setClearLogin(false); setGroupName("");
+    setAuthMode(savedAuthMode); setUsername(record?.siteLogin?.username ?? ""); setPassword("");
+    setAccessToken(""); setUserId(record?.siteLogin?.userId ?? ""); setClearLogin(false); setGroupName("");
   } });
+
+  function changeAuthMode(mode: SupplierSiteAuthMode) {
+    setAuthMode(mode);
+    setPassword("");
+    setAccessToken("");
+    setUsername(record?.siteLogin?.username ?? "");
+    setUserId(record?.siteLogin?.userId ?? "");
+    setClearLogin(false);
+  }
   const connections = allConnections.filter((connection) =>
     supplierOwnsConnection(entry, connection),
   );
@@ -969,21 +1015,36 @@ function SupplierDetail({
     : activeGroup;
 
   async function saveBasics(): Promise<SupplierRecord> {
-    if (password && !username.trim()) throw new Error("请填写站点账号。");
-    if (
-      !password &&
-      !clearLogin &&
-      username.trim() !== (record?.siteLogin?.username ?? "")
-    )
-      throw new Error("填写或更换站点账号时，请同时填写密码。");
-    const loginUpdate = clearLogin
-      ? { siteLogin: null }
-      : password
-        ? { siteLogin: { username: username.trim(), password } }
-        : {};
     const site = cleanSupplierAddress(siteUrl || apiUrl);
     const api = cleanSupplierAddress(apiUrl || siteUrl);
     if (!site) throw new Error("请填写站点地址或 API 地址。");
+    const loginUpdate: { siteLogin?: SupplierSiteLoginInput | null } = {};
+    if (clearLogin) loginUpdate.siteLogin = null;
+    else if (authMode === "password") {
+      if (password && !username.trim()) throw new Error("请填写站点账号。");
+      if (!password && username.trim() !== (record?.siteLogin?.username ?? ""))
+        throw new Error("填写或更换站点账号时，请同时填写密码。");
+      if (!password && record?.siteLogin?.configured && !keepSavedLogin)
+        throw new Error("更换登录方式或连接地址时，请重新填写站点账号与密码。");
+      if (password) loginUpdate.siteLogin = { username: username.trim(), password };
+    } else {
+      const tokenInput = accessToken.trim();
+      const token = tokenInput.replace(/^Bearer(?:\s+|$)/iu, "");
+      const id = userId.trim();
+      if (token.length > 8192) throw new Error("站点访问令牌不能超过 8192 个字符。");
+      if (tokenInput && (!token || /[\s\u0000-\u001f\u007f]/u.test(token)))
+        throw new Error("请填写有效的站点访问令牌，不含内部空白或控制字符。");
+      if (showUserId && id && (!/^[1-9]\d{0,18}$/u.test(id) || BigInt(id) > 9223372036854775807n))
+        throw new Error("站点用户 ID 必须是 1 至 9223372036854775807 的整数，或留空。");
+      if (!token && !keepSavedLogin)
+        throw new Error("首次保存或更换登录方式、连接地址时，请填写站点访问令牌。");
+      const userIdChanged = showUserId && id !== (record?.siteLogin?.userId ?? "");
+      if (token || userIdChanged) loginUpdate.siteLogin = {
+        authMode: "access-token",
+        ...(token ? { accessToken: token } : {}),
+        ...(showUserId && (id || userIdChanged) ? { userId: id || null } : {}),
+      };
+    }
     const input = {
       name: name.trim() || new URL(site).hostname,
       siteUrl: site,
@@ -998,18 +1059,21 @@ function SupplierDetail({
           expectedRevision: record.state?.revision ?? 0,
         })
       : await createSupplier(input);
-    if (!record && password && !clearLogin) {
+    if (!record && loginUpdate.siteLogin) {
       saved = await updateSupplier(saved.id, {
         ...loginUpdate,
         expectedRevision: saved.state?.revision ?? 0,
       });
     }
     setPassword("");
+    setAccessToken("");
     setName(saved.name);
     setSiteUrl(saved.siteUrl);
     setApiUrl(saved.apiUrl);
     setKind(saved.kind);
+    setAuthMode(saved.siteLogin?.authMode ?? "password");
     setUsername(saved.siteLogin?.username ?? "");
+    setUserId(saved.siteLogin?.userId ?? "");
     setClearLogin(false);
     onUpdated(saved);
     await onConnectionsChanged();
@@ -1039,12 +1103,12 @@ function SupplierDetail({
           scanned.scanError ||
             (scanned.scanStatus === "live"
               ? `已识别 ${scanned.catalog.groups.filter((group) => group.source !== "manual" && group.status !== "missing").length} 个分组。${scanned.state?.keySync ? "账号密钥同步结果见下方。" : "填写对应 Key，可继续读取实际可用模型。"}`
-              : "模型广场与 API 密钥页面未返回分组。可以填写站点账号密码重试，或手动添加分组后用 Key 读取模型。"),
+              : "模型广场与 API 密钥页面未返回分组。可以配置站点账号密码或访问令牌后重试，或手动添加分组后用 Key 读取模型。"),
         );
       } else setMessage("供应商信息已保存。");
     } catch (error) {
       setFailed(true);
-      setMessage(errorMessage(error, password));
+      setMessage(errorMessage(error, authMode === "access-token" ? accessToken : password));
     } finally {
       setBusy(false);
     }
@@ -1163,7 +1227,7 @@ function SupplierDetail({
       </div>
       {record?.scanError && detailTab !== "connection" && <div className="sm-notice is-error" role="status">
         <p>{record.scanError}</p>
-        <p>{record.scanErrorCode === "rate_limited" ? "站点正在限流，请稍后重试，无需重新填写账号。" : record.scanErrorCode === "verification_required" ? "请前往站点完成验证，再回来扫描。" : record.scanErrorCode === "unsupported_platform" ? "请在连接配置中确认平台类型与地址。" : record.scanErrorCode === "invalid_credentials" ? "请检查站点账号与密码；分组 API Key 单独配置。" : "已保留上次配置，可在连接配置中查看并重试。"}</p>
+        <p>{supplierScanHint(record)}</p>
         <button type="button" className="sm-button" onClick={() => setDetailTab("connection")}>查看连接配置</button>
         {record.scanErrorCode === "verification_required" && entry.siteUrl && <a href={entry.siteUrl} target="_blank" rel="noreferrer">前往站点验证</a>}
       </div>}
@@ -1322,10 +1386,18 @@ function SupplierDetail({
           </label>
         </div>
         <p className="sm-muted">
-          站点登录（选填）：保存并扫描时自动读取后台已有的分组 Key、模型和价格；密码与 Key 加密保存。
+          站点登录（选填）：保存并扫描时自动读取后台已有的分组 Key、模型和价格；密码、访问令牌与 Key 加密保存。
         </p>
         <p className="sm-muted">仅保存不读取目录。保存并扫描会继续原有的能力核验流程，可能提交生成请求；进度与暂停入口在“核验记录”。</p>
+        <label className="sm-field">
+          <span>登录方式</span>
+          <select aria-label="登录方式" value={authMode} onChange={(event) => changeAuthMode(event.target.value as SupplierSiteAuthMode)} disabled={busy}>
+            <option value="password">站点账号密码</option>
+            <option value="access-token">访问令牌</option>
+          </select>
+        </label>
         <div className="sm-form-grid">
+          {authMode === "password" ? <>
           <label className="sm-field">
             <span>站点账号</span>
             <input
@@ -1351,13 +1423,42 @@ function SupplierDetail({
                 setClearLogin(false);
               }}
               placeholder={
-                record?.siteLogin?.configured && !clearLogin
+                keepSavedLogin
                   ? "已保存，留空保持原密码"
                   : "请输入站点登录密码"
               }
               disabled={busy}
             />
           </label>
+          </> : <>
+            <label className="sm-field">
+              <span>站点访问令牌</span>
+              <input
+                type="password"
+                name={`supplier-site-access-token-${entry.id}`}
+                autoComplete="new-password"
+                maxLength={8192}
+                value={accessToken}
+                onChange={(event) => { setAccessToken(event.target.value); setClearLogin(false); }}
+                placeholder={keepSavedLogin ? "已保存，留空保持原令牌" : "请输入站点访问令牌"}
+                disabled={busy}
+              />
+            </label>
+            {showUserId && <label className="sm-field">
+              <span>站点用户 ID（选填）</span>
+              <input
+                aria-label="站点用户 ID（选填）"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={19}
+                value={userId}
+                onChange={(event) => { setUserId(event.target.value); setClearLogin(false); }}
+                placeholder="例如 123"
+                disabled={busy}
+              />
+              <small>部分 NewAPI / OneAPI 站点需要用户 ID；若站点提示缺少用户 ID，请填写账户资料中的正整数 ID。</small>
+            </label>}
+          </>}
         </div>
         {record?.siteLogin?.configured && (
           <button
@@ -1368,6 +1469,8 @@ function SupplierDetail({
               setClearLogin(true);
               setUsername("");
               setPassword("");
+              setAccessToken("");
+              setUserId("");
             }}
           >
             {clearLogin ? "保存后清除登录信息" : "清除已保存登录"}

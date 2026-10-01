@@ -345,6 +345,7 @@ describe("public run snapshots", () => {
               "https://platform.openai.com/docs/guides/error-codes/api-errors",
           },
           recoveryAction: "resume_archive",
+          taskEvidence: { taskId: "provider-task-1", status: "succeeded" },
           request: {
             provider: "weai",
             supplier: "weai",
@@ -364,12 +365,36 @@ describe("public run snapshots", () => {
     });
     const serialized = JSON.stringify(snapshot);
     expect(serialized).not.toContain("providerTask");
-    expect(serialized).not.toContain("provider-task-1");
+    expect(serialized).toContain("provider-task-1");
     expect(serialized).not.toContain("provider-secret");
     expect(serialized).not.toContain("QUJDREVGRw==");
     expect(serialized).not.toContain("revisionGraph");
     expect(serialized).not.toContain("private prompt");
     expect(serialized).not.toContain("must-not-be-public");
+  });
+
+  it("exposes the original supplier task behind a cloud receipt, without exposing recovery secrets", () => {
+    const input = recoverySnapshot();
+    const snapshot = publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!,
+      providerTaskId: `cloud:${"a".repeat(64)}`,
+      inputJson: { provider: "openai", providerTask: {
+        providerTaskId: "img-bb5984b0-c8d2", status: "failed", raw: { token: "private" },
+      } },
+      errorJson: { message: "502", phase: "poll", retryable: true, submissionMayHaveOccurred: false },
+    }] });
+    expect(snapshot?.nodes[0]?.taskEvidence).toEqual({ taskId: "img-bb5984b0-c8d2", status: "failed" });
+    expect(snapshot?.nodes[0]?.errorJson).toMatchObject({ phase: "poll", retryable: true, submissionMayHaveOccurred: false });
+    expect(JSON.stringify(snapshot)).not.toMatch(/cloud:|private|providerTask/);
+  });
+
+  it("does not present local, conflicting, unsafe or absent identifiers as supplier task IDs", () => {
+    const input = recoverySnapshot();
+    const node = input.nodes[0]!;
+    for (const taskId of [null, `cloud:${"a".repeat(64)}`, `openai:${node.workflowRunId}:${node.id}`, `weai:${node.workflowRunId}:${node.id}`, `rest:sync:${node.workflowRunId}:${node.id}`, "https://private.test/?token=secret", "Bearer private", "C:/private/job.json", "x".repeat(257)]) {
+      const snapshot = publicRunSnapshot({ ...input, nodes: [{ ...node, providerTaskId: taskId, inputJson: { provider: "openai" } }] });
+      expect(snapshot?.nodes[0]?.taskEvidence).toBeUndefined();
+    }
+    expect(publicRunSnapshot({ ...input, nodes: [{ ...node, inputJson: { provider: "openai", providerTask: { providerTaskId: "conflicting-id", status: "failed" } } }] })?.nodes[0]?.taskEvidence).toBeUndefined();
   });
 
   it("keeps SSE events to the public status/output subset", () => {

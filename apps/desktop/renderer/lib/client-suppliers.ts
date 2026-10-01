@@ -12,6 +12,17 @@ import {
 } from "./provider-connection-options";
 
 export type SupplierKind = "auto" | "newapi" | "sub2api" | "openai-compatible";
+export type SupplierSiteAuthMode = "password" | "access-token";
+export type SupplierSiteLoginInput =
+  | { authMode?: "password"; username: string; password: string }
+  | { authMode: "access-token"; accessToken?: string; userId?: string | null };
+export interface SupplierSiteLoginSummary {
+  configured: boolean;
+  /** Missing on older responses; those use the account/password method. */
+  authMode?: SupplierSiteAuthMode;
+  username?: string;
+  userId?: string;
+}
 export type SupplierModelProtocol =
   | "openai-images"
   | "openai-videos"
@@ -45,7 +56,7 @@ export interface SupplierCatalogGroup {
 }
 export interface SupplierRecord {
   state?: Omit<SupplierState, "siteLogin">;
-  siteLogin?: { username: string; configured: boolean };
+  siteLogin?: SupplierSiteLoginSummary;
   id: string;
   name: string;
   supplierKey: string;
@@ -109,7 +120,7 @@ export function updateSupplier(
     expectedRevision?: number;
     visibility?: "visible" | "hidden";
     generationTransport?: "local" | "cloudflare";
-    siteLogin?: { username: string; password: string } | null;
+    siteLogin?: SupplierSiteLoginInput | null;
   },
 ): Promise<SupplierRecord> {
   return supplierRequest(`/api/suppliers/${encodeURIComponent(id)}`, {

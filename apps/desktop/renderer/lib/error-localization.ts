@@ -2,6 +2,7 @@ import {
   providerSupplierLabel,
   providerSupplierWebsite,
 } from "@super-canvas/providers/suppliers";
+import type { ProviderErrorPresentation } from "@super-canvas/providers";
 
 export interface LocalizedRunError {
   message: string;
@@ -13,12 +14,18 @@ export interface LocalizedRunError {
   docsUrl?: string;
   actionUrl?: string;
   actionLabel?: string;
+  phase?: ProviderErrorPresentation["phase"];
+  retryable?: boolean;
+  submissionMayHaveOccurred?: boolean;
+  transport?: ProviderErrorPresentation["transport"];
 }
 
 interface ErrorContext {
   provider?: string | undefined;
   supplier?: string | undefined;
   supplierWebsiteUrl?: string | undefined;
+  status?: string | undefined;
+  providerTaskStatus?: string | undefined;
 }
 
 const OPENAI_ERROR_DOCS =
@@ -46,6 +53,33 @@ function safeHttpsUrl(value: unknown): string | undefined {
 
 function supplierApiLabel(label: string): string {
   return /\bAPI$/iu.test(label) ? label : `${label} API`;
+}
+
+/** Retain diagnostic evidence, never arbitrary response/header fields from old records. */
+function safeTransport(value: unknown): LocalizedRunError["transport"] {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  if ((source.stage !== "awaiting_headers" && source.stage !== "reading_body") ||
+      typeof source.elapsedMs !== "number" || !Number.isFinite(source.elapsedMs) || source.elapsedMs < 0 ||
+      typeof source.responseBytes !== "number" || !Number.isSafeInteger(source.responseBytes) || source.responseBytes < 0) return undefined;
+  const result: NonNullable<LocalizedRunError["transport"]> = {
+    stage: source.stage, elapsedMs: source.elapsedMs, responseBytes: source.responseBytes,
+  };
+  for (const key of ["socketBytesRead", "socketBytesWritten", "localPort", "remotePort"] as const) {
+    const count = source[key];
+    if (typeof count === "number" && Number.isSafeInteger(count) && count >= 0) result[key] = count;
+  }
+  for (const key of ["localAddress", "remoteAddress"] as const) {
+    const address = safeText(source[key]);
+    if (address && address.length <= 64 && /^[0-9a-f:.]+$/iu.test(address)) result[key] = address;
+  }
+  const errorCode = safeText(source.errorCode);
+  if (errorCode && /^[A-Z0-9_]{1,80}$/u.test(errorCode)) result.errorCode = errorCode;
+  if (["physical-direct", "system", "system-fake-ip", "explicit-proxy"].includes(String(source.route)))
+    result.route = source.route as NonNullable<typeof result.route>;
+  if (["normal_dns", "transport_constraints", "physical_tls_unreachable"].includes(String(source.fallbackReason)))
+    result.fallbackReason = source.fallbackReason as NonNullable<typeof result.fallbackReason>;
+  return result;
 }
 
 function apiDetails(
@@ -122,6 +156,9 @@ function structuredError(value: unknown): LocalizedRunError | null {
   const docsUrl = safeHttpsUrl(record.docsUrl);
   const actionUrl = safeHttpsUrl(record.actionUrl);
   const actionLabel = safeText(record.actionLabel);
+  const phase = ["connect", "submit", "poll", "cancel", "archive"].includes(String(record.phase))
+    ? record.phase as LocalizedRunError["phase"] : undefined;
+  const transport = safeTransport(record.transport);
   return {
     message,
     ...(type ? { type } : {}),
@@ -132,6 +169,10 @@ function structuredError(value: unknown): LocalizedRunError | null {
     ...(docsUrl ? { docsUrl } : {}),
     ...(actionUrl ? { actionUrl } : {}),
     ...(actionUrl && actionLabel ? { actionLabel } : {}),
+    ...(phase ? { phase } : {}),
+    ...(typeof record.retryable === "boolean" ? { retryable: record.retryable } : {}),
+    ...(typeof record.submissionMayHaveOccurred === "boolean" ? { submissionMayHaveOccurred: record.submissionMayHaveOccurred } : {}),
+    ...(transport ? { transport } : {}),
   };
 }
 
@@ -180,7 +221,7 @@ export function localizeRunError(
   }
 
   const raw = error.message;
-  const normalized = [raw, error.type, error.code]
+  const normalized = [raw, error.type, error.code, error.providerMessage]
     .filter((part): part is string => Boolean(part))
     .join(" ")
     .toLowerCase();
@@ -189,8 +230,9 @@ export function localizeRunError(
     context.supplier,
     context.supplierWebsiteUrl,
   );
-  const embeddedStatus =
-    /(?:http|gateway(?: error)?)\D{0,12}([45]\d{2})/iu.exec(normalized)?.[1];
+  const embeddedStatus = error.statusCode === undefined
+    ? /(?:http|gateway(?: error)?)\D{0,12}([45]\d{2})/iu.exec(normalized)?.[1]
+    : String(error.statusCode);
   const safetyCode = /\b(SAFETY\.[A-Z0-9._-]+)\b/u.exec(raw)?.[1];
 
   if (
@@ -223,6 +265,25 @@ export function localizeRunError(
               actionLabel: `前往${supplierLabel}官网查看余额`,
             }
           : {}),
+    };
+  }
+
+  if (["no available compatible accounts", "no_available_compatible_accounts"].some(pattern => normalized.includes(pattern)) ||
+      error.code === "provider_no_compatible_accounts") {
+    const uncertain = error.submissionMayHaveOccurred === true ||
+      (error.phase === "submit" && embeddedStatus !== undefined && Number(embeddedStatus) >= 500) ||
+      (context.status === "needs_attention" && error.phase !== "poll" && context.providerTaskStatus !== "failed");
+    return {
+      ...error,
+      message: "供应商当前没有适用于所选模型或线路的可用账号，" +
+        (uncertain
+          ? "本次提交结果未知。请先核对原任务和扣费记录，不要重复提交。"
+          : "未能完成本次生成。请等待供应商恢复或核对该线路状态；本次费用仍需核对。"),
+      type: "供应商无可用兼容账号",
+      code: error.code && error.code !== "generation_failed" ? error.code : "provider_no_compatible_accounts",
+      ...(error.api ? {} : api.api ? { api: api.api } : {}),
+      ...(error.docsUrl ? {} : api.docsUrl ? { docsUrl: api.docsUrl } : {}),
+      ...(error.providerMessage ? {} : /no[_ ]available[_ ]compatible[_ ]accounts/iu.test(raw) ? { providerMessage: raw } : {}),
     };
   }
 
@@ -263,34 +324,48 @@ export function localizeRunError(
     };
   }
 
-  if (error.type || error.code || error.api) return error;
-
-  if (
-    embeddedStatus === "502" ||
-    embeddedStatus === "503" ||
-    embeddedStatus === "504"
-  ) {
-    return {
-      message: `上游 API 暂时不可用（HTTP ${embeddedStatus}），请稍后重试。`,
-      type: "网关或上游服务错误",
-      code: `HTTP ${embeddedStatus}`,
-      ...(api.api ? { api: api.api } : {}),
-      ...(api.docsUrl ? { docsUrl: api.docsUrl } : {}),
-    };
-  }
-
   if (
     normalized.includes("system under load") ||
-    normalized.includes("overloaded")
+    normalized.includes("overloaded") ||
+    normalized.includes("adobe throttled")
   ) {
     return {
-      message: "上游 API 当前负载过高，请稍后重试。",
-      type: "供应商服务错误",
-      code: "provider_overloaded",
-      ...(api.api ? { api: api.api } : {}),
-      ...(api.docsUrl ? { docsUrl: api.docsUrl } : {}),
+      ...error,
+      message: error.submissionMayHaveOccurred === true ||
+        (context.status === "needs_attention" && error.phase !== "poll" && context.providerTaskStatus !== "failed")
+        ? "供应商模型当前繁忙，本次提交结果未知。请先核对原任务和扣费记录，不要重复提交。"
+        : "供应商模型当前繁忙，未能完成本次生成，请稍后重试。",
+      type: "供应商繁忙",
+      code: error.code && error.code !== "generation_failed" ? error.code : "provider_overloaded",
+      ...(error.api ? {} : api.api ? { api: api.api } : {}),
+      ...(error.docsUrl ? {} : api.docsUrl ? { docsUrl: api.docsUrl } : {}),
     };
   }
+
+  if (["502", "503", "504"].includes(embeddedStatus ?? "")) {
+    const uncertain = error.submissionMayHaveOccurred === true ||
+      (error.phase === "submit" && error.submissionMayHaveOccurred !== false) ||
+      (context.status === "needs_attention" && error.phase !== "poll" && context.providerTaskStatus !== "failed");
+    const queryInterrupted = error.phase === "poll";
+    const confirmedFailure = context.providerTaskStatus === "failed";
+    return {
+      ...error,
+      message: `上游 API 暂时不可用（HTTP ${embeddedStatus}）` +
+        (uncertain
+          ? "，本次提交结果未知。请先核对原任务和扣费记录，不要重复提交。"
+          : queryInterrupted
+            ? "，原任务查询暂时中断。请恢复原任务查询并核对供应商状态。"
+            : confirmedFailure
+              ? "，供应商已将原任务标记为生成失败。请核对原任务和扣费记录，再决定是否重新生成。"
+              : "。请核对供应商状态和原任务记录，再决定是否重新生成。"),
+      type: "网关或上游服务错误",
+      code: error.code ?? `HTTP ${embeddedStatus}`,
+      ...(error.api ? {} : api.api ? { api: api.api } : {}),
+      ...(error.docsUrl ? {} : api.docsUrl ? { docsUrl: api.docsUrl } : {}),
+    };
+  }
+
+  if (error.type || error.code || error.api) return error;
 
   if (
     normalized.includes("api key") ||

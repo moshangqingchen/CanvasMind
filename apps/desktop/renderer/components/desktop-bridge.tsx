@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { saveBeforeDesktopExit } from "../lib/desktop-client";
 import { fetchAppUpdate, requestAppUpdate, type AppUpdateView } from "../lib/client-api";
 import { AppUpdateModal } from "./app-update-modal";
+import feedbackStyles from "./blocking-feedback.module.css";
 
 export function DesktopBridge() {
   const [draining, setDraining] = useState(false);
@@ -46,11 +47,17 @@ export function DesktopBridge() {
     <AppUpdateModal open={open} status={status} busy={busy} onClose={() => setOpen(false)}
       onCheck={() => void update("check")} onDownload={() => void update("download")}
       onApply={() => void update("apply")} onDefer={() => void update("defer")} />
-    {open && error ? <div role="alert" style={{ position: "fixed", bottom: 20, left: 20, zIndex: 10001, background: "white", padding: 16 }}>{error}</div> : null}
-    {draining ? <div role="dialog" aria-modal="true" aria-label="正在准备退出" style={{ position: "fixed", inset: 0, zIndex: 10000, background: "#f6f6f4ed", display: "grid", placeItems: "center" }}>
-      <div><h2>正在保存并等待任务完成</h2><p>完成后会退出或安装已下载的更新。</p>
-        <button className="button primary" onClick={() => void window.superCanvasDesktop?.cancelExit().catch((failure: Error) => setError(failure.message))}>返回软件</button>
-        {error ? <p role="alert">{error}</p> : null}</div>
+    {open && error && !draining ? <div role="alert" className={feedbackStyles.toast}>{error}</div> : null}
+    {draining ? <div role="dialog" aria-modal="true" aria-label="正在准备退出" className={feedbackStyles.overlay}>
+      <div className={feedbackStyles.card}>
+        <div className={feedbackStyles.progress} role="status">
+          <span className={feedbackStyles.spinner} aria-hidden="true" />
+          <h2 className={feedbackStyles.title}>正在保存并等待任务完成</h2>
+        </div>
+        <p className={feedbackStyles.message}>完成后会退出或安装已下载的更新。</p>
+        <button type="button" className="button primary" onClick={() => void window.superCanvasDesktop?.cancelExit().catch((failure: Error) => setError(failure.message))}>返回软件</button>
+        {error ? <p role="alert" className={feedbackStyles.error}>{error}</p> : null}
+      </div>
     </div> : null}
   </>;
 }

@@ -62,10 +62,11 @@ export function modelPriceAmount(pricing: StructuredModelPricing, parameters: Re
   if (pricing.tiers?.some(tier => tier.conditions || tier.otherwise)) {
     for (const tier of pricing.tiers) {
       if (tier.otherwise) return tier.price;
-      const matched = tier.conditions?.some(condition => {
+      const match = (condition: NonNullable<StructuredPriceTier["conditions"]>[number]) => {
         const value = String(parameters[condition.parameter] ?? "");
         return condition.operator === "equals" ? value === condition.value : value.includes(condition.value);
-      });
+      };
+      const matched = tier.conditionMode === "all" ? tier.conditions?.every(match) : tier.conditions?.some(match);
       if (tier.conditions && (tier.conditionMode === "none" ? !matched : matched)) return tier.price;
     }
     return undefined;

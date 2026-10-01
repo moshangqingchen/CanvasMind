@@ -194,6 +194,10 @@ const EnterAsHardBreak = Extension.create({
   priority: 1_000,
   addKeyboardShortcuts() {
     return {
+      // Reserve generation shortcuts before StarterKit can insert a hard break.
+      // Returning true prevents editing while the event still bubbles to React.
+      "Mod-Enter": () => true,
+      "Shift-Mod-Enter": () => true,
       Enter: () => {
         if (document.querySelector(".mention-floating-menu")) return false;
         return this.editor.commands.setHardBreak();

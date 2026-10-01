@@ -4,8 +4,8 @@
 html, body { background:var(--bg); color:var(--text); }
 body { font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
 button, a, input, select, textarea { -webkit-tap-highlight-color:transparent; }
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 3px solid rgb(98 86 217 / 28%); outline-offset: 3px;
+html body :is(button, a, input, select, textarea, summary, [tabindex], [contenteditable="true"]):focus-visible {
+  outline: 2px solid #b9a7ff; outline-offset: 2px;
 }
 button:disabled { cursor: not-allowed; }
 .shell, .workspace { background:var(--bg); }

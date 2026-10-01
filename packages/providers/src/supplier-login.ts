@@ -12,12 +12,21 @@ import {
   type SupplierSiteKind,
 } from "./supplier-catalog.js";
 
-export interface SupplierSiteCredentials {
+export interface SupplierSitePasswordCredentials {
   username: string;
   password: string;
 }
+export interface SupplierSiteTokenCredentials {
+  accessToken: string;
+  /** Older NewAPI installations require the account's numeric user ID. */
+  userId?: string;
+}
+export type SupplierSiteCredentials = SupplierSitePasswordCredentials | SupplierSiteTokenCredentials;
 export type SupplierLoginErrorCode =
   | "invalid_credentials"
+  | "invalid_token"
+  | "permission_denied"
+  | "user_id_required"
   | "verification_required"
   | "unsupported_platform"
   | "invalid_configuration"
@@ -40,6 +49,33 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+const normalizedUserId = (value: unknown): string | undefined => {
+  const text = typeof value === "number" && Number.isSafeInteger(value) ? String(value)
+    : typeof value === "string" ? value.trim() : "";
+  if (!/^[1-9]\d{0,18}$/u.test(text) || BigInt(text) > 9223372036854775807n) return undefined;
+  return text;
+};
+
+function tokenLoginFailure(status: number | undefined, payload: unknown, kind: "newapi" | "sub2api", userId?: string): SupplierLoginError {
+  // Remote messages are classification evidence only. Never echo their contents.
+  const root = record(payload);
+  const nested = record(root?.error);
+  const evidence = [root?.code, root?.message, nested?.code, nested?.message]
+    .filter(value => typeof value === "string").join(" ");
+  if (kind === "newapi" && /New[-_]Api[-_]User/iu.test(evidence)) {
+    if (!userId && /未提供|缺少|missing|required|not provided/iu.test(evidence))
+      return new SupplierLoginError("该站点需要用户 ID，请填写后台账号对应的用户 ID 后重试", 400, "user_id_required");
+    return new SupplierLoginError("用户 ID 与访问令牌对应账号不一致或格式不正确，请检查后台用户 ID", 400, "invalid_configuration");
+  }
+  if (status === 429) return new SupplierLoginError("站点限制了验证频率，请稍后重试", 429);
+  if (status === 403 || /AUTH_INSUFFICIENT_PRIVILEGE|ACCESS_TOKEN_SCOPE_DENIED|权限不足|insufficient privilege|permission denied/iu.test(evidence))
+    return new SupplierLoginError("访问令牌权限不足，无法读取后台账号信息，请在站点检查令牌权限", 403, "permission_denied");
+  if ((status ?? 0) >= 500 || !status)
+    return new SupplierLoginError("站点访问令牌验证请求失败，请检查地址或稍后重试", 502);
+  if (status === 404 || status === 405)
+    return new SupplierLoginError("站点不支持当前平台的账号验证接口，请检查平台类型和站点地址", 400, "unsupported_platform");
+  return new SupplierLoginError("访问令牌无效、已过期或已撤销，请在站点后台获取新的访问令牌", 401, "invalid_token");
+}
 
 /** Create a request-local website session. No cookie/token is exposed to the client. */
 export async function loginSupplierSite(
@@ -51,12 +87,19 @@ export async function loginSupplierSite(
   fetchImpl: FetchImplementation = providerFetch,
 ): Promise<{ kind: "newapi" | "sub2api"; fetch: FetchImplementation }> {
   const base = supplierDirectoryBase(input.siteUrl);
-  if (
-    !base ||
-    !input.credentials.username.trim() ||
-    !input.credentials.password
-  )
-    throw new SupplierLoginError("请填写站点地址、账号和密码", 400, "invalid_configuration");
+  const tokenCredentials = "accessToken" in input.credentials ? input.credentials : undefined;
+  const passwordCredentials = "username" in input.credentials ? input.credentials : undefined;
+  if (!base) throw new SupplierLoginError("请填写有效的站点地址", 400, "invalid_configuration");
+  if (tokenCredentials && passwordCredentials)
+    throw new SupplierLoginError("请选择账号密码或访问令牌其中一种登录方式", 400, "invalid_configuration");
+  const accessToken = tokenCredentials?.accessToken.trim().replace(/^Bearer(?:\s+|$)/iu, "");
+  const suppliedUserId = tokenCredentials?.userId === undefined ? undefined : normalizedUserId(tokenCredentials.userId);
+  if (tokenCredentials && (!accessToken || accessToken.length > 8192 || /[\s\u0000-\u001f\u007f]/u.test(accessToken)))
+    throw new SupplierLoginError("请填写有效的后台访问令牌", 400, "invalid_configuration");
+  if (tokenCredentials?.userId !== undefined && !suppliedUserId)
+    throw new SupplierLoginError("用户 ID 必须是后台账号对应的正整数", 400, "invalid_configuration");
+  if (!tokenCredentials && (!passwordCredentials?.username.trim() || !passwordCredentials.password))
+    throw new SupplierLoginError("请填写站点账号和密码", 400, "invalid_configuration");
   const read = (path: string, fetcher = fetchImpl, init: RequestInit = {}) =>
     fetchProviderJson<unknown>(
       fetcher,
@@ -100,6 +143,34 @@ export async function loginSupplierSite(
     );
   }
 
+  if (tokenCredentials) {
+    const headers = new Headers({ authorization: `Bearer ${accessToken}` });
+    if (kind === "newapi" && suppliedUserId) headers.set("New-Api-User", suppliedUserId);
+    let profile: unknown;
+    try {
+      profile = await read(kind === "newapi" ? "/api/user/self" : "/api/v1/user/profile", fetchImpl, { headers: new Headers(headers) });
+    } catch (error) {
+      throw tokenLoginFailure(error instanceof ProviderHttpError ? error.details.status : undefined,
+        error instanceof ProviderHttpError ? error.details.responseBody : undefined, kind, suppliedUserId);
+    }
+    const root = record(profile);
+    const data = record(root?.data) ?? root;
+    if (!root || root.success === false ||
+      (typeof root.code === "number" && root.code !== 0 && root.code !== 200) || root.error)
+      throw tokenLoginFailure(200, profile, kind, suppliedUserId);
+    const userId = normalizedUserId((record(data?.user) ?? data)?.id);
+    if (!userId)
+      throw new SupplierLoginError("站点未返回可验证的账号信息，请检查平台类型和后台访问令牌", 400, "invalid_configuration");
+    if (kind === "newapi") {
+      if (suppliedUserId && suppliedUserId !== userId)
+        throw new SupplierLoginError("用户 ID 与访问令牌对应账号不一致，请检查后台用户 ID", 400, "invalid_configuration");
+      headers.set("New-Api-User", userId);
+    }
+    return createSupplierSiteSession(base, kind, headers, fetchImpl);
+  }
+  // Token authentication returned above, leaving the legacy password contract.
+  const credentials = passwordCredentials!;
+
   const cookies: string[] = [];
   const capture: FetchImplementation = async (url, init) => {
     const response = await fetchImpl(url, init);
@@ -117,12 +188,12 @@ export async function loginSupplierSite(
     let loginBody: Record<string, string> =
       kind === "newapi"
         ? {
-            username: input.credentials.username.trim(),
-            password: input.credentials.password,
+            username: credentials.username.trim(),
+            password: credentials.password,
           }
         : {
-            email: input.credentials.username.trim(),
-            password: input.credentials.password,
+            email: credentials.username.trim(),
+            password: credentials.password,
           };
     if (kind === "newapi") {
       // Older deployments lack this endpoint; newer ones can require RSA-OAEP.
@@ -144,7 +215,7 @@ export async function loginSupplierSite(
         )
           throw new Error("Invalid login encryption key");
         const key = createPublicKey(keyInfo.public_key);
-        const plain = Buffer.from(input.credentials.password, "utf8");
+        const plain = Buffer.from(credentials.password, "utf8");
         const rsaOptions = {
           key,
           padding: constants.RSA_PKCS1_OAEP_PADDING,
@@ -173,7 +244,7 @@ export async function loginSupplierSite(
           encrypted = `v2.${wrapped.toString("base64")}.${nonce.toString("base64")}.${ciphertext.toString("base64")}`;
         }
         loginBody = {
-          username: input.credentials.username.trim(),
+          username: credentials.username.trim(),
           password_encrypted: encrypted,
           encryption_key_id: keyInfo.kid,
         };
@@ -240,6 +311,12 @@ export async function loginSupplierSite(
   if (token) headers.set("authorization", `Bearer ${token}`);
   else if (cookies.length) headers.set("cookie", cookies.join("; "));
   if (kind === "newapi" && userId) headers.set("New-Api-User", userId);
+  return createSupplierSiteSession(base, kind, headers, fetchImpl);
+}
+
+function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", headers: Headers, fetchImpl: FetchImplementation): {
+  kind: "newapi" | "sub2api"; fetch: FetchImplementation;
+} {
   const allowedUrls = new Set(
     [
       "/api/pricing",
@@ -263,9 +340,13 @@ export async function loginSupplierSite(
         const usageQuery = [...parsed.searchParams].every(([key, value]) =>
           ["p", "page", "page_size", "type"].includes(key) ? /^\d+$/u.test(value)
             : key === "request_id" && /^[A-Za-z0-9_-]{1,128}$/u.test(value));
+        const statsParameters = ["type", "start_timestamp", "end_timestamp"];
+        const selfStatsQuery = statsParameters.every(key => parsed.searchParams.getAll(key).length === 1) &&
+          [...parsed.searchParams].every(([key, value]) => statsParameters.includes(key) && /^[1-9]\d*$/u.test(value));
         const accountRead = method === "GET" && (
           (kind === "newapi" && (
             (endpoint === `${base}/api/user/self` && !parsed.search) ||
+            (endpoint === `${base}/api/log/self/stat` && selfStatsQuery) ||
             ([`${base}/api/log/self`, `${base}/api/log/self/`].includes(endpoint) && usageQuery))) ||
           (kind === "sub2api" && (
             (endpoint === `${base}/api/v1/user/profile` && !parsed.search) ||

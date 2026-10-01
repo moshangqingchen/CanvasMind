@@ -6,6 +6,7 @@ import { cliConnectionReady, cliStatusLabel } from "../lib/cli-connections";
 import { resolveModelParameters, validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import { withoutLocalExecutionConfig } from "../lib/project-local-config";
 import { cliInputPorts, cliOperationForNode } from "../lib/cli-input-ports";
+import feedbackStyles from "./blocking-feedback.module.css";
 
 import { useRouter } from "next/navigation";
 import { CanvasPointerTrail, canvasMotionEnabled, useCanvasMotion } from "./canvas-motion";
@@ -1088,7 +1089,7 @@ function generatedResultError(
   provider?: string,
   supplier?: string,
 ): string | RunErrorDetails | undefined {
-  const localized = localizeRunError(error, { provider, supplier });
+  const localized = localizeRunError(error, { provider, supplier, status });
   if (localized) return localized;
   if (status === "failed") return "生成失败";
   if (status === "cancelled") return "生成已取消";
@@ -1112,7 +1113,10 @@ function sameRunError(
     left.providerMessage === right.providerMessage &&
     left.docsUrl === right.docsUrl &&
     left.actionUrl === right.actionUrl &&
-    left.actionLabel === right.actionLabel
+    left.actionLabel === right.actionLabel &&
+    left.phase === right.phase &&
+    left.retryable === right.retryable &&
+    left.submissionMayHaveOccurred === right.submissionMayHaveOccurred
   );
 }
 
@@ -8763,7 +8767,12 @@ function CanvasShell({
 
   return (
     <AgentCanvasContext.Provider value={{ perform: performAgentAction }}>
-    {agentMutation && <div role="status" style={{ position: "fixed", inset: 0, zIndex: 10000, display: "grid", placeItems: "center", background: "#ffffffaa" }}>正在保存并核对画布…</div>}
+      {agentMutation && <div role="status" className={feedbackStyles.overlay}>
+        <div className={feedbackStyles.card}><div className={feedbackStyles.progress}>
+          <span className={feedbackStyles.spinner} aria-hidden="true" />
+          <span>正在保存并核对画布…</span>
+        </div></div>
+      </div>}
     <div inert={agentMutation} className={`shell canvas-editor ${showEffects ? "" : "motion-disabled"} ${mobileInspectorOpen ? "inspector-visible" : ""} ${leaving ? "is-leaving" : ""}`} style={{ "--inspector-width": `${inspectorWidth}px` } as CSSProperties}>
       <header className="topbar">
         <button className="icon-button editor-home" type="button" aria-label="返回主界面" title="保存并返回主界面" disabled={leaving || initialization.status !== "ready"} onClick={() => void leaveCanvas(() => router.push("/"))}>

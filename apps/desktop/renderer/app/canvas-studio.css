@@ -21,10 +21,6 @@
   background: var(--bg);
   color: var(--text);
 }
-.canvas-editor :is(button, input, textarea, select):focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
 .canvas-editor :is(input, textarea, select) { color-scheme: dark; }
 .canvas-editor :is(input, textarea)::placeholder { color: #777b84; }
 .canvas-editor * { scrollbar-width: thin; scrollbar-color: #484b51 transparent; }
@@ -661,4 +657,16 @@
   .canvas-editor .node-config-provider-selectors,
   .canvas-editor .node-config-parameter-section .parameter-grid { grid-template-columns: minmax(0, 1fr); }
   .canvas-editor .node-config-popover-portal .parameter-dimensions-heading { align-items: flex-start; gap: 6px; }
+}
+
+/* Keep keyboard focus visible after the canvas and legacy control overrides. */
+html body .canvas-editor :is(button, a, input, textarea, select, summary, [tabindex], [contenteditable="true"]):focus-visible {
+  outline: 2px solid #b9a7ff;
+  outline-offset: 2px;
+}
+html body .canvas-editor .react-flow__controls-button:focus-visible {
+  outline-offset: -3px;
+}
+html body .canvas-editor .prompt-overview:focus-visible {
+  outline-offset: -2px;
 }

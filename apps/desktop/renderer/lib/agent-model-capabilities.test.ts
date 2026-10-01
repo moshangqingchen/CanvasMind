@@ -103,6 +103,27 @@ describe("model capability evidence", () => {
     expect(modelAgentProtocol(connection({ protocol: undefined }), "unknown-model")).toBe("openai-chat-completions");
   });
 
+  it("fills GPT-6.1 Sol from its official API profile without adding unsupported reasoning efforts or guessing reseller aliases", () => {
+    const c = connection({ protocol: undefined });
+    const modelId = "gpt-6.1-sol";
+    const result = resolveAgentCapabilities(c, modelId);
+    expect(result).toMatchObject({
+      protocol: "openai-responses", reasoningSource: "official-model",
+      reasoningFallback: { sourceUrl: "https://developers.openai.com/api/docs/models/gpt-6.1-sol", checkedAt: "2026-10-01" },
+    });
+    expect(result.reasoningOptions.map(option => option.value))
+      .toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    const declared = descriptor(modelId, { reasoningOptions: ["low", "high"], agentProtocol: "chat-completions" });
+    const channel = resolveAgentCapabilities(c, modelId, declared);
+    expect(channel).toMatchObject({ protocol: "openai-chat-completions", reasoningSource: "provider-catalog" });
+    expect(channel.reasoningOptions.map(option => option.value)).toEqual(["auto", "low", "high"]);
+    expect(channel.reasoningFallback).toBeUndefined();
+    c.config.agentRuntimeProfiles = { [modelId]: { fingerprint: agentModelEvidenceFingerprint(c), unsupportedReasoningEfforts: ["max"] } };
+    expect(resolveAgentCapabilities(c, modelId).reasoningOptions.map(option => option.value))
+      .toEqual(["auto", "low", "medium", "high", "xhigh"]);
+    expect(resolveAgentCapabilities(c, "gpt-6.1-sol-openai-compact").reasoningOptions.map(option => option.value)).toEqual(["auto"]);
+  });
+
   it.each(["gpt-6-sol", "gpt-6-luna"])("fills %s from official documentation while honoring channel declarations and rejections", modelId => {
     const c = connection({ protocol: undefined });
     expect(resolveAgentCapabilities(c, modelId)).toMatchObject({
@@ -138,7 +159,7 @@ describe("model capability evidence", () => {
     expect(result).toMatchObject({ reasoningSource: "official-model", reasoningFallback: { sourceUrl: `https://developers.openai.com/api/docs/models/${source}`, checkedAt: "2026-09-22" } });
   });
 
-  it.each(["gpt-5.2-openai-compact", "gpt-5.2-pro-2026-01-01", "gpt-5.6-luna-fast", "gpt-5.3-codex-2026-02-01"])("does not guess reasoning for undocumented reseller/snapshot %s", modelId => {
+  it.each(["gpt-5.2-openai-compact", "gpt-5.5-openai-compact", "gpt-5.6-sol-openai-compact", "gpt-5.2-pro-2026-01-01", "gpt-5.6-luna-fast", "gpt-5.3-codex-2026-02-01"])("does not guess reasoning for undocumented reseller/snapshot %s", modelId => {
     expect(resolveAgentCapabilities(connection(), modelId).reasoningOptions.map(option => option.value)).toEqual(["auto"]);
   });
 
@@ -157,6 +178,26 @@ describe("model capability evidence", () => {
     const result = resolveAgentCapabilities(connection({ protocol: "anthropic-messages" }), modelId);
     expect(result.reasoningOptions.map(option => option.value)).toEqual(["auto", ...options]);
     expect(result).toMatchObject({ reasoningSource: "official-model", reasoningFallback: { sourceUrl: "https://platform.claude.com/docs/en/build-with-claude/effort" }, capabilities: { reasoning: true } });
+  });
+
+  it("supplements exact Sonnet 5.5 with official efforts while preserving the channel protocol and restrictions", () => {
+    const modelId = "claude-sonnet-5-5";
+    const c = connection({ protocol: undefined });
+    const result = resolveAgentCapabilities(c, modelId);
+    expect(result).toMatchObject({
+      protocol: "anthropic-messages", reasoningSource: "official-model",
+      reasoningFallback: { sourceUrl: "https://platform.claude.com/docs/en/build-with-claude/effort", checkedAt: "2026-10-01" },
+    });
+    expect(result.reasoningOptions.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    expect(modelAgentProtocol(connection({ protocol: "chat-completions" }), modelId)).toBe("openai-chat-completions");
+    const declared = descriptor(modelId, { reasoningOptions: ["high"], agentProtocol: "chat-completions" });
+    const channel = resolveAgentCapabilities(c, modelId, declared);
+    expect(channel).toMatchObject({ protocol: "openai-chat-completions", reasoningSource: "provider-catalog" });
+    expect(channel.reasoningOptions.map(option => option.value)).toEqual(["auto", "high"]);
+    expect(channel.reasoningFallback).toBeUndefined();
+    c.config.agentRuntimeProfiles = { [modelId]: { fingerprint: agentModelEvidenceFingerprint(c), unsupportedReasoningEfforts: ["max"] } };
+    expect(resolveAgentCapabilities(c, modelId).reasoningOptions.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh"]);
+    expect(resolveAgentCapabilities(c, "claude-sonnet-5-5-fast").reasoningOptions.map(option => option.value)).toEqual(["auto"]);
   });
 
   it.each([
