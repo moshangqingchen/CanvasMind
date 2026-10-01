@@ -16,6 +16,12 @@ export interface SupplierGroupDetails {
 const tiers = ["1K", "2K", "4K"];
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const referencePricePattern = /(?:[¥￥$]?\s*\d+(?:\.\d+)?\s*(?:元|分|毛|刀)?\s*(?:[/／]|一|每|1)\s*(?:张|次)|(?:\d+|一|每)\s*张\s*[¥￥$]?\s*\d|量大\s*\d+(?:\.\d+)?\s*(?:分|毛|元))/u;
+const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
+/** A base model ID must never match a different model with an added suffix. */
+export function supplierTextMentionsModel(text: string, modelId: string): boolean {
+  return Boolean(modelId) && new RegExp(`(?<![\\w.-])${escapePattern(modelId)}(?![\\w.-])`, "iu").test(text);
+}
 
 function expandResolutionList(text: string): string {
   // Shared-unit lists are common in supplier descriptions. Do not interpret
@@ -76,6 +82,47 @@ export function supplierGroupResolutionLabel(details?: SupplierGroupDetails): st
   if (!details) return "";
   return [details.supportedResolutions?.length ? `${details.exclusiveResolutions ? "仅支持" : "说明支持"} ${details.supportedResolutions.join(" / ")}` : "",
     details.unsupportedResolutions?.length ? `不支持 ${details.unsupportedResolutions.join(" / ")}` : ""].filter(Boolean).join("；");
+}
+
+/** Scope textual image prices before using a group's shared resolution amounts. */
+export function supplierGroupModelPriceDetails(details: SupplierGroupDetails | undefined, modelId: string, knownModelIds: readonly string[] = []): SupplierGroupDetails | undefined {
+  if (!details?.description) return details;
+  const canonicalImageId = (value: string) => /^(?:gpt[- ]?)?image[- ]?2(?:\.0|\.5)?(?:[- ]|$)/iu.test(value)
+    ? value.toLowerCase().replace(/^gpt[- ]?/u, "").replace(/^image[- ]?/u, "gpt-image-")
+      .replace(/2\.0(?=$|[- ])/u, "2").replace(/ +/gu, "-").replace(/-sub(?=$|-)/u, "-sunburst")
+    : value.toLowerCase();
+  const selected = canonicalImageId(modelId);
+  const exactIds = [...new Set([modelId, ...knownModelIds])].filter(id => id.trim()).sort((a, b) => b.length - a.length);
+  const exactPattern = new RegExp(`(?<![\\w.-])(?:${exactIds.map(escapePattern).join("|")})(?![\\w.-])`, "giu");
+  const labels: string[] = [];
+  let scoped = false;
+  for (const clause of details.description.split(/[，,。;；\n]/u)) {
+    if (/充值|实付|汇率|兑换/iu.test(clause) || !referencePricePattern.test(clause)) continue;
+    const candidates = [...clause.matchAll(exactPattern),
+      ...clause.matchAll(/\b(?:gpt[- ]?)?image[- ]?2(?:\.5|\.0)?(?:-[a-z0-9]+(?:-[a-z0-9]+)*| +[a-z][a-z0-9]*(?:-[a-z0-9]+)*)?(?![\w.-])/giu)]
+      .sort((a, b) => a.index - b.index || b[0].length - a[0].length);
+    const mentions = candidates.filter((mention, index) => !candidates.slice(0, index).some(previous =>
+      previous.index <= mention.index && previous.index + previous[0].length > mention.index));
+    if (!mentions.length) { labels.push(clause.trim()); continue; }
+    scoped = true;
+    // Separate same-line model quotes only when each segment has its own price.
+    // A shared quote keeps the full wording and every named model in scope.
+    const segments = mentions.map((mention, index) => clause.slice(mention.index, mentions[index + 1]?.index).trim());
+    if (segments.every(segment => referencePricePattern.test(segment))) {
+      mentions.forEach((mention, index) => {
+        if (canonicalImageId(mention[0]) === selected) labels.push(segments[index]!);
+      });
+    } else if (mentions.some(mention => canonicalImageId(mention[0]) === selected)) labels.push(clause.trim());
+  }
+  if (!scoped) return details;
+  // Shared image_price_* fields cannot distinguish the models priced above.
+  // Keep unspecified currency/quality conditions in the supplier's wording.
+  const result = { ...details };
+  delete result.referencePrice;
+  delete result.imagePrices;
+  const referencePrice = labels.join("；").slice(0, 1000);
+  if (referencePrice) result.referencePrice = referencePrice;
+  return result;
 }
 
 export function supplierGroupPriceLabel(details?: SupplierGroupDetails): string {

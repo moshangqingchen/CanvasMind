@@ -65,7 +65,203 @@ const catalog: SupplierCatalogDiscovery = {
   ],
 };
 
+const mikotoHighQualityGroup = "生图（2k4k 高质量）";
+const mikotoHighQualityLines = [
+  "image2 0.1一张 能高质量",
+  "image2.5 flare 0.13一张 支持五档质量",
+  "image2.5 sub 0.16一张 支持五档质量",
+];
+const mikotoHighQualityCatalog: SupplierCatalogDiscovery = {
+  kind: "newapi",
+  status: "live",
+  complete: true,
+  checkedAt: "2026-10-01T00:00:00Z",
+  groups: [{
+    id: mikotoHighQualityGroup,
+    label: mikotoHighQualityGroup,
+    source: "catalog",
+    models: [],
+    details: {
+      source: "key-groups",
+      description: mikotoHighQualityLines.join("\n"),
+      referencePrice: mikotoHighQualityLines.join("；"),
+      supportedResolutions: ["2K", "4K"],
+      imagePrices: [{ resolution: "2K", amount: 0.1 }, { resolution: "4K", amount: 0.1 }],
+    },
+  }],
+};
+const mikotoImageModel = (id: string): ModelDescriptor => ({
+  id,
+  name: id,
+  operations: ["image.generate", "image.edit"],
+  metadata: { priceSource: "supplier-catalog", priceLabel: "价格未公布" },
+});
+const mikotoHighQualityModels = ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].map(mikotoImageModel);
+const withLegacyMikotoGroupPrice = (item: ModelDescriptor): ModelDescriptor => ({
+  ...item,
+  pricing: { kind: "tiered", currency: "credits", checkedAt: "2026-09-21T00:00:00Z", confidence: "exact",
+    tiers: [{ id: "2K", label: "2K · 后台额度/张", dimension: "resolution", value: "2K", price: 0.1 },
+      { id: "4K", label: "4K · 后台额度/张", dimension: "resolution", value: "4K", price: 0.1 }] },
+  metadata: { ...item.metadata, priceSource: "supplier-group", priceLabel: mikotoHighQualityLines.join("；") + "（分组说明参考）" },
+});
+
 describe("universal supplier price lookup", () => {
+  it.each([true, false])("scopes Gemini prices to complete model IDs and repairs shared cached prices when completeness is %s", complete => {
+    const ids = ["gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"];
+    const quotes = ["gemini-3.1-flash-image-preview 0.065/张", "gemini-3-pro-image-preview 0.085/张"];
+    const geminiCatalog: SupplierCatalogDiscovery = {
+      kind: "sub2api", status: "live", complete, checkedAt: "2026-10-01T00:00:00Z",
+      groups: [{ id: "gemini生图", label: "gemini生图", source: "catalog", models: [], details: {
+        source: "key-groups", description: [...quotes, "1k2k4k一个价"].join("\n"), referencePrice: quotes.join("；"),
+        imagePrices: ["1K", "2K", "4K"].map(resolution => ({ resolution, amount: 0.065 })),
+      } }],
+    };
+    const cached = ids.map<ModelDescriptor>(id => ({ ...mikotoImageModel(id),
+      pricing: { kind: "tiered", currency: "credits", checkedAt: "2026-09-21T00:00:00Z", confidence: "exact",
+        tiers: [{ id: "4K", label: "4K · 后台额度/张", dimension: "resolution", value: "4K", price: 0.065 }] },
+      metadata: { priceSource: "supplier-group", priceLabel: quotes.join("；") + "（分组说明参考）" },
+    }));
+    const results = applySupplierCatalogPrices(cached, "gemini生图", geminiCatalog);
+    for (const [index, result] of results.entries()) {
+      expect(result.pricing).toBeUndefined();
+      expect(result.metadata).toMatchObject({ priceSource: "supplier-group", priceStatus: "available" });
+      expect(result.metadata?.priceLabel).toContain(quotes[index]);
+      expect(result.metadata?.priceLabel).not.toContain(quotes[1 - index]);
+      expect(modelPriceSummary(result, { size_tier: "4K" })).toBe(result.metadata?.priceLabel);
+      expect(modelPriceSummary(result, { size_tier: "4K" })).not.toContain("credits");
+    }
+  });
+  it.each(["\n", " "])("scopes arbitrary future image model declarations with separator %j and keeps suffixes exact", separator => {
+    const ids = ["future-image-v99", "future-image-v99-pro", "future-image-v99-pro-fast"];
+    const quotes = ["future-image-v99 0.11/张", "future-image-v99-pro 0.22/张"];
+    const futureCatalog: SupplierCatalogDiscovery = {
+      kind: "sub2api", status: "live", complete: false, checkedAt: "2026-10-01T00:00:00Z",
+      groups: [{ id: "future-images", label: "future-images", source: "catalog", models: [], details: {
+        source: "key-groups", description: quotes.join(separator), referencePrice: quotes.join("；"),
+        imagePrices: [{ resolution: "4K", amount: 0.11 }],
+      } }],
+    };
+    const cached = ids.map<ModelDescriptor>(id => ({ ...mikotoImageModel(id),
+      pricing: { kind: "tiered", currency: "credits", checkedAt: "2026-09-21T00:00:00Z", confidence: "exact",
+        tiers: [{ id: "4K", label: "4K · 后台额度/张", dimension: "resolution", value: "4K", price: 0.11 }] },
+      metadata: { priceSource: "supplier-group", priceLabel: quotes.join("；") + "（分组说明参考）" },
+    }));
+    const results = applySupplierCatalogPrices(cached, "future-images", futureCatalog);
+    for (const [index, quote] of quotes.entries()) {
+      const result = results[index]!;
+      expect(result.pricing).toBeUndefined();
+      expect(result.metadata?.priceLabel).toContain(quote);
+      expect(result.metadata?.priceLabel).not.toContain(quotes[1 - index]);
+      expect(modelPriceSummary(result, { size_tier: "4K" })).toBe(result.metadata?.priceLabel);
+    }
+    expect(results[2]?.pricing).toBeUndefined();
+    expect(results[2]?.metadata?.priceLabel).toBe("价格未公布");
+    expect(modelPriceSummary(results[2], { size_tier: "4K" })).toBe("价格未公布");
+  });
+  it("recognizes catalog model IDs so a future pro declaration cannot price a base-only inventory", () => {
+    const futureCatalog: SupplierCatalogDiscovery = {
+      kind: "newapi", status: "live", complete: true, checkedAt: "2026-10-01T00:00:00Z",
+      groups: [{ id: "future-images", label: "future-images", source: "catalog",
+        models: [{ id: "future-image-v99-pro", capability: "image" }], details: {
+          source: "key-groups", description: "future-image-v99-pro 0.22/张",
+          imagePrices: [{ resolution: "4K", amount: 0.22 }],
+        } }],
+    };
+    const result = applySupplierCatalogPrices([mikotoImageModel("future-image-v99")], "future-images", futureCatalog)[0]!;
+    expect(result.pricing).toBeUndefined();
+    expect(result.metadata?.priceLabel).toBe("价格未公布");
+    expect(result.metadata?.priceLabel).not.toContain("0.22");
+  });
+  it("quotes each Mikoto image model from its own declaration instead of the shared 0.1 credits field", () => {
+    const results = applySupplierCatalogPrices(mikotoHighQualityModels, mikotoHighQualityGroup, mikotoHighQualityCatalog);
+    for (const [index, result] of results.entries()) {
+      expect(result.pricing).toBeUndefined(); // The declaration does not specify a currency.
+      expect(result.metadata).toMatchObject({ priceSource: "supplier-group", priceStatus: "available" });
+      expect(result.metadata?.priceLabel).toContain(mikotoHighQualityLines[index]);
+      expect(result.metadata?.priceLabel).toContain("分组说明参考");
+      for (const other of mikotoHighQualityLines.filter((_, otherIndex) => otherIndex !== index))
+        expect(result.metadata?.priceLabel).not.toContain(other);
+      for (const size_tier of ["2K", "4K"]) {
+        const quote = modelPriceSummary(result, { size_tier, quality: index === 0 ? "high" : "max" });
+        expect(quote).toBe(result.metadata?.priceLabel);
+        expect(quote).not.toContain("额度");
+        expect(quote).not.toContain("credits");
+      }
+    }
+  });
+  it.each([true, false])("repairs saved Mikoto group pricing during cached enrichment without another catalog read when completeness is %s", async scanComplete => {
+    const cached = mikotoHighQualityModels.map(withLegacyMikotoGroupPrice);
+    const supplier = { id: "mikoto-cached-model-prices", apiUrl: "https://api.mikoto.vip", siteUrl: "https://api.mikoto.vip", kind: "newapi",
+      state: { sourceId: "mikoto-price-source" }, catalog: { groups: mikotoHighQualityCatalog.groups },
+      scanStatus: "live", scanComplete, scannedAt: mikotoHighQualityCatalog.checkedAt, updatedAt: mikotoHighQualityCatalog.checkedAt };
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    const count = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+    try {
+      const results = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: "mikoto-price-source",
+        baseUrl: supplier.apiUrl, modelGroup: mikotoHighQualityGroup } }, cached, false, false);
+      expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count);
+      for (const [index, result] of results.entries()) {
+        expect(result.pricing).toBeUndefined();
+        expect(result.metadata?.priceLabel).toContain(mikotoHighQualityLines[index]);
+        expect(modelPriceSummary(result, { size_tier: "4K", quality: "max" })).toBe(result.metadata?.priceLabel);
+        for (const other of mikotoHighQualityLines.filter((_, otherIndex) => otherIndex !== index))
+          expect(result.metadata?.priceLabel).not.toContain(other);
+      }
+    } finally {
+      vi.mocked(getSupplierRecord).mockResolvedValue(null);
+    }
+  });
+  it("keeps exact catalog and model API prices ahead of Mikoto model-specific group wording", () => {
+    const exactCatalog = { ...mikotoHighQualityCatalog, groups: [{ ...mikotoHighQualityCatalog.groups[0]!,
+      models: [{ id: "gpt-image-2.5-sunburst", capability: "image" as const, priceLabel: "$0.25/张" }] }] };
+    const modelApi = { ...mikotoImageModel("gpt-image-2.5-flare"),
+      pricing: { kind: "per-image" as const, currency: "CNY", unitAmount: 0.24, checkedAt: "2026-10-01T00:00:00Z", confidence: "exact" as const },
+      metadata: { priceSource: "model-api", priceLabel: "¥0.24/张" } };
+    const results = applySupplierCatalogPrices([mikotoImageModel("gpt-image-2.5-sunburst"), modelApi], mikotoHighQualityGroup, exactCatalog);
+    expect(modelPriceSummary(results[0], { size_tier: "4K", quality: "max" })).toBe("0.25 USD / 张");
+    expect(results[0]?.metadata?.priceSource).toBe("supplier-catalog");
+    expect(modelPriceSummary(results[1], { size_tier: "4K", quality: "max" })).toBe("0.24 CNY / 张");
+    expect(results[1]?.metadata?.priceSource).toBe("model-api");
+  });
+  it.each(["gpt-image-2-high", "gpt-image-2.5-flare-fast", "gpt-image-2.5-sunburst-custom"])("does not lend a Mikoto declaration to suffixed model %s", id => {
+    const result = applySupplierCatalogPrices([mikotoImageModel(id)], mikotoHighQualityGroup, mikotoHighQualityCatalog)[0]!;
+    expect(result.pricing).toBeUndefined();
+    for (const line of mikotoHighQualityLines) expect(result.metadata?.priceLabel).not.toContain(line);
+    expect(result.metadata?.priceLabel).toBe("价格未公布");
+  });
+  it("does not treat stale Mikoto group declarations as new model prices", () => {
+    const staleCatalog = { ...mikotoHighQualityCatalog, groups: [{ ...mikotoHighQualityCatalog.groups[0]!,
+      details: { ...mikotoHighQualityCatalog.groups[0]!.details!, stale: true } }] };
+    const results = applySupplierCatalogPrices(mikotoHighQualityModels, mikotoHighQualityGroup, staleCatalog);
+    for (const result of results) {
+      expect(result.pricing).toBeUndefined();
+      expect(result.metadata).toMatchObject({ priceLabel: "价格未公布", priceStatus: "unpublished", supplierGroupInfoStale: true });
+    }
+  });
+  it.each([true, false])("clears legacy shared Mikoto prices from suffixed models when catalog completeness is %s", complete => {
+    const cached = ["gpt-image-2-high", "gpt-image-2.5-flare-fast", "gpt-image-2.5-sunburst-custom"]
+      .map(mikotoImageModel).map(withLegacyMikotoGroupPrice);
+    const results = applySupplierCatalogPrices(cached, mikotoHighQualityGroup, { ...mikotoHighQualityCatalog, complete });
+    for (const result of results) {
+      expect(result.pricing).toBeUndefined();
+      expect(result.metadata?.priceLabel).toBe("价格未公布");
+      expect(modelPriceSummary(result, { size_tier: "4K", quality: "max" })).toBe("价格未公布");
+      expect(result.metadata?.priceLabel).not.toContain("上次价格");
+      for (const line of mikotoHighQualityLines) expect(result.metadata?.priceLabel).not.toContain(line);
+    }
+  });
+  it.each([true, false])("clears legacy shared Mikoto prices from canonical models when group declarations are stale and catalog completeness is %s", complete => {
+    const staleCatalog = { ...mikotoHighQualityCatalog, complete, groups: [{ ...mikotoHighQualityCatalog.groups[0]!,
+      details: { ...mikotoHighQualityCatalog.groups[0]!.details!, stale: true } }] };
+    const results = applySupplierCatalogPrices(mikotoHighQualityModels.map(withLegacyMikotoGroupPrice), mikotoHighQualityGroup, staleCatalog);
+    for (const result of results) {
+      expect(result.pricing).toBeUndefined();
+      expect(result.metadata).toMatchObject({ priceLabel: "价格未公布", supplierGroupInfoStale: true });
+      expect(modelPriceSummary(result, { size_tier: "4K", quality: "max" })).toBe("价格未公布");
+      expect(result.metadata?.priceLabel).not.toContain("上次价格");
+      for (const line of mikotoHighQualityLines) expect(result.metadata?.priceLabel).not.toContain(line);
+    }
+  });
   it("refreshes catalog-owned interface evidence while protecting manual and model API fields", () => {
     const lookup = (endpoint: string, document: string, checkedAt = "2026-09-01T00:00:00Z") => ({ ...catalog, checkedAt,
       groups: [{ ...catalog.groups[0]!, models: [{ id: model.id, capability: "image" as const, metadata: { endpointTypes: [endpoint], documentationUrl: document } }] }] });
@@ -125,6 +321,24 @@ describe("universal supplier price lookup", () => {
     const tiered = applyDocumentedModelPrice(missing, "new-image：4K max ¥0.3/张，high ¥0.1/张", "https://example.com/docs");
     expect(tiered.pricing).toBeUndefined();
     expect(tiered.metadata?.priceLabel).toContain("4K max");
+  });
+  it("does not borrow a pro suffix price from documentation and selects exact future model lines", () => {
+    const base = mikotoImageModel("future-image-v99");
+    const pro = mikotoImageModel("future-image-v99-pro");
+    const proOnly = "future-image-v99-pro：¥0.22/张";
+    const missing = applyDocumentedModelPrice(base, proOnly, "https://example.com/docs");
+    expect(missing.pricing).toBeUndefined();
+    expect(missing.metadata?.priceLabel).toBe("价格未公布");
+    const document = [proOnly, "future-image-v99：¥0.11/张"].join("\n");
+    const baseQuote = applyDocumentedModelPrice(base, document, "https://example.com/docs");
+    expect(baseQuote.pricing).toMatchObject({ kind: "per-image", currency: "CNY", unitAmount: 0.11 });
+    expect(baseQuote.metadata?.priceLabel).toBe("¥0.11/张");
+    const proQuote = applyDocumentedModelPrice(pro, document, "https://example.com/docs");
+    expect(proQuote.pricing).toMatchObject({ kind: "per-image", currency: "CNY", unitAmount: 0.22 });
+    expect(proQuote.metadata?.priceLabel).toBe("¥0.22/张");
+    const suffixed = applyDocumentedModelPrice(mikotoImageModel("future-image-v99-pro-fast"), document, "https://example.com/docs");
+    expect(suffixed.pricing).toBeUndefined();
+    expect(suffixed.metadata?.priceLabel).toBe("价格未公布");
   });
   it("fills an unpublished price from a successful exact charge and keeps published prices first", async () => {
     const image: ModelDescriptor = { ...model, operations: ["image.generate"] };

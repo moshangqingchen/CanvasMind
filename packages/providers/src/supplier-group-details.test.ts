@@ -1,7 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { parseSupplierGroupDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel } from "./supplier-group-details.js";
+import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "./supplier-group-details.js";
 
 describe("supplier group evidence", () => {
+  it.each(["\n", "，", ";", " "])("scopes the screenshot's three model prices separated by %j", separator => {
+    const quotes = ["image2 0.1一张 能高质量", "image2.5 flare 0.13一张 支持五档质量", "image2.5 sub 0.16一张 支持五档质量"];
+    const details = parseSupplierGroupDetails({ description: quotes.join(separator), image_price_2k: 0.1, image_price_4k: 0.1 }, "key-groups")!;
+    for (const [index, modelId] of ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].entries()) {
+      const scoped = supplierGroupModelPriceDetails(details, modelId);
+      expect(scoped?.referencePrice).toBe(quotes[index]);
+      expect(scoped?.imagePrices).toBeUndefined();
+    }
+    expect(supplierGroupModelPriceDetails(details, "gpt-image-2.5-sunburst-adobe")?.referencePrice).toBeUndefined();
+    expect(supplierGroupModelPriceDetails(details, "gpt-image-2.5")?.referencePrice).toBeUndefined();
+    expect(details.imagePrices).toHaveLength(2);
+  });
+  it("keeps generic prices and scopes a single shared quote to the named models", () => {
+    const generic = parseSupplierGroupDetails({ description: "2.0跟2.5都有 0.07一张 只能中质量", image_price_4k: 0.07 }, "key-groups");
+    expect(supplierGroupModelPriceDetails(generic, "gpt-image-2.5-sunburst")).toBe(generic);
+    const shared = parseSupplierGroupDetails({ description: "gpt-image-2.5-flare 和 gpt-image-2.5-sunburst 每张0.16元，量大另议" }, "key-groups");
+    expect(supplierGroupModelPriceDetails(shared, "gpt-image-2.5-flare")?.referencePrice).toBe(shared?.referencePrice);
+    expect(supplierGroupModelPriceDetails(shared, "gpt-image-2")?.referencePrice).toBeUndefined();
+  });
+  it.each(["gpt-image-2.5-sunburst-adobe", "image2.5 sunburst-adobe", "image2.5 sub-adobe"])("captures the full %s declaration without lending its price to the base model", declared => {
+    const details = parseSupplierGroupDetails({ description: `${declared} 0.19一张`, image_price_4k: 0.19 }, "key-groups");
+    for (const id of ["gpt-image-2.5-sunburst", "gpt-image-2.5"]) {
+      expect(supplierGroupModelPriceDetails(details, id)?.referencePrice).toBeUndefined();
+      expect(supplierGroupModelPriceDetails(details, id)?.imagePrices).toBeUndefined();
+    }
+    expect(supplierGroupModelPriceDetails(details, "gpt-image-2.5-sunburst-adobe")?.referencePrice).toBe(`${declared} 0.19一张`);
+  });
+  it.each([
+    ["gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"],
+    ["future-image-v99", "future-image-v99-pro"],
+    ["vendor/image.v99", "vendor/image.v99-pro"],
+  ])("scopes arbitrary inventory IDs %s and %s without a supplier whitelist", (first, second) => {
+    const details = parseSupplierGroupDetails({ description: `${first} 0.065/张\n${second} 0.085/张`, image_price_4k: 0.065 }, "key-groups");
+    const ids = [first, second];
+    expect(supplierGroupModelPriceDetails(details, first, ids)?.referencePrice).toBe(`${first} 0.065/张`);
+    expect(supplierGroupModelPriceDetails(details, second, ids)?.referencePrice).toBe(`${second} 0.085/张`);
+    expect(supplierGroupModelPriceDetails(details, second, ids)?.imagePrices).toBeUndefined();
+    expect(supplierTextMentionsModel(`${second}：¥0.085/张`, first)).toBe(false);
+    expect(supplierTextMentionsModel(`**${first}**：¥0.065/张`, first)).toBe(true);
+  });
+  it("does not lend a numeric resolution suffix declaration to its base model", () => {
+    const details = parseSupplierGroupDetails({ description: "gpt-image-2-4k 0.1一张", image_price_4k: 0.1 }, "key-groups");
+    expect(supplierGroupModelPriceDetails(details, "gpt-image-2")?.referencePrice).toBeUndefined();
+    expect(supplierGroupModelPriceDetails(details, "gpt-image-2-4k")?.referencePrice).toBe("gpt-image-2-4k 0.1一张");
+  });
   it("reads the saved Secure Skill group wording", () => {
     expect(parseSupplierGroupDetails({ name: "image2.5特价", description: "image2.5特价，0.06一张，124k", rate_multiplier: 1 }, "key-groups"))
       .toMatchObject({ referencePrice: "0.06一张", supportedResolutions: ["1K", "2K", "4K"], rateMultiplier: 1 });

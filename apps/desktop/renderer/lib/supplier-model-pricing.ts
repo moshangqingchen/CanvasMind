@@ -9,7 +9,7 @@ import {
   type SupplierCatalogDiscovery,
   parseProviderModelFacts,
 } from "@super-canvas/providers";
-import { parseSupplierGroupDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel } from "@super-canvas/providers/supplier-group-details";
+import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "@super-canvas/providers/supplier-group-details";
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { repository } from "./server";
@@ -273,6 +273,7 @@ export function applySupplierCatalogPrices(
         ? "价格查询失败"
         : "价格未公布";
   const incomplete = catalog.complete === false || ["failed", "unauthorized"].includes(catalog.status);
+  const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   return models.map((model) => {
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
     if (catalogModel?.capability === "chat" && !model.operations.length) model = { ...model, metadata: { ...model.metadata,
@@ -311,9 +312,12 @@ export function applySupplierCatalogPrices(
     if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise)) return model;
     if (hasOwnPrice(model)) return model;
     const modelPrice = prices.get(model.id);
-    const groupPrice = image && !details?.stale ? supplierGroupPriceLabel(details) : "";
+    const priceDetails = image ? supplierGroupModelPriceDetails(details, model.id, groupModelIds) : undefined;
+    const groupPrice = !priceDetails?.stale ? supplierGroupPriceLabel(priceDetails) : "";
     const fresh = modelPrice || groupPrice;
+    const scopedGroupPrice = model.metadata?.priceSource === "supplier-group" && priceDetails !== details;
     const old =
+      !scopedGroupPrice &&
       ["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) &&
       typeof model.metadata?.priceLabel === "string" &&
       !unknownPrice.test(model.metadata.priceLabel)
@@ -338,7 +342,7 @@ export function applySupplierCatalogPrices(
     return {
       ...model,
       name,
-      pricing: pricingFromSupplierEvidence(modelPrice, image ? details : undefined, catalog.checkedAt, sourceUrl) ?? (incomplete ? model.pricing : undefined),
+      pricing: pricingFromSupplierEvidence(modelPrice, priceDetails, catalog.checkedAt, sourceUrl) ?? (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined),
       metadata: {
         ...model.metadata,
         priceLabel,
@@ -361,7 +365,7 @@ export function applySupplierCatalogPrices(
 export function applyDocumentedModelPrice(model: ModelDescriptor, document: string | undefined, sourceUrl: string): ModelDescriptor {
   if (model.pricing || (typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel) && model.metadata.priceSource !== "generated-result")) return model;
   const scoped = [model.description, model.metadata?.supplierChannelDescription,
-    ...((document ?? "").split(/\n/u).filter(line => line.includes(model.id)))].filter(value => typeof value === "string").join("\n");
+    ...((document ?? "").split(/\n/u).filter(line => supplierTextMentionsModel(line, model.id)))].filter(value => typeof value === "string").join("\n");
   const labels = [...scoped.matchAll(/(?:[¥￥$]\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:元|USD|CNY|RMB|美元))\s*[/／]\s*(?:张|次|请求)/giu)].map(match => match[0]);
   if (!labels.length) return model;
   const label = [...new Set(labels)].join(" · ");

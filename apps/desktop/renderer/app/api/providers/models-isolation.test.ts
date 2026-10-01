@@ -28,6 +28,8 @@ import {
   patchSupplierRecord,
 } from "../../../lib/supplier-service";
 import { GET } from "./[id]/models/route";
+import * as supplierModelPricing from "../../../lib/supplier-model-pricing";
+import { modelPriceSummary } from "../../../lib/model-display";
 import {
   mikotoConnectorForGroup,
   MIKOTO_IMAGE_GROUP,
@@ -73,7 +75,135 @@ async function fixture(supplierKey?: string) {
   });
   return { supplier, connection };
 }
+async function mixedGroupPriceFixture() {
+  const { supplier, connection } = await fixture("mikoto");
+  const group = "生图（2k4k 高质量）";
+  const declarations = ["image2 0.1一张 能高质量", "image2.5 flare 0.13一张 支持五档质量", "image2.5 sub 0.16一张 支持五档质量"];
+  const ids = ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"];
+  const savedSupplier = await mocks.repository.saveSupplier({ ...supplier, kind: "newapi", scanStatus: "live", scanComplete: true,
+    catalog: { groups: [{ id: group, label: group, models: [], details: { source: "key-groups", description: declarations.join("\n"),
+      referencePrice: declarations.join("；"), supportedResolutions: ["2K", "4K"],
+      imagePrices: [{ resolution: "2K", amount: 0.1 }, { resolution: "4K", amount: 0.1 }] } }] } });
+  const models = ids.map(id => ({ id, name: id, operations: ["image.generate"],
+    pricing: { kind: "tiered", currency: "credits", checkedAt: "2026-09-20T00:00:00Z", confidence: "exact",
+      tiers: [{ id: "2K", label: "2K", dimension: "resolution", value: "2K", price: 0.1 },
+        { id: "4K", label: "4K", dimension: "resolution", value: "4K", price: 0.1 }] },
+    metadata: { priceSource: "supplier-group", priceLabel: declarations.join("；") + "（分组说明参考）" } }));
+  const savedConnection = await mocks.repository.saveConnection({ ...connection, config: { ...connection.config, modelGroup: group,
+    manualModels: [], modelScanStatus: "live", modelScanCheckedAt: "2026-09-20T00:00:00Z", modelScanComplete: true,
+    scannedModelIds: ids, modelCatalogModels: models } });
+  return { supplier: savedSupplier, connection: savedConnection, declarations, ids, models };
+}
 describe("model refresh source boundary", () => {
+  it.each([false, true])("quotes an appended manual model from only its saved supplier/group without network, cached=%s", async cachedOnly => {
+    const { supplier, connection } = await fixture();
+    const savedSupplier = await mocks.repository.saveSupplier({ ...supplier, kind: "newapi", scanStatus: "live", scanComplete: true,
+      catalog: { groups: [
+        { id: "same-name", label: "Current", models: [{ id: "manual-only", capability: "image", priceLabel: "$0.19/张" }] },
+        { id: "other-group", label: "Other", models: [{ id: "manual-only", capability: "image", priceLabel: "$9/张" }] },
+      ] } });
+    const saved = await mocks.repository.saveConnection({ ...connection, config: { ...connection.config,
+      modelScanStatus: "live", modelCatalogModels: [] } });
+    const lookup = vi.spyOn(supplierModelPricing, "enrichSupplierModelPrices");
+    try {
+      const response = await GET(new Request(`http://localhost/api/providers/${connection.id}/models${cachedOnly ? "?cached=1" : ""}`),
+        { params: Promise.resolve({ id: connection.id }) });
+      expect(response.status).toBe(200);
+      const models = await response.json();
+      expect(models.map((model: { id: string }) => model.id)).toEqual(["manual-only"]);
+      expect(models[0].metadata).toMatchObject({ source: "manual", priceSource: "supplier-catalog", priceLabel: "$0.19/张" });
+      expect(modelPriceSummary(models[0], {})).toBe("0.19 USD / 张");
+      expect(lookup.mock.calls.some(([, models]) => models.some(model => model.id === "manual-only"))).toBe(true);
+      expect(lookup.mock.calls.every(([, , force, allowNetwork]) => force === false && allowNetwork === false)).toBe(true);
+      expect(mocks.fetch).not.toHaveBeenCalled();
+      expect(mocks.document).not.toHaveBeenCalled();
+      expect(await mocks.repository.getConnection(connection.id)).toEqual(saved);
+      expect(await mocks.repository.getSupplier(supplier.id)).toEqual(savedSupplier);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+  it("repairs saved mixed model prices after an upstream outage without another price lookup or changing inventory", async () => {
+    const { supplier, connection, declarations, ids, models: oldModels } = await mixedGroupPriceFixture();
+    mocks.fetch.mockRejectedValue(new Error("upstream model directory unavailable"));
+    const lookup = vi.spyOn(supplierModelPricing, "enrichSupplierModelPrices");
+    try {
+      const response = await refresh(connection.id);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("X-Model-Scan-Status")).toBe("stale");
+      const models = await response.json();
+      expect(models.map((model: { id: string }) => model.id)).toEqual(ids);
+      for (const [index, model] of models.entries()) {
+        expect(model.pricing).toBeUndefined();
+        expect(model.metadata.priceLabel).toContain(declarations[index]);
+        for (const other of declarations.filter((_, otherIndex) => index !== otherIndex))
+          expect(model.metadata.priceLabel).not.toContain(other);
+        expect(modelPriceSummary(model, { size_tier: "4K", quality: "max" })).not.toContain("额度");
+      }
+      expect(lookup.mock.calls.length).toBeGreaterThan(0);
+      expect(lookup.mock.calls.every(([, , force, allowNetwork]) => force === false && allowNetwork === false)).toBe(true);
+      expect(mocks.fetch.mock.calls.every(([url]) => String(url).includes("/models"))).toBe(true);
+      expect(mocks.document).not.toHaveBeenCalled();
+      const saved = (await mocks.repository.getConnection(connection.id))!;
+      expect(saved.config.scannedModelIds).toEqual(ids);
+      expect(saved.config.modelCatalogModels).toEqual(oldModels);
+      expect(saved.encryptedSecret).toBe(connection.encryptedSecret);
+      expect(await mocks.repository.getSupplier(supplier.id)).toEqual(supplier);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+  it("discards an appended manual price when the connection group changes during offline enrichment", async () => {
+    const { supplier, connection } = await fixture();
+    await mocks.repository.saveSupplier({ ...supplier, kind: "newapi", scanStatus: "live", scanComplete: true,
+      catalog: { groups: [{ id: "same-name", label: "Current", models: [{ id: "manual-only", capability: "image", priceLabel: "$0.19/张" }] }] } });
+    const saved = await mocks.repository.saveConnection({ ...connection, config: { ...connection.config,
+      modelScanStatus: "live", modelCatalogModels: [] } });
+    const actual = supplierModelPricing.enrichSupplierModelPrices;
+    let changed = false;
+    const lookup = vi.spyOn(supplierModelPricing, "enrichSupplierModelPrices").mockImplementation(async (source, models, ...options) => {
+      if (!changed && models.some(model => model.id === "manual-only")) {
+        changed = true;
+        await mocks.repository.saveConnection({ ...saved, config: { ...saved.config, modelGroup: "other-group" } });
+      }
+      return actual(source, models, ...options);
+    });
+    try {
+      const response = await GET(new Request(`http://localhost/api/providers/${connection.id}/models?cached=1`),
+        { params: Promise.resolve({ id: connection.id }) });
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toContain("连接已改变");
+      expect((await mocks.repository.getConnection(connection.id))?.config.modelGroup).toBe("other-group");
+      expect(mocks.fetch).not.toHaveBeenCalled();
+      expect(mocks.document).not.toHaveBeenCalled();
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+  it("repairs mixed prices in the failure fallback after a saved model read throws", async () => {
+    const { connection, declarations, ids, models: oldModels } = await mixedGroupPriceFixture();
+    const lookup = vi.spyOn(supplierModelPricing, "enrichSupplierModelPrices").mockRejectedValueOnce(new Error("temporary price read error"));
+    try {
+      const response = await refresh(connection.id, false);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("X-Model-Scan-Status")).toBe("stale");
+      const models = await response.json();
+      expect(models.map((model: { id: string }) => model.id)).toEqual(ids);
+      for (const [index, model] of models.entries()) {
+        expect(model.pricing).toBeUndefined();
+        expect(model.metadata.priceLabel).toContain(declarations[index]);
+        for (const other of declarations.filter((_, otherIndex) => index !== otherIndex))
+          expect(model.metadata.priceLabel).not.toContain(other);
+      }
+      expect(lookup.mock.calls).toHaveLength(2);
+      expect(lookup.mock.calls.every(([, , force, allowNetwork]) => force === false && allowNetwork === false)).toBe(true);
+      expect(mocks.fetch).not.toHaveBeenCalled();
+      expect(mocks.document).not.toHaveBeenCalled();
+      expect((await mocks.repository.getConnection(connection.id))?.config.modelCatalogModels).toEqual(oldModels);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
   it.each(["canvas", "agent"])("keeps supported object-map/alternate model-list payloads for %s connections", async usage => {
     const { connection } = await fixture();
     await mocks.repository.saveConnection({ ...connection, config: { ...connection.config, usage, manualModels: [] } });
@@ -344,12 +474,18 @@ describe("model refresh source boundary", () => {
     const connection = await mocks.repository.saveConnection({ id: "personal-cli", name: "CLI", provider: "cli", config: {
       cli: { executable: "MUST-NOT-EXECUTE.exe", enabled: true }, modelCatalogModels: models, modelScanStatus: "live",
     } });
-    const response = await refresh(connection.id);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(models);
-    expect(response.headers.get("X-Model-Scan-Source")).toBe("cli-saved");
-    expect(await mocks.repository.getConnection(connection.id)).toEqual(connection);
-    expect(mocks.fetch).not.toHaveBeenCalled();
+    const lookup = vi.spyOn(supplierModelPricing, "enrichSupplierModelPrices");
+    try {
+      const response = await refresh(connection.id);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(models);
+      expect(response.headers.get("X-Model-Scan-Source")).toBe("cli-saved");
+      expect(await mocks.repository.getConnection(connection.id)).toEqual(connection);
+      expect(mocks.fetch).not.toHaveBeenCalled();
+      expect(lookup).not.toHaveBeenCalled();
+    } finally {
+      lookup.mockRestore();
+    }
   });
   it("hydrates a new connection from saved data without scanning or writing, even when refresh is also present", async () => {
     const { connection } = await fixture();

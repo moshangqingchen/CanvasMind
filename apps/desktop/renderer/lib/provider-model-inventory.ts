@@ -1001,6 +1001,19 @@ async function readModels(
   }
 }
 
+/** Price appended manual models and failure snapshots without another upstream read. */
+async function offlineInventoryPrices(
+  connection: NonNullable<Awaited<ReturnType<typeof repository.getConnection>>>,
+  models: ModelDescriptor[],
+): Promise<ModelDescriptor[]> {
+  const priced = await enrichSupplierModelPrices(connection, models, false, false);
+  const current = await repository.getConnection(connection.id);
+  if (!current || JSON.stringify(current) !== JSON.stringify(connection))
+    throw new SupplierConflictError("读取价格期间连接已改变，旧结果已丢弃，请重新读取");
+  await assertCurrentSupplierConnection(current);
+  return priced;
+}
+
 /** One request identity across every adapter prevents delayed results from restoring old state. */
 async function readModelResponse(
   request: Request,
@@ -1037,7 +1050,8 @@ async function readModelResponse(
       const snapshot = original.config.modelScanStatus !== "empty" && Array.isArray(original.config.modelCatalogModels)
         ? original.config.modelCatalogModels as unknown as ModelDescriptor[] : [];
       const bound = bindScannedModelProtocols(original, await enrichSupplierModelPrices(original, snapshot, false, false));
-      return withModelInventoryMetadata(Response.json(mergeManualProviderModels(original, bound.models), {
+      const models = await offlineInventoryPrices(original, mergeManualProviderModels(original, bound.models));
+      return withModelInventoryMetadata(Response.json(models, {
         headers: {
           "X-Model-Scan-Status": modelInventoryScanStatus(original.config),
           "Cache-Control": "no-store",
@@ -1096,8 +1110,9 @@ async function readModelResponse(
             modelProtocolTemplate: bound.templateConnector as unknown as typeof original.config.connector } : {}),
         } }, { expected: original });
       }
+      const models = await offlineInventoryPrices(original, mergeManualProviderModels(original, bound.models));
       return withModelInventoryMetadata(Response.json(
-        mergeManualProviderModels(original, bound.models),
+        models,
         {
           headers: {
             "X-Model-Scan-Status":
@@ -1232,7 +1247,10 @@ async function readModelResponse(
     if (response.ok) {
       const payload: unknown = await response.clone().json().catch(() => null);
       if (Array.isArray(payload)) {
-        const models = await enrichSupplierModelPrices(latest, payload as ModelDescriptor[]);
+        const stale = ["stale", "failed"].includes(response.headers.get("X-Model-Scan-Status") ?? "");
+        const models = stale
+          ? await offlineInventoryPrices(latest, payload as ModelDescriptor[])
+          : await enrichSupplierModelPrices(latest, payload as ModelDescriptor[]);
         return withModelInventoryMetadata(Response.json(models, { headers: response.headers }), latest.config);
       }
     }
@@ -1291,11 +1309,11 @@ async function readModelResponse(
       if (status === "empty") return withModelInventoryMetadata(staleModelsResponse([]), saved.config, "saved");
       if (Array.isArray(saved.config.modelCatalogModels))
         return withModelInventoryMetadata(staleModelsResponse(
-          mergeManualProviderModels(
+          await offlineInventoryPrices(saved, mergeManualProviderModels(
             saved,
             saved.config.modelCatalogModels as unknown as ModelDescriptor[],
             true,
-          ),
+          )),
         ), saved.config, "saved");
     } catch (failure) {
       if (
