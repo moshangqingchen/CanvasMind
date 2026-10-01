@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseSupplierBilling, readSupplierBilling } from "./supplier-billing-read";
-import { billingAmount, billingCompact, billingTodayAmount } from "./supplier-billing-display";
+import { billingAmount, billingCompact, billingTodayAmount, billingSourceLabel } from "./supplier-billing-display";
 import type { SupplierBillingSnapshot } from "@super-canvas/db";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
@@ -8,7 +8,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 describe("supplier account amounts", () => {
   it("converts NewAPI quota only with the site's own divisor", () => {
     expect(parseSupplierBilling("newapi", { data: { quota: "750000", used_quota: 125000, request_count: 12 } }, { data: { quota_per_unit: 500000 } }))
-      .toEqual({ balance: 1.5, used: .25, todayUsed: undefined, requests: 12, unit: "credits" });
+      .toMatchObject({ balance: 1.5, used: .25, todayUsed: undefined, requests: 12, unit: "credits", unitBasis: "site-conversion" });
     expect(parseSupplierBilling("newapi", { data: { quota: 750000 } }, {})).toMatchObject({ balance: 750000, unit: "quota" });
   });
   it("keeps zero and negative balance but never fabricates missing amounts", () => {
@@ -25,12 +25,12 @@ describe("supplier account amounts", () => {
     expect(parseSupplierBilling("newapi", profile, { quota_per_unit: 500000, quota_display_type: "CNY", usd_exchange_rate: 7.2 })).toMatchObject({ balance: 7.2, used: 1.4400000000000002, unit: "CNY" });
     expect(parseSupplierBilling("newapi", profile, { quota_per_unit: 500000, quota_display_type: "USD", usd_exchange_rate: 7.2 })).toMatchObject({ balance: 1, unit: "USD" });
     expect(parseSupplierBilling("newapi", profile, { quota_per_unit: 500000, quota_display_type: "TOKENS" })).toMatchObject({ balance: 500000, unit: "quota" });
-    expect(parseSupplierBilling("newapi", profile, { quota_per_unit: 500000, quota_display_type: "CNY" })).toMatchObject({ balance: 1, unit: "credits" });
+    expect(parseSupplierBilling("newapi", profile, { quota_per_unit: 500000, quota_display_type: "CNY" })).toMatchObject({ balance: 500000, unit: "quota", unitBasis: "raw-quota" });
   });
   it("reads account actual cost instead of list pages or standard cost", () => {
     expect(parseSupplierBilling("sub2api", { code: 0, data: { balance: "12.35", currency: "USD" } },
       { code: 0, data: { total_actual_cost: 1.2345, total_cost: 99, today_actual_cost: .1, total_requests: 8, items: [{ actual_cost: 999 }] } }))
-      .toEqual({ balance: 12.35, used: 1.2345, todayUsed: .1, requests: 8, unit: "USD" });
+      .toMatchObject({ balance: 12.35, used: 1.2345, todayUsed: .1, requests: 8, unit: "USD", unitBasis: "declared-currency" });
     expect(parseSupplierBilling("sub2api", { balance: 5 }, {}).unit).toBe("credits");
     expect(() => parseSupplierBilling("newapi", { success: false, data: { quota: 1 } }, {})).toThrow();
     expect(() => parseSupplierBilling("sub2api", { code: 401, data: { balance: 1 } }, {})).toThrow();
@@ -126,5 +126,37 @@ describe("supplier account amounts", () => {
     const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
     expect(billingTodayAmount(billing, tomorrow)).toBe("0 额度（上次）");
     expect(billingTodayAmount(undefined, now)).toBe("未读取");
+  });
+
+  it("rejects string error codes rather than displaying error-payload zeros", async () => {
+    expect(() => parseSupplierBilling("sub2api", { code: "403", data: { balance: 0 } }, {})).toThrow();
+    expect(parseSupplierBilling("sub2api", { code: "0", data: { balance: 0 } }, { code: "200", data: { total_actual_cost: 0 } })).toMatchObject({ balance: 0, used: 0 });
+    const result = await readSupplierBilling({ siteUrl: "https://site.invalid", sourceId: "s", kind: "sub2api" }, async url =>
+      String(url).endsWith("/profile") ? Response.json({ data: { balance: 8 } }) : Response.json({ code: "403", data: { total_actual_cost: 0, today_actual_cost: 0 } }));
+    expect(result).toMatchObject({ status: "partial", balance: 8, used: undefined, todayUsed: undefined, todayStatus: "failed" });
+  });
+
+  it("never labels unconverted quota as the profile currency or emits an infinite conversion", () => {
+    const result = parseSupplierBilling("newapi", { currency: "CNY", quota: 500000, used_quota: 100000 }, { quota_per_unit: 500000, quota_display_type: "CNY" });
+    expect(result).toMatchObject({ balance: 500000, used: 100000, unit: "quota", unitBasis: "raw-quota" });
+    expect(parseSupplierBilling("newapi", { quota: Number.MAX_VALUE }, { quota_per_unit: 1, quota_display_type: "CNY", usd_exchange_rate: 10 }).balance).toBeUndefined();
+  });
+
+  it("keeps different declared account and usage currencies without converting either", async () => {
+    const result = await readSupplierBilling({ siteUrl: "https://site.invalid", sourceId: "s", kind: "sub2api" }, async url =>
+      String(url).endsWith("/profile") ? Response.json({ data: { balance: 10, currency: "cny" } }) : Response.json({ data: { total_actual_cost: 2, today_actual_cost: .5, currency: "USD" } }));
+    expect(result).toMatchObject({ unit: "CNY", balanceUnit: "CNY", usedUnit: "USD", todayUnit: "USD", balance: 10, used: 2,
+      sourceUrl: "https://site.invalid/api/v1/user/profile", usedSourceUrl: "https://site.invalid/api/v1/usage/dashboard/stats", todaySourceUrl: "https://site.invalid/api/v1/usage/dashboard/stats" });
+    expect(billingCompact(result)).toBe("余额 10 CNY");
+    expect(billingTodayAmount(result)).toBe("0.5 USD");
+    expect(billingSourceLabel(result)).toBe("来源：site.invalid 供应商后台");
+  });
+
+  it("preserves tiny nonzero costs and uses legacy checkedAt to date daily snapshots", () => {
+    expect(billingAmount(.000001, "USD")).toBe("0.000001 USD");
+    const old: SupplierBillingSnapshot = { sourceId: "s", status: "live", checkedAt: "2026-09-27T04:00:00Z", todayUsed: 1, unit: "USD", sourceUrl: "https://site.invalid/path?private=omit" };
+    expect(billingTodayAmount(old, new Date("2026-09-28T04:00:00Z"))).toBe("1 USD（上次）");
+    expect(billingSourceLabel(old)).toBe("来源：site.invalid 供应商后台");
+    expect(billingSourceLabel({ ...old, sourceUrl: "javascript:private" })).toBeUndefined();
   });
 });

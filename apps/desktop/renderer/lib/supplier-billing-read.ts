@@ -9,9 +9,12 @@ const number = (value: unknown): number | undefined => {
 };
 function data(payload: unknown) {
   const root = record(payload);
-  if (root.success === false || (typeof root.code === "number" && ![0, 200].includes(root.code))) throw Error("供应商未返回有效账务数据");
+  const hasCode = root.code !== undefined && root.code !== null;
+  if (root.success === false || (hasCode && ![0, 200].includes(number(root.code) ?? NaN))) throw Error("供应商未返回有效账务数据");
   return record(root.data ?? root);
 }
+
+const currency = (value: unknown) => typeof value === "string" && /^[A-Z]{3}$/u.test(value.trim().toUpperCase()) ? value.trim().toUpperCase() : undefined;
 
 /** No key-list sums or recent-page sums: only account-wide totals are accepted. */
 export function parseSupplierBilling(kind: "newapi" | "sub2api", profilePayload: unknown, extraPayload: unknown, todayPayload?: unknown) {
@@ -21,24 +24,32 @@ export function parseSupplierBilling(kind: "newapi" | "sub2api", profilePayload:
   let today: Record<string, unknown>;
   try { today = data(todayPayload); } catch { today = {}; }
   const divisor = kind === "newapi" ? number(extra.quota_per_unit) : undefined;
-  const explicitCurrency = String(profile.currency ?? extra.currency ?? "").toUpperCase();
-  let unit = kind === "newapi" && !(divisor && divisor > 0) ? "quota"
-    : ["USD", "CNY", "EUR"].includes(explicitCurrency) ? explicitCurrency : "credits";
+  const profileCurrency = currency(profile.currency), extraCurrency = currency(extra.currency);
+  let unit = kind === "newapi" ? "quota" : profileCurrency ?? extraCurrency ?? "credits";
+  let unitBasis: SupplierBillingSnapshot["unitBasis"] = kind === "newapi" ? "raw-quota" : unit === "credits" ? "unspecified" : "declared-currency";
+  let unitNote = kind === "newapi" ? "站点未提供完整换算设置，显示原始额度，不换算为货币。"
+    : unit === "credits" ? "站点未注明币种，金额仅按后台额度显示。" : "按站点返回的币种显示，未自动换算。";
   let factor = 1;
   if (kind === "newapi" && divisor && divisor > 0) {
     const display = String(extra.quota_display_type ?? "").toUpperCase();
     const exchange = number(extra.usd_exchange_rate);
     const customExchange = number(extra.custom_currency_exchange_rate);
-    if (display === "TOKENS") unit = "quota";
+    if (!display) unit = profileCurrency === "USD" || extraCurrency === "USD" ? "USD" : "credits";
+    else if (display === "TOKENS") unit = "quota";
     else if (display === "USD") unit = "USD";
     else if (display === "CNY" && exchange && exchange > 0) { unit = "CNY"; factor = exchange; }
     else if (display === "CUSTOM" && customExchange && customExchange > 0 && typeof extra.custom_currency_symbol === "string") {
       unit = extra.custom_currency_symbol.trim().slice(0, 20) || "额度"; factor = customExchange;
     }
+    if (unit !== "quota") {
+      unitBasis = "site-conversion";
+      unitNote = `按站点设置：每 ${divisor} 原始额度为 1 基础单位${factor !== 1 ? `，再乘站点汇率 ${factor}` : ""}；不使用外部汇率。`;
+    } else if (display === "TOKENS") unitNote = "站点配置为原始额度显示，不换算为货币。";
   }
   const convert = (value: unknown) => {
     const amount = number(value);
-    return amount === undefined ? undefined : kind === "newapi" && unit !== "quota" && divisor && divisor > 0 ? amount / divisor * factor : amount;
+    const converted = amount === undefined ? undefined : kind === "newapi" && unit !== "quota" && divisor && divisor > 0 ? amount / divisor * factor : amount;
+    return converted !== undefined && Number.isFinite(converted) ? converted : undefined;
   };
   return {
     balance: convert(kind === "newapi" ? profile.quota : profile.balance),
@@ -46,6 +57,9 @@ export function parseSupplierBilling(kind: "newapi" | "sub2api", profilePayload:
     todayUsed: kind === "sub2api" ? number(extra.today_actual_cost) : convert(today.quota),
     requests: number(kind === "newapi" ? profile.request_count : extra.total_requests),
     unit,
+    ...(kind === "sub2api" && profileCurrency && extraCurrency && profileCurrency !== extraCurrency
+      ? { balanceUnit: profileCurrency, usedUnit: extraCurrency, todayUnit: extraCurrency } : {}),
+    unitBasis, unitNote,
   };
 }
 
@@ -80,13 +94,16 @@ export async function readSupplierBilling(input: { siteUrl: string; sourceId: st
     { phase: "connect", timeoutMs: 12000, maxResponseBytes: 1024 * 1024 });
   const [profile, extra, today] = await Promise.allSettled([read(profilePath), read(extraPath),
     input.kind === "newapi" ? read(`/api/log/self/stat?${todayQuery}`) : Promise.resolve(undefined)]);
-  if (profile.status === "rejected") throw Error("余额与消耗读取失败，请检查站点登录或稍后重试");
+  if (profile.status === "rejected") throw profile.reason;
   const amounts = parseSupplierBilling(input.kind, profile.value, extra.status === "fulfilled" ? extra.value : {}, today.status === "fulfilled" ? today.value : {});
   if (amounts.balance === undefined && amounts.used === undefined) throw Error("供应商没有返回可识别的余额或消耗字段");
   const availability = todayAvailability(input.kind === "newapi" ? today : extra, amounts.todayUsed);
   const checkedAt = new Date().toISOString();
-  const incompleteTotals = extra.status === "rejected" || amounts.balance === undefined || amounts.used === undefined || amounts.unit === "quota";
+  let extraValid = extra.status === "fulfilled";
+  if (extra.status === "fulfilled") { try { data(extra.value); } catch { extraValid = false; } }
+  const incompleteTotals = !extraValid || amounts.balance === undefined || amounts.used === undefined || amounts.unit === "quota";
   const error = [incompleteTotals ? "部分账务字段未返回；未提供的金额显示为未读取" : undefined, availability.todayError].filter(Boolean).join("；");
   return { sourceId: input.sourceId, ...amounts, ...availability, ...(todayWindow ? { todayWindow } : {}), checkedAt, lastSuccessAt: checkedAt, sourceUrl: base + profilePath,
+    usedSourceUrl: base + (input.kind === "newapi" ? profilePath : extraPath), todaySourceUrl: base + (input.kind === "newapi" ? "/api/log/self/stat" : extraPath),
     status: error ? "partial" : "live", ...(error ? { error } : {}) };
 }

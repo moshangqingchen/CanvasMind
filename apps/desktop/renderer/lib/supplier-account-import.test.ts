@@ -18,6 +18,38 @@ function connection(patch: Partial<ProviderConnectionRecord> = {}): ProviderConn
     createdAt: "before", updatedAt: "before", ...patch };
 }
 describe("account key import plan", () => {
+  it.each([undefined, true, false])("controls verification markers only on newly imported Keys: %s", verifyCapabilities => {
+    const cleared = connection({ config: { supplierId: "s", supplierSourceId: "source", modelGroup: "B1", usage: "canvas",
+      supplierVerificationRequestId: "cleared-key-old-request" } });
+    const existing = connection({ id: "kept", encryptedSecret: "keep-key", config: { supplierId: "s", supplierSourceId: "source",
+      modelGroup: "B2", usage: "canvas", supplierVerificationRequestId: "existing-key-accepted-request" } });
+    const withNewGroup = { ...inventory, keys: [...inventory.keys, { id: "4", group: "B3", apiKey: "new-group-secret", name: "New" }] };
+    const before = [cleared, existing];
+    const plan = planSupplierAccountImport(supplier, before, withNewGroup, encrypt, before, { verifyCapabilities });
+    expect(plan.connections[1]).toEqual(existing);
+    for (const imported of [plan.connections[0]!, plan.connections[2]!]) {
+      if (verifyCapabilities === false) expect(imported.config).not.toHaveProperty("supplierVerificationRequestId");
+      else {
+        expect(imported.config.supplierVerificationRequestId).toEqual(expect.any(String));
+        expect(imported.config.supplierVerificationRequestId).not.toBe("cleared-key-old-request");
+      }
+    }
+    expect(cleared.config.supplierVerificationRequestId).toBe("cleared-key-old-request");
+  });
+  it("clears former Key scan evidence when filling a cleared Key while preserving manual models", () => {
+    const manualModels = [{ id: "manual", capability: "image", protocol: "openai-images" }];
+    const previous = connection({ config: { supplierId: "s", supplierSourceId: "source", modelGroup: "B1", usage: "canvas",
+      manualModels, modelScanStatus: "unauthorized", modelScanComplete: true, modelScanError: "Old failure",
+      modelScanErrorCode: "invalid_credentials", modelScanHttpStatus: 401, modelScanLastSuccessAt: "old",
+      modelScanCheckedAt: "old", modelCatalogModels: [{ id: "old-key-model" }], scannedModelIds: ["old-key-model"],
+    } });
+    const plan = planSupplierAccountImport(supplier, [previous], inventory, encrypt);
+    expect(plan.connections[0]?.config).toMatchObject({ manualModels, modelScanStatus: "unscanned", modelScanComplete: false,
+      modelScanError: null, modelScanErrorCode: null, modelScanHttpStatus: null,
+      modelScanLastSuccessAt: null, modelScanCheckedAt: null, modelScanAttemptStatus: "unscanned",
+      modelCatalogModels: [], scannedModelIds: [],
+    });
+  });
   it("fills empty groups, keeps exact ownership, and is idempotent on a second scan", () => {
     const plan = planSupplierAccountImport(supplier, [connection()], inventory, encrypt);
     expect(plan.summary).toMatchObject({ imported: 2, preserved: 0, multipleGroups: 1 });

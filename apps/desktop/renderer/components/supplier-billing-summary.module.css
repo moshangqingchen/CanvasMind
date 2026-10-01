@@ -4,9 +4,10 @@
 .heading button:disabled { opacity: .6; cursor: wait; }
 .amounts { display: flex; flex-wrap: wrap; gap: 10px 24px; margin: 12px 0 8px; }
 .amounts span { display: flex; gap: 8px; }
-.summary small { display: block; opacity: .65; line-height: 1.6; }
+.summary small { display: block; opacity: .8; line-height: 1.6; overflow-wrap: anywhere; }
 .summary p { color: #e4b1a4; margin: 5px 0; line-height: 1.5; }
 .compact { margin: 8px 0 0; padding: 9px 10px; }
 .compact .amounts { gap: 8px 12px; }
 .spin { animation: rotate 1s linear infinite; }
 @keyframes rotate { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

@@ -12,6 +12,11 @@ const docs = [{ url: "https://supplier.test/openapi.json", body: { openapi: "3.1
 } }];
 
 describe("automatic supplier interface onboarding", () => {
+  it("passes explicit freshness and operation identity to the document reader", async () => {
+    const read = vi.fn(async () => docs);
+    await discoverSupplierModelInterfaces(connection, [model], connection, read, { force: true, refreshId: "scan-1" });
+    expect(read).toHaveBeenCalledWith(connection.config.baseUrl, [model], connection.config.baseUrl, { force: true, refreshId: "scan-1" });
+  });
   it("creates one saved route for an authenticated model and repeated scans are idempotent", async () => {
     const read = vi.fn(async () => docs);
     const first = await discoverSupplierModelInterfaces(connection, [model], connection, read);

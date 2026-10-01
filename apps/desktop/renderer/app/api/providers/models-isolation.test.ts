@@ -74,6 +74,144 @@ async function fixture(supplierKey?: string) {
   return { supplier, connection };
 }
 describe("model refresh source boundary", () => {
+  it.each(["canvas", "agent"])("keeps supported object-map/alternate model-list payloads for %s connections", async usage => {
+    const { connection } = await fixture();
+    await mocks.repository.saveConnection({ ...connection, config: { ...connection.config, usage, manualModels: [] } });
+    mocks.fetch.mockImplementation(async (url: string | URL | Request) => String(url).includes("/models")
+      ? Response.json({ items: { "map-image": { display_name: "Map image" } }, result: [{ model_name: "other-model" }] })
+      : Response.json({}, { status: 404 }));
+    const response = await refresh(connection.id);
+    expect(response.status).toBe(200);
+    expect((await response.json()).map((model: { id: string }) => model.id)).toEqual(["map-image", "other-model"]);
+    expect((await mocks.repository.getConnection(connection.id))?.config.scannedModelIds).toEqual(["map-image", "other-model"]);
+  });
+  it.each([
+    { payload: {}, code: "invalid_response" },
+    { payload: { success: "false", data: [], message: "private-token-must-not-echo" }, code: "invalid_response" },
+    { payload: { data: [{ id: "partial-new" }], has_more: "true", total: "100" }, code: "incomplete_directory" },
+  ])("preserves confirmed inventory and manual configuration on $code HTTP 200 responses", async ({ payload, code }) => {
+    const { connection } = await fixture();
+    const confirmed = "2026-09-20T00:00:00.000Z";
+    const catalog = [{ id: "old-image", name: "Old image", operations: ["image.generate"] }];
+    await mocks.repository.saveConnection({ ...connection, config: { ...connection.config,
+      modelScanStatus: "live", modelScanComplete: true, modelScanCheckedAt: confirmed, modelCatalogModels: catalog,
+      scannedModelIds: ["old-image"], modelRemovedModels: [{ id: "earlier-removed" }],
+    } });
+    mocks.fetch.mockResolvedValue(Response.json(payload));
+    const response = await refresh(connection.id);
+    expect(response.headers.get("X-Model-Scan-Status")).toBe("stale");
+    expect((await response.json()).map((model: { id: string }) => model.id)).toContain("old-image");
+    const saved = (await mocks.repository.getConnection(connection.id))!;
+    expect(saved.config).toMatchObject({ modelScanStatus: "failed", modelScanComplete: false,
+      modelScanErrorCode: code, modelScanHttpStatus: 200, modelScanLastSuccessAt: confirmed,
+      modelCatalogModels: catalog, scannedModelIds: ["old-image"], modelRemovedModels: [{ id: "earlier-removed" }],
+      manualModels: connection.config.manualModels,
+    });
+    expect(saved.encryptedSecret).toBe(connection.encryptedSecret);
+    expect(JSON.stringify(saved.config)).not.toContain("private-token");
+    mocks.fetch.mockImplementation(async (url: string | URL | Request) => String(url).includes("/models")
+      ? Response.json({ data: [{ id: "new-image" }] }) : Response.json({}, { status: 404 }));
+    expect((await refresh(connection.id)).headers.get("X-Model-Scan-Complete")).toBe("true");
+    expect((await mocks.repository.getConnection(connection.id))?.config).toMatchObject({ modelScanComplete: true,
+      modelScanError: null, modelScanErrorCode: null, modelScanHttpStatus: null, scannedModelIds: ["new-image"] });
+  });
+  it.each([{ code: "401", expectedStatus: 401, failure: "invalid_credentials" },
+    { code: "403", expectedStatus: 403, failure: "permission_denied" }])(
+    "treats HTTP 200 application code $code as authorization failure without promoting an empty directory", async ({code, expectedStatus, failure}) => {
+      const { connection } = await fixture();
+      mocks.fetch.mockResolvedValue(Response.json({ code, data: [], message: "private-token-must-not-echo" }));
+      const response = await refresh(connection.id);
+      expect(response.status).toBe(expectedStatus);
+      expect(response.headers.get("X-Model-Scan-Status")).toBe("unauthorized");
+      expect(JSON.stringify(await response.json())).not.toContain("private-token");
+      expect((await mocks.repository.getConnection(connection.id))?.config).toMatchObject({ modelScanStatus: "unauthorized",
+        modelScanComplete: false, modelScanErrorCode: failure, modelScanHttpStatus: 200 });
+      expect((await mocks.repository.getConnection(connection.id))?.config.modelScanLastSuccessAt).toBeNull();
+    });
+  it("retains actual upstream HTTP failures as safe metadata", async () => {
+    const { connection } = await fixture();
+    mocks.fetch.mockResolvedValue(Response.json({ message: "private-token-must-not-echo" }, { status: 502 }));
+    await refresh(connection.id);
+    const saved = (await mocks.repository.getConnection(connection.id))!;
+    expect(saved.config).toMatchObject({ modelScanErrorCode: "directory_unavailable", modelScanHttpStatus: 502, modelScanComplete: false });
+    expect(JSON.stringify(saved.config)).not.toContain("private-token");
+  });
+  it.each([false, true])("does not revive removed catalog interface metadata after REST binding, fresh API override=%s", async apiOverride => {
+    const { connection } = await fixture();
+    const oldDoc = "https://instance.example.com/old-interface.json";
+    const apiDoc = "https://instance.example.com/current-api-interface.json";
+    const descriptor = { id: "gpt-image-2", name: "Image", operations: ["image.generate", "image.edit"], metadata: {
+      endpointTypes: ["/old-draw"], documentationUrl: oldDoc,
+      supplierCatalogEndpointTypes: ["/old-draw"], supplierCatalogDocumentationUrl: oldDoc,
+      supplierCatalogCheckedAt: "2026-09-20T00:00:00.000Z", supplierCatalogMetadataVersion: 1,
+    } };
+    const connector = mikotoConnectorForGroup(MIKOTO_IMAGE_GROUP);
+    await mocks.repository.saveConnection({ ...connection, provider: "rest", config: { ...connection.config,
+      manualModels: [], modelScanStatus: "live", modelCatalogModels: [descriptor],
+      connector: { ...connector, allowedHosts: ["instance.example.com"], models: [descriptor] },
+    } });
+    mocks.fetch.mockImplementation(async (url: string | URL | Request) => {
+      if (String(url).endsWith("/api/pricing")) return Response.json({ group_ratio: { "same-name": 1 }, data: [
+        { model_name: "gpt-image-2", quota_type: 1, model_price: 0.08, enable_groups: ["same-name"] },
+      ] });
+      if (String(url).endsWith("/api/status")) return Response.json({ data: { quota_display_type: "CNY", usd_exchange_rate: 1 } });
+      if (String(url).endsWith("/api/user/self/groups")) return Response.json({ data: { "same-name": { desc: "Current group", ratio: 1 } } });
+      if (String(url).includes("/models")) return Response.json({ data: [{ id: "gpt-image-2",
+        ...(apiOverride ? { documentationUrl: apiDoc, endpointTypes: ["/v1/images/generations"] } : {}),
+      }] });
+      return Response.json({}, { status: 404 });
+    });
+    const response = await refresh(connection.id);
+    expect(response.status).toBe(200);
+    const models = await response.json();
+    expect(models[0].metadata.documentationUrl).toBe(apiOverride ? apiDoc : undefined);
+    expect(models[0].metadata.endpointTypes).toEqual(apiOverride ? ["/v1/images/generations"] : undefined);
+    expect(models[0].metadata.supplierCatalogDocumentationUrl).toBeUndefined();
+    expect(models[0].metadata.supplierCatalogEndpointTypes).toBeUndefined();
+    expect(mocks.fetch.mock.calls.some(([url]) => String(url) === oldDoc)).toBe(false);
+    const saved = (await mocks.repository.getConnection(connection.id))!;
+    const savedModels = saved.config.modelCatalogModels as Array<{ metadata: Record<string, unknown> }>;
+    expect(savedModels[0]?.metadata.documentationUrl).toBe(apiOverride ? apiDoc : undefined);
+    expect(savedModels[0]?.metadata.endpointTypes).toEqual(apiOverride ? ["/v1/images/generations"] : undefined);
+    expect(savedModels[0]?.metadata.supplierCatalogDocumentationUrl).toBeUndefined();
+    expect((saved.config.connector as typeof connector).models?.[0]?.metadata?.documentationUrl).toBe(apiOverride ? apiDoc : undefined);
+  });
+  it.each(["site-login", "revision-only"])("checks private site login identity after async documentation without blocking $mode changes", async mode => {
+    const { supplier, connection } = await fixture();
+    await mocks.repository.saveSupplier({ ...supplier, kind: "newapi", state: { ...supplier.state!, siteLogin: {
+      authMode: "access-token", siteUrl: supplier.siteUrl,
+      encryptedAccessToken: encryptSecret("fixture-old-site-token", "isolated-test-master"),
+    } } });
+    const docUrl = `https://instance.example.com/private-site-scope-${mode}.json`;
+    mocks.fetch.mockImplementation(async (url: string | URL | Request) => {
+      if (String(url).endsWith("/api/pricing")) return Response.json({ group_ratio: { "same-name": 1 }, data: [
+        { model_name: "future-image", quota_type: 1, model_price: 0.08, enable_groups: ["same-name"] },
+      ] });
+      if (String(url).endsWith("/api/status")) return Response.json({ data: { quota_display_type: "CNY", usd_exchange_rate: 1 } });
+      if (String(url).endsWith("/api/user/self/groups")) return Response.json({ data: { "same-name": { desc: "Group", ratio: 1 } } });
+      if (String(url).endsWith("/api/user/self")) return Response.json({ success: true, data: { id: 42, username: "fixture-user" } });
+      if (String(url).includes("/models")) return Response.json({ data: [{ id: "future-image", documentationUrl: docUrl }] });
+      if (String(url) === docUrl) {
+        if (mode === "site-login") await patchSupplierRecord(supplier.id, {
+          siteLogin: { authMode: "access-token", accessToken: "fixture-new-site-token" },
+        });
+        else {
+          const current = (await mocks.repository.getSupplier(supplier.id))!;
+          await mocks.repository.saveSupplier({ ...current, state: { ...current.state!, revision: current.state!.revision + 1 } });
+        }
+        return Response.json({ openapi: "3.1.0", paths: {} });
+      }
+      return Response.json({}, { status: 404 });
+    });
+    const response = await refresh(connection.id);
+    expect(response.status).toBe(mode === "site-login" ? 409 : 200);
+    const saved = (await mocks.repository.getConnection(connection.id))!;
+    if (mode === "site-login") {
+      expect(saved.config.autoModelInterfaces).toBeUndefined();
+      expect(JSON.stringify(saved.config.modelCatalogModels)).not.toContain("¥0.08");
+      expect(JSON.stringify(await response.json())).not.toContain("fixture-new-site-token");
+    } else expect(saved.config.modelScanStatus).toBe("live");
+  });
   it.each([false, true])("persists automatic agent discovery only for the current Key: changed=%s", async changed => {
     const { connection } = await fixture();
     const alias = "gpt-pro-[稳定优先]";

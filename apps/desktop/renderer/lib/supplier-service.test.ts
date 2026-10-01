@@ -51,6 +51,88 @@ beforeEach(() => {
   mocks.accountKeys.mockReset().mockResolvedValue({ keys: [], skipped: 0, complete: true, checkedAt: new Date().toISOString() });
 });
 describe("supplier service", () => {
+  it.each([undefined, true, false])("does not leave imported Key capability requests after a read-only scan: %s", async verifyCapabilities => {
+    const created = await createSupplierRecord({ name: "Read-only import", siteUrl: "https://readonly-import.example.test", kind: "sub2api" });
+    const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "fixture-user", password: "fixture-password" } });
+    const cleared = await mocks.repository.saveConnection({ id: "cleared", name: "Cleared Key", provider: "openai", encryptedSecret: null,
+      config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId, modelGroup: "B1", usage: "canvas",
+        supplierVerificationRequestId: "cleared-key-old-request" } });
+    const existing = await mocks.repository.saveConnection({ id: "keep", name: "Existing Key", provider: "openai", encryptedSecret: "keep-ciphertext",
+      config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId, modelGroup: "B2", usage: "canvas",
+        supplierVerificationRequestId: "existing-key-accepted-request" } });
+    mocks.login.mockResolvedValue({ kind: "sub2api", fetch: vi.fn() });
+    mocks.discover.mockResolvedValue({ groups: [], kind: "sub2api", status: "empty", complete: true, checkedAt: "2026-10-01T00:00:00Z" });
+    mocks.accountKeys.mockResolvedValue({ keys: [
+      { id: "1", group: "B1", apiKey: "fixture-b1-key", name: "Filled" },
+      { id: "2", group: "B2", apiKey: "fixture-b2-key", name: "Existing" },
+      { id: "3", group: "B3", apiKey: "fixture-b3-key", name: "Created" },
+    ], complete: true, skipped: 0, checkedAt: "2026-10-01T00:00:00Z" });
+    mocks.models.mockResolvedValue(Response.json([], { headers: { "X-Model-Scan-Status": "empty" } }));
+    const scanned = await scanSupplierRecord(supplier.id, undefined, supplier.state!.revision, { verifyCapabilities });
+    expect(scanned.state?.keySync).toMatchObject({ imported: 2, preserved: 1 });
+    const connections = await mocks.repository.listConnections();
+    expect(connections.find(connection => connection.id === existing.id)).toMatchObject({ id: existing.id,
+      encryptedSecret: existing.encryptedSecret, config: existing.config });
+    for (const group of ["B1", "B3"]) {
+      const connection = connections.find(item => item.config.modelGroup === group)!;
+      expect(decryptSecret(connection.encryptedSecret!, requireServerMasterKey())).toBe(`fixture-${group.toLowerCase()}-key`);
+      if (verifyCapabilities === false) expect(connection.config).not.toHaveProperty("supplierVerificationRequestId");
+      else {
+        expect(connection.config.supplierVerificationRequestId).toEqual(expect.any(String));
+        expect(connection.config.supplierVerificationRequestId).not.toBe(cleared.config.supplierVerificationRequestId);
+      }
+    }
+    expect(mocks.models).toHaveBeenCalledTimes(3);
+  });
+  it("merges partial additions and names without treating unreturned groups or models as removals", () => {
+    const catalog: Parameters<typeof mergeSupplierCatalog>[0] = { groups: [
+      { id: "public", label: "Old label", source: "catalog", status: "available", models: [
+        { id: "updated", name: "Old name", capability: "image", protocol: "openai-images" },
+        { id: "retained", name: "Historical", capability: "image", protocol: "rest" },
+      ] },
+      { id: "unreturned", label: "Historical group", source: "catalog", models: [] },
+      { id: "manual", label: "Manual", source: "manual", models: [] },
+    ] };
+    const incoming: Parameters<typeof mergeSupplierCatalog>[1] = { groups: [
+      { id: "public", label: "Current label", models: [
+        { id: "updated", name: "Current name", capability: "image", protocol: "openai-images" },
+        { id: "new", capability: "video", protocol: "openai-videos" },
+      ] },
+      { id: "new-group", label: "New group", models: [] },
+    ] };
+    const partial = mergeSupplierCatalog(catalog, incoming, true, false);
+    expect(partial.groups[0]).toMatchObject({ label: "Current label", status: "available", details: { stale: true } });
+    expect(partial.groups[0]?.models.map(model => model.id)).toEqual(["updated", "new", "retained"]);
+    expect(partial.groups[0]?.models[0]?.name).toBe("Current name");
+    expect(partial.groups[0]?.models[2]?.protocol).toBe("rest");
+    expect(partial.groups.find(group => group.id === "unreturned")).toMatchObject({ details: { stale: true } });
+    expect(partial.groups.find(group => group.id === "manual")).toEqual(catalog.groups[2]);
+    const complete = mergeSupplierCatalog(partial, incoming, true, true);
+    expect(complete.groups[0]?.models.map(model => model.id)).toEqual(["updated", "new"]);
+    expect(complete.groups.find(group => group.id === "unreturned")?.status).toBe("missing");
+    expect(complete.groups.find(group => group.id === "manual")).toEqual(catalog.groups[2]);
+  });
+  it.each(["partial", "throw", "complete"])("preserves account-only model evidence with a %s account directory", async mode => {
+    const created = await createSupplierRecord({ name: "Account groups", siteUrl: "https://account-groups.example.test", kind: "sub2api" });
+    const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "user", password: "mock-password" } });
+    const confirmed = "2026-09-20T00:00:00.000Z";
+    const models = [{ id: "saved-image", name: "Saved image", capability: "image" as const, protocol: "rest" as const }];
+    await mocks.repository.saveSupplier({ ...supplier, scanStatus: "live", scanComplete: true, scannedAt: confirmed,
+      catalog: { groups: [{ id: "account-only", label: "Account", source: "catalog", status: "available", models }] } });
+    mocks.login.mockResolvedValue({ kind: "sub2api", fetch: vi.fn() });
+    mocks.discover.mockResolvedValue({ groups: [{ id: "new-public", label: "Public", models: [] }],
+      kind: "sub2api", status: "live", complete: true, checkedAt: "2026-10-01T00:00:00.000Z" });
+    if (mode === "throw") mocks.accountKeys.mockRejectedValue(new Error("private-upstream-text"));
+    else mocks.accountKeys.mockResolvedValue({ keys: mode === "complete" ? [{ id: "1", group: "account-only", apiKey: "mock-account-key", name: "Account" }] : [],
+      complete: mode === "complete", skipped: 0, checkedAt: "2026-10-01T00:00:00.000Z" });
+    mocks.models.mockResolvedValue(Response.json([], { headers: { "X-Model-Scan-Status": "live" } }));
+    const scanned = await scanSupplierRecord(supplier.id);
+    expect(scanned.catalog.groups.find(group => group.id === "account-only")).toMatchObject({ status: "available", models, details: { stale: true } });
+    expect(scanned.catalog.groups.find(group => group.id === "new-public")?.label).toBe("Public");
+    expect(scanned.scanComplete).toBe(mode === "complete");
+    expect(scanned.scanLastSuccessAt).toBe(mode === "complete" ? "2026-10-01T00:00:00.000Z" : confirmed);
+    expect(JSON.stringify(publicSupplierRecord(scanned))).not.toContain("private-upstream-text");
+  });
   it("persists each supplier's generation mode independently without changing its source", async () => {
     const a = await createSupplierRecord({ name: "Cloud choice", apiUrl: "https://a.example.com/v1" });
     const b = await createSupplierRecord({ name: "Local choice", apiUrl: "https://b.example.com/v1" });
@@ -100,7 +182,7 @@ describe("supplier service", () => {
     const created = await createSupplierRecord({ name: "Login", siteUrl: "https://site.example.com", kind: "sub2api" });
     const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "user", password: "mock-password" } });
     const confirmed = "2026-09-20T00:00:00.000Z";
-    await mocks.repository.saveSupplier({ ...supplier, scanStatus: "live", scannedAt: confirmed });
+    await mocks.repository.saveSupplier({ ...supplier, scanStatus: "live", scanComplete: true, scannedAt: confirmed });
     mocks.login.mockRejectedValue(new SupplierLoginError("安全的操作提示", failure.status, failure.code));
     const scanned = await scanSupplierRecord(supplier.id);
     expect(scanned).toMatchObject({ scanStatus: failure.expected, scanErrorCode: failure.code,

@@ -3,6 +3,14 @@ import type { ProviderConnectionRecord, SupplierRecord, SupplierState } from "@s
 import type { SupplierAccountKeys } from "@super-canvas/providers";
 import { supplierConnectionDraft } from "./supplier-connection-draft";
 
+function importedKeyConfig(config: ProviderConnectionRecord["config"], verifyCapabilities?: boolean) {
+  const next = { ...config };
+  // A cleared Key's old request cannot authorize verification of the new Key.
+  if (verifyCapabilities === false) delete next.supplierVerificationRequestId;
+  else next.supplierVerificationRequestId = randomUUID();
+  return next;
+}
+
 /** Fill missing credentials only. The caller commits this plan with source/revision guards. */
 export function planSupplierAccountImport(
   supplier: SupplierRecord,
@@ -10,6 +18,7 @@ export function planSupplierAccountImport(
   inventory: SupplierAccountKeys,
   encrypt: (secret: string) => string,
   initialConnections: ProviderConnectionRecord[] = connections,
+  options: { verifyCapabilities?: boolean } = {},
 ) {
   const next = [...connections];
   const summary: NonNullable<SupplierState["keySync"]> = {
@@ -42,9 +51,12 @@ export function planSupplierAccountImport(
         }
         next[next.indexOf(connection)] = {
           ...connection, encryptedSecret: encrypt(key.apiKey),
-          config: { ...connection.config, accountKeyId: key.id, accountKeyGroup: groupId, accountKeyImportedAt: inventory.checkedAt,
-            supplierName: supplier.name, modelScanStatus: "unscanned", modelScanRequestId: randomUUID(), supplierVerificationRequestId: randomUUID(),
-            modelCatalogModels: [], scannedModelIds: [] },
+          config: importedKeyConfig({ ...connection.config, accountKeyId: key.id, accountKeyGroup: groupId, accountKeyImportedAt: inventory.checkedAt,
+            supplierName: supplier.name, modelScanStatus: "unscanned", modelScanComplete: false,
+            modelScanError: null, modelScanErrorCode: null, modelScanHttpStatus: null,
+            modelScanCheckedAt: null, modelScanLastSuccessAt: null, modelScanAttemptStatus: "unscanned",
+            modelScanRequestId: randomUUID(),
+            modelCatalogModels: [], scannedModelIds: [] }, options.verifyCapabilities),
         };
         summary.imported++;
       }
@@ -55,11 +67,14 @@ export function planSupplierAccountImport(
     next.push({
       id: randomUUID(), name: `${supplier.name} · ${group.id} · ${usage === "agent" ? "智能体" : "画布"}`,
       provider: draft.provider, encryptedSecret: encrypt(key.apiKey),
-      config: { ...draft.config, supplierId: supplier.id, supplierName: supplier.name,
+      config: importedKeyConfig({ ...draft.config, supplierId: supplier.id, supplierName: supplier.name,
         supplierSourceId: supplier.state!.sourceId, accountKeyId: key.id, accountKeyGroup: groupId, accountKeyImportedAt: inventory.checkedAt,
-        modelScanStatus: "unscanned", modelScanRequestId: randomUUID(), supplierVerificationRequestId: randomUUID(),
+        modelScanStatus: "unscanned", modelScanComplete: false,
+        modelScanError: null, modelScanErrorCode: null, modelScanHttpStatus: null,
+        modelScanCheckedAt: null, modelScanLastSuccessAt: null, modelScanAttemptStatus: "unscanned",
+        modelScanRequestId: randomUUID(),
         ...(usage === "agent" ? { protocol: "chat-completions", directorProtocol: "openai-chat-completions" } : {}),
-      } as ProviderConnectionRecord["config"],
+      } as ProviderConnectionRecord["config"], options.verifyCapabilities),
       createdAt: inventory.checkedAt, updatedAt: inventory.checkedAt,
     });
     summary.imported++;

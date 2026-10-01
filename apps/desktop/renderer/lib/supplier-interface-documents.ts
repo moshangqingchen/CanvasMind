@@ -1,7 +1,8 @@
 import { fetchProviderBytes, providerFetch, type ModelDescriptor } from "@super-canvas/providers";
 
 export type InterfaceDocument = { url: string; body: unknown; priority?: number };
-const documents = new Map<string, { until: number; result: Promise<InterfaceDocument[]> }>();
+const documents = new Map<string, { until: number; refreshId?: string; result: Promise<InterfaceDocument[]> }>();
+export type InterfaceDocumentReadOptions = { force?: boolean; refreshId?: string };
 
 function jsonDocuments(text: string): unknown[] {
   const decode = (value: string) => value.replace(/&quot;/gu, '"').replace(/&#39;|&apos;/gu, "'").replace(/&lt;/gu, "<").replace(/&gt;/gu, ">").replace(/&amp;/gu, "&");
@@ -14,7 +15,7 @@ function jsonDocuments(text: string): unknown[] {
 }
 
 /** Anonymous bounded reads of supplier-linked documentation; no Key or page execution. */
-export async function readSupplierInterfaceDocuments(baseUrl: string, models: readonly ModelDescriptor[], siteUrl = baseUrl): Promise<InterfaceDocument[]> {
+export async function readSupplierInterfaceDocuments(baseUrl: string, models: readonly ModelDescriptor[], siteUrl = baseUrl, options: InterfaceDocumentReadOptions = {}): Promise<InterfaceDocument[]> {
   let base: URL;
   try { base = new URL(baseUrl); } catch { return []; }
   if (base.protocol !== "https:" || base.username || base.password) return [];
@@ -40,7 +41,7 @@ export async function readSupplierInterfaceDocuments(baseUrl: string, models: re
   }
   const key = JSON.stringify([...urls]);
   let cached = documents.get(key);
-  if (!cached || cached.until <= Date.now()) {
+  if (!cached || cached.until <= Date.now() || options.force && (!options.refreshId || cached.refreshId !== options.refreshId)) {
     const result = (async () => {
       const visited = new Set<string>();
       const read = async (url: string, priority: number, follow = true): Promise<InterfaceDocument[]> => {
@@ -67,7 +68,7 @@ export async function readSupplierInterfaceDocuments(baseUrl: string, models: re
       return [...preferred, ...fallback];
     })();
     if (documents.size >= 32) documents.delete(documents.keys().next().value!);
-    cached = { until: Date.now() + 300000, result };
+    cached = { until: Date.now() + 300000, refreshId: options.refreshId, result };
     documents.set(key, cached);
   }
   return cached.result;

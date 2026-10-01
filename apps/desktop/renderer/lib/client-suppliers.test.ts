@@ -7,6 +7,7 @@ import {
   manualModelProtocols,
   manualModelsForConnection,
   readSupplierModels,
+  scanSupplier,
   supplierOwnsConnection,
 } from "./client-suppliers";
 
@@ -30,6 +31,15 @@ const connection = (
 afterEach(() => vi.unstubAllGlobals());
 
 describe("supplier settings boundaries", () => {
+  it.each([undefined, false, true])("sends explicit capability verification preference %s without changing the default", async verifyCapabilities => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ id: "supplier" }));
+    vi.stubGlobal("fetch", fetcher);
+    await scanSupplier("supplier", undefined, 2, { verifyCapabilities });
+    const body = JSON.parse(fetcher.mock.calls[0]![1].body);
+    expect(body.expectedRevision).toBe(2);
+    if (verifyCapabilities === undefined) expect(body).not.toHaveProperty("verifyCapabilities");
+    else expect(body.verifyCapabilities).toBe(verifyCapabilities);
+  });
   it("hydrates stale saved models with their original success time without requesting refresh", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json([{ id: "old" }], { headers: {
       "X-Model-Scan-Status": "stale", "X-Model-Scan-Source": "saved",

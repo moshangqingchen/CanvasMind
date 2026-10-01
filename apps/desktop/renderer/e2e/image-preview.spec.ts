@@ -129,3 +129,44 @@ test("等待原图时按 Escape 取消，迟到的响应不会重新打开预览
     await request.delete(`/api/assets/${asset.id}`);
   }
 });
+
+for (const emptyOriginal of [false, true]) {
+  test(`生成图片缩略图读取失败：${emptyOriginal ? "空结果显示错误" : "回退原图"}`, async ({ page, request }) => {
+    const { id, asset } = await fixture(request, true);
+    await page.route(`**/api/assets/${asset.id}/preview?*`, route =>
+      route.fulfill({ status: 500, json: { error: "test preview failure" } }),
+    );
+    let originalRequests = 0;
+    page.on("request", event => {
+      if (new URL(event.url()).pathname === `/api/assets/${asset.id}/content`)
+        originalRequests += 1;
+    });
+    if (emptyOriginal)
+      await page.route(`**/api/assets/${asset.id}/content`, route =>
+        route.fulfill({ contentType: "image/png", body: Buffer.alloc(0) }),
+      );
+    try {
+      await page.goto(`/canvas/${id}`);
+      const picture = page.locator('.react-flow__node[data-id="picture"]');
+      if (emptyOriginal) {
+        await expect(picture.getByText("图片加载失败", { exact: true })).toBeVisible();
+        await expect(picture.getByText("图片为空、损坏或无法读取，请查看任务详情", { exact: true })).toBeVisible();
+        await expect(picture.locator("img")).toHaveCount(0);
+      } else {
+        const img = picture.locator("img");
+        await expect(img).toHaveAttribute("data-asset-preview-state", "original");
+        await expect.poll(() => img.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1);
+        expect(originalRequests).toBe(1);
+        await picture.locator(".previewable-image").dblclick({ delay: 100 });
+        const dialog = page.getByRole("dialog", { name: "素材预览" });
+        await expect(dialog).toBeVisible();
+        await expect.poll(() => dialog.locator("img").evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1);
+      }
+      if (emptyOriginal) expect(originalRequests).toBe(1);
+    } finally {
+      await page.close();
+      await request.delete(`/api/projects/${id}`);
+      await request.delete(`/api/assets/${asset.id}`);
+    }
+  });
+}

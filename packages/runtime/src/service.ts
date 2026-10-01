@@ -3514,6 +3514,11 @@ export class RunService {
     const size = bytes?.byteLength ?? persisted?.size;
     if (size === undefined)
       throw new Error("Provider output did not include bytes or a downloadable URL");
+    if (size === 0) {
+      if (persisted && this.storage.delete)
+        await this.storage.delete(storageKey).catch(() => undefined);
+      throw new Error("供应商返回了空文件（0 字节），没有可用的媒体内容");
+    }
     if (size > maxBytes) throw new Error(`Provider output exceeds ${maxBytes} bytes`);
     const kindLabel =
       artifactKind === "video"

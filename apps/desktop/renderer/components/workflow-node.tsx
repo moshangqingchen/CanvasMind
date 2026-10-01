@@ -1460,9 +1460,11 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                   ) : data.assetKind === "image" &&
                     inputPreviewUrl &&
                     !fakeResult ? (
-                    <img
+                    <AssetPreviewImage
+                      assetId={data.assetId}
                       src={inputPreviewUrl}
                       alt={inputAsset?.name ?? data.label}
+                      failureHint="图片为空、损坏或无法读取，请查看任务详情"
                       title="双击查看原图"
                       draggable={false}
                       decoding="async"

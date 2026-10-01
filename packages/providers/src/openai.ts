@@ -2155,16 +2155,20 @@ function imageFormatFromUrl(value: string): ImageFormatDescriptor | undefined {
 function decodeImageBase64(value: string): {
   data: Uint8Array;
   format?: ImageFormatDescriptor;
-} {
+} | undefined {
   const dataUrl = /^data:([^;,]+);base64,(.*)$/isu.exec(value.trim());
-  if (dataUrl) {
-    const format = imageFormat(dataUrl[1]);
-    return {
-      data: new Uint8Array(Buffer.from(dataUrl[2] ?? "", "base64")),
-      ...(format ? { format } : {}),
-    };
-  }
-  return { data: new Uint8Array(Buffer.from(value, "base64")) };
+  const encoded = (dataUrl?.[2] ?? value).replace(/\s+/gu, "");
+  // Buffer.from silently accepts empty strings and malformed Base64. Treat
+  // those fields as missing so a valid URL can still supply the image.
+  if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded))
+    return undefined;
+  const padding = encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0;
+  if ((encoded.length - padding) % 4 === 1 ||
+      (padding > 0 && encoded.length % 4 !== 0)) return undefined;
+  const data = new Uint8Array(Buffer.from(encoded, "base64"));
+  if (data.byteLength === 0) return undefined;
+  const format = dataUrl ? imageFormat(dataUrl[1]) : undefined;
+  return { data, ...(format ? { format } : {}) };
 }
 
 function filenameFor(
@@ -2238,7 +2242,7 @@ function extractGeminiOutputs(
         undefined;
       if (rawMime && !rawMime.toLowerCase().startsWith("image/")) continue;
       const decoded = decodeImageBase64(inline.data);
-      if (decoded.data.byteLength === 0) continue;
+      if (!decoded) continue;
       const format =
         imageFormatFromBytes(decoded.data) ??
         decoded.format ??
@@ -2299,7 +2303,7 @@ function friModelImageValue(
   const dataUrl = /^data:([^;,]+);base64,(.*)$/isu.exec(normalized);
   if (dataUrl || looksLikeBase64Image(normalized)) {
     const decoded = decodeImageBase64(normalized);
-    if (decoded.data.byteLength === 0) return undefined;
+    if (!decoded) return undefined;
     const format =
       imageFormatFromBytes(decoded.data) ??
       decoded.format ??
@@ -2338,7 +2342,7 @@ function friModelBase64Artifact(
   outputFormat?: unknown,
 ): RemoteArtifact | undefined {
   const decoded = decodeImageBase64(value);
-  if (decoded.data.byteLength === 0) return undefined;
+  if (!decoded) return undefined;
   const format =
     imageFormatFromBytes(decoded.data) ??
     decoded.format ??
@@ -3861,8 +3865,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const openAIResponse = response as OpenAIImageResponse;
     if (!Array.isArray(openAIResponse.data)) return [];
     return openAIResponse.data.flatMap((item, index): RemoteArtifact[] => {
-      if (typeof item.b64_json === "string") {
-        const decoded = decodeImageBase64(item.b64_json);
+      const decoded = typeof item.b64_json === "string"
+        ? decodeImageBase64(item.b64_json)
+        : undefined;
+      if (decoded) {
         const data = decoded.data;
         const format =
           imageFormatFromBytes(data) ??
@@ -3881,9 +3887,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           },
         ];
       }
-      if (typeof item.url === "string") {
+      if (typeof item.url === "string" && item.url.trim()) {
+        const url = item.url.trim();
         const format =
-          imageFormatFromUrl(item.url) ??
+          imageFormatFromUrl(url) ??
           imageFormat(item.mime_type) ??
           imageFormat(item.output_format) ??
           imageFormat(openAIResponse.output_format) ??
@@ -3891,7 +3898,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         return [
           {
             kind: "image" as const,
-            url: item.url,
+            url,
             ...(format
               ? {
                   mimeType: format.mimeType,

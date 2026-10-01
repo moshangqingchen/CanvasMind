@@ -116,4 +116,16 @@ describe("catalog prices for arbitrary new models", () => {
       ["Case/Image-v99", "$0.2/请求"],
     ]);
   });
+  it.each([undefined, null, false, true, "", " ", {}, ["0"]])("refuses undeclared billing modes instead of coercing %j into token pricing", quota_type => {
+    expect(catalogPriceLabel({ quota_type, model_ratio: 1, completion_ratio: 2, model_price: 0 }, { newApi: true })).toBeUndefined();
+  });
+  it("normalizes declared currencies and units while prioritizing nested video units", () => {
+    expect(catalogPriceLabel({ currency: "usd", price: .1, request_unit: "per_call" })).toBe("$0.1/请求");
+    expect(catalogPriceLabel({ currency: "cny", price: .1, request_unit: "per image" })).toBe("¥0.1/张");
+    expect(catalogPriceLabel({ model_price: .1, quota_type: 1, request_unit: "request", video_api: { pricing: { unit: "per_second" } } }, { newApi: true })).toBe("$0.1/秒");
+    expect(catalogPriceLabel({ quota_type: "0", model_ratio: 1 }, { newApi: true })).toBe("输入 $2/1M");
+    expect(catalogPriceLabel({ price: Number.MAX_VALUE, request_unit: "image" }, { multiplier: 2 })).toBeUndefined();
+    expect(catalogPriceLabel({ quota_type: 0, model_ratio: Number.MAX_VALUE }, { newApi: true })).toBeUndefined();
+    expect(catalogPriceLabel({ quota_type: 0, model_price: 0, request_unit: "image" }, { newApi: true })).toBeUndefined();
+  });
 });

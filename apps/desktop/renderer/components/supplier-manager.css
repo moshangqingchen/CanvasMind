@@ -944,6 +944,17 @@
   top: 19px;
   background:var(--panel);
 }
+.sm-supplier-actions { display:flex;align-items:center;justify-content:space-between;gap:5px;padding:0 9px 11px 12px; }
+.sm-supplier-actions button { min-height:32px;display:inline-flex;align-items:center;gap:6px;padding:5px 7px;border:0;border-radius:6px;color:var(--muted);background:transparent;font-size:12px; }
+.sm-supplier-actions button:hover { background:var(--panel-2);color:var(--text); }
+.sm-supplier-actions .sm-row-status { min-width:0; }
+.sm-row-status > span { font-size:12px; }
+.sm-row-status > svg { flex:0 0 auto; }
+.sm-detail-status-actions { display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap; }
+.sm-status-link { cursor:pointer;gap:6px;background:var(--panel-2); }
+.sm-notice:has(> .sm-button[aria-label="查看配置刷新状态"]) { display:flex;align-items:flex-start;justify-content:space-between;gap:12px; }
+.sm-notice > span { min-width:0;overflow-wrap:anywhere; }
+.sm-notice > .sm-button { flex:0 0 auto; }
 .sm-hidden-toggle {
   margin: 12px 0;
 }
@@ -1061,6 +1072,31 @@
 .sm-refresh-report ul { padding-left: 18px; font-size: 12px; }
 .sm-refresh-report li { margin-top: 12px; }
 .sm-refresh-report li span { display: block; margin-top: 4px; line-height: 1.7; color:var(--muted); }
+.sm-refresh-report .sm-refresh-results { list-style:none;padding:0;margin:14px 0 0; }
+.sm-refresh-results > li { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--line); }
+.sm-refresh-results > li > div { min-width:0; }
+.sm-refresh-results strong { display:block;margin-bottom:5px;overflow-wrap:anywhere; }
+.sm-refresh-results p { color:var(--muted);font-size:11px;line-height:1.7;overflow-wrap:anywhere; }
+.sm-refresh-results > li > .sm-button { flex:0 0 auto; }
+.sm-refresh-results > li span { display:inline-flex;margin:0; }
+.sm-refresh-overview { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:15px; }
+.sm-refresh-overview > div { min-width:0;padding:13px 14px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2); }
+.sm-refresh-overview > div[data-status="updated"] { border-color:rgba(146,205,179,.24);background:rgba(146,205,179,.05); }
+.sm-refresh-overview > div[data-status="partial"] { border-color:rgba(229,194,142,.24);background:rgba(229,194,142,.05); }
+.sm-refresh-overview > div[data-status="failed"] { border-color:rgba(239,167,177,.24);background:rgba(239,167,177,.05); }
+.sm-refresh-overview strong { display:block;margin-top:9px;font-size:24px;font-weight:600;line-height:1.1; }
+.sm-refresh-disclosure { margin-top:16px; }
+.sm-refresh-disclosure > summary { padding:9px 1px;color:var(--text);font-weight:550; }
+.sm-refresh-report .sm-refresh-results { max-height:280px;overflow-y:auto;overscroll-behavior:contain;padding-right:8px;scrollbar-gutter:stable; }
+.sm-refresh-results > li p { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+@media(max-width:700px) {
+  .sm-detail-status-actions { justify-content:flex-start; }
+  .sm-detail-heading { flex-wrap:wrap;gap:14px; }
+  .sm-notice:has(> .sm-button[aria-label="查看配置刷新状态"]) { flex-wrap:wrap; }
+  .sm-refresh-results > li { align-items:flex-start;flex-wrap:wrap; }
+  .sm-refresh-overview { gap:7px; }
+  .sm-refresh-overview > div { padding:10px 9px; }
+}
 .sm-model-item .sm-model-state { border-radius: 4px; padding: 2px 5px; white-space: nowrap; background:var(--panel); }
 .sm-model-item .sm-model-state.is-ok, .sm-supplier-label .sm-refresh-updated { color:#91cdb6; background:var(--panel); }
 .sm-model-item .sm-model-state.is-error, .sm-supplier-label .sm-refresh-failed { color:#e9a4ae; background:var(--panel); }
@@ -1122,4 +1158,43 @@
   .sm-model-item { display: flex; flex-direction: column; gap: 10px; }
   .sm-model-columns { display: none; }
   .sm-model-pagination { flex-wrap: wrap; justify-content: space-between; }
+}
+
+/* Supplier cards and page sections use distinct surfaces, with status colors
+   reserved for refresh outcomes and purple for the current selection. */
+.sm-sidebar { background:color-mix(in srgb,var(--panel-2) 55%,var(--panel)); }
+.sm-supplier-row { margin-bottom:9px;border:1px solid var(--line);border-radius:11px;background:var(--panel);overflow:hidden; }
+.sm-supplier-row:has(.sm-supplier-item.is-selected) { border-color:rgba(167,165,243,.38);background:color-mix(in srgb,var(--panel-2) 92%,#a7a5f3 8%);box-shadow:inset 3px 0 0 #a7a5f3; }
+.sm-supplier-row .sm-supplier-item { margin:0;padding-top:13px;padding-bottom:10px;border:0;border-radius:0;background:transparent; }
+.sm-supplier-row .sm-supplier-item:hover { background:rgba(167,165,243,.04); }
+.sm-supplier-label strong { font-size:13px;font-weight:600;color:var(--text); }
+.sm-supplier-label small { font-size:12px;line-height:1.55; }
+.sm-supplier-actions { margin:0 9px;padding:6px 0 9px;border-top:1px solid var(--line); }
+.sm-supplier-actions button { font-size:12px !important; }
+.sm-supplier-more { width:32px;height:32px;right:7px;top:13px;background:transparent; }
+.sm-detail-heading { padding:20px 22px;margin-bottom:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2); }
+.sm-detail-heading h2 { font-size:24px;line-height:1.25; }
+.sm-detail-heading p { margin-top:7px;font-size:12px;line-height:1.65; }
+.sm-status-summary { padding:13px 16px;margin-bottom:18px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--panel-2) 70%,var(--panel)); }
+.sm-detail-tabs { display:flex;gap:6px;flex-wrap:wrap;margin:0 0 20px;padding:5px;border:1px solid var(--line);border-radius:10px;background:var(--panel); }
+.sm-detail-tabs button { flex:1 1 auto;min-height:36px;padding:8px 13px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);font-size:12px; }
+.sm-detail-tabs button[aria-selected="true"] { border-color:rgba(167,165,243,.34);background:rgba(167,165,243,.18);color:#dbd9ff;font-weight:600;box-shadow:0 2px 7px rgba(0,0,0,.16); }
+.sm-detail > [aria-label="供应商余额与消耗"] { padding:18px 20px;margin-bottom:20px;border-color:rgba(146,205,179,.22);background:color-mix(in srgb,var(--panel-2) 95%,#92cdb3 5%); }
+.sm-detail > .sm-notice { margin-bottom:18px; }
+.sm-basics { padding:22px;border-color:rgba(167,165,243,.22);background:var(--panel-2); }
+.sm-groups { margin-top:24px; }
+.sm-groups-heading { padding-bottom:16px;margin-bottom:18px;border-bottom:1px solid var(--line); }
+.sm-group-card { background:var(--panel-2); }
+.sm-refresh-report { padding:18px 20px;background:color-mix(in srgb,var(--panel-2) 80%,var(--panel));border-color:rgba(167,165,243,.23); }
+.sm-refresh-report > h3 { margin:0 0 8px;font-size:15px;font-weight:620;color:var(--text); }
+.sm-refresh-report > p[role="status"] { color:var(--text);font-size:13px;font-weight:550; }
+.sm-refresh-report > .sm-muted { font-size:12px;line-height:1.65; }
+.sm-refresh-results > li p { font-size:12px; }
+@media(max-width:700px) {
+  .sm-detail-heading { padding:18px 16px; }
+  .sm-detail-heading h2 { font-size:22px; }
+  .sm-status-summary { padding:12px; }
+  .sm-basics { padding:18px 16px; }
+  .sm-detail > [aria-label="供应商余额与消耗"] { padding:16px; }
+  .sm-refresh-report { padding:16px; }
 }

@@ -161,6 +161,7 @@ export const SupplierScanSchema = z
   .object({
     token: z.string().trim().min(1).max(32768).optional(),
     expectedRevision: z.number().int().nonnegative().optional(),
+    verifyCapabilities: z.boolean().optional(),
   })
   .strict();
 
@@ -296,17 +297,21 @@ export function mergeSupplierCatalog(
       group.id,
       scanning && complete && group.source !== "manual"
         ? { ...group, status: "missing" }
-        : scanning && !complete && group.details
-          ? { ...group, details: { ...group.details, stale: true } }
+        : scanning && !complete && group.source !== "manual"
+          ? { ...group, details: { source: "model-plaza", ...group.details, stale: true } }
         : group,
     );
   for (const group of incoming.groups) {
     // Returned public entries are display data; PATCH cannot rewrite them as trusted scans.
     if (!scanning && group.source === "catalog") continue;
+    const previous = groups.get(group.id);
+    const retainedModels = scanning && (!complete || group.details?.stale === true) && previous
+      ? previous.models.filter(model => !group.models.some(incoming => incoming.id === model.id)) : [];
     groups.set(group.id, {
       ...group,
-      ...(scanning && !complete && !group.details && groups.get(group.id)?.details
-        ? { details: { ...groups.get(group.id)!.details!, stale: true } } : {}),
+      ...(retainedModels.length ? { models: [...group.models, ...retainedModels] } : {}),
+      ...(scanning && (!complete || group.details?.stale === true) && ((!group.details && previous?.details) || retainedModels.length)
+        ? { details: { source: "model-plaza", ...previous?.details, ...group.details, stale: true } } : {}),
       source: scanning ? "catalog" : "manual",
       status: "available",
     });
@@ -387,6 +392,9 @@ function invalidateInventory(config: ProviderConnectionRecord["config"]) {
     "modelScanCheckedAt",
     "modelScanLastSuccessAt",
     "modelScanAttemptStatus",
+    "modelScanError",
+    "modelScanErrorCode",
+    "modelScanHttpStatus",
     "scannedModelIds",
     "modelScanGroups",
     "modelCatalogModels",
@@ -403,6 +411,7 @@ function invalidateInventory(config: ProviderConnectionRecord["config"]) {
   ])
     delete next[key];
   next.modelScanStatus = "unscanned";
+  next.modelScanComplete = false;
   next.modelCatalogSource = "unverified";
   return next;
 }
@@ -639,6 +648,7 @@ export async function patchSupplierRecord(
     delete next.state.keySync;
     delete next.state.billing;
     next.scanStatus = "unscanned";
+    next.scanComplete = false;
     next.scannedAt = undefined;
     next.scanError = undefined;
     next.scanLastSuccessAt = undefined;
@@ -714,6 +724,7 @@ export async function scanSupplierRecord(
   id: string,
   token?: string,
   expectedRevision?: number,
+  options: { verifyCapabilities?: boolean } = {},
 ): Promise<SupplierRecord> {
   const ctx = await context(id, expectedRevision);
   if (token && !ctx.supplier.siteUrl)
@@ -741,9 +752,20 @@ export async function scanSupplierRecord(
       },
       session?.fetch,
     );
-    if (session) accountKeys = await readSupplierAccountKeys(
-      { siteUrl: supplier.siteUrl, kind: session.kind }, session.fetch,
-    );
+    if (session) {
+      try {
+        accountKeys = await readSupplierAccountKeys(
+          { siteUrl: supplier.siteUrl, kind: session.kind }, session.fetch,
+        );
+      } catch {
+        accountKeys = { keys: [], skipped: 0, complete: false, checkedAt: result.checkedAt,
+          error: "已有 API 密钥暂不可读取；原有配置已保留。" };
+      }
+      // Public directories do not necessarily include account-owned groups.
+      // An incomplete account read cannot prove those groups disappeared.
+      if (!accountKeys.complete) result = { ...result, complete: false,
+        error: result.error ?? "目录已读取；已有 API 密钥未完整同步，保留历史分组，请稍后重试" };
+    }
   } catch (error) {
     scanFailure = error instanceof SupplierLoginError
       ? { scanErrorCode: error.code, scanRetryable: error.retryable }
@@ -784,13 +806,14 @@ export async function scanSupplierRecord(
     );
     const plan = planSupplierAccountImport(
       { ...current.supplier, catalog }, current.connections, accountKeys,
-      secret => encryptSecret(secret, requireServerMasterKey()), initialConnections,
+      secret => encryptSecret(secret, requireServerMasterKey()), initialConnections, options,
     );
     // Account-owned groups may not be published in the public model plaza.
     const known = new Set(result.groups.map(group => group.id));
     for (const group of plan.catalog.groups) {
       if (!known.has(group.id) && accountKeys.keys.some(key => key.group === group.id))
-        result.groups.push({ ...group, source: "catalog", models: [] });
+        result.groups.push({ ...group, source: "catalog", models: [],
+          details: { source: "key-groups", ...group.details, stale: true } });
     }
     try {
       supplier = await commit(current, {
@@ -819,7 +842,7 @@ export async function scanSupplierRecord(
         new Request(
           `http://localhost/api/providers/${encodeURIComponent(connection.id)}/models?refresh=1`,
         ),
-        { params: Promise.resolve({ id: connection.id }) },
+        { params: Promise.resolve({ id: connection.id }), supplierRefreshId: scanId },
       );
       if (
         !response.ok ||
@@ -844,10 +867,11 @@ export async function scanSupplierRecord(
           result.complete !== false,
         ),
     scanStatus: result.status,
+    scanComplete: !failed && result.complete !== false,
     scannedAt: result.checkedAt,
-    scanLastSuccessAt: failed
+    scanLastSuccessAt: failed || result.complete === false
       ? latest.supplier.scanLastSuccessAt ??
-        (["live", "empty"].includes(latest.supplier.scanStatus) ? latest.supplier.scannedAt : undefined)
+        (latest.supplier.scanComplete !== false && ["live", "empty"].includes(latest.supplier.scanStatus) ? latest.supplier.scannedAt : undefined)
       : result.checkedAt,
     scanErrorCode: failed
       ? scanFailure.scanErrorCode ?? (result.status === "unauthorized" ? "invalid_credentials" : "directory_unavailable")
@@ -921,6 +945,7 @@ export async function deleteSupplierRecord(
       apiUrl: "",
       catalog: { groups: [] },
       scanStatus: "unscanned",
+      scanComplete: false,
       scannedAt: undefined,
       scanError: undefined,
       scanLastSuccessAt: undefined,
@@ -986,6 +1011,7 @@ export async function restoreSupplierHistory(
     kind: h.kind,
     catalog: h.catalog,
     scanStatus: "unscanned" as const,
+    scanComplete: false,
     scannedAt: undefined,
     scanError: undefined,
     scanLastSuccessAt: undefined,

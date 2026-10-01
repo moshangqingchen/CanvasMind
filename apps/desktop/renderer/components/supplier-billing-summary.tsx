@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { refreshSupplierAccount, useSupplierBillingOverview } from "../lib/client-supplier-billing";
-import { billingAmount, billingTodayAmount } from "../lib/supplier-billing-display";
+import { billingAmount, billingTodayAmount, billingSourceLabel } from "../lib/supplier-billing-display";
 import styles from "./supplier-billing-summary.module.css";
 
 export function SupplierBillingSummary({ supplierId, compact = false, onRefreshed }: { supplierId?: string; compact?: boolean; onRefreshed?: () => void }) {
@@ -12,6 +12,8 @@ export function SupplierBillingSummary({ supplierId, compact = false, onRefreshe
   if (!supplierId) return null;
   const billing = account?.billing;
   const stale = billing?.status === "failed";
+  const previous = stale ? "（上次）" : "";
+  const source = billingSourceLabel(billing);
   return <section className={`${styles.summary} ${compact ? styles.compact : ""}`} aria-label="供应商余额与消耗">
     <div className={styles.heading}><strong>{compact ? "账号余额与消耗" : "供应商账号账务"}</strong>
       <button type="button" disabled={busy} onClick={async () => {
@@ -21,11 +23,14 @@ export function SupplierBillingSummary({ supplierId, compact = false, onRefreshe
         finally { setBusy(false); }
       }}><RefreshCw size={13} className={busy ? styles.spin : ""} />{busy ? "读取中…" : "重新读取消耗"}</button></div>
     <div className={styles.amounts}>
-      <span>余额 <strong>{billingAmount(billing?.balance, billing?.unit)}</strong></span>
-      <span>累计消耗 <strong>{billingAmount(billing?.used, billing?.unit)}</strong></span>
+      <span>余额 <strong>{billingAmount(billing?.balance, billing?.balanceUnit ?? billing?.unit)}{billing?.balance !== undefined ? previous : ""}</strong></span>
+      <span>累计消耗 <strong>{billingAmount(billing?.used, billing?.usedUnit ?? billing?.unit)}{billing?.used !== undefined ? previous : ""}</strong></span>
       <span title={billing?.todayError}>今日消耗 <strong>{billingTodayAmount(billing)}</strong></span>
     </div>
     <small>{billing?.lastSuccessAt ? `${stale ? "上次成功" : "数据更新"}：${new Date(billing.lastSuccessAt).toLocaleString("zh-CN")}` : "从供应商后台读取，尚未取得数据"}</small>
+    {source && <small>{source}</small>}
+    {billing?.unitNote && <small>{billing.unitNote}</small>}
+    {stale && billing.checkedAt !== billing.lastSuccessAt && <small>最近读取失败：{new Date(billing.checkedAt).toLocaleString("zh-CN")}</small>}
     {billing?.todayWindow ? <small>今日消耗按本机时区（{billing.todayWindow.timeZone}）从零点统计至读取时刻。</small>
       : billing?.todayUsed !== undefined ? <small>今日消耗按供应商后台统计口径显示。</small> : null}
     {(error || billing?.error) && <p role="status">{error || billing?.error}</p>}

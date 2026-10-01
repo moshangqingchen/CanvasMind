@@ -32,9 +32,9 @@ export function catalogPriceLabel(
   if (explicit) return explicit;
   const multiplier = options.multiplier ?? 1;
   if (!Number.isFinite(multiplier) || multiplier < 0) return undefined;
-  const currency =
+  const currency = (
     text(pricing.currency ?? row.currency ?? options.currency) ??
-    (options.newApi ? "USD" : undefined);
+    (options.newApi ? "USD" : undefined))?.toUpperCase();
   const symbol =
     currency === "CNY" || currency === "RMB"
       ? "¥"
@@ -44,19 +44,26 @@ export function catalogPriceLabel(
           ? `${currency} `
           : "";
   const suffix = currency ? "" : "（币种未注明）";
-  const money = (v: number) => `${symbol}${display(v * multiplier)}`;
+  const money = (v: number) => Number.isFinite(v * multiplier) ? `${symbol}${display(v * multiplier)}` : undefined;
+  const videoPricing = record(record(row.video_api).pricing);
+  const unit = text(
+    videoPricing.unit ?? row.request_unit ?? pricing.unit ?? pricing.kind ?? pricing.billing_mode ?? row.billing_mode,
+  )?.toLowerCase().replace(/[\s-]+/gu, "_");
   if (row.billing_mode === "tiered_expr") {
     const media = mediaExpressionPricing(row.billing_expr, {
       currency: currency ?? "币种未注明", multiplier, checkedAt: "",
-      unit: row.request_unit === "image" ? "image" : "request",
+      unit: unit === "image" || unit === "per_image" ? "image" : unit === "second" || unit === "per_second" ? "second" : "request",
     });
     return media ? mediaPricingLabel(media) : "按条件/用量计费，详见供应商规则";
   }
-  if (options.newApi && Number(row.quota_type) === 0) {
+  const quotaType = row.quota_type === 0 || row.quota_type === "0" ? 0 : row.quota_type === 1 || row.quota_type === "1" ? 1 : undefined;
+  if (options.newApi && quotaType === 0) {
     const input = amount(row.model_ratio),
       completion = amount(row.completion_ratio);
-    if (input !== undefined)
-      return `输入 ${money(input * 2)}/1M${completion === undefined ? "" : ` · 输出 ${money(input * 2 * completion)}/1M`}${suffix}`;
+    if (input !== undefined) {
+      const inputPrice = money(input * 2), outputPrice = completion === undefined ? undefined : money(input * 2 * completion);
+      return inputPrice && (completion === undefined || outputPrice) ? `输入 ${inputPrice}/1M${outputPrice ? ` · 输出 ${outputPrice}/1M` : ""}${suffix}` : undefined;
+    }
   }
   const input = amount(
     pricing.inputPerMillion ??
@@ -68,7 +75,8 @@ export function catalogPriceLabel(
       pricing.output_per_million ??
       row.output_price_per_million,
   );
-  if (input !== undefined || output !== undefined)
+  if (input !== undefined || output !== undefined) {
+    if ((input !== undefined && !money(input)) || (output !== undefined && !money(output))) return undefined;
     return (
       [
         input === undefined ? "" : `输入 ${money(input)}/1M`,
@@ -77,37 +85,40 @@ export function catalogPriceLabel(
         .filter(Boolean)
         .join(" · ") + suffix
     );
+  }
+  // A token-mode placeholder model_price=0 is not a free per-request price.
+  if (options.newApi && quotaType === 0) return undefined;
   const raw = amount(
     pricing.unitAmount ?? pricing.unit_price ?? pricing.per_request_price ?? row.model_price ?? row.price,
   );
-  const unit = text(
-    row.request_unit ?? pricing.unit ?? pricing.kind ?? pricing.billing_mode ?? row.billing_mode,
-  )?.toLowerCase();
   const label =
     unit &&
     (
       {
         image: "张",
-        "per-image": "张",
+        per_image: "张",
         second: "秒",
-        "per-second": "秒",
+        seconds: "秒",
         per_second: "秒",
         request: "请求",
+        requests: "请求",
+        call: "请求",
+        per_call: "请求",
+        generation: "请求",
         per_request: "请求",
-        "per-request": "请求",
       } as Record<string, string>
     )[unit];
   if (
     raw !== undefined &&
-    (label || (options.newApi && Number(row.quota_type) === 1))
+    (label || (options.newApi && quotaType === 1))
   )
-    return `${money(raw)}/${label ?? "请求"}${suffix}`;
+    return money(raw) ? `${money(raw)}/${label ?? "请求"}${suffix}` : undefined;
   const tiers = Array.isArray(pricing.tiers) ? pricing.tiers : [];
   const tierLabels = tiers.flatMap((v) => {
     const tier = record(v),
       price = amount(tier.price);
     const name = text(tier.label ?? tier.id);
-    return price !== undefined && name ? [`${name} ${money(price)}`] : [];
+    return price !== undefined && name && money(price) ? [`${name} ${money(price)}`] : [];
   });
   return tierLabels.length ? tierLabels.join(" · ") + suffix : undefined;
 }

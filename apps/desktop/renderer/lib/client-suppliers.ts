@@ -65,6 +65,7 @@ export interface SupplierRecord {
   kind: SupplierKind;
   catalog: { groups: SupplierCatalogGroup[] };
   scanStatus: "unscanned" | "live" | "empty" | "failed" | "unauthorized";
+  scanComplete?: boolean;
   scannedAt?: string;
   scanLastSuccessAt?: string;
   scanError?: string;
@@ -133,6 +134,7 @@ export function scanSupplier(
   id: string,
   token?: string,
   expectedRevision?: number,
+  options: { verifyCapabilities?: boolean } = {},
 ): Promise<SupplierRecord> {
   return supplierRequest(`/api/suppliers/${encodeURIComponent(id)}/scan`, {
     method: "POST",
@@ -140,6 +142,7 @@ export function scanSupplier(
     body: JSON.stringify({
       ...(token?.trim() ? { token: token.trim() } : {}),
       expectedRevision,
+      verifyCapabilities: options.verifyCapabilities,
     }),
   });
 }

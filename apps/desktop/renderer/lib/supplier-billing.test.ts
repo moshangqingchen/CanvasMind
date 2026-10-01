@@ -35,6 +35,20 @@ describe("supplier billing persistence", () => {
     expect(failed).toMatchObject({ status: "failed", balance: 10, used: 2, todayUsed: .5, lastSuccessAt: previous.lastSuccessAt });
     expect(JSON.stringify(failed)).not.toContain("private-test-password");
   });
+  it("retains successful field units on failure but never fills missing partial fields from older currencies", async () => {
+    const supplier = await fixture();
+    const initial = await mocks.read();
+    mocks.read.mockResolvedValue({ ...initial, unit: "CNY", balanceUnit: "CNY", usedUnit: "USD", todayUnit: "USD" });
+    await refreshSupplierBilling(supplier.id);
+    mocks.login.mockRejectedValueOnce(Error("private-site-failure"));
+    expect(await refreshSupplierBilling(supplier.id)).toMatchObject({ status: "failed", balance: 10, used: 2, balanceUnit: "CNY", usedUnit: "USD", todayUnit: "USD" });
+    mocks.read.mockResolvedValue({ ...initial, status: "partial", unit: "quota", balance: 50, used: undefined, todayUsed: undefined });
+    const partial = await refreshSupplierBilling(supplier.id);
+    expect(partial).toMatchObject({ status: "partial", unit: "quota", balance: 50 });
+    expect(partial.used).toBeUndefined();
+    expect(partial.todayUsed).toBeUndefined();
+    expect(partial.usedUnit).toBeUndefined();
+  });
   it.each(["source", "login"])("discards an old response after %s changed", async change => {
     const supplier = await fixture(); const result = await mocks.read();
     mocks.read.mockImplementation(async () => {

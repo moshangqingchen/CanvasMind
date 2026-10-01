@@ -1,5 +1,7 @@
 import { supplierKeyForConnection } from "./supplier-identity";
 import { inventoryChanges } from "./model-availability";
+import { assertCompleteModelInventoryPayload, isCompleteModelInventoryResponse, ModelInventoryReadError, modelInventoryFailure,
+  modelInventoryFailureConfig, modelInventoryFailureHeaders, type ModelInventoryFailure } from "./model-inventory-failure";
 import { randomUUID } from "node:crypto";
 import { SupplierConflictError } from "@super-canvas/db";
 import {
@@ -42,6 +44,7 @@ import { discoverSupplierModelInterfaces } from "./supplier-interface-discovery"
 import { withHighestModelQualityDefault } from "./model-quality";
 import { enrichSupplierModelPrices } from "./supplier-model-pricing";
 import { discoverAgentModelCapabilities } from "./agent-model-discovery";
+import { supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { MIAOWU_PRESET_ID } from "./miaowu-presets";
 import { scanMiaowuConnection } from "./miaowu-server";
 import { CANGYUAN_IMAGE_PRESET_ID } from "./provider-presets";
@@ -68,24 +71,6 @@ function adapterFor(service: RunService, provider: string) {
 interface OpenAIModelList {
   data?: Array<{ id?: unknown; name?: unknown }>;
   models?: Array<{ id?: unknown; name?: unknown }>;
-}
-
-function modelListItems(payload: OpenAIModelList): Array<{
-  id?: unknown;
-  name?: unknown;
-}> {
-  // A few OpenAI-compatible gateways return both fields, with `data` left as
-  // an empty array. Prefer the non-empty field so the useful inventory is not
-  // discarded just because the response shape is technically valid.
-  if (Array.isArray(payload.data) && payload.data.length > 0)
-    return payload.data;
-  if (Array.isArray(payload.models) && payload.models.length > 0)
-    return payload.models;
-  return Array.isArray(payload.data)
-    ? payload.data
-    : Array.isArray(payload.models)
-      ? payload.models
-      : [];
 }
 
 interface CustomGroupModelScan {
@@ -127,7 +112,6 @@ async function listCustomGroupModels(connection: {
     ),
   ].filter((url, index, all) => all.indexOf(url) === index);
   let payload: OpenAIModelList | undefined;
-  let successfulPayload: OpenAIModelList | undefined;
   let lastError: unknown;
   for (const url of candidates) {
     try {
@@ -145,25 +129,18 @@ async function listCustomGroupModels(connection: {
           allowLoopback: connection.config.allowLocalhost === true,
         },
       );
-      successfulPayload ??= candidate;
-      if (
-        Array.isArray(candidate.data) ||
-        Array.isArray(candidate.models) ||
-        url === candidates[candidates.length - 1]
-      ) {
-        payload = candidate;
-        break;
-      }
+      assertCompleteModelInventoryPayload(candidate);
+      payload = candidate;
+      break;
     } catch (error) {
       if (
-        error instanceof ProviderHttpError &&
-        (error.details.status === 401 || error.details.status === 403)
+        error instanceof ProviderHttpError && [401, 403].includes(error.details.status ?? 0) ||
+        error instanceof ModelInventoryReadError && error.code !== "invalid_response"
       )
         throw error;
-      lastError = error;
+      if (!(lastError instanceof ModelInventoryReadError)) lastError = error;
     }
   }
-  payload ??= successfulPayload;
   if (!payload) throw lastError ?? new Error("model list unavailable");
   const defaultModel =
     typeof connection.config.defaultModel === "string"
@@ -206,6 +183,10 @@ async function persistCustomGroupModelScan(
         modelScanAttemptStatus: modelIds.length > 0 ? "live" : "empty",
         modelScanCheckedAt: scan.checkedAt,
         modelScanLastSuccessAt: scan.checkedAt,
+        modelScanComplete: true,
+        modelScanError: null,
+        modelScanErrorCode: null,
+        modelScanHttpStatus: null,
         scannedModelIds: modelIds,
         modelScanGroups: modelGroups,
         modelCatalogModels: scan.models,
@@ -220,6 +201,7 @@ async function persistCustomGroupModelScan(
 async function persistCustomGroupScanFailure(
   connection: NonNullable<Awaited<ReturnType<typeof repository.getConnection>>>,
   status: "failed" | "unauthorized" = "failed",
+  failure?: ModelInventoryFailure,
 ): Promise<void> {
   const latest = await repository.getConnection(connection.id);
   if (
@@ -246,6 +228,7 @@ async function persistCustomGroupScanFailure(
         modelScanAttemptStatus: status,
         modelScanLastSuccessAt: modelInventoryLastSuccessAt(connection.config) ?? null,
         modelCatalogSource: "saved",
+        ...(failure ? modelInventoryFailureConfig(failure) : { modelScanComplete: false }),
       },
     },
     { expected: connection },
@@ -567,7 +550,6 @@ async function listAgentModels(connection: {
     ),
   ].filter((url, index, all) => all.indexOf(url) === index);
   let response: OpenAIModelList | undefined;
-  let successfulResponse: OpenAIModelList | undefined;
   let lastError: unknown;
   for (const url of candidates) {
     try {
@@ -585,27 +567,19 @@ async function listAgentModels(connection: {
           allowLoopback: connection.config.allowLocalhost === true,
         },
       );
-      successfulResponse ??= payload;
-      if (
-        Array.isArray(payload.data) ||
-        Array.isArray(payload.models) ||
-        url === candidates[candidates.length - 1]
-      ) {
-        response = payload;
-        break;
-      }
+      assertCompleteModelInventoryPayload(payload);
+      response = payload;
+      break;
     } catch (error) {
       if (
-        error instanceof ProviderHttpError &&
-        (error.details.status === 401 || error.details.status === 403)
+        error instanceof ProviderHttpError && [401, 403].includes(error.details.status ?? 0) ||
+        error instanceof ModelInventoryReadError && error.code !== "invalid_response"
       )
         throw error;
-      lastError = error;
+      if (!(lastError instanceof ModelInventoryReadError)) lastError = error;
     }
   }
-  response ??= successfulResponse;
   if (!response) throw lastError ?? new Error("model list unavailable");
-  const responseItems = modelListItems(response);
   const defaultModel =
     typeof connection.config.defaultModel === "string"
       ? connection.config.defaultModel.trim()
@@ -618,7 +592,7 @@ async function listAgentModels(connection: {
       : {};
   // A legacy usage label cannot erase a Key's image/video models or the
   // supplier's explicit media declarations. /models is the grant boundary.
-  return scanProviderModelCatalog(responseItems, { defaultModel }).models
+  return scanProviderModelCatalog(response, { defaultModel }).models
     .filter(model => model.id !== "codex-auto-review")
     .map(model => ({ ...model, name: typeof names[model.id] === "string" ? String(names[model.id]) : model.name }));
 }
@@ -821,25 +795,26 @@ async function readModels(
         },
       );
     } catch (error) {
+      const failure = modelInventoryFailure(error);
       if (
-        error instanceof ProviderHttpError &&
-        (error.details.status === 401 || error.details.status === 403)
+        failure.code === "invalid_credentials" || failure.code === "permission_denied"
       ) {
         if (refresh)
-          await persistCustomGroupScanFailure(connection, "unauthorized");
+          await persistCustomGroupScanFailure(connection, "unauthorized", failure);
         return Response.json(
-          { error: "当前分组 Key 无权读取模型，请重新配置密钥" },
+          { error: failure.message },
           {
-            status: error.details.status,
+            status: failure.code === "invalid_credentials" ? 401 : 403,
             headers: {
               "X-Model-Scan-Status": "unauthorized",
               "Cache-Control": "no-store",
+              ...modelInventoryFailureHeaders(failure),
             },
           },
         );
       }
       if (refresh)
-        void persistCustomGroupScanFailure(connection).catch(() => undefined);
+        await persistCustomGroupScanFailure(connection, "failed", failure);
       const stale = mergeManualProviderModels(
         connection,
         connection.config.modelScanStatus === "live" ||
@@ -850,11 +825,10 @@ async function readModels(
       if (stale.length > 0)
         return staleModelsResponse(stale, {
           "X-Model-Scan-Source": "saved",
+          ...modelInventoryFailureHeaders(failure),
         });
-      return jsonError(
-        "自定义分组模型列表读取失败，请检查 Base URL、密钥和接口路径",
-        502,
-      );
+      return Response.json({ error: failure.message }, { status: 502,
+        headers: { "X-Model-Scan-Status": "failed", ...modelInventoryFailureHeaders(failure) } });
     }
   }
   if (refresh && connection.config.preset === CANGYUAN_IMAGE_PRESET_ID) {
@@ -934,15 +908,15 @@ async function readModels(
         },
       );
     } catch (error) {
-      if (
-        error instanceof ProviderHttpError &&
-        (error.details.status === 401 || error.details.status === 403)
-      )
-        return jsonError("当前分组 Key 无权读取模型", error.details.status);
+      const failure = modelInventoryFailure(error);
+      const headers = modelInventoryFailureHeaders(failure);
+      if (failure.code === "invalid_credentials" || failure.code === "permission_denied")
+        return Response.json({ error: failure.message }, { status: failure.code === "invalid_credentials" ? 401 : 403,
+          headers: { ...headers, "X-Model-Scan-Status": "unauthorized" } });
       const manual = manualProviderModelDescriptors(connection);
       if (manual.length)
-        return staleModelsResponse(manual, { "X-Model-Scan-Source": "manual" });
-      return jsonError("对话模型列表读取失败，请检查地址、密钥和模型权限", 502);
+        return staleModelsResponse(manual, { "X-Model-Scan-Source": "manual", ...headers });
+      return Response.json({ error: failure.message }, { status: 502, headers: { ...headers, "X-Model-Scan-Status": "failed" } });
     }
   }
   const adapter = adapterFor(getRunService(), connection.provider);
@@ -992,11 +966,11 @@ async function readModels(
       },
     });
   } catch (error) {
-    if (
-      error instanceof ProviderHttpError &&
-      (error.details.status === 401 || error.details.status === 403)
-    )
-      return jsonError("当前分组 Key 无权读取模型", error.details.status);
+    const failure = modelInventoryFailure(error);
+    const failureHeaders = modelInventoryFailureHeaders(failure);
+    if (failure.code === "invalid_credentials" || failure.code === "permission_denied")
+      return Response.json({ error: failure.message }, { status: failure.code === "invalid_credentials" ? 401 : 403,
+        headers: { ...failureHeaders, "X-Model-Scan-Status": "unauthorized" } });
     const connectorSnapshot = savedConnectorModels(connection);
     const weAiSnapshot = isWeAiConnectionConfig(connection)
       ? (weAiCanvasModelDescriptorsFromSavedScan(connection.config) ?? [])
@@ -1013,6 +987,7 @@ async function readModels(
     if (stale.length > 0)
       return staleModelsResponse(stale, {
         ...mikotoScanHeaders,
+        ...failureHeaders,
         ...(connection.config.preset === FRIMODEL_PRESET_ID
           ? { "X-Model-Scan-Source": "snapshot" }
           : isWeAiConnectionConfig(connection)
@@ -1021,15 +996,15 @@ async function readModels(
       });
     const manual = manualProviderModelDescriptors(connection);
     if (manual.length)
-      return staleModelsResponse(manual, { "X-Model-Scan-Source": "manual" });
-    return jsonError("模型列表读取失败，请检查供应商连接", 502);
+      return staleModelsResponse(manual, { "X-Model-Scan-Source": "manual", ...failureHeaders });
+    return Response.json({ error: failure.message }, { status: 502, headers: { ...failureHeaders, "X-Model-Scan-Status": "failed" } });
   }
 }
 
 /** One request identity across every adapter prevents delayed results from restoring old state. */
 async function readModelResponse(
   request: Request,
-  context: { params: Promise<{ id: string }> },
+  context: { params: Promise<{ id: string }>; supplierRefreshId?: string },
 ): Promise<Response> {
   const parsedId = parseRouteIdentifier((await context.params).id, "连接 ID");
   if (!parsedId.success) return parsedId.response;
@@ -1152,27 +1127,38 @@ async function readModelResponse(
             .catch(() => null)
         : null;
       let config = { ...latest.config };
-      if (
-        response.ok &&
-        Array.isArray(payload) &&
-        status !== "stale" &&
-        status !== "failed"
-      ) {
+      if (isCompleteModelInventoryResponse(response, payload)) {
+        if ((payload as ModelDescriptor[]).some(model => !model || typeof model.id !== "string" || !model.id.trim() || !Array.isArray(model.operations)))
+          throw new ModelInventoryReadError("invalid_response", 200);
         const unavailable = (m: ModelDescriptor) =>
           m.metadata?.canvasRunnable === false &&
           String(m.metadata?.canvasUnavailableReason ?? "").includes("未返回");
         const visible = (payload as ModelDescriptor[]).filter(
           (m) => !unavailable(m),
         );
-        const bound = bindScannedModelProtocols(latest, await enrichSupplierModelPrices(latest, visible, true), original);
+        // Bind first so exact-ID historical metadata retains catalog ownership.
+        // Fresh enrichment can then replace/remove those owned fields without
+        // the compatibility binder bringing them back afterward.
+        const bound = bindScannedModelProtocols(latest, visible, original);
         const owner = typeof latest.config.supplierId === "string" ? await getSupplierRecord(latest.config.supplierId) : null;
+        const siteScope = (supplier: typeof owner) => supplier ? JSON.stringify([
+          supplier.state?.sourceId, supplier.siteUrl, supplier.kind,
+          supplierSiteLoginCacheIdentity(supplier.state?.siteLogin),
+        ]) : null;
+        const ownerSiteScope = siteScope(owner);
+        const refreshId = context.supplierRefreshId ?? String(requestId);
+        const pricedModels = await enrichSupplierModelPrices(latest, bound.models, true, true, { refreshId });
         const discoveryConnection = owner ? { ...latest, config: { ...latest.config, supplierWebsiteUrl: owner.siteUrl } } : latest;
-        const discovered = await discoverSupplierModelInterfaces(discoveryConnection, bound.models, original);
+        const discovered = await discoverSupplierModelInterfaces(discoveryConnection, pricedModels, original, undefined, {
+          force: true, refreshId,
+        });
         const agentModels = await discoverAgentModelCapabilities(discoveryConnection, discovered.models);
         // Documentation GETs may overlap a Key/source edit or another scan.
         const afterDiscovery = await repository.getConnection(id);
         if (!afterDiscovery || afterDiscovery.updatedAt !== latest.updatedAt || afterDiscovery.config.modelScanRequestId !== requestId
           || afterDiscovery.encryptedSecret !== original.encryptedSecret) throw new SupplierConflictError("接口识别期间连接已改变，旧结果已丢弃");
+        if (owner && siteScope(await getSupplierRecord(owner.id)) !== ownerSiteScope)
+          throw new SupplierConflictError("刷新期间站点认证已改变，旧价格和接口结果已丢弃，请重新刷新");
         await assertCurrentSupplierConnection(afterDiscovery);
         const models = agentModels.map(withHighestModelQualityDefault);
         const defaultModel =
@@ -1184,7 +1170,7 @@ async function readModelResponse(
           autoModelInterfaces: discovered.bindings as unknown as typeof config.autoModelInterfaces,
           ...(bound.connector
             ? {
-                connector: bound.connector as unknown as typeof config.connector,
+                connector: { ...bound.connector, models: models.filter(model => model.operations.length && model.metadata?.canvasRunnable !== false) } as unknown as typeof config.connector,
                 modelProtocolTemplate: bound.templateConnector as unknown as typeof config.connector,
               }
             : {}),
@@ -1193,6 +1179,10 @@ async function readModelResponse(
           modelScanAttemptStatus: models.length ? "live" : "empty",
           modelScanCheckedAt: checkedAt,
           modelScanLastSuccessAt: checkedAt,
+          modelScanComplete: true,
+          modelScanError: null,
+          modelScanErrorCode: null,
+          modelScanHttpStatus: null,
           modelCatalogModels:
             models as unknown as typeof config.modelCatalogModels,
           scannedModelIds: models.map((m) => m.id),
@@ -1207,6 +1197,7 @@ async function readModelResponse(
           headers: {
             "Cache-Control": "no-store",
             "X-Model-Scan-Status": models.length ? "live" : "empty",
+            "X-Model-Scan-Complete": "true",
           },
         }), config, "live");
       }
@@ -1228,10 +1219,15 @@ async function readModelResponse(
       // Some legacy adapters update their own scan state; retain only the
       // success known before this failed attempt, never their attempt timestamp.
       config.modelScanLastSuccessAt = modelInventoryLastSuccessAt(original.config) ?? null;
+      const failure = modelInventoryFailure(undefined, response);
+      Object.assign(config, modelInventoryFailureConfig(failure));
       latest = await repository.saveConnection(
         { ...latest, config },
         { expected: latest },
       );
+      if (config.modelScanAttemptStatus === "unauthorized")
+        return withModelInventoryMetadata(Response.json({ error: failure.message }, { status: failure.code === "invalid_credentials" ? 401 : 403,
+          headers: { "X-Model-Scan-Status": "unauthorized", "X-Model-Scan-Complete": "false", ...modelInventoryFailureHeaders(failure) } }), config, "saved");
     }
     if (response.ok) {
       const payload: unknown = await response.clone().json().catch(() => null);
@@ -1263,9 +1259,8 @@ async function readModelResponse(
       )
         return jsonError("扫描期间连接已改变，旧结果已丢弃", 409);
       await assertCurrentSupplierConnection(latest);
-      const denied =
-        error instanceof ProviderHttpError &&
-        [401, 403].includes(error.details.status ?? 0);
+      const failure = modelInventoryFailure(error);
+      const denied = failure.code === "invalid_credentials" || failure.code === "permission_denied";
       const previousDenial = ["unauthorized", "empty"].includes(
         String(original.config.modelScanStatus),
       );
@@ -1283,12 +1278,16 @@ async function readModelResponse(
             modelScanAttemptStatus: denied ? "unauthorized" : "failed",
             modelScanCheckedAt: new Date().toISOString(),
             modelScanLastSuccessAt: modelInventoryLastSuccessAt(original.config) ?? null,
+            ...modelInventoryFailureConfig(failure),
           },
         },
         { expected: latest },
       );
       if (status === "unauthorized")
-        return withModelInventoryMetadata(jsonError("当前 Key 鉴权失败，请重新配置或测试", 401), saved.config, "saved");
+        return withModelInventoryMetadata(Response.json({ error: denied ? failure.message : "当前 Key 鉴权失败，请重新配置或测试" }, {
+          status: denied && failure.code === "permission_denied" ? 403 : 401,
+          headers: { "X-Model-Scan-Status": "unauthorized", "X-Model-Scan-Complete": "false", ...modelInventoryFailureHeaders(failure) },
+        }), saved.config, "saved");
       if (status === "empty") return withModelInventoryMetadata(staleModelsResponse([]), saved.config, "saved");
       if (Array.isArray(saved.config.modelCatalogModels))
         return withModelInventoryMetadata(staleModelsResponse(
@@ -1313,7 +1312,7 @@ async function readModelResponse(
 }
 
 /** Read-only enrichment: resolving capabilities never creates or submits paid tests. */
-export async function readProviderModelInventory(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+export async function readProviderModelInventory(request: Request, context: { params: Promise<{ id: string }>; supplierRefreshId?: string }): Promise<Response> {
   const response = await readModelResponse(request, context);
   if (response.headers.get("X-Model-Scan-Source") === "cli-saved") return response;
   if (!response.ok || new URL(request.url).searchParams.get("verificationRaw") === "1") return response;

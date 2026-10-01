@@ -3,7 +3,7 @@ import {
   type ModelDescriptor, type DocumentedModelInterface,
 } from "@super-canvas/providers";
 
-import { readSupplierInterfaceDocuments } from "./supplier-interface-documents";
+import { readSupplierInterfaceDocuments, type InterfaceDocumentReadOptions } from "./supplier-interface-documents";
 export { readSupplierInterfaceDocuments, type InterfaceDocument } from "./supplier-interface-documents";
 type Connection = { provider: string; config: Record<string, unknown> };
 
@@ -31,7 +31,7 @@ export function applySavedModelInterfaces(connection: Connection, models: readon
 
 /** All live models consult supplier documentation before keeping a compatibility route. */
 export async function discoverSupplierModelInterfaces(connection: Connection, models: readonly ModelDescriptor[], previous: Connection,
-  read = readSupplierInterfaceDocuments): Promise<{ models: ModelDescriptor[]; bindings: Record<string, DocumentedModelInterface> }> {
+  read = readSupplierInterfaceDocuments, options: InterfaceDocumentReadOptions = {}): Promise<{ models: ModelDescriptor[]; bindings: Record<string, DocumentedModelInterface> }> {
   const visible = new Set(models.filter(mayBind).map(model => model.id));
   const sameSource = connection.config.baseUrl === previous.config.baseUrl && connection.config.supplierSourceId === previous.config.supplierSourceId;
   const bindings = Object.assign(Object.create(null) as Record<string, DocumentedModelInterface>,
@@ -41,7 +41,7 @@ export async function discoverSupplierModelInterfaces(connection: Connection, mo
   const candidates = models.filter(model => mayBind(model) && model.operations.length);
   if (!candidates.length) return { models: [...models], bindings };
   const baseUrl = String(connection.config.baseUrl ?? "");
-  const docs = await read(baseUrl, candidates, String(connection.config.supplierWebsiteUrl ?? baseUrl));
+  const docs = await read(baseUrl, candidates, String(connection.config.supplierWebsiteUrl ?? baseUrl), options);
   const reasons = new Map<string, string>();
   const connected = new Set<string>();
   for (const model of candidates) {

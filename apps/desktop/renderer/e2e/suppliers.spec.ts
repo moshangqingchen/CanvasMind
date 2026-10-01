@@ -441,6 +441,202 @@ test("刷新全部供应商同步分组和模型，显示新增与未再返回�
   expect(api.connections()[0]!.apiKeySet).toBe(true);
 });
 
+test("单家刷新独立于其他供应商，详情列出分组模型接口价格变化并支持键盘与窄窗口", async ({ page }, testInfo) => {
+  const api = await mockSuppliers(page, { existing: true });
+  const record = api.suppliers()[0]!;
+  record.catalog.groups.push({ id: "retired", label: "旧公开组", source: "catalog", models: [] },
+    { id: "personal", label: "我的自定义组", source: "manual", models: [{ id: "personal-model", capability: "image" }] });
+  api.suppliers().push({ ...fixtureSupplier(), id: "supplier-other", name: "另一家供应商", supplierKey: "other", siteUrl: "https://other.example.com", apiUrl: "https://other.example.com/v1" });
+  const connection = api.connections()[0]!;
+  connection.config.modelScanCheckedAt = record.scannedAt;
+  connection.config.scannedModelIds = ["stable-image", "old-image"];
+  connection.config.modelCatalogModels = [
+    { id: "stable-image", name: "持续保留模型", operations: ["image.generate"], metadata: { protocol: "openai-images", autoInterfacePath: "/v1/images/generations", priceLabel: "0.10 USD" } },
+    { id: "old-image", name: "旧模型", operations: ["image.generate"] },
+  ];
+  const scans: string[] = [];
+  await page.route(/\/api\/suppliers\/[^/]+\/scan$/u, async route => {
+    const id = new URL(route.request().url()).pathname.split("/")[3]!;
+    scans.push(id);
+    const checkedAt = new Date().toISOString();
+    record.scannedAt = checkedAt;
+    record.scanComplete = true;
+    record.catalog.groups[0]!.label = "VIP 新名称";
+    record.catalog.groups.find(group => group.id === "retired")!.status = "missing";
+    record.catalog.groups.push({ id: "new-group", label: "新公开组", source: "catalog", models: [] });
+    connection.config = { ...connection.config, modelScanCheckedAt: checkedAt, scannedModelIds: ["stable-image", "new-image"],
+      modelCatalogModels: [
+        { id: "stable-image", name: "持续保留模型", operations: ["image.edit"], metadata: { protocol: "rest", autoInterfacePath: "/v2/images/edit", priceLabel: "0.20 USD" } },
+        { id: "new-image", name: "新模型", operations: ["image.generate"], metadata: { canvasRunnable: false, autoInterfaceStatus: "incomplete", canvasUnavailableReason: "站点尚未提供完整的图片接口资料。", priceStatus: "unpublished" } },
+      ] };
+    await route.fulfill({ json: record });
+  });
+  await openSettings(page);
+  const settings = page.getByRole("dialog", { name: "供应商与模型设置" });
+  const row = settings.locator(".sm-supplier-row").filter({ has: page.locator(".sm-supplier-label strong").filter({ hasText: /^测试供应商$/u }) });
+  await row.getByRole("button", { name: "刷新 测试供应商", exact: true }).click();
+  await expect(settings.getByText("刷新完成：1 家供应商", { exact: true })).toBeVisible();
+  const opener = row.getByRole("button", { name: "查看 测试供应商 刷新状态", exact: true });
+  await opener.click();
+  const details = page.getByRole("dialog", { name: "供应商刷新详情" });
+  await expect(details.getByRole("heading", { name: "测试供应商", exact: true })).toBeVisible();
+  await expect(details.getByRole("region", { name: "刷新概况" })).toContainText("部分待确认");
+  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("1 个模型接口待确认");
+  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("站点尚未提供完整的图片接口资料。");
+  const groupChanges = details.getByRole("region", { name: "分组变化详情" });
+  await expect(groupChanges.getByText("新公开组", { exact: true })).toBeVisible();
+  await expect(groupChanges.getByText("旧公开组", { exact: true })).toBeVisible();
+  await expect(groupChanges.getByText("VIP 创作组 → VIP 新名称", { exact: true })).toBeVisible();
+  const connectionDetails = details.getByRole("region", { name: "连接与模型详情" });
+  await expect(connectionDetails.getByText("新增模型（1）", { exact: true })).toBeVisible();
+  await expect(connectionDetails.getByText("未再返回的模型（1）", { exact: true })).toBeVisible();
+  await expect(connectionDetails.getByText("价格变化（1）", { exact: true })).toBeVisible();
+  await expect(connectionDetails.getByText(/0\.10 USD → 0\.20 USD/u)).toBeVisible();
+  await connectionDetails.locator("summary").filter({ hasText: "接口待确认的模型" }).click();
+  await expect(connectionDetails.getByText(/尚未提供完整/u)).toBeVisible();
+  await connectionDetails.locator("summary").filter({ hasText: "价格待确认的模型" }).click();
+  await expect(connectionDetails.getByText(/供应商未公布价格/u)).toBeVisible();
+  await expect(details.getByRole("region", { name: "待处理事项" })).not.toContainText("供应商未公布价格");
+  await page.keyboard.press("Escape");
+  await expect(details).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect(settings).toBeVisible();
+  await opener.click();
+  await expect(details.getByRole("button", { name: "关闭刷新详情" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(details.getByRole("button", { name: "完成", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(details.getByRole("button", { name: "关闭刷新详情" })).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await details.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  const bounds = await details.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(391);
+  await page.screenshot({ path: testInfo.outputPath("supplier-refresh-details-mobile.png") });
+  await page.keyboard.press("Escape");
+  expect(scans).toEqual(["supplier-fixture"]);
+  expect(api.writes).toEqual([]);
+  expect(connection.apiKeySet).toBe(true);
+  expect(record.catalog.groups.find(group => group.id === "personal")?.models[0]?.id).toBe("personal-model");
+});
+
+test("全部刷新每家可查看独立失败项目，保留旧模型与已保存 Key", async ({ page }) => {
+  const api = await mockSuppliers(page, { existing: true });
+  const other = { ...fixtureSupplier(), id: "supplier-other", name: "网络异常供应商", supplierKey: "other", siteUrl: "https://other.example.com", apiUrl: "https://other.example.com/v1" };
+  api.suppliers().push(other);
+  const connection = api.connections()[0]!;
+  connection.config.modelCatalogModels = [{ id: "saved-model", name: "已有模型", operations: ["image.generate"] }];
+  await page.route(/\/api\/suppliers\/[^/]+\/scan$/u, async route => {
+    if (route.request().url().includes("supplier-other")) {
+      await route.fulfill({ status: 502, json: { error: "网关未返回完整响应。Bearer sk-mock-diagnostic-secret" } });
+      return;
+    }
+    const record = api.suppliers()[0]!;
+    record.scannedAt = new Date().toISOString();
+    record.scanComplete = true;
+    connection.config = { ...connection.config, modelScanStatus: "stale", modelScanCheckedAt: record.scannedAt,
+      modelScanHttpStatus: 502, modelScanError: "模型接口暂不可用，请稍后重试。",
+      modelCatalogModels: [{ id: "saved-model", name: "已有模型", operations: ["image.generate"], metadata: { priceStatus: "failed", priceLabel: "上次标价已保留" } }] };
+    await route.fulfill({ json: record });
+  });
+  await openSettings(page);
+  const settings = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await settings.getByRole("button", { name: "刷新全部供应商", exact: true }).click();
+  await expect(settings.getByText("刷新完成：2 家供应商", { exact: true })).toBeVisible();
+  const report = settings.getByRole("region", { name: "供应商刷新结果" });
+  const firstOpener = report.getByRole("button", { name: "查看 测试供应商 刷新详情", exact: true });
+  await firstOpener.click();
+  const details = page.getByRole("dialog", { name: "供应商刷新详情" });
+  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("模型接口暂不可用，请稍后重试。");
+  await expect(details.getByRole("region", { name: "连接与模型详情" })).toContainText("HTTP 502");
+  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("1 个模型价格读取未完成");
+  await details.getByRole("region", { name: "连接与模型详情" }).locator("summary").filter({ hasText: "价格待确认的模型" }).click();
+  await expect(details.getByRole("region", { name: "连接与模型详情" }).getByText(/本次价格读取失败/u)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(firstOpener).toBeFocused();
+  await report.getByRole("button", { name: "查看 网络异常供应商 刷新详情", exact: true }).click();
+  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("本次请求未完成");
+  await expect(details).not.toContainText("sk-mock-diagnostic-secret");
+  await page.keyboard.press("Escape");
+  expect(api.writes).toEqual([]);
+  expect(connection.apiKeySet).toBe(true);
+  expect((connection.config.modelCatalogModels as Array<{ id: string }>)[0]!.id).toBe("saved-model");
+});
+
+test("连接配置可查看已保存状态而不丢草稿，保存并扫描后显示本次变化", async ({ page }) => {
+  const api = await mockSuppliers(page, { existing: true });
+  await page.route("**/api/suppliers/supplier-fixture/scan", async route => {
+    const record = api.suppliers()[0]!;
+    record.scannedAt = new Date().toISOString();
+    record.scanComplete = true;
+    record.catalog.groups.push({ id: "scan-added", label: "扫描新增组", source: "catalog", models: [] });
+    const connection = api.connections()[0]!;
+    connection.config = { ...connection.config, modelScanCheckedAt: record.scannedAt, scannedModelIds: ["scan-added-model"],
+      modelCatalogModels: [{ id: "scan-added-model", name: "本次新增模型", operations: ["image.generate"] }] };
+    await route.fulfill({ json: record });
+  });
+  await openSettings(page);
+  const settings = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await settings.getByRole("tab", { name: "连接配置", exact: true }).click();
+  const name = settings.getByLabel("供应商名称", { exact: true });
+  await name.fill("未保存的名称草稿");
+  await settings.locator(".sm-detail-heading").getByRole("button", { name: "查看 测试供应商 刷新状态", exact: true }).click();
+  const details = page.getByRole("dialog", { name: "供应商刷新详情" });
+  await expect(details.getByText("仅展示已保存状态；刷新后可查看本次变化。", { exact: true })).toBeVisible();
+  await expect(details.getByRole("region", { name: "分组变化详情" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(name).toHaveValue("未保存的名称草稿");
+  await settings.getByRole("button", { name: "保存并扫描", exact: true }).click();
+  const notice = settings.getByRole("button", { name: "查看配置刷新状态", exact: true });
+  await expect(notice).toBeVisible();
+  await notice.click();
+  await expect(details.getByRole("region", { name: "分组变化详情" }).getByText("扫描新增组", { exact: true })).toBeVisible();
+  await expect(details.getByRole("region", { name: "连接与模型详情" }).locator("details")
+    .filter({ has: page.getByText("新增模型（1）", { exact: true }) }).getByText("scan-added-model", { exact: true })).toBeVisible();
+  await expect(details.getByText("仅展示已保存状态；刷新后可查看本次变化。", { exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(notice).toBeFocused();
+  expect(api.writes).toEqual([]);
+});
+
+test("十三家刷新结果用状态统计和收起列表呈现，展开后内部滚动且各家可查看详情", async ({ page }, testInfo) => {
+  const api = await mockSuppliers(page, { existing: true });
+  for (let index = 2; index <= 13; index++) api.suppliers().push({ ...fixtureSupplier(), id: `supplier-${index}`, name: `创作供应商 ${index}`, supplierKey: `supplier-${index}` });
+  await page.route(/\/api\/suppliers\/[^/]+\/scan$/u, async route => {
+    const id = new URL(route.request().url()).pathname.split("/")[3]!;
+    const record = api.suppliers().find(item => item.id === id)!;
+    record.scannedAt = new Date().toISOString();
+    record.scanComplete = true;
+    if (id === "supplier-fixture") api.connections()[0]!.config.modelScanCheckedAt = record.scannedAt;
+    await route.fulfill({ json: record });
+  });
+  await openSettings(page);
+  const settings = page.getByRole("dialog", { name: "供应商与模型设置" });
+  await settings.getByRole("button", { name: "刷新全部供应商", exact: true }).click();
+  await expect(settings.getByText("刷新完成：13 家供应商", { exact: true })).toBeVisible();
+  const report = settings.getByRole("region", { name: "供应商刷新结果" });
+  await expect(report.locator(".sm-refresh-overview")).toBeVisible();
+  await expect(report.locator('.sm-refresh-overview > [data-status="updated"] strong')).toHaveText("1");
+  await expect(report.locator('.sm-refresh-overview > [data-status="partial"] strong')).toHaveText("12");
+  await expect(report.locator(".sm-refresh-disclosure")).not.toHaveAttribute("open");
+  await report.locator("summary").click();
+  await expect(report.getByRole("button", { name: /刷新详情$/u })).toHaveCount(13);
+  const layout = await report.locator(".sm-refresh-results").evaluate(element => ({
+    height: element.clientHeight, scrollable: element.scrollHeight > element.clientHeight, overflow: getComputedStyle(element).overflowY,
+  }));
+  expect(layout.height).toBeLessThanOrEqual(280);
+  expect(layout.scrollable).toBe(true);
+  expect(layout.overflow).toBe("auto");
+  await page.screenshot({ path: testInfo.outputPath("suppliers-refresh-overview-desktop.png") });
+  const opener = report.getByRole("button", { name: "查看 创作供应商 13 刷新详情", exact: true });
+  await opener.click();
+  const details = page.getByRole("dialog", { name: "供应商刷新详情" });
+  await expect(details.getByRole("heading", { name: "创作供应商 13", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("supplier-refresh-details-desktop.png") });
+  await page.keyboard.press("Escape");
+  await expect(opener).toBeFocused();
+});
+
 test("平台没有返回的旧连接分组归入手动分组，不依赖手动标记且可删除", async ({
   page,
 }) => {

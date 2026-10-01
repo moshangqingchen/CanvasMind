@@ -74,7 +74,8 @@ import {
 import { supplierConnectionDraft } from "../lib/supplier-connection-draft";
 import "./supplier-manager.css";
 import { inventoryModels, modelAvailability } from "../lib/model-availability";
-import { refreshAllSuppliers, subscribeSupplierRefresh, type SupplierRefreshProgress } from "../lib/refresh-suppliers";
+import { buildSupplierRefreshResult, recordSupplierRefreshResult, refreshAllSuppliers, refreshSupplier, supplierRefreshStatus, subscribeSupplierRefresh, type SupplierRefreshProgress, type SupplierRefreshResult } from "../lib/refresh-suppliers";
+import { SupplierRefreshDetails, SupplierRefreshIndicator } from "./supplier-refresh-details";
 
 const DEFAULT_API_URLS: Record<string, string> = {
   cangyuan: "https://ai.cangyuansuanli.cn",
@@ -194,8 +195,11 @@ export function SupplierManager({
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [refresh, setRefresh] = useState<SupplierRefreshProgress>({ running: false, total: 0, completed: 0, current: "", results: [] });
+  const [refresh, setRefresh] = useState<SupplierRefreshProgress>({ running: false, runningIds: [], total: 0, completed: 0, current: "", results: [] });
+  const [preparingRefreshId, setPreparingRefreshId] = useState<string | null>(null);
+  const [refreshDetailsId, setRefreshDetailsId] = useState<string | null>(null);
   const loadVersion = useRef(0);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const selectedRef = useRef<string | undefined>(undefined);
   const onConnectionsRef = useRef(onConnectionsChanged);
   useEffect(() => {
@@ -221,20 +225,25 @@ export function SupplierManager({
     setLoading(false);
   }, []);
 
-  useEffect(() => subscribeSupplierRefresh((state) => {
-    setRefresh(state);
-    if (state.completed > 0) void load();
-  }), [load]);
+  const scheduleLoad = useCallback(() => {
+    clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(() => { reloadTimer.current = undefined; void load(); }, 100);
+  }, [load]);
+  useEffect(() => {
+    let previous: SupplierRefreshProgress | undefined;
+    const unsubscribe = subscribeSupplierRefresh(state => {
+      setRefresh(state);
+      if (previous && (state.completed > previous.completed || previous.running && !state.running)) scheduleLoad();
+      previous = state;
+    });
+    return unsubscribe;
+  }, [scheduleLoad]);
 
   useEffect(() => {
-    let version = 0;
-    const refresh = () => { const request = ++version; void fetchSuppliers().then(records => {
-      if (request !== version) return;
-      setSuppliers(records); seedSupplierBilling(records);
-    }).catch(() => undefined); };
-    window.addEventListener("supplier-billing-updated", refresh);
-    return () => { version++; window.removeEventListener("supplier-billing-updated", refresh); };
-  }, []);
+    window.addEventListener("supplier-billing-updated", scheduleLoad);
+    return () => { window.removeEventListener("supplier-billing-updated", scheduleLoad); };
+  }, [scheduleLoad]);
+  useEffect(() => () => { clearTimeout(reloadTimer.current); loadVersion.current += 1; }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -275,6 +284,10 @@ export function SupplierManager({
         window.open(entry.siteUrl, "_blank", "noopener,noreferrer");
       return;
     }
+    if (action === "scan") {
+      requestSupplierRefresh(entry);
+      return;
+    }
     if (entry.id === selectedRef.current && !confirmDiscard()) return;
     try {
       const record =
@@ -293,13 +306,7 @@ export function SupplierManager({
             name,
             expectedRevision: record.state?.revision ?? 0,
           });
-      } else if (action === "scan")
-        result = await scanSupplier(
-          record.id,
-          undefined,
-          record.state?.revision ?? 0,
-        );
-      else if (action === "hide")
+      } else if (action === "hide")
         result = await updateSupplier(record.id, {
           visibility:
             record.state?.visibility === "hidden" ? "visible" : "hidden",
@@ -433,13 +440,62 @@ export function SupplierManager({
     setConnections(current);
     onConnectionsRef.current?.(current);
   }
+  async function recordScanResult(before: SupplierRecord, after: SupplierRecord, priorConnections: readonly ProviderConnectionView[]) {
+    const current = await fetchConnections().catch(() => [...priorConnections]);
+    current.forEach(connection => invalidateModelCache(connection.id));
+    setConnections(current);
+    onConnectionsRef.current?.(current);
+    recordSupplierRefreshResult(buildSupplierRefreshResult(before, after, priorConnections, current));
+  }
+
+  const refreshBusy = refresh.running || preparingRefreshId !== null;
+  function refreshResult(entry: SupplierEntry): SupplierRefreshResult | undefined {
+    const latest = refresh.results.find(result => result.id === entry.id);
+    const record = entry.record;
+    const matchesSource = !latest?.sourceId || !record?.state?.sourceId || latest.sourceId === record.state.sourceId;
+    const credentialsChanged = record?.scanStatus === "unscanned" && (!latest?.checkedAt || Date.parse(record.updatedAt) > Date.parse(latest.checkedAt));
+    const keyChanged = Boolean(latest?.connections && connections.some(connection => {
+      if (!supplierOwnsConnection(entry, connection)) return false;
+      const previous = latest.connections!.find(item => item.id === connection.id);
+      return !previous || connection.apiKeySet !== (previous.status !== "unconfigured") ||
+        modelInventoryScanStatus(connection.config) === "unscanned" && ["updated", "empty", "failed"].includes(previous.status);
+    }));
+    const newerScan = Boolean(latest?.checkedAt && (record?.scannedAt && Date.parse(record.scannedAt) > Date.parse(latest.checkedAt) ||
+      connections.some(connection => supplierOwnsConnection(entry, connection) && typeof connection.config.modelScanCheckedAt === "string" && Date.parse(connection.config.modelScanCheckedAt) > Date.parse(latest.checkedAt!))));
+    return latest && matchesSource && !newerScan && !credentialsChanged && !keyChanged ? latest : record ? supplierRefreshStatus(record, connections) : undefined;
+  }
+  async function startSupplierRefresh(entry: SupplierEntry) {
+    if (refreshBusy) return;
+    setPreparingRefreshId(entry.id);
+    try {
+      const record = entry.record ?? await createSupplier({
+        name: entry.name, supplierKey: entry.supplierKey, siteUrl: entry.siteUrl, apiUrl: entry.apiUrl,
+      });
+      if (!entry.record) {
+        updateRecord(record, entry.id);
+        if (refreshDetailsId === entry.id) setRefreshDetailsId(record.id);
+      }
+      await refreshSupplier(record.id);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setPreparingRefreshId(null);
+    }
+  }
+  function requestSupplierRefresh(entry: SupplierEntry) {
+    if (entry.id === selectedRef.current) requestLeave(() => void startSupplierRefresh(entry));
+    else void startSupplierRefresh(entry);
+  }
+  const refreshDetailsEntry = entries.find(entry => entry.id === refreshDetailsId);
+  const refreshDetailsResult = refreshDetailsEntry ? refreshResult(refreshDetailsEntry) : refresh.results.find(result => result.id === refreshDetailsId);
+  const supplierRefreshResults = refresh.results.filter(result => !["empty", "batch"].includes(result.id));
 
   return (
     <div className="sm-manager" id="sm-suppliers-panel" role="tabpanel">
       <aside className="sm-sidebar" aria-label="供应商列表">
         <div className="sm-sidebar-heading">
           <div>
-            <span className="sm-kicker">YOUR CONNECTIONS</span>
+            <span className="sm-kicker">已保存与内置连接</span>
             <h3>模型供应商</h3>
           </div>
           <button
@@ -457,7 +513,7 @@ export function SupplierManager({
           type="button"
           className="sm-button sm-refresh-all"
           onClick={() => requestLeave(() => void refreshAllSuppliers())}
-          disabled={refresh.running || loading}
+          disabled={refreshBusy || loading}
           title="读取已保存供应商的最新分组和各 Key 的模型列表"
         >
           <RefreshCw size={16} className={refresh.running ? "sm-spin" : ""} />
@@ -494,6 +550,8 @@ export function SupplierManager({
             const count = connections.filter((connection) =>
               supplierOwnsConnection(entry, connection),
             ).length;
+            const result = refreshResult(entry);
+            const refreshing = refresh.runningIds.includes(entry.id) || preparingRefreshId === entry.id;
             return (
               <div
                 className="sm-supplier-row"
@@ -539,11 +597,6 @@ export function SupplierManager({
                           : "等待添加分组"}
                     </small>
                     {entry.record && <small>{billingCompact(billingAccounts.find(item => item.id === entry.record?.id)?.billing)}</small>}
-                    {refresh.results.find(r => r.id === entry.id) && (
-                      <small className={`sm-refresh-${refresh.results.find(r => r.id === entry.id)!.status}`}>
-                        {{ updated: "已刷新", partial: "部分待确认", failed: "刷新失败" }[refresh.results.find(r => r.id === entry.id)!.status]}
-                      </small>
-                    )}
                   </span>
                   <ChevronRight size={14} />
                 </button>
@@ -558,6 +611,17 @@ export function SupplierManager({
                 >
                   <MoreHorizontal size={17} />
                 </button>
+                <div className="sm-supplier-actions">
+                  <button type="button" className="sm-row-refresh" aria-label={`刷新 ${entry.name}`}
+                    disabled={refreshBusy} onClick={() => requestSupplierRefresh(entry)}>
+                    <RefreshCw size={12} className={refreshing ? "sm-spin" : undefined} />{refreshing ? "刷新中" : "刷新"}
+                  </button>
+                  <button type="button" className="sm-row-status" aria-label={`查看 ${entry.name} 刷新状态`}
+                    aria-haspopup="dialog" onClick={() => setRefreshDetailsId(entry.id)}>
+                    <SupplierRefreshIndicator status={result?.status} running={refreshing} label={result ? undefined : "查看状态"} />
+                    <ChevronRight size={12} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -609,17 +673,24 @@ export function SupplierManager({
       <main className="sm-main">
         {(refresh.running || refresh.results.length > 0) && (
           <section className="sm-refresh-report" aria-label="供应商刷新结果">
+            <h3>各家最近刷新结果</h3>
             <p role="status" aria-live="polite">
-              {refresh.running ? `正在刷新：${refresh.current}（${refresh.completed}/${refresh.total}）` : `刷新完成：${refresh.completed} 家供应商`}
+              {refresh.running ? `正在刷新：${refresh.current}（${refresh.completed}/${refresh.total}）` : `刷新完成：${refresh.completed || supplierRefreshResults.length} 家供应商`}
             </p>
-            <p className="sm-muted">可用性依据 Key 返回的模型列表与应用协议支持，不进行付费生成测试。新增分组须配置对应 Key；网络失败保留上次结果。</p>
-            {refresh.results.length > 0 && <details open={!refresh.running}>
-              <summary>查看各供应商结果</summary>
-              <ul>{refresh.results.map(result => <li key={result.id}>
-                <strong>{result.name} · {{ updated: "已刷新", partial: "部分待确认", failed: "刷新失败" }[result.status]}</strong>
-                <span>{result.message}</span>
-              </li>)}</ul>
-            </details>}
+            <p className="sm-muted">分开核对目录、模型、接口与账号账务。查看每家详情可定位失败项目与本次变化；刷新只读取资料。</p>
+            {!refresh.running && <p className="sm-muted">本次处理 {refresh.completed || supplierRefreshResults.length} 家，以下保留 {supplierRefreshResults.length} 家最近结果；读取时间见详情。</p>}
+            <div className="sm-refresh-overview" aria-label="刷新结果统计">
+              {([["updated", "已更新"], ["partial", "待确认"], ["failed", "刷新失败"]] as const).map(([status, label]) => <div key={status} data-status={status}>
+                <SupplierRefreshIndicator status={status} label={label} /><strong>{supplierRefreshResults.filter(result => result.status === status).length}</strong>
+              </div>)}
+            </div>
+            {refresh.results.length > 0 && <details className="sm-refresh-disclosure" open={refresh.results.length <= 2 && !refresh.running}>
+              <summary>查看各供应商结果（{supplierRefreshResults.length}）</summary>
+              <ul className="sm-refresh-results">{refresh.results.map(result => <li key={result.id}>
+              <div><strong>{result.name}</strong><SupplierRefreshIndicator status={result.status} running={refresh.runningIds.includes(result.id)} /><p>{result.message}</p></div>
+              <button type="button" className="sm-button" aria-label={`查看 ${result.name} 刷新详情`}
+                aria-haspopup="dialog" onClick={() => setRefreshDetailsId(result.id)}>查看详情<ChevronRight size={13} /></button>
+            </li>)}</ul></details>}
           </section>
         )}
         {error && (
@@ -639,6 +710,7 @@ export function SupplierManager({
           <NewSupplierForm
             onCreated={updateRecord}
             onCancel={() => requestLeave(() => setAdding(false))}
+            onScanned={recordScanResult}
           />
         ) : selected ? (
           <SupplierDetail
@@ -648,6 +720,12 @@ export function SupplierManager({
             initialGroup={initialCangyuanGroup}
             onUpdated={(record) => updateRecord(record, selected.id)}
             onConnectionsChanged={updateConnections}
+            onScanned={recordScanResult}
+            onViewStatus={() => setRefreshDetailsId(selected.id)}
+            onRefresh={() => requestSupplierRefresh(selected)}
+            refreshBusy={refreshBusy}
+            refreshRunning={refresh.runningIds.includes(selected.id) || preparingRefreshId === selected.id}
+            refreshStatus={refreshResult(selected)?.status}
           />
         ) : (
           <div className="sm-empty">
@@ -657,6 +735,14 @@ export function SupplierManager({
           </div>
         )}
       </main>
+      {refreshDetailsId !== null && <SupplierRefreshDetails
+        supplierName={refreshDetailsEntry?.name ?? refreshDetailsResult?.name ?? "供应商"}
+        result={refreshDetailsResult}
+        running={refresh.runningIds.includes(refreshDetailsId) || preparingRefreshId === refreshDetailsId}
+        canRefresh={Boolean(refreshDetailsEntry) && !refreshBusy}
+        onRefresh={() => { if (refreshDetailsEntry) requestSupplierRefresh(refreshDetailsEntry); }}
+        onClose={() => setRefreshDetailsId(null)}
+      />}
       {menu && (
         <div className="sm-menu-backdrop" onPointerDown={() => setMenu(null)}>
           <div
@@ -721,9 +807,11 @@ export function SupplierManager({
 function NewSupplierForm({
   onCreated,
   onCancel,
+  onScanned,
 }: {
   onCreated: (record: SupplierRecord) => void;
   onCancel: () => void;
+  onScanned: (before: SupplierRecord, after: SupplierRecord, priorConnections: readonly ProviderConnectionView[]) => Promise<void>;
 }) {
   const [templateKey, setTemplateKey] = useState("");
   const [name, setName] = useState("");
@@ -751,20 +839,21 @@ function NewSupplierForm({
       });
       // Saving succeeds independently of discovery. A failed scan must not lose the new supplier.
       if (scan) {
+        let priorConnections: ProviderConnectionView[] = [];
         try {
-          onCreated(
-            await scanSupplier(
-              created.id,
-              undefined,
-              created.state?.revision ?? 0,
-            ),
-          );
+          priorConnections = await fetchConnections();
+          const scanned = await scanSupplier(created.id, undefined, created.state?.revision ?? 0);
+          onCreated(scanned);
+          await onScanned(created, scanned, priorConnections);
         } catch (error) {
-          onCreated({
+          const failed: SupplierRecord = {
             ...created,
             scanStatus: "failed",
             scanError: errorMessage(error),
-          });
+            scannedAt: new Date().toISOString(),
+          };
+          onCreated(failed);
+          await onScanned(created, failed, priorConnections);
         }
       } else onCreated(created);
     } catch (error) {
@@ -776,7 +865,7 @@ function NewSupplierForm({
   return (
     <section className="sm-new-supplier">
       {dirty && <p className="sm-draft-note">有未保存的配置</p>}
-      <span className="sm-kicker">NEW SUPPLIER</span>
+      <span className="sm-kicker">添加供应商</span>
       <h2>让创作，连接更多可能。</h2>
       <p className="sm-lead">
         填写你的中转站地址，自动识别平台并读取公开的分组和模型。
@@ -903,12 +992,24 @@ function SupplierDetail({
   initialGroup,
   onUpdated,
   onConnectionsChanged,
+  onScanned,
+  onViewStatus,
+  onRefresh,
+  refreshBusy,
+  refreshRunning,
+  refreshStatus,
 }: {
   entry: SupplierEntry;
   allConnections: ProviderConnectionView[];
   initialGroup?: string | null;
   onUpdated: (record: SupplierRecord) => void;
   onConnectionsChanged: () => Promise<void>;
+  onScanned: (before: SupplierRecord, after: SupplierRecord, priorConnections: readonly ProviderConnectionView[]) => Promise<void>;
+  onViewStatus: () => void;
+  onRefresh: () => void;
+  refreshBusy: boolean;
+  refreshRunning: boolean;
+  refreshStatus?: SupplierRefreshResult["status"];
 }) {
   const { requestLeave, confirmDiscard } = useSettingsLeaveGuard();
   const [name, setName] = useState(entry.name);
@@ -1084,9 +1185,13 @@ function SupplierDetail({
     setBusy(true);
     setMessage("");
     setFailed(false);
+    let beforeScan: SupplierRecord | undefined;
+    let priorConnections: ProviderConnectionView[] = [];
     try {
       const saved = await saveBasics();
       if (scan) {
+        beforeScan = saved;
+        priorConnections = await fetchConnections();
         const scanned = await scanSupplier(
           saved.id,
           undefined,
@@ -1094,7 +1199,7 @@ function SupplierDetail({
         );
         clearGroupFilter();
         onUpdated(scanned);
-        await onConnectionsChanged();
+        await onScanned(saved, scanned, priorConnections);
         setFailed(
           scanned.scanStatus === "failed" ||
             scanned.scanStatus === "unauthorized",
@@ -1109,6 +1214,10 @@ function SupplierDetail({
     } catch (error) {
       setFailed(true);
       setMessage(errorMessage(error, authMode === "access-token" ? accessToken : password));
+      if (beforeScan) await onScanned(beforeScan, {
+        ...beforeScan, scanStatus: "failed", scannedAt: new Date().toISOString(),
+        scanError: errorMessage(error, authMode === "access-token" ? accessToken : password),
+      }, priorConnections);
     } finally {
       setBusy(false);
     }
@@ -1194,12 +1303,16 @@ function SupplierDetail({
           <p>{record?.scannedAt ? `最近尝试 ${new Date(record.scannedAt).toLocaleString("zh-CN")}` : "连接供应商，读取分组与模型"}</p>
           {record?.scanLastSuccessAt && <p>目录成功更新于 {new Date(record.scanLastSuccessAt).toLocaleString("zh-CN")}</p>}
         </div>
-        <span
-          className={`sm-badge ${record?.scanStatus === "live" ? "is-success" : ""}`}
-        >
-          <span className="sm-status-dot" />
-          {catalogStatus(record)}
-        </span>
+        <div className="sm-detail-status-actions">
+          <button type="button" className="sm-button" disabled={refreshBusy || busy} onClick={onRefresh} aria-label={`刷新 ${entry.name}`}>
+            <RefreshCw size={14} className={refreshRunning ? "sm-spin" : undefined} />{refreshRunning ? "正在刷新" : "刷新此供应商"}
+          </button>
+          <button type="button" className={`sm-badge sm-status-link ${record?.scanStatus === "live" ? "is-success" : ""}`}
+            aria-label={`查看 ${entry.name} 刷新状态`} aria-haspopup="dialog" onClick={onViewStatus}>
+            <SupplierRefreshIndicator status={refreshStatus ?? (record?.scanStatus === "live" ? "updated" : record?.scanStatus === "failed" || record?.scanStatus === "unauthorized" ? "failed" : "idle")}
+              running={refreshRunning} label={refreshStatus ? undefined : catalogStatus(record)} />查看状态<ChevronRight size={12} />
+          </button>
+        </div>
       </header>
       <div className="sm-status-summary" aria-label="供应商配置概况">
         <span>已配置 Key <strong>{connections.filter(connection => connection.apiKeySet).length}</strong></span>
@@ -1228,6 +1341,7 @@ function SupplierDetail({
       {record?.scanError && detailTab !== "connection" && <div className="sm-notice is-error" role="status">
         <p>{record.scanError}</p>
         <p>{supplierScanHint(record)}</p>
+        <button type="button" className="sm-button" aria-haspopup="dialog" onClick={onViewStatus}>查看状态</button>
         <button type="button" className="sm-button" onClick={() => setDetailTab("connection")}>查看连接配置</button>
         {record.scanErrorCode === "verification_required" && entry.siteUrl && <a href={entry.siteUrl} target="_blank" rel="noreferrer">前往站点验证</a>}
       </div>}
@@ -1517,7 +1631,8 @@ function SupplierDetail({
             className={`sm-notice ${failed || (!message && (record?.scanStatus === "failed" || record?.scanStatus === "unauthorized")) ? "is-error" : ""}`}
             role="status"
           >
-            {message || record?.scanError}
+            <span>{message || record?.scanError}</span>
+            <button type="button" className="sm-button" aria-label="查看配置刷新状态" aria-haspopup="dialog" onClick={onViewStatus}>查看状态<ChevronRight size={13} /></button>
           </div>
         )}
         {record?.state?.keySync && (

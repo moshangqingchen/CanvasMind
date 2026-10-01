@@ -92,6 +92,99 @@ async function terminal(service: RunService, id: string) {
 }
 
 describe("artifact checkpoints", () => {
+  it.each(["bytes", "data-url", "download"])(
+    "does not publish or complete an empty %s output and preserves recovery without resubmitting",
+    async (source) => {
+      const storage = new MemoryStorage();
+      const output: RemoteArtifact =
+        source === "bytes"
+          ? { kind: "image", data: new Uint8Array(), mimeType: "image/png" }
+          : {
+              kind: "image",
+              url:
+                source === "data-url"
+                  ? "data:image/png;base64,"
+                  : "https://example.test/empty.png",
+            };
+      if (source === "download")
+        vi.spyOn(downloads, "downloadRemoteArtifact").mockResolvedValue({
+          bytes: new Uint8Array(),
+          contentType: "image/png",
+        });
+      const { service, repository, submit } = await fixture(storage, [output]);
+      const events: unknown[] = [];
+      const unsubscribe = service.subscribe((event) => {
+        if (event.type === "asset") events.push(event);
+      });
+      try {
+        const run = await service.createRun({
+          canvasId: "archive",
+          clientRequestId: `empty-${source}`,
+          scope: "all",
+        });
+        const result = await terminal(service, run.id);
+        expect(result.run.status).toBe("needs_attention");
+        expect(result.nodes[0]).toMatchObject({
+          status: "needs_attention",
+          outputAssetIds: [],
+          errorJson: {
+            code: "artifact_archive_failed",
+            message: expect.stringContaining("0 字节"),
+          },
+        });
+        expect(result.nodes[0].inputJson.providerTask).toBeDefined();
+        expect(await repository.listAssets()).toEqual([]);
+        expect(storage.values.size).toBe(0);
+        expect(events).toEqual([]);
+
+        // Recovery uses the preserved result; it must never create a second paid task.
+        await service.retryRun(run.id);
+        expect((await terminal(service, run.id)).run.status).toBe(
+          "needs_attention",
+        );
+        expect(submit).toHaveBeenCalledTimes(1);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
+
+  it("rejects and removes an empty streamed output before saving an asset", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "canvas-empty-stream-"));
+    try {
+      const storage = new LocalObjectStorage(directory);
+      const remove = vi.spyOn(storage, "delete");
+      vi.spyOn(downloads, "consumeRemoteArtifact").mockImplementation(
+        async (_url, callback) =>
+          callback(
+            (async function* () {
+              yield new Uint8Array();
+            })(),
+            "image/png",
+          ),
+      );
+      const { service, repository } = await fixture(storage, [
+        { kind: "image", url: "https://example.test/empty.png" },
+      ]);
+      const run = await service.createRun({
+        canvasId: "archive",
+        clientRequestId: "empty-stream",
+        scope: "all",
+      });
+      const result = await terminal(service, run.id);
+      expect(result.run.status).toBe("needs_attention");
+      expect(result.nodes[0].errorJson).toMatchObject({
+        code: "artifact_archive_failed",
+        message: expect.stringContaining("0 字节"),
+      });
+      expect(await repository.listAssets()).toEqual([]);
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(await storage.head(remove.mock.calls[0][0])).toBeNull();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("repairs a failed project mirror on recovery and leaves existing project files unread", async () => {
     const directory = await mkdtemp(join(tmpdir(), "canvas-mirror-repair-"));
     try {

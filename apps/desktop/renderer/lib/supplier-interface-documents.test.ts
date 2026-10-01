@@ -8,6 +8,32 @@ const doc = { openapi: "3.1.0", paths: {} };
 const bytes = (body: string) => ({ data: new TextEncoder().encode(body) });
 beforeEach(() => { mocks.bytes.mockReset(); });
 describe("supplier documentation sources", () => {
+  it("forces a fresh read and reuses it only inside the same refresh operation", async () => {
+    let revision = 1;
+    mocks.bytes.mockImplementation(async (_fetch, url: string) => url.endsWith("/manual")
+      ? bytes(JSON.stringify({ ...doc, revision })) : Promise.reject(Error("missing")));
+    const models = [{ ...model, metadata: { documentationUrl: "/manual" } }];
+    const base = "https://fresh-operation.test/v1";
+    const site = "https://fresh-operation.test";
+    expect((await readSupplierInterfaceDocuments(base, models, site))[0]?.body).toMatchObject({ revision: 1 });
+    revision = 2;
+    const count = mocks.bytes.mock.calls.length;
+    const [first, second] = await Promise.all([
+      readSupplierInterfaceDocuments(base, models, site, { force: true, refreshId: "operation-1" }),
+      readSupplierInterfaceDocuments(base, models, site, { force: true, refreshId: "operation-1" }),
+    ]);
+    expect(first).toEqual(second);
+    expect(first[0]?.body).toMatchObject({ revision: 2 });
+    const freshCount = mocks.bytes.mock.calls.length;
+    expect(freshCount).toBeGreaterThan(count);
+    await readSupplierInterfaceDocuments(base, models, site);
+    await readSupplierInterfaceDocuments(base, models, site, { force: true, refreshId: "operation-1" });
+    expect(mocks.bytes).toHaveBeenCalledTimes(freshCount);
+    revision = 3;
+    expect((await readSupplierInterfaceDocuments(base, models, site, { force: true, refreshId: "operation-2" }))[0]?.body).toMatchObject({ revision: 3 });
+    revision = 4;
+    expect((await readSupplierInterfaceDocuments(base, models, site, { force: true }))[0]?.body).toMatchObject({ revision: 4 });
+  });
   it("reads supplier-linked docs first, follows literal schema links, then reads only that supplier's fallback locations", async () => {
     const calls: string[] = [];
     mocks.bytes.mockImplementation(async (_fetch, url: string) => {

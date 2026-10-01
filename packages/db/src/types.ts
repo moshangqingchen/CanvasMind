@@ -143,6 +143,8 @@ export interface SupplierRecord {
     }>;
   };
   scanStatus: "unscanned" | "live" | "empty" | "failed" | "unauthorized";
+  /** Only a complete directory response can establish that a group disappeared. */
+  scanComplete?: boolean;
   scannedAt?: string;
   /** Last confirmed directory result; failed attempts never advance this timestamp. */
   scanLastSuccessAt?: string;
@@ -281,7 +283,15 @@ export interface SupplierBillingSnapshot {
   todayWindow?: { startAt: string; endAt: string; timeZone: string };
   requests?: number;
   unit: string;
+  /** Field-specific units when account and usage endpoints declare different currencies. */
+  balanceUnit?: string;
+  usedUnit?: string;
+  todayUnit?: string;
+  unitBasis?: "site-conversion" | "raw-quota" | "declared-currency" | "unspecified";
+  unitNote?: string;
   sourceUrl: string;
+  usedSourceUrl?: string;
+  todaySourceUrl?: string;
   error?: string;
 }
 export interface SupplierCommit {

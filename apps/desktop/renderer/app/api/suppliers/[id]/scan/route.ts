@@ -23,12 +23,15 @@ export async function POST(
   );
   if (!parsed.success) return parsed.response;
   try {
-    const supplier = await scanSupplierRecord(id.data, parsed.data.token, parsed.data.expectedRevision);
-    const pendingKeys = (await repository.listConnections()).some(connection => connection.config.supplierId === supplier.id
-      && connection.config.supplierVerificationRequestId && connection.config.supplierArchived !== true);
-    if (supplier.scanStatus === "live" || pendingKeys) {
-      const { scheduleSupplierVerification } = await import("../../../../../lib/supplier-verification");
-      void scheduleSupplierVerification(supplier.id).catch(() => console.error("[supplier-verification] 未能创建核验计划"));
+    const supplier = await scanSupplierRecord(id.data, parsed.data.token, parsed.data.expectedRevision,
+      { verifyCapabilities: parsed.data.verifyCapabilities });
+    if (parsed.data.verifyCapabilities !== false) {
+      const pendingKeys = (await repository.listConnections()).some(connection => connection.config.supplierId === supplier.id
+        && connection.config.supplierVerificationRequestId && connection.config.supplierArchived !== true);
+      if (supplier.scanStatus === "live" || pendingKeys) {
+        const { scheduleSupplierVerification } = await import("../../../../../lib/supplier-verification");
+        void scheduleSupplierVerification(supplier.id).catch(() => console.error("[supplier-verification] 未能创建核验计划"));
+      }
     }
     return Response.json(publicSupplierRecord(supplier));
   } catch (error) {

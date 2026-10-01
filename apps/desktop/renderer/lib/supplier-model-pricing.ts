@@ -18,10 +18,13 @@ import { readSupplierDocument } from "./supplier-document";
 type Connection = { config: Readonly<Record<string, unknown>> };
 const unknownPrice =
   /价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询/u;
+type CatalogCacheEntry = { until: number; result: Promise<SupplierCatalogDiscovery> };
 const cache = new Map<
   string,
-  { until: number; result: Promise<SupplierCatalogDiscovery> }
+  CatalogCacheEntry
 >();
+const refreshCache = new Map<string, CatalogCacheEntry>();
+export interface SupplierPriceReadOptions { refreshId?: string }
 const hasOwnPrice = (model: ModelDescriptor) =>
   !["supplier-catalog", "supplier-group", "generated-result", "supplier-document"].includes(String(model.metadata?.priceSource)) &&
   (Boolean(model.pricing) ||
@@ -199,6 +202,49 @@ async function applyMeasuredSupplierPrices(
   });
 }
 
+/** Refresh only fields that this catalog originally supplied, never a model API/manual override. */
+function catalogInterfaceMetadata(model: ModelDescriptor, catalogModel: { metadata?: ModelDescriptor["metadata"] } | undefined,
+  catalog: SupplierCatalogDiscovery, groupStale: boolean) {
+  const metadata = { ...model.metadata };
+  const incomplete = catalog.complete === false || ["failed", "unauthorized"].includes(catalog.status) || groupStale;
+  let supplied = false;
+  if (catalogModel && !["failed", "unauthorized"].includes(catalog.status)) {
+    const fields = [
+      ["endpointTypes", "supplierCatalogEndpointTypes"],
+      ["documentationUrl", "supplierCatalogDocumentationUrl"],
+    ] as const;
+    for (const [field, ownership] of fields) {
+      const raw = catalogModel.metadata?.[field];
+      const next = field === "endpointTypes"
+        ? Array.isArray(raw) ? raw.filter((value): value is string => typeof value === "string" && value.length <= 256).slice(0, 32) : undefined
+        : typeof raw === "string" && raw.trim() && raw.length <= 2048 ? raw : undefined;
+      const present = field === "endpointTypes" ? Array.isArray(next) && next.length > 0 : next !== undefined;
+      const current = metadata[field], previous = metadata[ownership];
+      const owned = previous !== undefined && JSON.stringify(current) === JSON.stringify(previous);
+      if (current === undefined || owned) {
+        if (present) {
+          metadata[field] = next;
+          metadata[ownership] = Array.isArray(next) ? [...next] : next;
+          supplied = true;
+        } else if (owned && !incomplete) {
+          delete metadata[field]; delete metadata[ownership];
+          supplied = true;
+        }
+      } else if (previous !== undefined) {
+        // A user/model API replaced our value. Do not adopt that replacement.
+        delete metadata[ownership];
+      }
+    }
+  }
+  if (supplied) metadata.supplierCatalogMetadataVersion = 1;
+  if (!supplied && metadata.supplierCatalogEndpointTypes === undefined && metadata.supplierCatalogDocumentationUrl === undefined) {
+    delete metadata.supplierCatalogCheckedAt; delete metadata.supplierCatalogInterfaceStale; delete metadata.supplierCatalogMetadataVersion;
+  }
+  if (supplied && !groupStale) metadata.supplierCatalogCheckedAt = catalog.checkedAt;
+  if (supplied || metadata.supplierCatalogCheckedAt) metadata.supplierCatalogInterfaceStale = incomplete || !catalogModel;
+  return metadata;
+}
+
 /** Join by exact group and exact model ID; a public plaza never grants availability. */
 export function applySupplierCatalogPrices(
   models: readonly ModelDescriptor[],
@@ -233,11 +279,9 @@ export function applySupplierCatalogPrices(
       supplierAgentFacts: parseProviderModelFacts(catalogModel as unknown as Record<string, unknown>),
       supplierAgentDescription: catalogModel.metadata?.supplierChannelDescription,
     } };
-    if (catalogModel?.metadata) {
-      const { endpointTypes, documentationUrl, supplierChannelDescription } = catalogModel.metadata;
-      model = { ...model, metadata: { ...model.metadata,
-        ...(endpointTypes && !model.metadata?.endpointTypes ? { endpointTypes } : {}),
-        ...(documentationUrl && !model.metadata?.documentationUrl ? { documentationUrl } : {}),
+    if (catalogModel?.metadata || model.metadata?.supplierCatalogCheckedAt) {
+      const supplierChannelDescription = catalogModel?.metadata?.supplierChannelDescription;
+      model = { ...model, metadata: { ...catalogInterfaceMetadata(model, catalogModel, catalog, selected?.details?.stale === true),
         ...(supplierChannelDescription ? { supplierChannelDescription } : {}),
       } };
     }
@@ -265,7 +309,7 @@ export function applySupplierCatalogPrices(
     }
     // A text-only catalog cannot replace parameter-dependent billing rules.
     if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise)) return model;
-    if (hasOwnPrice(model) && !(model.pricing?.checkedAt && Date.parse(catalog.checkedAt) > Date.parse(model.pricing.checkedAt) && prices.has(model.id))) return model;
+    if (hasOwnPrice(model)) return model;
     const modelPrice = prices.get(model.id);
     const groupPrice = image && !details?.stale ? supplierGroupPriceLabel(details) : "";
     const fresh = modelPrice || groupPrice;
@@ -298,7 +342,7 @@ export function applySupplierCatalogPrices(
       metadata: {
         ...model.metadata,
         priceLabel,
-        priceSource: !modelPrice && groupPrice ? "supplier-group" : "supplier-catalog",
+        priceSource: old && !fresh && incomplete ? model.metadata?.priceSource : !modelPrice && groupPrice ? "supplier-group" : "supplier-catalog",
         priceStatus: fresh
           ? "available"
           : catalog.complete === false
@@ -306,7 +350,8 @@ export function applySupplierCatalogPrices(
           : reason === "价格未公布"
             ? "unpublished"
             : catalog.status,
-        priceCheckedAt: catalog.checkedAt,
+        priceCheckedAt: old && !fresh && incomplete ? model.metadata?.priceCheckedAt : catalog.checkedAt,
+        priceLastAttemptAt: catalog.checkedAt,
       },
     };
   });
@@ -341,6 +386,7 @@ export async function enrichSupplierModelPrices(
   models: readonly ModelDescriptor[],
   force = false,
   allowNetwork = true,
+  readOptions: SupplierPriceReadOptions = {},
 ): Promise<ModelDescriptor[]> {
   if (!models.length) return [...models];
   const supplier =
@@ -364,6 +410,7 @@ export async function enrichSupplierModelPrices(
       group,
       { groups: supplier.catalog.groups.map(group => ({ ...group, source: "catalog", models: group.models.map(model => ({ ...model, protocol: model.protocol === "rest" ? "unknown" : model.protocol })) })),
         kind: supplier.kind, status: supplier.scanStatus === "unscanned" ? "failed" : supplier.scanStatus,
+        complete: supplier.scanComplete === true,
         checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl) : [...models];
     return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, supplier?.siteUrl || apiUrl, false), group, supplier?.state?.sourceId ?? "legacy");
   }
@@ -384,12 +431,12 @@ export async function enrichSupplierModelPrices(
     sameSource ? supplier.state?.sourceId : "",
     supplierSiteLoginCacheIdentity(login),
   ]);
-  let cached = cache.get(key);
-  // Share a short burst across groups while an explicit refresh bypasses older results.
+  const refreshKey = force && readOptions.refreshId ? JSON.stringify([key, readOptions.refreshId]) : undefined;
+  let cached = force ? refreshKey ? refreshCache.get(refreshKey) : undefined : cache.get(key);
+  // Only this explicit operation may share its read across groups; another operation is always fresh.
   if (
     !cached ||
-    cached.until <= Date.now() ||
-    (force && cached.until - Date.now() < 290000)
+    cached.until <= Date.now()
   ) {
     const result = (async (): Promise<SupplierCatalogDiscovery> => {
       try {
@@ -421,13 +468,23 @@ export async function enrichSupplierModelPrices(
       }
     })();
     cached = { until: Date.now() + 300000, result };
-    if (cache.size >= 100) cache.delete(cache.keys().next().value!);
+    if (cache.size >= 100 && !cache.has(key)) cache.delete(cache.keys().next().value!);
     cache.set(key, cached);
+    if (refreshKey) {
+      if (refreshCache.size >= 100 && !refreshCache.has(refreshKey)) refreshCache.delete(refreshCache.keys().next().value!);
+      refreshCache.set(refreshKey, cached);
+    }
+  }
+  const discovered = await cached.result;
+  // Failed/partial reads must not prevent the next user retry for five minutes.
+  if (["failed", "unauthorized"].includes(discovered.status) || discovered.complete === false) {
+    if (cache.get(key) === cached) cache.delete(key);
+    if (refreshKey && refreshCache.get(refreshKey) === cached) refreshCache.delete(refreshKey);
   }
   const catalogModels = applySupplierCatalogPrices(
     models,
     group,
-    await cached.result,
+    discovered,
     siteUrl,
   );
   return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, siteUrl, allowNetwork), group, supplier?.state?.sourceId ?? "legacy");

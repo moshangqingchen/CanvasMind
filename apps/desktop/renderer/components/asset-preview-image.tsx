@@ -82,6 +82,7 @@ interface AssetPreviewImageProps extends Omit<
   src: string;
   alt: string;
   compact?: boolean;
+  failureHint?: string;
 }
 
 export function AssetPreviewImage(props: AssetPreviewImageProps) {
@@ -94,6 +95,7 @@ function AssetPreviewImageResource({
   src,
   alt,
   compact = false,
+  failureHint = "文件可能不完整，请重新导入原图",
   ...imageProps
 }: AssetPreviewImageProps) {
   const [state, setState] = useState<
@@ -139,12 +141,12 @@ function AssetPreviewImageResource({
         className={`${styles.message} ${styles.failure} ${compact ? styles.compact : ""}`}
         data-asset-preview-state="failed"
         role="img"
-        aria-label={`图片加载失败：${alt}。文件可能不完整，请重新导入原图。`}
-        title={`图片加载失败：${alt}。文件可能不完整，请重新导入原图。`}
+        aria-label={`图片加载失败：${alt}。${failureHint}。`}
+        title={`图片加载失败：${alt}。${failureHint}。`}
       >
         <ImageOff size={compact ? 14 : 23} aria-hidden="true" />
         <strong>{compact ? "加载失败" : "图片加载失败"}</strong>
-        {!compact && <span>文件可能不完整，请重新导入原图</span>}
+        {!compact && <span>{failureHint}</span>}
       </div>
     );
   }

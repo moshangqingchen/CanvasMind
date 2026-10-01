@@ -8,11 +8,13 @@ const empty: readonly Entry[] = [];
 let entries: readonly Entry[] = empty;
 let loadedAt = 0;
 let loading: Promise<void> | undefined;
+let seedGeneration = 0;
 const pending = new Map<string, Promise<SupplierBillingSnapshot>>();
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 const publish = () => listeners.forEach(listener => listener());
 export function seedSupplierBilling(suppliers: SupplierRecord[]) {
+  seedGeneration++;
   entries = suppliers.filter(s => s.state?.visibility !== "deleted").map(s => ({ id: s.id, sourceId: s.state?.sourceId, revision: s.state?.revision, supplierKey: s.supplierKey,
     name: s.name, configured: s.siteLogin?.configured === true,
     billing: s.state?.billing?.sourceId === s.state?.sourceId ? s.state?.billing : undefined }));
@@ -20,7 +22,13 @@ export function seedSupplierBilling(suppliers: SupplierRecord[]) {
 }
 export async function loadSupplierBilling() {
   if (Date.now() - loadedAt < 60_000) return;
-  if (!loading) loading = fetchSuppliers().then(seedSupplierBilling).finally(() => { loading = undefined; });
+  if (!loading) {
+    const generation = seedGeneration;
+    loading = fetchSuppliers().then(suppliers => {
+      // An explicit scan/edit seed is newer than a list request that started before it.
+      if (seedGeneration === generation) seedSupplierBilling(suppliers);
+    }).finally(() => { loading = undefined; });
+  }
   return loading;
 }
 export function useSupplierBillingOverview() {
@@ -36,7 +44,13 @@ export function refreshSupplierAccount(id: string): Promise<SupplierBillingSnaps
     const response = await fetch(`/api/suppliers/${encodeURIComponent(id)}/billing`, { method: "POST" });
     if (!response.ok) throw Error("账务刷新未完成，请重试");
     const billing = await response.json() as SupplierBillingSnapshot;
-    entries = entries.map(entry => entry.id === id && entry.sourceId === billing.sourceId && entry.revision === revision ? { ...entry, billing } : entry); publish();
+    let applied = false;
+    entries = entries.map(entry => {
+      if (entry.id !== id || entry.sourceId !== billing.sourceId || entry.revision !== revision) return entry;
+      applied = true; return { ...entry, billing };
+    });
+    if (applied) seedGeneration++;
+    publish();
     window.dispatchEvent(new CustomEvent("supplier-billing-updated", { detail: { supplierId: id } }));
     return billing;
   })().finally(() => { pending.delete(id); });

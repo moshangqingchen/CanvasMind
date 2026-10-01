@@ -66,6 +66,47 @@ const catalog: SupplierCatalogDiscovery = {
 };
 
 describe("universal supplier price lookup", () => {
+  it("refreshes catalog-owned interface evidence while protecting manual and model API fields", () => {
+    const lookup = (endpoint: string, document: string, checkedAt = "2026-09-01T00:00:00Z") => ({ ...catalog, checkedAt,
+      groups: [{ ...catalog.groups[0]!, models: [{ id: model.id, capability: "image" as const, metadata: { endpointTypes: [endpoint], documentationUrl: document } }] }] });
+    const first = applySupplierCatalogPrices([model], "cheap", lookup("/old", "https://site.invalid/old.json"))[0]!;
+    expect(first.metadata).toMatchObject({ endpointTypes: ["/old"], supplierCatalogEndpointTypes: ["/old"], supplierCatalogDocumentationUrl: "https://site.invalid/old.json" });
+    const second = applySupplierCatalogPrices([first], "cheap", lookup("/new", "https://site.invalid/new.json", "2026-10-01T00:00:00Z"))[0]!;
+    expect(second.metadata).toMatchObject({ endpointTypes: ["/new"], documentationUrl: "https://site.invalid/new.json", supplierCatalogCheckedAt: "2026-10-01T00:00:00Z", supplierCatalogInterfaceStale: false });
+    const manual = { ...first, metadata: { ...first.metadata, endpointTypes: ["/manual"], documentationUrl: "https://site.invalid/manual.json" } };
+    const protectedModel = applySupplierCatalogPrices([manual], "cheap", lookup("/new", "https://site.invalid/new.json"))[0]!;
+    expect(protectedModel.metadata).toMatchObject({ endpointTypes: ["/manual"], documentationUrl: "https://site.invalid/manual.json" });
+    expect(protectedModel.metadata?.supplierCatalogEndpointTypes).toBeUndefined();
+    const mutated = structuredClone(first);
+    (mutated.metadata!.endpointTypes as string[]).push("/manual-added");
+    expect(applySupplierCatalogPrices([mutated], "cheap", lookup("/new", "https://site.invalid/new.json"))[0]?.metadata?.endpointTypes).toEqual(["/old", "/manual-added"]);
+    const native = { ...model, metadata: { modelFactsSource: "model-api", endpointTypes: ["/native"], documentationUrl: "https://site.invalid/native.json" } };
+    expect(applySupplierCatalogPrices([native], "cheap", lookup("/new", "https://site.invalid/new.json"))[0]?.metadata).toMatchObject(native.metadata);
+  });
+  it("removes withdrawn catalog fields only after a complete nonstale catalog row", () => {
+    const initial = { ...catalog, groups: [{ ...catalog.groups[0]!, models: [{ id: model.id, capability: "image" as const, metadata: { endpointTypes: ["/old"], documentationUrl: "https://site.invalid/old.json" } }] }] };
+    const first = applySupplierCatalogPrices([model], "cheap", initial)[0]!;
+    const missing = { ...catalog, groups: [{ ...catalog.groups[0]!, models: [{ id: model.id, capability: "image" as const }] }] };
+    const partial = applySupplierCatalogPrices([first], "cheap", { ...missing, complete: false })[0]!;
+    expect(partial.metadata).toMatchObject({ endpointTypes: ["/old"], documentationUrl: "https://site.invalid/old.json", supplierCatalogInterfaceStale: true });
+    const stale = applySupplierCatalogPrices([first], "cheap", { ...missing, groups: [{ ...missing.groups[0]!, details: { source: "key-groups" as const, stale: true } }] })[0]!;
+    expect(stale.metadata?.endpointTypes).toEqual(["/old"]);
+    const failed = applySupplierCatalogPrices([first], "cheap", { ...missing, status: "failed" })[0]!;
+    expect(failed.metadata?.endpointTypes).toEqual(["/old"]);
+    const cleared = applySupplierCatalogPrices([first], "cheap", missing)[0]!;
+    expect(cleared.metadata?.endpointTypes).toBeUndefined();
+    expect(cleared.metadata?.documentationUrl).toBeUndefined();
+  });
+  it.each([false, undefined])("preserves owned interface fields when saved catalog completeness is %j", async scanComplete => {
+    const initial = { ...catalog, groups: [{ ...catalog.groups[0]!, models: [{ id: model.id, capability: "image" as const, metadata: { endpointTypes: ["/old"], documentationUrl: "https://site.invalid/old.json" } }] }] };
+    const first = applySupplierCatalogPrices([model], "cheap", initial)[0]!;
+    const supplier = { id: "saved-interface", apiUrl: "https://saved-interface.invalid/v1", siteUrl: "https://saved-interface.invalid", kind: "newapi", scanStatus: "live", scanComplete,
+      state: { sourceId: "saved-source" }, catalog: { groups: [{ id: "cheap", label: "Cheap", models: [{ id: model.id, capability: "image" }] }] }, scannedAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" };
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    const result = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: "saved-source", baseUrl: supplier.apiUrl, modelGroup: "cheap" } }, [first], false, false);
+    expect(result[0]?.metadata).toMatchObject({ endpointTypes: ["/old"], documentationUrl: "https://site.invalid/old.json", supplierCatalogInterfaceStale: true });
+    vi.mocked(getSupplierRecord).mockResolvedValue(null);
+  });
   it("reinterprets cached group descriptions with compact resolutions and Chinese price units", () => {
     const image: ModelDescriptor = { ...model, id: "gpt-image-2.5-all", operations: ["image.generate"], metadata: { priceLabel: "价格未公布", priceSource: "supplier-catalog" } };
     const group = { id: "image2.5特价", label: "image2.5特价", source: "catalog" as const, models: [], details: { source: "key-groups" as const, description: "image2.5特价，0.06一张 124K" } };
@@ -247,6 +288,56 @@ describe("universal supplier price lookup", () => {
     expect(applySupplierCatalogPrices([known], "cheap", catalog)[0]).toBe(
       known,
     );
+  });
+  it("never replaces manual prices with a more recent catalog timestamp", () => {
+    const own: ModelDescriptor = { ...model, metadata: { priceSource: "manual", priceLabel: "¥0.123/张" },
+      pricing: { kind: "per-image", currency: "CNY", unitAmount: .123, checkedAt: "2026-09-01T00:00:00Z", confidence: "exact" } };
+    expect(applySupplierCatalogPrices([own], "cheap", { ...catalog, checkedAt: "2026-10-01T00:00:00Z" })[0]).toBe(own);
+  });
+  it("keeps the price's successful read time and source when the next lookup fails", () => {
+    const old = applySupplierCatalogPrices([model], "cheap", { ...catalog, checkedAt: "2026-09-01T00:00:00Z" });
+    const failed = applySupplierCatalogPrices(old, "cheap", { ...catalog, groups: [], status: "failed", checkedAt: "2026-10-01T00:00:00Z" });
+    expect(failed[0]?.metadata).toMatchObject({ priceLabel: "$0.02/张（上次价格）", priceSource: "supplier-catalog", priceCheckedAt: "2026-09-01T00:00:00Z", priceLastAttemptAt: "2026-10-01T00:00:00Z" });
+  });
+  it("retries a failed catalog immediately instead of caching it for five minutes", async () => {
+    vi.mocked(getSupplierRecord).mockResolvedValue(null);
+    vi.mocked(discoverSupplierCatalog).mockResolvedValueOnce({ kind: "newapi", status: "failed", checkedAt: "2026-10-01T00:00:00Z", groups: [] });
+    const connection = { config: { baseUrl: "https://failed-price-retry.invalid/v1", modelGroup: "new-group" } };
+    const first = await enrichSupplierModelPrices(connection, [model]);
+    expect(first[0]?.metadata?.priceStatus).toBe("failed");
+    const count = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+    const second = await enrichSupplierModelPrices(connection, [model]);
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count + 1);
+    expect(second[0]?.metadata?.priceLabel).toBe("$0.02/张");
+  });
+  it("shares a force read only within its operation ID even when two operations overlap", async () => {
+    vi.mocked(getSupplierRecord).mockResolvedValue(null);
+    let release!: (catalog: SupplierCatalogDiscovery) => void;
+    vi.mocked(discoverSupplierCatalog).mockReturnValueOnce(new Promise(resolve => { release = resolve; }))
+      .mockResolvedValueOnce({ ...catalog, groups: [{ ...catalog.groups[0]!, models: [{ id: model.id, capability: "image", priceLabel: "$0.3/张" }] }] });
+    const config = { baseUrl: "https://operation-price-cache.invalid/v1", modelGroup: "cheap" };
+    const count = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+    const first = enrichSupplierModelPrices({ config }, [model], true, true, { refreshId: "operation-a" });
+    const newer = enrichSupplierModelPrices({ config }, [model], true, true, { refreshId: "operation-b" });
+    const sameOperation = enrichSupplierModelPrices({ config: { ...config, modelGroup: "expensive" } }, [model], true, true, { refreshId: "operation-a" });
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count + 2);
+    release(catalog);
+    const [a, b, otherGroup] = await Promise.all([first, newer, sameOperation]);
+    expect(a[0]?.metadata?.priceLabel).toBe("$0.02/张");
+    expect(b[0]?.metadata?.priceLabel).toBe("$0.3/张");
+    expect(otherGroup[0]?.metadata?.priceLabel).toBe("$0.2/张");
+    const ordinary = await enrichSupplierModelPrices({ config }, [model]);
+    expect(ordinary[0]?.metadata?.priceLabel).toBe("$0.3/张");
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count + 2);
+  });
+  it("makes every force read without an operation ID fresh while ordinary reads retain their TTL", async () => {
+    vi.mocked(getSupplierRecord).mockResolvedValue(null);
+    const connection = { config: { baseUrl: "https://force-price-no-id.invalid/v1", modelGroup: "new-group" } };
+    const count = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+    await enrichSupplierModelPrices(connection, [model], true);
+    await enrichSupplierModelPrices(connection, [model], true);
+    await enrichSupplierModelPrices(connection, [model]);
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count + 2);
   });
   it("queries the marketplace automatically for a new supplier and newly added model", async () => {
     const connection = {

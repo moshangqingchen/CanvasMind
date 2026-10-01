@@ -123,3 +123,22 @@ test("未提供今日消耗的站点保留字段并解释原因，刷新后可�
   await expect(billing).not.toContainText("暂不支持");
   expect(data.forbidden).toEqual([]);
 });
+
+test("账务保留不同字段的币种与小额消耗，并说明来源和换算依据", async ({ page, request }) => {
+  const data = await fixture(page, request);
+  data.suppliers[0]!.state!.billing = { ...data.suppliers[0]!.state!.billing!, balanceUnit: "CNY", usedUnit: "USD", todayUnit: "USD",
+    used: .000001, todayUsed: .000002, unitBasis: "declared-currency", unitNote: "按站点返回的币种显示，未自动换算。" };
+  await page.goto("/");
+  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  const billing = page.getByRole("dialog", { name: "供应商与模型设置" }).getByRole("region", { name: "供应商余额与消耗" });
+  await expect(billing).toContainText("余额 10 CNY");
+  await expect(billing).toContainText("累计消耗 0.000001 USD");
+  await expect(billing).toContainText("今日消耗 0.000002 USD");
+  await expect(billing).toContainText("来源：billing-0.invalid 供应商后台");
+  await expect(billing).toContainText("未自动换算");
+  data.fail();
+  await billing.getByRole("button", { name: "重新读取消耗" }).click();
+  await expect(billing).toContainText("余额 10 CNY（上次）");
+  await expect(billing).toContainText("累计消耗 0.000001 USD（上次）");
+  expect(data.forbidden).toEqual([]);
+});
