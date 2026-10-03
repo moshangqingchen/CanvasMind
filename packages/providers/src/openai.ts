@@ -18,6 +18,7 @@ import { monsterImageEvidence } from "./monster-image-capabilities.js";
 import { chuangxiangImageEvidence } from "./chuangxiang-image-capabilities.js";
 import { isSecureSkillImageConnection, isSecureSkillImageResult, SecureSkillImageAdapter } from "./secure-skill-image.js";
 import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
+import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
   assetToBlob,
@@ -1574,6 +1575,7 @@ const OPENAI_IMAGE_PARAMETER_KEYS = [
 
 type OpenAIImageParameterKey = (typeof OPENAI_IMAGE_PARAMETER_KEYS)[number];
 type WeAIImageParameterKey = OpenAIImageParameterKey | "response_format" | "style";
+const TK1688_IMAGE_PARAMETER_KEYS = [...OPENAI_IMAGE_PARAMETER_KEYS, "response_format"] as const;
 const FRIMODEL_IMAGE_PARAMETER_KEYS = [
   "size",
   "quality",
@@ -1677,6 +1679,8 @@ function imageParameters(
   profile: ImageProviderProfile,
   group?: string,
   supplierKey?: string,
+  baseUrl?: string,
+  tk1688Model?: ModelDescriptor,
 ) {
   if (supplierKey === "chentu" && chentuAzImageDescriptor(model, group)) {
     // AZ rejects response_format/style and requires low on this 1K route.
@@ -1690,7 +1694,7 @@ function imageParameters(
       ? weAIImageParameterKeys(group)
       : supplierKey === "chentu"
         ? chentuImageParameterKeys(model, group)
-        : OPENAI_IMAGE_PARAMETER_KEYS;
+        : isTk1688ApiUrl(baseUrl) ? TK1688_IMAGE_PARAMETER_KEYS : OPENAI_IMAGE_PARAMETER_KEYS;
   const selectedChentuTier =
     supplierKey === "chentu" && isChentuFlexibleSizeModel(model)
       ? chentuResolutionTier(sourceParameters["size_tier"])
@@ -1744,7 +1748,7 @@ function imageParameters(
     );
     if (tierSize) result.size = tierSize;
   } else if (!chentuPromptAutomatic && result.size === undefined) {
-    const inferredSize = sizeFromAspectRatio(sourceParameters["aspect_ratio"], model);
+    const inferredSize = sizeFromAspectRatio(sourceParameters["aspect_ratio"], tk1688ImagePolicyModelId(model, baseUrl));
     if (inferredSize) result.size = inferredSize;
   }
   // We-AI's Adobe per-request route can close the connection while returning
@@ -1755,7 +1759,7 @@ function imageParameters(
     result.response_format = "url";
   if (supplierKey === "chentu" && result.response_format === undefined)
     result.response_format = "url";
-  return result;
+  return isTk1688ApiUrl(baseUrl) ? tk1688ImageParameters(sourceParameters, result, tk1688Model) : result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -2885,6 +2889,9 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       useGemini && resolvedSupplierKey !== "mikoto"
         ? canonicalWeAIGeminiModel(requestedModel)
         : requestedModel;
+    const tk1688 = isTk1688ApiUrl(resolvedConnection?.baseUrl);
+    const tk1688Model = resolvedConnection ? configuredTk1688ImageModel(resolvedConnection, resolvedModel) : undefined;
+    if (tk1688) issues.push(...tk1688ImageParameterIssues(tk1688Model, request.parameters ?? {}));
     const monster = this.profile === "openai" && resolvedConnection
       ? monsterImageEvidence({
           ...(isRecord(resolvedConnection.settings?.config) ? resolvedConnection.settings.config : {}),
@@ -3003,7 +3010,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
                       ? configuredModelGroup(resolvedConnection)
                       : undefined,
                   )
-                : OPENAI_IMAGE_PARAMETER_KEYS,
+                : tk1688 ? TK1688_IMAGE_PARAMETER_KEYS : OPENAI_IMAGE_PARAMETER_KEYS,
             );
     const assets = request.assets ?? [];
     const images = assets.filter((asset) => asset.kind === "image");
@@ -3022,7 +3029,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         message: "Image editing requires at least one reference image",
       });
     }
-    const maxInputImages = useGemini
+    const maxInputImages = tk1688Model?.limits?.maxInputImages ?? (useGemini
       ? resolvedSupplierKey === "mikoto"
         ? undefined
         : WEAI_GEMINI_MAX_INPUT_IMAGES
@@ -3030,12 +3037,12 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         ? 10
         : isFriModel
           ? 10
-          : 16;
+          : 16);
     if (maxInputImages !== undefined && images.length > maxInputImages) {
       issues.push({
         path: "assets",
         code: "too_many_images",
-        message: useGemini
+        message: tk1688Model ? `词元当前型号最多接受 ${maxInputImages} 张参考图` : useGemini
           ? `We-AI Gemini image editing accepts at most ${WEAI_GEMINI_MAX_INPUT_IMAGES} reference images`
           : resolvedSupplierKey === "chentu"
             ? "辰途 API 图片编辑最多接受 10 张参考图"
@@ -3125,7 +3132,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       permittedParameters.has("response_format") &&
       responseFormat !== undefined &&
       (typeof responseFormat !== "string" ||
-        !(resolvedSupplierKey === "chentu"
+        !(tk1688 ? ["url", "b64_json"].includes(responseFormat) : resolvedSupplierKey === "chentu"
           ? (isChentuOfficial
               ? ["url"].includes(responseFormat)
               : ["url", "b64_json"].includes(responseFormat))
@@ -3137,7 +3144,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         path: "parameters.response_format",
         code: "invalid_response_format",
           message:
-            resolvedSupplierKey === "chentu"
+            tk1688 ? "词元 response_format 必须是 url 或 b64_json" : resolvedSupplierKey === "chentu"
             ? isChentuOfficial
               ? "辰途 image2 官 key response_format 仅支持 url"
               : "辰途 API response_format 必须是 url 或 b64_json"
@@ -3159,7 +3166,9 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         message: "OpenAI background must be auto, opaque, or transparent",
       });
     const count = request.parameters?.["n"];
-    const maxCount =
+    const tk1688MaxCount = tk1688Model?.metadata?.tk1688OmitN === true ? 1
+      : tk1688Model?.limits?.maxOutputImages ?? tk1688Model?.parameters?.find(parameter => parameter.key === "n")?.max;
+    const maxCount = tk1688MaxCount ?? (
       this.profile === "weai"
         ? weAIMaxOutputCount(resolvedModel, resolvedModelGroup)
         : resolvedSupplierKey === "chentu"
@@ -3172,7 +3181,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
             : 1
           : resolvedSupplierKey === "frimodel"
             ? 1
-            : 10;
+            : 10);
     if (
       count !== undefined &&
       (typeof count !== "number" ||
@@ -3184,7 +3193,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         path: "parameters.n",
         code: "invalid_count",
         message:
-          this.profile === "weai"
+          tk1688MaxCount !== undefined ? `词元当前型号单次最多生成 ${maxCount} 张` : this.profile === "weai"
             ? `We-AI ${resolvedModel} n must be an integer between 1 and ${maxCount}`
             : resolvedSupplierKey === "chentu"
               ? isChentuOfficialModelGroup(
@@ -3320,7 +3329,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         code: "invalid_aspect_ratio",
         message: "OpenAI aspect_ratio must be auto or WIDTH:HEIGHT",
       });
-    if (/^gpt-image-2(?:-|$)/u.test(resolvedModel)) {
+    const policyModel = tk1688ImagePolicyModelId(resolvedModel, resolvedConnection?.baseUrl);
+    if (/^gpt-image-2(?:-|$)/u.test(policyModel)) {
       const size = request.parameters?.["size"];
       if (typeof size === "string") {
         const reason = gptImage2SizeIssue(size.trim());
@@ -3333,7 +3343,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       }
       const quality = request.parameters?.["quality"];
       if (
-        !isFriModel && !verifiedImage?.qualities.length &&
+        !isFriModel && !verifiedImage?.qualities.length && !tk1688Model?.parameters?.find(parameter => parameter.key === "quality")?.options?.length &&
         permittedParameters.has("quality") &&
         quality !== undefined &&
         !(
@@ -3460,6 +3470,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       useGemini && supplierKey !== "mikoto"
         ? canonicalWeAIGeminiModel(selectedModel)
         : selectedModel;
+    const tk1688Model = configuredTk1688ImageModel(connection, model);
     const effectiveParameters = request.parameters;
     // Marketplace Image2.5 connections use the generic OpenAI profile, whose
     // parameter allowlist omits response_format. Apply the Adobe URL contract
@@ -3467,7 +3478,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const forceWeAIUrlOutput = useWeAITransport &&
       isWeAIAdobeUrlOutputGroup(configuredModelGroup(connection), model);
     const imageRequestParameters = {
-      ...imageParameters(effectiveParameters, model, this.profile, modelGroup, supplierKey),
+      ...imageParameters(effectiveParameters, model, this.profile, modelGroup, supplierKey, baseUrl, tk1688Model),
       ...(forceWeAIUrlOutput ? { response_format: "url" } : {}),
     };
     const geminiProtocol = useGemini

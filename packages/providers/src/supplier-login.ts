@@ -321,6 +321,8 @@ function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", hea
     [
       "/api/pricing",
       "/api/user/self/groups",
+      // Exact official account inventory, never a model API or another host.
+      ...(base === "https://tk1688.com" && kind === "newapi" ? ["/api/user/models"] : []),
       "/api/v1/model-plaza",
       "/api/v1/groups/available",
     ].map((path) => `${base}${path}`),

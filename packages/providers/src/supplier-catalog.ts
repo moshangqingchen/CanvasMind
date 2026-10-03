@@ -3,6 +3,7 @@ import type { FetchImplementation, ModelDescriptor } from "./contracts.js";
 import { catalogPriceLabel } from "./catalog-pricing.js";
 import { parseProviderModelFacts } from "./model-catalog.js";
 import { parseSupplierGroupDetails, type SupplierGroupDetails } from "./supplier-group-details.js";
+import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketplace, TK1688_MARKETPLACE_URL } from "./tk1688-catalog.js";
 
 export type SupplierSiteKind =
   "auto" | "newapi" | "sub2api" | "openai-compatible";
@@ -528,6 +529,34 @@ export async function discoverSupplierCatalog(
     return { ...success(parsed, platform), complete: false,
       error: "模型目录已读取；账号分组说明暂不可用，保留历史分组，请稍后重试或检查站点登录" };
   };
+
+  // This NewAPI fork publishes its merchant contracts in /market, rather than
+  // /api/pricing. Read the same retail-price/description feed as its own UI.
+  if (isTk1688CatalogSource(siteUrl, input.apiUrl)) {
+    const [market, status, available, account] = await Promise.all([
+      probe(TK1688_MARKETPLACE_URL), probe(`${siteUrl}/api/status`), keyGroups("newapi"),
+      probe(`${siteUrl}/api/user/models`, siteHeaders("newapi")),
+    ]);
+    const accountIds = parseTk1688AccountModelIds(account.payload);
+    const parsed = parseTk1688Marketplace(market.payload, status.payload, { checkedAt,
+      ...(accountIds ? { accountModelIds: accountIds } : {}) });
+    if (market.status !== 200 || !parsed.complete)
+      return { groups: [], kind: "newapi", status: "failed", checkedAt, complete: false,
+        error: "词元模型广场暂不可完整读取，保留历史目录，请稍后刷新" };
+    const models: DiscoveredSupplierModel[] = parsed.models.map(model => ({
+      id: model.id, name: model.name, capability: model.operations.length ? "image" : "chat",
+      protocol: model.operations.length ? "openai-images" : "chat-completions",
+      ...(model.inputKinds ? { inputKinds: model.inputKinds } : {}), ...(model.outputKinds ? { outputKinds: model.outputKinds } : {}),
+      ...(model.limits ? { limits: model.limits } : {}),
+      ...(typeof model.metadata?.priceLabel === "string" ? { priceLabel: model.metadata.priceLabel } : {}),
+      metadata: { ...model.metadata, tk1688Parameters: model.parameters, tk1688Pricing: model.pricing },
+    }));
+    const groups = (available?.groups.length ? available.groups : [{ id: "default", label: "默认分组", source: "catalog" as const, models: [] }])
+      .map(group => ({ ...group, models }));
+    return { groups, kind: "newapi", status: models.length ? "live" : "empty", checkedAt,
+      complete: parsed.complete && accountIds !== undefined && available?.complete !== false && available?.status === "live",
+      ...(accountIds === undefined ? { error: "公开模型广场已读取；账号渠道权限暂不可读，公开商品不代表当前 Key 可用" } : {}) };
+  }
 
   // CDR probe order is significant: a recognized (including login-gated) platform stops inference.
   if (kind === "auto" || kind === "newapi") {

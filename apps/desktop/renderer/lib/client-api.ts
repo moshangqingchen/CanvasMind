@@ -1,4 +1,7 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { tk1688ConnectionWriteConfig } from "./tk1688-connection-write";
+import type { CangyuanAvailabilityItem, CangyuanAvailabilitySnapshot, CangyuanAvailabilityStatus } from "./cangyuan-availability-types";
+export type { CangyuanAvailabilityStatus } from "./cangyuan-availability-types";
 import type {
   AssetView,
   CanvasDocument,
@@ -197,27 +200,10 @@ export interface CangyuanMarketplaceGroupView {
   scannedModelCount?: number;
 }
 
-export type CangyuanAvailabilityStatus =
-  | "operational"
-  | "degraded"
-  | "unavailable"
-  | "unknown";
-
-export interface CangyuanAvailabilityView {
-  name: string;
-  category: string;
-  latestStatus: CangyuanAvailabilityStatus;
-  availability: number | null;
-  averageLatencyMs: number | null;
-  timeline: unknown[];
-}
-
-export interface CangyuanAvailabilitySnapshotView {
-  checkedAt: string;
-  windowDays: 7 | 15 | 30;
-  items: CangyuanAvailabilityView[];
-  source: "live" | "cache";
-}
+export type CangyuanAvailabilityView = CangyuanAvailabilityItem;
+export type CangyuanAvailabilitySnapshotView = CangyuanAvailabilitySnapshot & {
+  source: "live" | "cache" | "stale";
+};
 
 export interface AgentChatMessageView {
   role: "user" | "assistant";
@@ -879,7 +865,7 @@ export async function saveConnection(input: {
   const response = await fetch("/api/providers", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, config: tk1688ConnectionWriteConfig(input.id, input.config) }),
   });
   if (!response.ok)
     throw new Error(
@@ -1101,32 +1087,72 @@ export async function fetchCangyuanMarketplace(options?: {
   }>;
 }
 
+const availabilityCache = new Map<
+  string,
+  { expiresAt: number; snapshot: CangyuanAvailabilitySnapshotView }
+>();
+const pendingAvailability = new Map<
+  string,
+  Promise<CangyuanAvailabilitySnapshotView>
+>();
+
+/** Share polling between nodes and menus; the server also applies account-wide throttling. */
 export async function fetchCangyuanAvailability(
   connectionId: string,
   options?: {
-    windowDays?: 7 | 15 | 30;
     name?: string;
     category?: "text" | "image" | "video" | "audio";
     latestStatus?: CangyuanAvailabilityStatus;
   },
 ): Promise<CangyuanAvailabilitySnapshotView> {
-  const query = new URLSearchParams({
-    window_days: String(options?.windowDays ?? 7),
-  });
+  const query = new URLSearchParams();
   if (options?.name?.trim()) query.set("name", options.name.trim());
   if (options?.category) query.set("category", options.category);
-  if (options?.latestStatus)
-    query.set("latest_status", options.latestStatus);
-  const response = await fetch(
-    `/api/providers/${encodeURIComponent(connectionId)}/availability?${query.toString()}`,
-    { cache: "no-store" },
-  );
-  const payload = (await response.json().catch(() => null)) as
-    | (Partial<CangyuanAvailabilitySnapshotView> & { error?: string })
-    | null;
-  if (!response.ok)
-    throw new Error(payload?.error ?? "沧元可用性状态读取失败");
-  return payload as CangyuanAvailabilitySnapshotView;
+  if (options?.latestStatus) query.set("latest_status", options.latestStatus);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  const epoch = modelEpochs.get(connectionId) ?? 0;
+  const key = `${connectionId}:${epoch}:${suffix}`;
+  const cached = availabilityCache.get(key);
+  if (cached && cached.expiresAt > Date.now())
+    return {
+      ...cached.snapshot,
+      source: cached.snapshot.ready ? "cache" : cached.snapshot.source,
+    };
+  const pending = pendingAvailability.get(key);
+  if (pending) return pending;
+  const request = (async () => {
+    const response = await fetch(
+      `/api/providers/${encodeURIComponent(connectionId)}/availability${suffix}`,
+      { cache: "no-store" },
+    );
+    const payload = (await response.json().catch(() => null)) as
+      (Partial<CangyuanAvailabilitySnapshotView> & { error?: string }) | null;
+    if (!response.ok)
+      throw new Error(payload?.error ?? "沧元渠道可用性状态读取失败");
+    if (
+      !payload ||
+      typeof payload.ready !== "boolean" ||
+      typeof payload.enabled !== "boolean" ||
+      typeof payload.checkedAt !== "string" ||
+      !Array.isArray(payload.items) ||
+      !["live", "cache", "stale"].includes(String(payload.source))
+    )
+      throw new Error("沧元渠道可用性返回格式不完整");
+    const snapshot = payload as CangyuanAvailabilitySnapshotView;
+    if ((modelEpochs.get(connectionId) ?? 0) === epoch) {
+      // Bound memory when connection credentials are repeatedly changed.
+      if (availabilityCache.size >= 128)
+        availabilityCache.delete(availabilityCache.keys().next().value!);
+      availabilityCache.set(key, { expiresAt: Date.now() + 30_000, snapshot });
+    }
+    return snapshot;
+  })();
+  pendingAvailability.set(key, request);
+  try {
+    return await request;
+  } finally {
+    pendingAvailability.delete(key);
+  }
 }
 
 export async function fetchMiaowuCatalog(

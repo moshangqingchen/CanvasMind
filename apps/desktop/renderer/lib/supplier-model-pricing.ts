@@ -14,6 +14,7 @@ import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { repository } from "./server";
 import { readSupplierDocument } from "./supplier-document";
+import { applyTk1688CatalogModel } from "./tk1688-catalog";
 
 type Connection = { config: Readonly<Record<string, unknown>> };
 const unknownPrice =
@@ -276,6 +277,13 @@ export function applySupplierCatalogPrices(
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   return models.map((model) => {
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
+    if (catalogModel?.metadata?.tk1688Catalog === true) {
+      model = applyTk1688CatalogModel(model, catalogModel, catalog.checkedAt);
+      // Retail marketplace prices already contain the platform markup. Keep
+      // structured SKU prices and smart-route ranges from the same live feed.
+      return { ...model, metadata: { ...model.metadata, tk1688CatalogStale: incomplete,
+        priceStatus: incomplete ? "partial" : "available", priceLastAttemptAt: catalog.checkedAt } };
+    }
     if (catalogModel?.capability === "chat" && !model.operations.length) model = { ...model, metadata: { ...model.metadata,
       supplierAgentFacts: parseProviderModelFacts(catalogModel as unknown as Record<string, unknown>),
       supplierAgentDescription: catalogModel.metadata?.supplierChannelDescription,

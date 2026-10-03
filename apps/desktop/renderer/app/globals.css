@@ -1129,6 +1129,11 @@ circle.canvas-drawing-selection-outline {
 .react-flow__node-workflow:has(.node-config-popover) {
   z-index: 2000 !important;
 }
+/* The group-drag rectangle sits above the whole viewport. Raising only the
+   owning node cannot keep its attached form clickable after a marquee. */
+.react-flow__viewport:has(.node-config-popover) {
+  z-index: 4;
+}
 .node-config-popover-anchor {
   position: absolute;
   z-index: 40;

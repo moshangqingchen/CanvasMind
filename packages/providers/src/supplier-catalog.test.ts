@@ -2,6 +2,35 @@ import { describe, expect, it, vi } from "vitest";
 import { discoverSupplierCatalog, normalizeSupplierSiteBase, normalizeSupplierUrl, parseSupplierCatalog, parseSupplierKeyGroups, parseSupplierPricingChannels, supplierModelUrls } from "./supplier-catalog.js";
 
 describe("supplier discovery", () => {
+  it("reads词元 official marketplace contracts with account groups instead of generic pricing", async () => {
+    const calls: string[] = [];
+    const alias = "gpt-image-2.5-sunburst@s47c261";
+    const result = await discoverSupplierCatalog({ siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", token: "test-site-token:42" }, async (url, init) => {
+      calls.push(String(url));
+      if (String(url).endsWith("/marketplace/listings")) return Response.json({ success: true, data: { total: 1, items: [{
+        id: 1, base_model: "gpt-image-2.5-sunburst", alias, status: "active", channel_alive: true,
+        charge_type: "per_request", input_price_usd: 0.03, description: "Adobe原生4K(3840*2160)，不支持N。",
+      }] } });
+      if (String(url).endsWith("/api/status")) return Response.json({ success: true, data: { platform_markup_percent: 20 } });
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-site-token");
+      if (String(url).endsWith("/self/groups")) return Response.json({ success: true, data: { default: { ratio: 1, desc: "默认" }, vip: { ratio: 1, desc: "VIP" } } });
+      return Response.json({ success: true, data: [alias] });
+    });
+    expect(calls).not.toContain("https://tk1688.com/api/pricing");
+    expect(result).toMatchObject({ kind: "newapi", complete: true, status: "live" });
+    for (const group of result.groups) {
+      expect(group.models.find(model => model.id === alias)).toMatchObject({ capability: "image", priceLabel: "$0.03/次", limits: { maxOutputImages: 1 },
+        metadata: { tk1688FixedSize: "3840x2160", tk1688OmitN: true, tk1688Pricing: { kind: "per-request", unitAmount: 0.03 } } });
+    }
+  });
+  it("keeps a failed词元 marketplace read incomplete without probing unrelated platform endpoints", async () => {
+    const calls: string[] = [];
+    const result = await discoverSupplierCatalog({ siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1" }, async url => {
+      calls.push(String(url)); return Response.json({ success: false }, { status: 503 });
+    });
+    expect(result).toMatchObject({ status: "failed", complete: false, groups: [] });
+    expect(calls.some(url => url.includes("/api/v1/model-plaza"))).toBe(false);
+  });
   it("reads the separate model-price page and isolates prices by exact group/model", async () => {
     const data = [{name:"Images",description:"支持low、high、max",platforms:[{
       groups:[{name:"gpt-image-2.5",rate_multiplier:1},{name:"discount",rate_multiplier:0.5}],

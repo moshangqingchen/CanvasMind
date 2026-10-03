@@ -1,0 +1,5791 @@
+{
+  "checkedAt": "2026-10-03T07:41:20.300Z",
+  "baselineAt": "2026-10-01",
+  "scope": "Only unauthenticated public supplier HTTPS GET; no key access, login, production mutation or paid request.",
+  "browserVerification": {
+    "successful": [
+      "https://docs.we-ai.cc/guides/image-generation-service.html"
+    ],
+    "unavailable": [
+      "https://docs.we-ai.cc/guides/image-generation.html",
+      "https://tu.988236.xyz/docs/api-media.zh-CN.md",
+      "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-x.json",
+      "https://api.3365api.cn/docs/img2.md",
+      "https://api.miaowuai.store/api/pricing"
+    ],
+    "fallback": "The project providerFetch was used for direct public HTTPS GET after web browser read failures."
+  },
+  "results": [
+    {
+      "supplier": "沧元算力",
+      "kind": "model-document",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-x.json",
+      "model": "gpt-image-2-x",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:16.464Z",
+      "length": 4295,
+      "sha256": "dc48ccd84eecf9d9b0c0d676f465e23689abae280fa193b49a9c10fa4344590f",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "dc48ccd84eecf9d9b0c0d676f465e23689abae280fa193b49a9c10fa4344590f",
+      "exactBodyChanged": false,
+      "facts": {
+        "model": "gpt-image-2-x",
+        "lastReviewed": "2026-09-26",
+        "intro": "gpt-image-2-x 用 tier 选择清晰度，价格与对应公共名相同：省略或 web 等于 gpt-image-2，1k / 2k / 4k 等于 gpt-image-2-1k / gpt-image-2-2k / gpt-image-2-4k。直接调用那些公共名时不要传 tier。",
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2-x。",
+            "required": true
+          },
+          {
+            "name": "tier",
+            "description": "清晰度。web、1k、2k、4k。省略或 web 为默认档，价格与 gpt-image-2 相同。1k / 2k / 4k 与 gpt-image-2-1k / gpt-image-2-2k / gpt-image-2-4k 相同。"
+          },
+          {
+            "name": "prompt",
+            "description": "图像描述。",
+            "required": true
+          },
+          {
+            "name": "n",
+            "description": "张数，只能为 1。"
+          },
+          {
+            "name": "size",
+            "description": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。1k / 2k / 4k 的宽高须落在该档像素预算内。"
+          },
+          {
+            "name": "quality",
+            "description": "仅 1k / 2k / 4k 可传，可选 low / medium / high / xhigh / max。不改变本页价格。"
+          },
+          {
+            "name": "response_format",
+            "description": "推荐 url，结果 HTTPS 地址。"
+          },
+          {
+            "name": "async",
+            "description": "true 时按创建端点轮询；省略或 false 为同步等待。"
+          },
+          {
+            "name": "images",
+            "description": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。"
+          },
+          {
+            "name": "mask",
+            "description": "仅 1k / 2k / 4k 可传，可选蒙版 HTTPS URL，最多 1 张。web 不要传。"
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。1k / 2k / 4k 可带蒙版。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "sections": [
+          {
+            "title": "价格",
+            "variant": "table",
+            "body": "本页和右侧公共名是同一套价格的两种叫法。本页用 tier 选档；直接调用右侧公共名时不要传 tier。价格以模型广场为准。",
+            "headers": [
+              "调用",
+              "同价模型"
+            ],
+            "rows": [
+              {
+                "label": "web",
+                "detail": "gpt-image-2"
+              },
+              {
+                "label": "1k",
+                "detail": "gpt-image-2-1k"
+              },
+              {
+                "label": "2k",
+                "detail": "gpt-image-2-2k"
+              },
+              {
+                "label": "4k",
+                "detail": "gpt-image-2-4k"
+              }
+            ]
+          },
+          {
+            "title": "提交方式",
+            "body": "JSON 提交。按带了哪些字段判定玩法，不要另开接口。",
+            "headers": [
+              "玩法",
+              "关键参数"
+            ],
+            "rows": [
+              {
+                "label": "默认档文生图",
+                "detail": "prompt；省略 tier"
+              },
+              {
+                "label": "指定清晰度",
+                "detail": "tier=1k / 2k / 4k"
+              },
+              {
+                "label": "图生图 / 编辑",
+                "detail": "+ image"
+              }
+            ]
+          },
+          {
+            "title": "注意事项",
+            "items": [
+              {
+                "text": "tier 只能是 web、1k、2k、4k。不传等于 web。",
+                "tone": "warn"
+              },
+              {
+                "text": "参考图只传 HTTPS URL，不要调用 /v1/files。",
+                "tone": "warn"
+              },
+              {
+                "text": "不要发送 aspect_ratio、image_size、output_resolution。",
+                "tone": "warn"
+              },
+              "张数只能为 1。web 不要传 mask。1k / 2k / 4k 可带 1 张蒙版。",
+              "1k / 2k / 4k 的宽高超过该档像素预算会直接拒绝。"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "supplier": "沧元算力",
+      "kind": "model-document",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-x.json",
+      "model": "gpt-image-2.5-x",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:16.468Z",
+      "length": 5343,
+      "sha256": "09e88049a65b3f761e906ccb324fc8f8a3806ab67f907c006260fbd8620ec439",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "09e88049a65b3f761e906ccb324fc8f8a3806ab67f907c006260fbd8620ec439",
+      "exactBodyChanged": false,
+      "facts": {
+        "model": "gpt-image-2.5-x",
+        "lastReviewed": "2026-09-29",
+        "intro": "gpt-image-2.5-x 用 series 选择 Flare 或 Sunburst，再用 tier 选择清晰度，价格与对应公共名相同。series 必须传。省略 tier 或 web：flare 等于 gpt-image-2.5-flare，sunburst 等于 gpt-image-2.5-sunburst。1k / 2k / 4k 等于同名的 k 公共名。k 档在 quality 为 xhigh 或 max 时按标准价加倍。gpt-image-2.5 不是本页的 web 档。直接调用那些公共名时不要传 series 或 tier。",
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-x。",
+            "required": true
+          },
+          {
+            "name": "series",
+            "description": "产品线。只能是 flare 或 sunburst，必须传。",
+            "required": true
+          },
+          {
+            "name": "tier",
+            "description": "清晰度。web、1k、2k、4k。省略或 web 为默认档。1k / 2k / 4k 与对应 k 公共名相同。"
+          },
+          {
+            "name": "prompt",
+            "description": "图像描述。",
+            "required": true
+          },
+          {
+            "name": "n",
+            "description": "张数，只能为 1。"
+          },
+          {
+            "name": "size",
+            "description": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。1k / 2k / 4k 的宽高须落在该档像素预算内。"
+          },
+          {
+            "name": "quality",
+            "description": "1k / 2k / 4k 可传 low / medium / high / xhigh / max。省略、auto、low、medium、high 按标准档；xhigh / max 按标准档双倍。web 不按 quality 加价。"
+          },
+          {
+            "name": "response_format",
+            "description": "推荐 url，结果 HTTPS 地址。"
+          },
+          {
+            "name": "async",
+            "description": "true 时按创建端点轮询；省略或 false 为同步等待。"
+          },
+          {
+            "name": "images",
+            "description": "编辑请求的参考图 HTTPS URL 数组。1k / 2k / 4k 最多 16 张，web 档最多 9 张。"
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "sections": [
+          {
+            "title": "价格",
+            "variant": "table",
+            "body": "本页和右侧公共名是同一套价格的两种叫法。本页必须传 series，再用 tier 选档。直接调用右侧公共名时不要传 series 或 tier。gpt-image-2.5 不是本页的任一档。1k / 2k / 4k 的 xhigh / max 按该档标准价加倍。价格以模型广场为准。",
+            "headers": [
+              "调用",
+              "同价模型"
+            ],
+            "rows": [
+              {
+                "label": "series=flare，省略 tier",
+                "detail": "gpt-image-2.5-flare"
+              },
+              {
+                "label": "series=flare，tier=1k",
+                "detail": "gpt-image-2.5-flare-1k"
+              },
+              {
+                "label": "series=flare，tier=2k",
+                "detail": "gpt-image-2.5-flare-2k"
+              },
+              {
+                "label": "series=flare，tier=4k",
+                "detail": "gpt-image-2.5-flare-4k"
+              },
+              {
+                "label": "series=sunburst，省略 tier",
+                "detail": "gpt-image-2.5-sunburst"
+              },
+              {
+                "label": "series=sunburst，tier=1k",
+                "detail": "gpt-image-2.5-sunburst-1k"
+              },
+              {
+                "label": "series=sunburst，tier=2k",
+                "detail": "gpt-image-2.5-sunburst-2k"
+              },
+              {
+                "label": "series=sunburst，tier=4k",
+                "detail": "gpt-image-2.5-sunburst-4k"
+              }
+            ]
+          },
+          {
+            "title": "提交方式",
+            "body": "JSON 提交。按带了哪些字段判定玩法，不要另开接口。",
+            "headers": [
+              "玩法",
+              "关键参数"
+            ],
+            "rows": [
+              {
+                "label": "Flare 默认档",
+                "detail": "series=flare；省略 tier"
+              },
+              {
+                "label": "Sunburst 指定清晰度",
+                "detail": "series=sunburst；tier=1k / 2k / 4k"
+              },
+              {
+                "label": "图生图 / 编辑",
+                "detail": "+ image"
+              }
+            ]
+          },
+          {
+            "title": "注意事项",
+            "items": [
+              {
+                "text": "series 只能是 flare 或 sunburst，必须传。",
+                "tone": "warn"
+              },
+              {
+                "text": "tier 只能是 web、1k、2k、4k。不传等于 web。",
+                "tone": "warn"
+              },
+              {
+                "text": "参考图只传 HTTPS URL，不要调用 /v1/files。",
+                "tone": "warn"
+              },
+              {
+                "text": "不要发送 aspect_ratio、image_size、output_resolution。",
+                "tone": "warn"
+              },
+              "张数只能为 1。",
+              "1k / 2k / 4k 的 quality 省略或 auto 按标准档计费；xhigh / max 按双倍。",
+              "1k / 2k / 4k 的宽高超过该档像素预算会直接拒绝。"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "supplier": "沧元算力",
+      "kind": "model-document",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/midjourney-v7.json",
+      "model": "midjourney-v7",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:16.465Z",
+      "length": 3320,
+      "sha256": "32e7a1249cb689ca6b6e91cffc6c0e5d6a71a8d376726343afec198ec42a800b",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "32e7a1249cb689ca6b6e91cffc6c0e5d6a71a8d376726343afec198ec42a800b",
+      "exactBodyChanged": false,
+      "facts": {
+        "model": "midjourney-v7",
+        "lastReviewed": "2026-09-29",
+        "intro": "Midjourney V7 文生图和图生图，按次计费。没有 1K / 2K 档，也没有速度档。结果地址可以直接拉取，适合高并发。n 只能为 1，结果仍可能有多张，请遍历 data，不按返回张数加价。不要和 midjourney-1k、midjourney-2k 混用。",
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 midjourney-v7。",
+            "required": true
+          },
+          {
+            "name": "prompt",
+            "description": "图像描述，最多 4000 字符。不要写 --v、--niji、--fast、--hd。",
+            "required": true
+          },
+          {
+            "name": "n",
+            "description": "只能为 1。返回的 data 仍可能有多项。我们按次计费，不按返回张数加价。"
+          },
+          {
+            "name": "size",
+            "description": "比例：1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9。也可传对应的宽x高。省略按 16:9。没有 1K / 2K 档。"
+          },
+          {
+            "name": "images",
+            "description": "编辑请求的参考图 HTTPS URL 数组，最多 5 张。"
+          },
+          {
+            "name": "response_format",
+            "description": "推荐 url。结果地址可以直接拉取，适合高并发。结果在 data 数组里，可能多于一项。"
+          },
+          {
+            "name": "async",
+            "description": "true 时按创建端点轮询；省略或 false 为同步等待。"
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "sections": [
+          {
+            "title": "提交方式",
+            "body": "JSON 提交。按带了哪些字段判定玩法，不要另开接口。",
+            "headers": [
+              "玩法",
+              "关键参数"
+            ],
+            "rows": [
+              {
+                "label": "文生图",
+                "detail": "prompt"
+              },
+              {
+                "label": "参考图编辑",
+                "detail": "+ images，最多 5 张"
+              }
+            ]
+          },
+          {
+            "title": "这条线",
+            "items": [
+              {
+                "text": "这是 V7，不是 midjourney-1k / midjourney-2k。没有分辨率档和速度档，不要传 speed、quality。",
+                "tone": "warn"
+              },
+              {
+                "text": "结果地址可以直接拉取，适合高并发。不是官网原链，下载不会走 Midjourney 官方 CDN。"
+              },
+              {
+                "text": "按次计费，不是按张。一次请求一个价；data 里有多张也不按张加价。",
+                "tone": "warn"
+              },
+              {
+                "text": "n 为 1 时 data 仍可能有多项，请全部保存。没有放大和变体选择。",
+                "tone": "warn"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "supplier": "沧元算力",
+      "kind": "model-document",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/seedream-5.0-pro-x.json",
+      "model": "seedream-5.0-pro-x",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:16.447Z",
+      "length": 3646,
+      "sha256": "c359a8226e9ba9a3d0befb7edb413d1ffddf1b97b215e18054514cab43f98f8b",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "c359a8226e9ba9a3d0befb7edb413d1ffddf1b97b215e18054514cab43f98f8b",
+      "exactBodyChanged": false,
+      "facts": {
+        "model": "seedream-5.0-pro-x",
+        "lastReviewed": "2026-09-30",
+        "intro": "seedream-5.0-pro-x 文生图和参考图编辑。清晰度 1K 或 2K。size 传比例或宽x高，其它比例就近收到 8 种画面。省略按 16:9、2K。参考图最多 10 张。不支持蒙版。不要和 doubao-seedream-5-0-pro 混用。",
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 seedream-5.0-pro-x。",
+            "required": true
+          },
+          {
+            "name": "prompt",
+            "description": "图像描述，最多 8000 字符。",
+            "required": true
+          },
+          {
+            "name": "n",
+            "description": "张数，只能为 1。"
+          },
+          {
+            "name": "size",
+            "description": "比例 1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9，或宽x高，例如 1024x1024、2048x1152。其它比例就近收到这 8 种。省略按 16:9、2K。成品像素以返回图片为准。"
+          },
+          {
+            "name": "images",
+            "description": "编辑请求的参考图 HTTPS URL 数组，最多 10 张。"
+          },
+          {
+            "name": "response_format",
+            "description": "推荐 url，结果 HTTPS 地址。"
+          },
+          {
+            "name": "async",
+            "description": "true 时按创建端点轮询；省略或 false 为同步等待。"
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "sections": [
+          {
+            "title": "提交方式",
+            "body": "JSON 提交。按带了哪些字段判定玩法，不要另开接口。",
+            "headers": [
+              "玩法",
+              "关键参数"
+            ],
+            "rows": [
+              {
+                "label": "文生图",
+                "detail": "prompt"
+              },
+              {
+                "label": "参考图编辑",
+                "detail": "+ images，最多 10 张"
+              }
+            ]
+          },
+          {
+            "title": "注意事项",
+            "items": [
+              {
+                "text": "参考图只传 HTTPS URL，不要调用 /v1/files。",
+                "tone": "warn"
+              },
+              {
+                "text": "不要传 quality、蒙版。最大 2K，更大的宽高会收到 2K。",
+                "tone": "warn"
+              },
+              {
+                "text": "这是 seedream-5.0-pro-x，不是 doubao-seedream-5-0-pro。"
+              }
+            ]
+          },
+          {
+            "title": "素材要求",
+            "body": "素材须是无需登录即可下载的公网 HTTPS 地址。",
+            "blocks": [
+              {
+                "title": "图片要求",
+                "rows": [
+                  {
+                    "label": "传入方式",
+                    "detail": "图片 HTTPS URL"
+                  },
+                  {
+                    "label": "边长",
+                    "detail": "短边至少 15 像素，长边最多 6000 像素，宽高比 1:16 到 16:1"
+                  },
+                  {
+                    "label": "数量",
+                    "detail": "参考图最多 10 张"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "supplier": "沧元算力",
+      "kind": "model-document",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-4k.json",
+      "model": "gpt-image-2.5-flare-4k",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:16.465Z",
+      "length": 3350,
+      "sha256": "9721d9a2fe2afbbb2f2ea04fa985bcf7e5bc60cc43bef2bef7327fd66887da68",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "9721d9a2fe2afbbb2f2ea04fa985bcf7e5bc60cc43bef2bef7327fd66887da68",
+      "exactBodyChanged": false,
+      "facts": {
+        "model": "gpt-image-2.5-flare-4k",
+        "lastReviewed": "2026-09-29",
+        "intro": "gpt-image-2.5-flare-4k；张数 1；参考图最多 16 张。",
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-flare-4k。",
+            "required": true
+          },
+          {
+            "name": "prompt",
+            "description": "图像描述。",
+            "required": true
+          },
+          {
+            "name": "n",
+            "description": "张数，只能为 1。"
+          },
+          {
+            "name": "size",
+            "description": "需要固定宽高时传 WIDTHxHEIGHT，须落在 4K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。"
+          },
+          {
+            "name": "quality",
+            "description": "画质。low / medium / high / 省略 / auto 按标准档计费；xhigh / max 按标准档双倍。"
+          },
+          {
+            "name": "response_format",
+            "description": "推荐 url，结果为 HTTPS 地址。"
+          },
+          {
+            "name": "async",
+            "description": "true 时按创建端点轮询；省略或 false 为同步等待。"
+          },
+          {
+            "name": "images",
+            "description": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "priceTiers": [
+          {
+            "label": "low / medium / high / auto"
+          },
+          {
+            "label": "xhigh / max"
+          }
+        ],
+        "sections": [
+          {
+            "title": "整合调用",
+            "variant": "table",
+            "body": "本页是 gpt-image-2.5-x 在 series=flare、tier=4k 时的同价公共名。直接调用本页模型名时不要传 series 或 tier。要在一个名字里切换系列和清晰度，用 gpt-image-2.5-x。",
+            "headers": [
+              "字段",
+              "取值"
+            ],
+            "rows": [
+              {
+                "label": "model",
+                "detail": "gpt-image-2.5-x"
+              },
+              {
+                "label": "series",
+                "detail": "flare"
+              },
+              {
+                "label": "tier",
+                "detail": "4k"
+              }
+            ]
+          },
+          {
+            "title": "提交方式",
+            "body": "JSON 提交。按带了哪些字段判定玩法，不要另开接口。",
+            "headers": [
+              "玩法",
+              "关键参数"
+            ],
+            "rows": [
+              {
+                "label": "文生图",
+                "detail": "prompt"
+              },
+              {
+                "label": "图生图 / 编辑",
+                "detail": "+ image"
+              }
+            ]
+          },
+          {
+            "title": "注意事项",
+            "items": [
+              {
+                "text": "参考图只传 HTTPS URL，不要调用 /v1/files。",
+                "tone": "warn"
+              },
+              {
+                "text": "不要发送 aspect_ratio、image_size、output_resolution。",
+                "tone": "warn"
+              },
+              "买低档却请求更高档像素会在选渠前 400。",
+              "quality 省略或 auto 按标准档计费；xhigh / max 按双倍。"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "supplier": "沧元算力",
+      "kind": "model-document",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-4k.json",
+      "model": "gpt-image-2.5-sunburst-4k",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:16.728Z",
+      "length": 3368,
+      "sha256": "37264ba329e90801cdcaa4a94094278c5df465b20705432295d9b607fe1b91fb",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "37264ba329e90801cdcaa4a94094278c5df465b20705432295d9b607fe1b91fb",
+      "exactBodyChanged": false,
+      "facts": {
+        "model": "gpt-image-2.5-sunburst-4k",
+        "lastReviewed": "2026-09-29",
+        "intro": "gpt-image-2.5-sunburst-4k；张数 1；参考图最多 16 张。",
+        "params": [
+          {
+            "name": "model",
+            "description": "固定传 gpt-image-2.5-sunburst-4k。",
+            "required": true
+          },
+          {
+            "name": "prompt",
+            "description": "图像描述。",
+            "required": true
+          },
+          {
+            "name": "n",
+            "description": "张数，只能为 1。"
+          },
+          {
+            "name": "size",
+            "description": "需要固定宽高时传 WIDTHxHEIGHT，须落在 4K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。"
+          },
+          {
+            "name": "quality",
+            "description": "画质。low / medium / high / 省略 / auto 按标准档计费；xhigh / max 按标准档双倍。"
+          },
+          {
+            "name": "response_format",
+            "description": "推荐 url，结果为 HTTPS 地址。"
+          },
+          {
+            "name": "async",
+            "description": "true 时按创建端点轮询；省略或 false 为同步等待。"
+          },
+          {
+            "name": "images",
+            "description": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
+          }
+        ],
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/v1/images/generations",
+            "description": "文生图。"
+          },
+          {
+            "method": "POST",
+            "path": "/v1/images/edits",
+            "description": "参考图编辑。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/generations/{task_id}",
+            "description": "查询异步生成任务。"
+          },
+          {
+            "method": "GET",
+            "path": "/v1/images/edits/{task_id}",
+            "description": "查询异步编辑任务。"
+          }
+        ],
+        "priceTiers": [
+          {
+            "label": "low / medium / high / auto"
+          },
+          {
+            "label": "xhigh / max"
+          }
+        ],
+        "sections": [
+          {
+            "title": "整合调用",
+            "variant": "table",
+            "body": "本页是 gpt-image-2.5-x 在 series=sunburst、tier=4k 时的同价公共名。直接调用本页模型名时不要传 series 或 tier。要在一个名字里切换系列和清晰度，用 gpt-image-2.5-x。",
+            "headers": [
+              "字段",
+              "取值"
+            ],
+            "rows": [
+              {
+                "label": "model",
+                "detail": "gpt-image-2.5-x"
+              },
+              {
+                "label": "series",
+                "detail": "sunburst"
+              },
+              {
+                "label": "tier",
+                "detail": "4k"
+              }
+            ]
+          },
+          {
+            "title": "提交方式",
+            "body": "JSON 提交。按带了哪些字段判定玩法，不要另开接口。",
+            "headers": [
+              "玩法",
+              "关键参数"
+            ],
+            "rows": [
+              {
+                "label": "文生图",
+                "detail": "prompt"
+              },
+              {
+                "label": "图生图 / 编辑",
+                "detail": "+ image"
+              }
+            ]
+          },
+          {
+            "title": "注意事项",
+            "items": [
+              {
+                "text": "参考图只传 HTTPS URL，不要调用 /v1/files。",
+                "tone": "warn"
+              },
+              {
+                "text": "不要发送 aspect_ratio、image_size、output_resolution。",
+                "tone": "warn"
+              },
+              "买低档却请求更高档像素会在选渠前 400。",
+              "quality 省略或 auto 按标准档计费；xhigh / max 按双倍。"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "supplier": "沧元算力",
+      "kind": "document",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/image.md",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:16.724Z",
+      "length": 3016,
+      "sha256": "e58541056c2abc3064b8e008b581aab424116d1c287eea31cf3c0bce9d8b087a",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "e58541056c2abc3064b8e008b581aab424116d1c287eea31cf3c0bce9d8b087a",
+      "exactBodyChanged": false,
+      "bodyLooksLikeAppShell": false,
+      "visibleTextLength": 2962
+    },
+    {
+      "supplier": "辰途 API",
+      "kind": "document",
+      "url": "https://tu.988236.xyz/docs/api-media.zh-CN.md",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:17.155Z",
+      "length": 26579,
+      "sha256": "0abf85a28ebe6398774fb6a825161550ba606764971fe36bbfc4a5ff6be9d515",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "0abf85a28ebe6398774fb6a825161550ba606764971fe36bbfc4a5ff6be9d515",
+      "exactBodyChanged": false,
+      "bodyLooksLikeAppShell": false,
+      "visibleTextLength": 25266
+    },
+    {
+      "supplier": "We-AI",
+      "kind": "document",
+      "url": "https://docs.we-ai.cc/guides/image-generation-service.html",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:17.139Z",
+      "length": 25740,
+      "sha256": "d1878befb5e0bd5d1eb117c820634aa98586c9981c442d1a2a7e0f8ee27ea7ab",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "d1878befb5e0bd5d1eb117c820634aa98586c9981c442d1a2a7e0f8ee27ea7ab",
+      "exactBodyChanged": false,
+      "documentTitle": "生图服务介绍 | We-AI 使用文档",
+      "bodyLooksLikeAppShell": false,
+      "visibleTextLength": 2172
+    },
+    {
+      "supplier": "We-AI",
+      "kind": "document",
+      "url": "https://docs.we-ai.cc/guides/image-generation.html",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:17.241Z",
+      "length": 50832,
+      "sha256": "d1f9db82a070c7097d26faef580fcdd77c824a791bc139615fb98339a0036fec",
+      "documentTitle": "生图接入指南 | We-AI 使用文档",
+      "bodyLooksLikeAppShell": false,
+      "visibleTextLength": 11211
+    },
+    {
+      "supplier": "We-AI",
+      "kind": "document",
+      "url": "https://docs.we-ai.cc/guides/gemini-banana-image.html",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:17.598Z",
+      "length": 57412,
+      "sha256": "adf1089d3f565d4b502b4c96b3529ddd40d470073d701f987ebaee3d1f123a99",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "adf1089d3f565d4b502b4c96b3529ddd40d470073d701f987ebaee3d1f123a99",
+      "exactBodyChanged": false,
+      "documentTitle": "Gemini 香蕉生图文档 | We-AI 使用文档",
+      "bodyLooksLikeAppShell": false,
+      "visibleTextLength": 8555
+    },
+    {
+      "supplier": "赛博阿飞 API",
+      "kind": "document",
+      "url": "https://api.3365api.cn/docs/img2.md",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:17.751Z",
+      "length": 3225,
+      "sha256": "02d960d77b2ba588065c5d26f44efcd300179182f50ba214058a61d702c996f3",
+      "bodyLooksLikeAppShell": false,
+      "additionalBaselineAt": "2026-09-25",
+      "additionalBaselineSha256": "02d960d77b2ba588065c5d26f44efcd300179182f50ba214058a61d702c996f3",
+      "visibleTextChangedFromAdditionalBaseline": false,
+      "visibleTextLength": 3011
+    },
+    {
+      "supplier": "赛博阿飞 API",
+      "kind": "document",
+      "url": "https://api.3365api.cn/docs/banana.md",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:18.465Z",
+      "length": 6336,
+      "sha256": "eb083c02d7a74f1e19ed39beb333365d73090df1b5c9029fb34bbd9a5f3b0bfb",
+      "bodyLooksLikeAppShell": false,
+      "additionalBaselineAt": "2026-09-25",
+      "additionalBaselineSha256": "eb083c02d7a74f1e19ed39beb333365d73090df1b5c9029fb34bbd9a5f3b0bfb",
+      "visibleTextChangedFromAdditionalBaseline": false,
+      "visibleTextLength": 5946
+    },
+    {
+      "supplier": "喵呜 API",
+      "kind": "document",
+      "url": "https://api.miaowuai.store/docs/openai-videos",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:17.830Z",
+      "length": 1482,
+      "sha256": "65f8138488817503aac85216aef0252ffcd7ddc0cb42ba9dcddf2a172c34806e",
+      "documentTitle": "喵呜API",
+      "bodyLooksLikeAppShell": true,
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "65f8138488817503aac85216aef0252ffcd7ddc0cb42ba9dcddf2a172c34806e",
+      "exactBodyChanged": false,
+      "visibleTextLength": 5
+    },
+    {
+      "supplier": "沧元算力",
+      "kind": "public-catalog",
+      "url": "https://ai.cangyuansuanli.cn/api/pricing",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:17.526Z",
+      "length": 121459,
+      "sha256": "e112c614fb68c6521905210447e95011d0cc017eb249d738b44c09296eeba441",
+      "priceDisplay": {
+        "currency": "CNY",
+        "multiplier": 1
+      },
+      "recognized": true,
+      "groupCount": 13,
+      "modelIds": [
+        "claude-fable-5",
+        "claude-fable-5-1",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seedance-2-5-260628",
+        "doubao-seedream-5-0-pro",
+        "gemini-3-pro-image-preview",
+        "gemini-3.1-flash-image-preview",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash-high",
+        "gemini-music",
+        "gpt-5.5",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-image-2",
+        "gpt-image-2-1k",
+        "gpt-image-2-2k",
+        "gpt-image-2-4k",
+        "gpt-image-2-x",
+        "gpt-image-2.5",
+        "gpt-image-2.5-flare",
+        "gpt-image-2.5-flare-1k",
+        "gpt-image-2.5-flare-2k",
+        "gpt-image-2.5-flare-4k",
+        "gpt-image-2.5-sunburst",
+        "gpt-image-2.5-sunburst-1k",
+        "gpt-image-2.5-sunburst-2k",
+        "gpt-image-2.5-sunburst-4k",
+        "gpt-image-2.5-x",
+        "grok-4.5",
+        "grok-4.6",
+        "grok-4.7",
+        "grok-4.7-build-fast",
+        "grok-imagine-image",
+        "grok-imagine-image-2.0",
+        "grok-imagine-image-lite",
+        "grok-imagine-image-sale",
+        "grok-imagine-video",
+        "grok-imagine-video-1.5",
+        "gv3-grok-video-1.5",
+        "happyhorse-1.1",
+        "kl1-kling-3.0",
+        "kl2-kling-3.0",
+        "kling-3.0",
+        "kling-3.0-pro",
+        "midjourney-1k",
+        "midjourney-2k",
+        "midjourney-v7",
+        "mm2-minimax-h3",
+        "mm2-minimax-h3-max",
+        "mm3-minimax-h3-2k",
+        "nano-banana-pro-1k",
+        "nano-banana-pro-2k",
+        "nano-banana-pro-4k",
+        "nano-banana2-1k",
+        "nano-banana2-2k",
+        "nano-banana2-4k",
+        "niulai-pro",
+        "omni-fast",
+        "omni-fast-no-water",
+        "omni-v2v",
+        "omni-v2v-no-water",
+        "sd10-seedance-2.0",
+        "sd10-seedance-2.0-fast",
+        "sd10-seedance-2.0-mini",
+        "sd10-seedance-2.5",
+        "sd11-seedance-2.0",
+        "sd11-seedance-2.0-fast",
+        "sd11-seedance-2.0-mini",
+        "sd11-seedance-2.5",
+        "sd12-seedance-2.0",
+        "sd12-seedance-2.0-fast",
+        "sd12-seedance-2.0-mini",
+        "sd13-seedance-2.0",
+        "sd13-seedance-2.0-fast",
+        "sd13-seedance-2.0-mini",
+        "sd13-seedance-2.5",
+        "sd14-seedance-2.0",
+        "sd15-seedance-2.0",
+        "sd15-seedance-2.5",
+        "sd8-seedance-2.5",
+        "seedream-5.0-pro-x",
+        "ve1-veo-3.1-fast",
+        "wan4-wan3.0",
+        "wan5-wan3.0"
+      ],
+      "baselineModelCount": 105,
+      "addedModelIds": [],
+      "absentBaselineModelIds": [
+        "sd4-seedance-2.0",
+        "sd4-seedance-2.0-fast",
+        "sd4-seedance-2.0-mini",
+        "minimax-h3-768p",
+        "gpt-5.3-codex-spark",
+        "gpt-5.6",
+        "gpt-image-2.5-sunburst-o",
+        "gpt-image-2.5-flare-o",
+        "gpt-image-2-o"
+      ],
+      "publicGroups": [
+        {
+          "id": "AUDIO",
+          "label": "音频分组，陆续添加主流音频模型",
+          "models": [
+            {
+              "id": "gemini-music",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "¥0.99/请求"
+            }
+          ]
+        },
+        {
+          "id": "IMAGE",
+          "label": "所有图像模型选这个没有错",
+          "models": [
+            {
+              "id": "gpt-image-2.5-sunburst-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.4/张 · 普通质量 ¥0.2/张"
+            },
+            {
+              "id": "gpt-image-2.5-flare-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.36/张 · 普通质量 ¥0.18/张"
+            },
+            {
+              "id": "gemini-3-pro-image-preview",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "4k ¥0.1/张 · 2k ¥0.08/张 · 1k ¥0.06/张"
+            },
+            {
+              "id": "grok-imagine-image",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.07/张"
+            },
+            {
+              "id": "gpt-image-2.5-flare-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.4/张 · 普通质量 ¥0.2/张"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.025/张"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.36/张 · 普通质量 ¥0.18/张"
+            },
+            {
+              "id": "nano-banana-pro-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.06/张"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.025/张"
+            },
+            {
+              "id": "gpt-image-2.5-x",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-image-2-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.075/张"
+            },
+            {
+              "id": "grok-imagine-image-2.0",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.09/张"
+            },
+            {
+              "id": "grok-imagine-image-sale",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.019/张"
+            },
+            {
+              "id": "doubao-seedream-5-0-pro",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.099/张"
+            },
+            {
+              "id": "midjourney-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "relax ¥0.39/请求 · fast ¥0.49/请求"
+            },
+            {
+              "id": "gpt-image-2-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.055/张"
+            },
+            {
+              "id": "grok-imagine-image-lite",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.04/张"
+            },
+            {
+              "id": "gpt-image-2-x",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-image-2.5-flare-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.32/张 · 普通质量 ¥0.16/张"
+            },
+            {
+              "id": "gemini-3.1-flash-image-preview",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "4k ¥0.1/张 · 2k ¥0.08/张 · 1k ¥0.06/张"
+            },
+            {
+              "id": "seedream-5.0-pro-x",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.18/张"
+            },
+            {
+              "id": "nano-banana2-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.06/张"
+            },
+            {
+              "id": "nano-banana2-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.08/张"
+            },
+            {
+              "id": "nano-banana-pro-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.08/张"
+            },
+            {
+              "id": "midjourney-v7",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.19/请求"
+            },
+            {
+              "id": "nano-banana2-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.1/张"
+            },
+            {
+              "id": "nano-banana-pro-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.1/张"
+            },
+            {
+              "id": "gpt-image-2.5",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.025/张"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.44/张 · 普通质量 ¥0.22/张"
+            },
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.015/张"
+            },
+            {
+              "id": "gpt-image-2-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.095/张"
+            },
+            {
+              "id": "midjourney-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "relax ¥0.29/请求 · fast ¥0.39/请求"
+            }
+          ]
+        },
+        {
+          "id": "LLM-Claude-MAX",
+          "label": "满血，支持检测",
+          "models": [
+            {
+              "id": "claude-sonnet-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥1.96/1M · 输出 ¥9.8/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥4.9/1M · 输出 ¥24.5/1M"
+            },
+            {
+              "id": "claude-fable-5-1",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥9.8/1M · 输出 ¥49/1M"
+            },
+            {
+              "id": "claude-opus-5-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥3.92/1M · 输出 ¥19.6/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥4.9/1M · 输出 ¥24.5/1M"
+            },
+            {
+              "id": "claude-sonnet-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥2.94/1M · 输出 ¥14.7/1M"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥4.9/1M · 输出 ¥24.5/1M"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥4.9/1M · 输出 ¥24.5/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥9.8/1M · 输出 ¥49/1M"
+            }
+          ]
+        },
+        {
+          "id": "LLM-Claude-kiro",
+          "label": "kiro分组/90缓/几率用fable5",
+          "models": [
+            {
+              "id": "claude-sonnet-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.24/1M · 输出 ¥1.2/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.6/1M · 输出 ¥3/1M"
+            },
+            {
+              "id": "claude-fable-5-1",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥1.2/1M · 输出 ¥6/1M"
+            },
+            {
+              "id": "claude-opus-5-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.48/1M · 输出 ¥2.4/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.6/1M · 输出 ¥3/1M"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.6/1M · 输出 ¥3/1M"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.6/1M · 输出 ¥3/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥1.2/1M · 输出 ¥6/1M"
+            },
+            {
+              "id": "claude-haiku-4-5-20251001",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.12/1M · 输出 ¥0.6/1M"
+            }
+          ]
+        },
+        {
+          "id": "LLM-GPT-plus",
+          "label": "Plus速刷号池，不保证智商，适合大部分简单及工作流",
+          "models": [
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.475/1M · 输出 ¥2.85/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.19/1M · 输出 ¥0.95/1M"
+            }
+          ]
+        },
+        {
+          "id": "LLM-GPT-pro",
+          "label": "GPT-Pro号池，响应速度更快、更强，平常不降智",
+          "models": [
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.75/1M · 输出 ¥4.5/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.3/1M · 输出 ¥1.5/1M"
+            }
+          ]
+        },
+        {
+          "id": "LLM-GPT-企业级",
+          "label": "GPT-pro-5X+az/aws混池，不降智",
+          "models": [
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥1.5/1M · 输出 ¥9/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.6/1M · 输出 ¥3/1M"
+            }
+          ]
+        },
+        {
+          "id": "LLM-GPT-快速",
+          "label": "GPT-pro-5X 低容量 号池 日常速刷首选-基本不降智",
+          "models": [
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥1.15/1M · 输出 ¥6.9/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.46/1M · 输出 ¥2.3/1M"
+            }
+          ]
+        },
+        {
+          "id": "LLM-Gemini-anti",
+          "label": "Openai Chat接口调用",
+          "models": [
+            {
+              "id": "gemini-3.8-flash-high",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.2475/1M · 输出 ¥1.2375/1M"
+            },
+            {
+              "id": "gemini-3.8-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥0.2475/1M · 输出 ¥1.2375/1M"
+            }
+          ]
+        },
+        {
+          "id": "LLM-Grok-heavy",
+          "label": "Grok-heavy-订阅 模型更强，性价比更高",
+          "models": [
+            {
+              "id": "grok-4.7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "grok-4.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "grok-4.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "grok-4.7-build-fast",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            }
+          ]
+        },
+        {
+          "id": "VIDEO",
+          "label": "所有视频模型选这个没有错",
+          "models": [
+            {
+              "id": "omni-v2v-no-water",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥1/请求"
+            },
+            {
+              "id": "sd12-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "sd12-seedance-2.0-mini",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "omni-fast-no-water",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥0.81/请求"
+            },
+            {
+              "id": "sd14-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.9/请求"
+            },
+            {
+              "id": "sd11-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥7.4/请求 · 480p ¥3.5/请求"
+            },
+            {
+              "id": "wan5-wan3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "sd13-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p / 4k ¥15.96/请求 · 480p / 720p ¥7.11/请求"
+            },
+            {
+              "id": "sd15-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.9/请求"
+            },
+            {
+              "id": "sd15-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "gv3-grok-video-1.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥1.9/请求"
+            },
+            {
+              "id": "omni-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥0.66/请求"
+            },
+            {
+              "id": "sd12-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "mm3-minimax-h3-2k",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "mm2-minimax-h3-max",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "768p ¥8.9/请求 · 480p ¥5.8/请求"
+            },
+            {
+              "id": "sd11-seedance-2.0-mini",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥4.7/请求 · 480p ¥2.2/请求"
+            },
+            {
+              "id": "happyhorse-1.1",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥2.8/请求 · 1080p ¥3.8/请求"
+            },
+            {
+              "id": "sd13-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥22.14/请求 · 480p ¥10.32/请求"
+            },
+            {
+              "id": "sd11-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥29/请求 · 720p ¥19/请求 · 480p ¥12.8/请求"
+            },
+            {
+              "id": "niulai-pro",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "2k ¥3.9/请求 · 768p ¥2.9/请求"
+            },
+            {
+              "id": "sd13-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "480p / 720p ¥5.67/请求"
+            },
+            {
+              "id": "sd10-seedance-2.0-mini",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "kling-3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.5/请求"
+            },
+            {
+              "id": "sd11-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥18.9/请求 · 720p ¥9.6/请求 · 480p ¥4.5/请求"
+            },
+            {
+              "id": "kl1-kling-3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥6.1/请求 · 720p ¥4.6/请求"
+            },
+            {
+              "id": "sd10-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥4.9/请求"
+            },
+            {
+              "id": "kl2-kling-3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "ve1-veo-3.1-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥1.9/请求"
+            },
+            {
+              "id": "kling-3.0-pro",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "sd13-seedance-2.0-mini",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥3.63/请求 · 480p ¥1.7/请求"
+            },
+            {
+              "id": "sd10-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.5/请求"
+            },
+            {
+              "id": "sd8-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.9/请求"
+            },
+            {
+              "id": "grok-imagine-video-1.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥0.32/秒 · 720p ¥0.168/秒 · 480p ¥0.116/秒"
+            },
+            {
+              "id": "wan4-wan3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥20.7/请求 · 720p ¥10.3/请求 · 480p ¥5.2/请求"
+            },
+            {
+              "id": "sd10-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.9/请求"
+            },
+            {
+              "id": "omni-v2v",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥0.88/请求"
+            },
+            {
+              "id": "grok-imagine-video",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥0.11/秒 · 480p ¥0.08/秒"
+            },
+            {
+              "id": "mm2-minimax-h3",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "2k ¥14/请求 · 768p ¥9.9/请求"
+            }
+          ]
+        },
+        {
+          "id": "VIDEO-Seedance官转",
+          "label": "Seedance官转分组，为官方68折",
+          "models": [
+            {
+              "id": "doubao-seedance-2-5-260628",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "doubao-seedance-2-0-fast-260128",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "doubao-seedance-2-0-260128",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            }
+          ]
+        },
+        {
+          "id": "全模型-无claude/gpt",
+          "label": "非文本模型，省事选这个",
+          "models": [
+            {
+              "id": "omni-v2v-no-water",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥1/请求"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.4/张 · 普通质量 ¥0.2/张"
+            },
+            {
+              "id": "sd12-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "sd12-seedance-2.0-mini",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "gpt-image-2.5-flare-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.36/张 · 普通质量 ¥0.18/张"
+            },
+            {
+              "id": "omni-fast-no-water",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥0.81/请求"
+            },
+            {
+              "id": "gemini-3-pro-image-preview",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "4k ¥0.1/张 · 2k ¥0.08/张 · 1k ¥0.06/张"
+            },
+            {
+              "id": "sd14-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.9/请求"
+            },
+            {
+              "id": "sd11-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥7.4/请求 · 480p ¥3.5/请求"
+            },
+            {
+              "id": "wan5-wan3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "grok-imagine-image",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.07/张"
+            },
+            {
+              "id": "sd13-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p / 4k ¥15.96/请求 · 480p / 720p ¥7.11/请求"
+            },
+            {
+              "id": "gpt-image-2.5-flare-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.4/张 · 普通质量 ¥0.2/张"
+            },
+            {
+              "id": "sd15-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.9/请求"
+            },
+            {
+              "id": "sd15-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "gv3-grok-video-1.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥1.9/请求"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.025/张"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.36/张 · 普通质量 ¥0.18/张"
+            },
+            {
+              "id": "nano-banana-pro-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.06/张"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.025/张"
+            },
+            {
+              "id": "omni-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥0.66/请求"
+            },
+            {
+              "id": "sd12-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "gpt-image-2.5-x",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-image-2-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.075/张"
+            },
+            {
+              "id": "grok-imagine-image-2.0",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.09/张"
+            },
+            {
+              "id": "grok-imagine-image-sale",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.019/张"
+            },
+            {
+              "id": "mm3-minimax-h3-2k",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "mm2-minimax-h3-max",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "768p ¥8.9/请求 · 480p ¥5.8/请求"
+            },
+            {
+              "id": "sd11-seedance-2.0-mini",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥4.7/请求 · 480p ¥2.2/请求"
+            },
+            {
+              "id": "happyhorse-1.1",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥2.8/请求 · 1080p ¥3.8/请求"
+            },
+            {
+              "id": "sd13-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥22.14/请求 · 480p ¥10.32/请求"
+            },
+            {
+              "id": "doubao-seedream-5-0-pro",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.099/张"
+            },
+            {
+              "id": "midjourney-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "relax ¥0.39/请求 · fast ¥0.49/请求"
+            },
+            {
+              "id": "gpt-image-2-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.055/张"
+            },
+            {
+              "id": "grok-imagine-image-lite",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.04/张"
+            },
+            {
+              "id": "sd11-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥29/请求 · 720p ¥19/请求 · 480p ¥12.8/请求"
+            },
+            {
+              "id": "gpt-image-2-x",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-image-2.5-flare-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.32/张 · 普通质量 ¥0.16/张"
+            },
+            {
+              "id": "niulai-pro",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "2k ¥3.9/请求 · 768p ¥2.9/请求"
+            },
+            {
+              "id": "gemini-3.1-flash-image-preview",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "4k ¥0.1/张 · 2k ¥0.08/张 · 1k ¥0.06/张"
+            },
+            {
+              "id": "seedream-5.0-pro-x",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.18/张"
+            },
+            {
+              "id": "sd13-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "480p / 720p ¥5.67/请求"
+            },
+            {
+              "id": "nano-banana2-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.06/张"
+            },
+            {
+              "id": "nano-banana2-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.08/张"
+            },
+            {
+              "id": "sd10-seedance-2.0-mini",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "nano-banana-pro-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.08/张"
+            },
+            {
+              "id": "kling-3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.5/请求"
+            },
+            {
+              "id": "midjourney-v7",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.19/请求"
+            },
+            {
+              "id": "sd11-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥18.9/请求 · 720p ¥9.6/请求 · 480p ¥4.5/请求"
+            },
+            {
+              "id": "kl1-kling-3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥6.1/请求 · 720p ¥4.6/请求"
+            },
+            {
+              "id": "nano-banana2-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.1/张"
+            },
+            {
+              "id": "nano-banana-pro-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.1/张"
+            },
+            {
+              "id": "sd10-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥4.9/请求"
+            },
+            {
+              "id": "kl2-kling-3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "ve1-veo-3.1-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥1.9/请求"
+            },
+            {
+              "id": "gpt-image-2.5",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.025/张"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "xhigh/max ¥0.44/张 · 普通质量 ¥0.22/张"
+            },
+            {
+              "id": "kling-3.0-pro",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥2.9/请求"
+            },
+            {
+              "id": "sd13-seedance-2.0-mini",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥3.63/请求 · 480p ¥1.7/请求"
+            },
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.015/张"
+            },
+            {
+              "id": "sd10-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.5/请求"
+            },
+            {
+              "id": "sd8-seedance-2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.9/请求"
+            },
+            {
+              "id": "gpt-image-2-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "¥0.095/张"
+            },
+            {
+              "id": "grok-imagine-video-1.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥0.32/秒 · 720p ¥0.168/秒 · 480p ¥0.116/秒"
+            },
+            {
+              "id": "wan4-wan3.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "1080p ¥20.7/请求 · 720p ¥10.3/请求 · 480p ¥5.2/请求"
+            },
+            {
+              "id": "sd10-seedance-2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥3.9/请求"
+            },
+            {
+              "id": "omni-v2v",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "¥0.88/请求"
+            },
+            {
+              "id": "grok-imagine-video",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "720p ¥0.11/秒 · 480p ¥0.08/秒"
+            },
+            {
+              "id": "midjourney-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "relax ¥0.29/请求 · fast ¥0.39/请求"
+            },
+            {
+              "id": "mm2-minimax-h3",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "2k ¥14/请求 · 768p ¥9.9/请求"
+            }
+          ]
+        }
+      ],
+      "comparisonLimit": "Baseline currentCatalog may contain authenticated account/key group enrichment; absence from the public catalog is not proof of removal or loss of current key permission.",
+      "intersectionPriceLabelChanges": [
+        {
+          "group": "IMAGE",
+          "modelId": "midjourney-v7",
+          "before": "¥0.19/张",
+          "after": "¥0.19/请求"
+        },
+        {
+          "group": "全模型-无claude/gpt",
+          "modelId": "midjourney-v7",
+          "before": "¥0.19/张",
+          "after": "¥0.19/请求"
+        }
+      ],
+      "priceComparisonLimit": "Same group and complete model ID labels are compared. Public group/reference prices can differ from authenticated account prices; treat as quoted-label changes until account scan corroborates."
+    },
+    {
+      "supplier": "沧元算力",
+      "kind": "public-status",
+      "url": "https://ai.cangyuansuanli.cn/api/status",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:18.706Z",
+      "length": 7545,
+      "sha256": "245f595451d4de8e544c23521fa81ddca91e3d672f492f2e93a1f2e191ef2a2d",
+      "facts": {
+        "announcements": [
+          {
+            "content": "【沧海画布更新】\n\n画布这次做了一轮比较大的更新：修正了一批之前用起来会碰到的问题。打开后如果还是旧界面，请强制刷新一次页面。\n\n这次能直接用到的：\n\n· 角色库和音频工作台补齐了素材选择、生成参数和同步。音频生成支持 IndexTTS2 情感控制，一次可以留下多条结果。\n· 画布助手补上了角色卡和音频。中途中断的任务可以接着恢复，不用从头再来。\n\n图片和视频的打开方式也改了：\n\n· 列表、封面和画布静帧先用小图，点开和播放再用预览。不再把整张原文件拉下来当封面，国内打开会快一些。\n· 封面或预览还在准备时先占位，准备好会自己出现，不用整页刷新。\n· 生成结果会先存进沧海，再给画布用。页面上不再直接挂上游的临时地址。\n· 下载和复制拿到的仍是原文件。\n\n同时修掉的问题：\n\n· 创作页已经生成成功、只是画面还没就绪时，不再误显示「生成失败」。\n· 在创作页上传的素材，同步成功后会出现在素材库，不用再手动刷新。\n· 关掉「思考」后，不再被当成还开着。\n· 审批过程中修改图片参数，不再因为容量检查把自己卡住。\n· 账号存储空间、Live2D 预览和后台用户筛选也做了修正。\n\n用的时候如果还有异常，把页面和大概操作发我们，方便对一下。",
+            "extra": "",
+            "id": 19,
+            "publishDate": "2026-10-01T16:13:41.790Z",
+            "type": "success"
+          },
+          {
+            "content": "新上 4 条视频，都是按次一口价，时长不加价。请求里的 model 用下面的公共名。\n\nsd15-seedance-2.0　¥2.9/次\n4–15 秒，480p / 720p。参考图最多 9，视频、音频各 3。\nsd15-seedance-2.5　¥3.9/次\n4–30 秒，480p / 720p。参考图最多 30，音频最多 10。\n\ngv3-grok-video-1.5　¥1.9/次\n3–15 秒，固定 720p。参考图最多 7。\nmm3-minimax-h3-2k　¥2.9/次\n固定 15 秒，固定 2K。参考图最多 9，视频、音频各 3，合计最多 10 个。\n\nhttps://ai.cangyuansuanli.cn/docs",
+            "extra": "",
+            "id": 18,
+            "publishDate": "2026-09-29T17:35:16.885Z",
+            "type": "success"
+          },
+          {
+            "content": "2.5 的 1K / 2K / 4K 已恢复，并且现在最多可以带 16 张参考图。\n\nMidjourney V7 已上线，模型名 midjourney-v7/0.19/4张，此模型支持高并发和服务器拉图。支持文生图和参考图编辑，参考图最多 5 张。这一版没有 1K / 2K，也没有速度档，请不要和 midjourney-1k、midjourney-2k 混用。",
+            "extra": "",
+            "id": 17,
+            "publishDate": "2026-09-28T18:58:24.084Z",
+            "type": "success"
+          },
+          {
+            "content": "【图像整合调用已上线】\n\nGPT Image 2 和 2.5 可以用一个模型名覆盖各档，价格与对应的现有模型相同，以模型广场为准。\n\n1）GPT Image 2\nmodel 固定传 gpt-image-2-x\n用 tier 选择清晰度：不传或 web / 1k / 2k / 4k\n分别对应 gpt-image-2、gpt-image-2-1k、gpt-image-2-2k、gpt-image-2-4k\n\n2）GPT Image 2.5\nmodel 固定传 gpt-image-2.5-x\nseries 必须传：flare 或 sunburst\ntier 同样是不传或 web / 1k / 2k / 4k\n例如 series=flare、tier=1k，与 gpt-image-2.5-flare-1k 相同\nseries=sunburst、省略 tier，与 gpt-image-2.5-sunburst 相同\nk 档在 quality 为 xhigh 或 max 时，按该档标准价加倍\n\n原来的模型名继续可用。调用方式保持不变。\n\n各模型文档页的「整合调用」中也有具体说明：\nhttps://ai.cangyuansuanli.cn/docs/api/image",
+            "extra": "",
+            "id": 16,
+            "publishDate": "2026-09-26T04:54:14.420Z",
+            "type": "success"
+          },
+          {
+            "content": "https://ai.cangyuansuanli.cn/docs/models/niulai-pro\n牛来-pro模型上架，2k 15秒仅3.9，数量有限。",
+            "extra": "",
+            "id": 15,
+            "publishDate": "2026-09-24T05:23:05.771Z",
+            "type": "success"
+          },
+          {
+            "content": "🔥 原生丽臻 4K 上线｜速刷特价刷完下线，不卡脸\n\nSeedance 原生线路到账。人脸不过滤，出片快，最高 4K。\n按清晰度计费，时长不加价；不传分辨率默认最便宜的 480p。\n图 + 视频全能参考都能带。\n\n模型（请用 sd13- 开头，不要用 seedance-2.0 中性别名）：\n\n• sd13-seedance-2.0-mini\n  480p 1.70 / 720p 3.63\n\n• sd13-seedance-2.0-fast\n  480p = 720p  5.67\n\n• sd13-seedance-2.0   ← 丽臻 4K\n  480p = 720p  7.11\n  1080p = 4K   15.96\n\n• sd13-seedance-2.5\n  480p 10.32 / 720p 22.14（最长 30 秒）\n\n接口走 /v1/videos。要 4K 选 sd13-seedance-2.0，resolution 传 4k。",
+            "extra": "",
+            "id": 14,
+            "publishDate": "2026-09-20T12:17:09.860Z",
+            "type": "success"
+          },
+          {
+            "content": "价格调整\n\nGPT Image 2.5 k 即日起支持所有画质分档：low / medium / high / 不传 / auto 走标准档，xhigh / max 为标准档价格2倍。\n\nflare 1k / 2k / 4k：￥0.16 / 0.18 / 0.20\nsunburst 1k / 2k / 4k：￥0.18 / 0.20 / 0.22\n\nMidjourney 一次出 4 张，默认 Relax；speed=fast 或 --fast 走 Fast。\n\nmidjourney-1k：Relax ￥0.29 / Fast ￥0.39\nmidjourney-2k：Relax ￥0.39 / Fast ￥0.49",
+            "extra": "",
+            "id": 13,
+            "publishDate": "2026-09-17T15:53:58.481Z",
+            "type": "success"
+          },
+          {
+            "content": "沧元上线：自动人脸切分\n部分视频模型会卡真人脸。现在可以先把参考图切一刀，再拿去生视频。\n画布里： 悬停有图的图片节点，上方工具栏点「人脸切分」。右侧会出一张新图，连回原图。失败不改原图。\n自己调用： 不用 Key，传一张能公开打开的图片 URL，回一张处理后的公网 JPEG。\nPOST https://ai.cangyuansuanli.cn/v1/tools/face-split\n{\"image\":\"https://你的图.jpg\"}\n一次只处理 1 张。回包里的 url 按各模型文档当参考图提交即可。说明：\nhttps://ai.cangyuansuanli.cn/docs/integrations",
+            "extra": "",
+            "id": 12,
+            "publishDate": "2026-09-17T09:27:47.811Z",
+            "type": "success"
+          },
+          {
+            "content": "🎬 6 个新视频模型上线了。\n\n💰 按次一口价，拉长秒数不加价\n• ve1-veo-3.1-fast　1.9\n• 另外 5 档都是 2.9\n\n🌊 Seedance 2.0 三档　480p　4–15 秒 933  不卡脸 \n文生、参考图、参考视频 / 音频、首尾帧都可以。\n• sd12-seedance-2.0　出片 + 参考视频合计不超过 18 秒\n• sd12-seedance-2.0-fast  合计不超过 25 秒\n• sd12-seedance-2.0-mini　参考可以拉满\n\n📝 万相 3.0　480p\n• wan5-wan3.0　只收文字，2–30 秒，适合写长镜头\n\n🎞 可灵 3.0　720p\n• kl2-kling-3.0　文生或首尾帧，3–15 秒。默认不配音，要声音请打开 generate_audio。不要传普通参考图 / 视频\n\n⚡ Veo 3.1 Fast　720p\n• ve1-veo-3.1-fast　1.9。文生或首尾帧。时长只能 4 / 6 / 8 秒，默认出音频",
+            "extra": "6 个新视频模型：Seedance 2.0 / 万相 3.0 / 可灵 3.0 / Veo 3.1 Fast",
+            "id": 11,
+            "publishDate": "2026-09-15T16:38:31.611Z",
+            "type": "success"
+          },
+          {
+            "content": "🎉 Seedance 2.5 特价上新\n现已上线 Seedance 2.5 特价模型，30 秒视频固定价格 ¥7.9/条。支持文生视频与参考图生视频，具体参数、素材限制和任务轮询方式请查看模型独立文档。\n入口：https://ai.cangyuansuanli.cn\n文档：https://ai.cangyuansuanli.cn/docs",
+            "extra": "特价模型为限时/动态活动价格，最终以模型广场显示为准。",
+            "id": 10,
+            "publishDate": "2026-08-28T20:57:29.200Z",
+            "type": "success"
+          },
+          {
+            "content": "📢 沧元算力｜模型与 API 更新\n价格会随成本动态调整，请以模型广场为准。\n🌐 国内常规：https://ai.cangyuansuanli.cn ｜大流量/高清：https://direct-api.cangyuansuanli.cn\nGPT-Image-2：¥0.015/张；1K/2K/4K：¥0.045/0.065/0.095。\nNano Banana2：1K/2K/4K ¥0.075/0.11/0.145；Pro：¥0.09/0.13/0.19。\nGrok Video 1.0/1.5：¥0.69/1.39；Kling 3.0/Omni：¥1.4。\nSeedance 2.0：¥3.9/条；1080p：¥4.9；sd4：¥4.5，Fast ¥3.5，Mini ¥2.9；sd5/sd8：¥2.9，Fast ¥1.9。\nSeedance 2.5 特价：¥7.9/30秒。MiniMax3 768p/2K/4K：¥3.5/4.5/5.6。\n⚠️ 拒绝违规图片；本站拦截自动退费，上游违规拒绝造成额度损失不退（仅图片，视频违规正常退费）。\n📖 文档：https://ai.cangyuansuanli.cn/docs",
+            "extra": "模型价格与维护状态以模型广场实时信息为准。",
+            "id": 9,
+            "publishDate": "2026-08-28T20:57:29.199Z",
+            "type": "default"
+          },
+          {
+            "content": "点击链接加入TG通知群：https://t.me/cangyuansuanli",
+            "extra": "",
+            "id": 1,
+            "publishDate": "2026-06-26T11:08:37.806Z",
+            "type": "default"
+          }
+        ],
+        "announcements_enabled": true,
+        "docs_link": "/docs",
+        "enable_batch_update": true,
+        "quota_display_type": "CNY",
+        "system_name": "沧元算力",
+        "usd_exchange_rate": 1,
+        "version": ""
+      }
+    },
+    {
+      "supplier": "辰途 API",
+      "kind": "public-catalog",
+      "url": "https://tu.988236.xyz/api/pricing",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:18.801Z",
+      "length": 20337,
+      "sha256": "93be52b7a81a8f6042fa5bb3eaa9796790b1bd43f0a6f2f425a8dbbacb66d6fb",
+      "baselineAt": "2026-10-01",
+      "baselineSha256": "c0604c017ea9e77f192e1a336dc610f9decca5094dc715894bed56311999af55",
+      "exactBodyChanged": true,
+      "priceDisplay": {},
+      "recognized": true,
+      "groupCount": 30,
+      "modelIds": [
+        "AZ-gpt-image-2",
+        "H3量化版",
+        "MiniMaxH3",
+        "MiniMaxH3-2k",
+        "MiniMaxH3-2k-pro",
+        "MiniMaxH3-720p",
+        "Veo 3.1 Fast 1080p",
+        "a-2.0-720p-v1",
+        "a-2.0-720p-v4",
+        "claude-fable-5",
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-sonnet-5",
+        "gemini-3-flash",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-image-preview",
+        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash",
+        "gemini-3.6-flash",
+        "gemini-3.7-flash",
+        "gemini-3.7-flash-high",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash-high",
+        "gemini-omni-flash",
+        "gpt-5.4",
+        "gpt-5.5",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-image-2",
+        "gpt-image-2-1k",
+        "gpt-image-2-2k",
+        "gpt-image-2-4k",
+        "gpt-image-2.5",
+        "gpt-image-2.5-flare",
+        "gpt-image-2.5-flare-leo",
+        "gpt-image-2.5-sunburst",
+        "gpt-image-2.5-sunburst-leo",
+        "gpt-image-2自由传参",
+        "grok--video1.0",
+        "grok-4.5",
+        "grok-4.6",
+        "grok-4.7",
+        "grok-imagine-image",
+        "grok-imagine-image-2.0",
+        "grok-imagine-image-quality",
+        "grok-imagine-video-1.5（按次）",
+        "grok-video1.5-fast",
+        "leo-gemini-3.1-flash-image-preview",
+        "minimax-h3 768p",
+        "minimax_h3-768p-933",
+        "omni-fast",
+        "omni-fast-no-water",
+        "omni-fast-v2v",
+        "omni-fast-v2v-no-water",
+        "sd-2.0-720p-TJ",
+        "sd-2.5-M-720p",
+        "seedance2.0-mini",
+        "veo-3.1",
+        "veo-3.1-lite",
+        "xinghe-2.0s"
+      ],
+      "baselineModelCount": 76,
+      "addedModelIds": [
+        "claude-opus-5-5",
+        "claude-sonnet-5",
+        "gpt-6.1-sol",
+        "grok-imagine-image"
+      ],
+      "absentBaselineModelIds": [
+        "gemini-3-pro-preview",
+        "ad-gemini-3-pro-image-preview",
+        "ad-gemini-3.1-flash-image-preview",
+        "seedance-2.0-480p",
+        "happyhorse-1080p",
+        "kling-3.0-omni-720p",
+        "kling-3.0-omni-1080p",
+        "seedance-2.0-720p",
+        "happyhorse-720p",
+        "claude-sonnet-4-6",
+        "grok-imagine",
+        "AZ-gpt-image-2.5-sunburst",
+        "AZ-gpt-image-2.5-flare"
+      ],
+      "publicGroups": [
+        {
+          "id": "0.04gpt/k12",
+          "label": "0.04gpt/k12",
+          "models": []
+        },
+        {
+          "id": "1k低价生图",
+          "label": "1k低价生图",
+          "models": [
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.015/请求"
+            },
+            {
+              "id": "gpt-image-2.5",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.015/请求"
+            },
+            {
+              "id": "gpt-image-2-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.015/请求"
+            }
+          ]
+        },
+        {
+          "id": "1k福利生图",
+          "label": "1k福利生图稳定性不如低价1k",
+          "models": [
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.008/请求"
+            },
+            {
+              "id": "gpt-image-2.5",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.008/请求"
+            },
+            {
+              "id": "gpt-image-2-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.008/请求"
+            }
+          ]
+        },
+        {
+          "id": "az渠道image系列token计费",
+          "label": "token计费",
+          "models": [
+            {
+              "id": "AZ-gpt-image-2",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "输入 $11/1M · 输出 $66/1M"
+            }
+          ]
+        },
+        {
+          "id": "codexbugpro",
+          "label": "codexbugpro",
+          "models": [
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.75/1M · 输出 $4.5/1M"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.375/1M · 输出 $2.25/1M"
+            }
+          ]
+        },
+        {
+          "id": "codex不降智",
+          "label": "不掉缓存，首字ok，智商在线",
+          "models": [
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.9/1M · 输出 $5.4/1M"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            }
+          ]
+        },
+        {
+          "id": "codex假官key",
+          "label": "6-Astra不降智，5.6-sol不降智，超高缓存",
+          "models": [
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            }
+          ]
+        },
+        {
+          "id": "codex特惠",
+          "label": "codex特惠",
+          "models": [
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.3/1M · 输出 $1.8/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.15/1M · 输出 $0.9/1M"
+            }
+          ]
+        },
+        {
+          "id": "codex稳定",
+          "label": "混池",
+          "models": [
+            {
+              "id": "gpt-6.1-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.45/1M · 输出 $2.7/1M"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.225/1M · 输出 $1.35/1M"
+            }
+          ]
+        },
+        {
+          "id": "gemini大语言模型",
+          "label": "gemini大语言模型",
+          "models": [
+            {
+              "id": "gemini-3-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.1/1M · 输出 $0.6/1M"
+            },
+            {
+              "id": "gemini-3.8-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.15/1M · 输出 $0.75/1M"
+            },
+            {
+              "id": "gemini-3.7-flash-high",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.15/1M · 输出 $0.75/1M"
+            },
+            {
+              "id": "gemini-3-flash-preview",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $15/1M · 输出 $60/1M"
+            },
+            {
+              "id": "gemini-3.5-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.3/1M · 输出 $1.8/1M"
+            },
+            {
+              "id": "gemini-3.7-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.15/1M · 输出 $0.75/1M"
+            },
+            {
+              "id": "gemini-3.6-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.15/1M · 输出 $0.75/1M"
+            },
+            {
+              "id": "gemini-3.1-pro-preview",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "gemini-3.8-flash-high",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.15/1M · 输出 $0.75/1M"
+            }
+          ]
+        },
+        {
+          "id": "grokheavy号池",
+          "label": "grokheavy号池",
+          "models": [
+            {
+              "id": "grok-4.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "grok-4.7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $9.75/1M · 输出 $9.75/1M"
+            },
+            {
+              "id": "grok-4.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            }
+          ]
+        },
+        {
+          "id": "grok生图",
+          "label": "grok生图",
+          "models": [
+            {
+              "id": "grok-imagine-image",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.02/请求"
+            },
+            {
+              "id": "grok-imagine-image-2.0",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.02/请求"
+            },
+            {
+              "id": "grok-imagine-image-quality",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.02/请求"
+            }
+          ]
+        },
+        {
+          "id": "grok纯享视频",
+          "label": "grok纯享视频",
+          "models": [
+            {
+              "id": "grok--video1.0",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$0.49/请求"
+            },
+            {
+              "id": "grok-imagine-video-1.5（按次）",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$0.62/请求"
+            },
+            {
+              "id": "grok-video1.5-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$0.59/请求"
+            }
+          ]
+        },
+        {
+          "id": "image2.5全参",
+          "label": "全参支持max可透明背景",
+          "models": [
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.12/请求"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.12/请求"
+            }
+          ]
+        },
+        {
+          "id": "image2官key生图",
+          "label": "image2官key生图",
+          "models": [
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.15432/请求"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.15432/请求"
+            }
+          ]
+        },
+        {
+          "id": "image超分",
+          "label": "超分可4k",
+          "models": [
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.02/请求"
+            },
+            {
+              "id": "gpt-image-2.5",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.02/请求"
+            }
+          ]
+        },
+        {
+          "id": "kiro-90缓企业号",
+          "label": "90缓存，cctest95分，无虚假倍率，无敌",
+          "models": [
+            {
+              "id": "claude-sonnet-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.36/1M · 输出 $1.8/1M"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.6/1M · 输出 $3/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.6/1M · 输出 $3/1M"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.6/1M · 输出 $3/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.2/1M · 输出 $6/1M"
+            },
+            {
+              "id": "claude-opus-5-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.6/1M · 输出 $3/1M"
+            }
+          ]
+        },
+        {
+          "id": "klingsd视频",
+          "label": "klingsd视频",
+          "models": [
+            {
+              "id": "MiniMaxH3-2k-pro",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$2.1/请求"
+            },
+            {
+              "id": "sd-2.0-720p-TJ",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$2.7/请求"
+            },
+            {
+              "id": "MiniMaxH3-720p",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$1.8/请求"
+            },
+            {
+              "id": "MiniMaxH3",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$1.4/请求"
+            },
+            {
+              "id": "minimax_h3-768p-933",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$1.65/请求"
+            },
+            {
+              "id": "xinghe-2.0s",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$3.2/请求"
+            },
+            {
+              "id": "H3量化版",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$1/请求"
+            },
+            {
+              "id": "MiniMaxH3-2k",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$2.4/请求"
+            },
+            {
+              "id": "a-2.0-720p-v1",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$4.3/请求"
+            },
+            {
+              "id": "seedance2.0-mini",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$1.3/请求"
+            },
+            {
+              "id": "sd-2.5-M-720p",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$3.5/请求"
+            },
+            {
+              "id": "a-2.0-720p-v4",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$4.3/请求"
+            },
+            {
+              "id": "minimax-h3 768p",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$1.3/请求"
+            }
+          ]
+        },
+        {
+          "id": "sora，veo，omni视频",
+          "label": "sora，veo，omni系列",
+          "models": [
+            {
+              "id": "veo-3.1",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$0.5/请求"
+            },
+            {
+              "id": "omni-fast-v2v-no-water",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$0.72/请求"
+            },
+            {
+              "id": "Veo 3.1 Fast 1080p",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$0.3/请求"
+            },
+            {
+              "id": "omni-fast-v2v",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$0.62/请求"
+            },
+            {
+              "id": "omni-fast-no-water",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$0.58/请求"
+            },
+            {
+              "id": "veo-3.1-lite",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$0.15/请求"
+            },
+            {
+              "id": "gemini-omni-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "$0.4/请求"
+            },
+            {
+              "id": "omni-fast",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "$0.47/请求"
+            }
+          ]
+        },
+        {
+          "id": "低价Adobe生图",
+          "label": "Adobe渠道",
+          "models": [
+            {
+              "id": "gpt-image-2自由传参",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.05/请求"
+            },
+            {
+              "id": "gpt-image-2-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.05/请求"
+            },
+            {
+              "id": "gpt-image-2-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.05/请求"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.06/请求"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.06/请求"
+            },
+            {
+              "id": "gpt-image-2-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.05/请求"
+            }
+          ]
+        },
+        {
+          "id": "低价gemni生图",
+          "label": "ad渠道和as渠道混合",
+          "models": [
+            {
+              "id": "gpt-image-2.5-sunburst-leo",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.035715/请求"
+            },
+            {
+              "id": "leo-gemini-3.1-flash-image-preview",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.0392865/请求"
+            },
+            {
+              "id": "gemini-3-pro-image-preview",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.057144/请求"
+            },
+            {
+              "id": "gemini-3.1-flash-image-preview",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.050001/请求"
+            },
+            {
+              "id": "gpt-image-2.5-flare-leo",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.035715/请求"
+            }
+          ]
+        },
+        {
+          "id": "兜底原生生图",
+          "label": "兜底原生生图",
+          "models": [
+            {
+              "id": "gpt-image-2自由传参",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.09/请求"
+            },
+            {
+              "id": "gpt-image-2-4k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.09/请求"
+            },
+            {
+              "id": "gpt-image-2-1k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.09/请求"
+            },
+            {
+              "id": "gpt-image-2-2k",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.09/请求"
+            }
+          ]
+        },
+        {
+          "id": "稳定gemini生图",
+          "label": "as渠道官转",
+          "models": [
+            {
+              "id": "gemini-3-pro-image-preview",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.08/请求"
+            },
+            {
+              "id": "gemini-3.1-flash-image-preview",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.07/请求"
+            }
+          ]
+        },
+        {
+          "id": "cursor-claude",
+          "label": "cursor-claude",
+          "models": [
+            {
+              "id": "grok-4.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $10/1M · 输出 $50/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            }
+          ]
+        },
+        {
+          "id": "grok语言",
+          "label": "grok语言",
+          "models": [
+            {
+              "id": "grok-4.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            },
+            {
+              "id": "grok-4.7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $75/1M · 输出 $75/1M"
+            },
+            {
+              "id": "grok-4.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            }
+          ]
+        },
+        {
+          "id": "kiro-claude高缓",
+          "label": "kiro-claude高缓",
+          "models": [
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            }
+          ]
+        },
+        {
+          "id": "纯血ccmax",
+          "label": "纯血ccmax",
+          "models": [
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $10/1M · 输出 $50/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            }
+          ]
+        },
+        {
+          "id": "claoud福利分组",
+          "label": "claoud福利分组",
+          "models": [
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $10/1M · 输出 $50/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            }
+          ]
+        },
+        {
+          "id": "CC-MAX-企业版-CC Test满分",
+          "label": "CC-MAX-企业版-CC Test满分",
+          "models": [
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $10/1M · 输出 $50/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            }
+          ]
+        },
+        {
+          "id": "0.01福利额度不多速刷",
+          "label": "0.01福利额度不多速刷",
+          "models": [
+            {
+              "id": "gemini-3.5-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.5/1M · 输出 $9/1M"
+            },
+            {
+              "id": "gemini-3.7-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.75/1M · 输出 $3.75/1M"
+            },
+            {
+              "id": "gemini-3.6-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.75/1M · 输出 $3.75/1M"
+            },
+            {
+              "id": "gemini-3.1-pro-preview",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "按条件/用量计费，详见供应商规则"
+            }
+          ]
+        }
+      ],
+      "comparisonLimit": "Baseline currentCatalog may contain authenticated account/key group enrichment; absence from the public catalog is not proof of removal or loss of current key permission.",
+      "intersectionPriceLabelChanges": [
+        {
+          "group": "image2.5全参",
+          "modelId": "gpt-image-2.5-flare",
+          "before": "$0.12000016/请求",
+          "after": "$0.12/请求"
+        },
+        {
+          "group": "image2.5全参",
+          "modelId": "gpt-image-2.5-sunburst",
+          "before": "$0.12000016/请求",
+          "after": "$0.12/请求"
+        },
+        {
+          "group": "image2官key生图",
+          "modelId": "gpt-image-2.5-flare",
+          "before": "$0.18004/请求",
+          "after": "$0.15432/请求"
+        },
+        {
+          "group": "image2官key生图",
+          "modelId": "gpt-image-2.5-sunburst",
+          "before": "$0.18004/请求",
+          "after": "$0.15432/请求"
+        },
+        {
+          "group": "低价Adobe生图",
+          "modelId": "gpt-image-2.5-flare",
+          "before": "$0.07/请求",
+          "after": "$0.06/请求"
+        },
+        {
+          "group": "低价Adobe生图",
+          "modelId": "gpt-image-2.5-sunburst",
+          "before": "$0.07/请求",
+          "after": "$0.06/请求"
+        },
+        {
+          "group": "低价gemni生图",
+          "modelId": "gpt-image-2.5-sunburst-leo",
+          "before": "$0.05/请求",
+          "after": "$0.035715/请求"
+        },
+        {
+          "group": "低价gemni生图",
+          "modelId": "leo-gemini-3.1-flash-image-preview",
+          "before": "$0.055/请求",
+          "after": "$0.0392865/请求"
+        },
+        {
+          "group": "低价gemni生图",
+          "modelId": "gpt-image-2.5-flare-leo",
+          "before": "$0.05/请求",
+          "after": "$0.035715/请求"
+        }
+      ],
+      "priceComparisonLimit": "Same group and complete model ID labels are compared. Public group/reference prices can differ from authenticated account prices; treat as quoted-label changes until account scan corroborates."
+    },
+    {
+      "supplier": "辰途 API",
+      "kind": "public-status",
+      "url": "https://tu.988236.xyz/api/status",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:19.014Z",
+      "length": 3760,
+      "sha256": "3b8c8054ec79f3c3c715436e23c66784cc58b1c2b6e8fe97e58d569b77592607",
+      "facts": {
+        "announcements": [
+          {
+            "content": "image2和2.5  0.008\nimage2和2.5超分1，2，4k0.02\nimage2原生4k0.05\n原生image2.5-sunburst0.06，gpt-image-2.5-flare0.06\n全参image2.5和image2，0.12支持透明背景\nad和as混合香蕉20.05Pro0.06\n\nLeo香蕉2无敌稳定0.055\n\nas香蕉20.07，Pro0.08全天稳定\ngrok1.5 0.62一条图片全部0.02一张\n不降智gpt0.18倍率，特惠0.06倍率，\nkiro-claude，0.12倍率",
+            "extra": "",
+            "id": 2,
+            "publishDate": "2026-09-20T03:22:32.099Z",
+            "type": "default"
+          },
+          {
+            "content": "生图使用图片创作不要用创作台",
+            "extra": "",
+            "id": 1,
+            "publishDate": "2026-09-20T03:22:13.676Z",
+            "type": "success"
+          }
+        ],
+        "announcements_enabled": true,
+        "docs_link": "https://tu.988236.xyz/docs/",
+        "enable_batch_update": true,
+        "quota_display_type": "CUSTOM",
+        "system_name": "辰途API",
+        "usd_exchange_rate": 1,
+        "version": "v1.0.0-rc.41"
+      }
+    },
+    {
+      "supplier": "赛博阿飞 API",
+      "kind": "public-catalog",
+      "url": "https://api.3365api.cn/api/pricing",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:19.639Z",
+      "length": 21738,
+      "sha256": "90e27c6c66387f3e9caa5bf738a981facb5def32f4ebfbf8c889ea5c6339388d",
+      "priceDisplay": {},
+      "recognized": true,
+      "groupCount": 17,
+      "modelIds": [
+        "claude-fable-5",
+        "claude-fable-5-1",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        "codex-auto-review",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-3-flash",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-3.1-flash-image",
+        "gemini-3.1-flash-image-1k",
+        "gemini-3.1-flash-image-2k",
+        "gemini-3.1-flash-image-4k",
+        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-image-preview-2K",
+        "gemini-3.1-flash-image-preview-4K",
+        "gemini-3.1-pro-high",
+        "gemini-3.1-pro-low",
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-low",
+        "gemini-3.6-flash",
+        "gpt-5.3-codex-openai-compact",
+        "gpt-5.3-codex-spark",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-openai-compact",
+        "gpt-5.5",
+        "gpt-5.5-openai-compact",
+        "gpt-5.6",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-sol-openai-compact",
+        "gpt-5.6-terra",
+        "gpt-5.6-terra-openai-compact",
+        "gpt-6",
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-image-2",
+        "gpt-image-2-2K",
+        "gpt-image-2-4K",
+        "gpt-image-2.5",
+        "gpt-image-2.5-flare",
+        "gpt-image-2.5-sunburst",
+        "gpt-image-4K",
+        "gpt-reserve",
+        "grok-4.5-high",
+        "grok-4.6",
+        "grok-4.7",
+        "grok-image-破甲",
+        "grok-imagine-image",
+        "grok-imagine-image-2.0",
+        "grok-imagine-image-quality",
+        "grok-imagine-video",
+        "grok-imagine-video-1.5",
+        "kimi-k3",
+        "kling-3.0",
+        "minimax-h3",
+        "musk-4.6",
+        "nano-banana-pro",
+        "nano-banana2",
+        "omni-flash",
+        "seedance2.0",
+        "seedance2.5",
+        "veo3.1",
+        "veo3.1-fast",
+        "veo3.1-lite",
+        "veo3.1-pre",
+        "ya-sd25-30s"
+      ],
+      "baselineModelCount": 81,
+      "addedModelIds": [],
+      "absentBaselineModelIds": [
+        "claude-sonnet-4-5-20250929",
+        "claude-opus-4-5-20251101"
+      ],
+      "publicGroups": [
+        {
+          "id": "cc-max",
+          "label": "满血cc-max  高缓存  充值1:5",
+          "models": [
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $16.25/1M · 输出 $81.25/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $16.25/1M · 输出 $81.25/1M"
+            },
+            {
+              "id": "claude-sonnet-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $9.75/1M · 输出 $48.75/1M"
+            },
+            {
+              "id": "claude-fable-5-1",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $32.5/1M · 输出 $162.5/1M"
+            },
+            {
+              "id": "claude-opus-5-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $13/1M · 输出 $65/1M"
+            },
+            {
+              "id": "claude-sonnet-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $9.75/1M · 输出 $48.75/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $16.25/1M · 输出 $81.25/1M"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $16.25/1M · 输出 $81.25/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $32.5/1M · 输出 $162.5/1M"
+            },
+            {
+              "id": "claude-haiku-4-5-20251001",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.25/1M · 输出 $16.25/1M"
+            }
+          ]
+        },
+        {
+          "id": "gemini全模型",
+          "label": "gemini文本模型     充值1:5",
+          "models": [
+            {
+              "id": "gemini-3.1-pro-high",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            },
+            {
+              "id": "gemini-3.5-flash-low",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gemini-3.6-flash",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $187.5/1M · 输出 $750/1M"
+            },
+            {
+              "id": "gemini-3-pro-preview",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $4.5/1M · 输出 $27/1M"
+            },
+            {
+              "id": "gemini-2.5-flash",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $0.75/1M · 输出 $6.25/1M"
+            },
+            {
+              "id": "gemini-3.1-flash-image-1k",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.875/请求"
+            },
+            {
+              "id": "gemini-3.1-pro-preview",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            },
+            {
+              "id": "gemini-3.1-pro-low",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            },
+            {
+              "id": "gemini-3.5-flash",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gemini-2.5-pro",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $3.125/1M · 输出 $25/1M"
+            },
+            {
+              "id": "gemini-3.1-flash-image",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$1.25/请求"
+            },
+            {
+              "id": "gemini-3-flash-preview",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $1.25/1M · 输出 $7.5/1M"
+            },
+            {
+              "id": "gemini-3-flash",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $1.25/1M · 输出 $7.5/1M"
+            }
+          ]
+        },
+        {
+          "id": "gpt-plus-0.1",
+          "label": "稳定plus号池gpt     充值1:5",
+          "models": [
+            {
+              "id": "codex-auto-review",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.375/1M · 输出 $8.25/1M"
+            },
+            {
+              "id": "gpt-5.6-sol-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $41.25/1M · 输出 $247.5/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.2/1M · 输出 $8.25/1M"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.375/1M · 输出 $8.25/1M"
+            },
+            {
+              "id": "gpt-5.4-mini",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.825/1M · 输出 $4.95/1M"
+            },
+            {
+              "id": "gpt-5.6-luna",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.11/1M · 输出 $0.66/1M"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.75/1M · 输出 $16.5/1M"
+            },
+            {
+              "id": "gpt-5.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.75/1M · 输出 $16.5/1M"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.375/1M · 输出 $8.25/1M"
+            },
+            {
+              "id": "gpt-5.5-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.75/1M · 输出 $16.5/1M"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5.5/1M · 输出 $27.5/1M"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.75/1M · 输出 $16.5/1M"
+            },
+            {
+              "id": "gpt-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $41.25/1M · 输出 $82.5/1M"
+            },
+            {
+              "id": "gpt-5.6-terra-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $41.25/1M · 输出 $247.5/1M"
+            }
+          ]
+        },
+        {
+          "id": "gpt-pro-0.15",
+          "label": "稳定pro号池gpt      充值1:5",
+          "models": [
+            {
+              "id": "codex-auto-review",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.875/1M · 输出 $11.25/1M"
+            },
+            {
+              "id": "gpt-5.6-sol-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $56.25/1M · 输出 $337.5/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $11.25/1M"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.225/请求"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.875/1M · 输出 $11.25/1M"
+            },
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.1125/请求"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.375/请求"
+            },
+            {
+              "id": "gpt-5.4-mini",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.125/1M · 输出 $6.75/1M"
+            },
+            {
+              "id": "gpt-5.6-luna",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.15/1M · 输出 $0.9/1M"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gpt-5.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.875/1M · 输出 $11.25/1M"
+            },
+            {
+              "id": "gpt-5.5-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $7.5/1M · 输出 $37.5/1M"
+            },
+            {
+              "id": "gpt-reserve",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $56.25/1M · 输出 $112.5/1M"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gpt-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $56.25/1M · 输出 $112.5/1M"
+            },
+            {
+              "id": "gpt-5.6-terra-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $56.25/1M · 输出 $337.5/1M"
+            }
+          ]
+        },
+        {
+          "id": "gpt-纯血pro-0.3",
+          "label": "pro长期稳定不降智满血分组       充值1:5",
+          "models": [
+            {
+              "id": "gpt-5.4-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "codex-auto-review",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gpt-5.6-sol-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $112.5/1M · 输出 $675/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $6/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.45/请求"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gpt-5.3-codex-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $112.5/1M · 输出 $675/1M"
+            },
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.225/请求"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.75/请求"
+            },
+            {
+              "id": "gpt-5.4-mini",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.25/1M · 输出 $13.5/1M"
+            },
+            {
+              "id": "gpt-5.6-luna",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.3/1M · 输出 $1.8/1M"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $7.5/1M · 输出 $45/1M"
+            },
+            {
+              "id": "gpt-5.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $7.5/1M · 输出 $45/1M"
+            },
+            {
+              "id": "gpt-5.3-codex-spark",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.625/1M · 输出 $21/1M"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $22.5/1M"
+            },
+            {
+              "id": "gpt-5.5-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $7.5/1M · 输出 $45/1M"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $15/1M · 输出 $75/1M"
+            },
+            {
+              "id": "gpt-reserve",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $112.5/1M · 输出 $225/1M"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $7.5/1M · 输出 $45/1M"
+            },
+            {
+              "id": "gpt-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $112.5/1M · 输出 $225/1M"
+            },
+            {
+              "id": "gpt-5.6-terra-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $112.5/1M · 输出 $675/1M"
+            },
+            {
+              "id": "gpt-6-luna",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $112.5/1M · 输出 $225/1M"
+            }
+          ]
+        },
+        {
+          "id": "image-2稳定生图",
+          "label": "稳定高效 支持原生2k  4k  充值1:5",
+          "models": [
+            {
+              "id": "gpt-image-2-4K",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.45/请求"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.3/请求"
+            },
+            {
+              "id": "gpt-image-2-2K",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.3/请求"
+            },
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.15/请求"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.5/请求"
+            },
+            {
+              "id": "gpt-image-2.5",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.15/请求"
+            },
+            {
+              "id": "gpt-image-4K",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.45/请求"
+            }
+          ]
+        },
+        {
+          "id": "国模",
+          "label": "正规渠道，支持高并发  6折   充值1:5",
+          "models": [
+            {
+              "id": "kimi-k3",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $60/1M · 输出 $300/1M"
+            },
+            {
+              "id": "deepseek-v4-pro",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $9/1M · 输出 $18/1M"
+            },
+            {
+              "id": "deepseek-v4-flash",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $6/1M"
+            }
+          ]
+        },
+        {
+          "id": "图片视频模型综合分组",
+          "label": "grok，gemini，sd2.0生图和视频   均支持4k生图和1080p视频  充值1:5",
+          "models": [
+            {
+              "id": "nano-banana-pro",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$1.125/请求"
+            },
+            {
+              "id": "gemini-3.1-flash-image-preview",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.3/请求"
+            },
+            {
+              "id": "gemini-3.1-flash-image-4k",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.5/请求"
+            },
+            {
+              "id": "grok-imagine-video-1.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$3/请求"
+            },
+            {
+              "id": "veo3.1",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "$45/请求"
+            },
+            {
+              "id": "minimax-h3",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "$1.875/请求"
+            },
+            {
+              "id": "grok-image-破甲",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$1/请求"
+            },
+            {
+              "id": "kling-3.0",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$0.5/请求"
+            },
+            {
+              "id": "grok-imagine-image",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.5/请求"
+            },
+            {
+              "id": "gemini-3.1-flash-image-1k",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.35/请求"
+            },
+            {
+              "id": "nano-banana2",
+              "capability": "image",
+              "protocol": "openai-images",
+              "priceLabel": "$0.9/请求"
+            },
+            {
+              "id": "veo3.1-lite",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "$3/请求"
+            },
+            {
+              "id": "seedance2.0",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "$2.025/请求"
+            },
+            {
+              "id": "veo3.1-pre",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 $75/1M · 输出 $75/1M"
+            },
+            {
+              "id": "gemini-3.1-flash-image-preview-4K",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$1.5/请求"
+            },
+            {
+              "id": "omni-flash",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "$8.25/请求"
+            },
+            {
+              "id": "seedance2.5",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "$2.625/请求"
+            },
+            {
+              "id": "veo3.1-fast",
+              "capability": "video",
+              "protocol": "openai-videos",
+              "priceLabel": "$5.625/请求"
+            },
+            {
+              "id": "gemini-3.1-flash-image-2k",
+              "capability": "image",
+              "protocol": "gemini",
+              "priceLabel": "$0.4/请求"
+            },
+            {
+              "id": "grok-imagine-image-quality",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.65/请求"
+            },
+            {
+              "id": "grok-imagine-image-2.0",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.85/请求"
+            },
+            {
+              "id": "gemini-3.1-flash-image-preview-2K",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$1/请求"
+            },
+            {
+              "id": "grok-imagine-video",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "$2/请求"
+            }
+          ]
+        },
+        {
+          "id": "特价claude-高缓",
+          "label": "高缓存，反重力    充值1:5",
+          "models": [
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $18.75/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $18.75/1M"
+            },
+            {
+              "id": "claude-sonnet-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.25/1M · 输出 $11.25/1M"
+            },
+            {
+              "id": "claude-fable-5-1",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $7.5/1M · 输出 $37.5/1M"
+            },
+            {
+              "id": "claude-opus-5-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "claude-sonnet-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.25/1M · 输出 $11.25/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $18.75/1M"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.75/1M · 输出 $18.75/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $7.5/1M · 输出 $37.5/1M"
+            },
+            {
+              "id": "claude-haiku-4-5-20251001",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.75/1M · 输出 $3.75/1M"
+            }
+          ]
+        },
+        {
+          "id": "特价grok-4.6",
+          "label": "充值1:5",
+          "models": [
+            {
+              "id": "grok-4.5-high",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "$0.325/请求"
+            },
+            {
+              "id": "grok-4.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.95/1M · 输出 $9.75/1M"
+            },
+            {
+              "id": "grok-4.7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3.9/1M · 输出 $7.8/1M"
+            },
+            {
+              "id": "musk-4.6",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $48.75/1M · 输出 $48.75/1M"
+            }
+          ]
+        },
+        {
+          "id": "特价seedance2.0",
+          "label": "0.3一秒,720p，支持720p，1080p，文档有示例    充值1:5",
+          "models": [
+            {
+              "id": "ya-sd25-30s",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $75/1M · 输出 $75/1M"
+            }
+          ]
+        },
+        {
+          "id": "特价福利gpt",
+          "label": "不保稳定，偶尔延迟高，team号池",
+          "models": [
+            {
+              "id": "codex-auto-review",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1/1M · 输出 $6/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.6/1M · 输出 $6/1M"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1/1M · 输出 $6/1M"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2/1M · 输出 $12/1M"
+            },
+            {
+              "id": "gpt-5.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2/1M · 输出 $12/1M"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1/1M · 输出 $6/1M"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $4/1M · 输出 $20/1M"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2/1M · 输出 $12/1M"
+            }
+          ]
+        },
+        {
+          "id": "超级福利gpt",
+          "label": "不售后，能用就蹬",
+          "models": [
+            {
+              "id": "codex-auto-review",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.75/1M · 输出 $4.5/1M"
+            },
+            {
+              "id": "gpt-6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.2/1M · 输出 $4.5/1M"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.75/1M · 输出 $4.5/1M"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.5/1M · 输出 $9/1M"
+            },
+            {
+              "id": "gpt-5.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.5/1M · 输出 $9/1M"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.75/1M · 输出 $4.5/1M"
+            },
+            {
+              "id": "gpt-6-astra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.5/1M · 输出 $9/1M"
+            }
+          ]
+        },
+        {
+          "id": "cursor反代",
+          "label": "cursor反代",
+          "models": [
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-sonnet-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.5/1M · 输出 $15/1M"
+            },
+            {
+              "id": "kimi-k3",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $20/1M · 输出 $100/1M"
+            },
+            {
+              "id": "gpt-5.4-mini",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.5/1M · 输出 $9/1M"
+            },
+            {
+              "id": "gpt-5.6-luna",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $0.2/1M · 输出 $1.2/1M"
+            },
+            {
+              "id": "gemini-2.5-flash",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $0.3/1M · 输出 $2.5/1M"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            },
+            {
+              "id": "grok-4.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.5/1M · 输出 $15/1M"
+            },
+            {
+              "id": "claude-sonnet-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "gemini-3.5-flash",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $1.5/1M · 输出 $9/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $10/1M · 输出 $50/1M"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            },
+            {
+              "id": "gemini-3-flash",
+              "capability": "chat",
+              "protocol": "gemini",
+              "priceLabel": "输入 $0.5/1M · 输出 $3/1M"
+            }
+          ]
+        },
+        {
+          "id": "default",
+          "label": "default",
+          "models": [
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-sonnet-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "claude-sonnet-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $10/1M · 输出 $50/1M"
+            },
+            {
+              "id": "claude-haiku-4-5-20251001",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1/1M · 输出 $5/1M"
+            }
+          ]
+        },
+        {
+          "id": "一知半解专属kiro",
+          "label": "一知半解专属kiro",
+          "models": [
+            {
+              "id": "claude-opus-4-8",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-sonnet-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "claude-fable-5-1",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $10/1M · 输出 $50/1M"
+            },
+            {
+              "id": "claude-opus-5-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $4/1M · 输出 $20/1M"
+            },
+            {
+              "id": "claude-sonnet-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $3/1M · 输出 $15/1M"
+            },
+            {
+              "id": "claude-opus-4-6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-opus-4-7",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $25/1M"
+            },
+            {
+              "id": "claude-fable-5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $10/1M · 输出 $50/1M"
+            },
+            {
+              "id": "claude-haiku-4-5-20251001",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1/1M · 输出 $5/1M"
+            }
+          ]
+        },
+        {
+          "id": "gpt5.6-破甲版",
+          "label": "gpt5.6-破甲版",
+          "models": [
+            {
+              "id": "gpt-5.4-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.5/1M · 输出 $15/1M"
+            },
+            {
+              "id": "codex-auto-review",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.5/1M · 输出 $15/1M"
+            },
+            {
+              "id": "gpt-5.4",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.5/1M · 输出 $15/1M"
+            },
+            {
+              "id": "gpt-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "$0.15/请求"
+            },
+            {
+              "id": "gpt-5.4-mini",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $1.5/1M · 输出 $9/1M"
+            },
+            {
+              "id": "gpt-5.5",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            },
+            {
+              "id": "gpt-5.6",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            },
+            {
+              "id": "gpt-5.6-terra",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $2.5/1M · 输出 $15/1M"
+            },
+            {
+              "id": "gpt-5.5-openai-compact",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            },
+            {
+              "id": "gpt-5.6-sol",
+              "capability": "chat",
+              "protocol": "unknown",
+              "priceLabel": "输入 $5/1M · 输出 $30/1M"
+            }
+          ]
+        }
+      ],
+      "comparisonLimit": "Baseline currentCatalog may contain authenticated account/key group enrichment; absence from the public catalog is not proof of removal or loss of current key permission.",
+      "intersectionPriceLabelChanges": [
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "codex-auto-review",
+          "before": "输入 $2.5/1M · 输出 $15/1M",
+          "after": "输入 $1.875/1M · 输出 $11.25/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.6-sol-openai-compact",
+          "before": "输入 $75/1M · 输出 $450/1M",
+          "after": "输入 $56.25/1M · 输出 $337.5/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-6-sol",
+          "before": "输入 $4/1M · 输出 $15/1M",
+          "after": "输入 $3/1M · 输出 $11.25/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-image-2.5-flare",
+          "before": "$0.3/请求",
+          "after": "$0.225/请求"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.4",
+          "before": "输入 $2.5/1M · 输出 $15/1M",
+          "after": "输入 $1.875/1M · 输出 $11.25/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-image-2",
+          "before": "$0.15/请求",
+          "after": "$0.1125/请求"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-image-2.5-sunburst",
+          "before": "$0.5/请求",
+          "after": "$0.375/请求"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.4-mini",
+          "before": "输入 $1.5/1M · 输出 $9/1M",
+          "after": "输入 $1.125/1M · 输出 $6.75/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.6-luna",
+          "before": "输入 $0.2/1M · 输出 $1.2/1M",
+          "after": "输入 $0.15/1M · 输出 $0.9/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.5",
+          "before": "输入 $5/1M · 输出 $30/1M",
+          "after": "输入 $3.75/1M · 输出 $22.5/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.6",
+          "before": "输入 $5/1M · 输出 $30/1M",
+          "after": "输入 $3.75/1M · 输出 $22.5/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.6-terra",
+          "before": "输入 $2.5/1M · 输出 $15/1M",
+          "after": "输入 $1.875/1M · 输出 $11.25/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.5-openai-compact",
+          "before": "输入 $5/1M · 输出 $30/1M",
+          "after": "输入 $3.75/1M · 输出 $22.5/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-6-astra",
+          "before": "输入 $10/1M · 输出 $50/1M",
+          "after": "输入 $7.5/1M · 输出 $37.5/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-reserve",
+          "before": "输入 $75/1M · 输出 $150/1M",
+          "after": "输入 $56.25/1M · 输出 $112.5/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.6-sol",
+          "before": "输入 $5/1M · 输出 $30/1M",
+          "after": "输入 $3.75/1M · 输出 $22.5/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-6",
+          "before": "输入 $75/1M · 输出 $150/1M",
+          "after": "输入 $56.25/1M · 输出 $112.5/1M"
+        },
+        {
+          "group": "gpt-pro-0.15",
+          "modelId": "gpt-5.6-terra-openai-compact",
+          "before": "输入 $75/1M · 输出 $450/1M",
+          "after": "输入 $56.25/1M · 输出 $337.5/1M"
+        }
+      ],
+      "priceComparisonLimit": "Same group and complete model ID labels are compared. Public group/reference prices can differ from authenticated account prices; treat as quoted-label changes until account scan corroborates."
+    },
+    {
+      "supplier": "赛博阿飞 API",
+      "kind": "public-status",
+      "url": "https://api.3365api.cn/api/status",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:19.476Z",
+      "length": 6276,
+      "sha256": "8889e1b1762234cf4b23b44c9772fd0b5a43105d9348cea4a9d825fd7976a241",
+      "facts": {
+        "announcements": [
+          {
+            "content": "GPT 系列全分组的降智问题已解决，Codex 现在可以满血使用啦！ 大家可以继续放心开工，如使用中仍有异常，欢迎及时反馈。感谢大家的耐心等待与支持！",
+            "extra": "",
+            "id": 6,
+            "publishDate": "2026-09-24T19:30:45.006Z",
+            "type": "default"
+          },
+          {
+            "content": "新增可灵3.0视频模型，720p每秒0.1元，1080p每秒0.15元",
+            "extra": "",
+            "id": 5,
+            "publishDate": "2026-08-15T09:47:03.862Z",
+            "type": "default"
+          },
+          {
+            "content": "售后qq群，1098216001",
+            "extra": "",
+            "id": 4,
+            "publishDate": "2026-07-20T15:13:02.311Z",
+            "type": "default"
+          },
+          {
+            "content": "新增视频一键生成网站，支持grok和sd2.0，点击https://api.3365api.cn/ugc-test",
+            "extra": "",
+            "id": 3,
+            "publishDate": "2026-07-09T04:02:05.166Z",
+            "type": "default"
+          },
+          {
+            "content": "**新增模型：官方 GLM-5.2**\n\n已新增官方 `glm-5.2` 模型。\n\n使用方式：使用支持 GLM 官方模型分组的 Key，请求 `POST /v1/chat/completions` 或 `POST /v1/responses`，模型填 `glm-5.2`。\n\n请确保 Key 选择对应可用分组，否则会提示无可用渠道。",
+            "id": 2,
+            "publishDate": "2026-07-01T12:50:00+08:00",
+            "type": "success"
+          }
+        ],
+        "announcements_enabled": true,
+        "docs_link": "https://api.3365api.cn/docs/",
+        "enable_batch_update": true,
+        "quota_display_type": "USD",
+        "system_name": "赛博阿飞 API",
+        "usd_exchange_rate": 7.3,
+        "version": "v1.0.0-rc.21"
+      }
+    },
+    {
+      "supplier": "喵呜 API",
+      "kind": "public-catalog",
+      "url": "https://api.miaowuai.store/api/pricing",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:20.074Z",
+      "length": 18199,
+      "sha256": "e4b77db4340803a6c680916fd5fd71540d287c6b2c6d74c1f68a0ce6030469e6",
+      "priceDisplay": {
+        "currency": "CNY",
+        "multiplier": 7
+      },
+      "recognized": true,
+      "groupCount": 6,
+      "modelIds": [
+        "GPT-image-2",
+        "Image-nano-banana",
+        "Image-nano-banana-2",
+        "Image-nano-banana-pro",
+        "dola-seedance-2.0-fast",
+        "dola-seedance-2.5",
+        "doubao-seedance-2.0-fast",
+        "doubao-seedance-2.5",
+        "gpt-image-2.5-flare",
+        "gpt-image-2.5-sunburs",
+        "jimeng-seedance-2.5",
+        "minimax-h3",
+        "minimax-h3-max",
+        "seedance-2.0-deal",
+        "seedance-2.0-mini-deal",
+        "seedance-2.5-pro",
+        "seedream-5-0-pro",
+        "video-editing",
+        "wan3.0-video"
+      ],
+      "baselineModelCount": 20,
+      "addedModelIds": [],
+      "absentBaselineModelIds": [
+        "wan3.0-video-480p"
+      ],
+      "publicGroups": [
+        {
+          "id": "default",
+          "label": "默认分组",
+          "models": [
+            {
+              "id": "video-editing",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥1.5/请求"
+            },
+            {
+              "id": "dola-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "GPT-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "¥0.05/请求"
+            },
+            {
+              "id": "minimax-h3-max",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            },
+            {
+              "id": "seedance-2.5-pro",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "dola-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "doubao-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "Image-nano-banana-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "¥0.05/请求"
+            },
+            {
+              "id": "seedance-2.0-mini-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥0.3/请求"
+            },
+            {
+              "id": "doubao-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "jimeng-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "wan3.0-video",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥0.15/秒"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "gpt-image-2.5-sunburs",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "minimax-h3",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "¥0.12/秒"
+            },
+            {
+              "id": "seedream-5-0-pro",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "seedance-2.0-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            },
+            {
+              "id": "Image-nano-banana",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "¥0.05/请求"
+            },
+            {
+              "id": "Image-nano-banana-pro",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "¥0.15/请求"
+            }
+          ]
+        },
+        {
+          "id": "deal",
+          "label": "deal",
+          "models": [
+            {
+              "id": "video-editing",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥1.5/请求"
+            },
+            {
+              "id": "seedance-2.5-pro",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "seedance-2.0-mini-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥0.3/请求"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "seedance-2.0-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            }
+          ]
+        },
+        {
+          "id": "vip",
+          "label": "vip",
+          "models": [
+            {
+              "id": "video-editing",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥1.5/请求"
+            },
+            {
+              "id": "dola-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "GPT-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "¥0.05/请求"
+            },
+            {
+              "id": "minimax-h3-max",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            },
+            {
+              "id": "seedance-2.5-pro",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "dola-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "doubao-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "Image-nano-banana-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "¥0.05/请求"
+            },
+            {
+              "id": "seedance-2.0-mini-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥0.3/请求"
+            },
+            {
+              "id": "doubao-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "jimeng-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "gpt-image-2.5-sunburs",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "minimax-h3",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "¥0.12/秒"
+            },
+            {
+              "id": "seedream-5-0-pro",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "seedance-2.0-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            },
+            {
+              "id": "Image-nano-banana",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "¥0.05/请求"
+            },
+            {
+              "id": "Image-nano-banana-pro",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "¥0.15/请求"
+            }
+          ]
+        },
+        {
+          "id": "内部",
+          "label": "内部",
+          "models": [
+            {
+              "id": "video-editing",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥1.5/请求"
+            },
+            {
+              "id": "dola-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "minimax-h3-max",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            },
+            {
+              "id": "seedance-2.5-pro",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "dola-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "doubao-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "seedance-2.0-mini-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥0.3/请求"
+            },
+            {
+              "id": "doubao-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "jimeng-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "gpt-image-2.5-sunburs",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "minimax-h3",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "¥0.12/秒"
+            },
+            {
+              "id": "seedream-5-0-pro",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "seedance-2.0-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            }
+          ]
+        },
+        {
+          "id": "特价分组",
+          "label": "特价分组",
+          "models": [
+            {
+              "id": "video-editing",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥1.5/请求"
+            },
+            {
+              "id": "dola-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "minimax-h3-max",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            },
+            {
+              "id": "seedance-2.5-pro",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "dola-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "doubao-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "seedance-2.0-mini-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥0.3/请求"
+            },
+            {
+              "id": "doubao-seedance-2.0-fast",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "jimeng-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "gpt-image-2.5-sunburs",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "minimax-h3",
+              "capability": "other",
+              "protocol": "unknown",
+              "priceLabel": "¥0.12/秒"
+            },
+            {
+              "id": "seedream-5-0-pro",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "seedance-2.0-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            }
+          ]
+        },
+        {
+          "id": "dreamina",
+          "label": "dreamina",
+          "models": [
+            {
+              "id": "seedance-2.5-pro",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "seedance-2.0-mini-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥0.3/请求"
+            },
+            {
+              "id": "jimeng-seedance-2.5",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥525/1M"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "priceLabel": "输入 ¥525/1M · 输出 ¥1050/1M"
+            },
+            {
+              "id": "seedance-2.0-deal",
+              "capability": "video",
+              "protocol": "unknown",
+              "priceLabel": "¥2/请求"
+            }
+          ]
+        }
+      ],
+      "comparisonLimit": "Baseline currentCatalog may contain authenticated account/key group enrichment; absence from the public catalog is not proof of removal or loss of current key permission.",
+      "intersectionPriceLabelChanges": [
+        {
+          "group": "default",
+          "modelId": "wan3.0-video",
+          "before": "¥0.15/请求",
+          "after": "¥0.15/秒"
+        },
+        {
+          "group": "default",
+          "modelId": "minimax-h3",
+          "before": "¥0.12/请求",
+          "after": "¥0.12/秒"
+        },
+        {
+          "group": "vip",
+          "modelId": "minimax-h3",
+          "before": "¥0.12/请求",
+          "after": "¥0.12/秒"
+        },
+        {
+          "group": "内部",
+          "modelId": "minimax-h3",
+          "before": "¥0.12/请求",
+          "after": "¥0.12/秒"
+        },
+        {
+          "group": "特价分组",
+          "modelId": "minimax-h3",
+          "before": "¥0.12/请求",
+          "after": "¥0.12/秒"
+        }
+      ],
+      "priceComparisonLimit": "Same group and complete model ID labels are compared. Public group/reference prices can differ from authenticated account prices; treat as quoted-label changes until account scan corroborates."
+    },
+    {
+      "supplier": "喵呜 API",
+      "kind": "public-status",
+      "url": "https://api.miaowuai.store/api/status",
+      "status": 200,
+      "checkedAt": "2026-10-03T07:41:20.070Z",
+      "length": 2081,
+      "sha256": "dc5878faae1c45e3602f57cb1ec0c594312a0a51734a24c02a01b0bc021fbe6f",
+      "facts": {
+        "announcements": [],
+        "announcements_enabled": true,
+        "docs_link": "/docs/openai-videos",
+        "enable_batch_update": true,
+        "quota_display_type": "CNY",
+        "system_name": "喵呜API",
+        "usd_exchange_rate": 7,
+        "version": ""
+      }
+    }
+  ],
+  "limitations": [
+    "Undated current documentation or directory entries cannot establish that a model or feature was released today.",
+    "Public GET success does not verify paid upstream health.",
+    "HTML byte changes can be navigation/build changes; factual body comparison is needed.",
+    "Public directory absence is not proof of current key permission removal."
+  ],
+  "newDatedAnnouncements": [
+    {
+      "supplier": "沧元算力",
+      "url": "https://ai.cangyuansuanli.cn/api/status",
+      "id": 19,
+      "publishedAt": "2026-10-01T16:13:41.790Z",
+      "content": "【沧海画布更新】\n\n画布这次做了一轮比较大的更新：修正了一批之前用起来会碰到的问题。打开后如果还是旧界面，请强制刷新一次页面。\n\n这次能直接用到的：\n\n· 角色库和音频工作台补齐了素材选择、生成参数和同步。音频生成支持 IndexTTS2 情感控制，一次可以留下多条结果。\n· 画布助手补上了角色卡和音频。中途中断的任务可以接着恢复，不用从头再来。\n\n图片和视频的打开方式也改了：\n\n· 列表、封面和画布静帧先用小图，点开和播放再用预览。不再把整张原文件拉下来当封面，国内打开会快一些。\n· 封面或预览还在准备时先占位，准备好会自己出现，不用整页刷新。\n· 生成结果会先存进沧海，再给画布用。页面上不再直接挂上游的临时地址。\n· 下载和复制拿到的仍是原文件。\n\n同时修掉的问题：\n\n· 创作页已经生成成功、只是画面还没就绪时，不再误显示「生成失败」。\n· 在创作页上传的素材，同步成功后会出现在素材库，不用再手动刷新。\n· 关掉「思考」后，不再被当成还开着。\n· 审批过程中修改图片参数，不再因为容量检查把自己卡住。\n· 账号存储空间、Live2D 预览和后台用户筛选也做了修正。\n\n用的时候如果还有异常，把页面和大概操作发我们，方便对一下。"
+    }
+  ],
+  "conclusions": [
+    {
+      "supplier": "沧元算力",
+      "summary": "Six model documents and common image documentation match the 2026-10-01 SHA-256 exactly. A new announcement was published 2026-10-02 00:13 Beijing about the supplier’s own Canghai Canvas application, not this project or a new API model."
+    },
+    {
+      "supplier": "辰途 API",
+      "summary": "Media documentation exactly matches 2026-10-01. Public catalog bytes changed. Existing image group price labels declined for official-key 2.5, low-price Adobe 2.5, and Leo 2.5. Public catalog also now exposes GPT 6.1 Sol / Opus 5.5 / Sonnet 5 and grok-imagine-image, but current key availability and publication date require separate evidence."
+    },
+    {
+      "supplier": "We-AI",
+      "summary": "Image service introduction and Gemini guide match 2026-10-01 exactly. The current Codex restored statement already existed at baseline. The image connection guide is readable; no 2026-10-01 body baseline for that page is available. These documents do not establish whether Adobe generation currently works."
+    },
+    {
+      "supplier": "赛博阿飞 API",
+      "summary": "Both image documents have the same factual body as the saved 2026-09-25 pages. The 2026-10-01 report did not retain their byte hashes. Latest public announcement is dated 2026-09-25 Beijing, so no new post-baseline announcement was observed."
+    },
+    {
+      "supplier": "喵呜 API",
+      "summary": "Public pricing responds, but the published video documentation URL remains only a SPA shell. Its shell SHA-256 matches the 2026-10-01 evidence; the actual video documentation body cannot be verified. No public announcements are returned."
+    }
+  ],
+  "priceInterpretation": {
+    "cangyuan": "After applying the supplier CNY display convention, only the Midjourney V7 unit label differs from the saved catalog: per image versus per request. The numeric quote is unchanged and its unchanged model document describes four outputs per request.",
+    "miaowu": "CNY conversion preserves prior numeric amounts. Remaining labels show per second for minimax-h3 and wan3.0-video instead of the baseline per request; distinguish top-level model_price and nested video pricing rules before claiming a pricing update.",
+    "afei": "Public gpt-pro-0.15 group labels are 75 percent of saved baseline labels. Corroborate current group-rate metadata in the account scan.",
+    "chentu": "Nine same-group complete-model-ID quote label differences include two tiny precision differences. Seven are substantively lower quoted amounts. Corroborate current group-rate metadata in the account scan."
+  }
+}

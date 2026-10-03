@@ -61,9 +61,10 @@ import { ModelPicker } from "./model-picker";
 import { ModelPriceDetails } from "./model-price-details";
 import {
   fetchCangyuanAvailability,
-  type CangyuanAvailabilityView,
 } from "../lib/client-api";
-import { cangyuanAvailabilityForModel, modelAvailabilityBadgeState, type ModelAvailabilityLoadState } from "../lib/cangyuan-availability-ui";
+import { cangyuanAvailabilityForModel, receiveModelAvailabilitySnapshot, CANGYUAN_AVAILABILITY_REFRESH_MS,
+  type ModelAvailabilitySnapshot } from "../lib/cangyuan-availability-ui";
+import { CangyuanAvailabilityBadge, CangyuanModelAvailability } from "./cangyuan-model-availability";
 import { NodeParameterFields } from "./node-parameter-fields";
 import { ModelResolutionShortcuts } from "./model-resolution-shortcuts";
 import { shouldReselectNodeFromConfigPointer } from "../lib/node-config-pointer";
@@ -73,62 +74,6 @@ import { useResultPreviewSize } from "../lib/use-result-preview-size";
 import type { CanvasNode, CanvasNodeData, RunErrorDetails } from "./types";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
-const CANGYUAN_AVAILABILITY_REFRESH_MS = 30_500;
-
-function availabilityBadgeLabel(
-  availability: CangyuanAvailabilityView | undefined,
-  loadState: ModelAvailabilityLoadState,
-  checkedAt: string | undefined,
-): string {
-  return modelAvailabilityBadgeState(availability, loadState, checkedAt).label;
-}
-
-function availabilityBadgeTitle(
-  availability: CangyuanAvailabilityView | undefined,
-  loadState: ModelAvailabilityLoadState,
-  checkedAt: string | undefined,
-): string {
-  if (!availability) {
-    if (loadState === "loading") return "正在读取沧元实时可用性";
-    if (loadState === "error") return "沧元可用性查询暂时失败，不影响正常生成";
-    return "沧元可用性接口暂未收录这个模型";
-  }
-  const state = modelAvailabilityBadgeState(availability, loadState, checkedAt);
-  const parts = [state.label];
-  if (state.tone === "error" || state.tone === "stale") parts.push("以下为上次监测记录，当前可用性待确认");
-  if (availability.availability !== null)
-    parts.push(`近期可用率 ${availability.availability}%`);
-  if (availability.averageLatencyMs !== null)
-    parts.push(`平均延迟 ${Math.round(availability.averageLatencyMs)}ms`);
-  if (checkedAt) {
-    const date = new Date(checkedAt);
-    if (!Number.isNaN(date.getTime()))
-      parts.push(
-        `检测于 ${date.toLocaleTimeString("zh-CN", { hour12: false })}`,
-      );
-  }
-  return parts.join(" · ");
-}
-
-function ModelAvailabilityBadge({
-  availability,
-  loadState,
-  checkedAt,
-}: {
-  availability: CangyuanAvailabilityView | undefined;
-  loadState: ModelAvailabilityLoadState;
-  checkedAt: string | undefined;
-}) {
-  const status = modelAvailabilityBadgeState(availability, loadState, checkedAt).tone;
-  return (
-    <span
-      className={`node-model-availability is-${status}`}
-      title={availabilityBadgeTitle(availability, loadState, checkedAt)}
-    >
-      {availabilityBadgeLabel(availability, loadState, checkedAt)}
-    </span>
-  );
-}
 
 function handleAssetDragStart(
   event: React.DragEvent<HTMLElement>,
@@ -446,12 +391,8 @@ function GenerationNodeBody({
     const panel = settingsPanel.current?.getBoundingClientRect();
     if (select && panel) setModelMenuHeight(Math.max(40, Math.min(320, panel.bottom - select.bottom - 16)));
   }, [modelMenuOpen, settingsAnchor]);
-  const [availabilitySnapshot, setAvailabilitySnapshot] = useState<{
-    connectionId: string;
-    items: CangyuanAvailabilityView[];
-    checkedAt?: string;
-    state: ModelAvailabilityLoadState;
-  }>({ connectionId: "", items: [], state: "idle" });
+  const [availabilitySnapshot, setAvailabilitySnapshot] = useState<ModelAvailabilitySnapshot>(
+    { connectionId: "", items: [], state: "idle" });
   const [, setAvailabilityClock] = useState(0);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -528,6 +469,8 @@ function GenerationNodeBody({
       : cangyuanAvailabilityEnabled
         ? "loading"
         : "idle";
+  const availabilityOptions = { category: nodeType === "video-generation" ? "video" : "image", group: currentGroup };
+  const selectedAvailability = selectedModel ? cangyuanAvailabilityForModel(selectedModel, availabilityItems, availabilityOptions) : undefined;
   const parameterControlsUnavailable =
     selectedModel?.metadata?.parameterControlsUnavailable === true;
   const summary =
@@ -606,16 +549,9 @@ function GenerationNodeBody({
             : "loading",
       }));
       try {
-        const snapshot = await fetchCangyuanAvailability(currentConnection, {
-          windowDays: 7,
-        });
+        const snapshot = await fetchCangyuanAvailability(currentConnection);
         if (cancelled) return;
-        setAvailabilitySnapshot({
-          connectionId: currentConnection,
-          items: snapshot.items,
-          checkedAt: snapshot.checkedAt,
-          state: "ready",
-        });
+        setAvailabilitySnapshot(current => receiveModelAvailabilitySnapshot(current, currentConnection, snapshot));
       } catch {
         if (cancelled) return;
         setAvailabilitySnapshot((current) => ({
@@ -757,11 +693,14 @@ function GenerationNodeBody({
               onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
               maxHeight={modelMenuHeight} anchorKey={settingsAnchor} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
-              badge={cangyuanAvailabilityEnabled ? model => <ModelAvailabilityBadge
-                availability={cangyuanAvailabilityForModel(model, availabilityItems)}
+              badge={cangyuanAvailabilityEnabled ? model => <CangyuanAvailabilityBadge
+                availability={cangyuanAvailabilityForModel(model, availabilityItems, availabilityOptions)}
                 loadState={availabilityState} checkedAt={availabilitySnapshot.checkedAt} /> : undefined} />
           </div>
         </div>
+
+        {cangyuanAvailabilityEnabled && <CangyuanModelAvailability availability={selectedAvailability}
+          loadState={availabilityState} checkedAt={availabilitySnapshot.connectionId === currentConnection ? availabilitySnapshot.checkedAt : undefined} />}
 
         {currentConnection && !currentConnectionOption && <div className="node-config-connection-warning" role="status">原连接已归档或删除（{currentConnection}）。节点选择已保留，请恢复连接或手动选择其他连接。</div>}
         {currentConnectionOption?.available === false ? (

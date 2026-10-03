@@ -18,6 +18,18 @@ const credentials = {
 describe("supplier website access token", () => {
   const base = "https://site.example.com/gateway";
   const accessToken = "fake-dashboard-token";
+  it("forwards词元 website credentials only to its exact GET account model inventory", async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => Response.json({ success: true, data: { id: 42 } }));
+    const session = await loginSupplierSite({ siteUrl: "https://tk1688.com", kind: "newapi", credentials: { accessToken } }, fetcher);
+    await session.fetch("https://tk1688.com/api/user/models", { method: "GET" });
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe(`Bearer ${accessToken}`);
+    expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    for (const [url, method] of [["https://tk1688.com/api/user/models", "POST"], ["https://api.tk1688.com/api/user/models", "GET"],
+      ["https://tk1688.com/api/user/models?redirect=leak", "GET"]]) {
+      await session.fetch(url!, { method });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+    }
+  });
 
   it.each(["newapi", "sub2api"] as const)("validates %s with a same-site GET and creates a bounded bearer session", async kind => {
     const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>

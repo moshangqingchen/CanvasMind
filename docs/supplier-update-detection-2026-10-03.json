@@ -1,0 +1,326 @@
+{
+  "publicationScope": "supplier-level aggregate; private connection identifiers and per-Key model inventories are retained only in ignored local evidence",
+  "startedAt": "2026-10-03T07:41:04.668Z",
+  "baselineAt": "2026-10-01T01:29:50.941Z",
+  "finishedAt": "2026-10-03T07:43:20.586Z",
+  "scope": {
+    "operation": "directory-and-documentation-only",
+    "paidGenerationRequests": 0,
+    "priorTotalConnections": 97,
+    "supplierCount": 13,
+    "connectionCount": 92,
+    "statuses": {
+      "live": 73,
+      "unauthorized": 17,
+      "empty": 2
+    },
+    "modelRecords": 629,
+    "addedRecords": 11,
+    "removedRecords": 7,
+    "importedConnections": 0
+  },
+  "suppliers": [
+    {
+      "name": "沧元算力",
+      "officialSiteUrl": "https://ai.cangyuansuanli.cn/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:41:06.242Z",
+      "connectionCount": 8,
+      "connectionStatusCounts": {
+        "live": 6,
+        "unauthorized": 2
+      },
+      "currentModelRecordCount": 133,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 2,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 1,
+        "publicCatalogChanges": 3
+      }
+    },
+    {
+      "name": "智元api",
+      "officialSiteUrl": "https://pool.chaozhiyuanai.com/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:41:06.936Z",
+      "connectionCount": 6,
+      "connectionStatusCounts": {
+        "live": 6
+      },
+      "currentModelRecordCount": 77,
+      "changeCounts": {
+        "addedModelRecords": 8,
+        "removedModelRecords": 1,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 1,
+        "removedPublicGroups": 1,
+        "publicCatalogChanges": 0
+      }
+    },
+    {
+      "name": "辰途 API",
+      "officialSiteUrl": "https://tu.988236.xyz/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:41:25.099Z",
+      "connectionCount": 12,
+      "connectionStatusCounts": {
+        "live": 7,
+        "unauthorized": 5
+      },
+      "currentModelRecordCount": 24,
+      "changeCounts": {
+        "addedModelRecords": 2,
+        "removedModelRecords": 2,
+        "priceRecords": 9,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 8,
+        "removedPublicGroups": 2,
+        "publicCatalogChanges": 20
+      }
+    },
+    {
+      "name": "MikotoPro",
+      "officialSiteUrl": "https://api.mikoto.vip/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:41:28.224Z",
+      "connectionCount": 9,
+      "connectionStatusCounts": {
+        "unauthorized": 4,
+        "live": 5
+      },
+      "currentModelRecordCount": 73,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 3,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 1,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 0
+      }
+    },
+    {
+      "name": "FriModel",
+      "officialSiteUrl": "https://platform.frimodel.com/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:41:48.511Z",
+      "connectionCount": 4,
+      "connectionStatusCounts": {
+        "live": 4
+      },
+      "currentModelRecordCount": 11,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 1
+      }
+    },
+    {
+      "name": "We-AI",
+      "officialSiteUrl": "https://asian-acc.we-token.cc/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:41:56.755Z",
+      "connectionCount": 8,
+      "connectionStatusCounts": {
+        "live": 8
+      },
+      "currentModelRecordCount": 29,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 0
+      }
+    },
+    {
+      "name": "赛博阿飞 API",
+      "officialSiteUrl": "https://api.3365api.cn/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:42:09.326Z",
+      "connectionCount": 4,
+      "connectionStatusCounts": {
+        "live": 3,
+        "unauthorized": 1
+      },
+      "currentModelRecordCount": 41,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 1
+      }
+    },
+    {
+      "name": "喵呜 API",
+      "officialSiteUrl": "https://api.miaowuai.store/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:42:19.441Z",
+      "connectionCount": 2,
+      "connectionStatusCounts": {
+        "unauthorized": 2
+      },
+      "currentModelRecordCount": 0,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 4
+      }
+    },
+    {
+      "name": "怪兽ai",
+      "officialSiteUrl": "https://api.eaheng.com/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:42:27.352Z",
+      "connectionCount": 4,
+      "connectionStatusCounts": {
+        "live": 4
+      },
+      "currentModelRecordCount": 20,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 0
+      }
+    },
+    {
+      "name": "创想ai",
+      "officialSiteUrl": "https://vapi.chuangxiangai.asia/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:42:28.887Z",
+      "connectionCount": 5,
+      "connectionStatusCounts": {
+        "live": 5
+      },
+      "currentModelRecordCount": 57,
+      "changeCounts": {
+        "addedModelRecords": 1,
+        "removedModelRecords": 0,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 1
+      }
+    },
+    {
+      "name": "secure-skill",
+      "officialSiteUrl": "https://token.secure-skill.com/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:42:43.771Z",
+      "connectionCount": 23,
+      "connectionStatusCounts": {
+        "live": 19,
+        "unauthorized": 3,
+        "empty": 1
+      },
+      "currentModelRecordCount": 125,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 0
+      }
+    },
+    {
+      "name": "基因形象",
+      "officialSiteUrl": "https://genimage.pro/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:42:52.618Z",
+      "connectionCount": 4,
+      "connectionStatusCounts": {
+        "empty": 1,
+        "live": 3
+      },
+      "currentModelRecordCount": 14,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 0,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 0
+      }
+    },
+    {
+      "name": "夯炸了",
+      "officialSiteUrl": "https://api.hangzhale.com/",
+      "directoryStatus": "live",
+      "directoryFresh": true,
+      "directoryCheckedAt": "2026-10-03T07:43:08.021Z",
+      "connectionCount": 3,
+      "connectionStatusCounts": {
+        "live": 3
+      },
+      "currentModelRecordCount": 25,
+      "changeCounts": {
+        "addedModelRecords": 0,
+        "removedModelRecords": 4,
+        "priceRecords": 0,
+        "interfaceRecords": 0,
+        "parameterRecords": 0,
+        "addedPublicGroups": 0,
+        "removedPublicGroups": 0,
+        "publicCatalogChanges": 0
+      }
+    }
+  ],
+  "validation": {
+    "paidVerificationSubmissions": 0,
+    "pausePreserved": true,
+    "deletedSuppliersPreserved": true
+  },
+  "evidenceReports": [
+    "supplier-docs-primary-2026-10-03.json",
+    "supplier-docs-remaining-2026-10-03.json"
+  ]
+}

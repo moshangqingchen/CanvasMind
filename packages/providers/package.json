@@ -36,6 +36,11 @@
       "import": "./dist/image-size-presets.js",
       "default": "./dist/image-size-presets.js"
     },
+    "./tk1688-model-policy": {
+      "types": "./src/tk1688-model-policy.ts",
+      "import": "./dist/tk1688-model-policy.js",
+      "default": "./dist/tk1688-model-policy.js"
+    },
     "./image-quality-presets": {
       "types": "./src/image-quality-presets.ts",
       "import": "./dist/image-quality-presets.js",

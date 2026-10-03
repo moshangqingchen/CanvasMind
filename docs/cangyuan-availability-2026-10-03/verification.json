@@ -1,0 +1,103 @@
+{
+  "checkedAt": "2026-10-03T10:15:40.112Z",
+  "sources": {
+    "announcement": "https://ai.cangyuansuanli.cn/api/status",
+    "announcementId": 20,
+    "publishedAt": "2026-10-03T08:04:01.912Z",
+    "contract": "https://ai.cangyuansuanli.cn/docs-static/skills/cangyuan/SKILL.md"
+  },
+  "validation": {
+    "rendererUnitTests": {
+      "files": 168,
+      "tests": 1766,
+      "passed": true
+    },
+    "typecheck": true,
+    "eslint": true,
+    "browserTests": {
+      "tests": 3,
+      "passed": true
+    },
+    "packagedSmoke": {
+      "checks": 23,
+      "passed": true
+    },
+    "productionBuild": true
+  },
+  "installed": {
+    "version": "0.2.49",
+    "buildId": "7GaLvC8hooEu87fuCMC9h",
+    "checkedProgramFiles": 11291,
+    "restoredCanvas": true
+  },
+  "availability": {
+    "httpStatus": 200,
+    "schemaValid": true,
+    "enabled": true,
+    "ready": true,
+    "source": "live",
+    "checkedAt": "2026-10-03T10:14:00.689Z",
+    "productLineCount": 19,
+    "routeCount": 82,
+    "categoryCounts": {
+      "text": 4,
+      "image": 6,
+      "video": 8,
+      "audio": 1,
+      "unknown": 0
+    },
+    "productLineStatusCounts": {
+      "available": 9,
+      "degraded": 10,
+      "unavailable": 0,
+      "unknown": 0
+    },
+    "routeStatusCounts": {
+      "available": 68,
+      "degraded": 13,
+      "unavailable": 1,
+      "unknown": 0
+    }
+  },
+  "dataIntegrity": {
+    "databaseIdentical": false,
+    "records": {
+      "canvases": {
+        "count": 1,
+        "unchanged": false,
+        "contentUnchanged": true
+      },
+      "assets": {
+        "count": 327,
+        "unchanged": true
+      },
+      "connections": {
+        "count": 97,
+        "unchanged": true
+      },
+      "runs": {
+        "count": 228,
+        "unchanged": true
+      },
+      "nodeRuns": {
+        "count": 228,
+        "unchanged": true
+      }
+    },
+    "secretFiles": {
+      "secrets.bin": true,
+      "reference-channel.bin": true
+    },
+    "canvasSaveChanges": {
+      "layoutMeasurement": {
+        "nodeIndex": 14,
+        "heightBefore": 425,
+        "heightAfter": 427
+      },
+      "revisionBefore": 3980,
+      "revisionAfter": 3981,
+      "note": "Restoring the canvas in the updated UI measured a 2 px height difference and performed a normal save. Prompts, parameters, nodes, edges, assets and Key records are preserved."
+    }
+  },
+  "paidGenerationRequests": 0
+}

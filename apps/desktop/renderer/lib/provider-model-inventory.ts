@@ -13,6 +13,7 @@ import { matchesSupplierTemplate, SUPPLIER_TEMPLATE_API_URLS } from "./supplier-
 import {
   decryptSecret,
   fetchProviderJson,
+  isTk1688ApiUrl,
   joinUrl,
   providerFetch,
   scanProviderModelCatalog,
@@ -60,6 +61,7 @@ import {
   manualProviderModelDescriptors,
   mergeManualProviderModels,
 } from "./manual-provider-models";
+import { enrichTk1688ModelInventory, tk1688InventoryDefaultModel } from "./tk1688-catalog";
 
 function adapterFor(service: RunService, provider: string) {
   const anyService = service as unknown as {
@@ -771,7 +773,9 @@ async function readModels(
   }
   if (connection.config.customGroup === true || alternateSource) {
     try {
-      const scan = await listCustomGroupModels(connection);
+      const keyScan = await listCustomGroupModels(connection);
+      const scan = { ...keyScan, models: await enrichTk1688ModelInventory(connection, keyScan.models,
+        { force: refresh, refreshId: String(connection.config.modelScanRequestId ?? "") }) };
       if (refresh) await persistCustomGroupModelScan(connection, scan);
       return Response.json(
         mergeManualProviderModels(
@@ -1176,9 +1180,10 @@ async function readModelResponse(
           throw new SupplierConflictError("刷新期间站点认证已改变，旧价格和接口结果已丢弃，请重新刷新");
         await assertCurrentSupplierConnection(afterDiscovery);
         const models = agentModels.map(withHighestModelQualityDefault);
-        const defaultModel =
-          models.find((m) => m.id === config.defaultModel && m.metadata?.canvasRunnable !== false) ??
-          models.find((m) => m.metadata?.canvasRunnable !== false && m.operations.length > 0);
+        const defaultModel = isTk1688ApiUrl(String(latest.config.baseUrl ?? ""))
+          ? tk1688InventoryDefaultModel(latest, models, config.defaultModel)
+          : models.find((m) => m.id === config.defaultModel && m.metadata?.canvasRunnable !== false) ??
+            models.find((m) => m.metadata?.canvasRunnable !== false && m.operations.length > 0);
         const checkedAt = new Date().toISOString();
         config = {
           ...config,

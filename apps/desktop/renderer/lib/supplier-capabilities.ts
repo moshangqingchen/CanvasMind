@@ -13,6 +13,7 @@ import { IMAGE_SIZE_RATIOS, imageSizeForTier, imageSizeOptions } from "@super-ca
 import { parseSupplierGroupDetails } from "@super-canvas/providers/supplier-group-details";
 import { withHighestQualityDefault } from "./model-quality";
 import { imageQualityPresetsForHighest } from "@super-canvas/providers/image-quality-presets";
+import { isTk1688ApiUrl, tk1688ImagePolicyModelId } from "@super-canvas/providers/tk1688-model-policy";
 
 export const RESOLUTIONS: ImageResolutionTier[] = ["1K", "2K", "4K"];
 export const EVIDENCE_LABELS = {
@@ -113,7 +114,40 @@ export function effectiveImageCapabilities(input: {
   documentation?: string;
 }): EffectiveImageCapabilities {
   const { supplier, connection, model, fingerprint } = input;
+  const policyBaseUrl = typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl;
+  const tk1688 = isTk1688ApiUrl(policyBaseUrl);
+  const policyModelId = tk1688ImagePolicyModelId(model.id, policyBaseUrl);
   const group = String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "默认群组");
+  if (tk1688 && model.metadata?.tk1688Catalog === true) {
+    // Exact marketplace controls already distinguish merchant declarations
+    // from common image-station defaults. Do not expand them into generic
+    // quality/resolution guesses or schedule billable capability probes.
+    const resolutions = Array.isArray(model.metadata.tk1688SupportedResolutions)
+      ? RESOLUTIONS.filter(tier => (model.metadata!.tk1688SupportedResolutions as unknown[]).includes(tier)) : [];
+    const parameters = (model.parameters ?? []).map(withHighestQualityDefault);
+    const size = parameters.find(parameter => parameter.key === "size" || parameter.key === "resolution");
+    const quality = parameters.find(parameter => parameter.key === "quality");
+    const ratio = parameters.find(parameter => parameter.key === "aspect_ratio");
+    const sourceUrl = String(model.metadata.documentationUrl ?? model.metadata.docsUrl ?? "https://tk1688.com/market");
+    const checkedAt = String(model.metadata.tk1688CatalogCheckedAt ?? supplier.scannedAt ?? supplier.updatedAt);
+    const evidence: ImageCapabilityEvidence[] = resolutions.map(tier => ({
+      id: `${connection.id}:${model.id}:${tier}`, supplierId: supplier.id,
+      sourceId: supplier.state?.sourceId ?? "legacy", connectionId: connection.id, group,
+      modelId: model.id, operation: "image.generate", kind: "documentation", sourceUrl, checkedAt,
+      excerpt: String(model.description ?? "当前商家模型广场声明的分辨率；未进行付费核验"), fingerprint,
+      status: "declared", resolution: tier,
+    }));
+    return {
+      model: { ...model, parameters, metadata: { ...model.metadata, imageCapabilityEvidence: evidence, imageCapabilityPolicy: 2 } },
+      evidence, tiers: resolutions.map(tier => ({ tier, status: "declared" as const })), probeTiers: [],
+      ...(quality?.default !== undefined ? { quality: String(quality.default) } : {}),
+      qualityOptions: quality?.options?.map(option => String(option.value)) ?? [],
+      qualityKey: quality?.key, sizeKey: size?.key, sizeIsTier: size?.key === "resolution",
+      ratioKey: ratio?.key, ratio: typeof model.metadata.tk1688FixedSize === "string"
+        ? model.metadata.tk1688FixedSize.replace("x", ":") : ratio?.default === "auto" || ratio?.default === undefined ? "1:1" : String(ratio.default),
+      needsQualityProbe: false,
+    };
+  }
   const tests = (input.tests ?? []).filter(test =>
     test.connectionId === connection.id && test.modelId === model.id &&
     test.fingerprint === fingerprint && !["cancelled", "superseded"].includes(test.status)).map(currentResolutionEvidence);
@@ -210,12 +244,14 @@ export function effectiveImageCapabilities(input: {
     model.metadata?.qualitySupport !== "provider-decided";
   const qualityKey =
     rawQuality?.key ?? (implicitQuality ? "quality" : undefined);
+  // Tk1688's marketplace name is not a merchant quality enumeration. Keep
+  // generic high as an assumed default until this exact route supplies facts.
   const options = fixedQualityValue
     ? [rawQuality?.options?.find(option => option.value === fixedQualityValue) ?? { value: fixedQualityValue, label: fixedQualityValue }]
     : rawQuality?.options?.length
     ? rawQuality.options
     : implicitQuality
-      ? [{ value: /dall-e-3/iu.test(model.id) ? "hd" : /^gpt-image-2\.5(?:-|$)/u.test(model.id) ? "max" : "high", label: "最高" }]
+      ? [{ value: /dall-e-3/iu.test(model.id) ? "hd" : !tk1688 && /^gpt-image-2\.5(?:-|$)/u.test(model.id) ? "max" : "high", label: "最高" }]
       : [];
   let quality = options.length
     ? String(
@@ -435,7 +471,7 @@ export function effectiveImageCapabilities(input: {
   // Highest legal/default requests open the model's quality presets. Evidence
   // below still distinguishes a declaration/default from a successful request.
   const rejectedQualities = new Set([...deniedQualities, ...tests.filter(test => test.status === "unsupported" && test.rejectedParameter === "quality").map(test => test.quality)]);
-  const qualityPresets = fixedQuality || nativeQualityOptions ? undefined : imageQualityPresetsForHighest(model.id, [
+  const qualityPresets = fixedQuality || nativeQualityOptions ? undefined : imageQualityPresetsForHighest(policyModelId, [
     ...testedQualities, ...(quality ? [quality] : []),
   ].filter(value => !rejectedQualities.has(value) && (!legalQualities || legalQualities.includes(value))));
   const declaredOptions = declaredQualities.size > 1 ? [...declaredQualities].map(value => ({ label: value, value })) : options;
@@ -652,7 +688,7 @@ export function effectiveImageCapabilities(input: {
     probeTiers,
     quality,
     qualityOptions: (!fixedQualityValue && !rawQuality?.options?.length && implicitQuality
-      ? (/dall-e-3/iu.test(model.id) ? ["standard", "hd"] : /^gpt-image-2\.5(?:-|$)/u.test(model.id) ? ["low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high"])
+      ? (/dall-e-3/iu.test(model.id) ? ["standard", "hd"] : !tk1688 && /^gpt-image-2\.5(?:-|$)/u.test(model.id) ? ["low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high"])
       : qualityOptions.map(option => String(option.value))).filter(value => !rejectedQualities.has(value)),
     qualityKey,
     sizeKey,
@@ -672,10 +708,12 @@ export function verificationParameters(
   const option = descriptor?.options?.find(option => capabilities.sizeIsTier
     ? String(option.value).toUpperCase() === tier
     : new RegExp(`\\b${tier}\\b`, "iu").test(option.label) && option.label.match(/\d+:\d+/u)?.[0] === capabilities.ratio);
-  const selectedSize = option?.value ?? (capabilities.sizeIsTier ? tier : imageSizeForTier(tier, capabilities.ratio, descriptor?.max));
+  const fixedSize = capabilities.model.metadata?.tk1688FixedSize;
+  const selectedSize = typeof fixedSize === "string" && /^\d+x\d+$/u.test(fixedSize) ? fixedSize
+    : option?.value ?? (capabilities.sizeIsTier ? tier : imageSizeForTier(tier, capabilities.ratio, descriptor?.max));
   const size = /^\d+x\d+$/u.test(String(selectedSize)) ? String(selectedSize) : imageSizeForTier(tier, capabilities.ratio);
   const [width, height] = size.split("x").map(Number);
-  const parameters: Record<string, string | number | boolean> = { n: 1 };
+  const parameters: Record<string, string | number | boolean> = capabilities.model.metadata?.tk1688OmitN === true ? {} : { n: 1 };
   if (capabilities.sizeKey)
     parameters[capabilities.sizeKey] = selectedSize;
   if (capabilities.ratioKey)
