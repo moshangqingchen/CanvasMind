@@ -22,7 +22,7 @@ button:disabled { cursor: not-allowed; }
   border-radius: 10px; transition: background .15s, border-color .15s, box-shadow .15s;
 }
 .button:hover, .icon-button:hover { background:var(--panel); border-color:var(--line); color:#afb6f5; transform: none; }
-.button.primary, .button.primary:hover, .node-run-button, .login-submit {
+.button.primary, .button.primary:hover, .node-run-button {
   background:#6256d9; color:white; border-color:#6256d9; box-shadow: 0 4px 12px rgb(98 86 217 / 12%);
 }
 .button.primary:hover { background:#5448c4; }

@@ -57,6 +57,7 @@ export function RunHistoryModal({
   const [runs, setRuns] = useState<RunSnapshot[]>([]);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
@@ -203,12 +204,27 @@ export function RunHistoryModal({
                 重试
               </button>
             </div>
-          ) : visibleRuns.length === 0 ? (
+          ) : null}
+          {actionError ? (
+            <div className="modal-message history-load-error" role="alert">
+              <CircleAlert size={15} />
+              <span>{actionError}</span>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="关闭任务操作提示"
+                onClick={() => setActionError(null)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          ) : null}
+          {visibleRuns.length === 0 && !loadError ? (
             <div className="empty-state">
               <Clock3 size={24} />
               <span>{runs.length ? "当前筛选没有任务" : "还没有运行记录"}</span>
             </div>
-          ) : (
+          ) : visibleRuns.length > 0 ? (
             visibleRuns.map(({ run, nodes }) => {
               const outputAssetIds = [
                 ...new Set(nodes.flatMap((node) => node.outputAssetIds)),
@@ -399,12 +415,13 @@ export function RunHistoryModal({
                           }
                           title="取回供应商已返回的图片，不重新生成"
                           onClick={async () => {
+                            setActionError(null);
                             setRecoveringId(run.id);
                             try {
                               await onRecoverOutputs(run.id);
                               await reload();
                             } catch (error) {
-                              setLoadError(
+                              setActionError(
                                 error instanceof Error
                                   ? error.message
                                   : "取回已有图片失败",
@@ -436,12 +453,13 @@ export function RunHistoryModal({
                               recoveringId !== null
                             }
                             onClick={async () => {
+                              setActionError(null);
                               setResumingId(run.id);
                               try {
                                 await onResumeRun(run.id);
                                 await reload();
                               } catch (error) {
-                                setLoadError(
+                                setActionError(
                                   error instanceof Error
                                     ? error.message
                                     : "任务恢复失败",
@@ -471,7 +489,7 @@ export function RunHistoryModal({
                 </article>
               );
             })
-          )}
+          ) : null}
         </div>
       </section>
     </div>

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const workspaceRoot = fileURLToPath(new URL("../", import.meta.url));
 const generatedDirectory =
-  /^(?:\.next(?:-.*)?|out|playwright-report|test-results(?:-.*)?)$/u;
+  /^(?:\.next(?:-.*)?|out|playwright-report|test-results(?:-.*)?|\.ui-[a-z0-9-]+-results)$/u;
 
 async function entries(directory) {
   try {

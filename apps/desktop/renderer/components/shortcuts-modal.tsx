@@ -1,7 +1,8 @@
 "use client";
 
 import { Keyboard, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useDialogFocus } from "./use-dialog-focus";
 
 interface ShortcutRow {
   readonly keys: readonly string[];
@@ -70,15 +71,10 @@ export function ShortcutsModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useDialogFocus(open, onClose);
   // Lazy initialiser rather than an effect: the label must be right on the
   // first paint, and this component only mounts content after a user action.
   const [mac] = useState(isMacPlatform);
-
-  useEffect(() => {
-    if (!open) return;
-    dialogRef.current?.focus({ preventScroll: true });
-  }, [open]);
 
   if (!open) return null;
 

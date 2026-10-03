@@ -2,12 +2,47 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocalObjectStorage, getObjectStorage } from "./index.js";
+
+const storageReadMock = vi.hoisted(() => ({
+  maxReadBytes: Infinity,
+  positions: [] as number[],
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...original,
+    open: async (...args: Parameters<typeof original.open>) => {
+      const handle = await original.open(...args);
+      if (Number.isFinite(storageReadMock.maxReadBytes)) {
+        const originalRead = handle.read.bind(handle);
+        handle.read = (async (
+          buffer: Uint8Array,
+          offset: number,
+          length: number,
+          position: number,
+        ) => {
+          storageReadMock.positions.push(position);
+          return originalRead(
+            buffer,
+            offset,
+            Math.min(length, storageReadMock.maxReadBytes),
+            position,
+          );
+        }) as typeof handle.read;
+      }
+      return handle;
+    },
+  };
+});
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  storageReadMock.maxReadBytes = Infinity;
+  storageReadMock.positions = [];
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -143,6 +178,22 @@ describe("LocalObjectStorage", () => {
       bytes: Uint8Array.from([12, 13, 14]),
       contentType: "video/webm",
     });
+  });
+
+  it("fills a requested media range when the filesystem returns short reads", async () => {
+    const storage = await createStorage();
+    await storage.put(
+      "range.bin",
+      Uint8Array.of(10, 11, 12, 13, 14, 15, 16, 17),
+      "video/mp4",
+    );
+    storageReadMock.maxReadBytes = 2;
+
+    await expect(storage.getRange("range.bin", 2, 6)).resolves.toEqual({
+      bytes: Uint8Array.of(12, 13, 14, 15, 16),
+      contentType: "video/mp4",
+    });
+    expect(storageReadMock.positions).toEqual([2, 4, 6]);
   });
 
   it("returns null for missing objects and rejects invalid ranges", async () => {

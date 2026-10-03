@@ -414,6 +414,12 @@
   padding: 8px 12px;
   border-radius: 8px;
 }
+.library-leave-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: #000a;
+}
 .library-leave {
   position: absolute;
   inset: 50% auto auto 50%;
@@ -421,7 +427,6 @@
   z-index: 10;
   border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: 0 0 0 200vmax #000a;
   padding: 24px;
   width: min(440px, calc(100% - 32px));
   background: var(--panel);

@@ -438,6 +438,9 @@ export function GenerationHistoryModal(props: Props) {
   const dialogRef = useDialogFocus(open && !compareIds.length, () =>
     pendingLeave ? setPendingLeave(null) : close(),
   );
+  const leaveDialogRef = useDialogFocus(open && Boolean(pendingLeave), () => {
+    if (!savingRef.current) setPendingLeave(null);
+  });
   useEffect(() => {
     try {
       setStarred(
@@ -1062,39 +1065,55 @@ export function GenerationHistoryModal(props: Props) {
         )}
         {pendingLeave && (
           <div
-            className="library-leave"
-            role="alertdialog"
-            aria-label="保存评审草稿"
+            className="library-leave-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !savingRef.current)
+                setPendingLeave(null);
+            }}
           >
-            <strong>还有未保存的评审</strong>
-            <p>保存后继续，或保留在当前图片库中。</p>
-            <button
-              className="button primary"
-              disabled={saving}
-              onClick={async () => {
-                for (const id of dirty) if (!(await saveReview(id))) return;
-                const action = pendingLeave;
-                setPendingLeave(null);
-                action();
-              }}
+            <div
+              ref={(element) => { leaveDialogRef.current = element; }}
+              className="library-leave"
+              role="alertdialog"
+              aria-modal="true"
+              aria-label="保存评审草稿"
+              tabIndex={-1}
             >
-              保存并继续
-            </button>
-            <button className="button" onClick={() => setPendingLeave(null)}>
-              继续编辑
-            </button>
-            <button
-              className="button ghost"
-              disabled={saving}
-              onClick={() => {
-                setDrafts({});
-                const action = pendingLeave;
-                setPendingLeave(null);
-                action();
-              }}
-            >
-              放弃草稿并继续
-            </button>
+              <strong>还有未保存的评审</strong>
+              <p>保存后继续，或保留在当前图片库中。</p>
+              <button
+                className="button primary"
+                disabled={saving}
+                onClick={async () => {
+                  for (const id of dirty) if (!(await saveReview(id))) return;
+                  const action = pendingLeave;
+                  setPendingLeave(null);
+                  action();
+                }}
+              >
+                保存并继续
+              </button>
+              <button
+                className="button"
+                disabled={saving}
+                onClick={() => setPendingLeave(null)}
+              >
+                继续编辑
+              </button>
+              <button
+                className="button ghost"
+                disabled={saving}
+                onClick={() => {
+                  setDrafts({});
+                  const action = pendingLeave;
+                  setPendingLeave(null);
+                  action();
+                }}
+              >
+                放弃草稿并继续
+              </button>
+            </div>
           </div>
         )}
       </section>

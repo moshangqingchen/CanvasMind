@@ -337,6 +337,54 @@ test.describe("画布工作台", () => {
     ).toBeVisible();
   });
 
+  test("菜单键盘打开弹窗后，取消和关闭恢复画布操作按钮焦点", async ({
+    page,
+  }) => {
+    const state = await mockWorkspace(page, [older]);
+    await page.goto("/");
+    const trigger = page.getByRole("button", {
+      name: `${older.title} 的画布操作`,
+    });
+    await trigger.focus();
+    await trigger.press("ArrowDown");
+    const renameAction = page.getByRole("menuitem", {
+      name: "重命名",
+      exact: true,
+    });
+    await expect(renameAction).toBeFocused();
+    await renameAction.press("Enter");
+    const renameDialog = page.getByRole("dialog", { name: "重命名画布" });
+    await expect(renameDialog).toBeVisible();
+    await renameDialog
+      .getByRole("button", { name: "关闭弹窗", exact: true })
+      .click();
+    await expect(renameDialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    await trigger.press("ArrowUp");
+    const deleteAction = page.getByRole("menuitem", {
+      name: "删除画布",
+      exact: true,
+    });
+    await expect(deleteAction).toBeFocused();
+    await deleteAction.press("Enter");
+    const deleteDialog = page.getByRole("dialog", { name: "删除画布" });
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog
+      .getByRole("button", { name: "取消", exact: true })
+      .click();
+    await expect(deleteDialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    await trigger.press("ArrowDown");
+    await renameAction.press("Enter");
+    await expect(renameDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(renameDialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    expect(state.mutations).toEqual([]);
+  });
+
   test("首页从普通窗口最大化再还原时展开布局，文字与控件保持清晰", async ({
     page,
   }, testInfo) => {

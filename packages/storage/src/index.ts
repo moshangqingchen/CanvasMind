@@ -292,12 +292,17 @@ export class LocalObjectStorage implements ObjectStorage {
         throw new RangeError("Byte range starts past EOF");
       const lastByte = Math.min(end, details.size - 1);
       const bytes = new Uint8Array(lastByte - start + 1);
-      const { bytesRead } = await handle.read(
-        bytes,
-        0,
-        bytes.byteLength,
-        start,
-      );
+      let bytesRead = 0;
+      while (bytesRead < bytes.byteLength) {
+        const result = await handle.read(
+          bytes,
+          bytesRead,
+          bytes.byteLength - bytesRead,
+          start + bytesRead,
+        );
+        if (result.bytesRead === 0) break;
+        bytesRead += result.bytesRead;
+      }
       return {
         bytes:
           bytesRead === bytes.byteLength ? bytes : bytes.subarray(0, bytesRead),

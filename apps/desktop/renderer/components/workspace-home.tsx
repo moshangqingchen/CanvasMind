@@ -12,11 +12,13 @@ import {
   FolderOpen,
   Grid2X2,
   HardDrive,
+  ImageIcon,
   Layers3,
   LoaderCircle,
   List,
   MoreHorizontal,
   Pencil,
+  PanelsTopLeft,
   Pause,
   Play,
   Plus,
@@ -24,6 +26,7 @@ import {
   Settings2,
   Sparkles,
   Trash2,
+  WandSparkles,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -110,6 +113,7 @@ function ProjectActionDialog({
     dialog.kind === "create" ? "" : dialog.project.title,
   );
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const deleting = dialog.kind === "delete";
   const heading = deleting
@@ -119,8 +123,16 @@ function ProjectActionDialog({
       : "创建新画布";
   useEffect(() => {
     const modal = element.current;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     modal?.showModal();
-    return () => modal?.close();
+    return () => {
+      modal?.close();
+      if (previousFocus?.isConnected)
+        previousFocus.focus({ preventScroll: true });
+    };
   }, []);
   return (
     <dialog
@@ -135,7 +147,8 @@ function ProjectActionDialog({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (busy || (!deleting && !title.trim())) return;
+          if (submitting.current || (!deleting && !title.trim())) return;
+          submitting.current = true;
           setBusy(true);
           setError(null);
           void onSubmit(title.trim()).catch((reason: unknown) => {
@@ -143,6 +156,7 @@ function ProjectActionDialog({
               reason instanceof Error ? reason.message : "操作失败，请重试",
             );
             setBusy(false);
+            submitting.current = false;
           });
         }}
       >
@@ -221,6 +235,10 @@ function ProjectActionDialog({
 export function WorkspaceHome() {
   const router = useRouter();
   const homeRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const activeMenuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuFocusIndex = useRef(0);
   const [projects, setProjects] = useState<ProjectSummaryView[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -228,7 +246,10 @@ export function WorkspaceHome() {
   const [dialog, setDialog] = useState<ProjectDialog | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [startingDesign, setStartingDesign] = useState(false);
+  const [startingDesignKind, setStartingDesignKind] = useState<string | null>(
+    null,
+  );
+  const startingDesign = startingDesignKind !== null;
   const startingDesignRef = useRef(false);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [motionEnabled, toggleMotion] = useCanvasMotion();
@@ -265,6 +286,11 @@ export function WorkspaceHome() {
   }, [reload]);
   useEffect(() => {
     if (!menuId) return;
+    const items =
+      activeMenuRef.current?.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"]',
+      );
+    items?.[menuFocusIndex.current < 0 ? items.length - 1 : 0]?.focus();
     const close = (event: PointerEvent) => {
       if (
         !(event.target instanceof Element) ||
@@ -273,7 +299,11 @@ export function WorkspaceHome() {
         setMenuId(null);
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuId(null);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMenuId(null);
+        menuTriggerRef.current?.focus();
+      }
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", escape);
@@ -452,6 +482,8 @@ export function WorkspaceHome() {
           <button
             className={styles.settingsButton}
             type="button"
+            aria-label="供应商与模型"
+            title="供应商与模型"
             onClick={() => setSettingsOpen(true)}
           >
             <Settings2 size={17} />
@@ -478,6 +510,7 @@ export function WorkspaceHome() {
             <div className={styles.heroActions}>
               <button
                 className={styles.primaryButton}
+                disabled={startingDesign}
                 onClick={() => setDialog({ kind: "create" })}
               >
                 <Plus size={18} />
@@ -496,22 +529,25 @@ export function WorkspaceHome() {
                 <span className={styles.heroHint}>从一张空白画布开始</span>
               )}
             </div>
+            <div className={styles.quickDesignHeading}>从一个任务开始</div>
             <div className={styles.quickDesigns} aria-label="按设计任务开始">
               {(
                 [
-                  ["event-poster", "做活动海报"],
-                  ["revise", "修改客户原图"],
-                  ["event-material", "制作多尺寸物料"],
+                  ["event-poster", "做活动海报", ImageIcon],
+                  ["revise", "修改客户原图", WandSparkles],
+                  ["event-material", "制作多尺寸物料", PanelsTopLeft],
                 ] as const
-              ).map(([kind, label]) => (
+              ).map(([kind, label, Icon]) => (
                 <button
                   type="button"
                   key={kind}
+                  data-task={kind}
+                  aria-busy={startingDesignKind === kind}
                   disabled={startingDesign}
                   onClick={async () => {
                     if (startingDesignRef.current) return;
                     startingDesignRef.current = true;
-                    setStartingDesign(true);
+                    setStartingDesignKind(kind);
                     try {
                       const project = await createProject(label);
                       router.push(`${projectUrl(project.id)}?design=${kind}`);
@@ -524,12 +560,19 @@ export function WorkspaceHome() {
                         error: true,
                       });
                       startingDesignRef.current = false;
-                      setStartingDesign(false);
+                      setStartingDesignKind(null);
                     }
                   }}
                 >
-                  {label}
-                  <ArrowUpRight size={13} />
+                  <span className={styles.quickDesignIcon} aria-hidden="true">
+                    {startingDesignKind === kind ? (
+                      <LoaderCircle size={16} className={styles.spinning} />
+                    ) : (
+                      <Icon size={16} strokeWidth={1.7} />
+                    )}
+                  </span>
+                  <span>{label}</span>
+                  <ArrowUpRight size={13} className={styles.quickDesignArrow} />
                 </button>
               ))}
             </div>
@@ -558,6 +601,7 @@ export function WorkspaceHome() {
               <label className={styles.search}>
                 <Search size={17} />
                 <input
+                  ref={searchRef}
                   aria-label="搜索画布"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
@@ -567,7 +611,10 @@ export function WorkspaceHome() {
                   <button
                     type="button"
                     aria-label="清空搜索"
-                    onClick={() => setQuery("")}
+                    onClick={() => {
+                      setQuery("");
+                      searchRef.current?.focus();
+                    }}
                   >
                     <X size={15} />
                   </button>
@@ -638,6 +685,7 @@ export function WorkspaceHome() {
                   className={styles.createCard}
                   data-workspace-card
                   type="button"
+                  disabled={startingDesign}
                   onClick={() => setDialog({ kind: "create" })}
                   aria-label="新建空白画布"
                 >
@@ -660,6 +708,7 @@ export function WorkspaceHome() {
                   data-workspace-card
                   key={project.id}
                   aria-label={project.title}
+                  data-menu-open={menuId === project.id}
                 >
                   <Link
                     className={styles.cardLink}
@@ -692,29 +741,97 @@ export function WorkspaceHome() {
                       </div>
                     </div>
                   </Link>
-                  <div className={styles.cardMenu} data-project-menu>
+                  <div
+                    className={styles.cardMenu}
+                    data-project-menu
+                    onBlur={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget))
+                        setMenuId((current) =>
+                          current === project.id ? null : current,
+                        );
+                    }}
+                  >
                     <button
                       type="button"
                       className={styles.iconButton}
                       aria-label={`${project.title} 的画布操作`}
                       aria-expanded={menuId === project.id}
                       aria-haspopup="menu"
-                      onClick={() =>
-                        setMenuId(menuId === project.id ? null : project.id)
+                      aria-controls={
+                        menuId === project.id
+                          ? `project-menu-${project.id}`
+                          : undefined
                       }
+                      onClick={(event) => {
+                        menuTriggerRef.current = event.currentTarget;
+                        menuFocusIndex.current = 0;
+                        setMenuId(menuId === project.id ? null : project.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key !== "ArrowDown" &&
+                          event.key !== "ArrowUp"
+                        )
+                          return;
+                        event.preventDefault();
+                        menuTriggerRef.current = event.currentTarget;
+                        menuFocusIndex.current =
+                          event.key === "ArrowUp" ? -1 : 0;
+                        if (menuId === project.id) {
+                          const items =
+                            activeMenuRef.current?.querySelectorAll<HTMLButtonElement>(
+                              '[role="menuitem"]',
+                            );
+                          items?.[
+                            menuFocusIndex.current < 0 ? items.length - 1 : 0
+                          ]?.focus();
+                        }
+                        setMenuId(project.id);
+                      }}
                     >
                       <MoreHorizontal size={20} />
                     </button>
                     {menuId === project.id ? (
                       <div
+                        ref={activeMenuRef}
+                        id={`project-menu-${project.id}`}
                         className={styles.dropdown}
                         role="menu"
                         aria-label={`${project.title} 的操作菜单`}
+                        onKeyDown={(event) => {
+                          if (
+                            !["ArrowDown", "ArrowUp", "Home", "End"].includes(
+                              event.key,
+                            )
+                          )
+                            return;
+                          event.preventDefault();
+                          const items = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                              '[role="menuitem"]',
+                            ),
+                          );
+                          const current = items.indexOf(
+                            document.activeElement as HTMLButtonElement,
+                          );
+                          const next =
+                            event.key === "Home"
+                              ? 0
+                              : event.key === "End"
+                                ? items.length - 1
+                                : (current +
+                                    (event.key === "ArrowDown" ? 1 : -1) +
+                                    items.length) %
+                                  items.length;
+                          items[next]?.focus();
+                        }}
                       >
                         <button
                           type="button"
                           role="menuitem"
+                          tabIndex={-1}
                           onClick={() => {
+                            menuTriggerRef.current?.focus();
                             setMenuId(null);
                             setDialog({ kind: "rename", project });
                           }}
@@ -725,8 +842,10 @@ export function WorkspaceHome() {
                         <button
                           type="button"
                           role="menuitem"
+                          tabIndex={-1}
                           onClick={() => {
                             setMenuId(null);
+                            menuTriggerRef.current?.focus();
                             void openProjectFolder(project.id)
                               .then(() =>
                                 setNotice({ message: "已打开项目文件夹" }),
@@ -749,7 +868,9 @@ export function WorkspaceHome() {
                           type="button"
                           className={styles.deleteAction}
                           role="menuitem"
+                          tabIndex={-1}
                           onClick={() => {
+                            menuTriggerRef.current?.focus();
                             setMenuId(null);
                             setDialog({ kind: "delete", project });
                           }}
@@ -766,7 +887,13 @@ export function WorkspaceHome() {
           ) : null}
           {projects && visibleProjects.length === 0 ? (
             <div className={styles.emptyList}>
-              <Layers3 size={25} strokeWidth={1.3} />
+              <span className={styles.emptyIcon}>
+                {query.trim() ? (
+                  <Search size={24} strokeWidth={1.5} />
+                ) : (
+                  <Layers3 size={24} strokeWidth={1.5} />
+                )}
+              </span>
               <h3>
                 {query.trim()
                   ? "没有找到匹配的画布"
@@ -777,6 +904,18 @@ export function WorkspaceHome() {
                   ? "试试其他名称，或清空搜索查看全部画布。"
                   : "点击「创建画布」，添加图片、视频或文本节点。"}
               </p>
+              {query.trim() ? (
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => {
+                    setQuery("");
+                    searchRef.current?.focus();
+                  }}
+                >
+                  查看全部画布 <ArrowRight size={14} />
+                </button>
+              ) : null}
             </div>
           ) : null}
         </section>

@@ -1,18 +1,18 @@
 /* Immersive canvas theme. Scoped so the library and project home keep their own styling. */
 .canvas-editor {
   color-scheme: dark;
-  --bg: #101112;
-  --panel: #1e1f21;
-  --panel-2: #252629;
-  --panel-3: #303236;
-  --line: #34363a;
-  --muted: #92969e;
-  --text: #eeeff2;
+  --bg: #101116;
+  --panel: #1b1d25;
+  --panel-2: #252733;
+  --panel-3: #303342;
+  --line: #343746;
+  --muted: #a1a6b7;
+  --text: #eef0f7;
   --accent: #b5a6ff;
   --accent-2: #9bddd0;
   --danger: #ff91a4;
   --shadow: 0 16px 48px #0005;
-  --ui-panel-border: #34363a;
+  --ui-panel-border: #343746;
   --ui-panel-border-strong: #a99af0;
   --ui-glow-purple: #ac9cf51a;
   --canvas-topbar-height: 64px;
@@ -38,7 +38,7 @@
   grid-column: 1;
   grid-row: 1;
   margin-top: var(--canvas-topbar-height);
-  background: var(--bg);
+  background: radial-gradient(ellipse at 35% 0%, #8676e908, transparent 62%), var(--bg);
   border: 0;
   border-radius: 0;
 }
@@ -49,10 +49,10 @@
   width: auto;
   padding: 0 18px;
   gap: 10px;
-  background: var(--bg);
+  background: linear-gradient(180deg, #1b1c25f5, #15161ef5);
   border: 0;
   border-bottom: 1px solid var(--line);
-  box-shadow: none;
+  box-shadow: 0 3px 24px #0002, inset 0 1px #ffffff04;
   pointer-events: auto;
   container-name: canvas-topbar;
   container-type: inline-size;
@@ -73,9 +73,9 @@
   line-height: 1;
   filter: drop-shadow(0 0 9px #b4a0ff55);
 }
-.canvas-editor .editor-project-title { display: flex; min-width: 0; max-width: none; font-size: 13px; font-weight: 550; line-height: 1.5; }
+.canvas-editor .editor-project-title { display: flex; min-width: 0; max-width: none; font-size: 13px; font-weight: 600; line-height: 1.5; letter-spacing: .015em; }
 .canvas-editor .editor-project-title .readable-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.canvas-editor .brand-version { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
+.canvas-editor .brand-version { flex: 0 0 auto; color: var(--muted); font-size: 10px; border: 1px solid #3c3d50; border-radius: 6px; padding: 2px 6px; font-variant-numeric: tabular-nums; }
 .canvas-editor .top-actions { gap: 5px; min-width: 0; }
 .canvas-editor :is(.button, .icon-button, .pill) {
   background: var(--panel-2);
@@ -83,18 +83,19 @@
   border-color: var(--line);
   box-shadow: none;
 }
-.canvas-editor :is(.button, .icon-button):hover {
+.canvas-editor :is(.button, .icon-button):hover:not(:disabled) {
   background: var(--panel-3);
   border-color: #555960;
   color: #fff;
   transform: none;
 }
 .canvas-editor .button.primary {
-  background: #c2b7f4;
-  border-color: #c2b7f4;
+  background: linear-gradient(135deg, #d4c4ff, #b8b5fa);
+  border-color: #d4c4ff80;
   color: #242030;
 }
-.canvas-editor .button.primary:hover { background: #d0c6ff; box-shadow: 0 3px 18px #bca9ff26; }
+.canvas-editor .button.primary:hover:not(:disabled) { background: linear-gradient(135deg, #e3d6ff, #c8c5ff); box-shadow: 0 3px 18px #bca9ff26; }
+.canvas-editor :is(.button, .icon-button):disabled { opacity: .4; box-shadow: none; transform: none; }
 .canvas-editor .button.danger { background: #332128; border-color: #683444; color: var(--danger); }
 .canvas-editor .button.ghost { background: transparent; }
 .canvas-editor .top-actions .icon-button,
@@ -119,11 +120,11 @@
   max-height: calc(100% - 156px);
   padding: 7px 5px;
   gap: 3px;
-  border: 1px solid #36383c;
+  border: 1px solid #434353;
   border-radius: 16px;
-  background: #222326eb;
+  background: linear-gradient(160deg, #292a36ed, #1f212bed);
   backdrop-filter: blur(18px);
-  box-shadow: 0 6px 22px #0003, inset 0 1px #ffffff06;
+  box-shadow: 0 8px 30px #0004, inset 0 1px #ffffff0a;
   overflow: visible;
   z-index: 20;
 }
@@ -189,10 +190,10 @@
   margin: 10px 10px 10px 0;
   padding: 10px;
   min-height: 0;
-  border: 1px solid #36383c;
+  border: 1px solid #3c3f50;
   border-radius: 20px;
-  background: #1e1f21;
-  box-shadow: -6px 0 32px #0002;
+  background: linear-gradient(160deg, #222430, #1a1c25 70%);
+  box-shadow: -6px 0 32px #0002, inset 0 1px #ffffff06;
   animation: studio-panel-enter 220ms ease-out;
 }
 .canvas-editor .inspector h2 { color: #e6e8ed; }
@@ -257,15 +258,16 @@
   padding: 5px;
   gap: 5px;
   border-radius: 13px;
-  border-color: #34363a;
-  background: #222326ed;
+  border-color: #434354;
+  background: linear-gradient(180deg, #2a2b37f2, #22242ff2);
   backdrop-filter: blur(16px);
-  box-shadow: 0 6px 24px #0004;
+  box-shadow: 0 8px 32px #0004, inset 0 1px #ffffff09;
 }
 .canvas-editor .canvas-toolbar .button,
 .canvas-editor .canvas-drawing-tools button { color: #afb3bd; min-height: 32px; }
-.canvas-editor .canvas-drawing-tools button.active { background: #3d354b; color: #d1c1fa; }
-.canvas-editor .canvas-drawing-tools button:hover { background: #36383e; color: #eee; }
+.canvas-editor .canvas-drawing-tools button.active { background: #a795ec26; color: #e0d2ff; box-shadow: inset 0 0 0 1px #c5afff27; }
+.canvas-editor .canvas-drawing-tools button:hover:not(:disabled) { background: #ffffff0c; color: #eee; }
+.canvas-editor .canvas-toolbar button:disabled { opacity: .35; cursor: not-allowed; }
 .canvas-editor :is(.canvas-brush-color, .canvas-brush-size, .canvas-shape-label) { color: var(--muted); }
 .canvas-editor .react-flow__controls {
   bottom: 20px !important;
@@ -319,19 +321,24 @@
 .canvas-editor .canvas-empty-hint kbd { border-color: #45424d; color: #aaa0ba; background: #26232c; }
 
 /* Node chrome stays subdued; selection and generation carry the accent. */
-.canvas-editor .node-card { background: #1f2024; color: #d4d7df; border: 1px solid #414148; border-radius: 14px; box-shadow: 0 8px 28px #0003; transition: border-color 180ms, box-shadow 180ms; }
-.canvas-editor .node-card:hover { border-color: #67606f; }
+.canvas-editor .node-card { background: linear-gradient(155deg, #262837, #1e202b 72%); color: #d4d7df; border: 1px solid #45465a; border-radius: 14px; box-shadow: 0 12px 36px #0004, inset 0 1px #ffffff08; transition: border-color 180ms, box-shadow 180ms; }
+.canvas-editor .node-card:hover { border-color: #7b7393; box-shadow: 0 16px 42px #0005, inset 0 1px #ffffff0c; }
 .canvas-editor .node-card.selected { border-color: #70d7f2; box-shadow: 0 0 0 1px #67d6f455, 0 0 26px #32b9ec24, 0 8px 28px #0003; }
 .canvas-editor .node-card.selected::after {
   content: ""; position: absolute; inset: -3px; border: 1px solid #7fe6fa;
   border-radius: inherit; pointer-events: none; opacity: .38;
   box-shadow: 0 0 18px #26b7ef40; animation: studio-node-breathe 3.2s ease-in-out infinite;
 }
-.canvas-editor .node-card[data-node-type="prompt"] { background: #242127; }
+.canvas-editor .node-card[data-node-type="prompt"] { background: linear-gradient(155deg, #2c2837, #23212d 72%); }
+.canvas-editor .node-card .node-head { background: #ffffff03; }
+.canvas-editor .node-title .node-icon { background: color-mix(in srgb, var(--node-accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--node-accent) 25%, transparent); border-radius: 7px; }
+.canvas-editor .node-card:not(.selected):has(.node-status.running, .node-status.submitting) { border-color: #bfaa735c; }
+.canvas-editor .node-card:not(.selected):has(.node-status.failed, .node-status.needs_attention) { border-color: #e184985c; }
+.canvas-editor .node-card:not(.selected):has(.node-status.succeeded) { border-color: #67b8a65c; }
 .canvas-editor :is(.node-head, .node-body, .node-inline-toolbar, .node-generation-body, .node-actions, .node-config-summary, .node-config-provider-header, .node-config-popover-body) { background: transparent; border-color: #37363f; color: #c3c6d0; }
 .canvas-editor :is(.node-title, .node-title > span, .node-config-copy strong) { color: #e0dde7; }
 .canvas-editor :is(.node-config-copy small, .node-preview small, .port-label) { color: #9a96a3; }
-.canvas-editor :is(.node-title .node-icon, .node-head .node-icon) { color: #c2adea; }
+.canvas-editor :is(.node-title .node-icon, .node-head .node-icon) { color: var(--node-accent, #c2adea); }
 .canvas-editor :is(.field label, .parameter-field label) { color: #a8a5b3; }
 .canvas-editor :is(.search, .field input, .field textarea, .field select, .parameter-field input, .parameter-field select, .mention-editor, .tiptap-prompt, .node-inline-editor, .prompt-node-editor, .node-config-popover textarea) { background: #18191d; color: #d5d4de; border-color: #3c3b45; box-shadow: none; }
 .canvas-editor :is(.node-config-manage-api, .node-config-provider-selectors select, .node-model-select-trigger, .node-inline-toolbar select) { background: #29262f; color: #cac0dc; border-color: #45404f; }
@@ -339,19 +346,28 @@
 .canvas-editor .node-card .node-actions .button,
 .canvas-editor .node-card .node-inline-toolbar button,
 .canvas-editor .node-card .node-actions button { background: #2b2832; color: #c1b5d4; border-color: #453c50; }
-.canvas-editor .node-card .node-run-button,
+.canvas-editor .node-card .node-inline-toolbar .node-run-button,
 .canvas-editor .node-card .node-actions .button.primary { background: #c3b1ee; color: #2c213e; border-color: #c3b1ee; }
+.canvas-editor .node-card .node-inline-toolbar .node-run-button:hover:not(:disabled) { background: #dcc8ff; border-color: #e2d2ff; }
+.canvas-editor .node-card .node-inline-toolbar .node-run-button:disabled { opacity: .4; cursor: not-allowed; }
 .canvas-editor .node-linked-asset { background: #25222c; border-color: #42394f; }
 .canvas-editor .node-linked-asset-copy strong { color: #d1c8df; }
 .canvas-editor .node-linked-asset-copy small { color: #a098ad; }
 .canvas-editor :is(.node-linked-asset-remove, .node-delete-button) { background: #302731; border-color: #504052; color: #d4a8bf; }
 .canvas-editor .mention-chip { background: #41354f; color: #dcc5fb; border-color: #5b4771; }
 .canvas-editor :is(.node-linked-warning, .node-config-connection-warning, .node-model-availability) { background: #352d22; color: #dec398; border-color: #5a4931; }
+.canvas-editor .node-model-availability.is-operational { background: #173a31; color: #9adeca; border-color: #497568; }
+.canvas-editor .node-model-availability:is(.is-error, .is-unavailable) { background: #3b2430; color: #f1a9bc; border-color: #785060; }
+.canvas-editor .node-model-availability.is-loading { background: #302d3e; color: #bcb7d7; border-color: #514967; }
 .canvas-editor .generated-result-node { border-radius: 9px; border-color: #48434e; box-shadow: 0 4px 18px #0004; }
 .canvas-editor .generated-result-media { border-radius: 8px; }
 .canvas-editor :is(.connection-menu, .canvas-context-menu, .node-context-menu, .project-menu, .selection-alignment-toolbar) { background: #25262bef; backdrop-filter: blur(18px); color: #e0dce9; border-color: #45404e; box-shadow: var(--shadow); }
 .canvas-editor :is(.connection-menu, .canvas-context-menu, .node-context-menu, .project-menu) button { color: #cfccd9; }
 .canvas-editor :is(.connection-menu, .canvas-context-menu, .node-context-menu, .project-menu) button:hover { background: #3c3447; color: #eee3ff; }
+.canvas-editor .connection-menu { max-height: calc(100dvh - var(--canvas-topbar-height) - 24px); overflow-y: auto; padding: 4px; border-radius: 12px; }
+.canvas-editor .connection-menu > span { padding: 8px; }
+.canvas-editor .connection-menu button { border: 0; border-radius: 7px; padding: 9px 8px; }
+.canvas-editor .connection-menu button:focus-visible { background: #3c3447; outline-offset: -2px; }
 .canvas-editor .toast { background: #28262f; color: #e0dbe9; border-color: #53445f; }
 
 /* Smooth Bézier paths with a broad pointer target and directional light flow. */

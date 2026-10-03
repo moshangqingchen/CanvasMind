@@ -36,6 +36,8 @@ pnpm dev
 
 清理仅操作工作区内的可重建路径。它逐层检查路径边界，拒绝穿过符号链接或 Windows junction，删除构建目录时也不跟随内部链接。`pnpm test:maintenance` 验证素材、备份、安装副本和目录链接的保护边界，CI 同样运行这些测试。
 
+普通清理也包含 `.ui-*-results` 形式的历史界面测试输出；只识别这个明确的产物命名，不处理其他 `.ui-*` 隐藏目录。
+
 ## 质量检查与测试隔离
 
 `pnpm typecheck` 会先构建运行服务与导演引擎的共享依赖，支持干净检出。`pnpm test` 只收集各包源码中的单元测试，不扫描 `dist` 或 Next.js standalone 产物。`pnpm test:maintenance` 同时运行清理边界、素材 GC、供应商目录检查器和导演知识同步脚本的回归测试。

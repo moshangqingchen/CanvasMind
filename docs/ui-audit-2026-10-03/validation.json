@@ -1,0 +1,226 @@
+{
+  "date": "2026-10-03",
+  "tests": {
+    "rendererUnit": 1723,
+    "sharedDesktopCloudMaintenance": 998,
+    "browserFullSuite": 234,
+    "finalFocusedBrowser": 36
+  },
+  "checks": {
+    "lint": "passed",
+    "workspaceTypecheck": "passed",
+    "productionBuild": "passed",
+    "desktopShellBuild": "passed",
+    "desktopStage": "passed",
+    "desktopSmoke": "passed"
+  },
+  "desktopSmoke": {
+    "checks": [
+      "single instance lock",
+      "first-run setup",
+      "renderer has no Node.js require access",
+      "packaged homepage stylesheet matches its markup, keeps text readable and fills resized windows",
+      "loopback token rejects unauthenticated access",
+      "standalone web login, updater, cloud upload and public callback routes are absent",
+      "packaged lifecycle hook and durability barrier",
+      "reference channel IPC defaults off and never returns credentials",
+      "Fake Provider generation, archival, download and idempotent resubmission",
+      "image design review persists through the authenticated desktop API",
+      "native sharp dependency and image upload",
+      "EXIF thumbnail JPEG imports without data loss and both desktop thumbnail sizes decode",
+      "selected connections alone show continuous feathered light and clear with selection",
+      "project JSON export and re-import through the desktop UI",
+      "customer source stays verbatim with the requested 203:282 safe area in the packaged app",
+      "poster design studio creates a configured image workflow in the packaged app",
+      "custom supplier names, rename propagation, group/model selection and saved connection identity",
+      "close hides to tray and backend remains available",
+      "explicit quit saves canvas, flushes database and stops backend",
+      "no renderer exceptions",
+      "image review status and notes survive a desktop restart",
+      "structured poster design requirements survive a desktop restart",
+      "restart reuses DPAPI key, database and archived media"
+    ],
+    "homeLayouts": [
+      {
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "brandDisplay": "grid",
+        "actionsDisplay": "flex",
+        "eyebrowWidth": 115.75,
+        "eyebrowOverflow": 0,
+        "eyebrowHeight": 18,
+        "eyebrowLineHeight": 18,
+        "homeWidth": 1280,
+        "homeOverflow": 0,
+        "documentOverflow": 0,
+        "mainWidth": 1280,
+        "mainContentWidth": 1177.6,
+        "projectsWidth": 1177.625
+      },
+      {
+        "viewport": {
+          "width": 1920,
+          "height": 1080
+        },
+        "brandDisplay": "grid",
+        "actionsDisplay": "flex",
+        "eyebrowWidth": 115.75,
+        "eyebrowOverflow": 0,
+        "eyebrowHeight": 18,
+        "eyebrowLineHeight": 18,
+        "homeWidth": 1910,
+        "homeOverflow": 0,
+        "documentOverflow": 0,
+        "mainWidth": 1910,
+        "mainContentWidth": 1756.4,
+        "projectsWidth": 1756.40625
+      }
+    ]
+  },
+  "cleanup": {
+    "bytes": 885249867,
+    "files": 1312,
+    "targets": [
+      {
+        "path": ".codex-logs",
+        "reason": "历史开发日志",
+        "bytes": 42228694,
+        "files": 45
+      },
+      {
+        "path": "apps/desktop/renderer/.ui-image-design-results",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 276706,
+        "files": 4
+      },
+      {
+        "path": "apps/desktop/renderer/.ui-library-scroll-results",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 45,
+        "files": 1
+      },
+      {
+        "path": "apps/desktop/renderer/.ui-regression-results",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 367819,
+        "files": 4
+      },
+      {
+        "path": "apps/desktop/renderer/playwright-report",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 585394,
+        "files": 1
+      },
+      {
+        "path": "apps/desktop/renderer/test-results",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 8040625,
+        "files": 10
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-final-1",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 5928120,
+        "files": 61
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-final-2",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 723558,
+        "files": 8
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-final-3",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 11015089,
+        "files": 45
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-final-audit",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 8072573,
+        "files": 11
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-final-performance",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 7277,
+        "files": 13
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-final-targeted",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 705866,
+        "files": 6
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-home-review",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 8042195,
+        "files": 10
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-interactions",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 45,
+        "files": 1
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-menus",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 45,
+        "files": 1
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-project-audit",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 25980772,
+        "files": 124
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-suppliers",
+        "reason": "可重建的构建与测试输出",
+        "bytes": 296019,
+        "files": 3
+      },
+      {
+        "path": "apps/desktop/renderer/tsconfig.tsbuildinfo",
+        "reason": "开发日志与增量编译缓存",
+        "bytes": 336468,
+        "files": 1
+      },
+      {
+        "path": "apps/desktop/renderer/.next-desktop/dev",
+        "reason": "已停止的开发缓存或本次重复预览",
+        "bytes": 758816608,
+        "files": 826
+      },
+      {
+        "path": ".codex-temp/home-after.png",
+        "reason": "已停止的开发缓存或本次重复预览",
+        "bytes": 914932,
+        "files": 1
+      },
+      {
+        "path": ".codex-temp/home-after-mobile.png",
+        "reason": "已停止的开发缓存或本次重复预览",
+        "bytes": 219577,
+        "files": 1
+      },
+      {
+        "path": "本次隔离 Electron 测试资料",
+        "reason": "本次测试创建的模拟资料",
+        "bytes": 11712271,
+        "files": 116
+      },
+      {
+        "path": ".codex-temp/ui-audit-20261003",
+        "reason": "本次临时脚本、日志与重复截图",
+        "bytes": 979169,
+        "files": 19
+      }
+    ]
+  }
+}

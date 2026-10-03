@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Download, RefreshCw, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useDialogFocus } from "./use-dialog-focus";
 
 export interface CanvasSaveConflictModalProps {
   open: boolean;
@@ -18,11 +18,7 @@ export function CanvasSaveConflictModal({
   onExport,
   onReload,
 }: CanvasSaveConflictModalProps) {
-  const dialogRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (open) dialogRef.current?.focus({ preventScroll: true });
-  }, [open]);
+  const dialogRef = useDialogFocus(open, onClose);
 
   if (!open) return null;
 
@@ -41,9 +37,6 @@ export function CanvasSaveConflictModal({
         aria-modal="true"
         aria-labelledby="save-conflict-title"
         tabIndex={-1}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onClose();
-        }}
       >
         <header className="modal-head">
           <div>

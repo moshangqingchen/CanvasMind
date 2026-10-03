@@ -7,6 +7,7 @@ import { resolveModelParameters, validateModelParameters } from "@super-canvas/p
 import { withoutLocalExecutionConfig } from "../lib/project-local-config";
 import { cliInputPorts, cliOperationForNode } from "../lib/cli-input-ports";
 import feedbackStyles from "./blocking-feedback.module.css";
+import { useContextMenu } from "./use-context-menu";
 
 import { useRouter } from "next/navigation";
 import { CanvasPointerTrail, canvasMotionEnabled, useCanvasMotion } from "./canvas-motion";
@@ -2583,6 +2584,11 @@ function CanvasShell({
     useState<ConnectionMenuState | null>(null);
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null);
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
+  const contextMenuRef = useContextMenu(canvasMenu ?? nodeMenu ?? connectionMenu, () => {
+    setCanvasMenu(null);
+    setNodeMenu(null);
+    setConnectionMenu(null);
+  }, nodeMenu?.nodeId);
   const [dropActive, setDropActive] = useState(false);
   const [canvasMode, setCanvasMode] = useState<CanvasInteractionMode>("pan");
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("freehand");
@@ -2684,6 +2690,7 @@ function CanvasShell({
     future: CanvasDocument[];
     lastAt: number;
   }>({ past: [], future: [], lastAt: 0 });
+  const [historyAvailability, setHistoryAvailability] = useState({ undo: false, redo: false });
   const saveQueue = useRef<LatestTaskQueue<CanvasSaveRequest> | null>(null);
   const instanceActive = useRef(true);
   const saveSuspended = useRef(false);
@@ -3623,7 +3630,7 @@ function CanvasShell({
     (force = false) => {
       const history = historyRef.current;
       const now = Date.now();
-      if (!force && now - history.lastAt < 450) return;
+      if (!force && history.future.length === 0 && now - history.lastAt < 450) return;
       history.past.push(
         serializableGraph(
           graphRef.current.nodes,
@@ -3634,6 +3641,9 @@ function CanvasShell({
       if (history.past.length > 50) history.past.shift();
       history.future = [];
       history.lastAt = now;
+      setHistoryAvailability((current) => current.undo && !current.redo
+        ? current
+        : { undo: true, redo: false });
     },
     [],
   );
@@ -3688,6 +3698,8 @@ function CanvasShell({
         viewport,
       ),
     );
+    setHistoryAvailability({ undo: history.past.length > 0, redo: true });
+    history.lastAt = 0;
     restoreSnapshot(previous);
   }, [restoreSnapshot, viewport]);
 
@@ -3702,6 +3714,8 @@ function CanvasShell({
         viewport,
       ),
     );
+    setHistoryAvailability({ undo: true, redo: history.future.length > 0 });
+    history.lastAt = 0;
     restoreSnapshot(next);
   }, [restoreSnapshot, viewport]);
 
@@ -6256,6 +6270,7 @@ function CanvasShell({
     if (initialization.status !== "ready") return;
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (event.target instanceof Element && event.target.closest(".connection-menu")) return;
         setShortcutsOpen(false);
         setProjectMenuOpen(false);
         setConnectionMenu(null);
@@ -8556,6 +8571,8 @@ function CanvasShell({
   const openNodeMenu = useCallback(
     (event: MouseEvent | ReactMouseEvent, node: CanvasNode) => {
       event.preventDefault();
+      if (event.target instanceof Element)
+        event.target.closest<HTMLElement>(".react-flow__node")?.focus({ preventScroll: true });
       setConnectionMenu(null);
       setCanvasMenu(null);
       selectCanvasNode(node.id);
@@ -8919,6 +8936,7 @@ function CanvasShell({
             type="button"
             onClick={undo}
             aria-label="撤销"
+            disabled={!historyAvailability.undo}
             title="撤销 (Ctrl+Z)"
           >
             <Undo2 size={14} />
@@ -8928,6 +8946,7 @@ function CanvasShell({
             type="button"
             onClick={redo}
             aria-label="重做"
+            disabled={!historyAvailability.redo}
             title="重做 (Ctrl+Y)"
           >
             <Redo2 size={14} />
@@ -9586,6 +9605,7 @@ function CanvasShell({
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => selectCanvasGroup(group.id)}
                     onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         selectCanvasGroup(group.id);
@@ -9736,6 +9756,8 @@ function CanvasShell({
           {canvasMenu ? (
             <div
               className="connection-menu canvas-create-menu"
+              ref={contextMenuRef}
+              tabIndex={-1}
               style={{ left: canvasMenu.x, top: canvasMenu.y }}
               role="menu"
               aria-label="新建节点"
@@ -9785,6 +9807,8 @@ function CanvasShell({
           {nodeMenu ? (
             <div
               className="connection-menu node-context-menu"
+              ref={contextMenuRef}
+              tabIndex={-1}
               style={{ left: nodeMenu.x, top: nodeMenu.y }}
               role="menu"
               aria-label={`${nodeMenu.label} 的操作`}
@@ -9858,6 +9882,8 @@ function CanvasShell({
           {connectionMenu ? (
             <div
               className="connection-menu"
+              ref={contextMenuRef}
+              tabIndex={-1}
               style={{ left: connectionMenu.x, top: connectionMenu.y }}
               role="menu"
               aria-label="创建兼容节点"

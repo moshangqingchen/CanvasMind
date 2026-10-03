@@ -80,6 +80,35 @@ test("deep cleanup is limited to source workspaces, never installed app copies",
   );
 });
 
+test("normal cleanup includes historical UI test outputs while preserving unrelated hidden folders", async (t) => {
+  const { root, put } = await fixture(t);
+  const removed = [
+    "apps/desktop/renderer/.ui-regression-results/.last-run.json",
+    "apps/desktop/renderer/.ui-image-design-results/test/screenshot.png",
+    "apps/desktop/renderer/.ui-library-scroll-results/report.txt",
+  ];
+  const preserved = [
+    "apps/desktop/renderer/.ui-assets/original.png",
+    "apps/desktop/renderer/.ui-regression-results-backup/report.txt",
+    "apps/installed-App/.ui-regression-results/report.txt",
+  ];
+  for (const name of [...removed, ...preserved]) await put(name);
+  const plan = await planCleanup(root);
+  assert.deepEqual(
+    plan.map((entry) => entry.path),
+    [
+      "apps/desktop/renderer/.ui-image-design-results",
+      "apps/desktop/renderer/.ui-library-scroll-results",
+      "apps/desktop/renderer/.ui-regression-results",
+    ],
+  );
+  await applyCleanup(root, plan);
+  for (const name of removed)
+    await assert.rejects(lstat(path.join(root, name)), { code: "ENOENT" });
+  for (const name of preserved)
+    assert.ok(await readFile(path.join(root, name)));
+});
+
 test("rejects workspace root, outside paths and non-generated paths in supplied plans", async (t) => {
   const { root, put } = await fixture(t);
   await put("apps/desktop/renderer/data/super-canvas.json");
