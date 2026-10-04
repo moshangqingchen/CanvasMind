@@ -8,11 +8,17 @@ import { modelCanvasUnavailableReason } from "../lib/graph-ui";
 import { filterPickerModels, MODEL_PICKER_PAGE_SIZE, readRecentModels, RECENT_MODELS_KEY, rememberModel,
   type ModelKindFilter, type ModelStatusFilter } from "../lib/model-picker";
 import styles from "./model-picker.module.css";
+import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary } from "../lib/tk1688-model-display";
 
-function ModelIdentity({ model, parameters, price = false, detailsId }: { model: ModelDescriptor; parameters: Record<string, unknown>; price?: boolean; detailsId?: string }) {
+type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
+
+function ModelIdentity({ model, parameters, price = false, detailsId, route = false }: { model: ModelDescriptor; parameters: Record<string, unknown>; price?: boolean; detailsId?: string; route?: boolean }) {
+  const family = tk1688ModelFamily(model);
   return <span className={styles.identity}>
-    <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
+    <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{family ? route ? tk1688RouteLabel(model) : family : cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
+    {family && !route && <span id={detailsId ? `${detailsId}-route` : undefined} className={styles.route}>{tk1688RouteLabel(model)}</span>}
     <span id={detailsId ? `${detailsId}-id` : undefined} className={styles.id} title={model.id}>ID: {model.id}</span>
+    {route && <span id={detailsId ? `${detailsId}-summary` : undefined} className={styles.summary}>{tk1688RouteSummary(model)}</span>}
     {price && <span id={detailsId ? `${detailsId}-price` : undefined} className={styles.price}>{modelPriceSummary(model, parameters)}</span>}
   </span>;
 }
@@ -32,6 +38,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<ModelKindFilter>("all");
   const [status, setStatus] = useState<ModelStatusFilter>("all");
+  const [family, setFamily] = useState<string | null>(null);
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const [active, setActive] = useState(0);
   const host = useRef<HTMLDivElement>(null);
@@ -41,11 +48,20 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   const menu = useRef<HTMLDivElement>(null);
   const selected = models.find(model => model.id === value);
   const filtered = useMemo(() => filterPickerModels(models, query, kind, status, recentIds), [models, query, kind, status, recentIds]);
+  const grouped = models.some(model => tk1688ModelFamily(model));
   const hasFilters = Boolean(query.trim()) || kind !== "all" || status !== "all";
-  const options = useMemo(() => [
-    ...(!hasFilters ? [{ id: "", model: undefined as ModelDescriptor | undefined, label: "自动模型", reason: null as string | null }] : []),
-    ...filtered.map(model => ({ id: model.id, model, label: cleanModelDisplayName(model.name, model.metadata?.priceLabel), reason: modelCanvasUnavailableReason(model) })),
-  ], [filtered, hasFilters]);
+  const options = useMemo<PickerOption[]>(() => {
+    const automatic: PickerOption[] = !hasFilters && !family ? [{ id: "", label: "自动模型", reason: null }] : [];
+    if (!grouped) return [...automatic, ...filtered.map(model => ({ id: model.id, model,
+      label: cleanModelDisplayName(model.name, model.metadata?.priceLabel), reason: modelCanvasUnavailableReason(model) }))];
+    if (family) return groupTk1688Models(filtered).find(group => group.id === family)?.models.map(model => ({
+      id: model.id, model, label: tk1688RouteLabel(model)!, reason: modelCanvasUnavailableReason(model),
+    })) ?? [];
+    return [...automatic, ...groupTk1688Models(filtered).map(group => ({ id: `family:${group.id}`, family: group.id,
+      label: group.id, merchants: group.merchants.length, reason: null })),
+      ...filtered.filter(model => !tk1688ModelFamily(model)).map(model => ({ id: model.id, model,
+        label: cleanModelDisplayName(model.name, model.metadata?.priceLabel), reason: modelCanvasUnavailableReason(model) }))];
+  }, [filtered, hasFilters, family, grouped]);
   const activeIndex = Math.min(active, Math.max(0, options.length - 1));
   const page = Math.floor(activeIndex / MODEL_PICKER_PAGE_SIZE);
   const pageStart = page * MODEL_PICKER_PAGE_SIZE;
@@ -56,9 +72,13 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     if (!next && restoreFocus) trigger.current?.focus();
     if (next) {
       try { setRecentIds(readRecentModels(localStorage.getItem(RECENT_MODELS_KEY)).find(item => item.connectionId === connectionId)?.modelIds ?? []); } catch { setRecentIds([]); }
-      setQuery(""); setKind("all"); setStatus("all");
+      setQuery(""); setKind("all"); setStatus("all"); setFamily(null);
       const index = models.findIndex(model => model.id === value);
-      setActive(index < 0 ? 0 : index + 1);
+      const groups = groupTk1688Models(models);
+      const selectedFamily = selected && tk1688ModelFamily(selected);
+      const groupedIndex = selectedFamily ? groups.findIndex(group => group.id === selectedFamily)
+        : groups.length + models.filter(model => !tk1688ModelFamily(model)).findIndex(model => model.id === value);
+      setActive(grouped && index >= 0 ? groupedIndex + 1 : index < 0 ? 0 : index + 1);
     }
   };
   const choose = (modelId: string) => {
@@ -67,6 +87,13 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     }
     onChange(modelId);
     setOpen(false, true);
+  };
+  const activate = (option: typeof options[number]) => {
+    if (option.family) {
+      const routes = groupTk1688Models(filtered).find(group => group.id === option.family)?.models ?? [];
+      setFamily(option.family); setActive(Math.max(0, routes.findIndex(model => model.id === value)));
+    }
+    else if (!option.reason) choose(option.id);
   };
   useLayoutEffect(() => {
     if (!open || !menu.current) return;
@@ -129,7 +156,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter"].includes(event.key)) return;
     event.preventDefault(); event.stopPropagation();
     if (!open) { setOpen(true); return; }
-    if (event.key === "Enter") { const option = options[activeIndex]; if (option && !option.reason) choose(option.id); }
+    if (event.key === "Enter") { const option = options[activeIndex]; if (option) activate(option); }
     else setActive(event.key === "Home" ? 0 : event.key === "End" ? Math.max(0, options.length - 1) :
       Math.min(Math.max(0, options.length - 1), Math.max(0, activeIndex + (event.key === "ArrowDown" ? 1 : -1))));
   };
@@ -137,7 +164,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     onBlur={event => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
     <button id={id} ref={trigger} type="button" className={`node-model-select-trigger ${styles.trigger}`} role="combobox"
       aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
-      aria-describedby={selected ? `${listId}-selected-name ${listId}-selected-id` : undefined}
+      aria-describedby={selected ? `${listId}-selected-name ${listId}-selected-id${tk1688ModelFamily(selected) ? ` ${listId}-selected-route` : ""}` : undefined}
       title={selected ? `${cleanModelDisplayName(selected.name, selected.metadata?.priceLabel)} · ${selected.id}` : value || "自动模型"}
       onClick={() => setOpen(!open)}>
       {selected ? <ModelIdentity model={selected} parameters={parameters} detailsId={`${listId}-selected`} /> : <span>{value || "自动模型"}</span>}
@@ -146,8 +173,12 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     {value && !selected && <p className={styles.note} role="status">保留当前模型 {value}：{loading ? "正在扫描模型…" : failed ? "模型扫描失败，暂不可用" : authoritative ? "当前扫描不可用" : "目录未确认"}。请选择后才会更换。</p>}
     {open && <div ref={menu} popover="manual" className={`node-model-select-options ${styles.menu}`}
       style={{ position: "fixed", inset: "auto", margin: 0, display: "flex", maxHeight }}>
+      {grouped && <div className={styles.routingHeading}>
+        {family ? <><button type="button" onClick={() => { setFamily(null); setQuery(""); setActive(0); search.current?.focus(); }}>返回模型</button><strong>{family}</strong></>
+          : <span>先选模型，再选自动路由或商家渠道</span>}
+      </div>}
       <div className={styles.filters}>
-        <input ref={search} role="combobox" aria-label="搜索模型名称或 ID" placeholder="搜索模型名称或 ID" aria-autocomplete="list"
+        <input ref={search} role="combobox" aria-label="搜索模型名称或 ID" placeholder={grouped ? "搜索模型、商家、4K 或超分说明" : "搜索模型名称或 ID"} aria-autocomplete="list"
           aria-expanded="true" aria-controls={listId} aria-activedescendant={options.length ? `${listId}-${activeIndex}` : undefined}
           value={query} onChange={event => { setQuery(event.target.value); setActive(0); }} />
         <select aria-label="模型类型筛选" value={kind} onChange={event => { setKind(event.target.value as ModelKindFilter); setActive(0); }}>
@@ -159,20 +190,21 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       </div>
       <div ref={list} id={listId} className={styles.list} role="listbox" aria-label={`${label} 可选模型`}>
         {visible.map((option, offset) => <button key={option.id} id={`${listId}-${pageStart + offset}`} type="button" role="option"
-          aria-label={option.label} aria-selected={value === option.id} aria-disabled={Boolean(option.reason)} aria-setsize={options.length} aria-posinset={pageStart + offset + 1}
-          aria-describedby={option.model ? `${listId}-${pageStart + offset}-id ${listId}-${pageStart + offset}-price${option.reason ? ` ${listId}-${pageStart + offset}-reason` : ""}` : undefined}
+          aria-label={option.label} aria-selected={option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id} aria-disabled={Boolean(option.reason)} aria-setsize={options.length} aria-posinset={pageStart + offset + 1}
+          aria-describedby={option.model ? `${listId}-${pageStart + offset}-id ${listId}-${pageStart + offset}-price${family ? ` ${listId}-${pageStart + offset}-summary` : ""}${option.reason ? ` ${listId}-${pageStart + offset}-reason` : ""}` : undefined}
           className={styles.option} data-index={pageStart + offset} data-active={activeIndex === pageStart + offset || undefined}
-          title={option.reason ? `不可运行：${option.reason}` : option.id || "使用连接默认模型"} tabIndex={-1}
-          onMouseDown={event => event.preventDefault()} onClick={() => { if (!option.reason) choose(option.id); }}>
-          {option.model ? <span className={styles.identity}><ModelIdentity model={option.model} parameters={parameters} detailsId={`${listId}-${pageStart + offset}`} price />{option.reason && <small id={`${listId}-${pageStart + offset}-reason`}>不可运行：{option.reason}</small>}</span> : <span>{option.label}</span>}
+          title={option.family ? "查看此模型的自动路由与商家渠道" : option.reason ? `不可运行：${option.reason}` : option.id || "使用连接默认模型"} tabIndex={-1}
+          onMouseDown={event => event.preventDefault()} onClick={() => activate(option)}>
+          {option.family ? <span className={styles.identity}><strong>{option.label}</strong><span className={styles.summary}>{option.merchants} 条商家渠道 · 查看线路与报价</span></span>
+            : option.model ? <span className={styles.identity}><ModelIdentity model={option.model} parameters={parameters} detailsId={`${listId}-${pageStart + offset}`} price route={Boolean(family)} />{option.reason && <small id={`${listId}-${pageStart + offset}-reason`}>不可运行：{option.reason}</small>}</span> : <span>{option.label}</span>}
           {option.model && badge?.(option.model)}
         </button>)}
-        {!options.length && <p className={styles.note}>没有符合筛选条件的模型。可清空搜索或调整筛选。</p>}
+        {!options.length && <p className={styles.note}>没有符合筛选条件的{family ? "线路" : "模型"}。可清空搜索或调整筛选。</p>}
       </div>
-      <div className={styles.pagination}><span>{options.length ? `${pageStart + 1}–${Math.min(pageStart + MODEL_PICKER_PAGE_SIZE, options.length)} / ${options.length}` : "0 个模型"}</span>
+      <div className={styles.pagination}><span>{options.length ? `${pageStart + 1}–${Math.min(pageStart + MODEL_PICKER_PAGE_SIZE, options.length)} / ${options.length}${grouped ? family ? " 条线路" : " 个模型选项" : ""}` : "0 个模型"}</span>
         {options.length > MODEL_PICKER_PAGE_SIZE && <><button type="button" disabled={!page} onClick={() => { setActive(Math.max(0, pageStart - MODEL_PICKER_PAGE_SIZE)); search.current?.focus(); }}>上一页</button><button type="button" disabled={pageStart + MODEL_PICKER_PAGE_SIZE >= options.length} onClick={() => { setActive(pageStart + MODEL_PICKER_PAGE_SIZE); search.current?.focus(); }}>下一页</button></>}
       </div>
-      {allowManual && query.trim() && !models.some(model => model.id === query.trim()) && <button className={styles.manual} type="button" onClick={() => choose(query.trim())}>使用手动模型 ID：{query.trim()}</button>}
+      {allowManual && !grouped && query.trim() && !models.some(model => model.id === query.trim()) && <button className={styles.manual} type="button" onClick={() => choose(query.trim())}>使用手动模型 ID：{query.trim()}</button>}
     </div>}
   </div>;
 }

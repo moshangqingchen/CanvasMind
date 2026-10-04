@@ -1,6 +1,7 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { cleanModelDisplayName } from "./model-display";
 import { modelCanvasUnavailableReason } from "./graph-ui";
+import { tk1688ModelFamily, tk1688ModelSearchText } from "./tk1688-model-display";
 
 export const MODEL_PICKER_PAGE_SIZE = 40;
 export const RECENT_MODELS_KEY = "super-canvas.recent-models.v1";
@@ -17,7 +18,8 @@ export function filterPickerModels(models: readonly ModelDescriptor[], query: st
   const words = query.normalize("NFKC").trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
   const recent = new Set(recentIds);
   const filtered = models.filter(model => {
-    const searchable = `${cleanModelDisplayName(model.name, model.metadata?.priceLabel)} ${model.id}`.normalize("NFKC").toLocaleLowerCase();
+    const searchable = tk1688ModelFamily(model) ? tk1688ModelSearchText(model)
+      : `${cleanModelDisplayName(model.name, model.metadata?.priceLabel)} ${model.id}`.normalize("NFKC").toLocaleLowerCase();
     return words.every(word => searchable.includes(word)) &&
       (kind === "all" || model.operations.some(operation => operation.startsWith(`${kind}.`))) &&
       (status !== "runnable" || (model.operations.length > 0 && modelCanvasUnavailableReason(model) === null)) &&

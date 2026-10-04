@@ -40,6 +40,10 @@ export function agentCapabilities(connection: ProviderConnectionRecord, modelId:
 export interface AgentModelOption {
   supplierId: string; supplierName: string; group: string; connectionId: string; connectionName: string;
   modelId: string; modelName: string; protocol: DirectorProtocol; available: boolean; reason?: string;
+  supplierKey?: string;
+  description?: string;
+  metadata?: ModelDescriptor["metadata"];
+  pricing?: ModelDescriptor["pricing"];
   capabilities: DirectorModelCapabilities; source: "key" | "manual" | "catalog";
   reasoningOptions?: AgentReasoningOption[];
   reasoningSource?: AgentCapabilitySource;
@@ -146,6 +150,10 @@ export async function loadAgentModels(): Promise<AgentModelOption[]> {
         supplierName: supplier?.name ?? String(config.supplierName ?? connection.name.split(" · ")[0]),
         group: String(config.modelGroup ?? "默认分组"), connectionId: connection.id, connectionName: connection.name,
         modelId, modelName: entry.model.name, available: !reason, ...(reason ? { reason } : {}),
+        supplierKey: supplier?.supplierKey ?? (typeof config.supplierKey === "string" ? config.supplierKey : undefined),
+        ...(entry.model.description ? { description: entry.model.description } : {}),
+        ...(entry.model.metadata ? { metadata: entry.model.metadata } : {}),
+        ...(entry.model.pricing ? { pricing: entry.model.pricing } : {}),
         source: entry.source, ...resolved,
       });
     }

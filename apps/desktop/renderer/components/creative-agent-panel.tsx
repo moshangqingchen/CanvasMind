@@ -36,12 +36,15 @@ import {
   type ProviderConnectionView,
 } from "../lib/client-api";
 import { agentHistoryStorageKey } from "../lib/agent-chat-history";
+import { providerConnectionSupplierKey } from "../lib/provider-connection-options";
+import { isTk1688ApiUrl } from "@super-canvas/providers/tk1688-model-policy";
 import type { AssetView, CanvasNode } from "./types";
 import {
   AgentCanvasContext,
   type AgentCanvasResult,
 } from "./agent-canvas-context";
 import styles from "./creative-agent-panel.module.css";
+import { Tk1688TextModelSelect } from "./tk1688-text-model-select";
 
 type Props = {
   connections: ProviderConnectionView[];
@@ -56,6 +59,31 @@ type Props = {
   placement?: "left" | "right";
 };
 const keyOf = (m: AgentModelOption) => `${m.connectionId}\n${m.modelId}`;
+function isTk1688Connection(connection: ProviderConnectionView) {
+  return providerConnectionSupplierKey(connection) === "tk1688" ||
+    isTk1688ApiUrl(typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : undefined);
+}
+function isTk1688Model(model: AgentModelOption | undefined, connections: ProviderConnectionView[]) {
+  return Boolean(model && (model.supplierKey === "tk1688" || model.metadata?.tk1688Catalog === true ||
+    connections.some(connection => connection.id === model.connectionId && isTk1688Connection(connection))));
+}
+function savedTk1688Model(key: string, connections: ProviderConnectionView[]): AgentModelOption | undefined {
+  const [connectionId, modelId] = key.split("\n");
+  if (!connectionId || !modelId) return undefined;
+  const connection = connections.find(item => item.id === connectionId && isTk1688Connection(item));
+  if (!connection) return undefined;
+  const config = connection.config;
+  return {
+    supplierId: String(config.supplierId ?? `${config.supplierKey ?? connection.provider}:${config.baseUrl ?? connection.id}`),
+    supplierName: String(config.supplierName ?? connection.name.split(" · ")[0]),
+    supplierKey: "tk1688", group: String(config.modelGroup ?? "默认分组"),
+    connectionId, connectionName: connection.name, modelId, modelName: modelId,
+    protocol: "openai-chat-completions", available: false, source: "key",
+    reason: "本次目录未返回已保存线路，请刷新目录或重新选择",
+    capabilities: { text: true, imageInput: false, audioInput: false, videoInput: false,
+      structuredOutput: false, toolCalling: false, nativeWebSearch: false, reasoning: false },
+  };
+}
 const mediaKinds = [
   { kind: "image", capability: "imageInput", limit: "maxImages", label: "图片", unit: "张" },
   { kind: "video", capability: "videoInput", limit: "maxVideos", label: "视频", unit: "个" },
@@ -114,7 +142,9 @@ export function AgentPanel(props: Props) {
     Array<{ id: string; title: string }>
   >([]);
   const [models, setModels] = useState<AgentModelOption[]>([]);
-  const [choice, setChoice] = useState("");
+  const [modelChoiceLoaded, setModelChoiceLoaded] = useState(false);
+  const [selection, setSelection] = useState<{ key: string; snapshot?: AgentModelOption }>({ key: "" });
+  const choice = selection.key;
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AssetView[]>([]);
   const [busy, setBusy] = useState(false);
@@ -136,10 +166,17 @@ export function AgentPanel(props: Props) {
   }, [session]);
   const sessionId = session?.id;
   const conversation = useRef<HTMLDivElement>(null);
+  const missingSelection = isTk1688Model(selection.snapshot, props.connections)
+    ? { ...selection.snapshot!, available: false, reason: "本次目录未返回已保存线路，请刷新目录或重新选择",
+      metadata: { ...selection.snapshot!.metadata, tk1688CatalogStale: true } }
+    : savedTk1688Model(choice, props.connections);
   const selected =
-    models.find((m) => keyOf(m) === choice) ??
+    models.find((m) => keyOf(m) === choice) ?? missingSelection ??
     models.find((m) => m.available) ??
     models[0];
+  const tk1688Selection = isTk1688Model(selected, props.connections);
+  const modelInventory = selected && !models.some(model => keyOf(model) === keyOf(selected))
+    ? [...models, selected] : models;
   const modelKey = selected ? keyOf(selected) : "";
   const reasoningOptions = selected?.reasoningOptions ?? [{ value: "auto", label: "自动" }];
   const reasoning = reasoningChoice.model === modelKey &&
@@ -160,23 +197,27 @@ export function AgentPanel(props: Props) {
     ...items, ...(selectedAsset ? [selectedAsset] : []),
   ].map((asset) => [asset.id, asset])).values()];
   const selectModel = (model?: AgentModelOption) => {
-    if (model) setChoice(keyOf(model));
+    if (model) {
+      setSelection({ key: keyOf(model), snapshot: model });
+      if (isTk1688Model(model, props.connections))
+        localStorage.setItem(`agent-model:${props.canvasId}`, keyOf(model));
+    }
     setReasoningChoice({ model: "", value: "auto" });
   };
   const firstAvailable = (items: AgentModelOption[]) => items.find((m) => m.available) ?? items[0];
   const suppliers = [
-    ...new Map(models.map((m) => [m.supplierId, m.supplierName])).entries(),
+    ...new Map(modelInventory.map((m) => [m.supplierId, m.supplierName])).entries(),
   ];
   const groups = [
     ...new Set(
-      models
+      modelInventory
         .filter((m) => m.supplierId === selected?.supplierId)
         .map((m) => m.group),
     ),
   ];
   const connections = [
     ...new Map(
-      models
+      modelInventory
         .filter(
           (m) =>
             m.supplierId === selected?.supplierId &&
@@ -185,7 +226,7 @@ export function AgentPanel(props: Props) {
         .map((m) => [m.connectionId, m.connectionName]),
     ).entries(),
   ];
-  const groupModels = models.filter(
+  const groupModels = modelInventory.filter(
     (m) => m.connectionId === selected?.connectionId,
   );
   const modelLoad = useCallback(async () => {
@@ -197,6 +238,7 @@ export function AgentPanel(props: Props) {
     );
     if (alive.current && version === modelReadVersion.current)
       setModels(current => JSON.stringify(current) === JSON.stringify(items) ? current : items);
+    return items;
   }, []);
   const refresh = useCallback(async (id: string) => {
     const value = await agentRequest<AgentSession>(
@@ -238,10 +280,13 @@ export function AgentPanel(props: Props) {
         controller.signal,
       ),
     ])
-      .then(async ([, list]) => {
+      .then(async ([items, list]) => {
         if (!alive.current) return;
         setSessions(list);
-        if (savedModel) setChoice(savedModel);
+        if (savedModel) setSelection(current => current.key ? current : {
+          key: savedModel, snapshot: items.find(model => keyOf(model) === savedModel),
+        });
+        setModelChoiceLoaded(true);
         const last = window.localStorage.getItem(
           `agent-task:${props.canvasId}`,
         );
@@ -306,9 +351,9 @@ export function AgentPanel(props: Props) {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [props.draftRequest, props.assets]);
   useEffect(() => {
-    if (modelKey)
+    if (modelChoiceLoaded && modelKey && !tk1688Selection)
       localStorage.setItem(`agent-model:${props.canvasId}`, modelKey);
-  }, [modelKey, props.canvasId]);
+  }, [modelChoiceLoaded, modelKey, props.canvasId, tk1688Selection]);
   useEffect(() => {
     let reading = false;
     const load = () => {
@@ -514,7 +559,7 @@ export function AgentPanel(props: Props) {
             aria-label="刷新模型列表"
             title="刷新已接入模型"
             disabled={busy}
-            onClick={() => void run(modelLoad)}
+            onClick={() => void run(async () => { await modelLoad(); })}
           >
             <RefreshCw size={16} />
           </button>
@@ -927,7 +972,19 @@ export function AgentPanel(props: Props) {
               ))}
             </select>
           )}
-          <select
+          {tk1688Selection ? (
+            <Tk1688TextModelSelect
+              label="智能体模型"
+              models={groupModels.map(model => ({
+                id: model.modelId, name: model.modelName, description: model.description,
+                metadata: model.metadata, pricing: model.pricing,
+                available: model.available, reason: model.reason,
+              }))}
+              value={selected?.modelId ?? ""}
+              disabled={busy}
+              onChange={id => selectModel(groupModels.find(model => model.modelId === id))}
+            />
+          ) : <select
             aria-label="智能体模型"
             value={modelKey}
             disabled={busy}
@@ -942,7 +999,7 @@ export function AgentPanel(props: Props) {
                 {!m.available ? ` · ${m.reason}` : ""}
               </option>
             ))}
-          </select>
+          </select>}
           <select
               aria-label="思考强度"
               title={selected?.reasoningNotice}

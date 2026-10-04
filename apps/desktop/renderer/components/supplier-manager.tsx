@@ -10,6 +10,7 @@ import { modelInventoryLastSuccessAt, modelInventoryScanStatus } from "../lib/mo
 import { SupplierBillingSummary } from "./supplier-billing-summary";
 import { refreshAllSupplierAccounts, seedSupplierBilling, useSupplierBillingOverview } from "../lib/client-supplier-billing";
 import { billingCompact } from "../lib/supplier-billing-display";
+import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary, type Tk1688DisplayModel } from "../lib/tk1688-model-display";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -2318,7 +2319,7 @@ function GroupConnectionEditor({
   );
   const visibleCatalog = group.models;
   const realScan = modelStatus === "live" || modelStatus === "empty";
-  const modelCount = realScan ? actualModels.length : 0;
+  const modelCount = realScan ? supplierModelCount(actualModels) : "0";
   return (
     <form
       className="sm-group-body"
@@ -2529,7 +2530,7 @@ function GroupConnectionEditor({
             {!realScan && actualModels.length > 0 ? " · 展示上次结果，本次未确认" : " · 目录返回与实际生成核验分别记录"}
           </p>
           <div className="sm-model-filters">
-            <label>模型来源 <select aria-label={`${group.id} 模型来源`} value={modelSource} onChange={event => setModelSource(event.target.value)}><option value="actual">Key 模型（{actualModels.length}）</option><option value="catalog">目录参考（{visibleCatalog.length}）</option><option value="missing">未再返回（{inventoryModels(connection?.config.modelRemovedModels).length}）</option><option value="manual">手动添加（{manualModels.length}）</option></select></label>
+            <label>模型来源 <select aria-label={`${group.id} 模型来源`} value={modelSource} onChange={event => setModelSource(event.target.value)}><option value="actual">Key 模型（{supplierModelCount(actualModels)}）</option><option value="catalog">目录参考（{supplierModelCount(visibleCatalog)}）</option><option value="missing">未再返回（{supplierModelCount(inventoryModels(connection?.config.modelRemovedModels))}）</option><option value="manual">手动添加（{manualModels.length}）</option></select></label>
             <label>类型 <select aria-label={`${group.id} 模型类型`} value={kindFilter} onChange={event => setKindFilter(event.target.value as "all" | ModelKind)}><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="chat">对话</option></select></label>
             <label>状态 <select aria-label={`${group.id} 模型状态`} value={stateFilter} onChange={event => setStateFilter(event.target.value)}><option value="all">全部状态</option><option value="runnable">目录与协议已确认</option><option value="verified">已实测</option></select></label>
             {(kindFilter !== "all" || stateFilter !== "all") && <button type="button" className="sm-text-button" onClick={() => { setKindFilter("all"); setStateFilter("all"); }}>清除类型与状态筛选</button>}
@@ -2550,11 +2551,15 @@ function GroupConnectionEditor({
             models={actualModels.map((model) => ({
               id: model.id,
               name: cleanModelDisplayName(model.name, model.metadata?.priceLabel),
+              description: model.description,
+              metadata: model.metadata,
               capability: "other",
               kinds: descriptorKinds(model),
               runnable: modelStatus === "live" && model.metadata?.canvasRunnable !== false && model.operations.length > 0,
               verified: typeof model.metadata?.imageCapabilitiesVerifiedAt === "string",
-              priceLabel: `${modelPriceSummary(model, {})}${model.pricing ? " · 默认参数" : ""}`,
+              priceLabel: model.metadata?.tk1688Catalog === true && model.pricing?.kind === "token" && typeof model.metadata.priceLabel === "string"
+                ? model.metadata.priceLabel
+                : `${modelPriceSummary(model, {})}${model.pricing ? " · 默认参数" : ""}`,
               resolutionLabel: Array.isArray(model.metadata?.imageCapabilityEvidence) ? (model.metadata.imageCapabilityEvidence as ImageCapabilityEvidence[]).filter(item => item.resolution && !["unsupported"].includes(item.status)).map(item => `${item.resolution} · ${EVIDENCE_LABELS[item.status]}`).join(" / ") : typeof model.metadata?.imageVerifiedResolutionLabel === "string" ? model.metadata.imageVerifiedResolutionLabel : typeof model.metadata?.supplierGroupResolutionLabel === "string" ? model.metadata.supplierGroupResolutionLabel : undefined,
               qualityLabel: typeof model.metadata?.imageAcceptedQualityLabel === "string" ? model.metadata.imageAcceptedQualityLabel : undefined,
               interfaceLabel: typeof model.metadata?.autoInterfaceLabel === "string" ? model.metadata.autoInterfaceLabel : undefined,
@@ -2632,6 +2637,89 @@ function GroupConnectionEditor({
   );
 }
 
+type SupplierModelListItem = SupplierCatalogModel & {
+  description?: string;
+  kinds?: ModelKind[];
+  runnable?: boolean;
+  verified?: boolean;
+  availability?: { label: string; tone: string; detail: string };
+  added?: boolean;
+  resolutionLabel?: string;
+  qualityLabel?: string;
+  interfaceLabel?: string;
+  interfaceSource?: string;
+};
+
+function supplierModelCount(models: readonly Tk1688DisplayModel[], grouped = false): string {
+  const groups = groupTk1688Models(models);
+  if (!groups.length && !grouped) return String(models.length);
+  const ordinaryCount = models.filter(model => !tk1688ModelFamily(model)).length;
+  const merchantCount = groups.reduce((count, group) => count + group.merchants.length, 0);
+  return `${groups.length + ordinaryCount} 个基础型号 · ${merchantCount} 条商家渠道`;
+}
+
+function SupplierModelRow({ model, route = false }: { model: SupplierModelListItem; route?: boolean }) {
+  const routeSummary = route ? tk1688RouteSummary(model) : undefined;
+  return (
+    <div className={`sm-model-item${route ? " sm-model-route" : ""}`}>
+      <div className="sm-model-name">
+        <strong>{route ? tk1688RouteLabel(model) : cleanModelDisplayName(model.name ?? model.id, model.priceLabel)}</strong>
+        <code>{model.id}</code>
+      </div>
+      <div className="sm-model-facts">
+        {model.added && <span className="sm-model-state is-ok">新增</span>}
+        {model.availability && <span className={`sm-model-state is-${model.availability.tone}`} title={model.availability.detail}>{model.availability.label === "可用" ? "目录已确认" : model.availability.label}</span>}
+        <span>
+          {(model.kinds ?? (model.capability === "other" ? [] : [model.capability])).map(kind => CAPABILITY_LABELS[kind]).join(" / ")}
+        </span>
+        {model.protocol && model.protocol !== "unknown" && <small>{PROTOCOL_LABELS[model.protocol]}</small>}
+        {model.resolutionLabel && <small>{model.resolutionLabel}</small>}
+        {model.qualityLabel && <small title={model.availability?.detail}>{model.qualityLabel}</small>}
+        {model.interfaceLabel && <small>{model.interfaceLabel}{model.interfaceSource && <> · <a href={model.interfaceSource} target="_blank" rel="noreferrer">接口说明</a></>}</small>}
+        {model.availability && <details className="sm-model-evidence"><summary>查看依据</summary><p>{model.availability.detail}</p></details>}
+      </div>
+      <div className="sm-model-price">{model.priceLabel || "价格未公布"}</div>
+      {routeSummary && <p className="sm-model-route-summary">{routeSummary}</p>}
+    </div>
+  );
+}
+
+function Tk1688ModelCard({
+  group,
+  allRoutes,
+  searchQuery,
+}: {
+  group: ReturnType<typeof groupTk1688Models<SupplierModelListItem>>[number];
+  allRoutes: ReturnType<typeof groupTk1688Models<SupplierModelListItem>>[number];
+  searchQuery: string;
+}) {
+  const [expanded, setExpanded] = useState(Boolean(searchQuery.trim()));
+  const kinds = [...new Set(group.models.flatMap(model => model.kinds ?? (model.capability === "other" ? [] : [model.capability])))];
+  return (
+    <div className="sm-model-family">
+      <button
+        type="button"
+        className="sm-model-family-toggle"
+        aria-expanded={expanded}
+        aria-label={`${expanded ? "收起" : "展开"} ${group.id} 的商家渠道`}
+        onClick={() => setExpanded(value => !value)}
+      >
+        {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+        <span className="sm-model-family-name">
+          <strong>{group.id}</strong>
+          <span>{allRoutes.smart ? "自动路由 · " : ""}{allRoutes.merchants.length} 条商家渠道{group.models.length !== allRoutes.models.length && ` · ${group.models.length} / ${allRoutes.models.length} 条路线符合筛选`}</span>
+        </span>
+        {kinds.length > 0 && <span className="sm-model-family-kinds">{kinds.map(kind => CAPABILITY_LABELS[kind]).join(" / ")}</span>}
+        <span className="sm-model-family-action">{expanded ? "收起路线" : "查看路线"}</span>
+      </button>
+      {expanded && <div className="sm-model-family-routes">
+        <div className="sm-model-columns" aria-hidden="true"><span>路由 / 完整 ID</span><span>状态与能力</span><span>参考标价</span></div>
+        {group.models.map(model => <SupplierModelRow key={model.id} model={model} route />)}
+      </div>}
+    </div>
+  );
+}
+
 function ModelList({
   title,
   badge,
@@ -2641,7 +2729,7 @@ function ModelList({
 }: {
   title: string;
   badge: string;
-  models: readonly (SupplierCatalogModel & { kinds?: ModelKind[]; runnable?: boolean; verified?: boolean; availability?: { label: string; tone: string; detail: string }; added?: boolean; resolutionLabel?: string; qualityLabel?: string; interfaceLabel?: string; interfaceSource?: string })[];
+  models: readonly SupplierModelListItem[];
   empty: string;
   active: boolean; searchQuery: string; kindFilter: "all" | ModelKind; stateFilter: string;
 }) {
@@ -2650,46 +2738,39 @@ function ModelList({
   const filtered = models.filter(model => matchesModelText(model, searchQuery) &&
     (kindFilter === "all" || (model.kinds ?? [model.capability]).includes(kindFilter)) &&
     (stateFilter === "all" || (stateFilter === "verified" ? model.verified : model.runnable)));
-  const pages = Math.max(1, Math.ceil(filtered.length / 50));
+  const groups = groupTk1688Models(models);
+  const filteredGroups = groupTk1688Models(filtered);
+  const ordinaryRows = filtered.filter(model => !tk1688ModelFamily(model));
+  const rowCount = groups.length ? filteredGroups.length + ordinaryRows.length : filtered.length;
+  const pages = Math.max(1, Math.ceil(rowCount / 50));
   const currentPage = Math.min(page, pages - 1);
-  const rows = filtered.slice(currentPage * 50, (currentPage + 1) * 50);
+  const start = currentPage * 50;
+  const rows = groups.length ? ordinaryRows.slice(Math.max(0, start - filteredGroups.length), Math.max(0, start + 50 - filteredGroups.length)) : filtered.slice(start, start + 50);
+  const familyRows = filteredGroups.slice(start, start + 50);
   return (
     <section className="sm-model-section" data-source={title === "Key 实际读取" ? "actual" : title === "上次可用，本次未再返回" ? "missing" : title === "手动添加" ? "manual" : "catalog"}>
       <div className="sm-model-section-title">
         <strong>{title}</strong>
-        <span>{filtered.length === models.length ? `${models.length} 个` : `${filtered.length} / ${models.length} 个`}</span>
+        <span>{groups.length ? `${supplierModelCount(filtered, true)}${filtered.length === models.length ? "" : `（全部 ${supplierModelCount(models)}）`}` : filtered.length === models.length ? `${models.length} 个` : `${filtered.length} / ${models.length} 个`}</span>
         <small>{badge}</small>
       </div>
-      {rows.length ? (
-        <div className="sm-model-items">
-          <div className="sm-model-columns" aria-hidden="true"><span>模型 / ID</span><span>状态与能力</span><span>参考标价</span></div>
-          {rows.map((model) => (
-            <div className="sm-model-item" key={model.id}>
-              <div className="sm-model-name"><strong>{cleanModelDisplayName(model.name ?? model.id, model.priceLabel)}</strong><code>{model.id}</code></div>
-              <div className="sm-model-facts">
-              {model.added && <span className="sm-model-state is-ok">新增</span>}
-              {model.availability && <span className={`sm-model-state is-${model.availability.tone}`} title={model.availability.detail}>{model.availability.label === "可用" ? "目录已确认" : model.availability.label}</span>}
-              <span>
-                {(model.kinds ?? (model.capability === "other" ? [] : [model.capability])).map(kind => CAPABILITY_LABELS[kind]).join(" / ")}
-              </span>
-              {model.protocol && model.protocol !== "unknown" && (
-                <small>{PROTOCOL_LABELS[model.protocol]}</small>
-              )}
-              {model.resolutionLabel && <small>{model.resolutionLabel}</small>}
-              {model.qualityLabel && <small title={model.availability?.detail}>{model.qualityLabel}</small>}
-              {model.interfaceLabel && <small>{model.interfaceLabel}{model.interfaceSource && <> · <a href={model.interfaceSource} target="_blank" rel="noreferrer">接口说明</a></>}</small>}
-              {model.availability && <details className="sm-model-evidence"><summary>查看依据</summary><p>{model.availability.detail}</p></details>}
-              </div>
-              <div className="sm-model-price">{model.priceLabel || "价格未公布"}</div>
-            </div>
-          ))}
-        </div>
+      {groups.length > 0 && <p className="sm-model-route-guide">先按基础型号浏览，展开后比较自动路由与商家渠道。各渠道的能力和参考报价分别显示。</p>}
+      {rows.length || familyRows.length ? (
+        <>
+          {familyRows.length > 0 && <div className="sm-model-families">
+            {familyRows.map(group => <Tk1688ModelCard key={group.id} group={group} allRoutes={groups.find(item => item.id === group.id)!} searchQuery={searchQuery} />)}
+          </div>}
+          {rows.length > 0 && <div className="sm-model-items">
+            <div className="sm-model-columns" aria-hidden="true"><span>模型 / ID</span><span>状态与能力</span><span>参考标价</span></div>
+            {rows.map(model => <SupplierModelRow key={model.id} model={model} />)}
+          </div>}
+        </>
       ) : (
         <p className="sm-model-empty">{models.length ? "当前来源没有符合筛选条件的模型，可清除筛选或切换模型来源。" : empty || "当前来源没有模型。"}</p>
       )}
       {pages > 1 && <nav className="sm-model-pagination" aria-label={`${title} 分页`}>
         <button type="button" className="sm-button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button>
-        <span>第 {currentPage + 1} / {pages} 页 · 每页最多 50 个</span>
+        <span>第 {currentPage + 1} / {pages} 页 · 每页最多 50 {groups.length ? "种型号" : "个"}</span>
         <button type="button" className="sm-button" disabled={currentPage === pages - 1} onClick={() => setPage(currentPage + 1)}>下一页</button>
       </nav>}
     </section>

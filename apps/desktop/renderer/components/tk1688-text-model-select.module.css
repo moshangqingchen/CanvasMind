@@ -1,0 +1,76 @@
+.root {
+  grid-column: 1 / -1;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+.selectors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.field select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 7px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 10px;
+  color-scheme: light;
+}
+
+.field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.field select:disabled {
+  opacity: 0.65;
+}
+
+.facts {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.summary,
+.price {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.summary strong,
+.price {
+  color: var(--text);
+}
+
+.details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.details code {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-wrap;
+}

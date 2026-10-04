@@ -4,6 +4,11 @@
 .name { font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .id { color: #aab5cc; font-size: 11px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .price { color: #c6bbff; font-size: 11px; line-height: 1.4; white-space: normal; }
+.route { color: #c6bbff; font-size: 11px; }
+.summary { color: #adb7cd; font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+.routingHeading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 0 auto; font-size: 11px; color: #adb7cd; }
+.routingHeading strong { overflow-wrap: anywhere; color: var(--text); }
+.routingHeading button { color: var(--text); background: #252d40; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; cursor: pointer; }
 .menu { display: flex; flex-direction: column; gap: 5px; overflow: hidden; padding: 7px; z-index: 5; min-height: 100px; box-sizing: border-box; color: var(--text); }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; }
 .filters input { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--line); border-radius: 5px; background: #0e121b; color: var(--text); padding: 4px 7px; font-size: 12px; }

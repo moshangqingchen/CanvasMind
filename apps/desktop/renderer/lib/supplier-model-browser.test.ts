@@ -20,5 +20,7 @@ describe("supplier model search", () => {
     expect(matchesModelText({ id: "image-v2", name: "模型创作" }, "IMAGE 创作")).toBe(true);
     expect(matchesModelText({ id: "image-v2" }, "image missing")).toBe(false);
     expect(descriptorKinds({ operations: ["image.generate", "image.edit", "video.generate"] })).toEqual(["image", "video"]);
+    expect(descriptorKinds({ operations: [], metadata: { tk1688Catalog: true, protocol: "chat-completions" } })).toEqual(["chat"]);
+    expect(descriptorKinds({ operations: [], metadata: { protocol: "chat-completions" } })).toEqual([]);
   });
 });
