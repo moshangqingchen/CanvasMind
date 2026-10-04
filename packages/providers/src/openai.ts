@@ -17,6 +17,8 @@ import { chentuAzImageDescriptor, isChentuAzImageModel, CHENTU_AZ_IMAGE_SIZES } 
 import { monsterImageEvidence } from "./monster-image-capabilities.js";
 import { chuangxiangImageEvidence } from "./chuangxiang-image-capabilities.js";
 import { isSecureSkillImageConnection, isSecureSkillImageResult, SecureSkillImageAdapter } from "./secure-skill-image.js";
+import { applyPdogImageCapabilities, isPdogImageConnection, isPdogImageResult, pdogImageOrigin, PdogImageAdapter } from "./pdog-image.js";
+import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
@@ -1930,6 +1932,10 @@ function configuredBaseUrl(
   profile: ImageProviderProfile,
 ): string {
   const value = connection.baseUrl?.trim() || fallback;
+  const pdogOrigin = profile === "openai" ? pdogImageOrigin(value) : undefined;
+  if (pdogOrigin) return `${pdogOrigin}/v1`;
+  if (profile === "openai" && isChuangxiangImageConnection({ ...connection.settings, baseUrl: value }, configuredImageModel(connection, DEFAULT_MODEL, profile)))
+    return `${new URL(value).origin}/v1`;
   try {
     const parsed = new URL(value);
     // Newly imported Mikoto image groups store the site root, while its
@@ -2578,6 +2584,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   private readonly profile: ImageProviderProfile;
   private readonly defaultBaseUrl: string;
   private readonly secureSkill: SecureSkillImageAdapter;
+  private readonly pdog: PdogImageAdapter;
+  private readonly chuangxiang: ChuangxiangImageAdapter;
 
   public constructor(
     private readonly connections: ProviderConnectionResolver,
@@ -2594,6 +2602,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       120_000;
     this.submitTimeoutMs = options.requestTimeoutMs ?? 0;
     this.secureSkill = new SecureSkillImageAdapter(connections, { fetch: this.fetchImpl,
+      ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
+    this.pdog = new PdogImageAdapter(connections, { fetch: this.fetchImpl,
+      ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
+    this.chuangxiang = new ChuangxiangImageAdapter(connections, { fetch: this.fetchImpl,
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
   }
 
@@ -2749,6 +2761,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     // stale default once their /models response is available.
     if (
       this.profile !== "weai" &&
+      !pdogImageOrigin(connection.baseUrl) &&
       !(usesKeyedLiveImageInventory(supplierKey) && remoteIds.length > 0)
     )
       ids.add(defaultModel);
@@ -2761,7 +2774,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const effectiveDefaultModel = orderedIds.includes(defaultModel)
       ? defaultModel
       : orderedIds[0];
-    return orderedIds.flatMap((id) => {
+    const listed = orderedIds.flatMap((id) => {
       if (this.profile === "weai")
         return weAIModelDescriptors(
           id,
@@ -2795,23 +2808,26 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       if (known)
         return [
           withCanonicalModelFields(
-            { ...known, isDefault: id === effectiveDefaultModel },
+            applyPdogImageCapabilities({ provider: connection.provider, config: { ...connection.settings, baseUrl: connection.baseUrl } },
+              { ...known, isDefault: id === effectiveDefaultModel }),
             "openai",
           ),
         ];
       return [
         withCanonicalModelFields(
-          {
+          applyPdogImageCapabilities({ provider: connection.provider, config: { ...connection.settings, baseUrl: connection.baseUrl } }, {
             id,
             name: id,
             operations: ["image.generate", "image.edit"],
             parameters: IMAGE_PARAMETER_DESCRIPTORS,
             isDefault: id === effectiveDefaultModel,
-          },
+          }),
           "openai",
         ),
       ];
     });
+    return listed.map(model => applyChuangxiangCurrentImageCapabilities({ provider: connection.provider,
+      config: { ...connection.settings, baseUrl: connection.baseUrl } }, model));
   }
 
   public async validate(request: NormalizedRequest): Promise<ValidationResult> {
@@ -2867,6 +2883,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
             this.profile,
           )
         : this.defaultModel);
+    if (this.profile === "openai" && resolvedConnection && isPdogImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
+      return this.pdog.validate({ ...request, model: requestedModel });
+    if (this.profile === "openai" && resolvedConnection && isChuangxiangImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
+      return this.chuangxiang.validate({ ...request, model: requestedModel });
     const resolvedModelGroup =
       this.profile === "weai" && resolvedConnection
         ? configuredModelGroup(resolvedConnection)
@@ -3450,6 +3470,12 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const selectedModel =
       request.model ??
       configuredImageModel(connection, this.defaultModel, this.profile);
+    if (this.profile === "openai" && isPdogImageConnection({ ...connection.settings, baseUrl }, selectedModel)) {
+      const adapter = connection.settings?.pdogImageMode === "sync" ? new PdogImageAdapter(this.connections, { fetch: this.fetchImpl }, "sync") : this.pdog;
+      return adapter.submit({ ...request, model: selectedModel });
+    }
+    if (this.profile === "openai" && isChuangxiangImageConnection({ ...connection.settings, baseUrl }, selectedModel))
+      return this.chuangxiang.submit({ ...request, model: selectedModel });
     if (this.profile === "openai" && isSecureSkillImageConnection({ ...connection.settings, baseUrl }, selectedModel)) {
       return this.secureSkill.submit({ ...request, model: selectedModel });
     }
@@ -3842,11 +3868,14 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   }
 
   public async poll(task: ProviderTask): Promise<ProviderTask> {
+    if (isPdogImageResult(task.result)) return this.pdog.poll(task);
     if (!isSecureSkillImageResult(task.result)) throw new Error("当前图片接口没有可查询的异步任务");
     return this.secureSkill.poll(task);
   }
 
   public async extractOutputs(result: unknown): Promise<RemoteArtifact[]> {
+    if (isChuangxiangImageResult(result)) return this.chuangxiang.extractOutputs(result);
+    if (isPdogImageResult(result)) return this.pdog.extractOutputs(result);
     if (isSecureSkillImageResult(result)) return this.secureSkill.extractOutputs(result);
     if (!result || typeof result !== "object") return [];
     const envelope =

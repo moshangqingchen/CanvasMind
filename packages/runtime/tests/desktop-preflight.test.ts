@@ -9,6 +9,17 @@ const graph = { schemaVersion: 1, nodes: [
   { id: "video", type: "video-generation", position: { x: 1, y: 0 }, data: { type: "video-generation", provider: "rest", __runtimeConnection: { provider: "rest", config: { connector: { assetsRequirePublicUrls: true } } } } },
 ], edges: [{ id: "e", source: "source", target: "video", sourceHandle: "image", targetHandle: "firstFrame" }], viewport: { x: 0, y: 0, zoom: 1 } } as unknown as WorkflowGraph;
 describe("desktop public asset preflight", () => {
+  it("requires configured reference delivery for current Chuangxiang GPT edits", () => {
+    vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
+    const current = structuredClone(graph);
+    current.nodes[1]!.type = "image-generation";
+    current.nodes[1]!.data = { nodeType: "image-generation", provider: "openai", model: "gpt-image-2.5-flare-4k",
+      __runtimeConnection: { provider: "openai", config: { baseUrl: "https://vapi.chuangxiangai.asia", modelGroup: "生图" } } };
+    expect(() => assertDesktopPublicAssets(current, new Set(["video"]))).toThrow(/未提交付费/u);
+    expect(() => assertDesktopPublicAssets({ ...current, edges: [] }, new Set(["video"]))).not.toThrow();
+    (current.nodes[1]!.data as any).__runtimeConnection.config.referenceImageHosting = "litterbox-24h";
+    expect(() => assertDesktopPublicAssets(current, new Set(["video"]))).not.toThrow();
+  });
   it("requires public reference links only for Chuangxiang Banana, while native Banana edits accept local bytes", () => {
     vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
     for (const baseUrl of ["https://genimage.pro/v1", "https://api.frimodel.com/v1", "https://token.secure-skill.com/v1", "https://vapi.chuangxiangai.asia"]) {

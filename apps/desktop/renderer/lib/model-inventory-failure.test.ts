@@ -4,6 +4,18 @@ import { assertCompleteModelInventoryPayload, isCompleteModelInventoryResponse, 
   modelInventoryFailure, modelInventoryFailureConfig, modelInventoryFailureHeaders } from "./model-inventory-failure";
 
 describe("model directory completeness and safe failures", () => {
+  it.each([{ code: "INSUFFICIENT_BALANCE", message: "private-token-must-not-echo" },
+    { error: { code: "INSUFFICIENT_BALANCE", message: "private-token-must-not-echo" } }])(
+    "distinguishes supplier HTTP403 insufficient balance from an invalid Key", responseBody => {
+      const error = new ProviderHttpError("Provider returned HTTP 403", { kind: "authentication", phase: "connect", retryable: false,
+        submissionMayHaveOccurred: false, status: 403, responseBody });
+      const failure = modelInventoryFailure(error);
+      expect(failure).toMatchObject({ code: "insufficient_balance", httpStatus: 403 });
+      expect(failure.message).toContain("余额不足");
+      expect(JSON.stringify(modelInventoryFailureConfig(failure))).not.toContain("private-token");
+      expect(modelInventoryFailure(undefined, Response.json([], { status: 502, headers: modelInventoryFailureHeaders(failure) }))).toEqual(failure);
+      expect(() => assertCompleteModelInventoryPayload({ ...responseBody, data: [] })).toThrow("余额不足");
+    });
   it.each([{ data: [] }, { models: [] }, [], { data: [], models: [{ id: "new" }] },
     { data: [{ id: "model" }], has_more: false }, { models: [{ name: "models/gemini" }] },
     { items: [{ id: "model" }] }, { result: [{ id: "model" }] }, { data: { model: { name: "Model" } } },

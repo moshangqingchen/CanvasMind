@@ -53,6 +53,61 @@ const asyncConfig: RestConnectorConfig = {
 };
 
 describe("GenericRestAdapter", () => {
+  it("downloads authenticated content only for a succeeded task with its exact native id", async () => {
+    const config: RestConnectorConfig = { ...asyncConfig, output: { ...asyncConfig.output,
+      contentFallback: { path: "/jobs/{taskId}/content" } } };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Uint8Array([1, 2]), { headers: { "content-type": "image/png" } }));
+    const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "content", provider: "rest", apiKey: "content-secret",
+      baseUrl: "https://provider.test", settings: { connector: config } }]), { fetch: fetcher });
+    const envelope = { connectionId: "content", baseUrl: "https://provider.test", config,
+      taskId: "native/id?one", remote: { job: { state: "COMPLETE" } } };
+    for (const status of ["queued", "running", "failed", "cancelled"])
+      await expect(adapter.extractOutputs({ ...envelope, status })).resolves.toEqual([]);
+    await expect(adapter.extractOutputs({ ...envelope, taskId: undefined, status: "succeeded" })).resolves.toEqual([]);
+    for (const taskId of [".", ".."])
+      await expect(adapter.extractOutputs({ ...envelope, taskId, status: "succeeded" })).resolves.toEqual([]);
+    expect(fetcher).not.toHaveBeenCalled();
+    const outputs = await adapter.extractOutputs({ ...envelope, status: "succeeded" });
+    expect(outputs).toEqual([{ kind: "image", data: new Uint8Array([1, 2]), mimeType: "image/png" }]);
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://provider.test/jobs/native%2Fid%3Fone/content");
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: "GET", redirect: "error" });
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("X-API-Key")).toBe("content-secret");
+    expect(JSON.stringify(outputs)).not.toContain("content-secret");
+  });
+
+  it("leaves public CDN outputs available without resolving credentials", async () => {
+    const config: RestConnectorConfig = { ...asyncConfig, output: { ...asyncConfig.output,
+      contentFallback: { path: "/jobs/{taskId}/content" } } };
+    const resolve = vi.fn(async () => { throw new Error("connection deleted"); });
+    const fetcher = vi.fn<typeof fetch>();
+    const adapter = new GenericRestAdapter({ resolve }, { fetch: fetcher });
+    await expect(adapter.extractOutputs({ connectionId: "deleted", baseUrl: "https://provider.test", config,
+      taskId: "one", status: "succeeded", remote: { outputs: [{ url: "https://cdn.test/result.png" }] } })).resolves.toEqual([
+        { kind: "image", url: "https://cdn.test/result.png" }]);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects content fallback paths that could escape the provider origin before submitting", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "unsafe-content", provider: "rest", apiKey: "key",
+      baseUrl: "https://provider.test" }]), { fetch: fetcher, config: { ...asyncConfig,
+        modelOverrides: { unsafe: { output: { ...asyncConfig.output, contentFallback: { path: "/\\evil.test/{taskId}/content" } } } } } });
+    await expect(adapter.submit({ connectionId: "unsafe-content", model: "unsafe", operation: "image.generate",
+      prompt: "offline", idempotencyKey: "one" })).rejects.toThrow("REST task content paths");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("does not send task content credentials after the connection origin changes", async () => {
+    const config: RestConnectorConfig = { ...asyncConfig, output: { ...asyncConfig.output,
+      contentFallback: { path: "/jobs/{taskId}/content" } } };
+    const fetcher = vi.fn<typeof fetch>();
+    const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "changed", provider: "rest", apiKey: "key",
+      baseUrl: "https://different.test" }]), { fetch: fetcher });
+    await expect(adapter.extractOutputs({ connectionId: "changed", baseUrl: "https://provider.test", config,
+      taskId: "one", status: "succeeded", remote: {} })).rejects.toThrow("current connection origin");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it.each(["image.generate", "image.edit"] as const)("keeps %s waiting beyond legacy connection request deadlines", async operation => {
     vi.useFakeTimers();
     try {

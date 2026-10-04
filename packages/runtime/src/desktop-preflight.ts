@@ -1,5 +1,5 @@
 import type { WorkflowGraph } from "@super-canvas/core";
-import { restRequestRequiresPublicAssets, referenceImageHostingEnabled, secureSkillRequiresPublicAssets, bananaRequiresPublicAssets } from "@super-canvas/providers";
+import { restRequestRequiresPublicAssets, referenceImageHostingEnabled, secureSkillRequiresPublicAssets, bananaRequiresPublicAssets, chuangxiangRequiresPublicAssets } from "@super-canvas/providers";
 import { localReferenceChannel, localReferenceChannelConfigured } from "./reference-channel.js";
 
 export class DesktopPublicAssetError extends Error {
@@ -40,6 +40,7 @@ export function assertDesktopPublicAssets(graph: WorkflowGraph, selected: Readon
     const model = typeof data.model === "string" && data.model ? data.model : connection?.config?.defaultModel;
     if (!(provider === "rest" && restRequestRequiresPublicAssets(connection?.config?.connector, model, operation, connection?.config)) &&
         !secureSkillRequiresPublicAssets(provider, connection?.config, model, operation) &&
+        !chuangxiangRequiresPublicAssets(provider, connection?.config, model, operation) &&
         !bananaRequiresPublicAssets(provider, connection?.config, model)) continue;
     if (hasAssetReference(data) || graph.edges.filter((edge) => edge.target === node.id).some((edge) => containsMedia(edge.source))) {
       throw new DesktopPublicAssetError();

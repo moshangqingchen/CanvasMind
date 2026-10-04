@@ -33,6 +33,35 @@ const scanned = (
 });
 
 describe("scanned model protocol binding", () => {
+  it("repairs the current Chuangxiang GPT SKU's single output and nine-reference JSON contract in saved caches", () => {
+    const connection = { provider: "openai", config: { baseUrl: "https://vapi.chuangxiangai.asia", modelGroup: "生图", usage: "canvas" } };
+    const model: ModelDescriptor = { id: "gpt-image-2.5-flare-4k", name: "创想4K", operations: ["image.generate"], metadata: { canvasRunnable: true } };
+    const result = bindScannedModelProtocols(connection, [model]).models[0]!;
+    expect(result.limits).toMatchObject({ maxInputImages: 9, maxOutputImages: 1 });
+    expect(result.parameters?.find(parameter => parameter.key === "n")).toMatchObject({ max: 1 });
+    expect(result.parameters?.find(parameter => parameter.key === "quality")?.default).toBe("max");
+    expect(result.metadata).toMatchObject({ imageSupportedResolutions: ["4K"], imageUnsupportedResolutions: ["1K", "2K"] });
+  });
+  it("repairs a saved pDog Image2 cache to the documented high quality and single-image contract", () => {
+    const connection = { provider: "openai", config: { baseUrl: "https://ai.whyshy.cn", modelGroup: "1K2K4K(超分组)", usage: "canvas" } };
+    const cached: ModelDescriptor = { id: "gpt-image-2", name: "Image2", operations: ["image.generate", "image.edit"],
+      parameters: [{ key: "quality", label: "质量", control: "select", default: "max", options: [{ value: "max", label: "max" }] }], metadata: { canvasRunnable: true } };
+    const repaired = bindScannedModelProtocols(connection, [cached]).models[0]!;
+    expect(repaired.parameters?.find(parameter => parameter.key === "quality")).toMatchObject({ default: "high", options: [
+      { value: "low", label: "low" }, { value: "medium", label: "medium" }, { value: "high", label: "high" },
+    ] });
+    expect(repaired.parameters?.find(parameter => parameter.key === "n")).toMatchObject({ min: 1, max: 1 });
+    expect(repaired.parameters?.find(parameter => parameter.key === "size")?.options).toContainEqual({ value: "2048x1152", label: "2K · 16:9 · 2048x1152" });
+    expect(cached.parameters?.[0]?.default).toBe("max");
+  });
+  it("keeps pDog Image2.5 at the user's max candidate without claiming supplier verification", () => {
+    const connection = { provider: "openai", config: { baseUrl: "https://ai.whyshy.cn", modelGroup: "1K2K4K(超分组)", usage: "canvas" } };
+    const model: ModelDescriptor = { id: "gpt-image-2.5-flare", name: "Image2.5", operations: ["image.generate"], metadata: { canvasRunnable: true } };
+    const result = bindScannedModelProtocols(connection, [model]).models[0]!;
+    expect(result.parameters?.find(parameter => parameter.key === "quality")?.default).toBe("max");
+    expect(result.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    expect(result.metadata?.qualitySupport).toBe("assumed");
+  });
   it.each([
     ["https://genimage.pro/v1", "geminiResponseUrl"],
     ["https://api.frimodel.com/v1", "gemini_image"],

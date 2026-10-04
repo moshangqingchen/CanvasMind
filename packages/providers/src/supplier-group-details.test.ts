@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "./supplier-group-details.js";
 
 describe("supplier group evidence", () => {
+  it("distinguishes pDog native 1K from upscaled 2K/4K using the group's explicit wording", () => {
+    const details = parseSupplierGroupDetails({ name: "【生图】image2/2.5-1K2K4K(超分组)",
+      description: "0.03/张，1K/2K/4K同价，1K为原生，2K4K为超分，比例可自由调整" }, "key-groups");
+    expect(details).toMatchObject({ nativeResolutions: ["1K"], upscaledResolutions: ["2K", "4K"] });
+    expect(supplierGroupResolutionLabel(details)).toContain("说明原生 1K；说明超分 2K / 4K");
+    expect(parseSupplierGroupDetails({ description: "原生4K，0.06/张" }, "key-groups")?.nativeResolutions).toEqual(["4K"]);
+    expect(parseSupplierGroupDetails({ description: "支持4K，0.06/张" }, "key-groups")?.nativeResolutions).toBeUndefined();
+  });
+  it("associates each pDog banana quote with the exact ID following its amount", () => {
+    const first = "gemini-3.1-flash-image-preview", second = "gemini-3-pro-image";
+    const details = parseSupplierGroupDetails({ description: `香蕉2：0.07/张, ID：${first}\n香蕉pro：0.08/张, ID：${second}`,
+      image_price_4k: 0.07 }, "key-groups");
+    expect(supplierGroupModelPriceDetails(details, first, [first, second])?.referencePrice).toBe("香蕉2：0.07/张");
+    expect(supplierGroupModelPriceDetails(details, second, [first, second])?.referencePrice).toBe("香蕉pro：0.08/张");
+    expect(supplierGroupModelPriceDetails(details, second, [first, second])?.imagePrices).toBeUndefined();
+  });
   it.each(["\n", "，", ";", " "])("scopes the screenshot's three model prices separated by %j", separator => {
     const quotes = ["image2 0.1一张 能高质量", "image2.5 flare 0.13一张 支持五档质量", "image2.5 sub 0.16一张 支持五档质量"];
     const details = parseSupplierGroupDetails({ description: quotes.join(separator), image_price_2k: 0.1, image_price_4k: 0.1 }, "key-groups")!;

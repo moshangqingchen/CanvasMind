@@ -4,10 +4,12 @@ import {
   type ModelDescriptor,
   type RestConnectorConfig,
   type RestRequestDefinition,
-  applyBananaImageCapabilities,
   cangyuanCurrentModel,
   canApplyCangyuanCurrentContract,
 } from "@super-canvas/providers";
+import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
+import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
+import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
 import { mikotoGroup } from "./mikoto-presets";
 import { chentuFallbackImageDescriptor } from "./chentu-catalog";
 import { supplierKeyForConnection } from "./supplier-identity";
@@ -347,7 +349,8 @@ export function bindScannedModelProtocols(
   );
   const currentCangyuan = connection.provider === "rest" && supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection);
   const models = applySavedModelInterfaces(connection, compatibleModels)
-    .map(model => applyBananaImageCapabilities(connection, model)).map(withHighestModelQualityDefault);
+    .map(model => applyBananaImageCapabilities(connection, model))
+    .map(model => applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, model))).map(withHighestModelQualityDefault);
   if (currentCangyuan) {
     for (let i = 0; i < models.length; i++) if (canInherit(models[i]!) &&
       canApplyCangyuanCurrentContract(connection.config, String(connection.config.baseUrl ?? ""), models[i]!.id))

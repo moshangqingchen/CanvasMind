@@ -327,6 +327,31 @@ export const MIAOWU_CHAT_VIDEO_OVERRIDE: RestModelConnectorOverride = {
   },
 };
 
+/** Miaowu images are asynchronous media tasks, not OpenAI Images generations. */
+export const MIAOWU_IMAGE_OVERRIDE: RestModelConnectorOverride = {
+  submit: {
+    path: "/v1/images",
+    method: "POST",
+    bodyMode: "json",
+    mappings: submitMappings.filter(mapping =>
+      !["/seconds", "/video_urls", "/audio_urls"].includes(mapping.target)),
+    response: { taskIdPath: "$.id", statusPath: "$.status", progressPath: "$.progress", errorPath: "$.error.message" },
+  },
+  poll: {
+    path: "/v1/images/{taskId}",
+    method: "GET",
+    bodyMode: "none",
+    response: { taskIdPath: "$.id", statusPath: "$.status", progressPath: "$.progress", errorPath: "$.error.message" },
+  },
+  output: {
+    path: "$.url",
+    fallbackPaths: ["$.data.url", "$.image_url", "$.result_url"],
+    kind: "image",
+    defaultMimeType: "image/png",
+    contentFallback: { path: "/v1/images/{taskId}/content", alternatePaths: ["/v1/dream/tasks/{taskId}/content"] },
+  },
+};
+
 const CHAT_VIDEO_MODEL_IDS = [
   "hailuo-3",
   "seedance-2.0-deal",
@@ -384,6 +409,7 @@ export const MIAOWU_CONNECTOR: RestConnectorConfig = {
     fallbackPaths: ["$.data.url", "$.video_url", "$.result_url"],
     kind: "video",
     defaultMimeType: "video/mp4",
+    contentFallback: { path: "/v1/dream/tasks/{taskId}/content" },
   },
 };
 
@@ -394,6 +420,11 @@ export function miaowuConnectionConfig(
 ) {
   const connector = structuredClone(MIAOWU_CONNECTOR);
   connector.models = models.map((model) => structuredClone(model));
+  connector.modelOverrides = {
+    ...connector.modelOverrides,
+    ...Object.fromEntries(models.filter(model => model.outputKinds?.includes("image"))
+      .map(model => [model.id, structuredClone(MIAOWU_IMAGE_OVERRIDE)])),
+  };
   return {
     preset: MIAOWU_PRESET_ID,
     supplierKey: MIAOWU_SUPPLIER_KEY,

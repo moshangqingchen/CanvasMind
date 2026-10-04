@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import type {
   ModelDescriptor,
   ModelParameterDescriptor,
+  ModelParameterOption,
   ModelParameterValue,
   ProviderOperation,
 } from "@super-canvas/providers";
@@ -16,6 +17,10 @@ import {
 } from "../lib/model-parameters";
 import type { GenerationNodeType } from "../lib/graph-ui";
 import { validateModelParameters } from "@super-canvas/providers/cli-contracts";
+import {
+  tk1688ParametersForResolutionChange,
+  tk1688ResolutionControl,
+} from "../lib/tk1688-resolution-control";
 
 interface NodeParameterFieldsProps {
   nodeId: string;
@@ -223,12 +228,20 @@ function DimensionsControl({
   value,
   savedTier,
   update,
+  readOnlyDimensions = false,
+  showAllResolutionTiers = false,
+  useSavedResolutionTier = false,
+  automaticOptions,
 }: {
   id: string;
   descriptor: ModelParameterDescriptor;
   value: unknown;
   savedTier: unknown;
   update: (raw: string, tier?: ResolutionTierShortcut["label"] | null) => void;
+  readOnlyDimensions?: boolean;
+  showAllResolutionTiers?: boolean;
+  useSavedResolutionTier?: boolean;
+  automaticOptions?: readonly ModelParameterOption[];
 }) {
   const initial = useMemo(() => dimensionParts(value), [value]);
   const [width, setWidth] = useState(initial[0]);
@@ -255,15 +268,17 @@ function DimensionsControl({
   const automatic = String(value || descriptor.default || "") === "auto";
   const activeResolutionTier = activeResolutionTierForValue(
     resolutionShortcuts,
-    automatic ? "auto" : `${width}x${height}`,
+    useSavedResolutionTier || automatic ? "auto" : `${width}x${height}`,
     savedTier,
   );
-  const fullyAutomatic = automatic && activeResolutionTier === undefined;
-  const visiblePresetOptions = resolutionOptionsForTier(
-    descriptor,
-    activeResolutionTier,
-  );
-  const presetValue = descriptor.options?.some(
+  const fullyAutomatic =
+    (useSavedResolutionTier ? Boolean(autoOption) : automatic) &&
+    activeResolutionTier === undefined;
+  const visiblePresetOptions =
+    useSavedResolutionTier && !activeResolutionTier && automaticOptions
+      ? automaticOptions
+      : resolutionOptionsForTier(descriptor, activeResolutionTier);
+  const presetValue = visiblePresetOptions.some(
     (option) => String(option.value) === String(value),
   )
     ? String(value)
@@ -284,6 +299,7 @@ function DimensionsControl({
     nextHeight = height,
     alignTo16 = shouldAlign16,
   ) => {
+    if (readOnlyDimensions) return;
     const w = normalized(nextWidth, alignTo16);
     const h = normalized(nextHeight, alignTo16);
     if (w === undefined || h === undefined) return;
@@ -308,7 +324,8 @@ function DimensionsControl({
             id={`${id}-align`}
             type="checkbox"
             checked={shouldAlign16}
-            disabled={requires16PixelAlignment}
+            disabled={requires16PixelAlignment || readOnlyDimensions}
+            title={readOnlyDimensions ? "尺寸由当前渠道支持的比例预设确定" : undefined}
             onChange={(event) => {
               const nextAlign16 = event.target.checked;
               setAlign16(nextAlign16);
@@ -317,17 +334,19 @@ function DimensionsControl({
           />
         </label>
       </div>
-      {resolutionShortcuts.length > 0 ? (
+      {resolutionShortcuts.length > 0 || showAllResolutionTiers ? (
         <div
-          className={`parameter-dimensions-shortcuts${autoOption ? " has-auto" : ""}`}
+          className={`parameter-dimensions-shortcuts${autoOption || showAllResolutionTiers ? " has-auto" : ""}`}
           role="group"
           aria-label="自动与输出分辨率快捷档位"
         >
-          {autoOption ? (
+          {autoOption || showAllResolutionTiers ? (
             <button
               className="parameter-dimensions-shortcut"
               type="button"
               aria-pressed={fullyAutomatic}
+              disabled={!autoOption}
+              title={!autoOption ? "当前渠道使用固定尺寸" : undefined}
               onClick={() => {
                 setWidth("");
                 setHeight("");
@@ -337,27 +356,38 @@ function DimensionsControl({
               自动
             </button>
           ) : null}
-          {resolutionShortcuts.map((shortcut) => (
-            <button
-              className="parameter-dimensions-shortcut"
-              type="button"
-              aria-pressed={activeResolutionTier === shortcut.label}
-              onClick={() => {
-                const next = sizeOnTierChange(
-                  descriptor,
-                  value,
-                  shortcut.label,
-                );
-                const [w, h] = dimensionParts(next);
-                setWidth(w);
-                setHeight(h);
-                update(next, shortcut.label);
-              }}
-              key={shortcut.label}
-            >
-              {shortcut.label}
-            </button>
-          ))}
+          {(showAllResolutionTiers
+            ? RESOLUTION_TIER_LABELS
+            : resolutionShortcuts.map(shortcut => shortcut.label)
+          ).map((tier) => {
+            const shortcut = resolutionShortcuts.find(
+              shortcut => shortcut.label === tier,
+            );
+            return (
+              <button
+                className="parameter-dimensions-shortcut"
+                type="button"
+                aria-pressed={activeResolutionTier === tier}
+                disabled={!shortcut}
+                title={!shortcut ? "当前渠道未声明支持此档位" : undefined}
+                onClick={() => {
+                  if (!shortcut) return;
+                  const next = sizeOnTierChange(
+                    descriptor,
+                    value,
+                    shortcut.label,
+                  );
+                  const [w, h] = dimensionParts(next);
+                  setWidth(w);
+                  setHeight(h);
+                  update(next, shortcut.label);
+                }}
+                key={tier}
+              >
+                {tier}
+              </button>
+            );
+          })}
         </div>
       ) : null}
       {descriptor.options?.length ? (
@@ -374,14 +404,25 @@ function DimensionsControl({
               update(next, activeResolutionTier ?? null);
               return;
             }
+            if (readOnlyDimensions) {
+              update(
+                next,
+                useSavedResolutionTier
+                  ? activeResolutionTier ?? null
+                  : resolutionTierForValue(resolutionShortcuts, next) ?? null,
+              );
+              return;
+            }
             const [nextWidth, nextHeight] = dimensionParts(next);
             commit(nextWidth, nextHeight);
           }}
         >
-          <option value="">
+          <option value="" disabled={readOnlyDimensions}>
             {activeResolutionTier
               ? `${activeResolutionTier} 比例与尺寸（W × H）`
-              : "自定义尺寸（W × H）"}
+              : readOnlyDimensions
+                ? "选择比例与尺寸（W × H）"
+                : "自定义尺寸（W × H）"}
           </option>
           {visiblePresetOptions.map((option) => (
             <option key={String(option.value)} value={String(option.value)}>
@@ -399,6 +440,8 @@ function DimensionsControl({
           aria-label="图片宽度"
           type="number"
           value={width}
+          readOnly={readOnlyDimensions}
+          title={readOnlyDimensions ? "请从上方选择当前渠道支持的比例与尺寸" : undefined}
           min={descriptor.min}
           max={descriptor.max}
           step={shouldAlign16 ? 16 : 1}
@@ -416,6 +459,8 @@ function DimensionsControl({
           aria-label="图片高度"
           type="number"
           value={height}
+          readOnly={readOnlyDimensions}
+          title={readOnlyDimensions ? "请从上方选择当前渠道支持的比例与尺寸" : undefined}
           min={descriptor.min}
           max={descriptor.max}
           step={shouldAlign16 ? 16 : 1}
@@ -616,6 +661,10 @@ export function NodeParameterFields({
     () => parameterDescriptorsForValues(nodeType, provider, model, parameters, operation),
     [model, nodeType, parameters, provider, operation],
   );
+  const resolutionControlId = useId();
+  const tk1688Resolution = provider !== "cli"
+    ? tk1688ResolutionControl(model, descriptors, parameters)
+    : undefined;
   const clampNumericInput = provider !== "cli" && model?.metadata?.clampNumericParameters === true;
   const clearUnavailableParameters =
     provider !== "cli" && model?.metadata?.parameterControlsUnavailable === true;
@@ -670,7 +719,24 @@ export function NodeParameterFields({
         </p>
       )}
       <div className="parameter-grid">
-        {descriptors.map((descriptor) => (
+        {tk1688Resolution && (
+          <DimensionsControl
+            id={`${controlId(nodeId, "size")}-${resolutionControlId}`}
+            descriptor={tk1688Resolution.descriptor}
+            value={tk1688Resolution.value}
+            savedTier={tk1688Resolution.savedTier}
+            readOnlyDimensions
+            showAllResolutionTiers
+            useSavedResolutionTier
+            automaticOptions={tk1688Resolution.automaticOptions}
+            update={(raw, tier) => onChange(
+              tk1688ParametersForResolutionChange(tk1688Resolution, parameters, raw, tier),
+            )}
+          />
+        )}
+        {descriptors.filter(
+          descriptor => !tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key),
+        ).map((descriptor) => (
           <ParameterControl
             key={descriptor.key}
             nodeId={nodeId}

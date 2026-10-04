@@ -6,7 +6,7 @@ const baseModel = "gpt-image-2.5-sunburst";
 const marketplace = {
   success: true,
   data: {
-    total: 3,
+    total: 5,
     items: [
       { id: 75, base_model: baseModel, alias: `${baseModel}@s1c23`, supplier_id: 1,
         channel_no: "ID00023", charge_type: "per_request", input_price_usd: 0.0015,
@@ -19,6 +19,14 @@ const marketplace = {
         channel_no: "ID00261", charge_type: "per_request", input_price_usd: 0.03,
         output_price_usd: 0, description: "Adobe支持原生4K(3840*2160)，不支持N。",
         status: "active", channel_alive: true },
+      { id: 571, base_model: baseModel, alias: `${baseModel}@s48c262`, supplier_id: 48,
+        channel_no: "ID00262", charge_type: "per_request", input_price_usd: 0.03,
+        output_price_usd: 0, description: "支持4K，不支持1K、不支持2K。",
+        status: "active", channel_alive: true },
+      { id: 572, base_model: baseModel, alias: `${baseModel}@s49c263`, supplier_id: 49,
+        channel_no: "ID00263", charge_type: "per_request", input_price_usd: 0.03,
+        output_price_usd: 0, description: "支持1K /2K /4K。",
+        status: "active", channel_alive: true },
     ],
   },
 };
@@ -28,11 +36,17 @@ const models = parseTk1688Marketplace(marketplace,
   { checkedAt: "2026-10-03T12:00:00.000Z", keyModelIds: [baseModel],
     accountModelIds: marketplace.data.items.map(item => item.alias) }).models;
 
-for (const variant of ["fixed", "two-tiers", "smart"] as const) {
-  test(`词元模型广场 ${variant} 参数、商家型号与保存恢复`, async ({ page, request }, testInfo) => {
+const cases = [
+  { variant: "fixed", modelId: `${baseModel}@s47c261`, tiers: ["4K"], size: "3840x2160" },
+  { variant: "two-tiers", modelId: `${baseModel}@s46c264`, tiers: ["自动", "1K", "2K"], size: "2496x1680" },
+  { variant: "smart", modelId: baseModel, tiers: ["自动"], size: "1536x1024" },
+  { variant: "four-only", modelId: `${baseModel}@s48c262`, tiers: ["自动", "4K"], size: "3520x2352" },
+  { variant: "all-tiers", modelId: `${baseModel}@s49c263`, tiers: ["自动", "1K", "2K", "4K"], size: "3520x2352" },
+] as const;
+
+for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
+  test(`词元模型广场 ${variant} 统一分辨率面板、商家型号与保存恢复`, async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1080 });
-    const modelId = variant === "fixed" ? `${baseModel}@s47c261`
-      : variant === "two-tiers" ? `${baseModel}@s46c264` : baseModel;
     const descriptor = models.find(model => model.id === modelId)!;
     expect(descriptor).toBeTruthy();
     const connected = await request.post("/api/providers", { data: {
@@ -63,32 +77,65 @@ for (const variant of ["fixed", "two-tiers", "smart"] as const) {
     await open();
     const panel = page.getByRole("dialog", { name: "词元市场规格 模型与参数" });
     const values = async (label: string) => panel.getByLabel(label, { exact: true }).locator("option")
-      // The shared panel adds an empty "model default" choice to every select.
       .evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean));
-    if (variant === "fixed") {
-      expect(await values("精确尺寸")).toEqual(["3840x2160"]);
-      await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
-      await expect(panel.getByLabel("图片宽度", { exact: true })).toHaveCount(0);
-      await expect(panel.getByLabel("精确尺寸", { exact: true })).toHaveValue("3840x2160");
-    } else {
-      expect(await values("分辨率")).toEqual(variant === "two-tiers" ? ["auto", "1K", "2K"] : ["auto"]);
-      if (variant === "two-tiers") {
-        await panel.getByLabel("分辨率", { exact: true }).selectOption("2K");
-        await panel.getByLabel("画面比例", { exact: true }).selectOption("3:2");
-      } else await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
+    const tiers = panel.getByRole("group", { name: "自动与输出分辨率快捷档位" });
+    const preset = panel.getByLabel("输出分辨率预设", { exact: true });
+    const width = panel.getByLabel("图片宽度", { exact: true });
+    const height = panel.getByLabel("图片高度", { exact: true });
+    await expect(preset).toBeVisible();
+    await expect(width).toBeVisible();
+    await expect(height).toBeVisible();
+    await expect(width).not.toBeEditable();
+    await expect(height).not.toBeEditable();
+    for (const tier of ["自动", "1K", "2K", "4K"]) {
+      const button = tiers.getByRole("button", { name: tier, exact: true });
+      await expect(button).toBeVisible();
+      if ((supportedTiers as readonly string[]).includes(tier)) await expect(button).toBeEnabled();
+      else await expect(button).toBeDisabled();
     }
+    await expect(panel.getByLabel("精确尺寸", { exact: true })).toHaveCount(0);
+    await expect(panel.getByLabel("画面比例", { exact: true })).toHaveCount(0);
+    if (variant === "fixed") {
+      expect(await values("输出分辨率预设")).toEqual([size]);
+      await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
+      await expect(preset).toHaveValue(size);
+      await tiers.getByRole("button", { name: "4K", exact: true }).click();
+    } else if (variant === "smart") {
+      expect(await values("输出分辨率预设")).toEqual(["auto", "1024x1024", "1536x1024", "1024x1536"]);
+      await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
+      await preset.selectOption(size);
+    } else {
+      const tier = variant === "two-tiers" ? "2K" : "4K";
+      await tiers.getByRole("button", { name: tier, exact: true }).click();
+      await expect(tiers.getByRole("button", { name: tier, exact: true })).toHaveAttribute("aria-pressed", "true");
+      await preset.selectOption(size);
+    }
+    await expect(width).toHaveValue(size.split("x")[0]!);
+    await expect(height).toHaveValue(size.split("x")[1]!);
+    await expect(panel.getByLabel("当前参数价格", { exact: true })).toContainText(/\d+(?:\.\d+)?\s*USD|\$\d+(?:\.\d+)?/u);
     const qualityOptions = await values("质量");
     expect(qualityOptions).not.toContain("xhigh");
     expect(qualityOptions).not.toContain("max");
     await panel.getByLabel("返回格式", { exact: true }).selectOption("b64_json");
+    const expectedParameters = { response_format: "b64_json", ...(variant === "fixed" ? { size }
+      : { resolution: variant === "two-tiers" ? "2K" : variant === "smart" ? "auto" : "4K", aspect_ratio: "3:2" }) };
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data)
-      .toMatchObject({ model: modelId, parameters: { response_format: "b64_json",
-        ...(variant === "two-tiers" ? { resolution: "2K", aspect_ratio: "3:2" } : {}) } });
+      .toMatchObject({ model: modelId, parameters: expectedParameters });
+    const saved = (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters;
+    expect(saved).not.toHaveProperty("size_tier");
+    if (variant !== "fixed") expect(saved).not.toHaveProperty("size");
     await page.reload(); await open();
     await expect(panel.getByLabel("返回格式", { exact: true })).toHaveValue("b64_json");
-    if (variant === "two-tiers") await expect(panel.getByLabel("分辨率", { exact: true })).toHaveValue("2K");
-    if (variant === "fixed") await expect(panel.getByLabel("精确尺寸", { exact: true })).toHaveValue("3840x2160");
+    await expect(preset).toHaveValue(size);
+    await expect(width).toHaveValue(size.split("x")[0]!);
+    await expect(height).toHaveValue(size.split("x")[1]!);
+    const restoredTier = variant === "two-tiers" ? "2K" : variant === "smart" ? "自动" : "4K";
+    await expect(tiers.getByRole("button", { name: restoredTier, exact: true })).toHaveAttribute("aria-pressed", "true");
     expect(submitted).toBe(0);
-    await page.screenshot({ path: testInfo.outputPath(`tk1688-${variant}-parameters.png`) });
+    await panel.locator(".node-config-popover-body").evaluate(element => {
+      const model = element.querySelector<HTMLElement>(".node-config-model-field");
+      if (model) element.scrollTop = model.offsetTop - 12;
+    });
+    await panel.screenshot({ path: testInfo.outputPath(`tk1688-${variant}-parameters.png`) });
   });
 }

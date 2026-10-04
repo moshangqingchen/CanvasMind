@@ -3,6 +3,7 @@ import { ProviderHttpError } from "@super-canvas/providers";
 const messages = {
   invalid_credentials: "当前 Key 鉴权失败，请更新 Key 后重新刷新；原有配置已保留",
   permission_denied: "当前 Key 无权读取模型目录，请检查分组权限；原有配置已保留",
+  insufficient_balance: "供应商账户余额不足，暂时无法读取模型目录，请补充余额后重新刷新；原有配置已保留",
   rate_limited: "模型目录读取被限流，请稍后重试；原有配置已保留",
   timeout: "模型目录读取超时，请检查网络后重试；原有配置已保留",
   network: "模型目录暂不可读取，请检查网络后重试；原有配置已保留",
@@ -30,6 +31,13 @@ const strictCount = (value: unknown): number | undefined => {
   return Number.isSafeInteger(number) && number >= 0 ? number : undefined;
 };
 
+function balanceError(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const root = payload as Record<string, unknown>;
+  const nested = root.error && typeof root.error === "object" && !Array.isArray(root.error) ? root.error as Record<string, unknown> : {};
+  return [root.code, root.error, nested.code].some(value => typeof value === "string" && value.toUpperCase() === "INSUFFICIENT_BALANCE");
+}
+
 export function modelInventoryFailure(error?: unknown, response?: Response): ModelInventoryFailure {
   const headerCode = response?.headers.get("X-Model-Scan-Error-Code") ?? null;
   const suppliedHttp = response?.headers.get("X-Model-Scan-Http-Status");
@@ -39,6 +47,7 @@ export function modelInventoryFailure(error?: unknown, response?: Response): Mod
         : response && (response.status >= 400 || response.headers.get("X-Model-Scan-Status") === "unauthorized") ? response.status : undefined;
   const code: FailureCode = error instanceof ModelInventoryReadError ? error.code
     : knownCode(headerCode) ? headerCode
+      : error instanceof ProviderHttpError && balanceError(error.details.responseBody) ? "insufficient_balance"
       : status === 401 ? "invalid_credentials"
         : status === 403 || response?.headers.get("X-Model-Scan-Status") === "unauthorized" ? "permission_denied"
           : status === 429 ? "rate_limited"
@@ -78,7 +87,8 @@ export function assertCompleteModelInventoryPayload(payload: unknown): void {
     const nested = root.error && typeof root.error === "object" ? root.error as Record<string, unknown> : {};
     const rawCode = root.code ?? nested.code;
     const code = strictCount(rawCode) ?? rawCode;
-    throw new ModelInventoryReadError(code === 401 || code === "invalid_api_key" ? "invalid_credentials"
+    throw new ModelInventoryReadError(balanceError(root) ? "insufficient_balance"
+      : code === 401 || code === "invalid_api_key" ? "invalid_credentials"
       : code === 403 || code === "permission_denied" ? "permission_denied" : "invalid_response", 200);
   }
   const collections = Array.isArray(payload) ? [payload] : root

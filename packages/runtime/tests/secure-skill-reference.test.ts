@@ -7,8 +7,11 @@ import * as channel from "../src/reference-channel.js";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
-describe("Secure Skill runtime reference delivery", () => {
-  it("passes signed references through the configured channel before the OpenAI adapter submits", async () => {
+describe("supplier runtime reference delivery", () => {
+  it.each([
+    { baseUrl: "https://token.secure-skill.com/v1", model: "gpt-image-2.5-flare", modelGroup: undefined },
+    { baseUrl: "https://vapi.chuangxiangai.asia", model: "gpt-image-2.5-flare-4k", modelGroup: "生图" },
+  ])("passes signed references through the configured channel for $baseUrl before submitting", async ({ baseUrl, model, modelGroup }) => {
     vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
     vi.spyOn(channel, "localReferenceChannelConfigured").mockReturnValue(true);
     vi.spyOn(channel, "localReferenceChannel").mockReturnValue({ enabled: true, ready: true, baseUrl: "https://assets.example.com", instance: "test", updatedAt: Date.now() });
@@ -16,10 +19,10 @@ describe("Secure Skill runtime reference delivery", () => {
     const repository = new MemoryRepository();
     const canvas = await repository.ensureDefaultCanvas();
     await repository.saveConnection({ id: "secure", name: "Secure Skill", provider: "openai", encryptedSecret: null,
-      config: { baseUrl: "https://token.secure-skill.com/v1", defaultModel: "gpt-image-2.5-flare" } });
+      config: { baseUrl, defaultModel: model, ...(modelGroup ? { modelGroup } : {}) } });
     await repository.saveAsset({ id: "ref", name: "Reference", kind: "image", mimeType: "image/png", size: 3, storageKey: "ref.png", metadata: {} });
     await repository.saveCanvas({ id: canvas.id, graph: { schemaVersion: 1, nodes: [{ id: "image", type: "workflow", data: {
-      nodeType: "image-generation", provider: "openai", connectionId: "secure", model: "gpt-image-2.5-flare",
+      nodeType: "image-generation", provider: "openai", connectionId: "secure", model,
       parts: [{ type: "text", text: "Keep this subject" }, { type: "asset", assetId: "ref", role: "reference" }],
       outputs: [{ id: "image", kind: "image" }],
     } }], edges: [] } });

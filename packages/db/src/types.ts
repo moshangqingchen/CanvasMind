@@ -132,6 +132,8 @@ export interface SupplierRecord {
         referencePrice?: string;
         supportedResolutions?: string[];
         unsupportedResolutions?: string[];
+        nativeResolutions?: string[];
+        upscaledResolutions?: string[];
         exclusiveResolutions?: boolean;
         imagePrices?: Array<{ resolution: string; amount: number }>;
         rateMultiplier?: number;

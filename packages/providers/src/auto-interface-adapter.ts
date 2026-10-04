@@ -2,6 +2,8 @@ import type { ModelDescriptor, NormalizedRequest, ProviderAdapter, ProviderConne
 import type { DocumentedModelInterface } from "./documented-interface.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions } from "./rest.js";
 import { BananaImageAdapter, bananaImageRoute, applyBananaImageCapabilities, bananaNativeOutputs } from "./banana-image.js";
+import { isPdogImageConnection, PdogImageAdapter } from "./pdog-image.js";
+import { isChuangxiangImageConnection, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -39,6 +41,18 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       const submitRoute = bananaRoute.asyncTextGeneration && !request.assets?.length
         ? { ...bananaRoute, kind: "secure-async" as const } : bananaRoute;
       return new BananaImageAdapter(this.connections, submitRoute, descriptor, this.options);
+    }
+    if (connection.provider === "openai" && request.operation.startsWith("image.") && isPdogImageConnection(source.config, request.model)) {
+      const ids = connection.settings?.scannedModelIds;
+      if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
+        throw new Error("当前 PDog 分组没有此图片模型的可用权限或接口");
+      return new PdogImageAdapter(this.connections, this.options, connection.settings?.pdogImageMode === "sync" ? "sync" : "async");
+    }
+    if (connection.provider === "openai" && request.operation.startsWith("image.") && isChuangxiangImageConnection(source.config, request.model)) {
+      const ids = connection.settings?.scannedModelIds;
+      if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
+        throw new Error("当前创想分组没有此图片模型的可用权限或接口");
+      return new ChuangxiangImageAdapter(this.connections, this.options);
     }
     if (current?.metadata?.autoInterfaceStatus === "incomplete") throw new Error(String(current.metadata.canvasUnavailableReason ?? "供应商接口说明待补充"));
     const binding = savedModelInterfaces(connection.settings)[request.model];

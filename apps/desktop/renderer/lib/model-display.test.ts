@@ -8,7 +8,15 @@ describe("appendPriceLabelOnce", () => {
       parameters: [{ key: "quality", label: "质量", control: "select", options: [{ value: "high", label: "高" }] }] }];
     expect(comparableModelPrice(models, "image", { quality: "high" })).toBe("同型号 ¥0.3/张");
     expect(comparableModelPrice(models, "image", { quality: "max" })).toBe("当前参数不支持");
-    expect(comparableModelPrice(models, "different-image", {})).toBe("同型号未报价");
+    expect(comparableModelPrice(models, "different-image", {})).toBe("当前分组无此型号");
+    expect(comparableModelPrice(models, undefined, {})).toBe("未选择型号");
+  });
+  it("distinguishes a missing exact Synora model from an existing model without a quote", () => {
+    const models: ModelDescriptor[] = [{ id: "gpt-image-2.5-flare", name: "Flare", operations: ["image.generate"], metadata: { priceLabel: "0.07 额度 / 张" } },
+      { id: "gpt-image-2", name: "Image 2", operations: ["image.generate"] }];
+    expect(comparableModelPrice(models, "gpt-image-2.5", {})).toBe("当前分组无此型号");
+    expect(comparableModelPrice(models, "gpt-image-2.5-flare", {})).toBe("同型号 0.07 额度 / 张");
+    expect(comparableModelPrice(models, "gpt-image-2", {})).toBe("同型号未报价");
   });
   it("labels measured prices with their tested quality and resolution", () => {
     const label = "¥0.4/张（生成实测） · 4K / max";

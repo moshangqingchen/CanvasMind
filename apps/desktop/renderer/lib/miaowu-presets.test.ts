@@ -10,6 +10,7 @@ import {
   MIAOWU_MODELS,
   miaowuConnectionConfig,
 } from "./miaowu-presets";
+import { miaowuCatalogFromPricing, miaowuConnectorForModels } from "./miaowu-catalog";
 
 function resolver(): ProviderConnectionResolver {
   return {
@@ -23,6 +24,54 @@ function resolver(): ProviderConnectionResolver {
 }
 
 describe("Miaowu OpenAI Videos preset", () => {
+  it("submits native image JSON and downloads completed protected image content with GET", async () => {
+    const models = miaowuCatalogFromPricing({ data: [{ model_name: "GPT-image-2",
+      image_api: { modes: ["text-to-image", "image-to-image"], images_max: 5,
+        sizes: ["1080p"], ratios: ["16:9"] } }] }).models;
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({ id: "image_one", status: "queued" }))
+      .mockResolvedValueOnce(Response.json({ id: "image_one", status: "in_progress" }))
+      .mockResolvedValueOnce(Response.json({ id: "image_one", status: "completed" }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png" } }));
+    const adapter = new GenericRestAdapter(resolver(), { config: miaowuConnectorForModels(models), fetch });
+    const task = await adapter.submit({ connectionId: "miaowu", operation: "image.edit", model: "GPT-image-2",
+      prompt: "蓝色海面", idempotencyKey: "miaowu-image-one", parameters: { resolution: "1080p", aspect_ratio: "16:9" },
+      assets: [{ id: "ref", kind: "image", url: "https://canvas.example.test/reference.png", mimeType: "image/png" }] });
+    expect(fetch.mock.calls[0]?.[0]).toBe("https://api.miaowuai.store/v1/images");
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({ model: "GPT-image-2", prompt: "蓝色海面",
+      resolution: "1080p", ratio: "16:9", image_urls: ["https://canvas.example.test/reference.png"] });
+    await expect(adapter.extractOutputs(task.result)).resolves.toEqual([]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const running = await adapter.poll(task);
+    expect(running.status).toBe("running");
+    await expect(adapter.extractOutputs(running.result)).resolves.toEqual([]);
+    const completed = await adapter.poll({ ...task, result: running.result });
+    expect(fetch.mock.calls[1]?.[0]).toBe("https://api.miaowuai.store/v1/images/image_one");
+    expect(fetch.mock.calls[1]?.[1]?.method).toBe("GET");
+    expect(fetch.mock.calls[2]?.[0]).toBe("https://api.miaowuai.store/v1/images/image_one");
+    expect(fetch.mock.calls[2]?.[1]?.method).toBe("GET");
+    const outputs = await adapter.extractOutputs(completed.result);
+    expect(outputs).toEqual([{ kind: "image", data: new Uint8Array([137, 80, 78, 71]), mimeType: "image/png" }]);
+    expect(fetch.mock.calls[3]?.[0]).toBe("https://api.miaowuai.store/v1/images/image_one/content");
+    expect(fetch.mock.calls[3]?.[1]?.method).toBe("GET");
+    expect(fetch.mock.calls[3]?.[1]?.redirect).toBe("error");
+    expect(new Headers(fetch.mock.calls[3]?.[1]?.headers).get("authorization")).toBe("Bearer miaowu-secret");
+    expect(fetch.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+    expect(JSON.stringify({ task, completed, outputs })).not.toContain("miaowu-secret");
+  });
+
+  it("downloads the documented protected Dream content for completed video tasks", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({ id: "video_one", status: "completed", url: "/v1/dream/tasks/video_one/content" }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "video/mp4" } }));
+    const adapter = new GenericRestAdapter(resolver(), { config: MIAOWU_CONNECTOR, fetch });
+    const task = await adapter.submit({ connectionId: "miaowu", operation: "video.generate", model: "seedance-2.0-mini",
+      prompt: "海面", idempotencyKey: "miaowu-video-content", parameters: { duration: 5, resolution: "480p", aspect_ratio: "16:9" } });
+    await expect(adapter.extractOutputs(task.result)).resolves.toEqual([{ kind: "video", data: new Uint8Array([1, 2, 3]), mimeType: "video/mp4" }]);
+    expect(fetch.mock.calls[1]?.[0]).toBe("https://api.miaowuai.store/v1/dream/tasks/video_one/content");
+    expect(fetch.mock.calls[1]?.[1]?.method).toBe("GET");
+    expect(new Headers(fetch.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer miaowu-secret");
+  });
   it("contains all eleven video marketplace models and a safe preset config", () => {
     expect(MIAOWU_MODELS).toHaveLength(11);
     expect(MIAOWU_MODELS.map((model) => model.id)).toContain(

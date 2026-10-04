@@ -1138,7 +1138,6 @@ async function readModelResponse(
       );
     await assertCurrentSupplierConnection(latest);
     if (refresh) {
-      const status = response.headers.get("X-Model-Scan-Status");
       const payload: unknown = response.ok
         ? await response
             .clone()
@@ -1221,11 +1220,12 @@ async function readModelResponse(
           },
         }), config, "live");
       }
+      const failure = modelInventoryFailure(undefined, response);
+      const unauthorized = failure.code === "invalid_credentials" || failure.code === "permission_denied";
       config.modelScanStatus =
-        response.status === 401 ||
-        response.status === 403 ||
-        status === "unauthorized"
+        unauthorized
           ? "unauthorized"
+          : failure.code === "insufficient_balance" ? "failed"
           : ["unauthorized", "empty"].includes(
                 String(original.config.modelScanStatus),
               )
@@ -1234,12 +1234,11 @@ async function readModelResponse(
               ? "unauthorized"
               : "failed";
       config.modelScanCheckedAt = new Date().toISOString();
-      config.modelScanAttemptStatus = response.status === 401 || response.status === 403 || status === "unauthorized"
+      config.modelScanAttemptStatus = unauthorized
         ? "unauthorized" : "failed";
       // Some legacy adapters update their own scan state; retain only the
       // success known before this failed attempt, never their attempt timestamp.
       config.modelScanLastSuccessAt = modelInventoryLastSuccessAt(original.config) ?? null;
-      const failure = modelInventoryFailure(undefined, response);
       Object.assign(config, modelInventoryFailureConfig(failure));
       latest = await repository.saveConnection(
         { ...latest, config },

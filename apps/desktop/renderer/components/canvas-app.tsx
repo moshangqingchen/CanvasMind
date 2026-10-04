@@ -43,6 +43,7 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  useStoreApi,
   useUpdateNodeInternals,
   type Connection,
   type OnConnectStart,
@@ -204,7 +205,8 @@ import {
   zoomViewportAtPoint,
 } from "../lib/drawing";
 import { localizeRunError } from "../lib/error-localization";
-import { weAiImageGenerationDefault, withWeAiImage25RequestParameters } from "../lib/new-image-generation-default";
+import { weAiImageGenerationDefault } from "../lib/new-image-generation-default";
+import { withCurrentImageRequestParameters } from "../lib/image-request-parameters";
 import { removeUnreturnedGeneratedResults } from "../lib/generated-result-sync";
 import {
   collectReferencedAssetIds,
@@ -1404,17 +1406,17 @@ function modelDescriptorsForConnection(
   connection: ProviderConnectionView,
 ): ModelDescriptor[] {
   if (connection.config.supplierArchived === true || ["empty", "unauthorized"].includes(String(connection.config.modelScanStatus))) return [];
-  if (Array.isArray(connection.config.modelCatalogModels)) return withWeAiImage25RequestParameters(connection, connection.config.modelCatalogModels as unknown as ModelDescriptor[]);
+  if (Array.isArray(connection.config.modelCatalogModels)) return withCurrentImageRequestParameters(connection, connection.config.modelCatalogModels as unknown as ModelDescriptor[]);
   if (
     connection.provider === "weai" &&
     providerConnectionSupplierKey(connection) === "weai"
   ) {
     const saved = weAiCanvasModelDescriptorsFromSavedScan(connection.config);
-    if (saved) return withWeAiImage25RequestParameters(connection, saved);
+    if (saved) return withCurrentImageRequestParameters(connection, saved);
   }
   const verified = verifiedWeAiModelDescriptorsForConnection(connection);
   if (verified.length > 0) return verified;
-  return withWeAiImage25RequestParameters(connection, modelDescriptorsFromConnectionConfig(connection.config));
+  return withCurrentImageRequestParameters(connection, modelDescriptorsFromConnectionConfig(connection.config));
 }
 
 function modelForConnectionAndNode(
@@ -1861,7 +1863,7 @@ function modelOptionsForNode(
     weAiCanvasModelDescriptorsFromSavedScan(connection.config) !== null,
   );
   if (listed.connectionId === node.data.connectionId) {
-    const compatible = (connection ? withWeAiImage25RequestParameters(connection, listed.items) : listed.items).filter((model) =>
+    const compatible = (connection ? withCurrentImageRequestParameters(connection, listed.items) : listed.items).filter((model) =>
       modelSupportsNodeType(model, nodeType),
     );
     if (
@@ -2452,6 +2454,69 @@ function CanvasShell({
   onDeleteProject,
 }: CanvasShellProps) {
   const router = useRouter();
+  const flowStore = useStoreApi();
+  useEffect(() => {
+    // React Flow leaves its active marquee behind when pointer capture is
+    // cancelled. Recover without clearing the nodes the user already selected.
+    let selectionPointer: { target: Element; id: number; type: string } | null = null;
+    const finishInterruptedSelection = () => {
+      const state = flowStore.getState();
+      if (!state.userSelectionActive && !state.userSelectionRect) return;
+      if (state.userSelectionActive) {
+        // Consume the gesture's final click while the pane still handles
+        // selection events. This also resets its private selection-in-progress
+        // flag, so it cannot swallow the next model-picker button click.
+        state.domNode?.querySelector(".react-flow__pane")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+      }
+      flowStore.setState({
+        userSelectionActive: false,
+        userSelectionRect: null,
+        nodesSelectionActive: [...state.nodeLookup.values()].some(node => node.selected),
+      });
+      selectionPointer = null;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.isPrimary && event.button === 0 && event.target instanceof Element &&
+          flowStore.getState().domNode?.contains(event.target))
+        selectionPointer = { target: event.target, id: event.pointerId, type: event.pointerType };
+    };
+    const onPointerCancel = (event: PointerEvent) => {
+      if (event.target instanceof Node && flowStore.getState().domNode?.contains(event.target))
+        finishInterruptedSelection();
+    };
+    const cancelPointerSelection = () => {
+      const state = flowStore.getState();
+      if (!state.userSelectionActive && !state.userSelectionRect) return;
+      // Forward cancellation through the gesture target, even if capture was
+      // already lost, so React Flow also stops its private edge auto-pan loop.
+      if (selectionPointer?.target.isConnected)
+        selectionPointer.target.dispatchEvent(new PointerEvent("pointercancel", {
+          bubbles: true, pointerId: selectionPointer.id,
+          pointerType: selectionPointer.type, isPrimary: true,
+        }));
+      finishInterruptedSelection();
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== selectionPointer?.id) return;
+      // An ordinary pane pointerup has already finished selection. If capture
+      // was lost and release happened elsewhere, finish that gesture here.
+      cancelPointerSelection();
+      selectionPointer = null;
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerup", onPointerUp);
+    // Bubble after React Flow's cancellation handler has stopped auto-pan.
+    document.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("blur", cancelPointerSelection);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerCancel);
+      window.removeEventListener("blur", cancelPointerSelection);
+    };
+  }, [flowStore]);
   const [leaving, setLeaving] = useState(false);
   const [draftStorageError, setDraftStorageError] = useState(false);
   const [canvasId, setCanvasId] = useState<string | null>(projectId);
@@ -7475,7 +7540,7 @@ function CanvasShell({
         : modelDescriptorsForConnection(selectedConnection));
     const applyModels = (received: readonly ModelDescriptor[]) => {
       if (cancelled) return;
-      const items = withWeAiImage25RequestParameters(selectedConnection, received);
+      const items = withCurrentImageRequestParameters(selectedConnection, received);
       setConnectionModels((current) => {
         if (
           current.connectionId === modelScanConnectionId &&

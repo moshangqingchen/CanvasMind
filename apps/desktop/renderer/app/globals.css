@@ -1134,6 +1134,11 @@ circle.canvas-drawing-selection-outline {
 .react-flow__viewport:has(.node-config-popover) {
   z-index: 4;
 }
+/* Marquee gestures are captured by the pane; their visual rectangle must not
+   intercept a configuration panel's clicks or wheel events. */
+.canvas-editor .react-flow__selection {
+  pointer-events: none;
+}
 .node-config-popover-anchor {
   position: absolute;
   z-index: 40;
@@ -2031,9 +2036,13 @@ circle.canvas-drawing-selection-outline {
     background 120ms ease,
     color 120ms ease;
 }
-.parameter-dimensions-shortcut:hover {
+.parameter-dimensions-shortcut:hover:not(:disabled) {
   border-color: #52617d;
   color: #dbe5f7;
+}
+.parameter-dimensions-shortcut:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .parameter-dimensions-shortcut[aria-pressed="true"] {
   border-color: #5f86d8;

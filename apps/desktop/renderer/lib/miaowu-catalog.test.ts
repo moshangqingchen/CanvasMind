@@ -154,6 +154,37 @@ function okFetch(payload: unknown = FIXTURE) {
 }
 
 describe("miaowuCatalogFromPricing", () => {
+  it("preserves the documented image_api media type and native single-image parameters", () => {
+    const snapshot = miaowuCatalogFromPricing({ group_ratio: { default: 1 }, data: [{
+      model_name: "GPT-image-2", quota_type: 0, model_price: 0.02, enable_groups: ["default"],
+      image_api: { modes: ["text-to-image", "image-to-image"], images_max: 5,
+        sizes: ["1080p"], ratios: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+        pricing: { unit: "per_call", rules: [{ size: "1080p", price: 0.02 }] } },
+    }, { model_name: "gpt-image-2.5-sunburs", quota_type: 1, enable_groups: ["default"],
+      image_api: { modes: ["text-to-image", "image-to-image"], images_max: 5,
+        sizes: ["1080p", "2K", "4K"], ratios: ["16:9"] },
+    }] });
+    expect(snapshot.marketplaceModels.map(model => model.capability)).toEqual(["image", "image"]);
+    const model = snapshot.models[0]!;
+    expect(model).toMatchObject({ id: "GPT-image-2", operations: ["image.generate", "image.edit"],
+      outputKinds: ["image"], inputKinds: ["text", "image", "image[]"], limits: { maxInputImages: 5 },
+      pricing: { kind: "per-request", currency: "CNY", unitAmount: 0.14 },
+      metadata: { parameterSource: "pricing.image_api", imageNativeResolutionOptions: true, imageNativeRatioOptions: true } });
+    expect(model.parameters?.map(parameter => parameter.key)).toEqual(["resolution", "aspect_ratio"]);
+    expect(model.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["1080p"]);
+    expect(snapshot.models[1]?.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["1080p", "2K", "4K"]);
+    const connector = miaowuConnectorForModels(snapshot.models);
+    expect(connector.modelOverrides?.[model.id]).toMatchObject({ submit: { path: "/v1/images" },
+      poll: { path: "/v1/images/{taskId}" }, output: { kind: "image", contentFallback: { path: "/v1/images/{taskId}/content" } } });
+    expect(connector.modelOverrides?.[model.id]?.submit?.mappings?.map(mapping => mapping.target)).toEqual(["/model", "/prompt", "/ratio", "/resolution", "/image_urls"]);
+  });
+
+  it("uses the live size_seconds_max contract for per-resolution video duration limits", () => {
+    const snapshot = miaowuCatalogFromPricing({ data: [{ model_name: "wan3.0-vedio-deal",
+      video_api: { modes: ["text-to-video"], sizes: ["720p", "1080p"], seconds_min: 2, seconds_max: 30,
+        size_seconds_max: { "720p": 10, "1080p": 15 }, ratios: ["16:9"] } }] });
+    expect(snapshot.models[0]?.metadata?.durationMaxByResolution).toEqual({ "720p": 10, "1080p": 15 });
+  });
   const snapshot = miaowuCatalogFromPricing(FIXTURE);
   const byId = new Map(snapshot.models.map((model) => [model.id, model]));
 

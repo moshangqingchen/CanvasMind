@@ -33,10 +33,13 @@ import {
   cliJobKey,
   FakeProviderAdapter,
   imageSizeForTier,
+  isPdogImageConnection,
+  pdogImageSizeForTier,
   GenericRestAdapter,
   AutoInterfaceAdapter,
   restRequestRequiresPublicAssets,
   secureSkillRequiresPublicAssets,
+  chuangxiangRequiresPublicAssets,
   bananaImageRoute,
   bananaRequiresPublicAssets,
   normalizeBananaParameters,
@@ -2845,6 +2848,7 @@ export class RunService {
     if (assets.length > 0 &&
         ((providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation, connectionConfig)) ||
           secureSkillRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
+          chuangxiangRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           bananaRequiresPublicAssets(providerName, connectionConfig, model))) {
       if (frozenConnection?.cloudGeneration) {
         const savedUrls = nodeRun.inputJson.cloudReferenceUrls;
@@ -2921,6 +2925,7 @@ export class RunService {
           : undefined;
       const selectedOpenAiTier = providerName === "openai" && /^gpt-image/iu.test(model ?? "")
         ? weAiResolutionTier(parameters.size_tier) : undefined;
+      const isPdogGptImage = providerName === "openai" && isPdogImageConnection(connectionConfig, model);
       const selectedConnectorTier =
         providerName === "rest" && (supplier !== "cyberafei" || verifiedImageSizes)
           ? weAiResolutionTier(parameters.size_tier)
@@ -2960,7 +2965,14 @@ export class RunService {
           ? (aspectRatioFromPrompt(prompt) ??
             referenceAspectRatio(graph, assets))
           : undefined;
-      if (isCangyuanGptImage4K && !singleConfiguredSizeTier(imageDescriptor)) {
+      if (isPdogGptImage && selectedResolutionTier && (parameters.size === undefined || parameters.size === "auto")) {
+        const selectedRatio = typeof parameters.aspect_ratio === "string" && parameters.aspect_ratio !== "auto"
+          ? parameters.aspect_ratio : inferredRatio;
+        // The site's long-edge 2K pixels differ from the generic image pixel budget.
+        // Resolve from the original connection contract, including old scan caches.
+        parameters.size = pdogImageSizeForTier(selectedResolutionTier as "1K" | "2K" | "4K", selectedRatio ?? "1:1");
+        delete parameters.aspect_ratio;
+      } else if (isCangyuanGptImage4K && !singleConfiguredSizeTier(imageDescriptor)) {
         // The Cangyuan 4K SKU accepts ratios, but an explicit 4K canvas is
         // required when automatic sizing is selected. Keep a user-entered
         // WxH size untouched; otherwise resolve the selected/prompt ratio to

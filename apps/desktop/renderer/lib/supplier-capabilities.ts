@@ -8,6 +8,8 @@ import type {
 import type {
   ModelDescriptor,
 } from "@super-canvas/providers";
+import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
+import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
 import { modelPriceAmount } from "@super-canvas/providers/media-billing";
 import { IMAGE_SIZE_RATIOS, imageSizeForTier, imageSizeOptions } from "@super-canvas/providers/image-size-presets";
 import { parseSupplierGroupDetails } from "@super-canvas/providers/supplier-group-details";
@@ -113,7 +115,8 @@ export function effectiveImageCapabilities(input: {
   priorEvidence?: readonly ImageCapabilityEvidence[];
   documentation?: string;
 }): EffectiveImageCapabilities {
-  const { supplier, connection, model, fingerprint } = input;
+  const { supplier, connection, fingerprint } = input;
+  const model = applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, input.model));
   const policyBaseUrl = typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl;
   const tk1688 = isTk1688ApiUrl(policyBaseUrl);
   const policyModelId = tk1688ImagePolicyModelId(model.id, policyBaseUrl);
@@ -148,6 +151,39 @@ export function effectiveImageCapabilities(input: {
       needsQualityProbe: false,
     };
   }
+  if (model.metadata?.imageNativeResolutionOptions === true) {
+    const nativeGroup = supplier.catalog.groups.find(item => item.id === group);
+    const groupDeclaration = nativeGroup?.details?.stale ? undefined : parseSupplierGroupDetails({ name: group,
+      description: nativeGroup?.details?.description }, "key-groups");
+    const denied = new Set([...(groupDeclaration?.unsupportedResolutions ?? []), ...(nativeGroup?.details?.stale ? [] : nativeGroup?.details?.unsupportedResolutions ?? [])]);
+    const namedTiers = RESOLUTIONS.filter(tier => new RegExp(`${tier[0]}\\s*k`, "iu").test(group));
+    const explicitlyScoped = groupDeclaration?.exclusiveResolutions || nativeGroup?.details?.exclusiveResolutions ||
+      (namedTiers.length === 1 && namedTiers[0] === "1K");
+    if (explicitlyScoped) for (const tier of RESOLUTIONS) if (!(namedTiers.length ? namedTiers : groupDeclaration?.supportedResolutions ?? []).includes(tier)) denied.add(tier);
+    const tierOfOption = (option: { value: unknown; label?: string }) => /^[124]K$/iu.test(String(option.value)) ? String(option.value).toUpperCase()
+      : /\b[124]K\b/iu.exec(option.label ?? "")?.[0]?.toUpperCase();
+    const parameters = (model.parameters ?? []).map(parameter => withHighestQualityDefault(parameter.key === model.metadata?.imageNativeResolutionParameter
+      ? { ...parameter, options: parameter.options?.filter(option => !denied.has(tierOfOption(option) ?? "")) } : parameter));
+    const size = parameters.find(parameter => parameter.key === model.metadata?.imageNativeResolutionParameter);
+    const ratio = parameters.find(parameter => /^(aspect_ratio|aspectRatio|ratio)$/u.test(parameter.key));
+    const quality = parameters.find(parameter => /^(quality|image_quality|output_quality)$/u.test(parameter.key));
+    const resolutions = RESOLUTIONS.filter(tier => !denied.has(tier) && size?.options?.some(option => tierOfOption(option) === tier));
+    const evidence: ImageCapabilityEvidence[] = resolutions.map(resolution => ({
+      id: `${connection.id}:${model.id}:${resolution}`, supplierId: supplier.id, sourceId: supplier.state?.sourceId ?? "legacy",
+      connectionId: connection.id, group, modelId: model.id, operation: "image.generate", kind: "documentation",
+      sourceUrl: typeof model.metadata?.documentationUrl === "string" ? model.metadata.documentationUrl : supplier.siteUrl,
+      checkedAt: supplier.scannedAt ?? supplier.updatedAt, fingerprint, status: "declared", resolution,
+      excerpt: "供应商原生分辨率枚举；按文档保留参数值，未进行付费核验。",
+    }));
+    return {
+      model: { ...model, parameters, metadata: { ...model.metadata, imageCapabilityEvidence: evidence, imageCapabilityPolicy: 2 } },
+      evidence, tiers: resolutions.map(tier => ({ tier, status: "declared" })), probeTiers: [],
+      quality: quality?.default !== undefined ? String(quality.default) : undefined,
+      qualityOptions: quality?.options?.map(option => String(option.value)) ?? [], qualityKey: quality?.key,
+      sizeKey: size?.key, sizeIsTier: Boolean(size?.options?.some(option => /^[124]K$/iu.test(String(option.value)))),
+      ratioKey: ratio?.key, ratio: String(ratio?.default ?? "1:1"), needsQualityProbe: false,
+    };
+  }
   const tests = (input.tests ?? []).filter(test =>
     test.connectionId === connection.id && test.modelId === model.id &&
     test.fingerprint === fingerprint && !["cancelled", "superseded"].includes(test.status)).map(currentResolutionEvidence);
@@ -163,6 +199,10 @@ export function effectiveImageCapabilities(input: {
     { name: group, description: [groupDetails?.description, model.metadata?.supplierChannelDescription].filter(Boolean).join("。") },
     "model-plaza",
   );
+  const resolutionOrigins = { ...Object.fromEntries((groupDetails?.nativeResolutions ?? []).map(tier => [tier, "native"])),
+    ...Object.fromEntries((groupDetails?.upscaledResolutions ?? []).map(tier => [tier, "upscaled"])),
+    ...Object.fromEntries((parsed?.nativeResolutions ?? []).map(tier => [tier, "native"])),
+    ...Object.fromEntries((parsed?.upscaledResolutions ?? []).map(tier => [tier, "upscaled"])) };
   const supported = new Set([
     ...(parsed?.supportedResolutions ?? []),
     ...(groupDetails?.supportedResolutions ?? []),
@@ -430,7 +470,7 @@ export function effectiveImageCapabilities(input: {
       checkedAt:
         successful?.updatedAt ?? inferred?.checkedAt ?? pending?.updatedAt ?? supplier.scannedAt ?? supplier.updatedAt,
       excerpt: successful
-        ? `请求 ${successful.expectedWidth}×${successful.expectedHeight}，实际 ${successful.actualWidth}×${successful.actualHeight}；仅核验 ${successful.ratio}`
+        ? `请求 ${successful.expectedWidth}×${successful.expectedHeight}，实际 ${successful.actualWidth}×${successful.actualHeight}；仅核验 ${successful.ratio}${resolutionOrigins[tier] === "upscaled" ? "；分组说明为超分输出，尺寸实测不代表原生生成" : resolutionOrigins[tier] === "native" ? "；分组说明为原生输出" : ""}`
         : inferred ? inferred.excerpt
         : returnedBelowTier && rejected
           ? `请求 ${rejected.expectedWidth}×${rejected.expectedHeight}，实际 ${rejected.actualWidth}×${rejected.actualHeight}；当次未达到请求档位，仍可请求`
@@ -477,7 +517,7 @@ export function effectiveImageCapabilities(input: {
   const declaredOptions = declaredQualities.size > 1 ? [...declaredQualities].map(value => ({ label: value, value })) : options;
   const qualityOptions = (fixedQualityValue || nativeQualityOptions ? options : qualityPresets ?? (legalQualities ? legalQualities.map(value => options.find(option => option.value === value) ?? { label: value, value }) : declaredOptions))
     .filter(option => !rejectedQualities.has(String(option.value)) && (!legalQualities || legalQualities.includes(String(option.value))));
-  const needsQualityProbe = Boolean(
+  let needsQualityProbe = Boolean(
     qualityKey &&
     quality &&
     !qualityMention &&
@@ -493,6 +533,9 @@ export function effectiveImageCapabilities(input: {
     const remaining = qualityOptions;
     quality = remaining.length ? String(withHighestQualityDefault({ key: "quality", label: "质量", control: "select", options: remaining }).default) : undefined;
   }
+  const unverifiedPdogQuality = model.metadata?.pdogQualityDocumented === false && Boolean(quality) && !testedQualities.includes(quality!);
+  if (unverifiedPdogQuality) needsQualityProbe = true;
+  else if (model.metadata?.pdogQualityDocumented === true) needsQualityProbe = false;
   if (quality && qualityKey)
     evidence.push({
       id: `${connection.id}:${model.id}:quality`,
@@ -502,7 +545,7 @@ export function effectiveImageCapabilities(input: {
       group,
       modelId: model.id,
       operation: "image.generate",
-      kind: successfulQuality
+      kind: unverifiedPdogQuality ? "adapter" : successfulQuality
         ? "test"
         : qualityMention && qualityText === doc
           ? "documentation"
@@ -512,18 +555,20 @@ export function effectiveImageCapabilities(input: {
         successfulQuality?.updatedAt ??
         supplier.scannedAt ??
         supplier.updatedAt,
-      excerpt: successfulQuality
+      excerpt: unverifiedPdogQuality
+        ? "按用户 Image 2.5 最高质量规则保留 max 候选；pDog 当前通用文档未专门声明 2.5 的质量上限，当前分组支持情况未实测确认"
+        : successfulQuality
         ? `${successfulQuality.quality} 档请求已接受，画质差异未验证`
         : qualityMention
           ? qualityText.slice(0, 2000)
           : "适配器合法质量值，供应商支持情况待核验",
       fingerprint,
-      status: successfulQuality
+      status: unverifiedPdogQuality ? "assumed" : successfulQuality
         ? "verified"
         : needsQualityProbe
           ? "assumed"
           : "declared",
-      quality: successfulQuality?.quality ?? quality,
+      quality: unverifiedPdogQuality ? quality : successfulQuality?.quality ?? quality,
     });
   let reason: string | undefined;
   if (!model.operations.includes("image.generate"))
@@ -675,6 +720,7 @@ export function effectiveImageCapabilities(input: {
         ...model.metadata,
         ...(fixedQualityValue ? { fixedQuality: fixedQualityValue } : {}),
         imageCapabilityEvidence: evidence,
+        imageResolutionOrigins: resolutionOrigins,
         imageCapabilityPolicy: 2,
         qualitySupport: qualityKey
           ? needsQualityProbe

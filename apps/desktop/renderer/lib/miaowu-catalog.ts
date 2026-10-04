@@ -8,6 +8,7 @@ import {
 import {
   MIAOWU_CONNECTOR,
   MIAOWU_CHAT_VIDEO_OVERRIDE,
+  MIAOWU_IMAGE_OVERRIDE,
   MIAOWU_DEFAULT_MODEL,
   MIAOWU_MODELS,
 } from "./miaowu-presets";
@@ -38,6 +39,7 @@ interface PricingRecord {
   enable_groups?: unknown;
   supported_endpoint_types?: unknown;
   video_api?: unknown;
+  image_api?: unknown;
 }
 
 interface PricingPayload {
@@ -54,6 +56,7 @@ interface VideoApiRecord {
   audios_max?: unknown;
   seconds_min?: unknown;
   seconds_max?: unknown;
+  size_seconds_max?: unknown;
   sizes?: unknown;
   ratios?: unknown;
   resolutions?: unknown;
@@ -64,7 +67,7 @@ export interface MiaowuMarketplaceModel {
   id: string;
   name: string;
   description: string;
-  capability: "chat" | "video";
+  capability: "chat" | "image" | "video";
   priceLabel: string;
   billingLabel: string;
   tags: string[];
@@ -218,6 +221,10 @@ function videoApiRecord(record: PricingRecord): VideoApiRecord | undefined {
     : undefined;
 }
 
+function imageApiRecord(record: PricingRecord): VideoApiRecord | undefined {
+  return isRecord(record.image_api) ? record.image_api as VideoApiRecord : undefined;
+}
+
 function videoParameterOverrides(videoApi: VideoApiRecord): ParameterOverrides {
   const minSeconds = nonNegativeInteger(videoApi.seconds_min) || undefined;
   const maxSeconds = nonNegativeInteger(videoApi.seconds_max) || undefined;
@@ -246,9 +253,10 @@ interface ParsedPricing {
 }
 
 function videoRulePrices(record: PricingRecord): number[] {
-  if (!isRecord(record.video_api) || !isRecord(record.video_api.pricing))
+  const mediaApi = imageApiRecord(record) ?? videoApiRecord(record);
+  if (!mediaApi || !isRecord(mediaApi.pricing))
     return [];
-  const rules = record.video_api.pricing.rules;
+  const rules = mediaApi.pricing.rules;
   if (!Array.isArray(rules)) return [];
   return rules.flatMap((rule) => {
     if (!isRecord(rule)) return [];
@@ -278,7 +286,7 @@ function pricingFor(
     (groups.includes("default") ? "default" : (groups[0] ?? "default"));
   const ratio = groupRatios[group] ?? 1;
   const unit =
-    providerPriceUnit(record) ??
+    (imageApiRecord(record) ? "request" : providerPriceUnit(record)) ??
     (record.quota_type === 0 ? "second" : "request");
   const rulePrices = videoRulePrices(record);
   const modelPrice =
@@ -363,6 +371,8 @@ function descriptorFor(
       supportsFirstLastFrames: imagesMax >= 2,
       parameterSource: "pricing.video_api",
       clampNumericParameters: true,
+      ...(Object.keys(numberRecord(videoApi.size_seconds_max)).length
+        ? { durationMaxByResolution: numberRecord(videoApi.size_seconds_max) } : {}),
       ...(id === "seedance-2.0-mini"
         ? {
             durationMaxByResolution: { "720p": 12 },
@@ -374,6 +384,46 @@ function descriptorFor(
       maxInputVideos: videosMax,
       maxInputAudios: audiosMax,
     },
+  };
+}
+
+function imageDescriptorFor(id: string, record: PricingRecord, pricing: ParsedPricing, checkedAt: string): ModelDescriptor {
+  const imageApi = imageApiRecord(record)!;
+  const sizes = [...new Set(strings(imageApi.sizes))];
+  const ratios = [...new Set(strings(imageApi.ratios))];
+  const imagesMax = nonNegativeInteger(imageApi.images_max);
+  const modes = strings(imageApi.modes);
+  const operations = [
+    ...(!modes.length || modes.includes("text-to-image") ? ["image.generate" as const] : []),
+    ...(imagesMax > 0 && (!modes.length || modes.includes("image-to-image")) ? ["image.edit" as const] : []),
+  ];
+  return {
+    id, name: `${id}（${pricing.priceLabel}）`,
+    description: typeof record.description === "string" && record.description.trim()
+      ? record.description.trim() : "喵呜异步图片任务；请求字段与档位以当前模型配置为准。",
+    operations,
+    inputKinds: ["text", ...(imagesMax > 0 ? ["image" as const, ...(imagesMax > 1 ? ["image[]" as const] : [])] : [])],
+    outputKinds: ["image"],
+    parameters: [
+      ...(sizes.length ? [{ key: "resolution", label: "输出分辨率", control: "select" as const,
+        valueType: "string" as const, required: true, default: sizes.at(-1),
+        options: sizes.map(value => ({ label: value, value })),
+        description: "按喵呜当前型号原生 resolution 枚举发送；不是像素 size 参数。" }] : []),
+      ...(ratios.length ? [{ key: "aspect_ratio", label: "画面比例", control: "select" as const,
+        valueType: "string" as const, default: ratios[0], options: ratios.map(value => ({ label: value, value })),
+        description: "按喵呜当前型号原生 ratio 枚举发送。" }] : []),
+    ],
+    ...(pricing.maximum === undefined ? {} : { pricing: { kind: "per-request" as const, currency: "CNY", unitAmount: pricing.maximum,
+      sourceUrl: MIAOWU_CATALOG_SOURCE, checkedAt, confidence: "exact" as const } }),
+    metadata: {
+      modality: "image", catalogCapability: "image", marketplaceGroup: pricing.group,
+      pricingGroupRatio: pricing.ratio, priceLabel: pricing.priceLabel, billingLabel: pricing.billingLabel,
+      pricingCheckedAt: checkedAt, remoteMediaUrlsOnly: true, parameterSource: "pricing.image_api",
+      imageNativeResolutionOptions: true, imageNativeRatioOptions: true,
+      imageNativeResolutionParameter: "resolution", qualitySupport: "provider-decided",
+      documentationUrl: "https://api.miaowuai.store/docs/openai-videos",
+    },
+    limits: { maxInputImages: imagesMax, maxInputVideos: 0, maxInputAudios: 0 },
   };
 }
 
@@ -430,13 +480,14 @@ export function miaowuCatalogFromPricing(
     if (!id) continue;
     const pricing = pricingFor(record, groupRatios);
     const videoApi = videoApiRecord(record);
+    const imageApi = imageApiRecord(record);
     const description =
       typeof record.description === "string" && record.description.trim()
         ? record.description.trim()
-        : videoApi
+        : imageApi ? "喵呜异步图片模型。" : videoApi
           ? GENERIC_DESCRIPTION
           : "喵呜视频模型；模型广场暂未公开专用视频参数。";
-    const descriptor = videoApi
+    const descriptor = imageApi ? imageDescriptorFor(id, record, pricing, checkedAt) : videoApi
       ? descriptorFor(id, record, pricing, checkedAt)
       : miaowuUnparameterizedVideoDescriptor(id, {
           name: `${id}（${pricing.priceLabel}）`,
@@ -450,7 +501,7 @@ export function miaowuCatalogFromPricing(
       id,
       name: `${id}（${pricing.priceLabel}）`,
       description,
-      capability: "video",
+      capability: imageApi ? "image" : "video",
       priceLabel: pricing.priceLabel,
       billingLabel: pricing.billingLabel,
       tags: pricing.group === "default" ? [] : [pricing.group],
@@ -703,7 +754,7 @@ export async function loadMiaowuCatalog(options?: {
         (await response.json()) as PricingPayload,
       );
       if (snapshot.models.length === 0)
-        throw new Error("喵呜模型广场未返回视频模型");
+        throw new Error("喵呜模型广场未返回媒体模型");
       cache.snapshot = snapshot;
       cache.expiresAt = Date.now() + CATALOG_TTL_MS;
       return snapshot;
@@ -731,7 +782,9 @@ export function miaowuConnectorForModels(
   const connector = structuredClone(MIAOWU_CONNECTOR);
   const modelOverrides = Object.fromEntries(
     models.flatMap((model) =>
-      model.metadata?.parameterControlsUnavailable === true
+      model.outputKinds?.includes("image")
+        ? [[model.id, structuredClone(MIAOWU_IMAGE_OVERRIDE)]]
+        : model.metadata?.parameterControlsUnavailable === true
         ? [[model.id, structuredClone(MIAOWU_CHAT_VIDEO_OVERRIDE)]]
         : [],
     ),

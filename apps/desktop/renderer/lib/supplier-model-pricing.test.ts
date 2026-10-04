@@ -314,6 +314,19 @@ describe("universal supplier price lookup", () => {
     expect(applySupplierCatalogPrices([image], group.id, { ...catalog, groups: [{ ...group, details: { ...group.details, stale: true } }] })[0]?.metadata?.priceStatus).toBe("unpublished");
     expect(group.details).not.toHaveProperty("referencePrice");
   });
+  it("repairs saved pDog banana prices and exposes native versus upscaled group declarations", () => {
+    const ids = ["gemini-3.1-flash-image-preview", "gemini-3-pro-image"];
+    const images = ids.map(id => ({ ...model, id, operations: ["image.generate" as const], metadata: {} }));
+    const group = { id: "香蕉", label: "香蕉", source: "catalog" as const, models: [], details: { source: "key-groups" as const,
+      description: `香蕉2：0.07/张, ID：${ids[0]}\n香蕉pro：0.08/张, ID：${ids[1]}` } };
+    const priced = applySupplierCatalogPrices(images, group.id, { ...catalog, groups: [group] });
+    expect(priced.map(image => image.metadata?.priceLabel)).toEqual(["香蕉2：0.07/张（分组说明参考）", "香蕉pro：0.08/张（分组说明参考）"]);
+    const supersampled = { ...group, id: "1K2K4K(超分组)", details: { ...group.details,
+      description: "0.03/张，1K为原生，2K4K为超分" } };
+    const result = applySupplierCatalogPrices(images, supersampled.id, { ...catalog, groups: [supersampled] })[0]!;
+    expect(result.metadata?.imageResolutionOrigins).toEqual({ "1K": "native", "2K": "upscaled", "4K": "upscaled" });
+    expect(result.metadata?.supplierGroupResolutionLabel).toContain("说明超分 2K / 4K");
+  });
   it("reads scoped documentation before measured fallback and retains conditional wording", () => {
     const missing = {...model, metadata:{priceLabel:"价格未公布"}};
     expect(applyDocumentedModelPrice(missing, "new-image：¥0.16/张", "https://example.com/docs").pricing?.unitAmount).toBe(0.16);

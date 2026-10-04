@@ -26,6 +26,7 @@ import {
   assetAsUrl,
   assetToBlob,
   fetchProviderJson,
+  fetchProviderBytes,
   mergeHeaders,
   providerFetch,
   providerSubmitTransportActive,
@@ -124,6 +125,8 @@ export interface RestOutputMapping {
   mimeTypePath?: string;
   filenamePath?: string;
   defaultMimeType?: string;
+  /** Authenticated same-origin task content, used only after a terminal success. */
+  contentFallback?: { path: string; alternatePaths?: readonly string[] };
 }
 
 export interface RestAuthConfig {
@@ -187,6 +190,8 @@ interface RestTaskEnvelope {
   config: RestConnectorConfig;
   remote: unknown;
   baseUrl?: string;
+  taskId?: string;
+  status?: ProviderTaskStatus;
 }
 
 /** The selected request, not a mixed group's blanket flag, decides transport. */
@@ -570,6 +575,17 @@ function assertConfig(value: unknown): asserts value is RestConnectorConfig {
   }
   if (value.output.kind !== "image" && value.output.kind !== "video") {
     throw new Error("REST connector output.kind must be image or video");
+  }
+  if (value.output.contentFallback !== undefined) {
+    const fallback = value.output.contentFallback;
+    if (!isRecord(fallback) || typeof fallback.path !== "string" ||
+      (fallback.alternatePaths !== undefined && (!Array.isArray(fallback.alternatePaths) ||
+        fallback.alternatePaths.some(path => typeof path !== "string"))))
+      throw new Error("REST connector output.contentFallback must define task content paths");
+    for (const path of [fallback.path, ...(fallback.alternatePaths as string[] | undefined ?? [])]) {
+      if (!/^\/(?!\/)/u.test(path) || !path.includes("{taskId}") || /[?#\\]/u.test(path))
+        throw new Error("REST task content paths must be relative and contain {taskId}");
+    }
   }
   for (const key of [
     "urlPath",
@@ -1058,6 +1074,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         ? base.modelOverrides?.[model]?.operationOverrides?.[operation]
         : undefined;
     const selected = applyOverride(operationConfig, modelOperationOverride);
+    assertConfig(selected);
     // Repair stale family-inherited mappings for these exact public IDs only.
     // Model restrictions and credentials remain owned by the saved connection.
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, base, model)) {
@@ -1591,6 +1608,8 @@ export class GenericRestAdapter implements ProviderAdapter {
       connectionId: request.connectionId,
       config,
       remote,
+      ...(cloudTask ? { taskId: cloudTask } : typeof rawTaskId === "string" || typeof rawTaskId === "number" ? { taskId: String(rawTaskId) } : {}),
+      status,
       ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
     };
     const result: ProviderTask = {
@@ -1639,7 +1658,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       ...(envelope.config.pollIntervalMs === undefined
         ? {}
         : { pollAfterMs: envelope.config.pollIntervalMs }),
-      result: { ...envelope, remote },
+      result: { ...envelope, remote, status },
     };
     if (mapping?.progressPath) {
       const progress = normalizeProgress(
@@ -1720,7 +1739,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       providerTaskId: String(rawTaskId),
       id: String(rawTaskId),
       status,
-      result: { connectionId, config, remote: payload },
+      result: { connectionId, config, remote: payload, taskId: String(rawTaskId), status },
     };
     if (webhook.errorPath) {
       const error = readJsonPath(payload, webhook.errorPath);
@@ -1774,7 +1793,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       : selected === undefined
         ? []
         : [selected];
-    return values.flatMap((value): RemoteArtifact[] => {
+    const outputs = values.flatMap((value): RemoteArtifact[] => {
       if (typeof value === "string") {
         return [
           {
@@ -1844,6 +1863,40 @@ export class GenericRestAdapter implements ProviderAdapter {
       }
       return [];
     });
+    const content = config.output.contentFallback;
+    if (!content || typeof result.connectionId !== "string" || !baseUrl) return outputs;
+    const mapping = config.poll?.response ?? config.submit.response;
+    const rawTaskId = typeof result.taskId === "string" ? result.taskId
+      : mapping ? responseValue(remote, mapping.taskIdPath, mapping.taskIdFallbackPaths) : undefined;
+    const rawStatus = mapping ? responseValue(remote, mapping.statusPath, mapping.statusFallbackPaths) : undefined;
+    const status = result.status ?? normalizeStatus(rawStatus, config, "running");
+    if (status !== "succeeded" || !["string", "number"].includes(typeof rawTaskId) || !String(rawTaskId).trim()) return outputs;
+    const taskId = String(rawTaskId);
+    // URL parsers normalize these segments even after encodeURIComponent.
+    if (taskId === "." || taskId === "..") return outputs;
+    const contentUrls = [content.path, ...(content.alternatePaths ?? [])]
+      .map(path => this.resolveUrl(baseUrl, path, config, taskId));
+    if (contentUrls.some(url => new URL(url).origin !== new URL(baseUrl).origin))
+      throw new Error("REST task content must belong to the completed task origin");
+    const matchesContent = (url: string) => contentUrls.some(candidate => {
+      const expected = new URL(candidate), actual = new URL(url);
+      return actual.origin === expected.origin && actual.pathname === expected.pathname;
+    });
+    if (outputs.length && !outputs.some(output => output.url && matchesContent(output.url))) return outputs;
+    const connection = await this.connections.resolve(result.connectionId);
+    if (!connection.baseUrl || new URL(connection.baseUrl).origin !== new URL(baseUrl).origin)
+      throw new Error("REST task content no longer belongs to the current connection origin");
+    const download = async (url: string): Promise<RemoteArtifact> => {
+      if (!matchesContent(url)) throw new Error("REST task content URL does not match the completed task");
+      const headers = this.headers(connection, config, { path: content.path, method: "GET", bodyMode: "none" });
+      const downloaded = await fetchProviderBytes((input, init) => this.fetchImpl(input, { ...init, method: "GET", headers }), url,
+        { phase: "archive", timeoutMs: this.requestTimeoutMs, maxResponseBytes: config.output.kind === "image" ? 64 * 1024 * 1024 : 200 * 1024 * 1024 });
+      if (!downloaded.data.length) throw new Error("REST task content was empty");
+      return { kind: config.output.kind, data: downloaded.data,
+        ...((downloaded.mimeType ?? config.output.defaultMimeType) ? { mimeType: downloaded.mimeType ?? config.output.defaultMimeType } : {}) };
+    };
+    if (!outputs.length) return [await download(contentUrls[0]!)];
+    return Promise.all(outputs.map(output => output.url && matchesContent(output.url) ? download(output.url) : output));
   }
 }
 

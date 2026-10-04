@@ -304,6 +304,8 @@ export function applySupplierCatalogPrices(
     if (details && image) model = { ...model, metadata: { ...model.metadata,
       supplierGroupDescription: details.description ?? "",
       supplierGroupResolutionLabel: supplierGroupResolutionLabel(details),
+      imageResolutionOrigins: { ...Object.fromEntries((details.nativeResolutions ?? []).map(tier => [tier, "native"])),
+        ...Object.fromEntries((details.upscaledResolutions ?? []).map(tier => [tier, "upscaled"])) },
       supplierGroupInfoSource: details.source,
       supplierGroupInfoStale: details.stale === true,
       supplierGroupCheckedAt: catalog.checkedAt,
@@ -313,7 +315,7 @@ export function applySupplierCatalogPrices(
     }
     else if (model.metadata?.supplierGroupInfoSource) {
       const metadata = { ...model.metadata };
-      for (const key of ["supplierGroupDescription", "supplierGroupResolutionLabel", "supplierGroupInfoSource", "supplierGroupInfoStale", "supplierGroupCheckedAt"]) delete metadata[key];
+      for (const key of ["supplierGroupDescription", "supplierGroupResolutionLabel", "supplierGroupInfoSource", "supplierGroupInfoStale", "supplierGroupCheckedAt", "imageResolutionOrigins"]) delete metadata[key];
       model = { ...model, metadata };
     }
     // A text-only catalog cannot replace parameter-dependent billing rules.

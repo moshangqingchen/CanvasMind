@@ -50,7 +50,7 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
 /** Compare only the exact model and supported parameter combination in this connection. */
 export function comparableModelPrice(models: readonly import("@super-canvas/providers").ModelDescriptor[], id: string | undefined, parameters: Readonly<Record<string, unknown>>): string {
   const model = models.find(item => item.id === id);
-  if (!model) return "同型号未报价";
+  if (!model) return id ? "当前分组无此型号" : "未选择型号";
   if (model.parameters?.some(parameter => parameter.options?.length && parameters[parameter.key] !== undefined &&
     !parameter.options.some(option => String(option.value) === String(parameters[parameter.key])))) return "当前参数不支持";
   const price = modelPriceSummary(model, parameters);

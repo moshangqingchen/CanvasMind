@@ -1,0 +1,367 @@
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
+
+const models = ["甲", "乙"].map((suffix, index) => ({
+  id: `gpt-image-panel-${index}`,
+  name: `交互回归图像模型${suffix}`,
+  operations: ["image.generate"],
+  inputKinds: ["text"],
+  outputKinds: ["image"],
+  metadata: { canvasRunnable: true },
+  // Enough genuine descriptor controls to require scrolling the panel body.
+  parameters: Array.from({ length: 12 }, (_, parameter) => ({
+    key: `panel_parameter_${parameter}`,
+    label: `交互参数 ${parameter + 1}`,
+    control: "select",
+    valueType: "string",
+    default: "first",
+    options: [
+      { value: "first", label: "第一档" },
+      { value: "second", label: "第二档" },
+    ],
+  })),
+}));
+
+async function chooseNativeWithMouse(page: Page, select: Locator, value: string) {
+  await select.click();
+  await expect
+    .poll(() => select.evaluate((element) => element.matches(":open")))
+    .toBe(true);
+  const index = await select.locator("option").evaluateAll(
+    (options, target) =>
+      options.findIndex((option) => (option as HTMLOptionElement).value === target),
+    value,
+  );
+  expect(index).toBeGreaterThanOrEqual(0);
+  await page.keyboard.press("Home");
+  for (let item = 0; item < index; item++) await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(select).toHaveValue(value);
+}
+
+async function wheelPanel(page: Page, panel: Locator, delta: number) {
+  const body = panel.locator(".node-config-popover-body");
+  const bounds = await body.boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.mouse.move(bounds!.x + bounds!.width - 40, bounds!.y + bounds!.height / 2);
+  await page.mouse.wheel(0, delta);
+  return body;
+}
+
+async function fixture(page: Page, request: APIRequestContext, suffix: string) {
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  let submissions = 0;
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.route("**/api/runs**", async (route) => {
+    // Block every possible paid submission, including an accidental Run click.
+    if (route.request().method() === "POST") {
+      submissions++;
+      await route.abort();
+    } else await route.continue();
+  });
+  let scans = 0;
+  const completedScans = new Map<string, number>();
+  let holdScan = false;
+  const pendingScans = new Set<() => void>();
+  await page.route("**/api/providers/*/models*", async (route) => {
+    scans++;
+    if (holdScan) {
+      await new Promise<void>((resolve) => pendingScans.add(resolve));
+    }
+    await route.fulfill({ json: models, headers: { "X-Model-Scan-Status": "live" } });
+    const connectionId = new URL(route.request().url()).pathname.split("/")[3]!;
+    completedScans.set(connectionId, (completedScans.get(connectionId) ?? 0) + 1);
+  });
+  const mainGroup = `${suffix} 高质量`;
+  const alternateGroup = `${suffix} 标准`;
+  async function createSupplier(name: string, supplierKey?: string) {
+    const response = await request.post("/api/suppliers", {
+      data: { name, siteUrl: "https://panel-after-supplier.invalid", apiUrl: "https://panel-after-supplier.invalid", ...(supplierKey ? { supplierKey } : {}) },
+    });
+    expect(response.ok()).toBeTruthy();
+    const supplier = await response.json();
+    const connections: string[] = [];
+    for (const group of [mainGroup, alternateGroup]) {
+      const response = await request.post("/api/providers", { data: {
+        name: `${name} · ${group}`,
+        provider: "openai",
+        apiKey: "isolated-panel-after-supplier-key",
+        config: {
+          supplierId: supplier.id,
+          supplierKey: supplier.supplierKey,
+          baseUrl: supplier.apiUrl,
+          usage: "canvas",
+          customGroup: true,
+          modelGroup: group,
+          defaultModel: models[0]!.id,
+          modelCatalogModels: models,
+          modelScanStatus: "live",
+        },
+      } });
+      expect(response.ok()).toBeTruthy();
+      connections.push((await response.json()).id);
+    }
+    return { ...supplier, connections };
+  }
+  const original = await createSupplier(`原供应商 ${suffix}`);
+  const labels = [`左侧 ${suffix}`, `右侧 ${suffix}`];
+  const response = await request.post("/api/canvas", { data: {
+    title: `新增供应商参数面板回归 ${suffix}`,
+    graph: {
+      schemaVersion: 1,
+      viewport: { x: 0, y: 0, zoom: 1 },
+      edges: [],
+      nodes: labels.map((label, index) => ({
+        id: `panel-${index}`,
+        type: "workflow",
+        position: { x: 55 + index * 500, y: 50 },
+        style: { width: 420, height: 180 },
+        data: {
+          nodeType: "image-generation",
+          label,
+          provider: "openai",
+          connectionId: original.connections[0],
+          model: models[0]!.id,
+          parts: [],
+          inputs: [{ id: "prompt", kind: "text", label: "提示词" }],
+          outputs: [{ id: "images", kind: "image", label: "图片" }],
+          parameters: {},
+        },
+      })),
+    },
+  } });
+  expect(response.ok()).toBeTruthy();
+  const canvas = await response.json();
+  await page.goto(`/canvas/${canvas.id}`);
+  const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
+  if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
+  const panels = [];
+  for (const label of labels) {
+    await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
+    const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
+    await expect(panel).toBeVisible();
+    panels.push({
+      panel,
+      supplier: panel.getByRole("combobox", { name: `${label} 供应商`, exact: true }),
+      group: panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true }),
+      model: panel.getByRole("combobox", { name: `${label} 模型`, exact: true }),
+    });
+  }
+  return {
+    panels,
+    labels,
+    createSupplier,
+    mainGroup,
+    alternateGroup,
+    scans: () => scans,
+    completedScans: (connectionId: string) => completedScans.get(connectionId) ?? 0,
+    holdScans: () => { holdScan = true; },
+    releaseScans: () => {
+      holdScan = false;
+      for (const resume of pendingScans) resume();
+      pendingScans.clear();
+    },
+    assertNoRuns: () => {
+      expect(submissions).toBe(0);
+      expect(pageErrors).toEqual([]);
+    },
+  };
+}
+
+test("新增供应商并关闭设置后，两个参数面板的下拉、模型菜单和滚轮保持可用", async ({ page, request }) => {
+  const ui = await fixture(page, request, "供应商添加");
+  await page.getByRole("button", { name: "API 设置", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
+  await expect(settings).toBeVisible();
+  // Use the real save APIs inside the isolated test database. Closing settings
+  // follows the same connections refresh as a supplier created in its form.
+  const added = await ui.createSupplier("新添加交互供应商", "cyberafei");
+  await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await expect(settings).toBeHidden();
+  for (const panel of ui.panels) {
+    await expect(panel.panel).toBeVisible();
+    await expect(panel.supplier.locator('option[value="cyberafei"]')).toHaveCount(1);
+    await chooseNativeWithMouse(page, panel.supplier, added.supplierKey);
+    await chooseNativeWithMouse(page, panel.group, ui.alternateGroup);
+    await panel.model.click();
+    await expect(panel.model).toHaveAttribute("aria-expanded", "true");
+    await panel.panel.getByRole("option", { name: models[1]!.name, exact: true }).click();
+    await expect(panel.model).toContainText(models[1]!.id);
+    const body = await wheelPanel(page, panel.panel, 700);
+    await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await wheelPanel(page, panel.panel, -2_000);
+    await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBe(0);
+  }
+  const active = ui.panels[1]!;
+  const beforeRefresh = ui.scans();
+  const beforeCompletedRefresh = ui.completedScans(added.connections[1]);
+  const beforeViewport = await page.locator(".react-flow__viewport").getAttribute("style");
+  ui.holdScans();
+  try {
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(ui.scans).toBeGreaterThan(beforeRefresh);
+    await active.model.click();
+    await expect(active.panel.getByRole("listbox")).toBeVisible();
+    // A different panel remains clickable while its neighbor's list is open.
+    await chooseNativeWithMouse(page, ui.panels[0]!.group, ui.mainGroup);
+    await active.model.click();
+    await expect(active.model).toHaveAttribute("aria-expanded", "true");
+    ui.releaseScans();
+    await expect.poll(() => ui.completedScans(added.connections[1])).toBeGreaterThan(beforeCompletedRefresh);
+    await expect(active.panel.getByRole("option", { name: models[0]!.name, exact: true })).toBeVisible();
+    await expect(active.model).toHaveAttribute("aria-expanded", "true");
+    await active.panel.getByRole("option", { name: models[0]!.name, exact: true }).click();
+    const body = await wheelPanel(page, active.panel, 700);
+    await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await expect(page.locator(".react-flow__viewport")).toHaveAttribute("style", beforeViewport!);
+  } finally {
+    ui.releaseScans();
+  }
+  ui.assertNoRuns();
+});
+
+for (const interruption of ["pointercancel", "blur", "capture-lost-blur"] as const)
+test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉和滚动`, async ({ page, request }, testInfo) => {
+  const ui = await fixture(page, request, `框选取消 ${interruption}`);
+  const first = ui.panels[0]!;
+  const pane = page.locator(".react-flow__pane");
+  const paneBounds = await pane.boundingBox();
+  const supplierBounds = await first.supplier.boundingBox();
+  const bodyBounds = await first.panel.locator(".node-config-popover-body").boundingBox();
+  const viewport = page.locator(".react-flow__viewport");
+  const beforeGestureViewport = await viewport.getAttribute("style");
+  expect(paneBounds).not.toBeNull();
+  expect(supplierBounds).not.toBeNull();
+  expect(bodyBounds).not.toBeNull();
+  // Capture the browser's actual mouse pointer ID instead of assuming 1.
+  await pane.evaluate((element) => {
+    const events: { type: string; trusted: boolean; captured: boolean }[] = [];
+    const record = (event: Event) => {
+      events.push({
+        type: event.type,
+        trusted: event.isTrusted,
+        captured: element.hasPointerCapture(Number(element.getAttribute("data-test-pointer-id"))),
+      });
+      element.setAttribute("data-test-interruption-events", JSON.stringify(events));
+      if (event.type === "blur") element.setAttribute("data-test-blur-trusted", String(event.isTrusted));
+    };
+    element.addEventListener("pointerdown", (event) => {
+      element.setAttribute("data-test-pointer-id", String((event as PointerEvent).pointerId));
+      record(event);
+    }, { once: true });
+    element.addEventListener("lostpointercapture", record);
+    element.addEventListener("pointercancel", record);
+    // Capture before the app's blur recovery forwards pointercancel, preserving
+    // the browser's original capture state and the real event ordering.
+    // A capture listener on window also sees descendant controls losing focus.
+    // Only the window's own blur is the interruption being exercised here.
+    window.addEventListener("blur", (event) => {
+      if (event.target === window) record(event);
+    }, { capture: true });
+  });
+  const marqueeStart = { x: paneBounds!.x + paneBounds!.width - 100, y: paneBounds!.y + 20 };
+  // Start above the cards. A start inside the right card captures its child
+  // instead of the pane and its stopped propagation bypasses our recorder.
+  expect(await pane.evaluate((element, point) =>
+    document.elementFromPoint(point.x, point.y) === element,
+    marqueeStart,
+  )).toBe(true);
+  await page.keyboard.down("Control");
+  await page.mouse.move(marqueeStart.x, marqueeStart.y);
+  await page.mouse.down();
+  try {
+    const selectionEndX = interruption !== "pointercancel"
+      ? paneBounds!.x + 2
+      : supplierBounds!.x - 15;
+    await page.mouse.move(selectionEndX, bodyBounds!.y + bodyBounds!.height - 30, { steps: 12 });
+    await expect(page.locator(".react-flow__selection")).toBeVisible();
+    if (interruption !== "pointercancel") {
+      // Begin real auto-panning at the canvas edge before losing focus. State
+      // cleanup must also stop the library's animation loop while the pointer
+      // remains at the edge; simply hiding its rectangle would leave it moving.
+      await expect.poll(() => viewport.getAttribute("style")).not.toBe(beforeGestureViewport);
+    }
+    if (interruption === "pointercancel") {
+      await pane.evaluate((element) => {
+        element.dispatchEvent(new PointerEvent("pointercancel", {
+          bubbles: true,
+          pointerId: Number(element.getAttribute("data-test-pointer-id")),
+          pointerType: "mouse",
+          isPrimary: true,
+        }));
+      });
+    } else if (interruption === "blur") {
+      await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    } else {
+      // Lose real browser pointer capture before focus recovery, while the
+      // physical mouse stays down at the edge and auto-pan is still running.
+      await expect.poll(() => pane.evaluate((element) =>
+        element.hasPointerCapture(Number(element.getAttribute("data-test-pointer-id"))),
+      )).toBe(true);
+      await pane.evaluate((element) => {
+        element.releasePointerCapture(Number(element.getAttribute("data-test-pointer-id")));
+      });
+      await expect.poll(() => pane.evaluate((element) =>
+        element.hasPointerCapture(Number(element.getAttribute("data-test-pointer-id"))),
+      )).toBe(false);
+      // A native pointer event flushes the browser's pending capture release.
+      await page.mouse.move(selectionEndX, bodyBounds!.y + bodyBounds!.height - 30);
+      await expect.poll(() => pane.evaluate((element) => {
+        const events = JSON.parse(element.getAttribute("data-test-interruption-events") ?? "[]") as { type: string; trusted: boolean }[];
+        return events.some((event) => event.type === "lostpointercapture" && event.trusted);
+      })).toBe(true);
+      await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+      const events = JSON.parse(await pane.getAttribute("data-test-interruption-events") ?? "[]") as { type: string; trusted: boolean; captured: boolean }[];
+      await testInfo.attach("capture-loss-before-blur-event-order", {
+        body: JSON.stringify(events),
+        contentType: "application/json",
+      });
+      expect(events.find((event) => event.type === "blur")?.captured).toBe(false);
+      expect(events.findIndex((event) => event.type === "lostpointercapture")).toBeLessThan(events.findIndex((event) => event.type === "blur"));
+    }
+    // Cancellation must clean up immediately. A later pointerup is not
+    // guaranteed when the OS cancels a pointer or focus moves to another app.
+    await expect(page.locator(".react-flow__selection")).toHaveCount(0);
+    if (interruption !== "pointercancel") {
+      const stoppedTransforms = await viewport.evaluate(async (element) => {
+        const transforms: string[] = [];
+        for (let frame = 0; frame < 4; frame++) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          transforms.push(getComputedStyle(element).transform);
+        }
+        return transforms.slice(1);
+      });
+      expect(new Set(stoppedTransforms).size).toBe(1);
+    }
+  } finally {
+    // A cancelled capture releases the pointer. Releasing outside the pane
+    // must not rely on a later pane pointerup to repair the cancelled gesture.
+    await page.mouse.move(20, 20);
+    await page.mouse.up();
+    if (interruption !== "pointercancel") await page.keyboard.up("Control");
+  }
+  await expect(page.locator(".react-flow__selection")).toHaveCount(0);
+  // The first field action must work without a native select's pointerup
+  // incidentally cleaning up the cancelled gesture. Keep Ctrl down in the
+  // pointercancel case to also exercise the pane's selection capture handler.
+  try {
+    await first.model.click();
+    await expect(first.model).toHaveAttribute("aria-expanded", "true");
+    await first.panel.getByRole("option", { name: models[1]!.name, exact: true }).click();
+    await expect(first.model).toContainText(models[1]!.id);
+  } finally {
+    await page.keyboard.up("Control");
+  }
+  await chooseNativeWithMouse(page, first.group, ui.alternateGroup);
+  const body = await wheelPanel(page, first.panel, 700);
+  await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await wheelPanel(page, first.panel, -2_000);
+  await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBe(0);
+  ui.assertNoRuns();
+});

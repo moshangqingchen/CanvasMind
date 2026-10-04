@@ -72,6 +72,58 @@ function capabilities(group: string, description = "", custom = model) {
 }
 
 describe("supplier capability decisions", () => {
+  it("keeps pDog Image2.5 max as an unverified candidate even when the group's generic text mentions high", () => {
+    const group = "1K2K4K(超分组)";
+    const configuredSupplier = { ...supplier, apiUrl: "https://ai.whyshy.cn", siteUrl: "https://ai.whyshy.cn",
+      catalog: { groups: [{ id: group, label: group, models: [], details: { source: "key-groups" as const, description: "高质量图片 0.03/张" } }] } };
+    const result = effectiveImageCapabilities({ supplier: configuredSupplier,
+      connection: { ...connection, config: { ...connection.config, baseUrl: configuredSupplier.apiUrl, modelGroup: group } },
+      model: { ...model, id: "gpt-image-2.5-flare" }, fingerprint: "f" });
+    expect(result.quality).toBe("max");
+    expect(result.qualityOptions).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    expect(result.evidence.find(item => item.quality)).toMatchObject({ quality: "max", kind: "adapter", status: "assumed" });
+    expect(result.needsQualityProbe).toBe(true);
+  });
+  it.each(["1K", "1K2K4K(超分组)"])("uses pDog documented pixels and group-scoped high quality for %s", group => {
+    const configuredSupplier = { ...supplier, apiUrl: "https://ai.whyshy.cn", siteUrl: "https://ai.whyshy.cn",
+      catalog: { groups: [{ id: group, label: group, models: [], details: { source: "key-groups" as const, description: "0.03/张" } }] } };
+    const result = effectiveImageCapabilities({ supplier: configuredSupplier,
+      connection: { ...connection, config: { ...connection.config, baseUrl: configuredSupplier.apiUrl, modelGroup: group } },
+      model: { ...model, id: "gpt-image-2" }, fingerprint: "f" });
+    expect(result.quality).toBe("high");
+    expect(result.qualityOptions).toEqual(["low", "medium", "high"]);
+    const size = result.model.parameters?.find(parameter => parameter.key === "size");
+    for (const tier of group === "1K" ? ["1K"] : ["1K", "2K", "4K"])
+      expect(size?.options?.filter(option => option.label.startsWith(tier))).toHaveLength(11);
+    if (group === "1K") expect(size?.options?.some(option => option.label.startsWith("4K"))).toBe(false);
+    else expect(size?.options?.find(option => option.label.startsWith("2K · 16:9"))?.value).toBe("2048x1152");
+    expect(size?.options?.some(option => option.value === "auto")).toBe(true);
+  });
+  it.each([{ values: ["1080p"] }, { values: ["1080p", "2K", "4K"] }])("preserves vendor-native image enums $values without adding GPT controls", ({ values }) => {
+    const native = { ...model, id: "Image-GPT-image-2", parameters: [
+      { key: "resolution", label: "分辨率", control: "select" as const, default: values.at(-1), options: values.map(value => ({ value, label: value })) },
+      { key: "ratio", label: "比例", control: "select" as const, default: "16:9", options: ["16:9", "9:16"].map(value => ({ value, label: value })) },
+    ], metadata: { imageNativeResolutionOptions: true, imageNativeResolutionParameter: "resolution", imageNativeRatioOptions: true,
+      qualitySupport: "provider-decided", documentationUrl: "https://api.miaowuai.store/docs/openai-videos" } };
+    const result = capabilities("图片", "", native);
+    expect(result.model.parameters).toEqual(native.parameters);
+    expect(result.tiers.map(tier => tier.tier)).toEqual(values.filter(value => value !== "1080p"));
+    expect(result.probeTiers).toEqual([]);
+    expect(result.qualityKey).toBeUndefined();
+  });
+  it("keeps a decoded 4K size result distinct from the declared upscaling method", () => {
+    const group = "1K2K4K(超分组)";
+    const passed: SupplierVerificationCase = { id: "passed", requestId: "request", supplierId: supplier.id, sourceId: "source", connectionId: connection.id,
+      group, modelId: model.id, provider: "openai", fingerprint: "f", dedupeKey: "d", resolution: "4K", ratio: "16:9",
+      expectedWidth: 3840, expectedHeight: 2160, actualWidth: 3840, actualHeight: 2160, parameters: { size: "3840x2160" },
+      status: "succeeded", createdAt: "now", updatedAt: "now" };
+    const result = effectiveImageCapabilities({ supplier: { ...supplier, catalog: { groups: [{ id: group, label: group, models: [],
+      details: { source: "key-groups", description: "1K为原生，2K4K为超分，0.03/张" } }] } },
+      connection: { ...connection, config: { ...connection.config, modelGroup: group } }, model, fingerprint: "f", tests: [passed] });
+    expect(result.evidence.find(entry => entry.resolution === "4K")?.status).toBe("verified");
+    expect(result.evidence.find(entry => entry.resolution === "4K")?.excerpt).toContain("尺寸实测不代表原生生成");
+    expect(result.model.metadata?.imageResolutionOrigins).toEqual({ "1K": "native", "2K": "upscaled", "4K": "upscaled" });
+  });
   it("keeps resolution-valued quality fields and their case in the actual verification request", () => {
     const result = capabilities("图片", "", { ...model, id: "gemini-3-pro-image-preview", parameters: [
       { key: "quality", label: "分辨率", control: "select", default: "4k", options: ["1k", "2k", "4k"].map(value => ({ value, label: value })) },

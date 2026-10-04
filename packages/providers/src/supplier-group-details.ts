@@ -5,6 +5,8 @@ export interface SupplierGroupDetails {
   referencePrice?: string;
   supportedResolutions?: string[];
   unsupportedResolutions?: string[];
+  nativeResolutions?: string[];
+  upscaledResolutions?: string[];
   exclusiveResolutions?: boolean;
   imagePrices?: Array<{ resolution: string; amount: number }>;
   rateMultiplier?: number;
@@ -27,6 +29,25 @@ function expandResolutionList(text: string): string {
   // Shared-unit lists are common in supplier descriptions. Do not interpret
   // decimal sizes such as 1.24K or a larger number such as 1124K as this list.
   return text.replace(/(?<![\d.])(?:124|1\s*[/／、,.，·]\s*2\s*[/／、,.，·]\s*4)\s*K(?![\w.])/giu, "1K/2K/4K");
+}
+
+/** Output pixel dimensions and the supplier's native/upscaled declaration are separate facts. */
+function resolutionOrigins(text: string): Map<string, "native" | "upscaled"> {
+  const origins = new Map<string, "native" | "upscaled">();
+  const conflicts = new Set<string>();
+  for (const clause of expandResolutionList(text).split(/[，,。;；\n]/u)) {
+    if (/不支持|不提供|非原生|not\s+native/iu.test(clause)) continue;
+    const native = /原生|\bnative\b/iu.test(clause);
+    const upscaled = /超分|放大|\bupscal(?:e|ed|ing)\b/iu.test(clause);
+    if (native === upscaled) continue;
+    for (const match of clause.toUpperCase().matchAll(/(?<![\d.])([124])\s*K/gu)) {
+      const tier = `${match[1]}K`, origin = native ? "native" : "upscaled";
+      if (conflicts.has(tier)) continue;
+      if (origins.has(tier) && origins.get(tier) !== origin) { origins.delete(tier); conflicts.add(tier); }
+      else origins.set(tier, origin);
+    }
+  }
+  return origins;
 }
 
 export function parseSupplierGroupDetails(row: Record<string, unknown>, source: SupplierGroupDetails["source"]): SupplierGroupDetails | undefined {
@@ -64,10 +85,16 @@ export function parseSupplierGroupDetails(row: Record<string, unknown>, source: 
   const concurrency = /(?:最大并发|并发上限|并发限制)\s*[:：]?\s*(\d+)/u.exec(description);
   const concurrencyLimit = number(row.concurrency_limit ?? row.max_concurrency) ?? (concurrency ? Number(concurrency[1]) : undefined);
   const rpmLimit = number(row.rpm_limit);
+  const origins = resolutionOrigins(name);
+  for (const [tier, origin] of resolutionOrigins(description)) origins.set(tier, origin);
+  const nativeResolutions = tiers.filter(tier => origins.get(tier) === "native" && !unsupported.has(tier));
+  const upscaledResolutions = tiers.filter(tier => origins.get(tier) === "upscaled" && !unsupported.has(tier));
   const details: SupplierGroupDetails = {
     source, ...(description ? { description } : {}), ...(referencePrice ? { referencePrice } : {}),
     ...(supported.size ? { supportedResolutions: tiers.filter(t => supported.has(t)) } : {}),
     ...(unsupported.size ? { unsupportedResolutions: tiers.filter(t => unsupported.has(t)) } : {}),
+    ...(nativeResolutions.length ? { nativeResolutions } : {}),
+    ...(upscaledResolutions.length ? { upscaledResolutions } : {}),
     ...(exclusive && supported.size ? { exclusiveResolutions: true } : {}),
     ...(imagePrices.length ? { imagePrices } : {}),
     ...(rateMultiplier !== undefined ? { rateMultiplier } : {}),
@@ -81,7 +108,9 @@ export function parseSupplierGroupDetails(row: Record<string, unknown>, source: 
 export function supplierGroupResolutionLabel(details?: SupplierGroupDetails): string {
   if (!details) return "";
   return [details.supportedResolutions?.length ? `${details.exclusiveResolutions ? "仅支持" : "说明支持"} ${details.supportedResolutions.join(" / ")}` : "",
-    details.unsupportedResolutions?.length ? `不支持 ${details.unsupportedResolutions.join(" / ")}` : ""].filter(Boolean).join("；");
+    details.unsupportedResolutions?.length ? `不支持 ${details.unsupportedResolutions.join(" / ")}` : "",
+    details.nativeResolutions?.length ? `说明原生 ${details.nativeResolutions.join(" / ")}` : "",
+    details.upscaledResolutions?.length ? `说明超分 ${details.upscaledResolutions.join(" / ")}` : ""].filter(Boolean).join("；");
 }
 
 /** Scope textual image prices before using a group's shared resolution amounts. */
@@ -96,7 +125,17 @@ export function supplierGroupModelPriceDetails(details: SupplierGroupDetails | u
   const exactPattern = new RegExp(`(?<![\\w.-])(?:${exactIds.map(escapePattern).join("|")})(?![\\w.-])`, "giu");
   const labels: string[] = [];
   let scoped = false;
-  for (const clause of details.description.split(/[，,。;；\n]/u)) {
+  const clauses: string[] = [];
+  for (const part of details.description.split(/[，,。;；\n]/u)) {
+    const previous = clauses.at(-1);
+    // Some sites put an exact ID after the amount: “香蕉2：0.07/张, ID：gemini-...”.
+    // Keep this explicit association before separating model-specific prices.
+    if (previous && /^(?:模型\s*)?ID\s*[:：]/iu.test(part.trim()) && referencePricePattern.test(previous)
+      && exactIds.some(id => supplierTextMentionsModel(part, id))
+      && !exactIds.some(id => supplierTextMentionsModel(previous, id))) clauses[clauses.length - 1] = `${previous}，${part.trim()}`;
+    else clauses.push(part);
+  }
+  for (const clause of clauses) {
     if (/充值|实付|汇率|兑换/iu.test(clause) || !referencePricePattern.test(clause)) continue;
     const candidates = [...clause.matchAll(exactPattern),
       ...clause.matchAll(/\b(?:gpt[- ]?)?image[- ]?2(?:\.5|\.0)?(?:-[a-z0-9]+(?:-[a-z0-9]+)*| +[a-z][a-z0-9]*(?:-[a-z0-9]+)*)?(?![\w.-])/giu)]
@@ -112,7 +151,7 @@ export function supplierGroupModelPriceDetails(details: SupplierGroupDetails | u
       mentions.forEach((mention, index) => {
         if (canonicalImageId(mention[0]) === selected) labels.push(segments[index]!);
       });
-    } else if (mentions.some(mention => canonicalImageId(mention[0]) === selected)) labels.push(clause.trim());
+    } else if (mentions.some(mention => canonicalImageId(mention[0]) === selected)) labels.push(clause.trim().replace(/，\s*(?:模型\s*)?ID\s*[:：].*$/iu, ""));
   }
   if (!scoped) return details;
   // Shared image_price_* fields cannot distinguish the models priced above.

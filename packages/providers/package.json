@@ -46,6 +46,11 @@
       "import": "./dist/image-quality-presets.js",
       "default": "./dist/image-quality-presets.js"
     },
+    "./pdog-image": {
+      "types": "./src/pdog-image.ts",
+      "import": "./dist/pdog-image.js",
+      "default": "./dist/pdog-image.js"
+    },
     "./genimage-image-capabilities": {
       "types": "./src/genimage-image-capabilities.ts",
       "import": "./dist/genimage-image-capabilities.js",
@@ -85,6 +90,21 @@
       "types": "./src/model-catalog.ts",
       "import": "./dist/model-catalog.js",
       "default": "./dist/model-catalog.js"
+    },
+    "./banana-image-contract": {
+      "types": "./src/banana-image-contract.ts",
+      "import": "./dist/banana-image-contract.js",
+      "default": "./dist/banana-image-contract.js"
+    },
+    "./pdog-image-contract": {
+      "types": "./src/pdog-image-contract.ts",
+      "import": "./dist/pdog-image-contract.js",
+      "default": "./dist/pdog-image-contract.js"
+    },
+    "./chuangxiang-image-contract": {
+      "types": "./src/chuangxiang-image-contract.ts",
+      "import": "./dist/chuangxiang-image-contract.js",
+      "default": "./dist/chuangxiang-image-contract.js"
     }
   },
   "files": [
