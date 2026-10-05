@@ -60,6 +60,14 @@ describe("maskConnection", () => {
 });
 
 describe("public run snapshots", () => {
+  it("publishes only the complete durable mask binding outside provider parameters", () => {
+    expect(publicRunRequest({ imageMask: { maskAssetId: "mask", maskSourceAssetId: "original", width: 1024,
+      sourceUrl: "https://private.test", data: "private-bytes", nested: { secret: "private" } }, parameters: { quality: "high" } }))
+      .toEqual({ imageMask: { maskAssetId: "mask", maskSourceAssetId: "original" }, parameters: { quality: "high" } });
+    for (const imageMask of [{ maskAssetId: "mask" }, { maskAssetId: 42, maskSourceAssetId: "source" },
+      { maskAssetId: "mask", maskSourceAssetId: "" }, { maskAssetId: " ", maskSourceAssetId: "source" }])
+      expect(publicRunRequest({ imageMask })).toBeNull();
+  });
   it("publishes only recognized submission phases without cloud credentials", () => {
     expect(publicRunRequest({ submissionPhase: "generating", cloudGeneration: { endpoint: "https://cloud.example.com", encryptedToken: "private" } })).toEqual({ submissionPhase: "generating" });
     expect(publicRunRequest({ submissionPhase: "private arbitrary value" })).toBeNull();
@@ -96,6 +104,7 @@ describe("public run snapshots", () => {
       inputAssets: [
         { id: "ref-1", name: "Reference.png", kind: "image", role: "reference", url: "https://private.test/?token=secret", data: "private-bytes" },
         { id: "ref-2", name: "Frame.png", kind: "image", role: "firstFrame" },
+        { id: "mask", name: "Mask.png", kind: "image", role: "mask", data: "private-bytes" },
         { name: "invalid" },
       ],
     };
@@ -104,6 +113,7 @@ describe("public run snapshots", () => {
     expect(result?.inputAssets).toEqual([
       { id: "ref-1", name: "Reference.png", kind: "image", role: "reference" },
       { id: "ref-2", name: "Frame.png", kind: "image", role: "firstFrame" },
+      { id: "mask", name: "Mask.png", kind: "image", role: "mask" },
     ]);
     expect(result?.prompt).toBe("Use both references. token=[redacted]");
     expect(JSON.stringify(result)).not.toMatch(/private|https/);

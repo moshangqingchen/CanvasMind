@@ -266,6 +266,13 @@ export function localizeRunError(
     : String(error.statusCode);
   const safetyCode = /\b(SAFETY\.[A-Z0-9._-]+)\b/u.exec(raw)?.[1];
 
+  // Older snapshots classified this exact upstream code as a parameter error.
+  // Correct the explanation without changing the saved task or billing evidence.
+  if (error.code?.toLowerCase() === "content_blocked_24h") {
+    return { ...error, type: "内容被临时拦截", failureCategory: "content_policy",
+      message: "供应商提示：相同内容此前被上游拒绝，当前处于 24 小时拦截期。请检查内容是否符合平台规则，并联系供应商或等待限制结束；反复提交相同内容无法解决。" };
+  }
+
   if (
     error.code === "artifact_archive_failed" ||
     raw.includes("供应商任务已完成，但输出归档失败")

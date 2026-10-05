@@ -1,3 +1,4 @@
+import { imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import type {
   ModelDescriptor,
   ModelParameterDescriptor,
@@ -175,7 +176,7 @@ function defaultOutputs(request: NormalizedRequest): RemoteArtifact[] {
     : 1;
   const data = video
     ? new TextEncoder().encode("SUPER_CANVAS_FAKE_VIDEO")
-    : Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    : new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
   return Array.from({ length: count }, (_, index) => ({
     kind: video ? "video" : "image",
     url: `https://example.invalid/fake/${encodeURIComponent(request.idempotencyKey)}-${index + 1}.${extension}`,
@@ -215,7 +216,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
   }
 
   public async validate(request: NormalizedRequest): Promise<ValidationResult> {
-    const issues: ValidationIssue[] = [];
+    const issues: ValidationIssue[] = imageEditingRequestIssues({ provider: "fake", config: {} }, request);
     if (request.prompt.trim().length === 0) {
       issues.push({
         path: "prompt",
@@ -226,7 +227,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
     if (
       (request.operation === "image.edit" ||
         request.operation === "video.image-to-video") &&
-      !(request.assets ?? []).some((asset) => asset.kind === "image")
+      !imageReferenceAssets(request.assets).some((asset) => asset.kind === "image")
     ) {
       issues.push({
         path: "assets",

@@ -46,7 +46,7 @@ export class ChuangxiangImageAdapter extends GenericRestAdapter {
       issues.push({ path: "operation", code: "unsupported_operation", message: "此创想接口仅处理图片生成和编辑" });
     if (request.operation === "image.generate" && request.assets?.length)
       issues.push({ path: "assets", code: "reference_operation", message: "创想带参考图片的任务请使用图片编辑" });
-    const images = request.assets ?? [];
+    const images = (request.assets ?? []).filter(asset => asset.role !== "mask");
     if (request.operation === "image.edit" && !images.length)
       issues.push({ path: "assets", code: "reference_required", message: "创想图片编辑需要参考图" });
     if (images.length > 9)

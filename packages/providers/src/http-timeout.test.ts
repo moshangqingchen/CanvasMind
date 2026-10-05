@@ -27,7 +27,7 @@ vi.mock("undici", async (importOriginal) => {
   };
 });
 
-import { fetchProviderBytes, fetchProviderJson, fetchWithProviderHttpProxy, providerFetch } from "./http.js";
+import { fetchProviderBytes, fetchProviderJson, fetchWithProviderHttpProxy, providerFetch, ProviderHttpError } from "./http.js";
 import { weAIFetch } from "./openai.js";
 
 describe("long provider request transport budgets", () => {
@@ -229,6 +229,24 @@ describe("long provider request transport budgets", () => {
     expect(error.details.transport).toMatchObject({ route: "physical-direct", localAddress: "192.168.1.20", remoteAddress: "104.156.154.225",
       localPort: 51000, remotePort: 443, socketBytesWritten: 580, socketBytesRead: 0 });
     expect(JSON.stringify(error.details.transport)).not.toContain("private-token");
+    expect(transport.fetch).toHaveBeenCalledOnce();
+  });
+
+  it.each(["ENETUNREACH", "EHOSTUNREACH", "wrapped"])("does not call a submit unsent after its headers were sent: %s", async code => {
+    transport.fetch.mockImplementation(async () => {
+      const request = { origin: "https://supplier.test" };
+      channel("undici:request:create").publish({ request });
+      channel("undici:client:sendHeaders").publish({ request, socket: { remoteAddress: "104.156.154.225" } });
+      if (code === "wrapped") throw new ProviderHttpError("transport reported a connect failure", {
+        kind: "network", phase: "submit", retryable: true, submissionMayHaveOccurred: false, requestNotSent: true,
+        cause: Object.assign(new Error("route lost"), { code: "ENETUNREACH" }),
+      });
+      throw Object.assign(new Error("route lost after request headers"), { code });
+    });
+    const error = await fetchProviderJson(providerFetch, "https://supplier.test/generate", { method: "POST" },
+      { phase: "submit", timeoutMs: 0 }).catch(value => value);
+    expect(error.details).toMatchObject({ retryable: false, submissionMayHaveOccurred: true });
+    expect(error.details.requestNotSent).toBeUndefined();
     expect(transport.fetch).toHaveBeenCalledOnce();
   });
 

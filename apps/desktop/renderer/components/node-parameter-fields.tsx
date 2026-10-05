@@ -16,6 +16,7 @@ import {
   setParameterValue,
 } from "../lib/model-parameters";
 import type { GenerationNodeType } from "../lib/graph-ui";
+import { imageModeParameters } from "../lib/image-editing";
 import { validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import {
   tk1688ParametersForResolutionChange,
@@ -31,6 +32,7 @@ interface NodeParameterFieldsProps {
   onChange: (parameters: Record<string, unknown>) => void;
   showAdvanced?: boolean;
   operation?: ProviderOperation;
+  transparentSupported?: boolean;
 }
 
 function controlId(nodeId: string, key: string) {
@@ -656,6 +658,7 @@ export function NodeParameterFields({
   onChange,
   showAdvanced = true,
   operation,
+  transparentSupported = false,
 }: NodeParameterFieldsProps) {
   const descriptors = useMemo(
     () => parameterDescriptorsForValues(nodeType, provider, model, parameters, operation),
@@ -735,7 +738,8 @@ export function NodeParameterFields({
           />
         )}
         {descriptors.filter(
-          descriptor => !tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key),
+          descriptor => (provider === "cli" || descriptor.key !== "background") &&
+            (provider === "cli" || descriptor.key !== "mask") && (!tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key)),
         ).map((descriptor) => (
           <ParameterControl
             key={descriptor.key}
@@ -746,12 +750,27 @@ export function NodeParameterFields({
             sizeAspectRatioContext={sizeAspectRatioContext}
             clampNumericInput={clampNumericInput}
             disabledReason={
-              descriptor.key === "output_compression" && !compressionEnabled
+              provider !== "cli" && descriptor.key === "output_format" && parameters.background === "transparent"
+                ? "透明模式使用 PNG，保留透明通道"
+                : descriptor.key === "output_compression" && !compressionEnabled
                 ? "PNG 是无损格式，不支持设置压缩率；请选择 JPEG 或 WebP"
                 : undefined
             }
           />
         ))}
+        {nodeType === "image-generation" && provider !== "cli" && (
+          <div className="image-output-mode">
+            <span>生成模式</span>
+            <div role="group" aria-label="生成模式" className="image-output-mode-options">
+              <button type="button" aria-pressed={parameters.background !== "transparent"}
+                onClick={() => onChange(imageModeParameters(parameters, transparentSupported, "normal"))}>普通模式</button>
+              {transparentSupported && <button type="button" aria-pressed={parameters.background === "transparent"}
+                onClick={() => onChange(imageModeParameters(parameters, true, "transparent"))}>透明模式</button>}
+            </div>
+            {transparentSupported && parameters.background === "transparent" && <small>透明背景 · PNG 原图</small>}
+            {!transparentSupported && parameters.background === "transparent" && <small role="status">原透明模式当前不受支持，请切换到普通模式。</small>}
+          </div>
+        )}
       </div>
       {showAdvanced ? (
         <AdvancedParametersEditor

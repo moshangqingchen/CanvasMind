@@ -509,19 +509,26 @@ describe("Cangyuan live catalog", () => {
       { fetch: fetchMock },
     );
 
-    const task = await adapter.submit({
+    const generationRequest = {
       connectionId: "cangyuan-backup",
-      operation: "image.generate",
+      operation: "image.generate" as const,
       model: "gpt-image-2-4k",
       prompt: "4K 方形海报",
       idempotencyKey: "run:backup-4k",
       parameters: {
         aspect_ratio: "1:1",
-        background: "transparent",
+        background: "opaque",
         n: 1,
       },
       assets: [],
-    });
+    };
+    // The old catalog menu is not an exact API contract: current model docs
+    // omit background. Reject transparency despite that cached menu, while
+    // retaining this test's normal generation/edit asynchronous polling path.
+    await expect(adapter.submit({ ...generationRequest, parameters: { ...generationRequest.parameters, background: "transparent" } }))
+      .rejects.toThrow(/透明/u);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const task = await adapter.submit(generationRequest);
     await adapter.poll(task);
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
@@ -532,19 +539,17 @@ describe("Cangyuan live catalog", () => {
     );
     expect(
       JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
-    ).toMatchObject({
-      background: "transparent",
-    });
+    ).not.toHaveProperty("background");
 
     const editTask = await adapter.submit({
       connectionId: "cangyuan-backup",
       operation: "image.edit",
       model: "gpt-image-2-4k",
-      prompt: "保留主体并移除背景",
+      prompt: "保留主体并调整场景",
       idempotencyKey: "run:backup-edit",
       parameters: {
         aspect_ratio: "1:1",
-        background: "transparent",
+        background: "opaque",
         n: 1,
       },
       assets: [
@@ -563,7 +568,7 @@ describe("Cangyuan live catalog", () => {
       "https://ai.cangyuansuanli.cn/v1/images/edits",
     );
     const editBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
-    expect(editBody).toMatchObject({ background: "transparent" });
+    expect(editBody).not.toHaveProperty("background");
     expect(editBody.images).toHaveLength(1);
     expect(String(fetchMock.mock.calls[3]?.[0])).toBe(
       "https://ai.cangyuansuanli.cn/v1/images/edits/backup-edit",

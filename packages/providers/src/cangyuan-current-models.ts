@@ -101,7 +101,7 @@ export function cangyuanCurrentRequestIssues(request: NormalizedRequest, baseUrl
   if (gpt && kTiers.includes(String(tier)) && p.quality !== undefined && !(image25 && p.quality === "auto") && !qualities.includes(String(p.quality)))
     add("parameters.quality", "该型号质量只能为 low、medium、high、xhigh、max。");
   if (p.n !== undefined && p.n !== 1) add("parameters.n", "该型号每次请求只能 n=1。");
-  const references = request.assets?.filter(a => a.kind === "image") ?? [];
+  const references = request.assets?.filter(a => a.kind === "image" && a.role !== "mask") ?? [];
   const limit = image25 ? tier === "web" ? 9 : 16 : gpt ? 9 : request.model === "midjourney-v7" ? 5 : 10;
   if (references.length > limit) add("assets", `${request.model} 当前档位最多支持 ${limit} 张参考图。`);
   if (p.mask && (request.model !== "gpt-image-2-x" || tier === "web" || request.operation !== "image.edit")) add("parameters.mask", "仅 gpt-image-2-x 的 1k / 2k / 4k 编辑请求支持蒙版。");

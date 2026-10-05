@@ -123,7 +123,7 @@ export interface ProviderAssetInput {
   id: string;
   kind: ArtifactKind | "audio";
   mimeType: string;
-  role?: "reference" | "firstFrame" | "lastFrame";
+  role?: "reference" | "firstFrame" | "lastFrame" | "mask";
   filename?: string;
   url?: string;
   data?: Uint8Array;

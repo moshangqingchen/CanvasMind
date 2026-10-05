@@ -5,6 +5,14 @@ import { presentProviderError } from "../../../../packages/providers/src/error-p
 import { ProviderHttpError } from "../../../../packages/providers/src/http";
 
 describe("localizeRunError", () => {
+  it("corrects legacy 24-hour content blocks while preserving the recorded charge", () => {
+    const charge = { status: "charged", amount: 0.2, currency: "USD", source: "provider_response" };
+    const error = localizeRunError({ message: "API 拒绝了当前请求，请检查模型、参数、提示词和素材格式。",
+      type: "请求参数错误", code: "content_blocked_24h", statusCode: 451, failureCategory: "invalid_request", charge });
+    expect(error).toMatchObject({ type: "内容被临时拦截", failureCategory: "content_policy", charge,
+      message: expect.stringContaining("24 小时拦截期") });
+    expect(localizeRunError({ message: "Restricted", statusCode: 451 })?.message).not.toContain("24 小时");
+  });
   it("does not reinterpret a supplier account-pool balance failure as the user's empty balance", () => {
     const error = {
       message: "供应商当前没有适用于所选模型或线路的可用账号，请核对原任务。",

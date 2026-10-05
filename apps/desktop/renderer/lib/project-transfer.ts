@@ -181,6 +181,19 @@ function assertGraphTransferLimits(graph: CanvasDocument): void {
 
     if (data.assetId !== undefined)
       assertAssetId(data.assetId, `节点 ${node.id}`);
+    for (const parameters of [data.parameters, data.generatedParameters]) {
+      if (!isRecord(parameters)) continue;
+      for (const key of ["maskAssetId", "maskSourceAssetId"])
+        if (parameters[key] !== undefined) assertAssetId(parameters[key], `节点 ${node.id} 的蒙版引用`);
+    }
+    if (isRecord(data.generatedDetails)) {
+      const details = data.generatedDetails;
+      if (isRecord(details.imageMask)) for (const key of ["maskAssetId", "maskSourceAssetId"])
+        if (details.imageMask[key] !== undefined) assertAssetId(details.imageMask[key], `节点 ${node.id} 的历史蒙版`);
+      assertAssetIdArray(details.inputAssetIds, `节点 ${node.id} 的历史输入`);
+      if (Array.isArray(details.inputAssets)) for (const asset of details.inputAssets)
+        if (isRecord(asset)) assertAssetId(asset.id, `节点 ${node.id} 的历史输入`);
+    }
     assertAssetIdArray(data.lastOutputAssetIds, `节点 ${node.id} 的最近输出`);
     assertAssetIdArray(
       data.materializedOutputAssetIds,
@@ -253,6 +266,21 @@ export function collectReferencedAssetIds(graph: CanvasDocument): string[] {
     const data = node.data;
     addAssetId(ids, data?.assetId);
     addAssetId(ids, data?.designSourceAssetId);
+    for (const parameters of [data?.parameters, data?.generatedParameters]) {
+      if (!isRecord(parameters)) continue;
+      addAssetId(ids, parameters.maskAssetId);
+      addAssetId(ids, parameters.maskSourceAssetId);
+    }
+    if (isRecord(data?.generatedDetails)) {
+      const details = data.generatedDetails;
+      if (isRecord(details.imageMask)) {
+        addAssetId(ids, details.imageMask.maskAssetId);
+        addAssetId(ids, details.imageMask.maskSourceAssetId);
+      }
+      addAssetIds(ids, details.inputAssetIds);
+      if (Array.isArray(details.inputAssets)) for (const asset of details.inputAssets)
+        if (isRecord(asset)) addAssetId(ids, asset.id);
+    }
     addAssetIds(ids, data?.lastOutputAssetIds);
     addAssetIds(ids, data?.materializedOutputAssetIds);
     if (isRecord(data?.graphicDesignBrief)) {
@@ -320,6 +348,15 @@ export function remapGraphAssetIds(
         ...node,
         data: {
           ...data,
+          ...Object.fromEntries(["parameters", "generatedParameters"].flatMap(key => {
+            const parameters = data[key];
+            if (!isRecord(parameters)) return [];
+            const mapped = { ...parameters };
+            for (const field of ["maskAssetId", "maskSourceAssetId"])
+              if (typeof mapped[field] === "string") mapped[field] = assetIds.get(mapped[field]) ?? mapped[field];
+            return [[key, mapped]];
+          })),
+          ...(isRecord(data.generatedDetails) ? { generatedDetails: remapGenerationDetails(data.generatedDetails, assetIds) } : {}),
           ...(isRecord(data.graphicDesignBrief)
             ? {
                 graphicDesignBrief: remapGraphicDesignBrief(
@@ -366,6 +403,20 @@ export function remapGraphAssetIds(
     }),
     edges: graph.edges as CanvasEdge[],
   };
+}
+
+function remapGenerationDetails(details: Record<string, unknown>, assetIds: ReadonlyMap<string, string>): Record<string, unknown> {
+  const result = { ...details };
+  if (isRecord(details.imageMask)) {
+    const imageMask = { ...details.imageMask };
+    for (const field of ["maskAssetId", "maskSourceAssetId"])
+      if (typeof imageMask[field] === "string") imageMask[field] = assetIds.get(imageMask[field]) ?? imageMask[field];
+    result.imageMask = imageMask;
+  }
+  if (details.inputAssetIds !== undefined) result.inputAssetIds = remapIdArray(details.inputAssetIds, assetIds);
+  if (Array.isArray(details.inputAssets)) result.inputAssets = details.inputAssets.map(asset =>
+    isRecord(asset) && typeof asset.id === "string" ? { ...asset, id: assetIds.get(asset.id) ?? asset.id } : asset);
+  return result;
 }
 
 function remapGraphicDesignBrief(

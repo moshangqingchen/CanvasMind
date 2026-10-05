@@ -1,0 +1,295 @@
+{
+  "at": "2026-10-05T12:22:40.423Z",
+  "method": "Two unauthenticated HEAD requests to each configured HTTPS origin using the application provider transport. No redirects followed, no credentials, no generation requests.",
+  "environmentProxyConfigured": false,
+  "rows": [
+    {
+      "origin": "https://ai.cangyuansuanli.cn",
+      "dns": {
+        "ms": 5,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 886
+        },
+        {
+          "status": 200,
+          "ms": 1013
+        }
+      ]
+    },
+    {
+      "origin": "https://ai.whyshy.cn",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 639
+        },
+        {
+          "status": 200,
+          "ms": 500
+        }
+      ]
+    },
+    {
+      "origin": "https://api.3365api.cn",
+      "dns": {
+        "ms": 6,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 7804
+        },
+        {
+          "status": 200,
+          "ms": 1379
+        }
+      ]
+    },
+    {
+      "origin": "https://api.eaheng.com",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 1583
+        },
+        {
+          "status": 200,
+          "ms": 1560
+        }
+      ]
+    },
+    {
+      "origin": "https://api.frimodel.com",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 404,
+          "ms": 1034
+        },
+        {
+          "status": 404,
+          "ms": 707
+        }
+      ]
+    },
+    {
+      "origin": "https://api.hangzhale.com",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 758
+        },
+        {
+          "status": 200,
+          "ms": 257
+        }
+      ]
+    },
+    {
+      "origin": "https://api.miaowuai.store",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 1078
+        },
+        {
+          "status": 200,
+          "ms": 901
+        }
+      ]
+    },
+    {
+      "origin": "https://api.mikoto.vip",
+      "dns": {
+        "ms": 6,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 928
+        },
+        {
+          "status": 200,
+          "ms": 875
+        }
+      ]
+    },
+    {
+      "origin": "https://api.tk1688.com",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 301,
+          "ms": 638
+        },
+        {
+          "status": 301,
+          "ms": 567
+        }
+      ]
+    },
+    {
+      "origin": "https://asian-acc.we-token.cc",
+      "dns": {
+        "ms": 6,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 1157
+        },
+        {
+          "status": 200,
+          "ms": 700
+        }
+      ]
+    },
+    {
+      "origin": "https://genimage.pro",
+      "dns": {
+        "ms": 2,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 734
+        },
+        {
+          "status": 200,
+          "ms": 592
+        }
+      ]
+    },
+    {
+      "origin": "https://pool.chaozhiyuanai.com",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 1111
+        },
+        {
+          "status": 200,
+          "ms": 949
+        }
+      ]
+    },
+    {
+      "origin": "https://synoralink.com",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 820
+        },
+        {
+          "status": 200,
+          "ms": 1512
+        }
+      ]
+    },
+    {
+      "origin": "https://token.secure-skill.com",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 254
+        },
+        {
+          "status": 200,
+          "ms": 1233
+        }
+      ]
+    },
+    {
+      "origin": "https://tu.988236.xyz",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 584
+        },
+        {
+          "status": 200,
+          "ms": 469
+        }
+      ]
+    },
+    {
+      "origin": "https://vapi.chuangxiangai.asia",
+      "dns": {
+        "ms": 1,
+        "fakeIp": true,
+        "count": 1
+      },
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 834
+        },
+        {
+          "status": 200,
+          "ms": 724
+        }
+      ]
+    }
+  ]
+}

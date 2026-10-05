@@ -1,5 +1,7 @@
 import type { ModelDescriptor, NormalizedRequest, ProviderConnectionResolver, ProviderTask, RemoteArtifact, ValidationResult } from "./contracts.js";
 import { assetToBlob, providerFetch } from "./http.js";
+import { assertValidResult } from "./contracts.js";
+import { imageEditingConnection, imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
 import { normalizeBananaParameters, type BananaRoute } from "./banana-image-contract.js";
 export * from "./banana-image-contract.js";
@@ -44,8 +46,8 @@ function connector(route: BananaRoute, descriptor: ModelDescriptor): RestConnect
 }
 
 export class BananaImageAdapter extends GenericRestAdapter {
-  constructor(connections: ProviderConnectionResolver, private readonly route: BananaRoute, descriptor: ModelDescriptor, private readonly options: GenericRestAdapterOptions = {}) {
-    super(connections, { ...options, config: connector(route, descriptor) });
+  constructor(private readonly bananaConnections: ProviderConnectionResolver, private readonly route: BananaRoute, descriptor: ModelDescriptor, private readonly options: GenericRestAdapterOptions = {}) {
+    super(bananaConnections, { ...options, config: connector(route, descriptor) });
   }
   private normalized(request: NormalizedRequest): NormalizedRequest {
     const parameters = normalizeBananaParameters(this.route, request.parameters);
@@ -56,6 +58,8 @@ export class BananaImageAdapter extends GenericRestAdapter {
     const normalized = this.normalized(request);
     const result = await super.validate(normalized);
     const issues = [...result.issues];
+    const connection = await this.bananaConnections.resolve(request.connectionId);
+    issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
     if (this.route.unavailableReason) issues.push({ path: "model", code: "unsupported_model", message: this.route.unavailableReason });
     if (!this.route.sizes.includes(String(normalized.parameters?.image_size))) issues.push({ path: "parameters.image_size", code: "invalid_image_size", message: `此香蕉模型支持的分辨率为 ${this.route.sizes.join("、")}` });
     const ratio = normalized.parameters?.aspect_ratio;
@@ -63,12 +67,13 @@ export class BananaImageAdapter extends GenericRestAdapter {
     if (normalized.parameters?.n !== 1) issues.push({ path: "parameters.n", code: "invalid_count", message: "此香蕉接口每次生成一张图片" });
     if (request.operation === "image.edit" && !request.assets?.length) issues.push({ path: "assets", code: "reference_required", message: "改图需要连接或添加参考图片" });
     if (request.operation === "image.generate" && request.assets?.length) issues.push({ path: "assets", code: "reference_operation", message: "带参考图片的任务应使用图片编辑操作" });
-    if (this.route.inputLimitSource === "adapter" && (request.assets?.length ?? 0) > this.route.maxInputs) issues.push({ path: "assets", code: "adapter_reference_limit", message: `当前香蕉适配器最多传入 ${this.route.maxInputs} 张参考图；供应商文档未声明数量上限` });
+    if (this.route.inputLimitSource === "adapter" && imageReferenceAssets(request.assets).length > this.route.maxInputs) issues.push({ path: "assets", code: "adapter_reference_limit", message: `当前香蕉适配器最多传入 ${this.route.maxInputs} 张参考图；供应商文档未声明数量上限` });
     if (request.assets?.some(asset => asset.kind !== "image" || !["image/png", "image/jpeg", "image/webp"].includes(asset.mimeType))) issues.push({ path: "assets", code: "invalid_image", message: "参考图仅支持 PNG、JPEG 或 WebP" });
     if (this.route.maxInputBytes && request.assets?.some(asset => asset.data && asset.data.byteLength > this.route.maxInputBytes!)) issues.push({ path: "assets", code: "image_too_large", message: "此供应商要求每张参考图不超过 20 MB" });
     return { valid: !issues.length, issues };
   }
   override async submit(request: NormalizedRequest): Promise<ProviderTask> {
+    assertValidResult(await this.validate(request));
     let normalized = this.normalized(request);
     // Arbitrary public URLs are not Google Files URIs. Download them locally and send actual image bytes.
     if (this.route.kind === "native" && normalized.assets?.length) {

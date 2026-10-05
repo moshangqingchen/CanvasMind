@@ -4,6 +4,7 @@ import { consumeCliArtifact } from "./cli-artifact.js";
 import { recordSubmissionPhase } from "./submission-timeline.js";
 import { repositoryScheduler, runtimeConcurrency, scheduleReadyNodes, type RuntimeConcurrency, type RuntimeScheduler } from "./scheduler.js";
 import { assertDesktopPublicAssets } from "./desktop-preflight.js";
+import { ImageMaskValidationError, resolveImageMask } from "./image-mask.js";
 import { localReferenceChannelConfigured, localReferenceUrls } from "./reference-channel.js";
 import { cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
 import {
@@ -43,6 +44,7 @@ import {
   bananaImageRoute,
   bananaRequiresPublicAssets,
   normalizeBananaParameters,
+  getImageEditingCapabilities,
   referenceImageHostingEnabled,
   OPENAI_DEFAULT_IMAGE_MODEL,
   OpenAIImageAdapter,
@@ -1484,21 +1486,25 @@ export class RunService {
         "导演方案的付费调用失败后必须重新报价并确认，不能直接重试",
       );
     }
+    // Check every interrupted submission before clearing any node's diagnostic.
+    // An unrecoverable sibling must not leave earlier nodes half-requeued.
+    for (const [index, original] of nodeRuns.entries()) {
+      let nodeRun = original;
+      if (nodeRun.status !== "needs_attention" && !(run.status === "needs_attention" && nodeRun.status === "archiving")) continue;
+      if (!nodeRun.providerTaskId && nodeRun.inputJson.provider === "cli") {
+        const adapters = this.adapters(new RepoConnectionResolver(this.repository, frozenConnectionsFromGraph(asGraph(run.revisionGraph))));
+        nodeRun = await this.recoverCliSubmission(runId, nodeRun, adapters.get("cli")) ?? nodeRun;
+        nodeRuns[index] = nodeRun;
+      }
+      if (!nodeRun.providerTaskId)
+        throw new Error(`节点 ${nodeRun.nodeId} 没有可恢复的供应商任务 ID；请人工核对后新建运行`);
+    }
     const retryNodeIds = new Set<string>();
-    for (let nodeRun of nodeRuns) {
+    for (const nodeRun of nodeRuns) {
       if (
         nodeRun.status === "needs_attention" ||
         (run.status === "needs_attention" && nodeRun.status === "archiving")
       ) {
-        if (!nodeRun.providerTaskId && nodeRun.inputJson.provider === "cli") {
-          const adapters = this.adapters(new RepoConnectionResolver(this.repository, frozenConnectionsFromGraph(asGraph(run.revisionGraph))));
-          nodeRun = await this.recoverCliSubmission(runId, nodeRun, adapters.get("cli")) ?? nodeRun;
-        }
-        if (!nodeRun.providerTaskId) {
-          throw new Error(
-            `节点 ${nodeRun.nodeId} 没有可恢复的供应商任务 ID；请人工核对后新建运行`,
-          );
-        }
         const savedTask = storedProviderTask(nodeRun.inputJson.providerTask);
         await this.repository.updateNodeRun(nodeRun.id, {
           status: savedTask?.status === "succeeded" ? "archiving" : "running",
@@ -2696,12 +2702,19 @@ export class RunService {
     adapter: ProviderAdapter,
     request: NormalizedRequest,
     nodeRun: NodeRunRecord,
+    signal: AbortSignal,
   ): Promise<ProviderTask> {
     const maximumAttempts =
       nodeRun.inputJson.provider === "cli" || adapter instanceof CliProviderAdapter ||
       nodeRun.inputJson.paidRetryPolicy === "approval-required" ? 1 : 3;
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       try {
+        signal.throwIfAborted();
+        const [run, current] = await Promise.all([this.repository.getRun(nodeRun.workflowRunId), this.repository.getNodeRun(nodeRun.id)]);
+        if (run?.status === "cancelled" || current?.status === "cancel_requested" || current?.status === "cancelled")
+          throw new CancelledError("运行已取消");
+        if (current?.providerTaskId) throw new NeedsAttentionError("供应商任务已经存在，已停止重复提交");
+        signal.throwIfAborted();
         return await adapter.submit(request);
       } catch (error) {
         if (error instanceof ProviderHttpError) {
@@ -2713,7 +2726,7 @@ export class RunService {
           await this.repository.updateNodeRun(nodeRun.id, {
             attempt: nodeRun.attempt + attempt,
           });
-          await delay(this.retryBaseDelayMs * 2 ** (attempt - 1));
+          await delay(this.retryBaseDelayMs * 2 ** (attempt - 1), signal);
           continue;
         }
         throw error;
@@ -2868,7 +2881,11 @@ export class RunService {
       ]),
     ];
     const assets: ProviderAssetInput[] = [];
-    const resumingCli = (nodeRun.inputJson.provider ?? data.provider) === "cli" && Boolean(nodeRun.providerTaskId);
+    // A known supplier task only needs its saved receipt for polling/archival.
+    // Re-reading, validating or uploading original references can strand paid
+    // jobs after inputs were removed or their reference channel went offline.
+    // Cloud jobs still reconstruct the adapter request for their query-only transport.
+    const resumingTask = Boolean(nodeRun.providerTaskId) && !isCloudSubmission(nodeRun.providerTaskId);
     const connectedRoles = new Map<
       string,
       "reference" | "firstFrame" | "lastFrame"
@@ -2877,7 +2894,7 @@ export class RunService {
       for (const [assetId, role] of Object.entries(value.assetRoles ?? {}))
         connectedRoles.set(assetId, role);
     }
-    for (const assetId of resumingCli ? [] : assetIds) {
+    for (const assetId of resumingTask ? [] : assetIds) {
       const asset = await this.repository.getAsset(assetId);
       if (!asset) throw new Error(`素材 ${assetId} 不存在`);
       const stored = await this.storage.get(asset.storageKey);
@@ -2942,7 +2959,7 @@ export class RunService {
           : undefined;
     const rawParameters =
       (data.parameters as Record<string, unknown> | undefined) ?? {};
-    const model = await this.configuredModel(
+    const model = resumingTask ? requestedModel : await this.configuredModel(
       providerName,
       connectionId,
       semanticType(node),
@@ -2962,13 +2979,35 @@ export class RunService {
           connectionConfigString(connectionConfig, "baseUrl") ?? "",
         ));
     const storedOperation = nodeRun.inputJson.operation;
-    const operation = resumingCli && typeof storedOperation === "string" &&
+    const operation = resumingTask && typeof storedOperation === "string" &&
       ["image.generate", "image.edit", "video.generate", "video.image-to-video"].includes(storedOperation)
       ? storedOperation as NormalizedRequest["operation"]
       : operationFor(node, values.some((value) => value.kind === "image") || assets.some((asset) => asset.kind === "image"));
     if (!operation) throw new Error(`不支持的节点类型: ${semanticType(node)}`);
+    const providerErrorContext: ProviderErrorContext = {
+      provider: providerName,
+      operation,
+      supplier,
+      ...(supplierWebsiteUrl ? { supplierWebsiteUrl } : {}),
+    };
+    const editingCapabilities = getImageEditingCapabilities({ provider: providerName, config: connectionConfig ?? {} }, model ?? "", rawParameters);
+    let imageMask;
+    try {
+      imageMask = resumingTask ? null : await resolveImageMask({ parameters: rawParameters, assets,
+        supported: Boolean(editingCapabilities.mask), imageEdit: operation === "image.edit",
+        repository: this.repository, storage: this.storage });
+    } catch (error) {
+      if (error instanceof ImageMaskValidationError)
+        throw new ProviderRequestValidationError([{ code: error.code, message: error.message }], providerErrorContext);
+      throw error;
+    }
+    if (imageMask) {
+      assets.push(imageMask.asset);
+      assetIds.push(imageMask.asset.id);
+    }
     if (assets.length > 0 &&
-        ((providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation, connectionConfig)) ||
+        ((imageMask && editingCapabilities.mask === "url") ||
+          (providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation, connectionConfig)) ||
           secureSkillRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           chuangxiangRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           bananaRequiresPublicAssets(providerName, connectionConfig, model))) {
@@ -2988,18 +3027,14 @@ export class RunService {
         throw new Error("该模型需要参考图链接，请在设置的“素材通道”中连接本机通道，或选择支持直接上传素材的模型");
       }
     }
-    const providerErrorContext: ProviderErrorContext = {
-      provider: providerName,
-      operation,
-      supplier,
-      ...(supplierWebsiteUrl ? { supplierWebsiteUrl } : {}),
-    };
     let parameters =
       providerName === "weai"
         ? normalizeWeAiParameters(rawParameters, requestedModel, modelGroup)
         : providerName !== "cli" && supplier === "chentu"
           ? normalizeChentuParameters(rawParameters)
           : { ...rawParameters };
+    delete parameters.maskAssetId;
+    delete parameters.maskSourceAssetId;
     const bananaRoute = model && connectionConfig
       ? bananaImageRoute({ provider: providerName, config: connectionConfig }, model) : undefined;
     if (bananaRoute) parameters = normalizeBananaParameters(bananaRoute, parameters);
@@ -3010,14 +3045,14 @@ export class RunService {
         connectionConfig,
       );
     }
-    const prompt = resumingCli && typeof nodeRun.inputJson.prompt === "string" ? nodeRun.inputJson.prompt : renderPromptParts(parts, {
+    const prompt = resumingTask && typeof nodeRun.inputJson.prompt === "string" ? nodeRun.inputJson.prompt : renderPromptParts(parts, {
       resolveAsset: (id) => {
         const index = assets.findIndex((asset) => asset.id === id);
         return index < 0 ? "" : `[参考素材 ${index + 1}]`;
       },
       unresolvedAsset: "empty",
     });
-    if (providerName !== "cli" && semanticType(node) === "image-generation") {
+    if (!resumingTask && providerName !== "cli" && semanticType(node) === "image-generation") {
       const imageDescriptor = configuredImageDescriptor(
         connectionConfig,
         model,
@@ -3224,12 +3259,11 @@ export class RunService {
       model,
       prompt,
       assets,
-      parameters: resumingCli && isRecord(nodeRun.inputJson.parameters) ? nodeRun.inputJson.parameters : parameters,
+      parameters: resumingTask && isRecord(nodeRun.inputJson.parameters) ? nodeRun.inputJson.parameters : parameters,
       idempotencyKey: `${runId}:${nodeRunId}`,
       metadata: { fakeScenario: data.fakeScenario },
     };
-    // Querying/archiving an existing CLI task must not depend on still having its original input files.
-    const validation = resumingCli ? { valid: true, issues: [] } : await adapter.validate(request);
+    const validation = resumingTask ? { valid: true, issues: [] } : await adapter.validate(request);
     if (!validation.valid)
       throw new ProviderRequestValidationError(
         validation.issues,
@@ -3248,14 +3282,15 @@ export class RunService {
       operation,
       model: request.model ?? null,
       prompt: request.prompt,
-      assetIds: resumingCli ? nodeRun.inputJson.assetIds ?? assetIds : assetIds,
-      inputAssets: resumingCli ? nodeRun.inputJson.inputAssets ?? [] : assets.map((asset) => ({
+      assetIds: resumingTask ? nodeRun.inputJson.assetIds ?? assetIds : assetIds,
+      inputAssets: resumingTask ? nodeRun.inputJson.inputAssets ?? [] : assets.map((asset) => ({
         id: asset.id,
         name: asset.filename ?? asset.id,
         kind: asset.kind,
         role: asset.role ?? "reference",
       })),
       parameters: request.parameters ?? {},
+      ...(imageMask ? { imageMask: { ...imageMask.provenance } } : {}),
       ...(providerName === "cli" ? {
         cliDeadlineAt: typeof nodeRun.inputJson.cliDeadlineAt === "number"
           ? nodeRun.inputJson.cliDeadlineAt
@@ -3298,7 +3333,7 @@ export class RunService {
         if ((isCloudSubmission(nodeRun.providerTaskId) || cloud) && operation.startsWith("image.")) {
           if (!isRecord(cloud) || typeof cloud.endpoint !== "string" || typeof cloud.encryptedToken !== "string")
             throw new NeedsAttentionError("原任务的云端连接配置缺失，已停止，不能回退本机重复生成");
-          task = await runCloudGeneration(request.idempotencyKey, cloud as unknown as CloudGenerationConfig,
+          task = await withProviderSubmissionProgress(submissionProgress, () => runCloudGeneration(request.idempotencyKey, cloud as unknown as CloudGenerationConfig,
             () => adapter.submit(request), {
               resumeOnly: isCloudSubmission(nodeRun.providerTaskId),
               checkpoint: async config => {
@@ -3312,8 +3347,8 @@ export class RunService {
                 await this.updateNodeRunOrCancel(runId, nodeRunId, { status: "running", inputJson });
               },
               progress: submissionProgress,
-            });
-        } else task = await withProviderSubmissionProgress(submissionProgress, () => this.submitWithRetry(adapter, request, nodeRun), signal);
+            }), signal);
+        } else task = await withProviderSubmissionProgress(submissionProgress, () => this.submitWithRetry(adapter, request, nodeRun, signal), signal);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (

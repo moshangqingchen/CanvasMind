@@ -15,6 +15,7 @@ import {
 const MODEL_LIST_CACHE_TTL_MS = 60_000;
 const CANVAS_REQUEST_ATTEMPTS = 3;
 const CANVAS_REQUEST_TIMEOUT_MS = 12_000;
+const RUN_READ_TIMEOUT_MS = 15_000;
 
 interface ModelListCacheEntry {
   items: ModelDescriptor[];
@@ -767,16 +768,53 @@ export async function createRun(input: {
   catch { throw new TypeError("任务提交响应不完整，请核对原任务"); }
 }
 
+/** One bounded read; the caller owns polling and no generation request is retried. */
+async function readRunJson<T>(url: string, fallback: string, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
+  const controller = new AbortController();
+  let response: Response | undefined;
+  let rejectStopped!: (reason: unknown) => void;
+  const stopped = new Promise<never>((_resolve, reject) => { rejectStopped = reject; });
+  const cancelBody = () => {
+    if (response?.body && !response.body.locked) void response.body.cancel().catch(() => undefined);
+  };
+  const stop = (reason: unknown) => {
+    rejectStopped(reason);
+    controller.abort(reason);
+    cancelBody();
+  };
+  const onAbort = () => stop(signal?.reason);
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const timeout = setTimeout(() => stop(new Error("运行状态读取超时，请稍后重试")), RUN_READ_TIMEOUT_MS);
+  const request = async () => {
+    response = await fetch(url, { cache: "no-store", signal: controller.signal });
+    // A custom transport may deliver headers even after cancellation.
+    if (controller.signal.aborted) {
+      cancelBody();
+      controller.signal.throwIfAborted();
+    }
+    if (!response.ok) {
+      cancelBody();
+      throw new Error(fallback);
+    }
+    return response.json() as Promise<T>;
+  };
+  try {
+    // Keep the deadline through JSON consumption, including transports that
+    // do not reject their body reader when its request signal is aborted.
+    return await Promise.race([request(), stopped]);
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function fetchRun(
   runId: string,
   options: { details?: boolean; signal?: AbortSignal } = {},
 ): Promise<RunSnapshot> {
-  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}${options.details ? "?details=1" : ""}`, {
-    cache: "no-store",
-    signal: options.signal,
-  });
-  if (!response.ok) throw new Error("无法读取运行状态");
-  return response.json() as Promise<RunSnapshot>;
+  return readRunJson(`/api/runs/${encodeURIComponent(runId)}${options.details ? "?details=1" : ""}`,
+    "无法读取运行状态", options.signal);
 }
 
 export async function resumeRun(runId: string): Promise<RunSnapshot> {
@@ -831,9 +869,7 @@ export async function fetchVisibleRuns(
         const requests = uniqueRequestIds.slice(from, from + batchSize);
         if (runs.length) query.set("runIds", runs.join(","));
         if (requests.length) query.set("clientRequestIds", requests.join(","));
-        const response = await fetch(`/api/runs?${query.toString()}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("无法读取当前运行状态");
-        return response.json() as Promise<RunSnapshot[]>;
+        return readRunJson<RunSnapshot[]>(`/api/runs?${query.toString()}`, "无法读取当前运行状态");
       }),
     );
     for (const snapshot of batches.flat()) {
@@ -921,18 +957,21 @@ export class ProviderConnectionTestError extends Error {
 
 /** Reuse this exact scan in settings instead of issuing a second model refresh. */
 export async function testConnectionDetails(id: string): Promise<ProviderConnectionTestResult> {
+  const epoch = modelEpochs.get(id) ?? 0;
   const response = await fetch(
     `/api/providers/${encodeURIComponent(id)}/test`,
     { method: "POST" },
   );
+  const payload: unknown = await response.json().catch(() => null);
+  if ((modelEpochs.get(id) ?? 0) !== epoch)
+    throw new ProviderConnectionTestError("连接已改变，请重新测试", 409);
   if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null);
     const message = payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
       ? payload.error : "连接测试失败";
     throw new ProviderConnectionTestError(message, response.status,
       response.headers.get("X-Model-Scan-Status") ?? undefined);
   }
-  const result = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  const result = payload as Record<string, unknown> | null;
   if (!result || !Array.isArray(result.models))
     throw new ProviderConnectionTestError("连接测试返回了无效模型列表，请重试", response.status);
   if (["stale", "failed", "unauthorized"].includes(String(result.status)))

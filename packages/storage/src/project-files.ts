@@ -1,5 +1,7 @@
 import {
   lstat,
+  open,
+  realpath,
   mkdir,
   readdir,
   rename,
@@ -8,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   dirname,
   extname,
@@ -49,6 +51,32 @@ export interface ProjectFileResult {
 export interface ProjectCleanupResult {
   deleted: number;
   failed: Array<{ path: string; message: string }>;
+}
+
+export interface ProjectMediaFile {
+  fileId: string;
+  name: string;
+  kind: ProjectMediaKind;
+  mimeType: string;
+  size: number;
+  modifiedAt: string;
+  section: "draft" | "finished";
+  subfolder: string;
+  /** Server-only path relative to this project, never accepted from a client. */
+  relativePath: string;
+}
+
+export class ProjectFileAccessError extends Error {
+  constructor(message: string, readonly status = 409) { super(message); }
+}
+
+const extensionMedia: Record<string, { kind: ProjectMediaKind; mimeType: string }> = Object.fromEntries(
+  Object.entries(mimeExtensionsForBrowser()).map(([extension, mimeType]) => [extension, { kind: mimeType.split("/")[0] as ProjectMediaKind, mimeType }]),
+);
+function mimeExtensionsForBrowser(): Record<string, string> {
+  return { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", avif: "image/avif", bmp: "image/bmp",
+    mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", avi: "video/x-msvideo",
+    mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg" };
 }
 
 const mediaFolders: Record<ProjectMediaKind, string> = {
@@ -164,6 +192,8 @@ export class ProjectFileStore {
     string,
     Promise<ProjectFileResult>
   >();
+  private readonly fileIndexes = new Map<string, { at: number; files: Map<string, ProjectMediaFile> }>();
+  private readonly pendingFileIndexes = new Map<string, Promise<{ files: ProjectMediaFile[]; ignoredFiles: number }>>();
 
   constructor(options: ProjectFileStoreOptions = {}) {
     this.root = resolve(
@@ -204,6 +234,7 @@ export class ProjectFileStore {
     } finally {
       for (const key of keys) {
         if (exclusive) {
+          this.fileIndexes.delete(key);
           if (this.projectMutations.get(key) === pending) this.projectMutations.delete(key);
         } else {
           const readers = this.projectReaders.get(key);
@@ -221,6 +252,162 @@ export class ProjectFileStore {
     );
     assertWithin(this.root, target);
     return target;
+  }
+
+  private fileVersion(project: string, relativePath: string, details: Awaited<ReturnType<typeof lstat>>): string {
+    return createHash("sha256").update(JSON.stringify([this.operationKey(project), relativePath, details.dev, details.ino,
+      details.size, details.mtimeMs, details.ctimeMs, details.birthtimeMs])).digest("hex");
+  }
+
+  private async verifyExistingPath(target: string, directory: boolean): Promise<void> {
+    const relativePath = relative(this.root, target);
+    if (relativePath) assertWithin(this.root, target);
+    let current = this.root;
+    const segments = relativePath ? relativePath.split(sep) : [];
+    for (let index = -1; index < segments.length; index++) {
+      if (index >= 0) current = join(current, segments[index]!);
+      const details = await lstat(current);
+      if (details.isSymbolicLink() || ((index < segments.length - 1 || directory) ? !details.isDirectory() : !details.isFile()))
+        throw new ProjectFileAccessError("项目文件路径无效或包含符号链接");
+    }
+    const [actualRoot, actualTarget] = await Promise.all([realpath(this.root), realpath(target)]);
+    if (target !== this.root) assertWithin(actualRoot, actualTarget);
+    if (this.operationKey(relative(actualRoot, actualTarget)) !== this.operationKey(relative(this.root, target)))
+      throw new ProjectFileAccessError("项目文件路径已改变，请刷新");
+  }
+
+  private async listFilesOnce(projectName: string): Promise<{ files: ProjectMediaFile[]; ignoredFiles: number }> {
+    const project = this.projectDirectory(projectName);
+    try { await this.verifyExistingPath(project, true); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { files: [], ignoredFiles: 0 }; throw error; }
+    const files: ProjectMediaFile[] = [];
+    let ignoredFiles = 0;
+    let visited = 0;
+    const visit = async (directory: string, section: ProjectMediaFile["section"], area: string, depth: number) => {
+      await this.verifyExistingPath(directory, true);
+      const entries = await readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        if (++visited > 20_000) throw new ProjectFileAccessError("项目文件过多，请先在文件夹中整理后再打开", 413);
+        if (entry.isSymbolicLink()) { ignoredFiles++; continue; }
+        const target = join(directory, entry.name);
+        if (entry.isDirectory()) {
+          if (depth >= 12) { ignoredFiles++; continue; }
+          await visit(target, section, area, depth + 1);
+          continue;
+        }
+        const extension = extname(entry.name).slice(1).toLowerCase();
+        const media = Object.hasOwn(extensionMedia, extension) ? extensionMedia[extension] : undefined;
+        if (!entry.isFile() || !media || entry.name.endsWith(".tmp")) { ignoredFiles++; continue; }
+        await this.verifyExistingPath(target, false);
+        const details = await lstat(target);
+        const relativePath = relative(project, target);
+        files.push({ fileId: this.fileVersion(project, relativePath, details), name: entry.name, ...media,
+          size: details.size, modifiedAt: details.mtime.toISOString(), section,
+          subfolder: relative(area, directory).split(sep).join("/"), relativePath });
+      }
+    };
+    for (const [folder, section] of [["成品", "finished"], ["草稿", "draft"]] as const) {
+      const area = join(/* turbopackIgnore: true */ project, folder);
+      try { await visit(area, section, area, 0); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    }
+    files.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt) || a.relativePath.localeCompare(b.relativePath));
+    const key = this.operationKey(project);
+    this.fileIndexes.delete(key);
+    this.fileIndexes.set(key, { at: Date.now(), files: new Map(files.map(file => [file.fileId, file])) });
+    if (this.fileIndexes.size > 32) this.fileIndexes.delete(this.fileIndexes.keys().next().value!);
+    return { files, ignoredFiles };
+  }
+
+  private async indexedFile(projectName: string, fileId: string): Promise<ProjectMediaFile> {
+    const key = this.operationKey(this.projectDirectory(projectName));
+    let index = this.fileIndexes.get(key);
+    if (!index || Date.now() - index.at > 30_000 || !index.files.has(fileId)) {
+      await this.refreshFileIndex(projectName);
+      index = this.fileIndexes.get(key);
+    }
+    const file = index?.files.get(fileId);
+    if (!file) throw new ProjectFileAccessError("文件已变化或不属于当前项目，请刷新文件列表");
+    const target = join(this.projectDirectory(projectName), file.relativePath);
+    try {
+      await this.verifyExistingPath(target, false);
+      if (this.fileVersion(this.projectDirectory(projectName), file.relativePath, await lstat(target)) !== fileId)
+        throw new ProjectFileAccessError("文件已变化，请刷新文件列表");
+    } catch (error) {
+      this.fileIndexes.delete(key);
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new ProjectFileAccessError("文件已变化，请刷新文件列表");
+      throw error;
+    }
+    return file;
+  }
+
+  async fileMetadata(projectName: string, fileId: string): Promise<ProjectMediaFile> {
+    return this.withProjectAccess([this.projectDirectory(projectName)], false, () => this.indexedFile(projectName, fileId));
+  }
+
+  async listFiles(projectName: string): Promise<{ files: ProjectMediaFile[]; ignoredFiles: number }> {
+    return this.withProjectAccess([this.projectDirectory(projectName)], false, () => this.refreshFileIndex(projectName));
+  }
+
+  private async refreshFileIndex(projectName: string): Promise<{ files: ProjectMediaFile[]; ignoredFiles: number }> {
+    const key = this.operationKey(this.projectDirectory(projectName));
+    const active = this.pendingFileIndexes.get(key);
+    if (active) return active;
+    const pending = this.listFilesOnce(projectName);
+    this.pendingFileIndexes.set(key, pending);
+    try { return await pending; } finally { this.pendingFileIndexes.delete(key); }
+  }
+
+  async readFile(projectName: string, fileId: string, options: { start?: number; end?: number; maxBytes?: number } = {}): Promise<{ file: ProjectMediaFile; bytes: Uint8Array }> {
+    return this.withProjectAccess([this.projectDirectory(projectName)], false, async () => {
+      const file = await this.indexedFile(projectName, fileId);
+      const target = join(this.projectDirectory(projectName), file.relativePath);
+      await this.verifyExistingPath(target, false);
+      const handle = await open(target, "r");
+      try {
+        const details = await handle.stat();
+        if (!details.isFile() || this.fileVersion(this.projectDirectory(projectName), file.relativePath, details) !== fileId)
+          throw new ProjectFileAccessError("文件已变化，请刷新后重试");
+        const start = options.start ?? 0;
+        const end = options.end ?? file.size - 1;
+        const length = end - start + 1;
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end >= file.size || length < 0)
+          throw new ProjectFileAccessError("文件范围无效", 416);
+        if (length > (options.maxBytes ?? 512 * 1024 * 1024)) throw new ProjectFileAccessError("文件过大，无法一次读取", 413);
+        const bytes = Buffer.alloc(length);
+        let offset = 0;
+        while (offset < length) {
+          const read = await handle.read(bytes, offset, length - offset, start + offset);
+          if (!read.bytesRead) throw new ProjectFileAccessError("文件读取期间发生变化，请刷新");
+          offset += read.bytesRead;
+        }
+        await this.verifyExistingPath(target, false);
+        const latest = await lstat(target);
+        if (this.fileVersion(this.projectDirectory(projectName), file.relativePath, latest) !== fileId)
+          throw new ProjectFileAccessError("文件读取期间发生变化，请刷新");
+        return { file, bytes };
+      } finally { await handle.close(); }
+    });
+  }
+
+  async deleteFiles(projectName: string, fileIds: readonly string[]): Promise<{ deletedIds: string[]; failed: Array<{ fileId: string; message: string }> }> {
+    return this.withProjectAccess([this.projectDirectory(projectName)], true, async () => {
+      const files = new Map((await this.listFilesOnce(projectName)).files.map(file => [file.fileId, file]));
+      const deletedIds: string[] = [], failed: Array<{ fileId: string; message: string }> = [];
+      for (const fileId of new Set(fileIds)) {
+        try {
+          const file = files.get(fileId);
+          if (!file) throw new ProjectFileAccessError("文件已变化或不属于当前项目，请刷新后重试");
+          const target = join(this.projectDirectory(projectName), file.relativePath);
+          await this.verifyExistingPath(target, false);
+          if (this.fileVersion(this.projectDirectory(projectName), file.relativePath, await lstat(target)) !== fileId)
+            throw new ProjectFileAccessError("文件已变化，请刷新后重试");
+          await unlink(target);
+          deletedIds.push(fileId);
+        } catch (error) { failed.push({ fileId, message: error instanceof ProjectFileAccessError ? error.message : "文件删除失败，请刷新或检查文件是否被占用" }); }
+      }
+      return { deletedIds, failed };
+    });
   }
 
   private categoryDirectory(

@@ -100,8 +100,14 @@ describe("current Cangyuan image catalog and saved scan integration", () => {
     const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "offline", provider: "rest", baseUrl: current.config.baseUrl,
       apiKey: "offline-test", settings: { ...current.config, connector } }]), { fetch: fetcher });
     const references = Array.from({ length: 16 }, (_, i) => ({ id: String(i), kind: "image" as const, mimeType: "image/png", url: `https://images.example/${i}.png` }));
-    await adapter.submit({ connectionId: "offline", model: model.id, operation: "image.edit", prompt: "offline fixed 4k references",
-      idempotencyKey: "offline", assets: references, parameters: { quality: "max", n: 1, aspect_ratio: "16:9", tier: "web", series: "flare", mask: "https://images.example/mask.png" } });
+    const request = { connectionId: "offline", model: model.id, operation: "image.edit" as const, prompt: "offline fixed 4k references",
+      idempotencyKey: "offline", assets: references, parameters: { quality: "max", n: 1, aspect_ratio: "16:9", tier: "web", series: "flare" } };
+    // Exact standalone flare/sunburst-4k contracts do not declare masks. Unlike
+    // stale x-model resolution fields, a requested edit mask must never vanish.
+    await expect(adapter.submit({ ...request, parameters: { ...request.parameters, mask: "https://images.example/mask.png" } }))
+      .rejects.toThrow(/蒙版/u);
+    expect(fetcher).not.toHaveBeenCalled();
+    await adapter.submit(request);
     expect(String(fetcher.mock.calls[0]![0])).toBe(`${current.config.baseUrl}/v1/images/edits`);
     const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
     expect(body.images).toEqual(references.map(a => a.url));

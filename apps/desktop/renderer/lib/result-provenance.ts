@@ -10,6 +10,7 @@ export function generationDetailsFromRun(node: RunSnapshot["nodes"][number]): Ge
     ...(request?.prompt !== undefined ? { prompt: request.prompt } : {}),
     ...(request?.inputAssetIds !== undefined ? { inputAssetIds: request.inputAssetIds } : {}),
     ...(request?.inputAssets !== undefined ? { inputAssets: request.inputAssets } : {}),
+    ...(request?.imageMask ? { imageMask: request.imageMask } : {}),
     outputCount: node.outputAssetIds.length,
     ...(["succeeded", "failed", "cancelled"].includes(node.status) && node.updatedAt ? { finishedAt: node.updatedAt } : {}),
   };
@@ -43,13 +44,14 @@ export function resultGenerationConfiguration(
   const connectionId = request?.connectionId ?? data.generatedConnectionId;
   const model = request?.model ?? data.generatedModel;
   const parameters = request?.parameters ?? data.generatedParameters;
+  const imageMask = request?.imageMask ?? data.generatedDetails?.imageMask;
   if (!provider?.trim() || !connectionId?.trim() || !model?.trim() || parameters === undefined)
     return undefined;
   return {
     provider,
     connectionId,
     model,
-    parameters: structuredClone(parameters),
+    parameters: { ...structuredClone(parameters), ...imageMask },
     // Keep the historical quality even when the catalog's highest quality changes.
     qualityMode: "custom",
   };

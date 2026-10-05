@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
 
 const mocks = vi.hoisted(() => ({
   repository: {
@@ -12,13 +13,22 @@ const mocks = vi.hoisted(() => ({
     createDirectorMessage: vi.fn(),
     getAsset: vi.fn(),
     getRun: vi.fn(),
+    listCanvases: vi.fn(),
+    listRuns: vi.fn(),
+    listAssets: vi.fn(),
+    saveAsset: vi.fn(),
   },
-  storage: { get: vi.fn() },
+  storage: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
   store: {
     ensureProject: vi.fn(),
     archiveDraft: vi.fn(),
     archiveFinished: vi.fn(),
     clearDraft: vi.fn(),
+    listFiles: vi.fn(),
+    readFile: vi.fn(),
+    fileMetadata: vi.fn(),
+    deleteFiles: vi.fn(),
+    projectDirectory: vi.fn(),
   },
 }));
 
@@ -27,7 +37,8 @@ vi.mock("./server", () => ({
   storage: mocks.storage,
 }));
 
-vi.mock("@super-canvas/storage", () => ({
+vi.mock("@super-canvas/storage", async importOriginal => ({
+  ...await importOriginal<typeof import("@super-canvas/storage")>(),
   getProjectFileStore: () => mocks.store,
   normalizeProjectName: (value: string) => value.trim(),
 }));
@@ -37,6 +48,10 @@ import {
   clearProjectChat,
   listProjectChatMessages,
   projectCardSummary,
+  listProjectFiles,
+  importProjectFiles,
+  deleteProjectFiles,
+  archiveExternalAssetsForProject,
 } from "./project-service";
 
 const canvas = {
@@ -63,6 +78,10 @@ function session(id: string, metadata: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.repository.getCanvas.mockResolvedValue(canvas);
+  mocks.repository.listCanvases.mockResolvedValue([canvas]);
+  mocks.repository.listRuns.mockResolvedValue([]);
+  mocks.repository.listAssets.mockResolvedValue([]);
+  mocks.store.projectDirectory.mockReturnValue("isolated-project-folder");
   mocks.repository.updateDirectorSession.mockImplementation(async (id, patch) => ({
     ...session(id),
     ...patch,
@@ -75,7 +94,62 @@ beforeEach(() => {
   mocks.repository.createDirectorMessage.mockResolvedValue({});
 });
 
+describe("scoped project files", () => {
+  const file = { fileId: "a".repeat(64), name: "Picture--image.png", kind: "image", mimeType: "image/png", size: 4,
+    modifiedAt: "2026-10-05T00:00:00.000Z", section: "finished", subfolder: "图片", relativePath: "成品/图片/Picture--image.png" };
+  it("returns only directory media with scoped URLs and no raw file paths", async () => {
+    mocks.store.listFiles.mockResolvedValue({ files: [file], ignoredFiles: 1 });
+    mocks.repository.listAssets.mockResolvedValue([{ id: "image", name: "Picture", kind: "image", metadata: { canvasId: canvas.id } },
+      { id: "foreign", name: "Other project", metadata: { canvasId: "other" } }]);
+    const result = await listProjectFiles(canvas.id);
+    expect(result.files[0]).toMatchObject({ fileId: file.fileId, name: "Picture", assetId: "image", canDelete: true,
+      previewUrl: `/api/projects/${canvas.id}/files/content?fileId=${file.fileId}&preview=640` });
+    expect(result.files[0]).not.toHaveProperty("relativePath");
+    expect(mocks.store.listFiles).toHaveBeenCalledWith(canvas.title);
+  });
+  it("blocks legacy shared directories rather than exposing another project's files", async () => {
+    mocks.repository.listCanvases.mockResolvedValue([canvas, { ...canvas, id: "other" }]);
+    await expect(listProjectFiles(canvas.id)).rejects.toMatchObject({ status: 409 });
+    expect(mocks.store.listFiles).not.toHaveBeenCalled();
+  });
+  it("deletes only physical copies and preserves the asset library", async () => {
+    mocks.store.deleteFiles.mockResolvedValue({ deletedIds: [file.fileId], failed: [{ fileId: "stale", message: "refresh" }] });
+    expect(await deleteProjectFiles(canvas.id, [file.fileId, "stale"])).toMatchObject({ deletedIds: [file.fileId], failed: [{ fileId: "stale" }] });
+    expect(mocks.store.deleteFiles).toHaveBeenCalledWith(canvas.title, [file.fileId, "stale"]);
+    expect(mocks.storage.delete).not.toHaveBeenCalled();
+    expect(mocks.repository.saveAsset).not.toHaveBeenCalled();
+  });
+  it("reuses identical archived assets and imports manual media once without extra archive copies", async () => {
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: "white" } }).png().toBuffer();
+    const original = { id: "image", name: "Picture", kind: "image", storageKey: "original.png", metadata: { canvasId: canvas.id } };
+    mocks.repository.listAssets.mockResolvedValue([original]);
+    mocks.storage.get.mockResolvedValue({ bytes });
+    mocks.store.readFile.mockImplementation(async (_title, id) => {
+      if (id === "bad") throw new Error("文件已变化");
+      return { file: id === file.fileId ? file : { ...file, fileId: id, name: "Manual.png" }, bytes };
+    });
+    mocks.repository.saveAsset.mockImplementation(async value => value);
+    const result = await importProjectFiles(canvas.id, [file.fileId, "manual", "bad"]);
+    expect(result.assets[0]).toBe(original);
+    expect(result.assets[1]).toMatchObject({ name: "Manual.png", metadata: { canvasId: canvas.id, projectFile: { fileId: "manual" } } });
+    expect(result.failed).toEqual([{ fileId: "bad", error: "文件已变化" }]);
+    expect(mocks.storage.put).toHaveBeenCalledOnce();
+    expect(mocks.store.archiveDraft).not.toHaveBeenCalled();
+    mocks.repository.getAsset.mockResolvedValue(result.assets[1]);
+    await archiveExternalAssetsForProject(canvas.id, [result.assets[1]!.id]);
+    expect(mocks.store.archiveDraft).not.toHaveBeenCalled();
+  });
+});
+
 describe("project card summaries", () => {
+  it("does not turn hidden mask parameters into a project cover", async () => {
+    const result = await projectCardSummary({ ...canvas, graph: { nodes: [{ data: {
+      parameters: { maskAssetId: "mask", maskSourceAssetId: "source" },
+      generatedParameters: { maskAssetId: "old-mask", maskSourceAssetId: "old-source" },
+    } }] } });
+    expect(result.previewAssetId).toBeUndefined();
+    expect(mocks.repository.getAsset).not.toHaveBeenCalled();
+  });
   it("returns a compact empty summary for legacy graphs without nodes", async () => {
     await expect(projectCardSummary(canvas)).resolves.toEqual({
       id: canvas.id, title: canvas.title, createdAt: canvas.createdAt,

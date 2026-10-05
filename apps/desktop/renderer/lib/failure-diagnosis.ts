@@ -66,6 +66,8 @@ export function failureDiagnosis(error: LocalizedRunError | null | undefined, op
     ? "请核对供应商原任务是否已停止，以及本次扣费或退款记录。取消不等于退款。"
     : options.providerTaskStatus === "succeeded" || options.recoveryAction === "resume_archive"
     ? "生成结果已在供应商侧完成。修复下载或保存问题后，取回已有结果，无需重新生成。"
+    : error?.code?.toLowerCase() === "content_blocked_24h"
+    ? "检查内容是否符合平台规则，联系供应商或等待限制结束，不要连续重复提交相同内容。"
     : nextSteps[category];
   const billingStep = chargeStatus === "unknown" || chargeStatus === "charged"
     ? "重新生成前先核对原任务和账单，避免重复提交。"

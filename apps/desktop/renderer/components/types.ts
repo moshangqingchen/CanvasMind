@@ -36,10 +36,11 @@ export interface GenerationInputAsset {
   id: string;
   name?: string;
   kind?: "image" | "video" | "audio" | "text";
-  role?: "reference" | "firstFrame" | "lastFrame";
+  role?: "reference" | "firstFrame" | "lastFrame" | "mask";
 }
 
 export interface GenerationDetails {
+  imageMask?: { maskAssetId: string; maskSourceAssetId: string };
   taskEvidence?: RunTaskEvidence;
   submissionPhase?: string;
   operation?: string;
@@ -130,6 +131,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
   onRecoverResult?: () => Promise<void>;
   onSelect?: (additive?: boolean) => void;
   onOpenPreview?: (assetId: string) => void;
+  onEditMask?: (assetId: string, editNodeId?: string) => void;
+  imageEditingCapabilities?: { transparent: boolean; mask: "multipart" | "url" | null };
   onPrepareReversePrompt?: () => void;
   onReusePrompt?: () => Promise<void>;
   onDelete?: () => void;
@@ -227,6 +230,7 @@ export interface RunSnapshot {
       prompt?: string;
       inputAssetIds?: string[];
       inputAssets?: GenerationInputAsset[];
+      imageMask?: { maskAssetId: string; maskSourceAssetId: string };
     };
   }>;
 }

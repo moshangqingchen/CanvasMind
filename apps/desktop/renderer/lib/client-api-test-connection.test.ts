@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProviderConnectionTestError, testConnection, testConnectionDetails } from "./client-api";
+import { fetchModels, getCachedModels, invalidateModelCache, ProviderConnectionTestError, testConnection, testConnectionDetails } from "./client-api";
 
 afterEach(() => vi.unstubAllGlobals());
 describe("structured connection tests", () => {
@@ -31,5 +31,21 @@ describe("structured connection tests", () => {
       .mockResolvedValueOnce(Response.json({ message: "missing models" })));
     await expect(testConnectionDetails("bad")).rejects.toThrow("未完成");
     await expect(testConnectionDetails("bad")).rejects.toThrow("无效模型列表");
+  });
+
+  it.each([200, 401])("rejects an old HTTP %i connection test after configuration changes without clearing the fresh model cache", async status => {
+    let finish!: (response: Response) => void;
+    const currentModels = [{ id: "current-model", name: "Current", operations: [] }];
+    vi.stubGlobal("fetch", vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve; }))
+      .mockResolvedValueOnce(Response.json(currentModels)));
+    const id = `changed-during-test-${status}`;
+    const pending = testConnectionDetails(id);
+    const checked = expect(pending).rejects.toMatchObject({ httpStatus: 409, message: "连接已改变，请重新测试" });
+    invalidateModelCache(id);
+    await fetchModels(id);
+    finish(Response.json({ message: "old key succeeded", error: "old key rejected", models: [{ id: "old-model", name: "Old", operations: [] }] }, { status }));
+    await checked;
+    expect(getCachedModels(id)).toEqual(currentModels);
   });
 });

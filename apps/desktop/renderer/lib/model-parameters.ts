@@ -6,6 +6,7 @@ import type {
 } from "@super-canvas/providers";
 import type { GenerationNodeType } from "./graph-ui";
 import { withHighestQualityDefault } from "./model-quality";
+import { preserveImageMaskParameters } from "./image-editing";
 import { getModelParameterDescriptor, resolveModelParameters } from "@super-canvas/providers/cli-contracts";
 
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
@@ -467,7 +468,14 @@ export function parametersWithDefaults(
     else if (parameters.size !== undefined) delete parameters.aspect_ratio;
   }
 
-  return parameters;
+  // These are application-owned controls, independent of a supplier's catalog.
+  // Never lose a painted selection or transparency during a catalog refresh.
+  if (current.background === "transparent") {
+    parameters.background = "transparent";
+    parameters.output_format = "png";
+    delete parameters.output_compression;
+  }
+  return preserveImageMaskParameters(parameters, current);
 }
 
 /**
@@ -481,7 +489,7 @@ export function normalizedParametersForModel(
   model: Pick<ModelDescriptor, "parameters" | "metadata"> | null | undefined,
   current: Readonly<Record<string, unknown>> = {},
 ): Record<string, unknown> {
-  if (provider === "cli") return model ? resolveModelParameters(model as ModelDescriptor, current).parameters : { ...current };
+  if (provider === "cli") return model ? preserveImageMaskParameters(resolveModelParameters(model as ModelDescriptor, current).parameters, current) : { ...current };
   const descriptors = parameterDescriptorsForValues(
     nodeType,
     provider,

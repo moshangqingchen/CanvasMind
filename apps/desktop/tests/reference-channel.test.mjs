@@ -94,3 +94,75 @@ test("disabled channel retains encrypted credentials across restarts but publish
     assert.equal(status.includes(token), false); assert.equal(JSON.parse(status).ready, false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+async function healthFixture(fetchImpl) {
+  const root = await mkdtemp(join(tmpdir(), "supercanvas-reference-health-"));
+  await mkdir(join(root, "profile"));
+  const channel = new ReferenceChannel({ root, fetchImpl });
+  channel.config = { enabled: true, baseUrl: "https://assets.example.com" };
+  channel.runtime = { secret: "isolated-health-secret" };
+  channel.gateway = { close: async () => {} };
+  return { channel, async close() { await channel.stop(); await rm(root, { recursive: true, force: true }); } };
+}
+
+test("failed reference health checks release unread response bodies", async () => {
+  let cancelled = false;
+  const fixture = await healthFixture(async () => new Response(new ReadableStream({ cancel() { cancelled = true; } }), { status: 503 }));
+  try {
+    await fixture.channel.check();
+    assert.equal(fixture.channel.phase, "connecting");
+    assert.equal(cancelled, true, "an upstream error body must release its connection");
+  } finally { await fixture.close(); }
+});
+
+test("reference health checks stop reading an oversized success response", async () => {
+  let cancelled = false;
+  const fixture = await healthFixture(async () => new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(4096)); controller.enqueue(new Uint8Array(1)); controller.close(); },
+    cancel() { cancelled = true; },
+  })));
+  try {
+    await fixture.channel.check();
+    assert.equal(fixture.channel.phase, "connecting");
+    assert.equal(cancelled, true, "a health reply is bounded instead of buffering an arbitrary upstream page");
+  } finally { await fixture.close(); }
+});
+
+test("stopping the reference channel aborts its pending health check", async () => {
+  let pendingSignal;
+  let complete;
+  const fixture = await healthFixture((_url, options) => new Promise((resolve, reject) => {
+    complete = resolve;
+    pendingSignal = options.signal;
+    options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+  }));
+  const check = fixture.channel.check();
+  try {
+    await fixture.channel.stop();
+    assert.equal(pendingSignal.aborted, true);
+    assert.equal(fixture.channel.phase, "disabled");
+  } finally { complete(new Response("late")); await check; await fixture.close(); }
+});
+
+test("a complete reference health reply still marks only the current instance ready", async () => {
+  const fixture = await healthFixture(async () => new Response(fixture.channel.instance));
+  try {
+    await fixture.channel.check();
+    assert.equal(fixture.channel.phase, "ready");
+    fixture.channel.fetchImpl = async () => new Response("another-instance");
+    await fixture.channel.check();
+    assert.equal(fixture.channel.phase, "connecting");
+  } finally { await fixture.close(); }
+});
+
+test("a slow response cancellation cannot keep the health checker busy", async () => {
+  let finishCancellation;
+  const cancellation = new Promise(resolve => { finishCancellation = resolve; });
+  const fixture = await healthFixture(async () => new Response(new ReadableStream({ cancel() { return cancellation; } }), { status: 503 }));
+  const check = fixture.channel.check();
+  let deadline;
+  try {
+    const completed = await Promise.race([check.then(() => true), new Promise(resolve => { deadline = setTimeout(() => resolve(false), 100); })]);
+    assert.equal(completed, true, "response cleanup must not block the next health check");
+  } finally { clearTimeout(deadline); finishCancellation(); await check; await fixture.close(); }
+});

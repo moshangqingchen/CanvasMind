@@ -15,6 +15,52 @@ function service() {
   return { fetch, uploaded: () => uploaded, exists: () => { exists = true; } };
 }
 describe("cloud generation transport", () => {
+  const unreadResponse = (status: number) => {
+    const cancel = vi.fn(() => new Promise<void>(() => {}));
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new Uint8Array([1])); }, cancel,
+    }), { status });
+    return { response, cancel };
+  };
+  it("releases ignored lookup and submit bodies without waiting for cancellation", async () => {
+    const missing = unreadResponse(404); const submitted = unreadResponse(202); let query = 0;
+    const cloudFetch = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/response")) return output();
+      if (init?.method === "PUT") return submitted.response;
+      return query++ === 0 ? missing.response : Response.json({ state: "complete" });
+    });
+    await runCloudGeneration("release-unused-bodies", config,
+      () => fetchProviderJson(vi.fn(), "https://supplier.example.com/v1/images", { method: "POST", body: "{}" }, { phase: "submit" }),
+      { fetch: cloudFetch, delay: async () => {}, checkpoint: async () => {} });
+    expect(missing.cancel).toHaveBeenCalledOnce();
+    expect(submitted.cancel).toHaveBeenCalledOnce();
+  });
+  it.each([401, 403, 410, 503])("releases HTTP %s lookup bodies without waiting for cancellation", async status => {
+    const responses: ReturnType<typeof unreadResponse>[] = [];
+    const cloudFetch = vi.fn<typeof fetch>(async () => {
+      const item = unreadResponse(status); responses.push(item); return item.response;
+    });
+    await expect(runCloudGeneration("release-failed-lookup", config,
+      () => fetchProviderJson(vi.fn(), "https://supplier.example.com/v1/images", { method: "POST", body: "{}" }, { phase: "submit" }),
+      { fetch: cloudFetch, delay: async () => {}, checkpoint: async () => {} })).rejects.toThrow();
+    expect(responses.length).toBeGreaterThan(0);
+    for (const item of responses) expect(item.cancel).toHaveBeenCalledOnce();
+  });
+  it("does not create a cloud job after cancellation during the initial lookup", async () => {
+    const controller = new AbortController();
+    const cloudFetch = vi.fn<typeof fetch>(async (_input, init) => {
+      if (init?.method === "PUT") return Response.json({ state: "queued" });
+      controller.abort();
+      return Response.json({}, { status: 404 });
+    });
+    await expect(runCloudGeneration("cancel-before-purchase", config,
+      () => fetchProviderJson(vi.fn(), "https://supplier.example.com/v1/images", {
+        method: "POST", body: "{}", signal: controller.signal,
+      }, { phase: "submit" }), {
+        fetch: cloudFetch, delay: async () => {}, checkpoint: async () => {},
+      })).rejects.toThrow();
+    expect(cloudFetch.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(0);
+  });
   it("distinguishes cloud acceptance, supplier acknowledgement and result transfer", async () => {
     const phases: string[] = []; let accepted = false; let query = 0;
     const states = [{ state: "queued" }, { state: "running" }, { state: "running", phase: "generating" }, { state: "running", phase: "receiving" }, { state: "received" }, { state: "complete" }];

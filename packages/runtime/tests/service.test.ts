@@ -1073,6 +1073,73 @@ async function waitForRun(service: RunService, runId: string) {
 }
 
 describe("RunService", () => {
+  it.each(["running", "succeeded"] as const)("recovers an existing %s image task without its lost reference/mask bytes or upload channel", async status => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    const revisionGraph = resumableNodeGraph();
+    Object.assign(graphNodeData(revisionGraph, "image"), {
+      parts: [{ type: "text", text: "original edit" }, { type: "asset", assetId: "lost-reference", role: "reference" }],
+      parameters: { maskAssetId: "lost-mask", maskSourceAssetId: "lost-reference" },
+    });
+    const run = await repository.createRun({ id: "recover-edit", canvasId: canvas.id, clientRequestId: "recover-edit", scope: "node", nodeId: "image", status: "running", revisionGraph });
+    const inputJson: JsonObject = { provider: "runway", connectionId: "runway-test", operation: "image.edit", prompt: "original edit", parameters: { quality: "high" },
+      assetIds: ["lost-reference", "lost-mask"], inputAssets: [{ id: "lost-reference", role: "reference" }, { id: "lost-mask", role: "mask" }],
+      imageMask: { maskAssetId: "lost-mask", maskSourceAssetId: "lost-reference", width: 2, height: 2 },
+      providerTask: { providerTaskId: "original-remote", status, result: { completed: status === "succeeded" } } };
+    await repository.createNodeRun({ id: "recover-edit-node", workflowRunId: run.id, nodeId: "image", status: status === "succeeded" ? "archiving" : "running",
+      attempt: 1, providerTaskId: "original-remote", inputJson, outputAssetIds: [], errorJson: null });
+    const provider = pollingAdapter([]);
+    const validate = vi.spyOn(provider.adapter, "validate");
+    const storage = new MemoryStorage();
+    const service = new AdapterRunService(provider.adapter, repository, storage);
+    await service.resumeRun(run.id);
+    const result = await waitForRun(service, run.id);
+    expect(result.run.status).toBe("succeeded");
+    expect(provider.calls()).toEqual({ submit: 0, poll: status === "running" ? 1 : 0 });
+    expect(validate).not.toHaveBeenCalled();
+    expect(result.nodes[0]?.inputJson).toMatchObject({ operation: "image.edit", parameters: inputJson.parameters, assetIds: inputJson.assetIds,
+      inputAssets: inputJson.inputAssets, imageMask: inputJson.imageMask });
+    expect(result.nodes[0]?.outputAssetIds).toHaveLength(1);
+  });
+
+  it.each(["cancel", "shutdown"] as const)("does not submit again after %s during safe-submit backoff", async action => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+    let firstAttempt!: () => void;
+    const started = new Promise<void>(resolve => { firstAttempt = resolve; });
+    const controller = new AbortController();
+    let submits = 0;
+    const adapter = synchronousAdapter();
+    adapter.submit = async () => {
+      submits++;
+      if (submits === 1) { firstAttempt(); throw new ProviderHttpError("connection not established", { kind: "network", phase: "submit", retryable: true, submissionMayHaveOccurred: false }); }
+      return { providerTaskId: "must-not-submit", status: "succeeded", result: {} };
+    };
+    const service = new AdapterRunService(adapter, repository, new MemoryStorage(), "inline", "runway", { shutdownSignal: controller.signal, retryBaseDelayMs: 120 });
+    const run = await service.createRun({ canvasId: canvas.id, scope: "node", nodeId: "image", clientRequestId: `abort-retry-${action}` });
+    await started;
+    if (action === "cancel") await service.cancelRun(run.id); else controller.abort();
+    await new Promise(resolve => setTimeout(resolve, 260));
+    expect(submits).toBe(1);
+  });
+
+  it("leaves all nodes untouched when recovery is rejected for an uncertain task without an ID", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    const run = await repository.createRun({ id: "mixed-recovery", canvasId: canvas.id, clientRequestId: "mixed-recovery", scope: "all", status: "needs_attention", revisionGraph: resumableNodeGraph() });
+    const nodes = [];
+    for (const [id, providerTaskId] of [["recoverable", "known-task"], ["uncertain", null]] as const) {
+      nodes.push(await repository.createNodeRun({ id, workflowRunId: run.id, nodeId: id, status: "needs_attention", attempt: 1, providerTaskId,
+        inputJson: { provider: "runway" }, outputAssetIds: [], errorJson: { message: "original diagnostic" } }));
+    }
+    const provider = pollingAdapter([]);
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await expect(service.retryRun(run.id)).rejects.toThrow("供应商任务 ID");
+    expect(await repository.listNodeRuns(run.id)).toEqual(nodes);
+    expect(await repository.getRun(run.id)).toEqual(run);
+    expect(provider.calls()).toEqual({ submit: 0, poll: 0 });
+  });
   it.each([
     { terminal: {}, expected: { status: "charged", amount: 0.25, currency: "USD" } },
     { terminal: { charge: { status: "not_charged" } }, expected: { status: "charged", amount: 0.25, currency: "USD" } },

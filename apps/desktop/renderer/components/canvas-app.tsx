@@ -1,7 +1,13 @@
 "use client";
 
 import { savedModelAvailabilityError } from "../lib/model-availability";
+import { getImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
+import { imageModeParameters, preserveImageMaskParameters } from "../lib/image-editing";
+import { assetDownloadPath } from "../lib/asset-download";
+import { ImageMaskEditor } from "./image-mask-editor";
+import { ProjectFilesModal, type ProjectFileItem } from "./project-files-modal";
 import { generationDetailsFromRun, resultGenerationConfiguration, resultPrompt } from "../lib/result-provenance";
+import { reconcileRunSnapshot } from "../lib/run-snapshot-version";
 import { cliConnectionReady, cliStatusLabel } from "../lib/cli-connections";
 import { resolveModelParameters, validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import { withoutLocalExecutionConfig } from "../lib/project-local-config";
@@ -1980,6 +1986,8 @@ const transientNodeDataKeys = new Set([
   "onRecoverResult",
   "onSelect",
   "onOpenPreview",
+  "onEditMask",
+  "imageEditingCapabilities",
   "onPrepareReversePrompt",
   "onReusePrompt",
   "onDelete",
@@ -2607,6 +2615,22 @@ function CanvasShell({
   const preparingPromptReuse = useRef(false);
   const [runHistoryOpen, setRunHistoryOpen] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<AssetView | null>(null);
+  const [maskSession, setMaskSession] = useState<{
+    asset: AssetView; canvasId: string; editNodeId?: string; initialMaskAssetId?: string;
+  } | null>(null);
+  const maskSessionEpoch = useRef(0);
+  const [projectFilesOpen, setProjectFilesOpen] = useState(false);
+  const projectFilesEpoch = useRef(0);
+  const projectFilesImport = useRef<AbortController | null>(null);
+  const openProjectFiles = useCallback(() => {
+    projectFilesEpoch.current += 1;
+    setProjectFilesOpen(true);
+  }, []);
+  const closeProjectFiles = useCallback(() => {
+    projectFilesEpoch.current += 1;
+    projectFilesImport.current?.abort();
+    setProjectFilesOpen(false);
+  }, []);
   const previewRequest = useRef<AbortController | null>(null);
   const cancelPendingPreview = useCallback(() => {
     previewRequest.current?.abort();
@@ -2720,6 +2744,7 @@ function CanvasShell({
   const saveConflictRef = useRef<CanvasSaveConflictState | null>(null);
   const latestSaveAttempt = useRef(0);
   const eventSources = useRef<Map<string, EventSource>>(new Map());
+  const latestRunSnapshots = useRef(new Map<string, RunSnapshot>());
   const activeRunKeys = useRef(new Set<string>());
   const pendingSubmissionKeys = useRef(new Set<string>());
   const submittingRequestIds = useRef(new Set<string>());
@@ -3193,6 +3218,11 @@ function CanvasShell({
     /* eslint-disable react-hooks/set-state-in-effect */
     activeProjectIdRef.current = projectId;
     setGraphicDesignSession(null);
+    maskSessionEpoch.current += 1;
+    setMaskSession(null);
+    projectFilesEpoch.current += 1;
+    projectFilesImport.current?.abort();
+    setProjectFilesOpen(false);
     latestSaveAttempt.current += 1;
     setInitialization({ status: "loading" });
     setCanvasId(projectId);
@@ -3205,6 +3235,7 @@ function CanvasShell({
     initialViewportApplied.current = false;
     setNodeRunStatuses(new Map());
     latestNodeRunAt.current.clear();
+    latestRunSnapshots.current.clear();
     setBusy(false);
     setSaveState("saved");
     canvasRevision.current = null;
@@ -4679,6 +4710,73 @@ function CanvasShell({
     ],
   );
 
+  const placeProjectFiles = useCallback(async (files: ProjectFileItem[]) => {
+    if (!files.length) return;
+    if (projectFilesImport.current) throw new Error("正在将文件放入画布，请稍候");
+    if (saveConflictRef.current || saveSuspended.current) throw new Error("请先处理画布保存状态，再放入项目文件");
+    const controller = new AbortController();
+    projectFilesImport.current = controller;
+    const targetProjectId = activeProjectIdRef.current;
+    const epoch = projectFilesEpoch.current;
+    const current = () => instanceActive.current && !controller.signal.aborted && projectFilesEpoch.current === epoch && activeProjectIdRef.current === targetProjectId;
+    try {
+      const imported: AssetView[] = [];
+      let failed = 0;
+      for (let start = 0; start < files.length; start += 100) {
+        if (!current()) throw new Error("项目已切换，文件未放入其他画布");
+        const response = await fetch(`/api/projects/${encodeURIComponent(targetProjectId)}/files/import`, {
+          method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
+          body: JSON.stringify({ fileIds: files.slice(start, start + 100).map(file => file.fileId) }),
+        });
+        const payload = await response.json().catch(() => null) as { assets?: AssetView[]; failed?: Array<{ fileId: string; error: string }>; error?: string } | null;
+        if (!response.ok || !Array.isArray(payload?.assets)) throw new Error(payload?.error ?? "项目文件读取失败，请刷新后重试");
+        imported.push(...payload.assets.filter(asset => asset.kind !== "text"));
+        failed += payload.failed?.length ?? 0;
+      }
+      if (!current() || saveConflictRef.current || saveSuspended.current) throw new Error("画布状态已改变，文件已读取但未放入画布，请处理保存状态后重试");
+      const prepared = [...new Map(imported.map(asset => [asset.id, asset])).values()];
+      if (!prepared.length) throw new Error("所选文件已移动或无法读取，请刷新文件列表后重试");
+      flushPendingEditorEdits();
+      const state = useCanvasStore.getState();
+      const center = reactFlowRef.current?.screenToFlowPosition({ x: window.innerWidth / 2 - 180, y: window.innerHeight / 2 - 120 }) ?? { x: 360, y: 220 };
+      const added: CanvasNode[] = [];
+      for (const [index, asset] of prepared.entries()) {
+        const node = createAssetInputNode(asset, { x: center.x + (index % 3) * 340, y: center.y + Math.floor(index / 3) * 360 }, state.nodes.length + index);
+        node.position = closestAvailableVerticalPosition({ id: node.id, position: node.position, ...nodeDimensions(node) }, nodeDimensions(node),
+          [...state.nodes, ...added].map(item => ({ id: item.id, position: item.position, ...nodeDimensions(item) })));
+        node.selected = true;
+        added.push(node);
+      }
+      checkpoint(true);
+      setAssets(existing => [...prepared, ...existing.filter(asset => !prepared.some(item => item.id === asset.id))]);
+      const nextNodes = [...state.nodes.map(node => ({ ...node, selected: false })), ...added];
+      setNodes(nextNodes);
+      setSelectedId(added[0]!.id);
+      scheduleSave(nextNodes, state.edges);
+      closeProjectFiles();
+      requestAnimationFrame(() => {
+        if (instanceActive.current && activeProjectIdRef.current === targetProjectId)
+          void reactFlowRef.current?.fitView({ nodes: added.map(({ id }) => ({ id })), padding: .25, maxZoom: 1 });
+      });
+      showToast(failed ? `已放入 ${prepared.length} 个文件，${failed} 个文件无法读取，请刷新后重试` : `已将 ${prepared.length} 个项目文件放入画布`, failed ? "error" : "success");
+    } finally {
+      if (projectFilesImport.current === controller) projectFilesImport.current = null;
+    }
+  }, [checkpoint, closeProjectFiles, scheduleSave, setNodes, setSelectedId, showToast]);
+
+  const openImageMask = useCallback((assetId: string, editNodeId?: string) => {
+    const asset = assets.find(item => item.id === assetId);
+    if (!asset || asset.kind !== "image") { showToast("图片尚未就绪，请稍后重试", "error"); return; }
+    if (saveConflictRef.current || saveSuspended.current) { showToast("请先处理画布保存状态", "error"); return; }
+    const node = editNodeId ? useCanvasStore.getState().nodes.find(item => item.id === editNodeId) : undefined;
+    const parameters = node?.data.parameters;
+    maskSessionEpoch.current += 1;
+    setMaskSession({ asset, canvasId: activeProjectIdRef.current, editNodeId,
+      initialMaskAssetId: parameters?.maskSourceAssetId === asset.id && typeof parameters?.maskAssetId === "string" ? parameters.maskAssetId : undefined });
+    setPreviewAsset(null);
+    setHistoryOpen(false);
+  }, [assets, showToast]);
+
   const deleteHistoricalAssets = useCallback(
     async (assetIds: string[]) => {
       const result = await deleteAssets(assetIds);
@@ -5000,9 +5098,9 @@ function CanvasShell({
               nodeType === "video-generation"
                 ? "fake-video-v1"
                 : "fake-image-v1",
-            parameters: parametersWithDefaults(
+            parameters: preserveImageMaskParameters(parametersWithDefaults(
               parameterDescriptorsFor(nodeType, "fake", null),
-            ),
+            ), node.data.parameters ?? {}),
           },
           { persistImmediately: true },
         );
@@ -5015,6 +5113,12 @@ function CanvasShell({
         nodeType,
         defaultModelForConnection(connection),
       );
+      const nextParameters = connection.provider === "cli" && configuredModel
+        ? resolveModelParameters(configuredModel, {}, cliOperationForNode(nodeType, directLinkedAssetsForNode(node.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).some(asset => asset.kind === "image"))).parameters
+        : parametersWithDefaults(parameterDescriptorsFor(nodeType, connection.provider, configuredModel));
+      const selectedParameters = nodeType === "image-generation" && connection.provider !== "cli"
+        ? imageModeParameters(nextParameters, getImageEditingCapabilities(connection, configuredModel?.id ?? "", nextParameters).transparent)
+        : nextParameters;
       updateNodeData(
         nodeId,
         {
@@ -5027,15 +5131,7 @@ function CanvasShell({
             configuredModel,
             node.data.inputs,
           ),
-          parameters: connection.provider === "cli" && configuredModel ? resolveModelParameters(configuredModel, {}, cliOperationForNode(nodeType, directLinkedAssetsForNode(node.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).some(asset => asset.kind === "image"))).parameters : parametersWithDefaults(
-            parameterDescriptorsFor(
-              nodeType,
-              connection.provider,
-              configuredModel,
-            ),
-            {},
-            connection.provider === "cli",
-          ),
+          parameters: preserveImageMaskParameters(selectedParameters, node.data.parameters ?? {}),
         },
         { persistImmediately: true },
       );
@@ -5070,7 +5166,7 @@ function CanvasShell({
       if (connection?.provider === "cli" && nextModel) {
         const hasImage = directLinkedAssetsForNode(node.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).some(asset => asset.kind === "image");
         const resolved = resolveModelParameters(nextModel, node.data.parameters ?? {}, cliOperationForNode(nodeType, hasImage));
-        updateNodeData(nodeId, { model: modelId, inputs: generationInputsForModel(nodeType, nextModel, node.data.inputs), parameters: resolved.parameters }, { persistImmediately: true });
+        updateNodeData(nodeId, { model: modelId, inputs: generationInputsForModel(nodeType, nextModel, node.data.inputs), parameters: preserveImageMaskParameters(resolved.parameters, node.data.parameters ?? {}) }, { persistImmediately: true });
         if (resolved.removedKeys.length) showToast(`已按新模型清理不支持的参数：${resolved.removedKeys.join("、")}`);
         return;
       }
@@ -5104,6 +5200,10 @@ function CanvasShell({
         delete currentParameters.n;
       }
       if (resolutionParameters) Object.assign(currentParameters, resolutionParameters);
+      const nextParameters = parametersWithDefaults(parameterDescriptorsFor(nodeType, node.data.provider ?? "fake", nextModel), currentParameters);
+      const selectedParameters = nodeType === "image-generation" && connection
+        ? imageModeParameters(nextParameters, getImageEditingCapabilities(connection, modelId, nextParameters).transparent)
+        : nextParameters;
       updateNodeData(
         nodeId,
         {
@@ -5114,20 +5214,70 @@ function CanvasShell({
             nextModel,
             node.data.inputs,
           ),
-          parameters: parametersWithDefaults(
-            parameterDescriptorsFor(
-              nodeType,
-              node.data.provider ?? "fake",
-              nextModel,
-            ),
-            currentParameters,
-          ),
+          parameters: preserveImageMaskParameters(selectedParameters, node.data.parameters ?? {}),
         },
         { persistImmediately: true },
       );
     },
     [connectionModels, connections, updateNodeData, showToast, assets],
   );
+
+  const saveImageMask = useCallback(async (file: File) => {
+    const session = maskSession;
+    const epoch = maskSessionEpoch.current;
+    if (!session || session.canvasId !== activeProjectIdRef.current || saveSuspended.current || saveConflictRef.current)
+      throw new Error("画布已切换或尚未保存，请关闭后重新打开蒙版");
+    const currentNode = session.editNodeId ? useCanvasStore.getState().nodes.find(node => node.id === session.editNodeId) : undefined;
+    if (session.editNodeId && !currentNode) throw new Error("编辑节点已删除，请重新打开图片");
+    const maskAsset = await uploadAsset(file);
+    if (!instanceActive.current || maskSessionEpoch.current !== epoch || activeProjectIdRef.current !== session.canvasId || saveSuspended.current || saveConflictRef.current)
+      throw new Error("蒙版已保存为素材，但画布状态已改变，请重新打开图片后设置");
+    setAssets(current => [maskAsset, ...current.filter(asset => asset.id !== maskAsset.id)]);
+    if (session.editNodeId) {
+      const live = useCanvasStore.getState().nodes.find(node => node.id === session.editNodeId);
+      if (!live) throw new Error("编辑节点已删除，蒙版已保存为素材");
+      const references = directLinkedAssetsForNode(live.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).filter(asset => asset.kind === "image");
+      if (references[0]?.id !== session.asset.id) throw new Error("原图连线已改变，请重新打开蒙版，避免修改错位");
+      const parameters = { ...live.data.parameters, maskAssetId: maskAsset.id, maskSourceAssetId: session.asset.id };
+      delete (parameters as Record<string, unknown>).mask;
+      updateNodeData(live.id, { parameters }, { persistImmediately: true });
+    } else {
+      flushPendingEditorEdits();
+      const state = useCanvasStore.getState();
+      const original = state.nodes.find(node => node.data.assetId === session.asset.id);
+      const preferredId = original?.data.generatedConnectionId;
+      const eligible = connections.filter(connection => connectionIsConfigured(connection) && providerConnectionUsage(connection) === "canvas");
+      eligible.sort((a, b) => Number(b.id === preferredId) - Number(a.id === preferredId));
+      const options = eligible.flatMap(connection => modelDescriptorsForConnection(connection)
+        .filter(model => model.operations.includes("image.edit") && model.metadata?.canvasRunnable !== false)
+        .map(model => {
+          const parameters = parametersWithDefaults(parameterDescriptorsFor("image-generation", connection.provider, model));
+          if (model.id === "gpt-image-2-x") parameters.tier = "4k";
+          return { connection, model, parameters, capabilities: getImageEditingCapabilities(connection, model.id, parameters) };
+        }));
+      const choice = options.find(option => option.capabilities.mask) ?? options[0];
+      const parameters = { ...imageModeParameters(choice?.parameters ?? {}, choice?.capabilities.transparent ?? false, "normal"), maskAssetId: maskAsset.id, maskSourceAssetId: session.asset.id };
+      const center = reactFlowRef.current?.screenToFlowPosition({ x: window.innerWidth / 2 - 300, y: window.innerHeight / 2 - 110 }) ?? { x: 360, y: 220 };
+      const position = closestAvailableVerticalPosition({ id: "mask-edit-placement", position: center, width: 800, height: 0 },
+        { width: 800, height: 250 }, state.nodes.map(node => ({ id: node.id, position: node.position, ...nodeDimensions(node) })));
+      const draft = createImageEditDraft({ asset: session.asset, source: {
+        provider: choice?.connection.provider ?? "fake", connectionId: choice?.connection.id ?? "fake-default",
+        model: choice?.model.id ?? "fake-image-v1", parameters: parameters as Record<string, string | number | boolean>,
+      }, position });
+      const draftNodes = draft.nodes.map(node => node.id === draft.editNodeId ? { ...node, selected: true, data: {
+        ...node.data, label: "局部重绘", description: "已保存蒙版，请填写涂抹区域的修改要求", parts: [{ type: "text" as const, text: "" }],
+      } } : node);
+      checkpoint(true);
+      const nextNodes = [...state.nodes.map(node => ({ ...node, selected: false })), ...draftNodes];
+      const nextEdges = [...state.edges, ...draft.edges];
+      setNodes(nextNodes); setEdges(nextEdges); scheduleSave(nextNodes, nextEdges); setSelectedId(draft.editNodeId);
+      requestAnimationFrame(() => {
+        if (instanceActive.current && activeProjectIdRef.current === session.canvasId)
+          void reactFlowRef.current?.fitView({ nodes: draft.nodes.map(({ id }) => ({ id })), padding: 0.25, maxZoom: 1 });
+      });
+    }
+    showToast("蒙版已保存，请核对模型并填写修改要求后生成", "success");
+  }, [maskSession, assets, connections, updateNodeData, checkpoint, setNodes, setEdges, scheduleSave, setSelectedId, showToast]);
 
   const updateMediaAspectRatio = useCallback(
     (nodeId: string, ratio: number) => {
@@ -5170,6 +5320,8 @@ function CanvasShell({
   const applyRunSnapshot = useCallback(
     (snapshot: RunSnapshot, pendingRequestId?: string) => {
       if (!instanceActive.current || saveSuspended.current || snapshot.run.canvasId !== activeProjectIdRef.current) return;
+      snapshot = reconcileRunSnapshot(latestRunSnapshots.current.get(snapshot.run.id), snapshot);
+      latestRunSnapshots.current.set(snapshot.run.id, snapshot);
       if (terminalRunStatuses.has(snapshot.run.status)) {
         const supplierIds = new Set(snapshot.nodes.flatMap(node => {
           const connection = connections.find(item => item.id === node.request?.connectionId);
@@ -5520,7 +5672,8 @@ function CanvasShell({
           .then((snapshot) => {
             if (!isActive()) return;
             applyRunSnapshot(snapshot, snapshot.run.clientRequestId);
-            if (terminalRunStatuses.has(snapshot.run.status)) {
+            const current = latestRunSnapshots.current.get(snapshot.run.id) ?? snapshot;
+            if (terminalRunStatuses.has(current.run.status)) {
               stopRunSubscription(runId);
               void refreshAssets();
             }
@@ -5706,7 +5859,8 @@ function CanvasShell({
           }
 
           for (const snapshot of runs) {
-            if (terminalRunStatuses.has(snapshot.run.status)) {
+            const current = latestRunSnapshots.current.get(snapshot.run.id) ?? snapshot;
+            if (terminalRunStatuses.has(current.run.status)) {
               if (eventSources.current.has(snapshot.run.id))
                 stopRunSubscription(snapshot.run.id);
               continue;
@@ -5853,6 +6007,16 @@ function CanvasShell({
           state.edges,
           assets,
         );
+        if (node.data.nodeType === "image-generation" && savedConnection?.provider !== "cli" &&
+            node.data.parameters?.background === "transparent" &&
+            (!savedConnection || !getImageEditingCapabilities(savedConnection, node.data.model ?? "", node.data.parameters).transparent))
+          return `${node.data.label}：当前供应商分组和型号不支持透明模式，请切换到普通模式或选择支持透明输出的模型`;
+        if (typeof node.data.parameters?.maskAssetId === "string") {
+          if (!savedConnection || !getImageEditingCapabilities(savedConnection, node.data.model ?? "", node.data.parameters).mask)
+            return `${node.data.label}：当前模型不支持蒙版编辑，请选择支持局部重绘的模型，或手动移除蒙版`;
+          if (linked.filter(asset => asset.kind === "image")[0]?.id !== node.data.parameters.maskSourceAssetId)
+            return `${node.data.label}：蒙版对应的原图已改变，请重新绘制蒙版`;
+        }
         if (savedConnection?.provider === "cli") {
           if (!model || !options.some(option => option.id === node.data.model)) return `${node.data.label}：所选模型不在当前 CLI 目录中，请同步模型或重新选择`;
           const validation = validateModelParameters(model, node.data.parameters ?? {}, cliOperationForNode(node.data.nodeType === "image-generation" ? "image-generation" : "video-generation", linked.some(asset => asset.kind === "image")));
@@ -6304,11 +6468,23 @@ function CanvasShell({
       );
       node.data.inputs = generationInputsForModel(kind, model, node.data.inputs);
       node.selected = true;
+      const maskSourceId = configuration.parameters?.maskSourceAssetId;
+      const maskSource = typeof configuration.parameters?.maskAssetId === "string" && typeof maskSourceId === "string"
+        ? assets.find((asset) => asset.id === maskSourceId && asset.kind === "image") : undefined;
+      if (typeof configuration.parameters?.maskAssetId === "string" && !maskSource) {
+        showToast("这次局部重绘的原图已不可用，无法完整复用蒙版", "error");
+        return;
+      }
+      const sourceNode = maskSource ? createAssetInputNode(maskSource, { x: base.position.x - 380, y: base.position.y }, state.nodes.length + 1) : undefined;
+      const nextEdges = sourceNode ? [...state.edges, {
+        id: crypto.randomUUID(), source: sourceNode.id, sourceHandle: "asset", target: node.id, targetHandle: "references",
+      }] : state.edges;
       checkpoint(true);
-      const nextNodes = [...state.nodes.map((item) => item.selected ? { ...item, selected: false } : item), node];
+      const nextNodes = [...state.nodes.map((item) => item.selected ? { ...item, selected: false } : item), ...(sourceNode ? [sourceNode] : []), node];
       setNodes(nextNodes);
+      if (sourceNode) setEdges(nextEdges);
       setSelectedId(node.id);
-      scheduleSave(nextNodes, state.edges);
+      scheduleSave(nextNodes, nextEdges);
       requestAnimationFrame(() => {
         if (instanceActive.current && activeProjectIdRef.current === targetCanvasId)
           void reactFlowRef.current?.fitView({ nodes: [{ id: node.id }], padding: 0.3, maxZoom: 1 });
@@ -6320,7 +6496,7 @@ function CanvasShell({
     } finally {
       preparingPromptReuse.current = false;
     }
-  }, [assets, checkpoint, connectionModels, connections, scheduleSave, setNodes, setSelectedId, showToast]);
+  }, [assets, checkpoint, connectionModels, connections, scheduleSave, setEdges, setNodes, setSelectedId, showToast]);
 
   const regenerateResult = useCallback(
     (resultNodeId: string) => {
@@ -7057,6 +7233,10 @@ function CanvasShell({
           node.data.model,
           node.data.parameters as Readonly<Record<string, unknown>> | undefined,
         ) ?? null;
+      const editingConnection = connections.find(connection => connection.id === node.data.connectionId);
+      const imageEditingCapabilities = editingConnection && generationType === "image-generation"
+        ? getImageEditingCapabilities(editingConnection, node.data.model ?? effectiveModel?.id ?? "", node.data.parameters)
+        : { transparent: false, mask: null };
       const linkedAssets = generationType ? directAssetsForNode(node.id) : [];
       const compatibleInputIds =
         connectingFrom && node.id !== connectingFrom.nodeId
@@ -7108,6 +7288,7 @@ function CanvasShell({
           assets,
           mentionAssets: mentionAssetsForNode(node.id),
           linkedAssets,
+          imageEditingCapabilities,
           linkedAssetDurations,
           linkedAssetWarnings: validateLinkedMediaInputs(
             effectiveModel,
@@ -7199,6 +7380,7 @@ function CanvasShell({
             : {}),
           onSelect: (additive = false) => selectCanvasNode(node.id, additive),
           onOpenPreview: (assetId: string) => void openAssetPreview(assetId),
+          onEditMask: openImageMask,
           onReusePrompt: () => reuseResultPrompt(node.id),
           onPrepareReversePrompt: () => {
             selectCanvasNode(node.id);
@@ -7269,7 +7451,9 @@ function CanvasShell({
             const current = useCanvasStore.getState().nodes.find(item => item.id === node.id)?.data;
             const qualityChanged = ["quality", "image_quality", "output_quality"].some(key =>
               parameters[key] !== current?.parameters?.[key]);
-            updateNodeData(node.id, { parameters, ...(qualityChanged ? { qualityMode: "custom" as const } : {}) });
+            const next = generationType === "image-generation" && node.data.provider !== "cli"
+              ? imageModeParameters(parameters, imageEditingCapabilities.transparent) : parameters;
+            updateNodeData(node.id, { parameters: next, ...(qualityChanged ? { qualityMode: "custom" as const } : {}) });
           },
           onMediaAspectRatio: (ratio: number) =>
             updateMediaAspectRatio(node.id, ratio),
@@ -7315,6 +7499,7 @@ function CanvasShell({
     onConfigurationOpenChange,
     recordLinkedAssetDuration,
     openAssetPreview,
+    openImageMask,
     applyRunSnapshot,
     refreshAssets,
     regenerateResult,
@@ -8930,6 +9115,10 @@ function CanvasShell({
           </button>
         </nav>
         <div className="top-actions">
+          <button className="button small project-files-button" type="button" onClick={openProjectFiles}
+            disabled={initialization.status !== "ready"} title="在页面内查看当前项目的成品和草稿文件" aria-label="打开项目文件">
+            <FolderOpen size={14} /><span>项目文件</span>
+          </button>
           <button
             className="icon-button project-toggle"
             type="button"
@@ -9208,6 +9397,7 @@ function CanvasShell({
           <span className="rail-divider" />
           <button type="button" title="节点与素材库" aria-label="打开节点与素材库" aria-pressed={mobileLibraryOpen} onClick={() => { setMobileLibraryOpen((open) => !open); setMobileProjectsOpen(false); }}><FolderOpen size={20} /><span>素材</span></button>
           <button type="button" aria-label="历史生成" onClick={() => setHistoryOpen(true)}><History size={20} /><span>历史</span></button>
+          <button type="button" aria-label="项目文件" title="项目文件" disabled={initialization.status !== "ready"} onClick={openProjectFiles}><FolderOpen size={20} /><span>项目文件</span></button>
           <span className="rail-divider" />
           <button type="button" aria-label="打开智能体" aria-pressed={mobileInspectorOpen} onClick={() => { setMobileInspectorOpen(true); setMobileProjectsOpen(false); }}><Bot size={20} /><span>智能体</span></button>
         </nav>
@@ -10163,6 +10353,7 @@ function CanvasShell({
       <AssetPreviewModal
         key={previewAsset?.id ?? "no-preview"}
         asset={previewAsset}
+        onEditMask={openImageMask}
         onClose={() => {
           cancelPendingPreview();
           setPreviewAsset(null);
@@ -10180,6 +10371,14 @@ function CanvasShell({
             : undefined
         }
       />
+      {maskSession?.canvasId === projectId && <ImageMaskEditor
+        key={`${maskSession.asset.id}:${maskSession.editNodeId ?? "new"}:${maskSession.initialMaskAssetId ?? "empty"}`}
+        imageSrc={assetDownloadPath(maskSession.asset.id)} imageName={maskSession.asset.name}
+        initialMaskSrc={maskSession.initialMaskAssetId ? assetDownloadPath(maskSession.initialMaskAssetId) : undefined}
+        saveLabel={maskSession.editNodeId ? "保存蒙版" : "保存并创建局部重绘"}
+        onSave={saveImageMask} onClose={() => { maskSessionEpoch.current += 1; setMaskSession(null); }} />}
+      <ProjectFilesModal open={projectFilesOpen} projectId={projectId} projectName={title}
+        onClose={closeProjectFiles} onPlaceOnCanvas={placeProjectFiles} />
       <ShortcutsModal
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}

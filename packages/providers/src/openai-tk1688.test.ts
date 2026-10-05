@@ -102,7 +102,7 @@ describe("Tk1688 merchant model parameter policy", () => {
   it("does not change another supplier's same-looking alias policy", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ data: [{ b64_json: "bW9jaw==" }] }));
     const adapter = adapterFor("https://other.example/v1", fetchMock);
-    expect((await adapter.validate({ ...request, parameters: { background: "transparent" } })).valid).toBe(true);
+    expect((await adapter.validate({ ...request, parameters: { background: "transparent" } })).valid).toBe(false);
     await adapter.submit({ ...request, parameters: { aspect_ratio: "16:9" } });
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ model: merchantModel, size: "1536x1024" });
   });

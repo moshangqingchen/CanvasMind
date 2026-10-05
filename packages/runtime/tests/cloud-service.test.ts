@@ -11,19 +11,26 @@ vi.mock("@super-canvas/providers", async original => ({ ...await original<typeof
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]) }));
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
-it("retrieves the same cloud job after a lost acceptance and a supplier mode change, without repurchasing", async () => {
+it.each([false, true])("keeps cloud submissions safe after a lost acceptance or cancellation (cancel during lookup: %s)", async cancelDuringLookup => {
   const dir = await mkdtemp(join(tmpdir(), "canvas-cloud-test-"));
   vi.stubEnv("LOCAL_DATABASE_PATH", join(dir, "db.json"));
   vi.stubEnv("MASTER_KEY", "local-development-master-key");
   try {
     await saveCloudGenerationConfig({ endpoint: "https://cloud.example.com", token: "a".repeat(48) });
     let exists = false; let purchases = 0; let progressQueries = 0; let observedGenerating = false; const ids = new Set<string>();
+    const cancellation = new AbortController();
     mocks.fetch.mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/health")) return Response.json({ service: "super-canvas-generation-v1", ready: true, storage: true });
       ids.add(url.replace(/\/response$/, ""));
       if (init?.method === "PUT") { exists = true; purchases++; throw new Error("client disconnected after acceptance"); }
-      if (!exists) return Response.json({}, { status: 404 });
+      if (!exists) {
+        if (cancelDuringLookup) {
+          await first.cancelRun(run.id);
+          cancellation.abort();
+        }
+        return Response.json({}, { status: 404 });
+      }
       if (url.endsWith("/response")) return Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }, { headers: { "x-supercanvas-response": "1" } });
       if (++progressQueries <= 2) return Response.json({ state: "running", phase: "generating" });
       const pending = (await repository.listNodeRuns(run.id))[0];
@@ -48,8 +55,14 @@ it("retrieves the same cloud job after a lost acceptance and a supplier mode cha
     const options = { repository, storage: { async get(key: string) { return saved.get(key) ?? null; }, async put(key: string, bytes: Uint8Array, contentType: string) { saved.set(key, { bytes, contentType }); } }, executionMode: "queue" as const, enqueueRun: async () => {}, pollIntervalMs: 0 };
     const first = new Service(options);
     const run = await first.createRun({ canvasId: canvas.id, clientRequestId: "one", scope: "all" });
-    await first.execute(run.id, new AbortController().signal);
+    await first.execute(run.id, cancellation.signal);
     const lost = await first.getRun(run.id);
+    if (cancelDuringLookup) {
+      expect(lost?.run.status, JSON.stringify(lost)).toBe("cancelled");
+      expect(purchases).toBe(0);
+      expect(supplierFetch).not.toHaveBeenCalled();
+      return;
+    }
     expect(lost?.run.status, JSON.stringify(lost)).toBe("needs_attention");
     expect(lost?.nodes[0]?.providerTaskId).toMatch(/^cloud:/);
     await repository.saveSupplier({ ...supplier, state: { ...supplier.state!, generationTransport: "local" } });

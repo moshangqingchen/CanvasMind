@@ -1,3 +1,4 @@
+import { imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import type {
   FetchImplementation,
   ModelDescriptor,
@@ -230,7 +231,7 @@ export class RunwayAdapter implements ProviderAdapter {
   }
 
   public async validate(request: NormalizedRequest): Promise<ValidationResult> {
-    const issues: ValidationIssue[] = [];
+    const issues: ValidationIssue[] = imageEditingRequestIssues({ provider: "runway", config: {} }, request);
     try {
       const connection = await this.connections.resolve(request.connectionId);
       if (!connection.apiKey) {
@@ -274,7 +275,7 @@ export class RunwayAdapter implements ProviderAdapter {
         message: "Runway prompts must be at most 1,000 characters",
       });
     }
-    const assets = request.assets ?? [];
+    const assets = imageReferenceAssets(request.assets);
     const images = assets.filter((asset) => asset.kind === "image");
     if (request.operation === "video.generate" && assets.length > 0) {
       issues.push({
@@ -387,7 +388,7 @@ export class RunwayAdapter implements ProviderAdapter {
     let endpoint = "/text_to_video";
     if (request.operation === "video.image-to-video") {
       endpoint = "/image_to_video";
-      const firstImage = (request.assets ?? []).find(
+      const firstImage = imageReferenceAssets(request.assets).find(
         (asset) => asset.kind === "image",
       );
       const imageUrl = firstImage ? assetAsUrl(firstImage) : undefined;

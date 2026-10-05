@@ -3,6 +3,18 @@ import { generationDetailsFromRun, resultElapsed, resultGenerationConfiguration,
 import type { AssetView } from "../components/types";
 
 describe("result provenance", () => {
+  it("retains a mask separately from reference inputs when reusing execution settings", () => {
+    const imageMask = { maskAssetId: "mask", maskSourceAssetId: "original" };
+    const request = { provider: "openai", connectionId: "key", model: "gpt-image-2", parameters: { size: "auto" }, imageMask,
+      inputAssetIds: ["original", "mask"], inputAssets: [{ id: "original", kind: "image" as const }, { id: "mask", kind: "image" as const, role: "mask" as const }] };
+    const details = generationDetailsFromRun({ id: "nr", nodeId: "n", status: "succeeded", outputAssetIds: [], request });
+    expect(details.imageMask).toEqual(imageMask);
+    expect(resultReferenceInputs(details)?.find(asset => asset.id === "mask")?.role).toBe("mask");
+    expect(resultGenerationConfiguration({ label: "Result" }, request)?.parameters).toEqual({ size: "auto", ...imageMask });
+    expect(resultGenerationConfiguration({ label: "Result", generatedProvider: "openai", generatedConnectionId: "key",
+      generatedModel: "gpt-image-2", generatedParameters: { size: "auto" }, generatedDetails: details })?.parameters).toEqual({ size: "auto", ...imageMask });
+    expect(request.parameters).toEqual({ size: "auto" });
+  });
   it("distinguishes no references from missing history and keeps deleted references", () => {
     expect(resultReferenceInputs({})).toBeUndefined();
     expect(resultReferenceInputs({ inputAssetIds: [] })).toEqual([]);

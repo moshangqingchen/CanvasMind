@@ -22,7 +22,7 @@ describe("supplier banana image protocols", () => {
     ["https://asian-acc.we-token.cc/v1", "adobe香蕉", "Authorization", "Bearer fixture-key", "gemini-3-pro-image"],
   ])("sends native image requests for %s without GPT fields", async (baseUrl, group, header, credential, sentModel) => {
     const f = fixture(baseUrl!, { group });
-    const result = await f.adapter.submit({ ...request, parameters: { size: "auto", size_tier: "4K", aspect_ratio: "16:9", quality: "max", background: "transparent" } });
+    const result = await f.adapter.submit({ ...request, parameters: { size: "auto", size_tier: "4K", aspect_ratio: "16:9", quality: "max", background: "opaque" } });
     expect(f.fetch).toHaveBeenCalledOnce();
     const [url, init] = f.fetch.mock.calls[0]!;
     expect(String(url)).toBe(`${new URL(baseUrl!).origin}/v1beta/models/${sentModel}:generateContent`);

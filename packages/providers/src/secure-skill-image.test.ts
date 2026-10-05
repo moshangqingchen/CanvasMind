@@ -31,7 +31,7 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-key");
     expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: request.prompt, size: "3840x2160", quality, response_format: "url",
-      image: ["https://assets.example.com/reference.png", "https://assets.example.com/second.jpg"] });
+      image: ["https://assets.example.com/reference.png", "https://assets.example.com/second.jpg"], ...(model === "gpt-image-2" ? { background: "opaque" } : {}) });
   });
 
   it("omits references for generation and omits auto sentinels", async () => {

@@ -96,6 +96,30 @@ function packageFile(
 }
 
 describe("project transfer", () => {
+  it("packages and remaps mask/source references without rewriting ordinary parameters", async () => {
+    const source = structuredClone(graph);
+    source.nodes[1]!.data.parameters = { maskAssetId: "mask-old", maskSourceAssetId: "asset-old", prompt: "mask-old" };
+    source.nodes[1]!.data.generatedParameters = { maskAssetId: "history-mask", maskSourceAssetId: "history-source" };
+    source.nodes[1]!.data.generatedDetails = { imageMask: { maskAssetId: "details-mask", maskSourceAssetId: "details-source" },
+      inputAssetIds: ["details-source", "details-mask"], inputAssets: [
+        { id: "details-source", role: "reference" }, { id: "details-mask", role: "mask", name: "details-mask" },
+      ] };
+    expect(collectReferencedAssetIds(source)).toEqual(["asset-old", "details-mask", "details-source", "generated-old", "history-mask", "history-source", "mask-old"]);
+    const bytes = new Uint8Array([1, 2, 3]);
+    const packageBlob = await createPortableProjectPackage({ title: "局部编辑", graph: source,
+      assets: collectReferencedAssetIds(source).map(id => asset(id, bytes)), fetchAsset: async () => new Response(bytes) });
+    const prepared = await prepareProjectImport({ file: new File([packageBlob], "mask.supercanvas"),
+      fallbackTitle: "mask", fallbackViewport: graph.viewport, availableAssetIds: new Set() });
+    expect(prepared.packageAssets.map(asset => asset.id).sort()).toEqual(collectReferencedAssetIds(source));
+    const restored = await uploadPreparedPackageAssets({ prepared, upload: async file => asset(`new-${file.name.replace(/\.png$/u, "")}`, bytes) });
+    expect(restored.graph.nodes[1]!.data.parameters).toEqual({ maskAssetId: "new-mask-old", maskSourceAssetId: "new-asset-old", prompt: "mask-old" });
+    expect(restored.graph.nodes[1]!.data.generatedParameters).toEqual({ maskAssetId: "new-history-mask", maskSourceAssetId: "new-history-source" });
+    expect(restored.graph.nodes[1]!.data.generatedDetails).toEqual({ imageMask: { maskAssetId: "new-details-mask", maskSourceAssetId: "new-details-source" },
+      inputAssetIds: ["new-details-source", "new-details-mask"], inputAssets: [
+        { id: "new-details-source", role: "reference" }, { id: "new-details-mask", role: "mask", name: "details-mask" },
+      ] });
+    expect(source.nodes[1]!.data.parameters.maskAssetId).toBe("mask-old");
+  });
   it("carries review state and remaps edit ancestry while accepting old packages", async () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const sourceGraph = structuredClone(graph);

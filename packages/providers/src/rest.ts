@@ -17,6 +17,8 @@ import type {
 } from "./contracts.js";
 import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
 import { cangyuanCurrentRequestIssues, cangyuanCurrentTransport, isCangyuanCurrentRequest, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
+import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
+  imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
 import {
   assertValidResult,
   getProviderTaskId,
@@ -763,6 +765,7 @@ function sourceValue(
     const assets = (request?.assets ?? []).filter(
       (asset) =>
         (source.assetKind === undefined || asset.kind === source.assetKind) &&
+        (asset.role !== "mask" || source.role === "mask") &&
         (source.role === undefined || asset.role === source.role) &&
         !(source.excludeRoles ?? []).includes(asset.role ?? "reference"),
     );
@@ -816,7 +819,7 @@ function sourceValue(
     return selectedAssets.map(encode);
   }
   if (source.kind === "assetMode") {
-    const assets = request?.assets ?? [];
+    const assets = imageReferenceAssets(request?.assets);
     const hasFrame = assets.some(
       (asset) => asset.role === "firstFrame" || asset.role === "lastFrame",
     );
@@ -833,7 +836,7 @@ function sourceValue(
   }
   if (source.kind === "openaiMessages") {
     const prompt = request?.prompt ?? "";
-    const images = (request?.assets ?? []).filter(
+    const images = imageReferenceAssets(request?.assets).filter(
       (asset) => asset.kind === "image",
     );
     if (images.length === 0) return [{ role: "user", content: prompt }];
@@ -1341,6 +1344,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     try {
       const connection = await this.connections.resolve(request.connectionId);
+      issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
       const baseConfig = this.configFrom(connection);
       if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, baseConfig, request.model)) issues.push(...cangyuanCurrentRequestIssues(request, connection.baseUrl));
       const config = this.configFrom(
@@ -1348,6 +1352,11 @@ export class GenericRestAdapter implements ProviderAdapter {
         request.model,
         request.operation,
       );
+      if (request.assets?.some(asset => asset.role === "mask") || request.parameters?.mask) {
+        const capabilities = getImageEditingCapabilities(imageEditingConnection(connection), request.model ?? "", request.parameters);
+        if (capabilities.mask && (capabilities.mask !== "url" || config.submit.bodyMode !== "json"))
+          issues.push({ path: "assets", code: "unsupported_mask_transport", message: "当前已配置的接口传输方式不支持此蒙版；请使用供应商的图片编辑接口。" });
+      }
       const configuredModel = baseConfig.models?.find(
         (model) => model.id === request.model,
       );
@@ -1370,7 +1379,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       }
       if (configuredModel) {
         const imageCount =
-          request.assets?.filter((asset) => asset.kind === "image").length ?? 0;
+          imageReferenceAssets(request.assets).filter((asset) => asset.kind === "image").length;
         const videoCount =
           request.assets?.filter((asset) => asset.kind === "video").length ?? 0;
         const audioCount =
@@ -1567,12 +1576,29 @@ export class GenericRestAdapter implements ProviderAdapter {
   public async submit(request: NormalizedRequest): Promise<ProviderTask> {
     assertValidResult(await this.validate(request));
     const connection = await this.connections.resolve(request.connectionId);
-    const config = this.configFrom(
+    let config = this.configFrom(
       connection,
       request.model,
       request.operation,
     );
-    let outboundRequest = withNearestSupportedAspectRatio(request, config);
+    const editingConnection = imageEditingConnection(connection);
+    const capabilities = getImageEditingCapabilities(editingConnection, request.model ?? "", request.parameters);
+    const hasMask = request.assets?.some(asset => asset.role === "mask") || Boolean(request.parameters?.mask);
+    if (hasMask && capabilities.mask === "url") {
+      const cangyuan = connection.provider === "rest" && /(^|\.)cangyuansuanli\.cn$/u.test(new URL(connection.baseUrl!).hostname);
+      config = { ...config, assetsRequirePublicUrls: true,
+        submit: { ...config.submit,
+          ...(cangyuan ? { path: "/v1/images/edits" } : {}),
+          mappings: [...(config.submit.mappings ?? []).filter(mapping => mapping.target !== "/mask" && mapping.target !== "/images"),
+            { target: "/images", source: { kind: "assets", assetKind: "image", select: "all" } },
+            { target: "/mask", source: { kind: "request", path: "$.parameters.mask" }, omitIfUndefined: true, omitIfEmpty: true },
+            { target: "/mask", source: { kind: "assets", assetKind: "image", role: "mask", select: "first" }, omitIfUndefined: true }],
+        },
+        ...(cangyuan && config.poll ? { poll: { ...config.poll, path: "/v1/images/edits/{taskId}" } } : {}),
+      };
+    }
+    let outboundRequest = withNearestSupportedAspectRatio({ ...request,
+      parameters: normalizeImageEditingParameters(editingConnection, request.model ?? "", request.parameters) }, config);
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, this.configFrom(connection), request.model))
       outboundRequest = withCangyuanCurrentRequestParameters(outboundRequest, connection.baseUrl);
     if (request.assets?.length && restRequestRequiresPublicAssets(config)) {

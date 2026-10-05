@@ -36,7 +36,7 @@ describe("Chuangxiang current GPT Images contract", () => {
   });
   it.each([config.baseUrl, `${config.baseUrl}/v1`])("uses the versioned synchronous JSON endpoint for %s", async baseUrl => {
     const f = fixture(baseUrl);
-    const task = await f.adapter.submit({ ...request, parameters: { ...request.parameters, output_format: "webp", background: "transparent", response_format: "b64_json" } });
+    const task = await f.adapter.submit({ ...request, parameters: { ...request.parameters, output_format: "webp", background: "opaque", response_format: "b64_json" } });
     expect(f.fetch).toHaveBeenCalledOnce();
     const [url, init] = f.fetch.mock.calls[0]!;
     expect(String(url)).toBe(`${config.baseUrl}/v1/images/generations`);

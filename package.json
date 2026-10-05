@@ -1,6 +1,6 @@
 {
   "name": "super-canvas",
-  "version": "0.2.55",
+  "version": "0.2.57",
   "private": true,
   "packageManager": "pnpm@11.9.0",
   "scripts": {

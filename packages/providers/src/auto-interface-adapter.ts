@@ -4,6 +4,8 @@ import { GenericRestAdapter, type GenericRestAdapterOptions } from "./rest.js";
 import { BananaImageAdapter, bananaImageRoute, applyBananaImageCapabilities, bananaNativeOutputs } from "./banana-image.js";
 import { isPdogImageConnection, PdogImageAdapter } from "./pdog-image.js";
 import { isChuangxiangImageConnection, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
+import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues } from "./image-editing-capabilities.js";
+import { assertValidResult } from "./contracts.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -27,9 +29,11 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
   private async selected(request: NormalizedRequest): Promise<ProviderAdapter> {
     if (!request.model) return this.fallback;
     const connection = await this.connections.resolve(request.connectionId);
+    const editingIssues = imageEditingRequestIssues(imageEditingConnection(connection), request);
+    assertValidResult({ valid: !editingIssues.length, issues: editingIssues });
     const catalog = connection.settings?.modelCatalogModels;
     const current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
-    const source = { provider: connection.provider, config: { ...connection.settings, baseUrl: connection.baseUrl } };
+    const source = imageEditingConnection(connection);
     const bananaRoute = bananaImageRoute(source, request.model);
     if (bananaRoute && request.operation.startsWith("image.")) {
       const ids = connection.settings?.scannedModelIds;
@@ -53,6 +57,16 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
         throw new Error("当前创想分组没有此图片模型的可用权限或接口");
       return new ChuangxiangImageAdapter(this.connections, this.options);
+    }
+    // These contracts are implemented by the dedicated Images adapter. A saved
+    // generic mapping must not silently omit a newly selected background/mask.
+    const editing = getImageEditingCapabilities(source, request.model, request.parameters);
+    if (connection.provider === "openai" && (editing.transparent || editing.mask === "multipart")) {
+      const ids = connection.settings?.scannedModelIds;
+      if (current?.metadata?.canvasRunnable === false || current?.metadata?.autoInterfaceStatus === "incomplete" ||
+          (Array.isArray(ids) && !ids.includes(request.model)))
+        throw new Error("当前分组没有此图片型号的可用权限或完整接口");
+      return this.fallback;
     }
     if (current?.metadata?.autoInterfaceStatus === "incomplete") throw new Error(String(current.metadata.canvasUnavailableReason ?? "供应商接口说明待补充"));
     const binding = savedModelInterfaces(connection.settings)[request.model];

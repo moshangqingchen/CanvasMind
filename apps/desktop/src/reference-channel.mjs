@@ -77,6 +77,24 @@ export async function startReferenceGateway({ origin, desktopToken, secret, inst
   return { port: server.address().port, close: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }) };
 }
 
+async function matchesHealthResponse(response, instance) {
+  if (!response.ok) { void response.body?.cancel().catch(() => {}); return false; }
+  const reader = response.body?.getReader();
+  if (!reader) return false;
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return Buffer.concat(chunks).toString("utf8") === instance;
+      size += value.byteLength;
+      // The gateway replies with a UUID. Do not buffer a proxy error page.
+      if (size > 512) return false;
+      chunks.push(value);
+    }
+  } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
+
 export class ReferenceChannel {
   constructor({ root, protect, unprotect, onState = () => {}, spawnImpl = spawn, fetchImpl = fetch }) {
     Object.assign(this, { root, protect, unprotect, onState, spawnImpl, fetchImpl });
@@ -125,6 +143,7 @@ export class ReferenceChannel {
       const failed = message => {
         if (epoch !== this.epoch) return;
         this.epoch++; clearInterval(this.timer);
+        this.abortCheck();
         void this.publish("error", message);
       };
       this.child.once("error", () => failed("隧道客户端启动失败"));
@@ -134,19 +153,25 @@ export class ReferenceChannel {
     } catch (error) { await this.stop(); await this.publish("error", error.code === "EADDRINUSE" ? "素材通道端口 3210 已被其他程序占用" : error.message); }
   }
   async check(epoch = this.epoch) {
-    if (this.checking || epoch !== this.epoch || !this.gateway || !this.runtime) return;
-    this.checking = true;
+    if (this.checkRequest || epoch !== this.epoch || !this.gateway || !this.runtime) return;
+    const controller = new AbortController();
+    this.checkRequest = controller;
     try {
       const url = new URL("/api/provider-assets/_health", this.config.baseUrl);
       url.searchParams.set("token", createProviderAssetToken({ assetId: "_health", secret: this.runtime.secret, expiresInSeconds: 30 }));
-      const response = await this.fetchImpl(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8000) });
-      const ok = response.ok && (await response.text()) === this.instance;
+      const response = await this.fetchImpl(url, { cache: "no-store", redirect: "error", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) });
+      const ok = await matchesHealthResponse(response, this.instance);
       if (epoch === this.epoch) await this.publish(ok ? "ready" : "connecting", ok ? "素材通道已连通，参考链接有效期为 1 小时" : "等待公网连接，请检查隧道是否指向本机 3210 端口");
     } catch { if (epoch === this.epoch) await this.publish("connecting", "暂时无法从公网访问，正在重试…"); }
-    finally { this.checking = false; }
+    finally { if (this.checkRequest === controller) this.checkRequest = null; }
+  }
+  abortCheck() {
+    this.checkRequest?.abort();
+    this.checkRequest = null;
   }
   async stop() {
     this.epoch++; clearInterval(this.timer);
+    this.abortCheck();
     const child = this.child; this.child = null;
     if (child && child.exitCode === null) await new Promise(resolve => { const timeout = setTimeout(resolve, 4000); child.once("exit", () => { clearTimeout(timeout); resolve(); }); child.kill(); });
     if (this.gateway) await this.gateway.close(); this.gateway = null;

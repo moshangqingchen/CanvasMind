@@ -160,7 +160,7 @@ export function ResultInformation({
   const runNode = loadedRun && loadedRun.id === data.generatedFromRunId ? loadedRun.node : undefined;
   const details = { ...data.generatedDetails, ...(runNode ? generationDetailsFromRun(runNode) : {}) };
   const references = resultReferenceInputs(details, data.assets);
-  const imageCount = references?.filter((input) => input.kind === "image").length ?? 0;
+  const imageCount = references?.filter((input) => input.kind === "image" && input.role !== "mask").length ?? 0;
   const unknownCount = references?.filter((input) => !input.kind).length ?? 0;
   const referenceCount = references === undefined ? "未记录" : unknownCount ? `${imageCount} 张已知，${unknownCount} 个素材类型未记录` : `${imageCount} 张`;
   const prompt = resultPrompt(data, details);
@@ -344,7 +344,7 @@ export function ResultInformation({
                           {available && input.kind === "image" ? <button type="button" className="result-info-reference-preview" aria-label={`查看 ${input.name ?? input.id}`} title={`查看 ${input.name ?? input.id}`} onClick={() => { close(); data.onOpenPreview?.(input.id); }}>
                             <img src={`/api/assets/${encodeURIComponent(input.id)}/preview?size=160`} alt={input.name ?? `参考图 ${index + 1}`} loading="lazy" />
                           </button> : <span className="result-info-reference-placeholder"><FileImage size={20} aria-hidden="true" /></span>}
-                          <div><span>{index + 1}. {input.name ?? input.id}</span><small>{({ firstFrame: "首帧", lastFrame: "尾帧", reference: "参考素材" } as Record<string, string>)[input.role ?? ""] ?? "参考素材"}{available ? "" : " · 素材不可用"}</small></div>
+                          <div><span>{index + 1}. {input.name ?? input.id}</span><small>{({ firstFrame: "首帧", lastFrame: "尾帧", reference: "参考素材", mask: "重绘蒙版" } as Record<string, string>)[input.role ?? ""] ?? "参考素材"}{available ? "" : " · 素材不可用"}</small></div>
                         </li>;
                       })}
                     </ol> : <p className="result-info-note">{references ? "无参考素材" : "未记录参考素材"}</p>}

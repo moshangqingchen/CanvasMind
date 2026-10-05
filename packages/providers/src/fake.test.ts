@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { inflateSync } from "node:zlib";
 import type { NormalizedRequest } from "./contracts";
 import { FakeProviderAdapter } from "./fake";
 import { ProviderHttpError } from "./http";
@@ -25,9 +26,28 @@ describe("FakeProviderAdapter", () => {
     expect((await adapter.poll(submitted)).status).toBe("running");
     const completed = await adapter.poll(submitted);
     expect(completed.status).toBe("succeeded");
-    expect(await adapter.extractOutputs(completed.result)).toEqual([
+    const outputs = await adapter.extractOutputs(completed.result);
+    expect(outputs).toEqual([
       expect.objectContaining({ kind: "image", mimeType: "image/png" }),
     ]);
+    // The fake artifact is used by real thumbnail/archival paths in E2E tests.
+    // A PNG signature alone cannot be decoded by a browser or image processor.
+    const bytes = Buffer.from(outputs[0]!.data!);
+    expect(bytes.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const chunks = new Map<string, Buffer[]>();
+    let offset = 8;
+    while (offset < bytes.length) {
+      const length = bytes.readUInt32BE(offset);
+      const type = bytes.toString("ascii", offset + 4, offset + 8);
+      expect(offset + 12 + length).toBeLessThanOrEqual(bytes.length);
+      chunks.set(type, [...(chunks.get(type) ?? []), bytes.subarray(offset + 8, offset + 8 + length)]);
+      offset += 12 + length;
+    }
+    expect([...chunks.keys()]).toEqual(["IHDR", "IDAT", "IEND"]);
+    const header = chunks.get("IHDR")![0]!;
+    expect([header.readUInt32BE(0), header.readUInt32BE(4), header[8], header[9]]).toEqual([1, 1, 8, 4]);
+    expect(inflateSync(Buffer.concat(chunks.get("IDAT")!))).toHaveLength(3);
+    expect(chunks.get("IEND")![0]).toHaveLength(0);
   });
 
   it("deduplicates submit calls by idempotency key", async () => {

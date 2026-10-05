@@ -4,6 +4,16 @@ import { presentProviderError } from "./error-presentation";
 import { ProviderHttpError } from "./http";
 
 describe("provider error presentation", () => {
+  it("explains a repeated-content 24-hour rejection without inventing billing evidence", () => {
+    const error = new ProviderHttpError("Provider returned HTTP 451", {
+      kind: "invalid_request", phase: "submit", status: 451, retryable: false, submissionMayHaveOccurred: false,
+      responseBody: { error: { code: "content_blocked_24h", message: "The same content was rejected by the upstream provider with HTTP 451 within the last 24 hours. Please try again later." } },
+    });
+    expect(presentProviderError(error, { provider: "openai" })).toMatchObject({
+      code: "content_blocked_24h", statusCode: 451, type: "内容被临时拦截", failureCategory: "content_policy",
+      message: expect.stringContaining("24 小时拦截期"), charge: { status: "unknown", source: "unconfirmed" },
+    });
+  });
   it("states that failed route discovery did not submit a paid request", () => {
     const cause = Object.assign(new Error("discovery failed"), { code: "PROVIDER_NETWORK_DISCOVERY_FAILED" });
     const error = new ProviderHttpError("Provider network request failed", {

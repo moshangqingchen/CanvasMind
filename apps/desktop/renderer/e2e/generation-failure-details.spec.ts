@@ -37,6 +37,9 @@ async function failedGeneration(page: Page, request: APIRequestContext, error: (
 }
 
 const cases: Array<{ name: string; error: RunErrorDetails; reason: RegExp; charge: RegExp; amount?: RegExp; forbidden?: RegExp; supplier?: string; balanceLink?: boolean }> = [
+  { name: "历史24小时内容拦截纠正为真实原因", reason: /24 小时拦截期/, charge: /扣费待确认/, forbidden: /请求参数不符合要求|API 拒绝了当前请求/,
+    error: { message: "API 拒绝了当前请求，请检查模型、参数、提示词和素材格式。", type: "请求参数错误",
+      code: "content_blocked_24h", statusCode: 451, failureCategory: "invalid_request", charge: { status: "unknown", source: "unconfirmed" } } },
   { name: "余额不足且供应商明确未扣费", reason: /余额.*不足/, charge: /未扣费/, supplier: "cyberafei", balanceLink: true,
     error: { message: "Insufficient balance", failureCategory: "insufficient_balance",
       charge: { status: "not_charged", amount: 0, source: "provider_response" } } },
@@ -74,9 +77,11 @@ for (const scenario of cases) test(`失败原因与扣费贯穿结果和历史�
     await expect(fixture.state.getByRole("link", { name: /官网查看余额/ })).toHaveAttribute("href", "https://api.3365api.cn/");
   }
   await page.reload();
+  await expect(diagnosis).toContainText(scenario.reason);
   await expect(diagnosis).toContainText(scenario.charge);
   await fixture.state.getByRole("button", { name: /查看 .* 来源/ }).click();
   const details = page.getByRole("dialog", { name: "结果来源与参数" });
+  await expect(details.getByLabel("失败诊断")).toContainText(scenario.reason);
   await expect(details.getByLabel("失败诊断")).toContainText(scenario.charge);
   if (scenario.amount) await expect(details.getByLabel("失败诊断")).toContainText(scenario.amount);
   if (scenario.forbidden) await expect(details).not.toContainText(scenario.forbidden);
@@ -96,6 +101,7 @@ for (const scenario of cases) test(`失败原因与扣费贯穿结果和历史�
   await page.getByRole("menuitem", { name: "运行历史", exact: true }).click();
   const history = page.getByRole("dialog", { name: "运行历史" });
   await expect(history.getByLabel("失败诊断").first()).toBeVisible();
+  await expect(history.getByLabel("失败诊断").first()).toContainText(scenario.reason);
   await expect(history.getByLabel("失败诊断").first()).toContainText(scenario.charge);
   if (scenario.amount) await expect(history.getByLabel("失败诊断").first()).toContainText(scenario.amount);
   if (scenario.forbidden) await expect(history).not.toContainText(scenario.forbidden);

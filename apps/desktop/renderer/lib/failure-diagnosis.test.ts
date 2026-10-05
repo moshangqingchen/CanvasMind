@@ -8,6 +8,11 @@ import { FailureDiagnosis } from "../components/failure-diagnosis";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("generation failure diagnosis", () => {
+  it("explains the provider cooldown on saved 24-hour content blocks", () => {
+    const error = localizeRunError({ message: "请求参数错误", code: "content_blocked_24h", failureCategory: "invalid_request" });
+    expect(failureDiagnosis(error)).toMatchObject({ category: "content_policy", chargeStatus: "unknown",
+      nextStep: expect.stringContaining("等待限制结束") });
+  });
   it("presents cancellation as cancellation while preserving a confirmed charge", () => {
     vi.stubGlobal("React", React);
     const error = localizeRunError({ message: "运行已取消", charge: { status: "charged", amount: 0.1, currency: "USD", source: "provider_response" } });

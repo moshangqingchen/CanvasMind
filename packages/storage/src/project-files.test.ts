@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -28,6 +28,84 @@ const asset = {
 };
 
 describe("ProjectFileStore", () => {
+  it("lists real draft/finished media, scopes IDs to a project, and deletes only selected copies", async () => {
+    const store = await storeFixture();
+    const finished = await store.archiveFinished(asset);
+    await store.archiveDraft({ ...asset, source: "external", assetId: "draft" });
+    const foreign = await store.archiveFinished({ ...asset, projectName: "other" });
+    const manual = join(store.projectDirectory(asset.projectName), "成品", "图片", "manual.png");
+    await writeFile(manual, "manual");
+    const text = join(store.projectDirectory(asset.projectName), "成品", "keep.txt");
+    await writeFile(text, "user notes");
+    for (const extension of ["constructor", "__proto__"])
+      await writeFile(join(store.projectDirectory(asset.projectName), "成品", `keep.${extension}`), "user notes");
+    const listing = await store.listFiles(asset.projectName);
+    expect(listing.files).toHaveLength(3);
+    expect(listing.ignoredFiles).toBe(3);
+    expect(listing.files.filter(file => file.section === "finished")).toHaveLength(2);
+    const selected = listing.files.find(file => file.name === "manual.png")!;
+    const foreignId = (await store.listFiles("other")).files[0]!.fileId;
+    await expect(store.readFile(asset.projectName, foreignId)).rejects.toMatchObject({ status: 409 });
+    const deleted = await store.deleteFiles(asset.projectName, [selected.fileId, foreignId]);
+    expect(deleted.deletedIds).toEqual([selected.fileId]);
+    expect(deleted.failed).toEqual([{ fileId: foreignId, message: expect.stringMatching(/当前项目/u) }]);
+    expect(await readFile(finished.path, "utf8")).toBe("image");
+    expect(await readFile(foreign.path, "utf8")).toBe("image");
+    expect(await readFile(text, "utf8")).toBe("user notes");
+    for (const extension of ["constructor", "__proto__"])
+      expect(await readFile(join(store.projectDirectory(asset.projectName), "成品", `keep.${extension}`), "utf8")).toBe("user notes");
+    await expect(stat(manual)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects stale versions instead of reading or deleting a replacement file", async () => {
+    const store = await storeFixture();
+    const saved = await store.archiveFinished(asset);
+    const before = (await store.listFiles(asset.projectName)).files[0]!;
+    const replacement = `${saved.path}.new`;
+    await writeFile(replacement, "replacement");
+    await rename(replacement, saved.path);
+    await expect(store.readFile(asset.projectName, before.fileId)).rejects.toMatchObject({ status: 409 });
+    const result = await store.deleteFiles(asset.projectName, [before.fileId]);
+    expect(result.deletedIds).toEqual([]);
+    expect(result.failed[0]?.fileId).toBe(before.fileId);
+    expect(await readFile(saved.path, "utf8")).toBe("replacement");
+    const latest = (await store.listFiles(asset.projectName)).files[0]!;
+    expect(new TextDecoder().decode((await store.readFile(asset.projectName, latest.fileId, { start: 1, end: 3 })).bytes)).toBe("epl");
+  });
+
+  it("never traverses directory links or exposes files outside draft/finished", async () => {
+    const store = await storeFixture();
+    await store.ensureProject(asset.projectName);
+    const external = join(store.root, "outside");
+    await mkdir(external);
+    await writeFile(join(external, "private.png"), "private");
+    await writeFile(join(store.projectDirectory(asset.projectName), "outside-area.png"), "private");
+    const linked = join(store.projectDirectory(asset.projectName), "成品", "linked");
+    await symlink(external, linked, process.platform === "win32" ? "junction" : "dir");
+    const result = await store.listFiles(asset.projectName);
+    expect(result.files).toEqual([]);
+    expect(result.ignoredFiles).toBe(1);
+    expect((await store.deleteFiles(asset.projectName, ["../outside/private.png"])).deletedIds).toEqual([]);
+    expect(await readFile(join(external, "private.png"), "utf8")).toBe("private");
+  });
+
+  it("orders selected-file deletion after an active archive without deleting its output", async () => {
+    const store = await storeFixture();
+    await store.archiveFinished(asset);
+    const selected = (await store.listFiles(asset.projectName)).files[0]!;
+    let started!: () => void, resume!: () => void;
+    const writing = new Promise<void>(resolve => { started = resolve; });
+    const held = new Promise<void>(resolve => { resume = resolve; });
+    const archive = store.archiveFinished({ ...asset, assetId: "new", bytes: (async function* () { started(); await held; yield new TextEncoder().encode("new"); })() });
+    await writing;
+    let settled = false;
+    const deletion = store.deleteFiles(asset.projectName, [selected.fileId]).finally(() => { settled = true; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    resume();
+    expect((await deletion).deletedIds).toEqual([selected.fileId]);
+    expect(await readFile((await archive).path, "utf8")).toBe("new");
+  });
   it("orders archive, rename, and a later archive without blocking another project", async () => {
     const store = await storeFixture();
     let writing!: () => void;

@@ -20,6 +20,7 @@ export * from "./media-billing.js";
 export * from "./cangyuan-current-models.js";
 export * from "./image-size-presets.js";
 export * from "./image-quality-presets.js";
+export * from "./image-editing-capabilities.js";
 export * from "./tk1688-model-policy.js";
 export * from "./tk1688-catalog.js";
 export * from "./chentu-az.js";

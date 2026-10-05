@@ -42,7 +42,7 @@ describe("Cangyuan current complete public IDs", () => {
 
   it.each(["gpt-image-2-x", "gpt-image-2.5-x"])("omits web quality and forbidden fields for %s", async id => {
     const { adapter, fetcher } = adapterFor(id);
-    await adapter.submit(request(id, { tier: "web", series: "flare", quality: "max", aspect_ratio: "16:9", image_size: "4K", output_resolution: "4K", background: "transparent" }));
+    await adapter.submit(request(id, { tier: "web", series: "flare", quality: "max", aspect_ratio: "16:9", image_size: "4K", output_resolution: "4K", background: "opaque" }));
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ model: id, prompt: "offline contract test", tier: "web", n: 1,
       size: "16:9", async: true, response_format: "url", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}) });
   });

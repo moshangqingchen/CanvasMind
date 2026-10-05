@@ -20,6 +20,8 @@ import { isSecureSkillImageConnection, isSecureSkillImageResult, SecureSkillImag
 import { applyPdogImageCapabilities, isPdogImageConnection, isPdogImageResult, pdogImageOrigin, PdogImageAdapter } from "./pdog-image.js";
 import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
+import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
+  imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
@@ -37,6 +39,10 @@ import {
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-image-2";
+async function appendImageMask(form: FormData, assets: readonly ProviderAssetInput[] | undefined, fetchImpl: FetchImplementation): Promise<void> {
+  const mask = assets?.find(asset => asset.role === "mask");
+  if (mask) form.append("mask", await assetToBlob(mask, fetchImpl), "mask.png");
+}
 const WEAI_DEFAULT_BASE_URL = "https://asian-acc.we-token.cc/v1";
 
 function isWeAITokenEndpoint(
@@ -2883,6 +2889,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
             this.profile,
           )
         : this.defaultModel);
+    if (resolvedConnection) issues.push(...imageEditingRequestIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
     if (this.profile === "openai" && resolvedConnection && isPdogImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
       return this.pdog.validate({ ...request, model: requestedModel });
     if (this.profile === "openai" && resolvedConnection && isChuangxiangImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
@@ -3032,7 +3039,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
                   )
                 : tk1688 ? TK1688_IMAGE_PARAMETER_KEYS : OPENAI_IMAGE_PARAMETER_KEYS,
             );
-    const assets = request.assets ?? [];
+    const assets = imageReferenceAssets(request.assets);
     const images = assets.filter((asset) => asset.kind === "image");
     if (request.operation === "image.generate" && assets.length > 0) {
       issues.push({
@@ -3393,7 +3400,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           code: "invalid_quality",
           message: "GPT Image 2 quality must be auto, low, medium, or high",
         });
-      if (permittedParameters.has("background") && background === "transparent")
+      if (permittedParameters.has("background") && background === "transparent" &&
+          !(resolvedConnection && getImageEditingCapabilities(imageEditingConnection(resolvedConnection), resolvedModel, request.parameters).transparent))
         issues.push({
           path: "parameters.background",
           code: "unsupported_background",
@@ -3497,7 +3505,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         ? canonicalWeAIGeminiModel(selectedModel)
         : selectedModel;
     const tk1688Model = configuredTk1688ImageModel(connection, model);
-    const effectiveParameters = request.parameters;
+    const effectiveParameters = normalizeImageEditingParameters(imageEditingConnection(connection), model, request.parameters);
     // Marketplace Image2.5 connections use the generic OpenAI profile, whose
     // parameter allowlist omits response_format. Apply the Adobe URL contract
     // after that filtering, for both JSON generation and multipart editing.
@@ -3584,7 +3592,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         )) {
           form.set(key, String(value));
         }
-        const images = (request.assets ?? []).filter(
+        const images = imageReferenceAssets(request.assets).filter(
           (asset) => asset.kind === "image",
         );
         for (const [index, image] of images.entries()) {
@@ -3595,6 +3603,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
             filenameFor(index, image.filename, image.mimeType),
           );
         }
+        await appendImageMask(form, request.assets, this.fetchImpl);
         response = await fetchProviderJson<OpenAIImageResponse>(
           this.fetchImpl,
           joinUrl(baseUrl, "/images/edits"),
@@ -3611,7 +3620,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       protocol = "frimodel-images";
     } else if (useGemini && geminiProtocol === "gemini-generate-content") {
       commonHeaders.set("content-type", "application/json");
-      const images = (request.assets ?? []).filter(
+      const images = imageReferenceAssets(request.assets).filter(
         (asset) => asset.kind === "image",
       );
       const inlineParts = await geminiInlineImageParts(
@@ -3655,7 +3664,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       );
       protocol = "gemini-generate-content";
     } else if (useGemini && geminiProtocol === "gemini-openai-compatible") {
-      const images = (request.assets ?? []).filter(
+      const images = imageReferenceAssets(request.assets).filter(
         (asset) => asset.kind === "image",
       );
       const endpoint =
@@ -3756,7 +3765,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       )) {
         form.set(key, String(value));
       }
-      const images = (request.assets ?? []).filter(
+      const images = imageReferenceAssets(request.assets).filter(
         (asset) => asset.kind === "image",
       );
       for (const [index, image] of images.entries()) {
@@ -3803,7 +3812,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       )) {
         form.set(key, String(value));
       }
-      const images = (request.assets ?? []).filter(
+      const images = imageReferenceAssets(request.assets).filter(
         (asset) => asset.kind === "image",
       );
       for (const [index, image] of images.entries()) {
@@ -3815,6 +3824,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           filenameFor(index, image.filename, image.mimeType),
         );
       }
+      await appendImageMask(form, request.assets, this.fetchImpl);
       response = await fetchProviderJson<OpenAIImageResponse>(
         submitFetch,
         joinUrl(baseUrl, "/images/edits"),

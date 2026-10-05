@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { ArrowLeft, Film, X } from "lucide-react";
+import { ArrowLeft, Brush, Film, X } from "lucide-react";
 import { useDialogFocus } from "./use-dialog-focus";
 import { assetDownloadPath, downloadAssetPreferLocal } from "../lib/asset-download";
 import type { AssetView } from "./types";
@@ -12,10 +12,12 @@ export function AssetPreviewModal({
   asset,
   onClose,
   onBack,
+  onEditMask,
 }: {
   asset: AssetView | null;
   onClose: () => void;
   onBack?: () => void;
+  onEditMask?: (assetId: string) => void;
 }) {
   const dialogRef = useDialogFocus(Boolean(asset), onClose);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -73,6 +75,8 @@ export function AssetPreviewModal({
             </div>
           </div>
           <div className="modal-head-actions">
+            {asset.kind === "image" && onEditMask && <button className="button small" type="button"
+              onClick={() => onEditMask(asset.id)}><Brush size={15} /> 绘制蒙版</button>}
             {asset.kind === "image" ? (
               <span className="asset-zoom-level">
                 {Math.round(imageZoom * 100)}%

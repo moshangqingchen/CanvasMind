@@ -1,5 +1,6 @@
 import type { NormalizedRequest, ProviderConnectionResolver, ProviderTask, ValidationIssue, ValidationResult } from "./contracts.js";
 import { ProviderHttpError, assetToBlob, providerFetch } from "./http.js";
+import { imageEditingConnection, imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig, type RestRequestMapping } from "./rest.js";
 import type { ImageSizeTier } from "./image-size-presets.js";
 import { isPdogImageConnection, pdogImageSizeForTier, pdogImageQualityOptions } from "./pdog-image-contract.js";
@@ -55,6 +56,7 @@ export class PdogImageAdapter extends GenericRestAdapter {
     const base = await super.validate(normalized);
     const issues: ValidationIssue[] = [...base.issues];
     const connection = await this.pdogConnections.resolve(request.connectionId).catch(() => undefined);
+    if (connection) issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
     if (!connection || connection.provider !== "openai" || !isPdogImageConnection({ ...connection.settings, baseUrl: connection.baseUrl }, request.model))
       issues.push({ path: "model", code: "unsupported_model", message: "此 PDog 接口仅适用于当前站点已配置的 GPT 图片模型" });
     if (request.operation !== "image.generate" && request.operation !== "image.edit") issues.push({ path: "operation", code: "unsupported_operation", message: "PDog GPT 接口只支持生成或编辑图片" });
@@ -71,7 +73,7 @@ export class PdogImageAdapter extends GenericRestAdapter {
         issues.push({ path: "parameters.size", code: "invalid_size", message: "输出尺寸需符合已有 GPT 图片适配的像素及对齐限制；优先选择 PDog 文档尺寸" });
     }
     if (selected.response_format !== undefined && selected.response_format !== "url" && selected.response_format !== "b64_json") issues.push({ path: "parameters.response_format", code: "invalid_response_format", message: "PDog 返回格式必须为 url 或 b64_json" });
-    const images = request.assets?.filter(asset => asset.kind === "image") ?? [];
+    const images = imageReferenceAssets(request.assets).filter(asset => asset.kind === "image");
     if (request.assets?.some(asset => asset.kind !== "image")) issues.push({ path: "assets", code: "invalid_image", message: "PDog 图片编辑仅接受图片参考素材" });
     if (request.operation === "image.edit" && !images.length) issues.push({ path: "assets", code: "missing_image", message: "PDog 图片编辑需要参考图片" });
     if (request.operation === "image.generate" && images.length) issues.push({ path: "assets", code: "reference_operation", message: "有参考图时请使用图片编辑接口" });
@@ -81,7 +83,7 @@ export class PdogImageAdapter extends GenericRestAdapter {
   override async submit(request: NormalizedRequest): Promise<ProviderTask> {
     // Download URL-only references before multipart construction; local byte inputs remain local.
     const normalized = { ...request, parameters: parameters(request.parameters) };
-    const checked = await this.validate(normalized);
+    const checked = await this.validate(request);
     if (!checked.valid) throw new Error(checked.issues.map(issue => issue.message).join("；"));
     const outbound = normalized.assets?.length ? { ...normalized, assets: await Promise.all(normalized.assets.map(async asset => {
       if (asset.data) return asset;

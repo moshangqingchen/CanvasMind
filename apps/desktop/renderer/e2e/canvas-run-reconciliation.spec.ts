@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import type { CanvasNode, RunSnapshot } from "../components/types";
 
-type ObservedWindow = Window & { auditStreams: { url: string; closed: boolean }[] };
+type ObservedWindow = Window & { auditStreams: { url: string; closed: boolean; emit?: () => void }[] };
 
 async function fixture(page: Page, request: APIRequestContext, initiallyFail = false, initiallyOmit = false) {
   const upload = await request.post("/api/assets/upload", { multipart: { file: {
@@ -31,24 +31,28 @@ async function fixture(page: Page, request: APIRequestContext, initiallyFail = f
   } } });
   expect(created.ok()).toBeTruthy();
   const canvas = await created.json() as { id: string };
-  const state = { fail: initiallyFail, omit: initiallyOmit, completed: false, submissions: 0, batches: [] as string[][] };
+  const state = { fail: initiallyFail, omit: initiallyOmit, completed: false, submissions: 0, batches: [] as string[][],
+    delayNextActiveRead: false, delayedRead: false };
+  let releaseDelayedRead = () => {};
   const snapshot = (runId: string): RunSnapshot => {
     const index = runIds.indexOf(runId);
     const status = index === 50 && !state.completed ? "running" : "succeeded";
+    const createdAt = new Date(Date.UTC(2026, 8, 26, 8, 0, index)).toISOString();
+    const updatedAt = new Date(Date.parse(createdAt) + (index === 50 && state.completed ? 60_000 : 0)).toISOString();
     return { run: { id: runId, canvasId: canvas.id, clientRequestId: `request-${index}`, scope: "node",
-      nodeId: "source", status, createdAt: new Date(Date.UTC(2026, 8, 26, 8, 0, index)).toISOString() },
-      nodes: [{ id: `node-run-${index}`, nodeId: "source", status,
+      nodeId: "source", status, createdAt, updatedAt },
+      nodes: [{ id: `node-run-${index}`, nodeId: "source", status, updatedAt,
         outputAssetIds: status === "succeeded" ? [asset.id] : [], errorJson: null }] };
   };
   await page.addInitScript(() => {
     const observed = window as unknown as ObservedWindow;
     observed.auditStreams = [];
     class TestEventSource {
-      onmessage = null;
+      onmessage: (() => void) | null = null;
       onerror = null;
-      record: { url: string; closed: boolean };
+      record: { url: string; closed: boolean; emit: () => void };
       constructor(url: string) {
-        this.record = { url, closed: false };
+        this.record = { url, closed: false, emit: () => { this.onmessage?.(); } };
         observed.auditStreams.push(this.record);
       }
       close() { this.record.closed = true; }
@@ -64,6 +68,13 @@ async function fixture(page: Page, request: APIRequestContext, initiallyFail = f
       state.batches.push(requested);
       if (state.fail && requested.includes(runIds[50]!))
         return route.fulfill({ status: 503, json: { error: "测试临时不可用" } });
+      if (state.delayNextActiveRead && requested.includes(runIds[50]!)) {
+        state.delayNextActiveRead = false;
+        const delayed = requested.slice(0, 50).map(snapshot);
+        state.delayedRead = true;
+        await new Promise<void>(resolve => { releaseDelayedRead = resolve; });
+        return route.fulfill({ json: delayed });
+      }
       return route.fulfill({ json: requested.slice(0, 50)
         .filter((runId) => !state.omit || runId !== runIds[50]).map(snapshot) });
     }
@@ -73,7 +84,7 @@ async function fixture(page: Page, request: APIRequestContext, initiallyFail = f
   const liveStreams = () => page.evaluate(() => (window as unknown as ObservedWindow).auditStreams
     .filter((stream) => stream.url.includes("audit-run-50/") && !stream.closed).length);
   const reconcile = () => page.evaluate(() => window.dispatchEvent(new Event("canvas-reconcile-tasks")));
-  return { state, canvas, asset, liveStreams, reconcile };
+  return { state, canvas, asset, liveStreams, reconcile, releaseDelayedRead: () => releaseDelayedRead() };
 }
 
 test("第51个任务持续订阅，缺失响应和部分失败不关闭任务，重试后正常完成", async ({ page, request }) => {
@@ -120,5 +131,35 @@ test("刷新时首次响应暂缺任务，后续轮询仍能找回并订阅", as
   expect(await ui.liveStreams()).toBe(0);
   ui.state.omit = false;
   await expect.poll(ui.liveStreams, { timeout: 12_000 }).toBe(1);
+  expect(ui.state.submissions).toBe(0);
+});
+
+test("旧轮询晚于完成事件返回时不会回退结果或重新建立订阅", async ({ page, request }) => {
+  const ui = await fixture(page, request);
+  await expect.poll(ui.liveStreams).toBe(1);
+  ui.state.delayNextActiveRead = true;
+  await ui.reconcile();
+  await expect.poll(() => ui.state.delayedRead).toBe(true);
+  ui.state.completed = true;
+  await page.evaluate(() => {
+    const stream = (window as unknown as ObservedWindow).auditStreams
+      .find(item => item.url.includes("audit-run-50/") && !item.closed);
+    stream?.emit?.();
+  });
+  await expect.poll(ui.liveStreams).toBe(0);
+  const streamCount = () => page.evaluate(() => (window as unknown as ObservedWindow).auditStreams
+    .filter(item => item.url.includes("audit-run-50/")).length);
+  const streamsBeforeRelease = await streamCount();
+  const batchesBeforeRelease = ui.state.batches.length;
+  ui.releaseDelayedRead();
+  await ui.reconcile();
+  // The follow-up read starts only after the delayed reconciliation settles.
+  await expect.poll(() => ui.state.batches.length).toBeGreaterThan(batchesBeforeRelease);
+  await expect.poll(ui.liveStreams).toBe(0);
+  expect(await streamCount()).toBe(streamsBeforeRelease);
+  await expect.poll(async () => {
+    const saved = await (await request.get(`/api/canvas/${ui.canvas.id}`)).json();
+    return saved.graph.nodes.find((node: CanvasNode) => node.id === "result-50")?.data;
+  }).toMatchObject({ generatedStatus: "succeeded", assetId: ui.asset.id });
   expect(ui.state.submissions).toBe(0);
 });

@@ -1,5 +1,5 @@
 import type { WorkflowGraph } from "@super-canvas/core";
-import { restRequestRequiresPublicAssets, referenceImageHostingEnabled, secureSkillRequiresPublicAssets, bananaRequiresPublicAssets, chuangxiangRequiresPublicAssets } from "@super-canvas/providers";
+import { getImageEditingCapabilities, restRequestRequiresPublicAssets, referenceImageHostingEnabled, secureSkillRequiresPublicAssets, bananaRequiresPublicAssets, chuangxiangRequiresPublicAssets } from "@super-canvas/providers";
 import { localReferenceChannel, localReferenceChannelConfigured } from "./reference-channel.js";
 
 export class DesktopPublicAssetError extends Error {
@@ -10,7 +10,7 @@ export class DesktopPublicAssetError extends Error {
 function hasAssetReference(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   return Object.entries(value).some(([key, child]) =>
-    key !== "__runtimeConnection" && ((key === "assetId" && typeof child === "string" && child.length > 0) || hasAssetReference(child)));
+    key !== "__runtimeConnection" && ((["assetId", "maskAssetId", "maskSourceAssetId"].includes(key) && typeof child === "string" && child.length > 0) || hasAssetReference(child)));
 }
 
 /** Reject unsupported public-asset workflows before any upstream paid submit. */
@@ -38,10 +38,12 @@ export function assertDesktopPublicAssets(graph: WorkflowGraph, selected: Readon
     if (!localReferenceChannelConfigured() && referenceImageHostingEnabled(connection?.config)) continue;
     const operation = (data.nodeType ?? node.type) === "image-generation" ? "image.edit" : "video.image-to-video";
     const model = typeof data.model === "string" && data.model ? data.model : connection?.config?.defaultModel;
+    const parameters = data.parameters && typeof data.parameters === "object" ? data.parameters as Record<string, unknown> : {};
+    const urlMask = parameters.maskAssetId && getImageEditingCapabilities({ provider, config: connection?.config ?? {} }, model ?? "", parameters).mask === "url";
     if (!(provider === "rest" && restRequestRequiresPublicAssets(connection?.config?.connector, model, operation, connection?.config)) &&
         !secureSkillRequiresPublicAssets(provider, connection?.config, model, operation) &&
         !chuangxiangRequiresPublicAssets(provider, connection?.config, model, operation) &&
-        !bananaRequiresPublicAssets(provider, connection?.config, model)) continue;
+        !bananaRequiresPublicAssets(provider, connection?.config, model) && !urlMask) continue;
     if (hasAssetReference(data) || graph.edges.filter((edge) => edge.target === node.id).some((edge) => containsMedia(edge.source))) {
       throw new DesktopPublicAssetError();
     }

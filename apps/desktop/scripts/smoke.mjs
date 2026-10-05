@@ -191,6 +191,33 @@ try {
   await page.goto(`${origin}/canvas/${canvas.id}`);
   await page.locator('.react-flow__node[data-id="prompt"]').waitFor({ timeout: 30000 });
   await page.getByRole("button", { name: "画布自动保存状态" }).filter({ hasText: "已保存" }).waitFor({ timeout: 15000 });
+  const finishedDownloadStatus = await page.evaluate(async (id) => {
+    const response = await fetch(`/api/assets/${id}/content?download=1`);
+    await response.arrayBuffer();
+    return response.status;
+  }, imageId);
+  assert.equal(finishedDownloadStatus, 200, "existing fake image must archive as a project finished file");
+  const projectFilesResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/api/projects/${canvas.id}/files` && response.request().method() === "GET");
+  await page.getByRole("button", { name: "打开项目文件", exact: true }).click();
+  const projectFilesDialog = page.getByRole("dialog", { name: "项目文件", exact: true });
+  await projectFilesDialog.waitFor();
+  const filesResponse = await projectFilesResponse;
+  assert.equal(filesResponse.status(), 200, "packaged project files API must load the current project");
+  const projectFiles = await filesResponse.json();
+  const finishedFile = projectFiles.files.find((file) => file.section === "finished" && file.assetId === imageId);
+  assert.ok(finishedFile, "project files must list the archived fake image under finished files");
+  assert.equal(await projectFilesDialog.getByRole("tab", { name: /^成品/ }).getAttribute("aria-selected"), "true");
+  const finishedThumbnail = projectFilesDialog.locator(`article[data-file-id="${finishedFile.fileId}"] img`);
+  await finishedThumbnail.waitFor({ state: "visible" });
+  assert.equal(await finishedThumbnail.getAttribute("src"), finishedFile.previewUrl, "file grid must use the thumbnail URL");
+  await page.waitForFunction((fileId) => {
+    const image = document.querySelector(`article[data-file-id="${fileId}"] img`);
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+  }, finishedFile.fileId, { timeout: 15000 });
+  await projectFilesDialog.getByRole("button", { name: "关闭项目文件", exact: true }).click();
+  await projectFilesDialog.waitFor({ state: "hidden" });
+  report.checks.push("project files opens from the top toolbar, loads the scoped API and decodes an archived finished thumbnail");
   assert.equal(await page.locator(".studio-edge-beam").count(), 0, "unselected desktop links must be still");
   await page.getByRole("button", { name: "Fit View", exact: true }).click();
   await page.locator('.react-flow__node[data-id="prompt"] .node-title').click();

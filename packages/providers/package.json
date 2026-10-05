@@ -6,6 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./image-editing-capabilities": {
+      "types": "./src/image-editing-capabilities.ts",
+      "import": "./dist/image-editing-capabilities.js",
+      "default": "./dist/image-editing-capabilities.js"
+    },
     "./credentials": {
       "types": "./src/credentials.ts",
       "import": "./dist/credentials.js",

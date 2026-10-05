@@ -112,7 +112,7 @@ const TCP_KEEPALIVE = { keepAlive: true, keepAliveInitialDelay: 30_000 };
 const autoNetworkConnector = createAutoNetworkConnector();
 
 type TransportPath = Pick<NonNullable<ProviderHttpError["details"]["transport"]>, "localAddress" | "remoteAddress" | "localPort" | "remotePort" | "route" | "fallbackReason">;
-interface RequestTransportTrace { origin: string; path: TransportPath }
+interface RequestTransportTrace { origin: string; path: TransportPath; headersSent?: true }
 interface TransportTraceRegistry {
   scope: AsyncLocalStorage<RequestTransportTrace>;
   requests: WeakMap<object, RequestTransportTrace>;
@@ -130,6 +130,7 @@ const transportTrace = traceGlobal.__superCanvasProviderTransportTrace ??= (() =
     const { request, socket } = message as { request?: object; socket?: object };
     const trace = request && registry.requests.get(request);
     if (!trace || !socket) return;
+    trace.headersSent = true;
     recordSocketPath(trace.path, socket);
     const route = (socket as Record<symbol, unknown>)[Symbol.for("super-canvas.provider-route")];
     if (trace.path.route !== "explicit-proxy" && ["physical-direct", "system", "system-fake-ip"].includes(String(route)))
@@ -757,9 +758,13 @@ function submissionMayHaveOccurred(
   phase: ProviderRequestPhase,
   status?: number,
   error?: unknown,
+  headersSent = false,
 ): boolean {
   if (phase !== "submit") return false;
   if (status === undefined) {
+    // Reachability errors can also happen on an established connection. Once
+    // headers were sent, their code is no longer proof of an unsent request.
+    if (headersSent) return true;
     const code = providerTransportErrorCode(error);
     if (code !== undefined && DEFINITELY_PRE_SUBMISSION_CODES.has(code)) {
       return false;
@@ -838,7 +843,7 @@ export async function fetchProviderJson<T>(
     // The body reader has not taken ownership while a progress callback is
     // running. Release the response here if that callback fails or stalls.
     void receivedResponse?.body?.cancel().catch(() => undefined);
-    if (error instanceof ProviderProxyConfigurationError && !receivedResponse) {
+    if (error instanceof ProviderProxyConfigurationError && !receivedResponse && !trace.headersSent) {
       clearTimeout(timeout);
       throw new ProviderHttpError(error.message, {
         kind: "invalid_request", phase: options.phase, retryable: false,
@@ -853,11 +858,12 @@ export async function fetchProviderJson<T>(
       options.phase,
       receivedResponse?.status,
       error,
+      trace.headersSent,
     );
     clearTimeout(timeout);
     // A receiving-progress callback runs after the provider answered. Its own
     // connection error cannot turn this accepted request into a safe retry.
-    if (error instanceof ProviderHttpError && !receivedResponse) throw error;
+    if (error instanceof ProviderHttpError && !receivedResponse && !trace.headersSent) throw error;
     throw new ProviderHttpError(
       timedOut
         ? "Provider request timed out"
@@ -873,7 +879,7 @@ export async function fetchProviderJson<T>(
             options.phase !== "submit" ||
             options.idempotent === true),
         submissionMayHaveOccurred: mayHaveOccurred,
-        ...(!receivedResponse && (!requestStarted || DEFINITELY_PRE_SUBMISSION_CODES.has(providerTransportErrorCode(error) ?? "")) ? { requestNotSent: true as const } : {}),
+        ...(!receivedResponse && !trace.headersSent && (!requestStarted || DEFINITELY_PRE_SUBMISSION_CODES.has(providerTransportErrorCode(error) ?? "")) ? { requestNotSent: true as const } : {}),
         transport: transportEvidence(error, startedAt, "awaiting_headers", 0, trace.path),
         cause: error,
       },

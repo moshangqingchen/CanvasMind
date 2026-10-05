@@ -20,7 +20,8 @@
     "@super-canvas/core": "workspace:*",
     "@super-canvas/db": "workspace:*",
     "@super-canvas/providers": "workspace:*",
-    "@super-canvas/storage": "workspace:*"
+    "@super-canvas/storage": "workspace:*",
+    "sharp": "0.35.4"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",

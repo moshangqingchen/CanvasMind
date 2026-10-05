@@ -12,6 +12,7 @@ import type {
   ResolvedProviderConnection, ValidationIssue, ValidationResult,
 } from "./contracts.js";
 import { assertValidResult, getProviderTaskId } from "./contracts.js";
+import { imageEditingConnection, imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import {
   configFingerprint, parseCliConnectorConfig, parseCliModelCatalog, validateModelParameters,
   type CliAction, type CliBridgeRequest, type CliConnectorConfig,
@@ -204,6 +205,7 @@ export class CliProviderAdapter implements ProviderAdapter {
   public async validate(request: NormalizedRequest): Promise<ValidationResult> {
     const { connection, config } = await this.connection(request.connectionId);
     const issues: ValidationIssue[] = [];
+    issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
     if (!config.enabled) issues.push({ path: "connectionId", code: "disabled", message: "此个人 AI 网站连接已停用" });
     try { assertConfigured(config); } catch (error) { issues.push({ path: "connectionId", code: "unconfigured", message: error instanceof Error ? error.message : "CLI 配置无效" }); }
     const status = connection.settings?.cliStatus;
@@ -217,7 +219,7 @@ export class CliProviderAdapter implements ProviderAdapter {
       issues.push(...validateModelParameters(model, request.parameters ?? {}, request.operation).issues);
       if (model.limits?.maxPromptCharacters !== undefined && request.prompt.length > model.limits.maxPromptCharacters)
         issues.push({ path: "prompt", code: "too_long", message: "提示词超出模型长度限制" });
-      const assets = request.assets ?? [];
+      const assets = imageReferenceAssets(request.assets);
       const limits = model.limits;
       for (const [kind, maximum] of [["image", limits?.maxInputImages], ["video", limits?.maxInputVideos], ["audio", limits?.maxInputAudios]] as const) {
         const count = assets.filter(asset => asset.kind === kind).length;
@@ -291,6 +293,7 @@ export class CliProviderAdapter implements ProviderAdapter {
     await mkdir(inputDirectory, { recursive: true });
     const inputs: Array<NonNullable<CliBridgeRequest["request"]>["assets"][number]> = [];
     for (const [index, asset] of (request.assets ?? []).entries()) {
+      if (asset.role === "mask") throw new Error("当前 CLI 接口未确认支持蒙版编辑");
       const extension = ({ "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm", "audio/mpeg": ".mp3", "audio/wav": ".wav" } as Record<string, string>)[asset.mimeType] ?? ".bin";
       const path = join(inputDirectory, `${index}${extension}`);
       if (asset.data) {

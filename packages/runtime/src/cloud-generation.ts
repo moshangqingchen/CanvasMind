@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { setTimeout as abortableDelay } from "node:timers/promises";
 import { decryptSecret, encryptSecret, ProviderHttpError, providerFetch, withProviderSubmitTransport, type ProviderSubmitTransport, type ProviderSubmissionPhase } from "@super-canvas/providers";
 
 export interface CloudGenerationConfig { endpoint: string; encryptedToken: string }
@@ -81,7 +82,6 @@ export interface CloudTransportOptions {
 }
 export async function runCloudGeneration<T>(idempotencyKey: string, config: CloudGenerationConfig, work: () => Promise<T>, options: CloudTransportOptions): Promise<T> {
   const fetchImpl = options.fetch ?? providerFetch;
-  const delay = options.delay ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
   const auth = headers(config);
   let index = 0;
   let checkpointed = false;
@@ -89,6 +89,16 @@ export async function runCloudGeneration<T>(idempotencyKey: string, config: Clou
     kind: "network", phase: "submit", retryable: false, submissionMayHaveOccurred: true,
   });
   const transport: ProviderSubmitTransport = async (url, init, settings) => {
+    const signal = init.signal ?? undefined;
+    const requestSignal = (timeoutMs: number) => signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
+    const delay = async (ms: number) => {
+      signal?.throwIfAborted();
+      if (options.delay) await options.delay(ms);
+      else await abortableDelay(ms, undefined, { signal });
+      signal?.throwIfAborted();
+    };
+    signal?.throwIfAborted();
     const jobId = createHash("sha256").update(`${idempotencyKey}:${index++}`).digest("hex");
     const target = `${config.endpoint}/v1/jobs/${jobId}`;
     const remote = new URL(url);
@@ -97,7 +107,9 @@ export async function runCloudGeneration<T>(idempotencyKey: string, config: Clou
     let status: { state: string; error?: string; phase?: string } | undefined;
     // Check durable state first. Retrying this lookup never purchases a new image.
     const check = async () => {
-      const response = await fetchImpl(target, { headers: auth, redirect: "error", signal: AbortSignal.timeout(15_000) });
+      signal?.throwIfAborted();
+      const response = await fetchImpl(target, { headers: auth, redirect: "error", signal: requestSignal(15_000) });
+      if (!response.ok) void response.body?.cancel().catch(() => {});
       if (response.status === 404) return null;
       if (response.status === 410) return { state: "expired", error: "云端保存的 24 小时已到期，请检查本地已下载的素材；不会重新生成" };
       if ([401, 403].includes(response.status)) return { state: "failed", error: "云端服务凭据已失效，请修复连接后取回原任务" };
@@ -106,6 +118,9 @@ export async function runCloudGeneration<T>(idempotencyKey: string, config: Clou
     };
     try { status = await check() ?? undefined; }
     catch { throw uncertain("云端任务查询暂时失败，原任务编号已保存；恢复时只查询同一任务"); }
+    // Cancellation can happen while the first lookup is in flight. A missing
+    // job is not permission to create it after this local run stopped.
+    signal?.throwIfAborted();
     if (!status) {
       if (options.resumeOnly) throw uncertain("云端未找到原任务，为避免重复扣费已停止；请核对后再创建新任务");
       // Let Request serialize multipart boundaries exactly once. Upload raw bytes,
@@ -116,10 +131,12 @@ export async function runCloudGeneration<T>(idempotencyKey: string, config: Clou
         ...(settings.cloudPolling ? { polling: settings.cloudPolling } : {}) };
       const body = await request.arrayBuffer();
       if (body.byteLength > 64 * 1024 * 1024) throw new Error("云端生图单次请求上限 64 MB，请减少参考图体积");
+      signal?.throwIfAborted();
       try {
         const response = await fetchImpl(target, { method: "PUT", headers: { ...auth,
           "content-type": "application/octet-stream", "x-supercanvas-manifest": Buffer.from(JSON.stringify(manifest)).toString("base64") },
-          body, redirect: "error", signal: AbortSignal.timeout(120_000) });
+          body, redirect: "error", signal: requestSignal(120_000) });
+        void response.body?.cancel().catch(() => {});
         if (!response.ok) throw new Error(`Cloud submit HTTP ${response.status}`);
       } catch { throw uncertain("提交到云端后的响应未收到，任务编号已保存；恢复只查询原任务，不重新生成"); }
     }
@@ -137,7 +154,7 @@ export async function runCloudGeneration<T>(idempotencyKey: string, config: Clou
       if (status.state === "complete") {
         await progress("downloading");
         try {
-          const response = await fetchImpl(`${target}/response`, { headers: auth, redirect: "error", signal: init.signal ?? AbortSignal.timeout(120_000) });
+          const response = await fetchImpl(`${target}/response`, { headers: auth, redirect: "error", signal: requestSignal(120_000) });
           if (response.headers.get("x-supercanvas-response") !== "1") { await response.body?.cancel(); await delay(3_000); continue; }
           return response;
         } catch { await delay(3_000); continue; }

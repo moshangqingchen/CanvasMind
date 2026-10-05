@@ -22,6 +22,7 @@ import {
   AlignStartVertical,
   AlignVerticalSpaceBetween,
   CircleAlert,
+  Brush,
   CopyPlus,
   Download,
   ExternalLink,
@@ -712,6 +713,7 @@ function GenerationNodeBody({
             operation={cliOperationForNode(nodeType, data.linkedAssets?.some(asset => asset.kind === "image") === true)}
             model={selectedModel ?? null}
             parameters={parameters}
+            transparentSupported={data.imageEditingCapabilities?.transparent === true}
             showAdvanced={false}
             onChange={(nextParameters) =>
               data.onParametersChange?.(nextParameters)
@@ -732,6 +734,21 @@ function GenerationNodeBody({
         ? createPortal(settingsPopover, settingsHost)
         : null}
       <LinkedAssetStrip data={data} />
+      {nodeType === "image-generation" && Boolean(data.linkedAssets?.some(asset => asset.kind === "image") || parameters.maskAssetId || parameters.mask) && (
+        <div className="node-mask-summary nodrag nopan nowheel" onPointerDown={event => event.stopPropagation()}>
+          {data.linkedAssets?.some(asset => asset.kind === "image") && <button type="button" onClick={() => {
+            const source = data.linkedAssets?.find(asset => asset.kind === "image");
+            if (source) data.onEditMask?.(source.id, nodeId);
+          }}><Brush size={13} />{parameters.maskAssetId ? "编辑蒙版" : "绘制蒙版"}</button>}
+          {(typeof parameters.maskAssetId === "string" || typeof parameters.mask === "string") && <>
+            <span>{!data.linkedAssets?.some(asset => asset.kind === "image") ? "请连接蒙版对应的原图" : !data.imageEditingCapabilities?.mask ? "当前模型不支持蒙版，请更换模型" : parameters.maskAssetId ? "已设置局部修改区域" : "已设置外部蒙版"}</span>
+            <button type="button" aria-label="移除蒙版" onClick={() => {
+              const next = { ...parameters }; delete next.maskAssetId; delete next.maskSourceAssetId; delete next.mask;
+              data.onParametersChange?.(next);
+            }}><X size={12} /></button>
+          </>}
+        </div>
+      )}
       <div
         className="node-inline-editor nodrag nowheel nopan"
         onPointerDownCapture={selectNode}
@@ -996,6 +1013,10 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
             aria-label="生成结果操作"
             onPointerDown={(event) => event.stopPropagation()}
           >
+            {hasArchivedGeneratedMedia && data.assetKind === "image" && data.assetId && !fakeResult &&
+              <button type="button" title="绘制蒙版，局部修改" aria-label="绘制蒙版" onClick={event => {
+                event.stopPropagation(); data.onEditMask?.(data.assetId!);
+              }}><Brush size={13} />蒙版</button>}
             {hasArchivedGeneratedMedia &&
             data.assetKind === "image" &&
             inputPreviewUrl &&
@@ -1552,6 +1573,10 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           !generatedResult &&
           data.nodeType !== "preview" ? (
             <div className="node-actions nodrag nopan">
+              {data.assetKind === "image" && data.assetId && !data.pendingImport &&
+                <button type="button" aria-label="绘制蒙版" onClick={event => {
+                  event.stopPropagation(); data.onEditMask?.(data.assetId!);
+                }}><Brush size={12} />蒙版</button>}
               <button
                 type="button"
                 aria-label={`运行 ${data.label} 节点`}

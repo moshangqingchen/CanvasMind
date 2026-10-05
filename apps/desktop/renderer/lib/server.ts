@@ -113,6 +113,7 @@ export interface PublicRunRequest {
   prompt?: string;
   inputAssetIds?: string[];
   inputAssets?: GenerationInputAsset[];
+  imageMask?: { maskAssetId: string; maskSourceAssetId: string };
 }
 
 export interface PublicRunError {
@@ -246,6 +247,7 @@ export function publicRunRequest(input: JsonObject, includePrompt = false, decla
       : undefined;
   };
   const rawParameters = input.parameters;
+  const imageMask = safeJsonObject(input.imageMask);
   const parameters: Record<string, string | number | boolean> = {};
   if (
     rawParameters &&
@@ -281,6 +283,9 @@ export function publicRunRequest(input: JsonObject, includePrompt = false, decla
     ...(text("model") ? { model: text("model") } : {}),
     ...(rawParameters && typeof rawParameters === "object" && !Array.isArray(rawParameters) ? { parameters } : {}),
     ...(includePrompt && typeof input.prompt === "string" ? { prompt: redactPublicText(input.prompt) } : {}),
+    ...(typeof imageMask.maskAssetId === "string" && imageMask.maskAssetId.trim() &&
+      typeof imageMask.maskSourceAssetId === "string" && imageMask.maskSourceAssetId.trim()
+      ? { imageMask: { maskAssetId: imageMask.maskAssetId, maskSourceAssetId: imageMask.maskSourceAssetId } } : {}),
     ...(Array.isArray(input.assetIds) ? { inputAssetIds: [...new Set(input.assetIds.filter((id): id is string => typeof id === "string"))] } : {}),
     ...(Array.isArray(input.inputAssets) ? { inputAssets: input.inputAssets.flatMap((value): GenerationInputAsset[] => {
       const asset = safeJsonObject(value);
@@ -289,7 +294,7 @@ export function publicRunRequest(input: JsonObject, includePrompt = false, decla
         id: asset.id,
         ...(typeof asset.name === "string" ? { name: redactPublicText(asset.name) } : {}),
         ...(["image", "video", "audio", "text"].includes(String(asset.kind)) ? { kind: asset.kind as GenerationInputAsset["kind"] } : {}),
-        ...(["reference", "firstFrame", "lastFrame"].includes(String(asset.role)) ? { role: asset.role as GenerationInputAsset["role"] } : {}),
+        ...(["reference", "firstFrame", "lastFrame", "mask"].includes(String(asset.role)) ? { role: asset.role as GenerationInputAsset["role"] } : {}),
       }];
     }) } : {}),
   };

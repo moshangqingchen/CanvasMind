@@ -250,7 +250,12 @@ function classifiedPresentation(input: {
   const networkFailure = kind === "network" || ["UND_ERR_SOCKET", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN", "ENETDOWN", "ENETUNREACH", "EADDRNOTAVAIL", "PROVIDER_NETWORK_DISCOVERY_FAILED"].includes(extracted.code ?? "") ||
     includesAny(searchable, ["fetch failed", "failed to fetch", "network request failed"]);
 
-  if (
+  if (/\bcontent_blocked_24h\b/u.test(searchable)) {
+    message = "供应商提示：相同内容此前被上游拒绝，当前处于 24 小时拦截期。请检查内容是否符合平台规则，并联系供应商或等待限制结束；反复提交相同内容无法解决。";
+    type = "内容被临时拦截";
+    failureCategory = "content_policy";
+    fallbackCode = "content_blocked_24h";
+  } else if (
     includesAny(searchable, [
       "content moderation",
       "content_moderation",
