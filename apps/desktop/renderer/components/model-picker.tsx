@@ -24,11 +24,11 @@ function ModelIdentity({ model, parameters, price = false, detailsId, route = fa
 }
 
 export function ModelPicker({ id, label, connectionId, models, value, onChange, parameters = {},
-  open: controlledOpen, onOpenChange, maxHeight = 360, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge,
+  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge,
 }: {
   id?: string; label: string; connectionId: string; models: readonly ModelDescriptor[]; value: string;
   onChange: (modelId: string) => void; parameters?: Record<string, unknown>; open?: boolean;
-  onOpenChange?: (open: boolean) => void; maxHeight?: number; anchorKey?: string; loading?: boolean; failed?: boolean;
+  onOpenChange?: (open: boolean) => void; anchorKey?: string; loading?: boolean; failed?: boolean;
   authoritative?: boolean; allowManual?: boolean; badge?: (model: ModelDescriptor) => ReactNode;
 }) {
   const generatedId = useId();
@@ -109,18 +109,48 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       const top = (viewport?.offsetTop ?? 0) + 12;
       const right = left + (viewport?.width ?? window.innerWidth) - 24;
       const bottom = top + (viewport?.height ?? window.innerHeight) - 24;
-      const below = bottom - rect.bottom - 4;
-      const above = rect.top - top - 4;
-      // The inspector's supplier fields must remain clickable while choosing
-      // a model. Other picker surfaces can still use the space above them.
-      const inInspector = Boolean(host.current?.closest(".node-config-popover"));
-      const upwards = !inInspector && below < 220 && above > below;
-      const height = Math.min(bottom - top, Math.max(160, Math.min(Math.max(240, maxHeight), upwards ? above : below)));
-      const width = Math.min(Math.max(260, rect.width), right - left);
-      panel.style.width = `${width}px`;
+      const gap = 8;
+      const viewportHeight = bottom - top;
+      const below = Math.max(0, bottom - rect.bottom - gap);
+      const above = Math.max(0, rect.top - top - gap);
+      const inspector = host.current?.closest(".node-config-popover")?.getBoundingClientRect();
+      let width = Math.min(Math.max(360, rect.width), right - left);
+      const measureHeight = () => {
+        // Measure at the final width, including rows hidden by list scrolling.
+        // Short catalogs expand completely; only the viewport limits long ones.
+        panel.style.width = `${width}px`;
+        return Math.min(viewportHeight, panel.offsetHeight + Math.max(0, panel.scrollHeight - panel.clientHeight)
+          + (list.current ? list.current.scrollHeight - list.current.clientHeight : 0));
+      };
+      let height = measureHeight();
+      let x = Math.max(left, Math.min(rect.left, right - width));
+      let y = rect.bottom + gap;
+      const rightSpace = inspector ? right - inspector.right - gap : 0;
+      const leftSpace = inspector ? inspector.left - left - gap : 0;
+      const sideSpace = Math.max(rightSpace, leftSpace);
+      if (inspector && below < height && sideSpace >= 280) {
+        // Beside the inspector, the full viewport height is available and the
+        // supplier/group controls above the model remain directly clickable.
+        width = Math.min(width, sideSpace);
+        height = measureHeight();
+        x = rightSpace >= leftSpace ? inspector.right + gap : inspector.left - gap - width;
+        y = Math.max(top, Math.min(rect.top, bottom - height));
+      } else if (!inspector && below < height && above > below) {
+        height = Math.min(height, above);
+        y = rect.top - gap - height;
+      } else {
+        // Reserve the filters/footer plus at least one complete option when
+        // the viewport is too narrow to place the menu beside the inspector.
+        const rows = list.current;
+        const rowHeight = Math.max(44, ...Array.from(rows?.children ?? [], row => row.getBoundingClientRect().height));
+        const chromeHeight = panel.offsetHeight + Math.max(0, panel.scrollHeight - panel.clientHeight) - (rows?.clientHeight ?? 0);
+        const minimumHeight = Math.min(height, Math.max(160, chromeHeight + rowHeight));
+        y = Math.max(top, Math.min(y, bottom - minimumHeight));
+        height = Math.min(height, bottom - y);
+      }
       panel.style.maxHeight = `${height}px`;
-      panel.style.left = `${Math.max(left, Math.min(rect.left, right - width))}px`;
-      panel.style.top = `${upwards ? Math.max(top, rect.top - Math.min(panel.scrollHeight, height) - 4) : Math.max(top, Math.min(rect.bottom + 4, bottom - height))}px`;
+      panel.style.left = `${Math.max(left, Math.min(x, right - width))}px`;
+      panel.style.top = `${y}px`;
     };
     position();
     window.addEventListener("resize", position);
@@ -133,7 +163,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       window.visualViewport?.removeEventListener("resize", position);
       window.visualViewport?.removeEventListener("scroll", position);
     };
-  }, [open, maxHeight, options.length, anchorKey]);
+  }, [open, options, page, anchorKey]);
   useEffect(() => {
     if (!open) return;
     search.current?.focus();
@@ -172,7 +202,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     </button>
     {value && !selected && <p className={styles.note} role="status">保留当前模型 {value}：{loading ? "正在扫描模型…" : failed ? "模型扫描失败，暂不可用" : authoritative ? "当前扫描不可用" : "目录未确认"}。请选择后才会更换。</p>}
     {open && <div ref={menu} popover="manual" className={`node-model-select-options ${styles.menu}`}
-      style={{ position: "fixed", inset: "auto", margin: 0, display: "flex", maxHeight }}>
+      style={{ position: "fixed", inset: "auto", margin: 0, display: "flex" }}>
       {grouped && <div className={styles.routingHeading}>
         {family ? <><button type="button" onClick={() => { setFamily(null); setQuery(""); setActive(0); search.current?.focus(); }}>返回模型</button><strong>{family}</strong></>
           : <span>先选模型，再选自动路由或商家渠道</span>}

@@ -365,7 +365,6 @@ function GenerationNodeBody({
   // Share the node's coordinate space so the panel pans, zooms and resizes with it.
   const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
   const settingsTrigger = useRef<HTMLButtonElement | null>(null);
-  const settingsPanel = useRef<HTMLElement | null>(null);
   const settingsBody = useRef<HTMLDivElement | null>(null);
   const settingsAnchor = useStore(state => {
     if (!modelMenuOpen) return "";
@@ -384,13 +383,6 @@ function GenerationNodeBody({
     return () => window.removeEventListener("keydown", escape, true);
   }, [settingsOpen]);
   const modelSelectRef = useRef<HTMLDivElement | null>(null);
-  const [modelMenuHeight, setModelMenuHeight] = useState(320);
-  useLayoutEffect(() => {
-    if (!modelMenuOpen) return;
-    const select = modelSelectRef.current?.getBoundingClientRect();
-    const panel = settingsPanel.current?.getBoundingClientRect();
-    if (select && panel) setModelMenuHeight(Math.max(40, Math.min(320, panel.bottom - select.bottom - 16)));
-  }, [modelMenuOpen, settingsAnchor]);
   const [availabilitySnapshot, setAvailabilitySnapshot] = useState<ModelAvailabilitySnapshot>(
     { connectionId: "", items: [], state: "idle" });
   const [, setAvailabilityClock] = useState(0);
@@ -581,7 +573,6 @@ function GenerationNodeBody({
       // Portals still participate in React Flow's capture handlers. `nokey`
       // keeps its Ctrl-selection handler from swallowing these form events.
       className="node-config-popover node-config-popover-portal nodrag nowheel nopan nokey"
-      ref={settingsPanel}
       role="dialog"
       aria-label={`${data.label} 模型与参数`}
       // A portal still bubbles through the owning React node. Native select
@@ -691,7 +682,7 @@ function GenerationNodeBody({
               connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
               parameters={{ ...parameters, prompt: renderPromptParts(data.parts ?? []) }}
               onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
-              maxHeight={modelMenuHeight} anchorKey={settingsAnchor} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
+              anchorKey={settingsAnchor} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
               badge={cangyuanAvailabilityEnabled ? model => <CangyuanAvailabilityBadge
                 availability={cangyuanAvailabilityForModel(model, availabilityItems, availabilityOptions)}
