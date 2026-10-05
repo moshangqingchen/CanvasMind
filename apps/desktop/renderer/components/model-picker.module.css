@@ -1,7 +1,13 @@
 .picker { min-width: 0; position: relative; }
 .trigger { min-height: 58px; height: auto; padding: 7px 9px; }
 .identity { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: hidden; text-align: left; }
+.heading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; min-width: 0; }
 .name { font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.heading .name { min-width: 0; max-width: 100%; }
+.capabilities { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.capability { display: inline-flex; align-items: center; flex: 0 0 auto; border: 1px solid; border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 500; line-height: 1.5; white-space: nowrap; }
+.transparent { color: #a9e6d1; border-color: #487565; background: #26433b; }
+.editable { color: #d8cbff; border-color: #786597; background: #40334f; }
 .id { color: #aab5cc; font-size: 11px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .price { color: #c6bbff; font-size: 11px; line-height: 1.4; white-space: normal; }
 .route { color: #c6bbff; font-size: 11px; }

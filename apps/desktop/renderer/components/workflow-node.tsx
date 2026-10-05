@@ -682,6 +682,7 @@ function GenerationNodeBody({
           <div className="node-config-model-control" ref={modelSelectRef}>
             <ModelPicker key={currentConnection} id={`node-inline-model-${nodeId}`} label={`${data.label} 模型`}
               connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
+              capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
               parameters={{ ...parameters, prompt: renderPromptParts(data.parts ?? []) }}
               onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
               anchorKey={settingsAnchor} loading={data.modelOptionsLoading} failed={data.modelOptionsError}

@@ -3,6 +3,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import type { ImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
 import { cleanModelDisplayName, modelPriceSummary } from "../lib/model-display";
 import { modelCanvasUnavailableReason } from "../lib/graph-ui";
 import { filterPickerModels, MODEL_PICKER_PAGE_SIZE, readRecentModels, RECENT_MODELS_KEY, rememberModel,
@@ -12,10 +13,16 @@ import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSumm
 
 type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
 
-function ModelIdentity({ model, parameters, price = false, detailsId, route = false }: { model: ModelDescriptor; parameters: Record<string, unknown>; price?: boolean; detailsId?: string; route?: boolean }) {
+function ModelIdentity({ model, parameters, capabilities, price = false, detailsId, route = false }: { model: ModelDescriptor; parameters: Record<string, unknown>; capabilities?: ImageEditingCapabilities; price?: boolean; detailsId?: string; route?: boolean }) {
   const family = tk1688ModelFamily(model);
   return <span className={styles.identity}>
-    <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{family ? route ? tk1688RouteLabel(model) : family : cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
+    <span className={styles.heading}>
+      <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{family ? route ? tk1688RouteLabel(model) : family : cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
+      {(capabilities?.transparent || capabilities?.mask) && <span id={detailsId ? `${detailsId}-capabilities` : undefined} className={styles.capabilities}>
+        {capabilities.transparent && <span className={`${styles.capability} ${styles.transparent}`} title="支持透明 PNG 输出">可透明</span>}
+        {capabilities.mask && <span className={`${styles.capability} ${styles.editable}`} title="支持涂抹蒙版、局部修改">可编辑</span>}
+      </span>}
+    </span>
     {family && !route && <span id={detailsId ? `${detailsId}-route` : undefined} className={styles.route}>{tk1688RouteLabel(model)}</span>}
     <span id={detailsId ? `${detailsId}-id` : undefined} className={styles.id} title={model.id}>ID: {model.id}</span>
     {route && <span id={detailsId ? `${detailsId}-summary` : undefined} className={styles.summary}>{tk1688RouteSummary(model)}</span>}
@@ -23,13 +30,14 @@ function ModelIdentity({ model, parameters, price = false, detailsId, route = fa
   </span>;
 }
 
-export function ModelPicker({ id, label, connectionId, models, value, onChange, parameters = {},
+export function ModelPicker({ id, label, connectionId, models, value, onChange, parameters = {}, capabilities = {},
   open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge,
 }: {
   id?: string; label: string; connectionId: string; models: readonly ModelDescriptor[]; value: string;
   onChange: (modelId: string) => void; parameters?: Record<string, unknown>; open?: boolean;
   onOpenChange?: (open: boolean) => void; anchorKey?: string; loading?: boolean; failed?: boolean;
   authoritative?: boolean; allowManual?: boolean; badge?: (model: ModelDescriptor) => ReactNode;
+  capabilities?: Readonly<Record<string, ImageEditingCapabilities>>;
 }) {
   const generatedId = useId();
   const listId = `${id ?? generatedId}-options`;
@@ -194,10 +202,10 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     onBlur={event => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
     <button id={id} ref={trigger} type="button" className={`node-model-select-trigger ${styles.trigger}`} role="combobox"
       aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
-      aria-describedby={selected ? `${listId}-selected-name ${listId}-selected-id${tk1688ModelFamily(selected) ? ` ${listId}-selected-route` : ""}` : undefined}
+      aria-describedby={selected ? `${listId}-selected-name ${listId}-selected-id${tk1688ModelFamily(selected) ? ` ${listId}-selected-route` : ""}${capabilities[selected.id]?.transparent || capabilities[selected.id]?.mask ? ` ${listId}-selected-capabilities` : ""}` : undefined}
       title={selected ? `${cleanModelDisplayName(selected.name, selected.metadata?.priceLabel)} · ${selected.id}` : value || "自动模型"}
       onClick={() => setOpen(!open)}>
-      {selected ? <ModelIdentity model={selected} parameters={parameters} detailsId={`${listId}-selected`} /> : <span>{value || "自动模型"}</span>}
+      {selected ? <ModelIdentity model={selected} parameters={parameters} capabilities={capabilities[selected.id]} detailsId={`${listId}-selected`} /> : <span>{value || "自动模型"}</span>}
       {selected && badge?.(selected)}<ChevronDown size={15} />
     </button>
     {value && !selected && <p className={styles.note} role="status">保留当前模型 {value}：{loading ? "正在扫描模型…" : failed ? "模型扫描失败，暂不可用" : authoritative ? "当前扫描不可用" : "目录未确认"}。请选择后才会更换。</p>}
@@ -221,12 +229,12 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       <div ref={list} id={listId} className={styles.list} role="listbox" aria-label={`${label} 可选模型`}>
         {visible.map((option, offset) => <button key={option.id} id={`${listId}-${pageStart + offset}`} type="button" role="option"
           aria-label={option.label} aria-selected={option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id} aria-disabled={Boolean(option.reason)} aria-setsize={options.length} aria-posinset={pageStart + offset + 1}
-          aria-describedby={option.model ? `${listId}-${pageStart + offset}-id ${listId}-${pageStart + offset}-price${family ? ` ${listId}-${pageStart + offset}-summary` : ""}${option.reason ? ` ${listId}-${pageStart + offset}-reason` : ""}` : undefined}
+          aria-describedby={option.model ? `${listId}-${pageStart + offset}-id ${listId}-${pageStart + offset}-price${family ? ` ${listId}-${pageStart + offset}-summary` : ""}${option.reason ? ` ${listId}-${pageStart + offset}-reason` : ""}${capabilities[option.model.id]?.transparent || capabilities[option.model.id]?.mask ? ` ${listId}-${pageStart + offset}-capabilities` : ""}` : undefined}
           className={styles.option} data-index={pageStart + offset} data-active={activeIndex === pageStart + offset || undefined}
           title={option.family ? "查看此模型的自动路由与商家渠道" : option.reason ? `不可运行：${option.reason}` : option.id || "使用连接默认模型"} tabIndex={-1}
           onMouseDown={event => event.preventDefault()} onClick={() => activate(option)}>
           {option.family ? <span className={styles.identity}><strong>{option.label}</strong><span className={styles.summary}>{option.merchants} 条商家渠道 · 查看线路与报价</span></span>
-            : option.model ? <span className={styles.identity}><ModelIdentity model={option.model} parameters={parameters} detailsId={`${listId}-${pageStart + offset}`} price route={Boolean(family)} />{option.reason && <small id={`${listId}-${pageStart + offset}-reason`}>不可运行：{option.reason}</small>}</span> : <span>{option.label}</span>}
+            : option.model ? <span className={styles.identity}><ModelIdentity model={option.model} parameters={parameters} capabilities={capabilities[option.model.id]} detailsId={`${listId}-${pageStart + offset}`} price route={Boolean(family)} />{option.reason && <small id={`${listId}-${pageStart + offset}-reason`}>不可运行：{option.reason}</small>}</span> : <span>{option.label}</span>}
           {option.model && badge?.(option.model)}
         </button>)}
         {!options.length && <p className={styles.note}>没有符合筛选条件的{family ? "线路" : "模型"}。可清空搜索或调整筛选。</p>}

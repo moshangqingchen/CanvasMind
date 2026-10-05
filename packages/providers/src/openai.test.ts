@@ -10,6 +10,48 @@ function jsonResponse(value: unknown): Response {
 }
 
 describe("OpenAIImageAdapter", () => {
+  it.each(["api.eaheng.com", "pool.chaozhiyuanai.com"])(
+    "uses the official /v1 Images endpoint for imported %s roots", async (host) => {
+      for (const path of ["", "/", "/v1", "/v1/"]) {
+        const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonResponse({ data: [{ b64_json: "aW1hZ2U=" }] }));
+        const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{
+          id: "official-root", provider: "openai", apiKey: "test-key", baseUrl: `https://${host}${path}`,
+        }]), { fetch: fetchMock });
+        await adapter.submit({
+          connectionId: "official-root", operation: "image.generate", model: "gpt-image-2",
+          prompt: "Test", idempotencyKey: "official-root", parameters: { size: "1024x1024" },
+        });
+        expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`https://${host}/v1/images/generations`);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
+  it.each(["api.eaheng.com", "pool.chaozhiyuanai.com"])(
+    "preserves custom paths and non-official origins resembling %s", async (host) => {
+      for (const baseUrl of [
+        `https://${host}/custom`, `https://${host}.example.test`,
+        `http://${host}`, `https://${host}:8443`, `https://user:pass@${host}`,
+        `https://${host}/?route=custom`, `https://${host}/#custom`,
+      ]) {
+        const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonResponse({ data: [{ b64_json: "aW1hZ2U=" }] }));
+        const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{
+          id: "custom-root", provider: "openai", apiKey: "test-key", baseUrl,
+        }]), { fetch: fetchMock });
+        const submission = adapter.submit({
+          connectionId: "custom-root", operation: "image.generate", model: "gpt-image-2",
+          prompt: "Test", idempotencyKey: "custom-root", parameters: { size: "1024x1024" },
+        });
+        if (new URL(baseUrl).username) {
+          await expect(submission).rejects.toThrow("Provider endpoint is not allowed");
+          expect(fetchMock).not.toHaveBeenCalled();
+          continue;
+        }
+        await submission;
+        expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${baseUrl}/images/generations`);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
   it("allows Chuangxiang 2K and 4K requests despite historical output undersizing", async () => {
     const adapter=new OpenAIImageAdapter(new StaticConnectionResolver([{id:"cx-probe",provider:"openai",apiKey:"test-key",baseUrl:"https://vapi.chuangxiangai.asia",settings:{modelGroup:"生图"}}]));
     const request={connectionId:"cx-probe",operation:"image.generate" as const,model:"gpt-image-2.5-yf",prompt:"Test",idempotencyKey:"capability-probe",metadata:{purpose:"supplier-verification"}};

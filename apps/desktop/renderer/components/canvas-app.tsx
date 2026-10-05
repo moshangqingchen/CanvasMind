@@ -2,6 +2,7 @@
 
 import { savedModelAvailabilityError } from "../lib/model-availability";
 import { getImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
+import { modelImageCapabilities } from "../lib/model-image-capabilities";
 import { imageModeParameters, preserveImageMaskParameters } from "../lib/image-editing";
 import { assetDownloadPath } from "../lib/asset-download";
 import { ImageMaskEditor } from "./image-mask-editor";
@@ -1988,6 +1989,7 @@ const transientNodeDataKeys = new Set([
   "onOpenPreview",
   "onEditMask",
   "imageEditingCapabilities",
+  "modelImageCapabilities",
   "onPrepareReversePrompt",
   "onReusePrompt",
   "onDelete",
@@ -7234,8 +7236,8 @@ function CanvasShell({
           node.data.parameters as Readonly<Record<string, unknown>> | undefined,
         ) ?? null;
       const editingConnection = connections.find(connection => connection.id === node.data.connectionId);
-      const imageEditingCapabilities = editingConnection && generationType === "image-generation"
-        ? getImageEditingCapabilities(editingConnection, node.data.model ?? effectiveModel?.id ?? "", node.data.parameters)
+      const imageEditingCapabilities = generationType === "image-generation" && effectiveModel
+        ? modelImageCapabilities(editingConnection, effectiveModel, node.data.parameters)
         : { transparent: false, mask: null };
       const linkedAssets = generationType ? directAssetsForNode(node.id) : [];
       const compatibleInputIds =
@@ -7289,6 +7291,9 @@ function CanvasShell({
           mentionAssets: mentionAssetsForNode(node.id),
           linkedAssets,
           imageEditingCapabilities,
+          modelImageCapabilities: generationType === "image-generation" ? Object.fromEntries(modelOptions.map(model => [model.id,
+            modelImageCapabilities(editingConnection, model, model.id === effectiveModel?.id ? node.data.parameters : undefined),
+          ])) : undefined,
           linkedAssetDurations,
           linkedAssetWarnings: validateLinkedMediaInputs(
             effectiveModel,

@@ -133,6 +133,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   onOpenPreview?: (assetId: string) => void;
   onEditMask?: (assetId: string, editNodeId?: string) => void;
   imageEditingCapabilities?: { transparent: boolean; mask: "multipart" | "url" | null };
+  modelImageCapabilities?: Record<string, { transparent: boolean; mask: "multipart" | "url" | null }>;
   onPrepareReversePrompt?: () => void;
   onReusePrompt?: () => Promise<void>;
   onDelete?: () => void;

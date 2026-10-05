@@ -1,4 +1,5 @@
 import type { NormalizedRequest, ProviderAssetInput, ResolvedProviderConnection, ValidationIssue } from "./contracts.js";
+import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
 
 export interface ImageEditingConnection {
   provider: string;
@@ -16,7 +17,7 @@ const cangyuanMaskModels = new Set(["gpt-image-2-1k", "gpt-image-2-2k", "gpt-ima
   "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
 
 /** Browser-safe, exact supplier contracts. Model-family resemblance is not evidence. */
-export function getImageEditingCapabilities(connection: ImageEditingConnection, modelId: string,
+function declaredImageEditingCapabilities(connection: ImageEditingConnection, modelId: string,
   parameters: Readonly<Record<string, unknown>> = {}): ImageEditingCapabilities {
   const config = connection.config;
   const none: ImageEditingCapabilities = { transparent: false, mask: null };
@@ -42,6 +43,19 @@ export function getImageEditingCapabilities(connection: ImageEditingConnection, 
       (modelId === "gpt-image-2-x" && ["1k", "2k", "4k"].includes(String(parameters.tier))) ? "url" : null };
   }
   return none;
+}
+
+export function getImageEditingCapabilities(connection: ImageEditingConnection, modelId: string,
+  parameters: Readonly<Record<string, unknown>> = {}): ImageEditingCapabilities {
+  const declared = declaredImageEditingCapabilities(connection, modelId, parameters);
+  return { ...declared, transparent: declared.transparent || Boolean(verifiedTransparentImageEvidence(connection, modelId, parameters)) };
+}
+
+/** Preserve existing normal/mask routing when a declared contract gains live proof. */
+export function usesDeclaredImagesEditingRoute(connection: ImageEditingConnection, modelId: string,
+  parameters: Readonly<Record<string, unknown>> = {}): boolean {
+  const declared = declaredImageEditingCapabilities(connection, modelId, parameters);
+  return connection.provider === "openai" && (declared.transparent || declared.mask === "multipart");
 }
 
 export function imageEditingConnection(connection: ResolvedProviderConnection): ImageEditingConnection {

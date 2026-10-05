@@ -1,6 +1,7 @@
 import type { NormalizedRequest, ProviderConnectionResolver, ProviderTask, ValidationIssue, ValidationResult } from "./contracts.js";
 import { ProviderHttpError, assetToBlob, providerFetch } from "./http.js";
 import { imageEditingConnection, imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
+import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig, type RestRequestMapping } from "./rest.js";
 import type { ImageSizeTier } from "./image-size-presets.js";
 import { isPdogImageConnection, pdogImageSizeForTier, pdogImageQualityOptions } from "./pdog-image-contract.js";
@@ -12,6 +13,10 @@ function parameters(input: Readonly<Record<string, unknown>> = {}): Record<strin
   for (const key of ["size", "quality", "response_format"] as const) {
     // The site declares these optional fields; automatic selection means omitting the field.
     if (input[key] !== undefined && input[key] !== "auto") result[key] = input[key];
+  }
+  if (input.background === "transparent") {
+    result.background = "transparent";
+    result.output_format = input.output_format ?? "png";
   }
   const tier = String(input.size_tier ?? input.resolution ?? "").toUpperCase();
   const ratio = typeof input.aspect_ratio === "string" && input.aspect_ratio !== "auto" ? input.aspect_ratio : undefined;
@@ -25,6 +30,8 @@ const mappings: readonly RestRequestMapping[] = [
   { target: "/model", source: { kind: "request", path: "$.model" } },
   { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
   ...["size", "quality", "n", "response_format"].map(key => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true })),
+  ...["background", "output_format"].map(key => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` },
+    omitIfUndefined: true, when: [{ path: "$.parameters.background", values: ["transparent"] }] })),
 ];
 
 function connector(mode: Mode): RestConnectorConfig {
@@ -57,6 +64,10 @@ export class PdogImageAdapter extends GenericRestAdapter {
     const issues: ValidationIssue[] = [...base.issues];
     const connection = await this.pdogConnections.resolve(request.connectionId).catch(() => undefined);
     if (connection) issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
+    const transparent = connection && request.parameters?.background === "transparent"
+      ? verifiedTransparentImageEvidence(imageEditingConnection(connection), request.model ?? "", request.parameters) : undefined;
+    if (transparent && transparent.transport.kind !== `pdog-${this.mode}`)
+      issues.push({ path: "parameters.background", code: "unverified_transparent_route", message: "此型号透明背景仅验证异步图片接口，请使用已验证的异步线路" });
     if (!connection || connection.provider !== "openai" || !isPdogImageConnection({ ...connection.settings, baseUrl: connection.baseUrl }, request.model))
       issues.push({ path: "model", code: "unsupported_model", message: "此 PDog 接口仅适用于当前站点已配置的 GPT 图片模型" });
     if (request.operation !== "image.generate" && request.operation !== "image.edit") issues.push({ path: "operation", code: "unsupported_operation", message: "PDog GPT 接口只支持生成或编辑图片" });

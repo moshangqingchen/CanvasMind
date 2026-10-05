@@ -4,8 +4,9 @@ import { GenericRestAdapter, type GenericRestAdapterOptions } from "./rest.js";
 import { BananaImageAdapter, bananaImageRoute, applyBananaImageCapabilities, bananaNativeOutputs } from "./banana-image.js";
 import { isPdogImageConnection, PdogImageAdapter } from "./pdog-image.js";
 import { isChuangxiangImageConnection, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
-import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues } from "./image-editing-capabilities.js";
+import { imageEditingConnection, imageEditingRequestIssues, usesDeclaredImagesEditingRoute } from "./image-editing-capabilities.js";
 import { assertValidResult } from "./contracts.js";
+import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -34,6 +35,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     const catalog = connection.settings?.modelCatalogModels;
     const current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
     const source = imageEditingConnection(connection);
+    const transparentEvidence = verifiedTransparentImageEvidence(source, request.model, request.parameters);
     const bananaRoute = bananaImageRoute(source, request.model);
     if (bananaRoute && request.operation.startsWith("image.")) {
       const ids = connection.settings?.scannedModelIds;
@@ -50,7 +52,9 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       const ids = connection.settings?.scannedModelIds;
       if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
         throw new Error("当前 PDog 分组没有此图片模型的可用权限或接口");
-      return new PdogImageAdapter(this.connections, this.options, connection.settings?.pdogImageMode === "sync" ? "sync" : "async");
+      const mode = request.parameters?.background === "transparent" && transparentEvidence?.transport.kind === "pdog-async"
+        ? "async" : connection.settings?.pdogImageMode === "sync" ? "sync" : "async";
+      return new PdogImageAdapter(this.connections, this.options, mode);
     }
     if (connection.provider === "openai" && request.operation.startsWith("image.") && isChuangxiangImageConnection(source.config, request.model)) {
       const ids = connection.settings?.scannedModelIds;
@@ -60,12 +64,18 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     }
     // These contracts are implemented by the dedicated Images adapter. A saved
     // generic mapping must not silently omit a newly selected background/mask.
-    const editing = getImageEditingCapabilities(source, request.model, request.parameters);
-    if (connection.provider === "openai" && (editing.transparent || editing.mask === "multipart")) {
+    // New measured capabilities pin only transparent requests. Ordinary requests
+    // keep their saved route; legacy declared Images and mask contracts stay intact.
+    if (["openai", "weai"].includes(connection.provider) && (usesDeclaredImagesEditingRoute(source, request.model, request.parameters) ||
+        transparentEvidence && request.parameters?.background === "transparent")) {
       const ids = connection.settings?.scannedModelIds;
       if (current?.metadata?.canvasRunnable === false || current?.metadata?.autoInterfaceStatus === "incomplete" ||
           (Array.isArray(ids) && !ids.includes(request.model)))
         throw new Error("当前分组没有此图片型号的可用权限或完整接口");
+      if (transparentEvidence && request.parameters?.background === "transparent" &&
+          (transparentEvidence.transport.kind !== "openai-images" ||
+           transparentEvidence.transport.path !== "/v1/images/generations" || transparentEvidence.transport.bodyMode !== "json"))
+        throw new Error("此已验证透明接口需要对应的专用传输配置，不能切换为通用图片接口");
       return this.fallback;
     }
     if (current?.metadata?.autoInterfaceStatus === "incomplete") throw new Error(String(current.metadata.canvasUnavailableReason ?? "供应商接口说明待补充"));
