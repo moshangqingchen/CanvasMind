@@ -48,8 +48,32 @@ test("gateway streams only the signed asset, keeps headers private and denies ex
     assert.deepEqual(calls[0].options.headers, { "x-supercanvas-desktop-token": "desktop-private", range: "bytes=0-2" });
     assert.equal((await fetch(url + "&download=1")).status, 403);
     const head = await fetch(url, { method: "HEAD" }); assert.equal(await head.text(), "");
+    assert.equal(calls.at(-1).options.method, "HEAD");
     const health = `http://127.0.0.1:${gateway.port}/api/provider-assets/_health?token=${createProviderAssetToken({ assetId: "_health", secret: "test-key" })}`;
     assert.equal(await (await fetch(health)).text(), "isolated");
+  } finally { await gateway.close(); }
+});
+
+test("gateway preserves suffix ranges and unsatisfied-range metadata for media seeking", async () => {
+  const calls = [];
+  const gateway = await startReferenceGateway({ origin: "http://127.0.0.1:43210", desktopToken: "desktop-private", secret: "test-key", instance: "isolated", port: 0,
+    fetchImpl: async (_url, options) => {
+      calls.push(options);
+      if (options.headers.range === "bytes=-3") return new Response("end", { status: 206, headers: { "content-range": "bytes 7-9/10", "content-length": "3" } });
+      return new Response(null, { status: 416, headers: { "content-range": "bytes */10", "set-cookie": "private" } });
+    } });
+  const url = `http://127.0.0.1:${gateway.port}/api/provider-assets/a?token=${createProviderAssetToken({ assetId: "a", secret: "test-key" })}`;
+  try {
+    const suffix = await fetch(url, { headers: { range: "bytes=-3" } });
+    assert.equal(suffix.status, 206);
+    assert.equal(await suffix.text(), "end");
+    assert.equal(suffix.headers.get("content-range"), "bytes 7-9/10");
+    assert.equal(calls[0].headers.range, "bytes=-3");
+    const unsatisfied = await fetch(url, { headers: { range: "bytes=10-" } });
+    assert.equal(unsatisfied.status, 416);
+    assert.equal(unsatisfied.headers.get("content-range"), "bytes */10");
+    assert.equal(unsatisfied.headers.get("accept-ranges"), "bytes");
+    assert.equal(unsatisfied.headers.get("set-cookie"), null);
   } finally { await gateway.close(); }
 });
 

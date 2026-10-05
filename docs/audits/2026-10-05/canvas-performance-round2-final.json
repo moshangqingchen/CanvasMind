@@ -1,0 +1,182 @@
+[
+  {
+    "scene": "mixed",
+    "count": 200,
+    "gesture": "drag",
+    "samples": 194,
+    "p50": 5.599999999999909,
+    "p95": 11.200000000000273,
+    "max": 127.69999999999982,
+    "over50ms": 2
+  },
+  {
+    "scene": "mixed",
+    "count": 200,
+    "gesture": "zoom",
+    "samples": 99,
+    "p50": 11,
+    "p95": 27.800000000000182,
+    "max": 61.09999999999991,
+    "over50ms": 1
+  },
+  {
+    "scene": "mixed",
+    "count": 200,
+    "gesture": "multiselect-drag",
+    "samples": 138,
+    "p50": 11.100000000000364,
+    "p95": 16.800000000000182,
+    "max": 66.70000000000073,
+    "over50ms": 1
+  },
+  {
+    "scene": "mixed",
+    "count": 50,
+    "gesture": "drag",
+    "samples": 118,
+    "p50": 5.599999999999909,
+    "p95": 5.700000000000273,
+    "max": 33.299999999999955,
+    "over50ms": 0
+  },
+  {
+    "scene": "mixed",
+    "count": 50,
+    "gesture": "zoom",
+    "samples": 158,
+    "p50": 5.599999999999909,
+    "p95": 5.699999999999818,
+    "max": 16.699999999999818,
+    "over50ms": 0
+  },
+  {
+    "scene": "mixed",
+    "count": 50,
+    "gesture": "multiselect-drag",
+    "samples": 123,
+    "p50": 5.599999999999454,
+    "p95": 5.600000000000364,
+    "max": 16.699999999999818,
+    "over50ms": 0
+  },
+  {
+    "scene": "mixed",
+    "count": 500,
+    "gesture": "drag",
+    "samples": 185,
+    "p50": 5.600000000000364,
+    "p95": 22.300000000000182,
+    "max": 183.30000000000018,
+    "over50ms": 4
+  },
+  {
+    "scene": "mixed",
+    "count": 500,
+    "gesture": "zoom",
+    "samples": 82,
+    "p50": 11.100000000000364,
+    "p95": 38.900000000000546,
+    "max": 61.100000000000364,
+    "over50ms": 1
+  },
+  {
+    "scene": "mixed",
+    "count": 500,
+    "gesture": "multiselect-drag",
+    "samples": 133,
+    "p50": 5.699999999998909,
+    "p95": 28,
+    "max": 61.19999999999891,
+    "over50ms": 1
+  },
+  {
+    "scene": "prompt",
+    "count": 200,
+    "gesture": "drag",
+    "samples": 172,
+    "p50": 5.599999999999909,
+    "p95": 11.199999999999818,
+    "max": 55.5,
+    "over50ms": 1
+  },
+  {
+    "scene": "prompt",
+    "count": 200,
+    "gesture": "zoom",
+    "samples": 116,
+    "p50": 5.599999999999909,
+    "p95": 16.800000000000182,
+    "max": 33.40000000000009,
+    "over50ms": 0
+  },
+  {
+    "scene": "prompt",
+    "count": 200,
+    "gesture": "multiselect-drag",
+    "samples": 131,
+    "p50": 5.600000000000364,
+    "p95": 22.100000000000364,
+    "max": 66.60000000000036,
+    "over50ms": 1
+  },
+  {
+    "scene": "prompt",
+    "count": 50,
+    "gesture": "drag",
+    "samples": 100,
+    "p50": 5.599999999999909,
+    "p95": 5.699999999999818,
+    "max": 16.700000000000045,
+    "over50ms": 0
+  },
+  {
+    "scene": "prompt",
+    "count": 50,
+    "gesture": "zoom",
+    "samples": 145,
+    "p50": 5.599999999999909,
+    "p95": 5.600000000000364,
+    "max": 16.59999999999991,
+    "over50ms": 0
+  },
+  {
+    "scene": "prompt",
+    "count": 50,
+    "gesture": "multiselect-drag",
+    "samples": 120,
+    "p50": 5.599999999999454,
+    "p95": 5.699999999999818,
+    "max": 22.300000000000182,
+    "over50ms": 0
+  },
+  {
+    "scene": "prompt",
+    "count": 500,
+    "gesture": "drag",
+    "samples": 188,
+    "p50": 11.099999999999454,
+    "p95": 22.200000000000273,
+    "max": 188.79999999999973,
+    "over50ms": 4
+  },
+  {
+    "scene": "prompt",
+    "count": 500,
+    "gesture": "zoom",
+    "samples": 67,
+    "p50": 11.199999999999818,
+    "p95": 50,
+    "max": 55.5,
+    "over50ms": 1
+  },
+  {
+    "scene": "prompt",
+    "count": 500,
+    "gesture": "multiselect-drag",
+    "samples": 137,
+    "p50": 11.100000000000364,
+    "p95": 50,
+    "max": 94.3799999999992,
+    "over50ms": 6
+  }
+]

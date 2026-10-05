@@ -7,7 +7,7 @@ describe("provider error presentation", () => {
   it("states that failed route discovery did not submit a paid request", () => {
     const cause = Object.assign(new Error("discovery failed"), { code: "PROVIDER_NETWORK_DISCOVERY_FAILED" });
     const error = new ProviderHttpError("Provider network request failed", {
-      kind: "network", phase: "submit", retryable: true, submissionMayHaveOccurred: false, cause,
+      kind: "network", phase: "submit", retryable: true, submissionMayHaveOccurred: false, requestNotSent: true, cause,
     });
     const presentation = presentProviderError(error, { provider: "openai" });
     expect(presentation.type).toBe("连接准备失败");
@@ -81,6 +81,8 @@ describe("provider error presentation", () => {
       type: "内容审核错误",
       code: "content_moderation",
       api: "OpenAI Images API",
+      failureCategory: "content_policy",
+      charge: { status: "unknown", source: "unconfirmed" },
       docsUrl: "https://platform.openai.com/docs/guides/error-codes/api-errors",
     });
   });
@@ -127,6 +129,8 @@ describe("provider error presentation", () => {
       type: "供应商任务超时",
       code: "generation_timeout",
       api: "自定义 REST API",
+      failureCategory: "supplier_error",
+      charge: { status: "unknown", source: "unconfirmed" },
       providerMessage: "Generation timed out, please retry later.",
     });
   });
@@ -396,7 +400,7 @@ describe("provider error presentation", () => {
     });
   });
 
-  it("explains Cyber Afei long-running socket disconnects without blaming local configuration", () => {
+  it("keeps supplier socket disconnects unattributed without claiming authentication was verified", () => {
     const error = new ProviderHttpError("Provider network request failed", {
       kind: "network",
       phase: "submit",
@@ -417,8 +421,10 @@ describe("provider error presentation", () => {
       }),
     ).toMatchObject({
       message:
-        "赛博阿飞或其上游在生成过程中断开了长连接；鉴权和接口地址正常。请求可能已经被受理，请先核对供应商日志与扣费记录，不要立即重复提交。",
-      type: "供应商连接中断",
+        "API 提交过程中连接中断，未收到完整响应。供应商可能仍在生成或已扣费，请先核对原任务和账单，不要重复提交。",
+      type: "连接中断",
+      failureCategory: "network",
+      charge: { status: "unknown", source: "unconfirmed" },
       code: "UND_ERR_SOCKET",
       api: "赛博阿飞 API",
     });
@@ -459,6 +465,8 @@ describe("provider error presentation", () => {
       type: "内容审核错误",
       code: "SAFETY.INPUT.TEXT",
       api: "Runway 视频生成 API",
+      failureCategory: "content_policy",
+      charge: { status: "unknown", source: "unconfirmed" },
       docsUrl: "https://docs.dev.runwayml.com/errors/task-failures/",
     });
   });

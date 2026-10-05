@@ -8,6 +8,7 @@ import { withoutLocalExecutionConfig } from "../lib/project-local-config";
 import { cliInputPorts, cliOperationForNode } from "../lib/cli-input-ports";
 import feedbackStyles from "./blocking-feedback.module.css";
 import { useContextMenu } from "./use-context-menu";
+import { CanvasLoading } from "./canvas-loading";
 
 import { useRouter } from "next/navigation";
 import { CanvasPointerTrail, canvasMotionEnabled, useCanvasMotion } from "./canvas-motion";
@@ -1130,7 +1131,12 @@ function sameRunError(
     left.actionLabel === right.actionLabel &&
     left.phase === right.phase &&
     left.retryable === right.retryable &&
-    left.submissionMayHaveOccurred === right.submissionMayHaveOccurred
+    left.submissionMayHaveOccurred === right.submissionMayHaveOccurred &&
+    left.failureCategory === right.failureCategory &&
+    left.charge?.status === right.charge?.status &&
+    left.charge?.amount === right.charge?.amount &&
+    left.charge?.currency === right.charge?.currency &&
+    left.charge?.source === right.charge?.source
   );
 }
 
@@ -10282,9 +10288,11 @@ export function CanvasApp({ projectId }: { projectId: string }) {
     return result.warning;
   }, [projectId, router]);
 
+  if (!projects && !error) return <CanvasLoading />;
+
   if (!projects || error) {
     return (
-      <div className="shell" aria-busy="true">
+      <div className="shell" aria-busy={!error}>
         <header className="topbar">
           <div className="brand">
             <span className="brand-mark">✦</span>

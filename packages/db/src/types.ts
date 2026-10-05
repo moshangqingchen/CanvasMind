@@ -376,6 +376,8 @@ export interface WebhookEventRecord {
 }
 
 export interface Repository {
+  /** Confirm all current changes are durable before acknowledging a retried save. */
+  flush?(): Promise<void>;
   listSupplierVerifications(): Promise<SupplierVerificationRecord[]>;
   getSupplierVerification(id: string): Promise<SupplierVerificationRecord | null>;
   saveSupplierVerification(record: SupplierVerificationRecord, expectedRevision: number): Promise<SupplierVerificationRecord>;

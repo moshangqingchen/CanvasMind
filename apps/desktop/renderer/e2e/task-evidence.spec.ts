@@ -37,7 +37,7 @@ for (const scenario of ["unknown", "capacity"] as const) {
     if (scenario === "unknown") {
       await expect(result).toContainText("提交结果未知");
       await expect(result).toContainText("供应商任务号：未取得");
-      await expect(result).toContainText("提交和费用尚未确认");
+      await expect(result.getByLabel("失败诊断")).toContainText("扣费待确认");
       await expect(result.getByRole("button", { name: /再次运行/ })).toHaveCount(0);
     } else {
       await expect(result).toContainText("已接单，任务失败");

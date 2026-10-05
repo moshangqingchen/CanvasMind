@@ -2469,6 +2469,8 @@ test.describe("超级画布完整验收", () => {
             type: "模拟测试错误",
             code: "fake_provider_failure",
             api: "本地模拟 API",
+            failureCategory: "unknown",
+            charge: { status: "unknown", source: "unconfirmed" },
           },
         });
 

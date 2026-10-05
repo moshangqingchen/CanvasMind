@@ -22,6 +22,62 @@ afterEach(async () => {
 });
 
 describe("FileRepository", () => {
+  it("waits for the initial snapshot when concurrent callers see the cached default canvas", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
+    temporaryDirectories.push(directory);
+    let entered!: () => void;
+    const writing = new Promise<void>((resolve) => { entered = resolve; });
+    let resume!: () => void;
+    const held = new Promise<void>((resolve) => { resume = resolve; });
+    const repository = new FileRepository(join(directory, "state.json"), async (oldPath, newPath) => {
+      entered();
+      await held;
+      return rename(oldPath, newPath);
+    });
+    const initial = repository.ensureDefaultCanvas();
+    await writing;
+    let settled = false;
+    const cached = repository.ensureDefaultCanvas().finally(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const acknowledgedBeforeWrite = settled;
+    resume();
+    const [first, second] = await Promise.all([initial, cached]);
+    expect(acknowledgedBeforeWrite).toBe(false);
+    expect(second).toEqual(first);
+  });
+
+  it("requires a successful durability barrier before confirming a previously failed canvas save", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json");
+    let diskUnavailable = false;
+    const repository = new FileRepository(path, async (oldPath, newPath) => {
+      if (diskUnavailable) throw Object.assign(new Error("disk unavailable"), { code: "EIO" });
+      return rename(oldPath, newPath);
+    });
+    const canvas = await repository.ensureDefaultCanvas();
+    diskUnavailable = true;
+    await expect(repository.saveCanvas({ id: canvas.id, graph: { saved: true }, expectedRevision: 0 })).rejects.toThrow("disk unavailable");
+    expect(await repository.getCanvas(canvas.id)).toMatchObject({ revision: 1, graph: { saved: true } });
+    expect(await new FileRepository(path).getCanvas(canvas.id)).toMatchObject({ revision: 0 });
+    await expect(repository.flush()).rejects.toThrow("disk unavailable");
+    diskUnavailable = false;
+    await repository.flush();
+    const restored = new FileRepository(path);
+    expect(await restored.getCanvas(canvas.id)).toMatchObject({ revision: 1, graph: { saved: true } });
+    expect(await restored.listRevisions(canvas.id)).toHaveLength(1);
+  });
+
+  it("does not acknowledge a cached default canvas while its initial snapshot still cannot be saved", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
+    temporaryDirectories.push(directory);
+    const repository = new FileRepository(join(directory, "state.json"), async () => {
+      throw Object.assign(new Error("disk unavailable"), { code: "EIO" });
+    });
+    await expect(repository.ensureDefaultCanvas()).rejects.toThrow("disk unavailable");
+    await expect(repository.ensureDefaultCanvas()).rejects.toThrow("disk unavailable");
+  });
+
   it("opens imported UTF-8 snapshots with a byte order mark", async () => {
     const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
     temporaryDirectories.push(directory);

@@ -89,6 +89,60 @@ describe("automatic local provider connection selection", () => {
     expect(socket.bytesWritten).toBe(0);
   });
 
+  it("selects a healthy second address while the first TLS handshake is stalled", async () => {
+    const winner = successfulSocket();
+    const failed = successfulSocket();
+    let stalledSignal: AbortSignal | undefined;
+    const dial = vi.fn(async ({ address }: { address: string }, signal: AbortSignal) => {
+      if (address === "43.154.120.97") return winner;
+      stalledSignal = signal;
+      return new Promise<Socket>((_resolve, reject) => signal.addEventListener("abort", () => {
+        failed.destroy();
+        reject(signal.reason);
+      }, { once: true }));
+    });
+    const test = setup({ resolvePublicAddresses: async () => ["104.156.154.225", "43.154.120.97"], connectTls: dial });
+    await expect(test.connect()).resolves.toBe(winner);
+    expect(dial).toHaveBeenCalledTimes(2);
+    expect(stalledSignal?.aborted).toBe(true);
+    expect(failed.destroyed).toBe(true);
+    expect(winner.destroyed).toBe(false);
+    expect(winner.bytesWritten).toBe(0);
+    expect(test.systemConnector).not.toHaveBeenCalled();
+    winner.destroy();
+  });
+
+  it("hands over only one socket when parallel TLS candidates finish together", async () => {
+    const sockets = [successfulSocket(), successfulSocket(), successfulSocket(), successfulSocket()];
+    let next = 0;
+    const test = setup({
+      resolvePublicAddresses: async () => ["104.156.154.225", "43.154.120.97"],
+      discoverLocalAddresses: async () => ["192.168.1.20", "192.168.2.20"],
+      connectTls: async () => sockets[next++]!,
+    });
+    const winner = await test.connect();
+    expect(sockets.filter(socket => !socket.destroyed)).toEqual([winner]);
+    expect(sockets.every(socket => socket.bytesWritten === 0)).toBe(true);
+    expect(test.systemConnector).not.toHaveBeenCalled();
+    winner.destroy();
+  });
+
+  it("closes a cancelled TLS candidate even if its transport returns a socket late", async () => {
+    const controller = new AbortController();
+    let deliver!: (socket: Socket) => void;
+    const dial = vi.fn(() => new Promise<Socket>(resolve => { deliver = resolve; }));
+    const test = setup({ connectTls: dial });
+    const result = test.connect({ ...request, signal: controller.signal }).catch(error => error);
+    await vi.waitFor(() => expect(dial).toHaveBeenCalledOnce());
+    controller.abort();
+    expect(await result).toMatchObject({ name: "AbortError" });
+    const lateSocket = successfulSocket();
+    deliver(lateSocket);
+    await new Promise(resolve => setImmediate(resolve));
+    expect(lateSocket.destroyed).toBe(true);
+    expect(test.systemConnector).not.toHaveBeenCalled();
+  });
+
   it("shares bounded DNS and physical discovery between connections", async () => {
     const test = setup();
     await Promise.all([test.connect(), test.connect()]);

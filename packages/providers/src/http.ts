@@ -42,6 +42,8 @@ export class ProviderHttpError extends Error {
       retryable: boolean;
       /** True when blindly retrying could create a second paid generation. */
       submissionMayHaveOccurred: boolean;
+      /** Positive evidence that execution stopped before sending any request. */
+      requestNotSent?: true;
       status?: number;
       responseBody?: unknown;
       cause?: unknown;
@@ -428,6 +430,8 @@ const DEFINITELY_PRE_SUBMISSION_CODES = new Set([
   "PROVIDER_NETWORK_DISCOVERY_FAILED",
   "ECONNREFUSED",
   "ENETUNREACH",
+  "ENETDOWN",
+  "EADDRNOTAVAIL",
   "EHOSTUNREACH",
   "ENOTFOUND",
   "EAI_AGAIN",
@@ -487,8 +491,13 @@ function isBlockedIpv4(address: string): boolean {
 function isBlockedIpv6(address: string): boolean {
   // URL normalization also compresses expanded DNS answers and converts an
   // IPv4-mapped dotted suffix to its two hexadecimal words.
-  const normalized = new URL(`http://[${address.replace(/^\[|\]$/gu, "")}]`)
-    .hostname.toLowerCase().replace(/^\[|\]$/gu, "");
+  let normalized: string;
+  try {
+    normalized = new URL(`http://[${address.replace(/^\[|\]$/gu, "")}]`)
+      .hostname.toLowerCase().replace(/^\[|\]$/gu, "");
+  } catch {
+    return true;
+  }
   if (normalized === "::" || normalized === "::1") return true;
   const mapped = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/u.exec(normalized);
   if (mapped) {
@@ -496,14 +505,11 @@ function isBlockedIpv6(address: string): boolean {
     const low = Number.parseInt(mapped[2]!, 16);
     return isBlockedIpv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
   }
-  return (
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd") ||
-    normalized.startsWith("fe8") ||
-    normalized.startsWith("fe9") ||
-    normalized.startsWith("fea") ||
-    normalized.startsWith("feb")
-  );
+  const [first, second] = normalized.split(":", 2).map(value => Number.parseInt(value, 16));
+  // Only global unicast addresses can receive provider credentials. This also
+  // excludes multicast, deprecated site-local and IPv4-compatible forms.
+  return first === undefined || !Number.isFinite(first) || first < 0x2000 || first > 0x3fff ||
+    (first === 0x2001 && second === 0xdb8);
 }
 
 function isBlockedAddress(address: string): boolean {
@@ -583,19 +589,78 @@ function responseContentLength(response: Response): number | undefined {
   return Number.isSafeInteger(value) ? value : undefined;
 }
 
+/** Bound custom transports and DNS as well as fetch, and observe late failures. */
+function withRequestSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => {
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason);
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    void work.then(
+      value => { signal.removeEventListener("abort", abort); resolve(value); },
+      error => { signal.removeEventListener("abort", abort); reject(error); },
+    );
+  });
+}
+
+function awaitProviderResponse(work: Promise<Response>, signal: AbortSignal): Promise<Response> {
+  return withRequestSignal(work.then(response => {
+    if (signal.aborted) {
+      void response.body?.cancel().catch(() => undefined);
+      signal.throwIfAborted();
+    }
+    return response;
+  }), signal);
+}
+
+async function validateRequestEndpoint(
+  url: string,
+  options: ProviderFetchOptions,
+  signal: AbortSignal,
+  timeoutSignal: AbortSignal,
+): Promise<void> {
+  try {
+    signal.throwIfAborted();
+    await withRequestSignal(assertSafeProviderEndpoint(
+      url,
+      options.allowLoopback ? { allowLoopback: true } : {},
+    ), signal);
+    signal.throwIfAborted();
+  } catch (error) {
+    const timedOut = timeoutSignal.aborted;
+    const cancelled = !timedOut && signal.aborted;
+    throw new ProviderHttpError(
+      timedOut ? "Provider request timed out"
+        : cancelled ? "Provider request was cancelled" : "Provider endpoint is not allowed",
+      {
+        kind: timedOut ? "timeout" : cancelled ? "network" : "invalid_request",
+        phase: options.phase,
+        retryable: timedOut,
+        submissionMayHaveOccurred: false,
+        requestNotSent: true,
+        cause: error,
+      },
+    );
+  }
+}
+
 async function readResponseBytes(
   response: Response,
   maxBytes: number,
   progress?: (bytes: number) => void,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   const declaredLength = responseContentLength(response);
   if (declaredLength !== undefined && declaredLength > maxBytes) {
-    await response.body?.cancel().catch(() => undefined);
+    void response.body?.cancel().catch(() => undefined);
     throw new ProviderResponseTooLargeError(maxBytes);
   }
 
   if (!response.body) {
-    const data = new Uint8Array(await response.arrayBuffer());
+    const read = response.arrayBuffer();
+    const data = new Uint8Array(await (signal ? withRequestSignal(read, signal) : read));
     progress?.(data.byteLength);
     if (data.byteLength > maxBytes)
       throw new ProviderResponseTooLargeError(maxBytes);
@@ -605,19 +670,24 @@ async function readResponseBytes(
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
+  let completed = false;
   try {
     while (true) {
-      const next = await reader.read();
-      if (next.done) break;
+      signal?.throwIfAborted();
+      const read = reader.read();
+      const next = await (signal ? withRequestSignal(read, signal) : read);
+      if (next.done) { completed = true; break; }
       length += next.value.byteLength;
       progress?.(length);
       if (length > maxBytes) {
-        await reader.cancel().catch(() => undefined);
         throw new ProviderResponseTooLargeError(maxBytes);
       }
       chunks.push(next.value);
     }
   } finally {
+    // A custom stream may not listen to fetch's signal. Cancel its pending
+    // read explicitly, without letting a stalled cancellation block the caller.
+    if (!completed) void reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
   const data = new Uint8Array(length);
@@ -706,10 +776,11 @@ async function readResponseBody(
   response: Response,
   maxBytes: number,
   progress?: (bytes: number) => void,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
   const text = new TextDecoder().decode(
-    await readResponseBytes(response, maxBytes, progress),
+    await readResponseBytes(response, maxBytes, progress, signal),
   );
   if (text.length === 0) return undefined;
   if (contentType.includes("json")) {
@@ -729,68 +800,64 @@ export async function fetchProviderJson<T>(
   options: ProviderFetchOptions,
 ): Promise<T> {
   const startedAt = Date.now();
-  try {
-    await assertSafeProviderEndpoint(
-      url,
-      options.allowLoopback ? { allowLoopback: true } : {},
-    );
-  } catch (error) {
-    throw new ProviderHttpError("Provider endpoint is not allowed", {
-      kind: "invalid_request",
-      phase: options.phase,
-      retryable: false,
-      submissionMayHaveOccurred: false,
-      cause: error,
-    });
-  }
   const signals = [init.signal, options.signal, submissionSignal.getStore()].filter((signal): signal is AbortSignal => Boolean(signal));
   const callerSignal = signals.length ? AbortSignal.any(signals) : undefined;
-  if (callerSignal?.aborted) {
-    throw new ProviderHttpError("Provider request was cancelled", {
-      kind: "network",
-      phase: options.phase,
-      retryable: false,
-      submissionMayHaveOccurred: false,
-      cause: callerSignal.reason,
-    });
-  }
   const controller = new AbortController();
-  const trace: RequestTransportTrace = { origin: new URL(url).origin, path: {} };
   const cloudTransport = options.phase === "submit" ? submitTransport.getStore() : undefined;
   const timeoutMs = cloudTransport ? 31 * 60_000 : options.timeoutMs ?? 60_000;
   const timeout = timeoutMs === 0 ? undefined : setTimeout(() => controller.abort(), timeoutMs);
+  const signal = callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal;
+  try {
+    await validateRequestEndpoint(url, options, signal, controller.signal);
+  } catch (error) {
+    clearTimeout(timeout);
+    throw error;
+  }
+  const trace: RequestTransportTrace = { origin: new URL(url).origin, path: {} };
   let response: Response;
+  let receivedResponse: Response | undefined;
+  let requestStarted = false;
   try {
     const requestInit: RequestInit = {
       ...init,
-      signal: callerSignal
-        ? AbortSignal.any([controller.signal, callerSignal])
-        : controller.signal,
+      signal,
       redirect: "error",
     };
-    if (options.phase === "submit" && !cloudTransport) await submissionProgress.getStore()?.("waiting_provider");
-    response = cloudTransport
-      ? await cloudTransport(url, requestInit, options)
-      : await transportTrace.scope.run(trace, () => requestTransportTimeout.run(timeoutMs, () => fetchImpl(url, requestInit)));
-    if (options.phase === "submit" && !cloudTransport && response.ok) await submissionProgress.getStore()?.("receiving");
+    const progress = options.phase === "submit" && !cloudTransport ? submissionProgress.getStore() : undefined;
+    if (progress) await withRequestSignal(progress("waiting_provider"), signal);
+    // Progress persistence can yield to cancellation; no supplier call may
+    // start after that boundary, even if a custom transport ignores signals.
+    signal.throwIfAborted();
+    requestStarted = true;
+    response = await awaitProviderResponse(cloudTransport
+      ? cloudTransport(url, requestInit, options)
+      : transportTrace.scope.run(trace, () => requestTransportTimeout.run(timeoutMs, () => fetchImpl(url, requestInit))), signal);
+    receivedResponse = response;
+    if (progress && response.ok) await withRequestSignal(progress("receiving"), signal);
   } catch (error) {
-    if (error instanceof ProviderProxyConfigurationError) {
+    // The body reader has not taken ownership while a progress callback is
+    // running. Release the response here if that callback fails or stalls.
+    void receivedResponse?.body?.cancel().catch(() => undefined);
+    if (error instanceof ProviderProxyConfigurationError && !receivedResponse) {
       clearTimeout(timeout);
       throw new ProviderHttpError(error.message, {
         kind: "invalid_request", phase: options.phase, retryable: false,
         submissionMayHaveOccurred: false,
+        requestNotSent: true,
         transport: transportEvidence(error, startedAt, "awaiting_headers", 0, trace.path),
       });
     }
     const timedOut = controller.signal.aborted;
     const cancelled = !timedOut && callerSignal?.aborted === true;
-    const mayHaveOccurred = submissionMayHaveOccurred(
+    const mayHaveOccurred = requestStarted && submissionMayHaveOccurred(
       options.phase,
-      undefined,
+      receivedResponse?.status,
       error,
     );
     clearTimeout(timeout);
-    if (error instanceof ProviderHttpError) throw error;
+    // A receiving-progress callback runs after the provider answered. Its own
+    // connection error cannot turn this accepted request into a safe retry.
+    if (error instanceof ProviderHttpError && !receivedResponse) throw error;
     throw new ProviderHttpError(
       timedOut
         ? "Provider request timed out"
@@ -806,6 +873,7 @@ export async function fetchProviderJson<T>(
             options.phase !== "submit" ||
             options.idempotent === true),
         submissionMayHaveOccurred: mayHaveOccurred,
+        ...(!receivedResponse && (!requestStarted || DEFINITELY_PRE_SUBMISSION_CODES.has(providerTransportErrorCode(error) ?? "")) ? { requestNotSent: true as const } : {}),
         transport: transportEvidence(error, startedAt, "awaiting_headers", 0, trace.path),
         cause: error,
       },
@@ -819,6 +887,7 @@ export async function fetchProviderJson<T>(
       response,
       options.maxResponseBytes ?? DEFAULT_JSON_RESPONSE_BYTES,
       bytes => { responseBytes = bytes; },
+      signal,
     );
   } catch (error) {
     clearTimeout(timeout);
@@ -903,39 +972,30 @@ export async function fetchProviderBytes(
   options: Omit<ProviderFetchOptions, "allowEmpty">,
 ): Promise<{ data: Uint8Array; mimeType?: string }> {
   const startedAt = Date.now();
-  try {
-    await assertSafeProviderEndpoint(
-      url,
-      options.allowLoopback ? { allowLoopback: true } : {},
-    );
-  } catch (error) {
-    throw new ProviderHttpError("Provider endpoint is not allowed", {
-      kind: "invalid_request",
-      phase: options.phase,
-      retryable: false,
-      submissionMayHaveOccurred: false,
-      cause: error,
-    });
-  }
   const controller = new AbortController();
-  const trace: RequestTransportTrace = { origin: new URL(url).origin, path: {} };
   const timeoutMs = options.timeoutMs ?? 60_000;
-  const timeout = timeoutMs === 0 ? undefined : setTimeout(
-    () => controller.abort(),
-    timeoutMs,
-  );
-  const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+  const timeout = timeoutMs === 0 ? undefined : setTimeout(() => controller.abort(), timeoutMs);
+  const signals = [options.signal, submissionSignal.getStore()].filter((signal): signal is AbortSignal => Boolean(signal));
+  const callerSignal = signals.length ? AbortSignal.any(signals) : undefined;
+  const signal = callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal;
+  try {
+    await validateRequestEndpoint(url, options, signal, controller.signal);
+  } catch (error) {
+    clearTimeout(timeout);
+    throw error;
+  }
+  const trace: RequestTransportTrace = { origin: new URL(url).origin, path: {} };
   let stage: "awaiting_headers" | "reading_body" = "awaiting_headers";
   let responseBytes = 0;
   try {
     signal.throwIfAborted();
-    const response = await transportTrace.scope.run(trace, () => requestTransportTimeout.run(timeoutMs, () => fetchImpl(url, {
+    const response = await awaitProviderResponse(transportTrace.scope.run(trace, () => requestTransportTimeout.run(timeoutMs, () => fetchImpl(url, {
       signal,
       redirect: "error",
-    })));
+    }))), signal);
     stage = "reading_body";
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
+      void response.body?.cancel().catch(() => undefined);
       throw new ProviderHttpError(
         `Asset download returned HTTP ${response.status}`,
         {
@@ -952,6 +1012,7 @@ export async function fetchProviderBytes(
       response,
       options.maxResponseBytes ?? DEFAULT_BINARY_RESPONSE_BYTES,
       bytes => { responseBytes = bytes; },
+      signal,
     );
     const mimeType = response.headers.get("content-type") ?? undefined;
     return mimeType === undefined ? { data } : { data, mimeType };
@@ -965,7 +1026,7 @@ export async function fetchProviderBytes(
       });
     }
     const timedOut = controller.signal.aborted;
-    const cancelled = !timedOut && options.signal?.aborted === true;
+    const cancelled = !timedOut && callerSignal?.aborted === true;
     throw new ProviderHttpError(
       timedOut
         ? "Asset download timed out"

@@ -28,6 +28,8 @@ export interface RunErrorDetails {
   retryable?: boolean;
   submissionMayHaveOccurred?: boolean;
   transport?: ProviderErrorPresentation["transport"];
+  failureCategory?: ProviderErrorPresentation["failureCategory"];
+  charge?: ProviderErrorPresentation["charge"];
 }
 
 export interface GenerationInputAsset {

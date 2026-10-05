@@ -90,15 +90,15 @@ function ipv4IsPublic(address: string): boolean {
   ) {
     return false;
   }
-  const [a = 0, b = 0] = octets;
+  const [a = 0, b = 0, c = 0] = octets;
   if (a === 0 || a === 10 || a === 127) return false;
   if (a === 100 && b >= 64 && b <= 127) return false;
   if (a === 169 && b === 254) return false;
   if (a === 172 && b >= 16 && b <= 31) return false;
   if (a === 192 && (b === 0 || b === 168)) return false;
-  if (a === 192 && b === 88) return false;
-  if (a === 198 && (b === 18 || b === 19 || b === 51)) return false;
-  if (a === 203 && b === 0) return false;
+  if (a === 192 && b === 88 && c === 99) return false;
+  if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return false;
+  if (a === 203 && b === 0 && c === 113) return false;
   if (a >= 224) return false;
   return true;
 }
@@ -108,13 +108,25 @@ export function isPublicNetworkAddress(address: string): boolean {
   if (family === 4) return ipv4IsPublic(address);
   if (family !== 6) return false;
 
-  const normalized = address.toLowerCase().split("%")[0] ?? "";
-  const dottedTail = normalized.match(/(\d+\.\d+\.\d+\.\d+)$/u)?.[1];
-  if (dottedTail) return ipv4IsPublic(dottedTail);
-  if (normalized.startsWith("2001:db8:")) return false;
-  const firstSegment = normalized.split(":", 1)[0];
+  // URL literals and DNS can spell the same IPv4-mapped address with dotted
+  // bytes or hexadecimal words. Apply the IPv4 policy to both consistently.
+  let normalized: string;
+  try {
+    normalized = new URL(`http://[${address}]`).hostname.replace(/^\[|\]$/gu, "");
+  } catch {
+    // Scoped/link-local addresses cannot be remote artifact destinations.
+    return false;
+  }
+  const mapped = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/u.exec(normalized);
+  if (mapped) {
+    const high = Number.parseInt(mapped[1]!, 16);
+    const low = Number.parseInt(mapped[2]!, 16);
+    return ipv4IsPublic(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+  }
+  const [firstSegment, secondSegment] = normalized.split(":", 2);
+  const first = Number.parseInt(firstSegment ?? "", 16);
+  if (first === 0x2001 && Number.parseInt(secondSegment ?? "", 16) === 0xdb8) return false;
   if (!firstSegment) return false;
-  const first = Number.parseInt(firstSegment, 16);
   return first >= 0x2000 && first <= 0x3fff;
 }
 
@@ -272,6 +284,7 @@ async function requestThroughProviderProxy(
   signal: AbortSignal,
   maxBytes: number,
 ): Promise<RemoteStreamResponse> {
+  if (signal.aborted) throw new Error("Provider output download timed out");
   const target = new URL(url.href);
   if (resolved.pinProxyTarget) {
     target.hostname =
@@ -292,11 +305,15 @@ async function requestThroughProviderProxy(
         { method: "GET", redirect: "manual", signal, headers },
         process.env.ARTIFACT_HTTP_PROXY,
       );
+  if (signal.aborted) {
+    void response.body?.cancel().catch(() => undefined);
+    throw new Error("Provider output download timed out");
+  }
   const status = response.status;
   const location = response.headers.get("location") ?? undefined;
   const contentType = response.headers.get("content-type") ?? undefined;
   if (status < 200 || status >= 300) {
-    await response.body?.cancel();
+    void response.body?.cancel().catch(() => undefined);
     return {
       status,
       location,
@@ -306,7 +323,7 @@ async function requestThroughProviderProxy(
     };
   }
   if (Number(response.headers.get("content-length")) > maxBytes) {
-    await response.body?.cancel();
+    void response.body?.cancel().catch(() => undefined);
     throw new Error(`Provider output exceeds ${maxBytes} bytes`);
   }
   const chunks = (async function* () {
@@ -319,7 +336,9 @@ async function requestThroughProviderProxy(
         yield value;
       }
     } finally {
-      await reader.cancel().catch(() => undefined);
+      // Cancellation starts synchronously, but a custom stream's cleanup may
+      // never settle. It must not hide the timeout or the storage error.
+      void reader.cancel().catch(() => undefined);
       reader.releaseLock();
     }
   })();
@@ -329,17 +348,20 @@ async function requestThroughProviderProxy(
     chunks,
     close: async () => {
       await chunks.return(undefined);
-      await response.body?.cancel().catch(() => undefined);
+      void response.body?.cancel().catch(() => undefined);
     },
   };
 }
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted)
-    return Promise.reject(new Error("Provider output download timed out"));
   return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(new Error("Provider output download timed out"));
-    signal.addEventListener("abort", abort, { once: true });
+    const abort = () => {
+      signal.removeEventListener("abort", abort);
+      reject(new Error("Provider output download timed out"));
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    // Observe the operation even when the deadline expired before the wait.
     void promise.then(
       (value) => {
         signal.removeEventListener("abort", abort);

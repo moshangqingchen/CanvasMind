@@ -5,6 +5,25 @@ import { presentProviderError } from "../../../../packages/providers/src/error-p
 import { ProviderHttpError } from "../../../../packages/providers/src/http";
 
 describe("localizeRunError", () => {
+  it("does not reinterpret a supplier account-pool balance failure as the user's empty balance", () => {
+    const error = {
+      message: "供应商当前没有适用于所选模型或线路的可用账号，请核对原任务。",
+      type: "供应商无可用兼容账号", failureCategory: "supplier_capacity", code: "upstream_balance_exhausted",
+      providerMessage: "Upstream account insufficient balance",
+      charge: { status: "unknown", source: "unconfirmed" },
+    };
+    expect(localizeRunError(error, { provider: "rest", supplier: "cyberafei" })).toEqual(error);
+    const legacy = localizeRunError({ message: "Upstream account insufficient balance" });
+    expect(legacy?.type).toBe("供应商无可用兼容账号");
+    expect(legacy?.message).not.toContain("请充值");
+  });
+
+  it("uses explicit network classification even if upstream diagnostics mention billing", () => {
+    const error = localizeRunError({ message: "Connection reset after submission", failureCategory: "network",
+      providerMessage: "Request failed while checking insufficient balance", charge: { status: "unknown", source: "unconfirmed" } });
+    expect(error?.message).toContain("网络");
+    expect(error?.message).not.toMatch(/充值|供应商返回了生成错误|稍后重试/);
+  });
   it("explains saved socket submission errors without changing their evidence", () => {
     const error = {
       message: "API 提交时网络连接失败，请检查网络和接口地址。",
@@ -178,8 +197,41 @@ describe("localizeRunError", () => {
 
   it.each(["No available compatible accounts", "No_available_compatible_accounts"])("keeps server and legacy client account-pool explanations aligned: %s", raw => {
     const server = presentProviderError(new Error(raw), { provider: "openai", operation: "image.generate" });
-    expect(localizeRunError(raw, { provider: "openai" })).toEqual(server);
+    const legacy = { ...server };
+    delete legacy.failureCategory;
+    delete legacy.charge;
+    expect(localizeRunError(raw, { provider: "openai" })).toEqual(legacy);
     expect(localizeRunError(server, { provider: "openai", status: "failed", providerTaskStatus: "failed" })).toEqual(server);
+  });
+
+  it.each(["authentication failed", "rate limit", "request timed out", "Unknown provider error"])("preserves explicit billing evidence while translating %s", message => {
+    const charge = { status: "charged", amount: 0.034, currency: "USD", source: "provider_response" };
+    expect(localizeRunError({ message, charge, failureCategory: "network" })).toMatchObject({ charge, failureCategory: "network" });
+  });
+
+  it("keeps confirmed supplier failures focused on the original task instead of blaming user parameters", () => {
+    const charge = { status: "charged", amount: 0.036, currency: "USD", source: "provider_response" };
+    const error = localizeRunError({ message: "Provider failed after billing", failureCategory: "supplier_error", charge });
+    expect(error).toMatchObject({
+      message: "供应商未能完成本次生成。请核对供应商状态、原任务和账单，再决定是否重新生成。",
+      failureCategory: "supplier_error", charge,
+    });
+    expect(error?.message).not.toMatch(/检查接入参数|稍后重试/);
+  });
+
+  it("whitelists billing evidence from historical canvas drafts", () => {
+    expect(localizeRunError({ message: "生成失败", failureCategory: "not-real",
+      charge: { status: "charged", amount: -3, currency: "\nsecret\n", source: "provider_response", authorization: "secret" },
+    })).toEqual({ message: "生成失败", charge: { status: "charged", source: "provider_response" } });
+    const unknown = localizeRunError({ message: "生成失败", charge: { status: "unknown", amount: 12, currency: "USD", source: "provider_response" } });
+    expect(unknown?.charge).toEqual({ status: "unknown", source: "unconfirmed" });
+    expect(localizeRunError({ message: "生成失败", charge: { status: "not_charged", source: "unconfirmed" } })?.charge)
+      .toEqual({ status: "unknown", source: "unconfirmed" });
+    expect(localizeRunError({ message: "生成失败", charge: { status: "charged", source: "not_submitted" } })?.charge)
+      .toEqual({ status: "unknown", source: "unconfirmed" });
+    for (const charge of [{ status: "charged", amount: 0 }, { status: "not_charged", amount: 1 }])
+      expect(localizeRunError({ message: "生成失败", charge: { ...charge, source: "provider_response" } })?.charge)
+        .toEqual({ status: "unknown", source: "unconfirmed" });
   });
 
   it.each(["submit", "poll"] as const)("keeps server and client gateway evidence aligned during %s", phase => {
@@ -237,6 +289,22 @@ describe("localizeRunError", () => {
       actionUrl: "https://api.3365api.cn/",
       actionLabel: "前往赛博阿飞 API官网查看余额",
     });
+  });
+
+  it.each(["账户余额不足，请检查计费状态。", "Insufficient user balance"])("restores the balance website action for classified public errors: %s", message => {
+    // Public run errors retain the category and billing evidence, but omit action URLs.
+    const error = {
+      message, failureCategory: "insufficient_balance", code: "INSUFFICIENT_BALANCE",
+      charge: { status: "unknown", source: "unconfirmed" },
+    };
+    const localized = localizeRunError(error, { provider: "rest", supplier: "cyberafei" });
+    expect(localized).toMatchObject({
+      failureCategory: "insufficient_balance", code: "INSUFFICIENT_BALANCE", charge: error.charge,
+      actionUrl: "https://api.3365api.cn/", actionLabel: "前往赛博阿飞 API官网查看余额",
+    });
+    if (message.includes("余额")) expect(localized?.message).toBe(message);
+    expect(localizeRunError({ ...error, actionUrl: "https://billing.example.com/", actionLabel: "核对账单" },
+      { provider: "rest", supplier: "cyberafei" })).toMatchObject({ actionUrl: "https://billing.example.com/", actionLabel: "核对账单" });
   });
 
   it("corrects legacy structured balance and safety classifications", () => {

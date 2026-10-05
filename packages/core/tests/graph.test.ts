@@ -29,6 +29,23 @@ const dag: WorkflowGraph = {
 };
 
 describe("DAG algorithms", () => {
+  it("validates long chains without exhausting the call stack and still finds back edges", () => {
+    const nodes = Array.from({ length: 12_000 }, (_, index) => ({
+      id: String(index).padStart(5, "0"),
+      type: "prompt",
+    }));
+    const edges = nodes.slice(1).map((node, index) => ({
+      id: `edge-${index}`,
+      source: nodes[index]!.id,
+      target: node.id,
+    }));
+    expect(findCycles({ nodes, edges })).toEqual([]);
+    edges.push({ id: "back", source: "11999", target: "11997" });
+    expect(findCycles({ nodes, edges })).toEqual([
+      ["11997", "11998", "11999", "11997"],
+    ]);
+  });
+
   it("returns deterministic layers and order", () => {
     expect(topologicalLayers(dag)).toEqual([
       ["asset", "prompt"],

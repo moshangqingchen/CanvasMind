@@ -22,8 +22,12 @@ const mocks = vi.hoisted(() => {
     put: vi.fn(),
     delete: vi.fn(),
   };
-  return { repository, storage };
+  return { repository, storage, archiveGeneratedAssetForFinished: vi.fn() };
 });
+
+vi.mock("../../../lib/project-service", () => ({
+  archiveGeneratedAssetForFinished: mocks.archiveGeneratedAssetForFinished,
+}));
 
 vi.mock("../../../lib/server", () => ({
   repository: mocks.repository,
@@ -34,7 +38,7 @@ vi.mock("../../../lib/server", () => ({
   },
 }));
 
-import { GET as getAssetContent } from "./[id]/content/route";
+import { GET as getAssetContent, HEAD as headAssetContent } from "./[id]/content/route";
 import { GET as listVisibleAssets } from "./route";
 import { POST as bulkDeleteAssets } from "./bulk-delete/route";
 import {
@@ -148,6 +152,36 @@ describe("bulk asset deletion route", () => {
 });
 
 describe("asset content route", () => {
+  it("answers HEAD from metadata without reading or archiving the media", async () => {
+    const response = await headAssetContent(
+      new Request("http://localhost/api/assets/asset-1/content?download=1", {
+        method: "HEAD", headers: { range: "bytes=-3" },
+      }),
+      { params: Promise.resolve({ id: "asset-1" }) },
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toBeNull();
+    expect(response.headers.get("content-length")).toBe("10");
+    expect(response.headers.get("content-type")).toBe("video/mp4");
+    expect(response.headers.get("content-disposition")).toContain("clip.mp4");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(mocks.storage.head).toHaveBeenCalledWith(asset.storageKey);
+    expect(mocks.storage.get).not.toHaveBeenCalled();
+    expect(mocks.storage.getRange).not.toHaveBeenCalled();
+    expect(mocks.archiveGeneratedAssetForFinished).not.toHaveBeenCalled();
+  });
+
+  it("returns a bodyless 404 when HEAD cannot find the stored media", async () => {
+    mocks.storage.head.mockResolvedValueOnce(null);
+    const response = await headAssetContent(
+      new Request("http://localhost/api/assets/asset-1/content", { method: "HEAD" }),
+      { params: Promise.resolve({ id: "asset-1" }) },
+    );
+    expect(response.status).toBe(404);
+    expect(response.body).toBeNull();
+    expect(mocks.storage.get).not.toHaveBeenCalled();
+  });
+
   it("forces a named attachment for explicit downloads", async () => {
     mocks.repository.getAsset.mockResolvedValueOnce({
       ...asset,

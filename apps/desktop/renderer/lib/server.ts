@@ -126,6 +126,37 @@ export interface PublicRunError {
   phase?: ProviderErrorPresentation["phase"];
   retryable?: boolean;
   submissionMayHaveOccurred?: boolean;
+  failureCategory?: ProviderErrorPresentation["failureCategory"];
+  charge?: ProviderErrorPresentation["charge"];
+}
+
+const PUBLIC_FAILURE_CATEGORIES = new Set([
+  "insufficient_balance", "local_network", "network", "supplier_capacity",
+  "supplier_error", "authentication", "rate_limit", "invalid_request",
+  "content_policy", "local_storage", "unknown",
+]);
+
+/** Billing evidence is a bounded value object, never the raw supplier response. */
+function publicCharge(value: unknown): PublicRunError["charge"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const row = value as Record<string, unknown>;
+  if (!["charged", "not_charged", "refunded", "unknown"].includes(String(row.status)) ||
+      !["provider_response", "not_submitted", "unconfirmed"].includes(String(row.source))) return undefined;
+  const unknown = { status: "unknown", source: "unconfirmed" } as const;
+  if (row.status === "unknown" || row.source === "unconfirmed") return unknown;
+  const amount = typeof row.amount === "number" && Number.isFinite(row.amount) && row.amount >= 0
+    ? row.amount : undefined;
+  if ((row.source === "not_submitted" && row.status !== "not_charged") ||
+      (row.status === "not_charged" && row.amount !== undefined && amount !== 0) ||
+      (row.status === "charged" && amount === 0)) return unknown;
+  const currency = typeof row.currency === "string" && /^(?:[A-Za-z][A-Za-z0-9_-]{0,15}|[¥￥$€£]|元|人民币|积分|点数|额度)$/u.test(row.currency)
+    ? row.currency : undefined;
+  return {
+    status: row.status as NonNullable<PublicRunError["charge"]>["status"],
+    source: row.source as NonNullable<PublicRunError["charge"]>["source"],
+    ...(amount === undefined ? {} : { amount }),
+    ...(currency ? { currency } : {}),
+  };
 }
 
 function publicError(
@@ -159,6 +190,7 @@ function publicError(
     typeof value.providerMessage === "string"
       ? redactPublicText(value.providerMessage).slice(0, 2_048)
       : undefined;
+  const charge = publicCharge(value.charge);
   return {
     message,
     ...(detail("type") ? { type: detail("type") } : {}),
@@ -170,6 +202,9 @@ function publicError(
     ...(["connect", "submit", "poll", "cancel", "archive"].includes(String(value.phase)) ? { phase: value.phase as ProviderErrorPresentation["phase"] } : {}),
     ...(typeof value.retryable === "boolean" ? { retryable: value.retryable } : {}),
     ...(typeof value.submissionMayHaveOccurred === "boolean" ? { submissionMayHaveOccurred: value.submissionMayHaveOccurred } : {}),
+    ...(typeof value.failureCategory === "string" && PUBLIC_FAILURE_CATEGORIES.has(value.failureCategory)
+      ? { failureCategory: value.failureCategory as PublicRunError["failureCategory"] } : {}),
+    ...(charge ? { charge } : {}),
   };
 }
 

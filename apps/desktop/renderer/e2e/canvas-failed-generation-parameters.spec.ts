@@ -137,7 +137,7 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
     await page.getByRole("button", { name: "运行 失败参数测试 节点", exact: true }).click();
     const result = page.locator(".react-flow__node:has(.generated-result-state.failed)");
     await expect(result).toHaveCount(1);
-    await expect(result.locator(".result-error-summary")).toContainText("隔离测试：");
+    await expect(result.getByLabel("失败诊断")).toContainText("隔离测试：");
     await expect.poll(() => submissions).toBe(1);
 
     await expect(panel).toBeVisible();

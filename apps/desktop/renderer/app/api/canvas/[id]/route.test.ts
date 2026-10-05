@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   repository: {
     getCanvas: vi.fn(),
     saveCanvas: vi.fn(),
+    flush: vi.fn(),
   },
 }));
 
@@ -38,10 +39,55 @@ function request(expectedRevision?: number) {
 const context = { params: Promise.resolve({ id: "canvas-1" }) };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe("PUT /api/canvas/[id]", () => {
+  it("acknowledges a repeated save after its first response was lost without incrementing revision", async () => {
+    const saved = { id: "canvas-1", title: "Canvas", graph: {
+      viewport: { zoom: 1, y: 0, x: 0 }, edges: [], nodes: [], schemaVersion: 1,
+    }, revision: 8 };
+    mocks.repository.saveCanvas.mockRejectedValue(new CanvasRevisionConflictError(7, 8));
+    mocks.repository.getCanvas.mockResolvedValue(saved);
+    mocks.repository.flush.mockResolvedValue(undefined);
+
+    const response = await PUT(request(7), context);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(saved);
+    expect(mocks.repository.flush).toHaveBeenCalledOnce();
+    expect(mocks.repository.saveCanvas).toHaveBeenCalledOnce();
+  });
+
+  it("never acknowledges a matching in-memory graph when the durability check fails", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(new CanvasRevisionConflictError(7, 8));
+    mocks.repository.getCanvas.mockResolvedValue({ id: "canvas-1", title: "Canvas", graph, revision: 8 });
+    mocks.repository.flush.mockRejectedValue(new Error("disk full"));
+    expect((await PUT(request(7), context)).status).toBe(500);
+  });
+
+  it("preserves a genuine conflict if the graph changes during the durability check", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(new CanvasRevisionConflictError(7, 8));
+    mocks.repository.getCanvas
+      .mockResolvedValueOnce({ id: "canvas-1", title: "Canvas", graph, revision: 8 })
+      .mockResolvedValueOnce({ id: "canvas-1", title: "Canvas", graph: { ...graph, viewport: { x: 20, y: 0, zoom: 1 } }, revision: 9 });
+    const response = await PUT(request(7), context);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ currentRevision: 9 });
+  });
+
+  it("does not acknowledge a different title or a future expected revision", async () => {
+    mocks.repository.saveCanvas.mockRejectedValue(new CanvasRevisionConflictError(7, 8));
+    mocks.repository.getCanvas.mockResolvedValue({ id: "canvas-1", title: "Renamed elsewhere", graph, revision: 8 });
+    const renamed = new Request("http://localhost/api/canvas/canvas-1", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ graph, expectedRevision: 7, title: "Original title" }),
+    });
+    expect((await PUT(renamed, context)).status).toBe(409);
+    expect((await PUT(request(9), context)).status).toBe(409);
+    expect(mocks.repository.flush).not.toHaveBeenCalled();
+  });
+
   it("forwards an optional expected revision to the repository", async () => {
     mocks.repository.saveCanvas.mockResolvedValue({
       id: "canvas-1",

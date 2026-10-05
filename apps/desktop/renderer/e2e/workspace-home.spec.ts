@@ -34,10 +34,26 @@ const newer: HomeProject = {
   updatedAt: "2026-09-04T08:00:00.000Z",
 };
 
+for (const title of ["做活动海报", "修改客户原图", "制作多尺寸物料"]) {
+  test(`已有同名任务时仍可再次开始：${title}`, async ({ page }) => {
+    const state = await mockWorkspace(page, [
+      { ...older, title },
+      { ...newer, title: `${title} 2` },
+    ]);
+    await page.goto("/");
+    await expect(page.getByRole("article")).toHaveCount(2);
+    await page.getByRole("button", { name: title, exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "平面设计", exact: true })).toBeVisible();
+    expect(state.createdTitles).toEqual([`${title} 3`]);
+    await expect(page).toHaveURL(/\/canvas\/home-created$/u);
+  });
+}
+
 /** Every application API is mocked: these tests cannot access user data or run models. */
 async function mockWorkspace(page: Page, initial: HomeProject[]) {
   let projects = structuredClone(initial);
   const mutations: string[] = [];
+  const createdTitles: string[] = [];
   const canvasReads: string[] = [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -47,6 +63,7 @@ async function mockWorkspace(page: Page, initial: HomeProject[]) {
     if (pathname === "/api/projects") {
       if (method === "GET") return route.fulfill({ json: { projects } });
       const { title } = request.postDataJSON() as { title: string };
+      createdTitles.push(title);
       if (projects.some((project) => project.title === title))
         return route.fulfill({
           status: 409,
@@ -124,7 +141,7 @@ async function mockWorkspace(page: Page, initial: HomeProject[]) {
       json: { groups: [], items: [], runs: [], drops: [] },
     });
   });
-  return { mutations, canvasReads };
+  return { mutations, canvasReads, createdTitles };
 }
 
 async function expectReadableWorkspace(page: Page, viewportWidth: number) {
@@ -226,6 +243,49 @@ async function expectReadableWorkspace(page: Page, viewportWidth: number) {
 }
 
 test.describe("画布工作台", () => {
+  test("刷新后保留列表和排序偏好，已有作品优先展示", async ({ page }) => {
+    await mockWorkspace(page, [older, newer]);
+    await page.goto("/");
+    await expect(page.getByRole("article")).toHaveCount(2);
+    await expect(page.getByRole("button", { name: "新建空白画布", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "列表视图" }).click();
+    await page.getByLabel("画布排序").selectOption("name");
+    await page.reload();
+    await expect(page.getByRole("button", { name: "列表视图" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByLabel("画布排序")).toHaveValue("name");
+    await expect(page.getByRole("article").first()).toHaveAccessibleName(older.title);
+  });
+
+  test("重命名后迟到的焦点刷新不会恢复旧名称", async ({ page }) => {
+    await mockWorkspace(page, [older, newer]);
+    await page.goto("/");
+    await expect(page.getByRole("article")).toHaveCount(2);
+    let releaseRead!: () => void;
+    const pendingRead = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let readStarted = false;
+    await page.route("**/api/projects", async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      readStarted = true;
+      await pendingRead;
+      return route.fulfill({ json: { projects: [older, newer] } });
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => readStarted).toBe(true);
+    await page.getByRole("button", { name: `${older.title} 的画布操作` }).click();
+    await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "重命名画布" });
+    await dialog.getByLabel("画布名称").fill("已保存的新名称");
+    await dialog.getByRole("button", { name: "保存名称" }).click();
+    await expect(page.getByRole("article", { name: "已保存的新名称", exact: true })).toBeVisible();
+    const response = page.waitForResponse((result) => new URL(result.url()).pathname === "/api/projects");
+    releaseRead();
+    await response;
+    // Let the fulfilled request and its React update complete before asserting.
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page.getByRole("article", { name: "已保存的新名称", exact: true })).toBeVisible();
+    await expect(page.getByRole("article", { name: older.title, exact: true })).toHaveCount(0);
+  });
+
   test("首页保持空库，主动创建后进入独立画布地址", async ({ page }) => {
     const state = await mockWorkspace(page, []);
     await page.goto("/");

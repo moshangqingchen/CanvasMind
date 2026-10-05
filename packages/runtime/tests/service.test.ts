@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { MemoryRepository, type JsonObject, type WorkflowRunRecord } from "@super-canvas/db";
+import { FileRepository, MemoryRepository, type JsonObject, type WorkflowRunRecord } from "@super-canvas/db";
 import {
   ProviderHttpError,
   fetchProviderJson,
@@ -1070,6 +1073,358 @@ async function waitForRun(service: RunService, runId: string) {
 }
 
 describe("RunService", () => {
+  it.each([
+    { terminal: {}, expected: { status: "charged", amount: 0.25, currency: "USD" } },
+    { terminal: { charge: { status: "not_charged" } }, expected: { status: "charged", amount: 0.25, currency: "USD" } },
+    { terminal: { charge: { status: "charged", amount: 0.25 } }, expected: { status: "charged", amount: 0.25, currency: "USD" } },
+    { terminal: { charge: { status: "charged", amount: 0.5 } }, expected: { status: "charged", amount: 0.25, currency: "USD" } },
+    { terminal: { charge: { status: "charged", amount: 0.25, currency: "CNY" } }, expected: { status: "charged", amount: 0.25, currency: "USD" } },
+    { terminal: { refund: { status: "refunded", amount: 0.25, currency: "USD" } }, expected: { status: "refunded", amount: 0.25, currency: "USD" } },
+  ])("persists task billing evidence across polling and a file repository reload: $expected.status", async ({ terminal, expected }) => {
+    const root = await mkdtemp(join(tmpdir(), "super-canvas-failure-evidence-"));
+    try {
+      const database = join(root, "state.json");
+      const repository = new FileRepository(database);
+      await repository.saveConnection({ id: "runway-test", name: "Isolated billing fixture", provider: "runway", encryptedSecret: null, config: {} });
+      const canvas = await repository.ensureDefaultCanvas();
+      await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+      const submit = vi.fn(async (): Promise<ProviderTask> => ({
+        providerTaskId: "billed-task", status: "running",
+        result: { remote: { charge: { status: "charged", amount: 0.25, currency: "USD" } } },
+      }));
+      const poll = vi.fn(async (): Promise<ProviderTask> => ({
+        providerTaskId: "billed-task", status: "failed", error: "no available accounts",
+        result: { remote: terminal },
+      }));
+      const adapter: ProviderAdapter = {
+        async testConnection() {}, async listModels() { return []; },
+        async validate() { return { valid: true, issues: [] }; },
+        submit, poll, async extractOutputs() { return []; },
+      };
+      const service = new AdapterRunService(adapter, repository, new MemoryStorage());
+      const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "billing-evidence", scope: "node", nodeId: "image" });
+      const snapshot = await waitForRun(service, run.id);
+      expect(snapshot.nodes[0]?.errorJson).toMatchObject({
+        failureCategory: "supplier_capacity", charge: { ...expected, source: "provider_response" },
+      });
+      const restored = new FileRepository(database);
+      expect((await restored.listNodeRuns(run.id))[0]?.errorJson).toEqual(snapshot.nodes[0]?.errorJson);
+      expect(submit).toHaveBeenCalledOnce();
+      expect(poll).toHaveBeenCalledOnce();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("retains a billing receipt from a running poll when a later status query fails", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    const provider = pollingAdapter([]);
+    let polls = 0;
+    provider.adapter.poll = async (task) => {
+      if (++polls === 1) return { ...task, status: "running", result: { remote: { charged_amount: 2, currency: "CNY" } } };
+      throw new ProviderHttpError("expired credential", { kind: "authentication", phase: "poll", status: 401, retryable: false, submissionMayHaveOccurred: false });
+    };
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await service.resumeRun("resumable-run");
+    const snapshot = await waitForRun(service, "resumable-run");
+    expect(snapshot.nodes[0]?.errorJson).toMatchObject({
+      failureCategory: "authentication", charge: { status: "charged", amount: 2, currency: "CNY", source: "provider_response" },
+    });
+    expect(provider.calls().submit).toBe(0);
+    expect(polls).toBe(2);
+  });
+
+  it.each([
+    { receipt: {}, responseBody: { charged: false }, expected: { status: "unknown", source: "unconfirmed" } },
+    { receipt: { charge: { status: "charged", amount: 0.25, currency: "USD" } }, responseBody: { refund: { status: "refunded", amount: 0.25, currency: "USD" } }, expected: { status: "charged", amount: 0.25, currency: "USD", source: "provider_response" } },
+  ])("does not apply a failed status query's own billing to the generation task: $expected.status", async ({ receipt, responseBody, expected }) => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    await repository.updateNodeRun("resumable-node-run", { inputJson: {
+      providerTask: { providerTaskId: "remote-task-1", status: "running", result: { remote: receipt } },
+    } });
+    const provider = pollingAdapter([new ProviderHttpError("status query denied", {
+      kind: "authentication", phase: "poll", status: 401, retryable: false, submissionMayHaveOccurred: false, responseBody,
+    })]);
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await service.resumeRun("resumable-run");
+    const snapshot = await waitForRun(service, "resumable-run");
+    expect(snapshot.nodes[0]?.errorJson?.charge).toEqual(expected);
+    expect(provider.calls()).toEqual({ submit: 0, poll: 1 });
+  });
+
+  it.each(["poll", "restore"] as const)("rejects a different provider task during %s without importing its refund", async phase => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    const originalCharge = { status: "charged", amount: 0.25, currency: "USD", source: "provider_response" };
+    const wrongTask = { providerTaskId: "another-paid-task", status: "failed" as const, error: "unrelated failure", result: { remote: { refund: { status: "refunded", amount: 5, currency: "CNY" } } } };
+    await repository.updateNodeRun("resumable-node-run", { inputJson: {
+      providerCharge: originalCharge,
+      providerTask: phase === "restore" ? wrongTask : { providerTaskId: "remote-task-1", status: "running", result: { remote: {} } },
+    } });
+    const provider = pollingAdapter([]);
+    const poll = vi.fn(async () => wrongTask);
+    provider.adapter.poll = poll;
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await service.resumeRun("resumable-run");
+    const snapshot = await waitForRun(service, "resumable-run");
+    expect(snapshot.run.status).toBe("needs_attention");
+    expect(snapshot.nodes[0]?.providerTaskId).toBe("remote-task-1");
+    expect(snapshot.nodes[0]?.errorJson).toMatchObject({ code: "provider_task_mismatch" });
+    expect(snapshot.nodes[0]?.errorJson?.charge).not.toMatchObject({ status: "refunded" });
+    if (phase === "poll") expect(snapshot.nodes[0]?.errorJson?.charge).toEqual(originalCharge);
+    expect(poll).toHaveBeenCalledTimes(phase === "poll" ? 1 : 0);
+    expect(provider.calls().submit).toBe(0);
+  });
+
+  it.each(["charged", "refunded"] as const)("preserves %s evidence when the provider cancels the task", async status => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: retryBlockedGraph() });
+    const provider = pollingAdapter([]);
+    provider.adapter.poll = vi.fn(async task => ({ ...task, status: "cancelled", result: {
+      remote: { charge: { status, amount: 0.25, currency: "USD" } },
+    } }));
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "provider-cancelled", scope: "all" });
+    const snapshot = await waitForRun(service, run.id);
+    expect(snapshot.run.status).toBe("cancelled");
+    expect(Object.fromEntries(snapshot.nodes.map(node => [node.nodeId, node.status]))).toEqual({ prompt: "succeeded", image: "cancelled", preview: "blocked" });
+    expect(snapshot.nodes.find(node => node.nodeId === "image")?.errorJson).toMatchObject({
+      message: "供应商已取消任务", charge: { status, amount: 0.25, currency: "USD", source: "provider_response" },
+    });
+    expect(provider.calls().submit).toBe(1);
+  });
+
+  it("preserves a generation receipt during cancellation reconciliation", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    const task = await seedCancelledProviderRun(repository, canvas.id);
+    const charge = { status: "charged", amount: 0.25, currency: "USD", source: "provider_response" };
+    await repository.updateNodeRun("cancelled-provider-node-run", { inputJson: {
+      provider: "runway", connectionId: "runway-test", providerCharge: charge,
+      providerTask: { ...task, result: { ...task.result, remote: { charge } } },
+    } });
+    const provider = cancellationAdapter();
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await service.reconcileCancellation("cancelled-provider-run");
+    const snapshot = await service.getRun("cancelled-provider-run");
+    expect(snapshot?.nodes[0]?.status).toBe("cancelled");
+    expect(snapshot?.nodes[0]?.errorJson?.charge).toEqual(charge);
+    expect(provider.calls().cancel).toBe(1);
+  });
+
+  it.each(["image", "video"] as const)("preserves a late %s poll receipt after local cancellation without archiving", async kind => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id, kind);
+    const provider = pollingAdapter([]);
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const charge = { status: "charged", amount: 4, currency: "USD", source: "provider_response" };
+    provider.adapter.poll = vi.fn(async task => {
+      started();
+      await gate;
+      return { ...task, status: "succeeded", result: { remote: { charge } } };
+    });
+    provider.adapter.cancel = vi.fn(async () => {});
+    provider.adapter.extractOutputs = vi.fn(async () => []);
+    const storage = new MemoryStorage();
+    const service = new AdapterRunService(provider.adapter, repository, storage);
+    await service.resumeRun("resumable-run");
+    await entered;
+    await service.cancelRun("resumable-run");
+    // Image cancellation must finish without waiting for the outstanding query.
+    if (kind === "image") await vi.waitFor(async () => {
+      expect((await repository.getNodeRun("resumable-node-run"))?.status).toBe("cancelled");
+    });
+    release();
+    await vi.waitFor(async () => {
+      const node = await repository.getNodeRun("resumable-node-run");
+      expect(node?.status).toBe("cancelled");
+      expect(node?.inputJson.providerCharge).toEqual(charge);
+      expect(node?.inputJson.providerTask).toMatchObject({ providerTaskId: "remote-task-1", status: "succeeded" });
+      expect(node?.errorJson?.charge).toEqual(charge);
+    });
+    expect((await service.getRun("resumable-run"))?.run.status).toBe("cancelled");
+    expect(provider.calls().submit).toBe(0);
+    expect(provider.adapter.poll).toHaveBeenCalledOnce();
+    expect(provider.adapter.extractOutputs).not.toHaveBeenCalled();
+    expect(storage.values.size).toBe(0);
+  });
+
+  it("keeps a late refund when cancellation reconciliation finishes from an older task snapshot", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id, "video");
+    const originalCharge = { status: "charged", amount: 4, currency: "USD", source: "provider_response" };
+    const refund = { ...originalCharge, status: "refunded" };
+    await repository.updateNodeRun("resumable-node-run", { inputJson: {
+      provider: "runway", connectionId: "runway-test", providerCharge: originalCharge,
+    } });
+    const provider = pollingAdapter([]);
+    let releasePoll!: () => void;
+    let pollStarted!: () => void;
+    let releaseCancel!: () => void;
+    let cancelStarted!: () => void;
+    const pollGate = new Promise<void>(resolve => { releasePoll = resolve; });
+    const enteredPoll = new Promise<void>(resolve => { pollStarted = resolve; });
+    const cancelGate = new Promise<void>(resolve => { releaseCancel = resolve; });
+    const enteredCancel = new Promise<void>(resolve => { cancelStarted = resolve; });
+    provider.adapter.poll = async task => {
+      pollStarted();
+      await pollGate;
+      return { ...task, status: "cancelled", result: { remote: { charge: refund } } };
+    };
+    provider.adapter.cancel = vi.fn(async () => {
+      cancelStarted();
+      await cancelGate;
+    });
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await service.resumeRun("resumable-run");
+    await enteredPoll;
+    await service.cancelRun("resumable-run");
+    const reconciliation = service.reconcileCancellation("resumable-run");
+    await enteredCancel;
+    await repository.updateNodeRun("resumable-node-run", { errorJson: { code: "retained_cancel_detail", message: "原取消详情" } });
+    releasePoll();
+    try {
+      await vi.waitFor(async () => expect((await repository.getNodeRun("resumable-node-run"))?.inputJson.providerCharge).toEqual(refund));
+    } finally { releaseCancel(); }
+    await reconciliation;
+    await vi.waitFor(async () => {
+      const node = await repository.getNodeRun("resumable-node-run");
+      expect(node?.status).toBe("cancelled");
+      expect(node?.inputJson.providerCharge).toEqual(refund);
+      expect(node?.inputJson.providerTask).toMatchObject({ status: "cancelled" });
+      expect(node?.errorJson).toMatchObject({ code: "retained_cancel_detail", charge: refund });
+    });
+    expect(provider.calls().submit).toBe(0);
+  });
+
+  it("clears the previous remote cancellation error after reconciliation succeeds while keeping its receipt", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    const task = await seedCancelledProviderRun(repository, canvas.id);
+    const charge = { status: "charged", amount: 4, currency: "USD", source: "provider_response" };
+    await repository.updateNodeRun("cancelled-provider-node-run", { inputJson: {
+      provider: "runway", connectionId: "runway-test", providerCharge: charge, providerTask: task,
+    } });
+    const provider = cancellationAdapter();
+    provider.adapter.cancel = vi.fn()
+      .mockRejectedValueOnce(new Error("provider cancellation unavailable"))
+      .mockResolvedValueOnce(undefined);
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+    await service.reconcileCancellation("cancelled-provider-run");
+    expect((await repository.getNodeRun("cancelled-provider-node-run"))?.errorJson?.message).toContain("远端取消暂未完成");
+    await service.reconcileCancellation("cancelled-provider-run");
+    const node = await repository.getNodeRun("cancelled-provider-node-run");
+    expect(node?.status).toBe("cancelled");
+    expect(node?.errorJson).toEqual({ message: "运行已取消", charge });
+    expect(provider.adapter.cancel).toHaveBeenCalledTimes(2);
+  });
+
+  it("replaces an old cancellation error with the confirmed CLI tracking message", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    const task = await seedCancelledProviderRun(repository, canvas.id);
+    await repository.updateNodeRun("cancelled-provider-node-run", {
+      inputJson: { provider: "cli", connectionId: "runway-test",
+        providerTask: { ...task, result: { ...task.result, cli: { supportsCancel: false } } } },
+      errorJson: { message: "remote cancellation old failure" },
+    });
+    const provider = cancellationAdapter();
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage(), "inline", "cli");
+    await service.reconcileCancellation("cancelled-provider-run");
+    const node = await repository.getNodeRun("cancelled-provider-node-run");
+    expect(node?.status).toBe("cancelled");
+    expect(node?.errorJson).toEqual({ code: "cli_tracking_stopped", message: "已停止跟踪；该网站不支持远端取消，生成可能仍在继续" });
+    expect(provider.calls().cancel).toBe(1);
+  });
+
+  it.each(["shutdown", "shutdown-then-cancel", "different-task", "newer-receipt"] as const)("guards late image polling after %s", async scenario => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await seedResumableRun(repository, canvas.id);
+    const provider = pollingAdapter([]);
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    provider.adapter.poll = async task => {
+      started();
+      await gate;
+      return { ...task, providerTaskId: scenario === "different-task" ? "unrelated-task" : task.providerTaskId,
+        status: "cancelled", result: { remote: { charge: { status: "charged", amount: 4, currency: "USD" } } } };
+    };
+    provider.adapter.cancel = vi.fn(async () => {});
+    provider.adapter.extractOutputs = vi.fn(async () => []);
+    const shutdown = new AbortController();
+    const service = new AdapterRunService(provider.adapter, repository, new MemoryStorage(), "inline", "runway", { shutdownSignal: shutdown.signal });
+    await service.resumeRun("resumable-run");
+    await entered;
+    if (scenario === "shutdown" || scenario === "shutdown-then-cancel") {
+      shutdown.abort();
+      if (scenario === "shutdown-then-cancel") {
+        await new Promise(resolve => setImmediate(resolve));
+        const replacement = new AdapterRunService(provider.adapter, repository, new MemoryStorage());
+        await replacement.cancelRun("resumable-run");
+        await replacement.reconcileCancellation("resumable-run");
+      }
+    }
+    else {
+      await service.cancelRun("resumable-run");
+      await vi.waitFor(async () => expect((await repository.getNodeRun("resumable-node-run"))?.status).toBe("cancelled"));
+    }
+    if (scenario === "newer-receipt") {
+      const current = (await repository.getNodeRun("resumable-node-run"))!;
+      const refund = { status: "refunded", amount: 4, currency: "USD", source: "provider_response" };
+      await repository.updateNodeRun(current.id, {
+        inputJson: { ...current.inputJson, providerCharge: refund,
+          providerTask: { providerTaskId: "remote-task-1", status: "succeeded", result: { remote: { charge: refund } } } },
+        errorJson: { message: "已停止跟踪；退款已确认", code: "newer_cancellation_detail", charge: refund },
+      });
+    }
+    await new Promise(resolve => setImmediate(resolve));
+    const before = (await repository.getNodeRun("resumable-node-run"))!;
+    release();
+    // Drain the resolved query and its receipt callback without waiting on a poll timer.
+    await new Promise(resolve => setImmediate(resolve));
+    const after = (await repository.getNodeRun("resumable-node-run"))!;
+    expect(after.status).toBe(before.status);
+    expect(after.inputJson).toEqual(before.inputJson);
+    expect(after.errorJson).toEqual(before.errorJson);
+    expect(provider.calls().submit).toBe(0);
+    expect(provider.adapter.extractOutputs).not.toHaveBeenCalled();
+  });
+
+  it("keeps an accepted task's charge when local archival fails and retries only archival", async () => {
+    const repository = await testRepository();
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, graph: resumableNodeGraph() });
+    const adapter = synchronousAdapter();
+    const originalSubmit = adapter.submit.bind(adapter);
+    adapter.submit = vi.fn(async (request) => ({ ...await originalSubmit(request), result: { charge: { status: "charged", amount: 3, currency: "CNY" } } }));
+    const storage = new RecoverableStorage(3);
+    const service = new AdapterRunService(adapter, repository, storage);
+    const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "archive-billing", scope: "node", nodeId: "image" });
+    const snapshot = await waitForRun(service, run.id);
+    expect(snapshot.nodes[0]?.errorJson).toMatchObject({
+      failureCategory: "local_storage", charge: { status: "charged", amount: 3, currency: "CNY", source: "provider_response" },
+    });
+    storage.recover();
+    await service.retryRun(run.id);
+    const recovered = await waitForRun(service, run.id);
+    expect(recovered.run.status).toBe("succeeded");
+    expect(recovered.nodes[0]?.inputJson.providerCharge).toEqual(snapshot.nodes[0]?.errorJson?.charge);
+    expect(recovered.nodes[0]?.inputJson.providerTask).toBeUndefined();
+    expect(adapter.submit).toHaveBeenCalledOnce();
+  });
+
   it("keeps concurrent runs of one generation node independent when the newer run finishes first", async () => {
     const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();
@@ -1177,6 +1532,8 @@ describe("RunService", () => {
       message: "请求未提交：GPT Image 2 does not support image.edit",
       type: "请求参数错误",
       code: "unsupported_operation",
+      failureCategory: "invalid_request",
+      charge: { status: "not_charged", source: "not_submitted" },
     });
   });
 
@@ -1625,6 +1982,7 @@ describe("RunService", () => {
     expect(snapshot.run.status).toBe("needs_attention");
     expect(snapshot.nodes[0]?.providerTaskId).toBe("remote-task-1");
     expect(provider.calls()).toEqual({ submit: 0, poll: 1 });
+    expect(snapshot.nodes[0]?.errorJson?.charge).toEqual({ status: "unknown", source: "unconfirmed" });
   });
 
   it("quarantines a We-AI model only after three consecutive unknown-model rejections", async () => {

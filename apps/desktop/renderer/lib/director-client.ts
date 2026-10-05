@@ -205,20 +205,44 @@ export async function streamDirectorTurn(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/gu, "\n");
-    const blocks = buffer.split("\n\n");
-    buffer = blocks.pop() ?? "";
-    for (const block of blocks) {
-      const event = parseSseBlock(block);
-      if (event) onEvent(event);
+  let receivedDone = false;
+  const acceptBlock = (block: string) => {
+    signal?.throwIfAborted();
+    const event = parseSseBlock(block);
+    if (event) {
+      onEvent(event);
+      if (event.type === "done") receivedDone = true;
     }
-    if (done) break;
-  }
-  if (buffer.trim()) {
-    const event = parseSseBlock(buffer);
-    if (event) onEvent(event);
+  };
+  const onAbort = () => { void reader.cancel(signal?.reason).catch(() => undefined); };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    signal?.throwIfAborted();
+    while (!receivedDone) {
+      const { done, value } = await reader.read();
+      signal?.throwIfAborted();
+      // CR and LF can arrive in separate chunks. Normalize the accumulated
+      // buffer so those boundaries do not merge otherwise independent events.
+      buffer += decoder.decode(value, { stream: !done });
+      buffer = buffer.replace(/\r\n/gu, "\n");
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        acceptBlock(block);
+        if (receivedDone) break;
+      }
+      if (done) {
+        if (!receivedDone && buffer.trim()) acceptBlock(buffer);
+        break;
+      }
+    }
+    signal?.throwIfAborted();
+    if (!receivedDone)
+      throw new Error("超级导演连接已中断，请查看已保存的对话后重试。");
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
 }
 

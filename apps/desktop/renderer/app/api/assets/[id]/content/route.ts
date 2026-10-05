@@ -101,9 +101,10 @@ function unsatisfiedRange(totalSize: number): Response {
   });
 }
 
-export async function GET(
+async function assetContent(
   request: Request,
   context: { params: Promise<{ id: string }> },
+  headOnly = false,
 ) {
   const { id } = await context.params;
   const asset = await repository.getAsset(id);
@@ -111,7 +112,7 @@ export async function GET(
   const forceDownload =
     new URL(request.url).searchParams.get("download") === "1";
 
-  if (forceDownload) {
+  if (forceDownload && !headOnly) {
     try {
       // Explicit downloads of generated results are also copied into the
       // project's protected finished directory before the response is sent.
@@ -139,6 +140,25 @@ export async function GET(
           : null;
       });
   if (!metadata) return jsonError("Asset file does not exist", 404);
+
+  if (headOnly) {
+    const media = contentTypeFor(asset.kind, asset.mimeType, metadata.contentType);
+    // Range applies to GET. Metadata probes should neither load the media body
+    // nor trigger the side effect of archiving an explicit download.
+    return new Response(null, {
+      headers: applySecurityHeaders(
+        new Headers({
+          "accept-ranges": "bytes",
+          "cache-control": "private, no-store",
+          "content-length": String(metadata.size),
+          "content-type": media.contentType,
+        }),
+        media.downloadable || forceDownload,
+        asset.name,
+        media.contentType,
+      ),
+    });
+  }
 
   const rangeHeader = request.headers.get("range");
   if (rangeHeader) {
@@ -205,4 +225,19 @@ export async function GET(
     media.contentType,
   );
   return new Response(loadedObject.bytes as BodyInit, { headers });
+}
+
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  return assetContent(request, context);
+}
+
+export async function HEAD(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  const response = await assetContent(request, context, true);
+  return new Response(null, { status: response.status, headers: response.headers });
 }

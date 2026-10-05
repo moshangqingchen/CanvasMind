@@ -1,4 +1,5 @@
 import { CanvasRevisionConflictError } from "@super-canvas/db";
+import { isDeepStrictEqual } from "node:util";
 import {
   UpdateCanvasRequestSchema,
   graphValidationError,
@@ -50,11 +51,32 @@ export async function PUT(
       "expectedRevision" in error && Number.isSafeInteger(error.expectedRevision) &&
       "currentRevision" in error && Number.isSafeInteger(error.currentRevision)
     )) {
+      let currentRevision = error.currentRevision;
+      try {
+        let current = await repository.getCanvas(parsedId.data);
+        const matchesRequestedSave = (canvas: typeof current): boolean => Boolean(
+          canvas && parsed.data.expectedRevision !== undefined &&
+          parsed.data.expectedRevision < canvas.revision &&
+          (parsed.data.title === undefined || parsed.data.title === canvas.title) &&
+          isDeepStrictEqual(parsed.data.graph, canvas.graph),
+        );
+        if (matchesRequestedSave(current)) {
+          // A save may have committed before its response was lost. File-backed
+          // repositories can also retain a failed disk write in memory, so a
+          // matching graph alone is insufficient proof of a durable save.
+          await repository.flush?.();
+          current = await repository.getCanvas(parsedId.data);
+          if (matchesRequestedSave(current)) return Response.json(current);
+        }
+        currentRevision = current?.revision ?? currentRevision;
+      } catch {
+        return jsonError("画布保存失败", 500);
+      }
       return Response.json(
         {
           error: "画布已在其他位置更新，请先处理版本冲突",
           code: error.code,
-          currentRevision: error.currentRevision,
+          currentRevision,
         },
         { status: 409 },
       );

@@ -42,6 +42,7 @@ export async function streamAgentTurn(
   let buffer = "";
   let receivedDone = false;
   const acceptFrame = (frame: string) => {
+    signal.throwIfAborted();
     const data = frame.split("\n").filter(line => line.startsWith("data:"))
       .map(line => line.slice(5).trimStart()).join("\n");
     if (!data) return;
@@ -49,9 +50,13 @@ export async function streamAgentTurn(
     if (event.type === "done") receivedDone = true;
     onEvent(event);
   };
+  const onAbort = () => { void reader.cancel(signal.reason).catch(() => undefined); };
+  signal.addEventListener("abort", onAbort, { once: true });
   try {
-    for (;;) {
+    signal.throwIfAborted();
+    while (!receivedDone) {
       const { value, done } = await reader.read();
+      signal.throwIfAborted();
       buffer += decoder.decode(value, { stream: !done });
       buffer = buffer.replace(/\r\n/gu, "\n");
       let end: number;
@@ -59,11 +64,17 @@ export async function streamAgentTurn(
         const frame = buffer.slice(0, end);
         buffer = buffer.slice(end + 2);
         acceptFrame(frame);
+        if (receivedDone) break;
       }
-      if (done) { acceptFrame(buffer); break; }
+      if (done) {
+        if (!receivedDone) acceptFrame(buffer);
+        break;
+      }
     }
+    signal.throwIfAborted();
     if (!receivedDone) throw new Error("智能体连接已中断，任务记录已保留，请重新编辑后发送。");
   } finally {
+    signal.removeEventListener("abort", onAbort);
     await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }

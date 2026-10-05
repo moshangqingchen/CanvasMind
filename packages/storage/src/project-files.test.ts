@@ -28,6 +28,99 @@ const asset = {
 };
 
 describe("ProjectFileStore", () => {
+  it("orders archive, rename, and a later archive without blocking another project", async () => {
+    const store = await storeFixture();
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => { writing = resolve; });
+    let resume!: () => void;
+    const held = new Promise<void>((resolve) => { resume = resolve; });
+    const first = store.archiveFinished({ ...asset, bytes: (async function* () {
+      writing();
+      await held;
+      yield new TextEncoder().encode("first");
+    })() });
+    await started;
+    const rename = store.renameProject(asset.projectName, "重命名项目");
+    // This is a new explicit write addressed to the old name. It may recreate
+    // that directory after the rename, but cannot join the rename's wait set.
+    const later = store.archiveFinished({ ...asset, bytes: new TextEncoder().encode("later") });
+    let independent;
+    try {
+      independent = await store.archiveFinished({ ...asset, projectName: "其他项目" });
+      expect(await readFile(independent.path, "utf8")).toBe("image");
+    } finally { resume(); }
+    const [original, changed, last] = await Promise.all([first, rename, later]);
+    expect(changed).toBe(true);
+    expect(await readFile(original.path.replace(store.projectDirectory(asset.projectName), store.projectDirectory("重命名项目")), "utf8")).toBe("first");
+    expect(await readFile(last.path, "utf8")).toBe("later");
+  });
+
+  it("continues independent asset writes in the same project while another archive is streaming", async () => {
+    const store = await storeFixture();
+    let writing!: () => void;
+    const started = new Promise<void>((resolve) => { writing = resolve; });
+    let resume!: () => void;
+    const held = new Promise<void>((resolve) => { resume = resolve; });
+    const first = store.archiveFinished({ ...asset, bytes: (async function* () {
+      writing();
+      await held;
+      yield new TextEncoder().encode("first");
+    })() });
+    await started;
+    try {
+      const second = await store.archiveFinished({ ...asset, assetId: "asset-2" });
+      expect(await readFile(second.path, "utf8")).toBe("image");
+    } finally { resume(); }
+    await first;
+  });
+
+  it.each(["rename", "delete", "clearDraft"] as const)(
+    "waits for an in-flight archive before project %s",
+    async (operation) => {
+      const store = await storeFixture();
+      let writing!: () => void;
+      const started = new Promise<void>((resolve) => { writing = resolve; });
+      let resume!: () => void;
+      const held = new Promise<void>((resolve) => { resume = resolve; });
+      const archive = store.archiveDraft({
+        ...asset, source: "generated",
+        bytes: (async function* () {
+          yield new TextEncoder().encode("first-");
+          writing();
+          await held;
+          yield new TextEncoder().encode("last");
+        })(),
+      });
+      await started;
+      let settled = false;
+      const mutation = (operation === "rename"
+        ? store.renameProject(asset.projectName, "新项目")
+        : operation === "delete"
+          ? store.deleteProject(asset.projectName)
+          : store.clearDraft(asset.projectName))
+        .finally(() => { settled = true; });
+      // Observe early rejections while deliberately holding the writer open.
+      const results = Promise.allSettled([archive, mutation]);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      const settledBeforeWriter = settled;
+      resume();
+      const [written, changed] = await results;
+      expect(settledBeforeWriter).toBe(false);
+      expect(written.status).toBe("fulfilled");
+      expect(changed.status).toBe("fulfilled");
+      if (operation === "rename" && written.status === "fulfilled") {
+        const moved = written.value.path.replace(
+          store.projectDirectory(asset.projectName), store.projectDirectory("新项目"),
+        );
+        expect(await readFile(moved, "utf8")).toBe("first-last");
+      } else if (operation === "delete") {
+        await expect(stat(store.projectDirectory(asset.projectName))).rejects.toMatchObject({ code: "ENOENT" });
+      } else if (operation === "clearDraft") {
+        expect(await readdir(join(store.projectDirectory(asset.projectName), "草稿", "画布生成", "图片"))).toEqual([]);
+      }
+    },
+  );
+
   it("archives simultaneous requests for one asset exactly once", async () => {
     const store = await storeFixture();
     const results = await Promise.all(

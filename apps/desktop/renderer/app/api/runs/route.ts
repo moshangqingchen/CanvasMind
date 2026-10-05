@@ -39,6 +39,13 @@ function deploymentDrainActive(): boolean {
   );
 }
 
+function uncertainRunSubmission(): Response {
+  return Response.json(
+    { error: "任务创建结果暂时无法确认，请先核对原任务，避免重复提交。" },
+    { status: 503, headers: { "retry-after": "2" } },
+  );
+}
+
 async function cyberAfeiRunPreflight(input: {
   canvasId: string;
   clientRequestId: string;
@@ -307,11 +314,15 @@ export async function POST(request: Request) {
   const preflight = await cyberAfeiRunPreflight(parsed.data);
   if (preflight) return jsonError(preflight.message, preflight.status);
 
+  let created = false;
   try {
     // The runtime freezes the selected connection and model for this run.
     // Unrelated suppliers must never add network latency to paid submission.
     const run = await runService.createRun(parsed.data);
-    return Response.json(publicRunSnapshot(await runService.getRun(run.id)), {
+    created = true;
+    const snapshot = publicRunSnapshot(await runService.getRun(run.id));
+    if (!snapshot) return uncertainRunSubmission();
+    return Response.json(snapshot, {
       status: 201,
     });
   } catch (error) {
@@ -336,10 +347,14 @@ export async function POST(request: Request) {
             },
           });
         }
+        return uncertainRunSubmission();
       }
     } catch {
-      // Fall through to the non-persisted validation response below.
+      // A failed read cannot prove the paid task was never created. Keep the
+      // client request journal so the browser can reconcile the original run.
+      return uncertainRunSubmission();
     }
+    if (created) return uncertainRunSubmission();
     if (error instanceof Error && "code" in error && error.code === "DESKTOP_PUBLIC_ASSETS_UNAVAILABLE") return jsonError(error.message, 422);
     return jsonError("无法创建运行，请检查画布、节点和输入配置", 422);
   }

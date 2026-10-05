@@ -48,9 +48,30 @@ type ProjectDialog =
   | { kind: "create" }
   | { kind: "rename" | "delete"; project: ProjectSummaryView };
 type SortOrder = "recent" | "created" | "name";
+const VIEW_PREFERENCE_KEY = "supercanvas.workspace-view.v1";
+const SORT_PREFERENCE_KEY = "supercanvas.workspace-sort.v1";
+
+function savePreference(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // A restricted or full storage area must not prevent changing the view.
+  }
+}
 
 function projectUrl(id: string) {
   return `/canvas/${encodeURIComponent(id)}`;
+}
+
+function nextDesignProjectTitle(label: string, projects: ProjectSummaryView[]) {
+  // Built-in task labels contain no reserved filename characters. Account for
+  // the trailing dots/spaces that Windows removes from existing project names.
+  const titles = new Set(projects.map((project) =>
+    project.title.trim().replace(/[. ]+$/gu, "").normalize("NFC"),
+  ));
+  let title = label;
+  for (let index = 2; titles.has(title); index += 1) title = `${label} ${index}`;
+  return title;
 }
 
 function updatedLabel(value: string) {
@@ -92,6 +113,7 @@ function ProjectCover({ project }: { project: ProjectSummaryView }) {
       src={`/api/assets/${encodeURIComponent(project.previewAssetId)}/preview?size=640`}
       alt=""
       loading="lazy"
+      decoding="async"
       onError={() => setFailedId(project.previewAssetId ?? null)}
     />
   ) : (
@@ -252,6 +274,19 @@ export function WorkspaceHome() {
   const startingDesign = startingDesignKind !== null;
   const startingDesignRef = useRef(false);
   const [view, setView] = useState<"grid" | "list">("grid");
+  useEffect(() => {
+    try {
+      const savedView = window.localStorage.getItem(VIEW_PREFERENCE_KEY);
+      const savedOrder = window.localStorage.getItem(SORT_PREFERENCE_KEY);
+      // Read browser-only preferences after hydration to keep server markup stable.
+      /* eslint-disable react-hooks/set-state-in-effect */
+      if (savedView === "grid" || savedView === "list") setView(savedView);
+      if (savedOrder === "recent" || savedOrder === "created" || savedOrder === "name") setOrder(savedOrder);
+      /* eslint-enable react-hooks/set-state-in-effect */
+    } catch {
+      // Defaults remain usable when local storage is unavailable.
+    }
+  }, []);
   const [motionEnabled, toggleMotion] = useCanvasMotion();
   const pointerEffectsEnabled =
     motionEnabled && !settingsOpen && !dialog && !menuId;
@@ -404,6 +439,8 @@ export function WorkspaceHome() {
       router.push(projectUrl(project.id));
     } else if (dialog.kind === "rename") {
       const { project } = await renameProject(dialog.project.id, title);
+      // A focus-triggered read started before this mutation may still be in flight.
+      loadVersion.current += 1;
       setProjects(
         (current) =>
           current?.map((item) =>
@@ -420,6 +457,7 @@ export function WorkspaceHome() {
       setNotice({ message: "画布已重命名" });
     } else {
       const result = await deleteProject(dialog.project.id);
+      loadVersion.current += 1;
       setProjects(
         (current) =>
           current?.filter((project) => project.id !== dialog.project.id) ?? [],
@@ -521,6 +559,7 @@ export function WorkspaceHome() {
                 <Link
                   className={styles.continueLink}
                   href={projectUrl(recentProject.id)}
+                  title={`继续编辑「${recentProject.title}」`}
                 >
                   继续最近创作
                   <ArrowRight size={16} />
@@ -549,7 +588,8 @@ export function WorkspaceHome() {
                     startingDesignRef.current = true;
                     setStartingDesignKind(kind);
                     try {
-                      const project = await createProject(label);
+                      const currentProjects = await fetchProjects();
+                      const project = await createProject(nextDesignProjectTitle(label, currentProjects));
                       router.push(`${projectUrl(project.id)}?design=${kind}`);
                     } catch (error) {
                       setNotice({
@@ -595,7 +635,11 @@ export function WorkspaceHome() {
                   <span>{projects.length.toString().padStart(2, "0")}</span>
                 ) : null}
               </div>
-              <p>收藏每一次灵感，继续未完的精彩</p>
+              <p aria-live="polite" aria-atomic="true">
+                {query.trim()
+                  ? `找到 ${visibleProjects.length} 张画布`
+                  : "收藏每一次灵感，继续未完的精彩"}
+              </p>
             </div>
             <div className={styles.listTools}>
               <label className={styles.search}>
@@ -625,9 +669,10 @@ export function WorkspaceHome() {
                 <select
                   aria-label="画布排序"
                   value={order}
-                  onChange={(event) =>
-                    setOrder(event.target.value as SortOrder)
-                  }
+                  onChange={(event) => {
+                    setOrder(event.target.value as SortOrder);
+                    savePreference(SORT_PREFERENCE_KEY, event.target.value);
+                  }}
                 >
                   <option value="recent">最近编辑</option>
                   <option value="created">最新创建</option>
@@ -644,7 +689,10 @@ export function WorkspaceHome() {
                   type="button"
                   aria-label="网格视图"
                   aria-pressed={view === "grid"}
-                  onClick={() => setView("grid")}
+                  onClick={() => {
+                    setView("grid");
+                    savePreference(VIEW_PREFERENCE_KEY, "grid");
+                  }}
                 >
                   <Grid2X2 size={16} />
                 </button>
@@ -652,7 +700,10 @@ export function WorkspaceHome() {
                   type="button"
                   aria-label="列表视图"
                   aria-pressed={view === "list"}
-                  onClick={() => setView("list")}
+                  onClick={() => {
+                    setView("list");
+                    savePreference(VIEW_PREFERENCE_KEY, "list");
+                  }}
                 >
                   <List size={17} />
                 </button>
@@ -680,7 +731,7 @@ export function WorkspaceHome() {
             <div
               className={`${styles.grid} ${view === "list" ? styles.listView : ""}`}
             >
-              {!query.trim() ? (
+              {!projects.length && !query.trim() ? (
                 <button
                   className={styles.createCard}
                   data-workspace-card

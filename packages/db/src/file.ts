@@ -213,7 +213,7 @@ export class FileRepository extends MemoryRepository {
     reject: (error: unknown) => void;
   }> = [];
   private writeSequence = 0;
-  private needsCompaction: boolean;
+  private needsSnapshotWrite: boolean;
   private readonly path: string;
   private readonly replaceFile: typeof rename;
 
@@ -225,7 +225,7 @@ export class FileRepository extends MemoryRepository {
     super(compacted.snapshot);
     this.path = path;
     this.replaceFile = replaceFile;
-    this.needsCompaction = compacted.changed || stored?.version === 1;
+    this.needsSnapshotWrite = compacted.changed || stored?.version === 1;
   }
 
   private async replaceSnapshot(
@@ -282,13 +282,16 @@ export class FileRepository extends MemoryRepository {
         const temporaryPath = `${this.path}.${process.pid}.${++this.writeSequence}.tmp`;
         await this.replaceSnapshot(temporaryPath, contents);
         this.completedWriteGeneration = generation;
-        this.needsCompaction = false;
+        this.needsSnapshotWrite = generation < this.requestedWriteGeneration;
         this.resolveWriteWaiters();
       }
     } catch (error) {
       // A later mutation retries the complete current snapshot. Resetting the
       // generation prevents a failed filesystem write from spinning forever.
       this.requestedWriteGeneration = this.completedWriteGeneration;
+      // In-memory records remain available for recovery. A cached canvas must
+      // not be acknowledged as initialized until this dirty snapshot is saved.
+      this.needsSnapshotWrite = true;
       this.rejectWriteWaiters(error);
       throw error;
     }
@@ -311,6 +314,7 @@ export class FileRepository extends MemoryRepository {
   }
 
   private persist(): Promise<void> {
+    this.needsSnapshotWrite = true;
     const generation = ++this.requestedWriteGeneration;
     const result = new Promise<void>((resolve, reject) => {
       this.writeWaiters.push({ generation, resolve, reject });
@@ -333,7 +337,7 @@ export class FileRepository extends MemoryRepository {
   override async ensureDefaultCanvas(): Promise<CanvasRecord> {
     const existing = await this.listCanvases();
     const result = await super.ensureDefaultCanvas();
-    if (existing.length === 0 || this.needsCompaction) await this.persist();
+    if (existing.length === 0 || this.needsSnapshotWrite) await this.persist();
     return result;
   }
 

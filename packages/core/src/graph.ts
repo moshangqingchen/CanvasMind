@@ -138,11 +138,29 @@ export function findCycles(
     state.set(nodeId, "visiting");
     stackIndexes.set(nodeId, stack.length);
     stack.push(nodeId);
+  };
 
-    for (const targetId of adjacency.get(nodeId) ?? []) {
+  for (const nodeId of [...adjacency.keys()].sort(byText)) {
+    if (state.has(nodeId)) continue;
+    visit(nodeId);
+    // Use an explicit DFS stack so long imported workflows cannot exhaust
+    // the JavaScript call stack while being validated or connected.
+    const frames = [{ id: nodeId, next: 0 }];
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]!;
+      const targets = adjacency.get(frame.id) ?? [];
+      const targetId = targets[frame.next++];
+      if (targetId === undefined) {
+        frames.pop();
+        stack.pop();
+        stackIndexes.delete(frame.id);
+        state.set(frame.id, "visited");
+        continue;
+      }
       const targetState = state.get(targetId);
       if (targetState === undefined) {
         visit(targetId);
+        frames.push({ id: targetId, next: 0 });
       } else if (targetState === "visiting") {
         const startIndex = stackIndexes.get(targetId);
         if (startIndex !== undefined) {
@@ -153,16 +171,6 @@ export function findCycles(
           cycles.set(cycle.join("\u0000"), cycle);
         }
       }
-    }
-
-    stack.pop();
-    stackIndexes.delete(nodeId);
-    state.set(nodeId, "visited");
-  };
-
-  for (const nodeId of [...adjacency.keys()].sort(byText)) {
-    if (state.get(nodeId) === undefined) {
-      visit(nodeId);
     }
   }
 
@@ -208,6 +216,7 @@ export function validateGraph(
   const nodeMap = makeNodeMap(graph.nodes);
   const seenNodeIds = new Set<string>();
   const seenEdgeIds = new Set<string>();
+  const incomingEdges = new Map<string, WorkflowEdge[]>();
 
   for (const node of graph.nodes) {
     if (seenNodeIds.has(node.id)) {
@@ -232,6 +241,11 @@ export function validateGraph(
       });
     }
     seenEdgeIds.add(edge.id);
+    if (checkPorts) {
+      const incoming = incomingEdges.get(edge.target);
+      if (incoming) incoming.push(edge);
+      else incomingEdges.set(edge.target, [edge]);
+    }
 
     const sourceNode = nodeMap.get(edge.source);
     const targetNode = nodeMap.get(edge.target);
@@ -321,10 +335,7 @@ export function validateGraph(
   if (checkPorts) {
     for (const node of graph.nodes) {
       for (const input of getNodePorts(node, "input")) {
-        const connections = graph.edges.filter((edge) => {
-          if (edge.target !== node.id) {
-            return false;
-          }
+        const connections = (incomingEdges.get(node.id) ?? []).filter((edge) => {
           return (
             resolveNodePort(node, "input", getEdgeTargetPortId(edge))?.id ===
             input.id

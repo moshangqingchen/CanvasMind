@@ -157,6 +157,9 @@ async function removeDraftEntry(path: string): Promise<void> {
 
 export class ProjectFileStore {
   readonly root: string;
+  private readonly pendingProjects = new Map<string, Promise<string>>();
+  private readonly projectMutations = new Map<string, Promise<unknown>>();
+  private readonly projectReaders = new Map<string, Set<Promise<unknown>>>();
   private readonly pendingArchives = new Map<
     string,
     Promise<ProjectFileResult>
@@ -166,6 +169,49 @@ export class ProjectFileStore {
     this.root = resolve(
       /* turbopackIgnore: true */ options.root ?? configuredRoot(),
     );
+  }
+
+  private operationKey(path: string): string {
+    return process.platform === "win32" ? path.toLowerCase() : path;
+  }
+
+  /** Archives may run together, but directory mutations wait for their writers. */
+  private async withProjectAccess<T>(
+    projects: readonly string[],
+    exclusive: boolean,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const keys = [...new Set(projects.map((project) => this.operationKey(project)))];
+    const dependencies = new Set<Promise<unknown>>();
+    for (const key of keys) {
+      const mutation = this.projectMutations.get(key);
+      if (mutation) dependencies.add(mutation);
+      if (exclusive) for (const reader of this.projectReaders.get(key) ?? []) dependencies.add(reader);
+    }
+    // Reserve all rename endpoints synchronously before yielding. Later reads
+    // wait behind this mutation; a rejected earlier operation cannot poison it.
+    const pending = Promise.all([...dependencies].map((dependency) => dependency.catch(() => undefined))).then(work);
+    for (const key of keys) {
+      if (exclusive) this.projectMutations.set(key, pending);
+      else {
+        const readers = this.projectReaders.get(key) ?? new Set<Promise<unknown>>();
+        readers.add(pending);
+        this.projectReaders.set(key, readers);
+      }
+    }
+    try {
+      return await pending;
+    } finally {
+      for (const key of keys) {
+        if (exclusive) {
+          if (this.projectMutations.get(key) === pending) this.projectMutations.delete(key);
+        } else {
+          const readers = this.projectReaders.get(key);
+          readers?.delete(pending);
+          if (!readers?.size) this.projectReaders.delete(key);
+        }
+      }
+    }
   }
 
   projectDirectory(projectName: string): string {
@@ -197,7 +243,27 @@ export class ProjectFileStore {
   }
 
   async ensureProject(projectName: string): Promise<string> {
+    return this.withProjectAccess([this.projectDirectory(projectName)], false,
+      () => this.ensureProjectShared(projectName));
+  }
+
+  private async ensureProjectShared(projectName: string): Promise<string> {
     const project = this.projectDirectory(projectName);
+    const key = this.operationKey(project);
+    const previous = this.pendingProjects.get(key);
+    if (previous) return previous;
+    // Workspace reads and parallel archives often need the same directories.
+    // Share only work in flight; later calls must still recheck the filesystem.
+    const pending = this.ensureProjectOnce(projectName, project);
+    this.pendingProjects.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.pendingProjects.get(key) === pending) this.pendingProjects.delete(key);
+    }
+  }
+
+  private async ensureProjectOnce(projectName: string, project: string): Promise<string> {
     const directories = [
       ...Object.keys(sourceFolders).flatMap((source) =>
         Object.keys(mediaFolders).map((kind) =>
@@ -222,10 +288,19 @@ export class ProjectFileStore {
     currentProjectName: string,
     nextProjectName: string,
   ): Promise<boolean> {
+    return this.withProjectAccess([
+      this.projectDirectory(currentProjectName), this.projectDirectory(nextProjectName),
+    ], true, () => this.renameProjectOnce(currentProjectName, nextProjectName));
+  }
+
+  private async renameProjectOnce(
+    currentProjectName: string,
+    nextProjectName: string,
+  ): Promise<boolean> {
     const currentProject = this.projectDirectory(currentProjectName);
     const nextProject = this.projectDirectory(nextProjectName);
     if (currentProject === nextProject) {
-      await this.ensureProject(nextProjectName);
+      await this.ensureProjectShared(nextProjectName);
       return false;
     }
 
@@ -257,7 +332,7 @@ export class ProjectFileStore {
     }
 
     if (!currentExists) {
-      await this.ensureProject(nextProjectName);
+      await this.ensureProjectShared(nextProjectName);
       return false;
     }
 
@@ -277,11 +352,16 @@ export class ProjectFileStore {
     } else {
       await rename(currentProject, nextProject);
     }
-    await this.ensureProject(nextProjectName);
+    await this.ensureProjectShared(nextProjectName);
     return true;
   }
 
   async deleteProject(projectName: string): Promise<boolean> {
+    return this.withProjectAccess([this.projectDirectory(projectName)], true,
+      () => this.deleteProjectOnce(projectName));
+  }
+
+  private async deleteProjectOnce(projectName: string): Promise<boolean> {
     const project = this.projectDirectory(projectName);
     try {
       const rootDetails = await lstat(this.root);
@@ -361,14 +441,15 @@ export class ProjectFileStore {
     area: "草稿" | "成品",
   ): Promise<ProjectFileResult> {
     const directory = dirname(this.assetPath(input, area));
-    const key = join(
+    const key = this.operationKey(join(
       /* turbopackIgnore: true */ directory,
       cleanSegment(input.assetId, "asset", 96),
-    );
+    ));
     const previous = this.pendingArchives.get(key);
-    const pending = (previous ?? Promise.resolve())
-      .catch(() => undefined)
-      .then(() => this.writeAssetOnce(input, area));
+    const pending = this.withProjectAccess([this.projectDirectory(input.projectName)], false, async () => {
+      await previous?.catch(() => undefined);
+      return this.writeAssetOnce(input, area);
+    });
     this.pendingArchives.set(key, pending);
     try {
       return await pending;
@@ -382,7 +463,7 @@ export class ProjectFileStore {
     input: ProjectAssetFileInput | ProjectFinishedFileInput,
     area: "草稿" | "成品",
   ): Promise<ProjectFileResult> {
-    await this.ensureProject(input.projectName);
+    await this.ensureProjectShared(input.projectName);
     const target = this.assetPath(input, area);
     const assetMarker = `--${cleanSegment(input.assetId, "asset", 96)}.`;
     const existingByAssetId = (await readdir(dirname(target))).find(
@@ -434,7 +515,12 @@ export class ProjectFileStore {
   }
 
   async clearDraft(projectName: string): Promise<ProjectCleanupResult> {
-    const project = await this.ensureProject(projectName);
+    return this.withProjectAccess([this.projectDirectory(projectName)], true,
+      () => this.clearDraftOnce(projectName));
+  }
+
+  private async clearDraftOnce(projectName: string): Promise<ProjectCleanupResult> {
+    const project = await this.ensureProjectShared(projectName);
     const draft = join(/* turbopackIgnore: true */ project, "草稿");
     const entries = await readdir(draft, { withFileTypes: true });
     let deleted = 0;
@@ -451,7 +537,7 @@ export class ProjectFileStore {
         });
       }
     }
-    await this.ensureProject(projectName);
+    await this.ensureProjectShared(projectName);
     return { deleted, failed };
   }
 }

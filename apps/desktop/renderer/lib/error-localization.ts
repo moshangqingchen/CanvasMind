@@ -18,6 +18,8 @@ export interface LocalizedRunError {
   retryable?: boolean;
   submissionMayHaveOccurred?: boolean;
   transport?: ProviderErrorPresentation["transport"];
+  failureCategory?: ProviderErrorPresentation["failureCategory"];
+  charge?: ProviderErrorPresentation["charge"];
 }
 
 interface ErrorContext {
@@ -159,6 +161,10 @@ function structuredError(value: unknown): LocalizedRunError | null {
   const phase = ["connect", "submit", "poll", "cancel", "archive"].includes(String(record.phase))
     ? record.phase as LocalizedRunError["phase"] : undefined;
   const transport = safeTransport(record.transport);
+  const categories = ["insufficient_balance", "local_network", "network", "supplier_capacity", "supplier_error", "authentication", "rate_limit", "invalid_request", "content_policy", "local_storage", "unknown"];
+  const failureCategory = categories.includes(String(record.failureCategory))
+    ? record.failureCategory as LocalizedRunError["failureCategory"] : undefined;
+  const charge = safeCharge(record.charge);
   return {
     message,
     ...(type ? { type } : {}),
@@ -173,6 +179,31 @@ function structuredError(value: unknown): LocalizedRunError | null {
     ...(typeof record.retryable === "boolean" ? { retryable: record.retryable } : {}),
     ...(typeof record.submissionMayHaveOccurred === "boolean" ? { submissionMayHaveOccurred: record.submissionMayHaveOccurred } : {}),
     ...(transport ? { transport } : {}),
+    ...(failureCategory ? { failureCategory } : {}),
+    ...(charge ? { charge } : {}),
+  };
+}
+
+/** Stored drafts may predate the server whitelist; accept billing evidence only. */
+function safeCharge(value: unknown): LocalizedRunError["charge"] {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (!["charged", "not_charged", "refunded", "unknown"].includes(String(record.status)) ||
+      !["provider_response", "not_submitted", "unconfirmed"].includes(String(record.source))) return undefined;
+  if (record.status === "unknown" || record.source === "unconfirmed" ||
+      (record.source === "not_submitted" && record.status !== "not_charged"))
+    return { status: "unknown", source: "unconfirmed" };
+  const amount = typeof record.amount === "number" && Number.isFinite(record.amount) && record.amount >= 0
+    ? record.amount : undefined;
+  if ((record.status === "not_charged" && record.amount !== undefined && amount !== 0) ||
+      (record.status === "charged" && amount === 0)) return { status: "unknown", source: "unconfirmed" };
+  const currency = typeof record.currency === "string" && /^(?:[A-Za-z][A-Za-z0-9_-]{0,15}|[¥￥$€£]|元|人民币|积分|点数|额度)$/u.test(record.currency)
+    ? record.currency : undefined;
+  return {
+    status: record.status as NonNullable<LocalizedRunError["charge"]>["status"],
+    source: record.source as NonNullable<LocalizedRunError["charge"]>["source"],
+    ...(amount === undefined ? {} : { amount }),
+    ...(currency ? { currency } : {}),
   };
 }
 
@@ -258,7 +289,39 @@ export function localizeRunError(
     };
   }
 
-  if (isBalanceError(normalized, embeddedStatus)) {
+  // Public error snapshots omit action URLs; restore this known supplier action
+  // before returning an already localized, explicitly classified balance error.
+  if (error.failureCategory === "insufficient_balance" && !error.actionUrl && api.websiteUrl) {
+    error = {
+      ...error,
+      actionUrl: api.websiteUrl,
+      actionLabel: `前往${api.supplierLabel ?? "供应商"}官网查看余额`,
+    };
+  }
+
+  // A structured server classification is stronger evidence than words quoted
+  // in providerMessage (for example an upstream account's insufficient balance).
+  if (error.failureCategory && error.failureCategory !== "unknown") {
+    if (/[\u3400-\u9fff]/u.test(raw)) return error;
+    const descriptions: Record<Exclude<NonNullable<LocalizedRunError["failureCategory"]>, "unknown">, [string, string]> = {
+      insufficient_balance: ["账户余额或可用额度不足，请检查所选渠道的余额与计费状态。", "余额不足"],
+      local_network: ["本机网络连接未建立，请检查本机网络、代理或权限设置，并核对原任务状态。", "本机网络连接异常"],
+      network: ["网络连接未正常完成，暂不能确认问题发生在本机、代理还是供应商侧。请核对原任务状态和账单。", "网络链路异常"],
+      supplier_capacity: ["供应商当前没有足够的可用账号或处理容量，未能完成本次生成。请核对供应商状态、原任务和账单。", "供应商容量不足"],
+      supplier_error: ["供应商未能完成本次生成。请核对供应商状态、原任务和账单，再决定是否重新生成。", "供应商生成错误"],
+      authentication: ["API 身份验证失败，请检查密钥、权限和接口地址，并核对原任务。", "身份验证错误"],
+      rate_limit: ["请求频率或并发超过限制。请降低并发，并核对原任务状态后再决定是否重新生成。", "速率限制错误"],
+      invalid_request: ["请求参数不符合所选模型的要求，请根据原始错误核对参数和素材。", "请求参数错误"],
+      content_policy: ["内容审核未通过，请根据审核原因修改提示词或参考素材。", "内容审核错误"],
+      local_storage: ["本地保存未完成，请检查磁盘空间和保存目录权限，并核对原任务结果。", "本地保存错误"],
+    };
+    const [message, type] = descriptions[error.failureCategory];
+    return { ...error, message, type: error.type ?? type };
+  }
+
+  const upstreamCapacity = /(?:upstream|account[_ ]?pool|channel|上游|号池|账号池|通道)[\s\S]{0,48}(?:insufficient[\s\S]{0,24}(?:balance|quota|credit)|quota exhausted|余额不足|额度不足|账号耗尽)/iu.test(normalized);
+
+  if (isBalanceError(normalized, embeddedStatus) && !upstreamCapacity) {
     const supplierLabel = api.supplierLabel ?? "供应商";
     return {
       ...error,
@@ -279,7 +342,7 @@ export function localizeRunError(
     };
   }
 
-  if (["no available compatible accounts", "no_available_compatible_accounts"].some(pattern => normalized.includes(pattern)) ||
+  if (upstreamCapacity || ["no available compatible accounts", "no_available_compatible_accounts"].some(pattern => normalized.includes(pattern)) ||
       error.code === "provider_no_compatible_accounts") {
     const uncertain = error.submissionMayHaveOccurred === true ||
       (error.phase === "submit" && embeddedStatus !== undefined && Number(embeddedStatus) >= 500) ||
@@ -384,6 +447,7 @@ export function localizeRunError(
     normalized.includes("unauthorized")
   ) {
     return {
+      ...error,
       message: "API 身份验证失败，请检查密钥、权限和接口地址。",
       type: "身份验证错误",
       code: embeddedStatus ? `HTTP ${embeddedStatus}` : "authentication_error",
@@ -394,6 +458,7 @@ export function localizeRunError(
 
   if (normalized.includes("rate limit") || embeddedStatus === "429") {
     return {
+      ...error,
       message: "API 请求过于频繁或已达到用量限制，请稍后重试。",
       type: "速率限制错误",
       code: "HTTP 429",
@@ -404,6 +469,7 @@ export function localizeRunError(
 
   if (normalized.includes("timed out") || normalized.includes("timeout")) {
     return {
+      ...error,
       message: "API 请求超时，请稍后重试。",
       type: "请求超时错误",
       code: "request_timeout",
@@ -414,6 +480,7 @@ export function localizeRunError(
 
   if (/^[\x00-\x7f\s]+$/u.test(raw)) {
     return {
+      ...error,
       message: "供应商返回了生成错误，请检查接入参数或稍后重试。",
       type: "供应商生成错误",
       code: embeddedStatus ? `HTTP ${embeddedStatus}` : "generation_failed",

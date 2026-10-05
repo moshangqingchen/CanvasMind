@@ -13,6 +13,7 @@ import { fetchRuns } from "../lib/client-api";
 import { localizeRunError } from "../lib/error-localization";
 import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
 import { TaskEvidence } from "./task-evidence";
+import { FailureDiagnosis } from "./failure-diagnosis";
 import { resultElapsed } from "../lib/result-provenance";
 import { useDialogFocus } from "./use-dialog-focus";
 import type { RunSnapshot } from "./types";
@@ -230,7 +231,7 @@ export function RunHistoryModal({
                 ...new Set(nodes.flatMap((node) => node.outputAssetIds)),
               ];
               const nodeErrors = nodes.filter((node) =>
-                Boolean(node.errorJson?.message),
+                Boolean(node.errorJson?.message) || ["failed", "needs_attention"].includes(node.status),
               );
               return (
                 <article className="history-row" key={run.id}>
@@ -290,7 +291,7 @@ export function RunHistoryModal({
                                 : ""}
                             </span>
                             {node.request?.provider ? <TaskEvidence request={node.request} evidence={node.taskEvidence} /> : null}
-                            {taskOutcomeNote(node.status, node.taskEvidence, node.recoveryAction) ? <small>{taskOutcomeNote(node.status, node.taskEvidence, node.recoveryAction)}</small> : null}
+                            {!node.errorJson && taskOutcomeNote(node.status, node.taskEvidence, node.recoveryAction) ? <small>{taskOutcomeNote(node.status, node.taskEvidence, node.recoveryAction)}</small> : null}
                             {node.request?.submissionTimeline?.map(
                               (entry, index) => (
                                 <small key={index}>
@@ -327,13 +328,7 @@ export function RunHistoryModal({
                             updatedAt: node.updatedAt,
                             outputAssetIds: node.outputAssetIds,
                             recoveryAction: node.recoveryAction,
-                            error: node.errorJson
-                              ? {
-                                  code: node.errorJson.code,
-                                  type: node.errorJson.type,
-                                  statusCode: node.errorJson.statusCode,
-                                }
-                              : undefined,
+                            error: localizeRunError(node.errorJson, { provider: node.request?.provider, supplier: node.request?.supplier, status: node.status, providerTaskStatus: node.taskEvidence?.status }),
                             model: node.request?.model,
                             supplier: node.request?.supplier,
                             connectionName: node.request?.connectionName,
@@ -358,7 +353,7 @@ export function RunHistoryModal({
                       <Download size={12} /> 导出诊断信息
                     </button>
                     {nodeErrors.length > 0 ? (
-                      <details className="history-errors">
+                      <details className="history-errors" open>
                         <summary className="history-error">
                           {nodeErrors.length} 个节点错误
                         </summary>
@@ -369,7 +364,7 @@ export function RunHistoryModal({
                               <li key={node.id}>
                                 <strong>{node.nodeId}</strong>
                                 <div className="history-error-detail">
-                                  <span>{localized?.message}</span>
+                                  <FailureDiagnosis error={localized} status={node.status} providerTaskStatus={node.taskEvidence?.status} recoveryAction={node.recoveryAction} />
                                   {localized?.actionUrl ? (
                                     <a
                                       href={localized.actionUrl}
@@ -380,6 +375,16 @@ export function RunHistoryModal({
                                       {localized.actionLabel ?? "供应商官网"}
                                     </a>
                                   ) : null}
+                                  <details>
+                                    <summary>技术详情与上游原文</summary>
+                                    <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(localized, null, 2)}</pre>
+                                    <button type="button" className="button ghost small" onClick={(event) => {
+                                      const button = event.currentTarget;
+                                      void navigator.clipboard.writeText(JSON.stringify({ error: localized, runId: run.id, nodeId: node.nodeId, taskEvidence: node.taskEvidence }, null, 2))
+                                        .then(() => { button.textContent = "已复制"; })
+                                        .catch(() => { button.textContent = "复制失败，请手动选择"; });
+                                    }}>复制错误详情</button>
+                                  </details>
                                 </div>
                               </li>
                             );

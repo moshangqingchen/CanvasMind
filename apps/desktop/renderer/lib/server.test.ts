@@ -387,6 +387,63 @@ describe("public run snapshots", () => {
     expect(JSON.stringify(snapshot)).not.toMatch(/cloud:|private|providerTask/);
   });
 
+  it("publishes failure classification and bounded per-request charge evidence without billing secrets", () => {
+    const input = recoverySnapshot();
+    const snapshot = publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!,
+      errorJson: {
+        message: "No available compatible accounts", failureCategory: "supplier_capacity",
+        charge: { status: "charged", amount: 0.125, currency: "CNY", source: "provider_response",
+          account: "private-account", apiKey: "private-key", response: { authorization: "private-header" } },
+      },
+    }] });
+    expect(snapshot?.nodes[0]?.errorJson).toEqual({
+      message: "No available compatible accounts", failureCategory: "supplier_capacity",
+      charge: { status: "charged", amount: 0.125, currency: "CNY", source: "provider_response" },
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("private");
+  });
+
+  it.each([
+    { status: "not_charged", amount: 0, currency: "credits", source: "provider_response" },
+    { status: "not_charged", amount: 0, source: "not_submitted" },
+    { status: "refunded", amount: 1.5, currency: "USD", source: "provider_response" },
+    { status: "charged", source: "provider_response" },
+  ])("preserves supported charge evidence: %j", (charge) => {
+    const input = recoverySnapshot();
+    const snapshot = publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!, errorJson: { message: "failed", charge } }] });
+    expect(snapshot?.nodes[0]?.errorJson?.charge).toEqual(charge);
+  });
+
+  it.each([
+    { status: "unknown", amount: 99, currency: "USD", source: "provider_response" },
+    { status: "charged", amount: 1, source: "not_submitted" },
+    { status: "not_charged", amount: 1, source: "provider_response" },
+    { status: "not_charged", amount: -1, source: "provider_response" },
+    { status: "charged", amount: 0, source: "provider_response" },
+    { status: "charged", amount: 1, source: "unconfirmed" },
+  ])("does not publish contradictory charge evidence as confirmed: %j", (charge) => {
+    const input = recoverySnapshot();
+    const snapshot = publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!, errorJson: { message: "failed", charge } }] });
+    expect(snapshot?.nodes[0]?.errorJson?.charge).toEqual({ status: "unknown", source: "unconfirmed" });
+  });
+
+  it("rejects arbitrary classifications and malformed amounts/currencies without inventing free billing", () => {
+    const input = recoverySnapshot();
+    const snapshot = publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!, errorJson: {
+      message: "failed", failureCategory: "private-token", charge: {
+        status: "charged", amount: Number.NaN, currency: "token=private-secret", source: "provider_response",
+      },
+    } }] });
+    expect(snapshot?.nodes[0]?.errorJson).toEqual({
+      message: "failed", charge: { status: "charged", source: "provider_response" },
+    });
+    const historical = publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!, errorJson: {
+      message: "poll failed", phase: "poll", submissionMayHaveOccurred: false,
+    } }] });
+    expect(historical?.nodes[0]?.errorJson?.charge).toBeUndefined();
+    expect(JSON.stringify(snapshot)).not.toContain("private");
+  });
+
   it("does not present local, conflicting, unsafe or absent identifiers as supplier task IDs", () => {
     const input = recoverySnapshot();
     const node = input.nodes[0]!;

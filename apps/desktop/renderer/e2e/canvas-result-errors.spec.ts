@@ -12,7 +12,7 @@ for (const status of ["cancelled", "failed", "needs_attention"]) test(`${status}
   await page.goto(`/canvas/${canvas.id}`);
   const state = page.locator(`.generated-result-state.${status === "needs_attention" ? "needs-attention" : status}`);
   await expect(state).toHaveCSS("overflow-y", "auto");
-  await expect(state.locator(".result-error-summary")).toHaveText(message);
+  await expect(status === "cancelled" ? state.locator(".result-error-summary") : state.getByLabel("失败诊断").locator("dd p")).toHaveText(message);
   const title = state.locator("strong").first();
   await expect(title).toBeInViewport({ ratio: 1 });
   const node = page.locator('.react-flow__node[data-id="result"]');
@@ -46,7 +46,7 @@ for (const status of ["cancelled", "failed", "needs_attention"]) test(`${status}
   await state.evaluate(el => { el.scrollTop = 0; });
   await state.getByRole("button", { name: "查看 结果验收 来源" }).click();
   const dialog = page.getByRole("dialog", { name: "结果来源与参数" });
-  await expect(dialog.getByLabel("完整错误详情").locator("p")).toHaveText(message);
+  await expect(dialog.getByLabel("完整错误详情").locator(".result-info-error")).toHaveText(message);
   await expect(dialog.getByLabel("完整错误详情").locator("pre")).toContainText("原文结尾");
   await expect(dialog.getByRole("button", { name: "复制错误详情", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath(`${status}-full-details.png`) });

@@ -3,6 +3,7 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import { PROVIDER_SUPPLIER_PROFILES } from "@super-canvas/providers/suppliers";
 import {
   invalidateModelCache,
+  invalidateConnections,
   type ProviderConnectionView,
 } from "./client-api";
 import {
@@ -10,6 +11,7 @@ import {
   providerConnectionSupplierKey,
   providerConnectionUsage,
 } from "./provider-connection-options";
+import { createSharedRequest } from "./shared-request";
 
 export type SupplierKind = "auto" | "newapi" | "sub2api" | "openai-compatible";
 export type SupplierSiteAuthMode = "password" | "access-token";
@@ -101,11 +103,21 @@ async function supplierRequest<T>(url: string, init?: RequestInit): Promise<T> {
     );
   }
   if (payload === null) throw new Error("供应商返回了无效响应，请重试。");
+  if (init?.method && init.method !== "GET") {
+    supplierRequests.invalidate();
+    invalidateConnections();
+  }
   return payload as T;
 }
 
+const supplierRequests = createSharedRequest(() =>
+  supplierRequest<SupplierRecord[]>("/api/suppliers", {
+    signal: AbortSignal.timeout(15_000),
+  }),
+);
+
 export function fetchSuppliers(): Promise<SupplierRecord[]> {
-  return supplierRequest("/api/suppliers");
+  return supplierRequests.read();
 }
 export function createSupplier(input: SupplierInput): Promise<SupplierRecord> {
   return supplierRequest("/api/suppliers", {

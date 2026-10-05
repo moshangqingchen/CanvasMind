@@ -97,7 +97,7 @@ test("任务取回失败仍可立即重试，轮询保留操作错误", async ({
   await expect(recover).toBeEnabled();
 });
 
-test("刷新失败保留任务及输出按钮，错误详情可以通过 Tab 打开", async ({ page }) => {
+test("刷新失败保留任务及输出按钮，默认展开的错误详情支持键盘开合", async ({ page }) => {
   const failed = {
     run: { ...cancelledTask.run, status: "failed", canRecoverOutputs: false },
     nodes: [{ ...cancelledTask.nodes[0], status: "failed", errorJson: { message: "供应商任务失败" } }],
@@ -110,6 +110,9 @@ test("刷新失败保留任务及输出按钮，错误详情可以通过 Tab 打
   await page.keyboard.press("Tab");
   const errors = history.locator("summary.history-error");
   await expect(errors).toBeFocused();
+  await expect(history.locator(".history-error-detail")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(history.locator(".history-error-detail")).not.toBeVisible();
   await page.keyboard.press("Enter");
   await expect(history.locator(".history-error-detail")).toBeVisible();
   await page.route(/\/api\/runs(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: "历史刷新失败" } }));

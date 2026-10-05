@@ -3,6 +3,7 @@ import {
   memo,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -12,6 +13,7 @@ import { createPortal } from "react-dom";
 import { Copy, FileImage, X } from "lucide-react";
 import type { AssetView, CanvasNodeData, RunSnapshot } from "./types";
 import { localizeRunError } from "../lib/error-localization";
+import { FailureDiagnosis } from "./failure-diagnosis";
 import { taskConnectionLabel, taskOutcomeLabel } from "../lib/task-evidence";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
 import { generationDetailsFromRun, resultElapsed, resultFileSize, resultPrompt, resultReferenceInputs } from "../lib/result-provenance";
@@ -121,16 +123,28 @@ export function ReadableName({ text }: { text: string }) {
 }
 
 export function ResultInformation({
+  nodeId,
   data,
   asset,
   overlay = false,
 }: {
+  nodeId: string;
   data: CanvasNodeData;
   asset?: AssetView;
   overlay?: boolean;
 }) {
   const [open, setOpen] = useState(false),
     [copy, setCopy] = useState("复制任务编号");
+  const dialogLeaseId = useId();
+  const onConfigurationOpenChange = data.onConfigurationOpenChange;
+  useLayoutEffect(() => {
+    if (!open) return;
+    // The body portal still belongs to this node's React tree. Keep that tree
+    // mounted when a resize or pan moves the source node outside the viewport.
+    const leaseKey = `result-information:${nodeId}:${dialogLeaseId}`;
+    onConfigurationOpenChange?.(leaseKey, true);
+    return () => onConfigurationOpenChange?.(leaseKey, false);
+  }, [dialogLeaseId, nodeId, onConfigurationOpenChange, open]);
   const [loadedDimensions, setLoadedDimensions] = useState<{ assetId: string; text: string } | null>(null);
   const imageAssetId = asset?.kind === "image" ? asset.id : null;
   const dimensions = imageAssetId
@@ -152,7 +166,7 @@ export function ResultInformation({
   const prompt = resultPrompt(data, details);
   const parameters = runNode?.request?.parameters ?? data.generatedParameters;
   const status = runNode?.status ?? data.generatedStatus;
-  const error = localizeRunError(data.generatedError, { provider: data.generatedProvider, supplier: data.generatedSupplier, status, providerTaskStatus: details.taskEvidence?.status });
+  const error = localizeRunError(runNode ? runNode.errorJson : data.generatedError, { provider: runNode?.request?.provider ?? data.generatedProvider, supplier: runNode?.request?.supplier ?? data.generatedSupplier, status, providerTaskStatus: details.taskEvidence?.status });
   const statusLabel = taskOutcomeLabel(status, details.taskEvidence, runNode?.recoveryAction ?? data.generatedRecoveryAction) ?? (status ? pendingGeneratedResultLabel(status, details.submissionPhase) : "未记录");
   const operationLabel = ({ "image.generate": "文生图", "image.edit": "参考图生成 / 编辑", "video.generate": "文生视频", "video.image-to-video": "图生视频" } as Record<string, string>)[details.operation ?? ""] ?? details.operation ?? "未记录";
   const unit = data.assetKind === "video" ? "个" : "张";
@@ -254,10 +268,13 @@ export function ResultInformation({
                 </header>
                 <div className="result-info-body">
                   <h3>{data.label}</h3>
-                  {error ? <section aria-label="完整错误详情">
-                    <h4>{data.generatedStatus === "cancelled" ? "取消信息" : "错误详情"}</h4>
-                    <p className="result-info-error">{error.message}</p>
-                    <pre>{JSON.stringify(error, null, 2)}</pre>
+                  {error || status === "failed" || status === "needs_attention" || status === "cancelled" ? <section aria-label="完整错误详情">
+                    <h4>{status === "cancelled" ? "取消信息" : "错误详情"}</h4>
+                    <FailureDiagnosis error={error} status={status} providerTaskStatus={details.taskEvidence?.status} recoveryAction={runNode?.recoveryAction ?? data.generatedRecoveryAction} />
+                    <details>
+                      <summary>技术详情与上游原文</summary>
+                      <pre>{error ? JSON.stringify(error, null, 2) : "该任务未记录原始错误"}</pre>
+                    </details>
                     <button type="button" className="button" onClick={() => {
                       void navigator.clipboard.writeText(JSON.stringify(error, null, 2))
                         .then(() => setErrorCopy("已复制"))
@@ -290,7 +307,7 @@ export function ResultInformation({
                     <dt>请求数量</dt>
                     <dd>{Number.isInteger(requestedCount) && requestedCount > 0 ? `${requestedCount} ${unit}` : "未指定（供应商默认）"}</dd>
                     <dt>已保存结果</dt>
-                    <dd>{details.outputCount !== undefined ? `${details.outputCount} ${unit}${typeof data.generatedOutputIndex === "number" ? `，当前为第 ${data.generatedOutputIndex + 1} ${unit}` : ""}` : "未记录"}</dd>
+                    <dd>{details.outputCount !== undefined ? `${details.outputCount} ${unit}${details.outputCount > 0 && typeof data.generatedOutputIndex === "number" && Number.isInteger(data.generatedOutputIndex) && data.generatedOutputIndex >= 0 && data.generatedOutputIndex < details.outputCount ? `，当前为第 ${data.generatedOutputIndex + 1} ${unit}` : ""}` : "未记录"}</dd>
                     <dt>实际尺寸</dt>
                     <dd>{dimensions}</dd>
                     <dt>开始时间</dt>
@@ -365,7 +382,7 @@ export function ResultInformation({
                     </button>
                   ) : null}
                   <button type="button" className="button" onClick={() => copyDetail(JSON.stringify({
-                    label: data.label, taskId, status, model: runNode?.request?.model ?? data.generatedModel,
+                    label: data.label, taskId, status, error, model: runNode?.request?.model ?? data.generatedModel,
                     connection: runNode?.request?.connectionName ?? data.generatedConnectionName,
                     group: data.generatedGroup, ...details, references, prompt, parameters,
                     referenceImageCount: references && !unknownCount ? imageCount : undefined,

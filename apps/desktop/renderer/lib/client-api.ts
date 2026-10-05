@@ -1,5 +1,6 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { tk1688ConnectionWriteConfig } from "./tk1688-connection-write";
+import { createSharedRequest } from "./shared-request";
 import type { CangyuanAvailabilityItem, CangyuanAvailabilitySnapshot, CangyuanAvailabilityStatus } from "./cangyuan-availability-types";
 export type { CangyuanAvailabilityStatus } from "./cangyuan-availability-types";
 import type {
@@ -255,7 +256,8 @@ export async function fetchProjects(): Promise<ProjectSummaryView[]> {
     error?: string;
   } | null;
   if (!response.ok) throw new Error(payload?.error ?? "项目列表读取失败");
-  return Array.isArray(payload?.projects) ? payload.projects : [];
+  if (!Array.isArray(payload?.projects)) throw new Error("项目列表返回格式无效，请重试");
+  return payload.projects;
 }
 
 export async function createProject(
@@ -847,12 +849,23 @@ export async function fetchVisibleRuns(
   return [...snapshots.values()].sort((a, b) => b.run.createdAt.localeCompare(a.run.createdAt));
 }
 
-export async function fetchConnections(): Promise<ProviderConnectionView[]> {
+const connectionRequests = createSharedRequest(async (): Promise<ProviderConnectionView[]> => {
   const response = await fetch(`/api/providers?fresh=${Date.now()}`, {
     cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error("无法读取供应商连接");
-  return response.json() as Promise<ProviderConnectionView[]>;
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) throw new Error("供应商连接返回格式无效，请重试");
+  return payload as ProviderConnectionView[];
+});
+
+export function invalidateConnections(): void {
+  connectionRequests.invalidate();
+}
+
+export function fetchConnections(): Promise<ProviderConnectionView[]> {
+  return connectionRequests.read();
 }
 
 export async function saveConnection(input: {
@@ -872,6 +885,7 @@ export async function saveConnection(input: {
       (await response.json().catch(() => null))?.error ?? "供应商连接保存失败",
     );
   const saved = (await response.json()) as ProviderConnectionView;
+  invalidateConnections();
   invalidateModelCache(saved.id);
   return saved;
 }
@@ -884,6 +898,7 @@ export async function saveReferenceImageHosting(id: string, enabled: boolean): P
   });
   if (!response.ok)
     throw new Error((await response.json().catch(() => null))?.error ?? "参考图链接设置保存失败");
+  invalidateConnections();
   return response.json() as Promise<ProviderConnectionView>;
 }
 
@@ -1139,12 +1154,12 @@ export async function fetchCangyuanAvailability(
     )
       throw new Error("沧元渠道可用性返回格式不完整");
     const snapshot = payload as CangyuanAvailabilitySnapshotView;
-    if ((modelEpochs.get(connectionId) ?? 0) === epoch) {
-      // Bound memory when connection credentials are repeatedly changed.
-      if (availabilityCache.size >= 128)
-        availabilityCache.delete(availabilityCache.keys().next().value!);
-      availabilityCache.set(key, { expiresAt: Date.now() + 30_000, snapshot });
-    }
+    if ((modelEpochs.get(connectionId) ?? 0) !== epoch)
+      throw new ProviderModelsRequestError("连接已改变，请重新读取渠道状态", 409);
+    // Bound memory when connection credentials are repeatedly changed.
+    if (availabilityCache.size >= 128)
+      availabilityCache.delete(availabilityCache.keys().next().value!);
+    availabilityCache.set(key, { expiresAt: Date.now() + 30_000, snapshot });
     return snapshot;
   })();
   pendingAvailability.set(key, request);
@@ -1317,4 +1332,6 @@ export async function deleteConnection(id: string): Promise<void> {
     method: "DELETE",
   });
   if (!response.ok) throw new Error("删除供应商连接失败");
+  invalidateConnections();
+  invalidateModelCache(id);
 }

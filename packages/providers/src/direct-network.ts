@@ -286,26 +286,51 @@ export function createAutoNetworkConnector(options: AutoNetworkConnectorOptions 
         if (!publicCandidates.length || !localCandidates.length) throw new ProviderNetworkDiscoveryError();
         const budget = AbortSignal.timeout(options.connectTimeoutMs ?? 8_000);
         const signal = request.signal ? AbortSignal.any([budget, request.signal]) : budget;
-        let attempted = false;
         let localBindingFailed = false;
-        for (const localAddress of localCandidates) {
-          for (const address of publicCandidates) {
-            if (signal.aborted) break;
+        // At most four TLS handshakes compete before any HTTP bytes are sent.
+        // A black-holed first address must not consume the whole budget and
+        // prevent a healthy second IP or adapter from ever being considered.
+        const attempts = localCandidates.flatMap(localAddress => publicCandidates.map(address => ({
+          address, localAddress, controller: new AbortController(),
+        })));
+        let winner: (typeof attempts)[number] | undefined;
+        let selected = false;
+        let selectedSocket: Socket | undefined;
+        let handedOver = false;
+        try {
+          const connected = await waitWithSignal(Promise.any(attempts.map(async attempt => {
+            const attemptSignal = AbortSignal.any([signal, attempt.controller.signal]);
             try {
-              attempted = true;
-              const socket = await dial({ address, hostname: request.hostname, port: Number(request.port || 443), localAddress }, signal);
-              if (signal.aborted) { socket.destroy(); break; }
-              Object.defineProperty(socket, PROVIDER_ROUTE, { value: "physical-direct", configurable: true });
-              finish(null, socket);
-              return;
+              attemptSignal.throwIfAborted();
+              const socket = await dial({ address: attempt.address, hostname: request.hostname,
+                port: Number(request.port || 443), localAddress: attempt.localAddress }, attemptSignal);
+              if (attemptSignal.aborted || selected) {
+                socket.destroy();
+                throw abortError(attemptSignal);
+              }
+              selected = true;
+              selectedSocket = socket;
+              return { socket, attempt };
             } catch (error) {
               // An obsolete local address is failed discovery, not evidence
               // that the supplier requires the TUN route.
               if (error && typeof error === "object" && "code" in error && error.code === "EADDRNOTAVAIL") localBindingFailed = true;
+              throw error;
             }
-          }
+          })), signal);
+          winner = connected.attempt;
+          if (signal.aborted) { connected.socket.destroy(); throw abortError(signal); }
+          Object.defineProperty(connected.socket, PROVIDER_ROUTE, { value: "physical-direct", configurable: true });
+          finish(null, connected.socket);
+          handedOver = true;
+          return;
+        } catch {
+          if (request.signal?.aborted) throw abortError(request.signal);
+        } finally {
+          for (const attempt of attempts) if (attempt !== winner) attempt.controller.abort();
+          if (!handedOver) selectedSocket?.destroy();
         }
-        if (!attempted || localBindingFailed) {
+        if (localBindingFailed) {
           cache.delete("local");
           throw new ProviderNetworkDiscoveryError();
         }

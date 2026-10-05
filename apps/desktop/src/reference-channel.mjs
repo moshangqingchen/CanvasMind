@@ -47,12 +47,20 @@ export async function startReferenceGateway({ origin, desktopToken, secret, inst
     res.once("close", finish);
     try {
       const headers = { "x-supercanvas-desktop-token": desktopToken };
-      if (req.headers.range && /^bytes=\d+-\d*$/.test(req.headers.range)) headers.range = req.headers.range;
+      if (req.headers.range && /^bytes=(?:\d+-\d*|-\d+)$/.test(req.headers.range)) headers.range = req.headers.range;
       // The target and authentication are app-owned. No incoming header, query,
       // redirect or arbitrary path can reach management APIs.
       const response = await fetchImpl(new URL(`/api/assets/${encodeURIComponent(id)}/content`, origin),
-        { headers, redirect: "error", signal: abort.signal });
-      if (!response.ok) { await response.body?.cancel(); return reject(response.status === 404 ? 404 : response.status === 416 ? 416 : 502); }
+        { method: req.method, headers, redirect: "error", signal: abort.signal });
+      if (!response.ok) {
+        await response.body?.cancel();
+        if (response.status === 416) {
+          const contentRange = response.headers.get("content-range");
+          if (contentRange && /^bytes \*\/\d+$/.test(contentRange)) res.setHeader("content-range", contentRange);
+          res.setHeader("accept-ranges", "bytes");
+        }
+        return reject(response.status === 404 ? 404 : response.status === 416 ? 416 : 502);
+      }
       const outgoing = { "cache-control": "private, no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox", "referrer-policy": "no-referrer" };
       for (const name of ["content-type", "content-length", "content-range", "accept-ranges"]) {
         const value = response.headers.get(name); if (value) outgoing[name] = value;

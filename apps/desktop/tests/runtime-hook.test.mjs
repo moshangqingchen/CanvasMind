@@ -205,6 +205,33 @@ test("normal async response finishes exactly once", async () => {
   } finally { if (child.exitCode === null) child.kill(); }
 });
 
+for (const extraListener of [false, true]) test(`completed response keeps async post-response writes counted with extra listener=${extraListener}`, async () => {
+  const { child, origin } = await startFixture(`
+    const http = require('node:http'); let release; let persisted = 0;
+    process.on('message', message => { if (message.type === 'release') release(); });
+    const server = http.createServer(async (req, res) => {
+      if (req.url === '/write') {
+        res.end('accepted');
+        await new Promise(resolve => { release = resolve; });
+        persisted++;
+        process.send({ completed: true });
+        return;
+      }
+      res.end(JSON.stringify({ ...globalThis.__superCanvasDesktopLifecycle, persisted }));
+    });
+    if (${extraListener}) server.on('request', () => {});
+    server.listen(0, '127.0.0.1', () => process.send({ port: server.address().port }));
+  `);
+  try {
+    assert.equal(await (await fetch(`${origin}/write`, { method: "POST", headers: testHeaders })).text(), "accepted");
+    assert.deepEqual(await readState(origin), { draining: false, writes: 1, persisted: 0 });
+    const completed = once(child, "message");
+    child.send({ type: "release" }); await completed;
+    assert.deepEqual(await readState(origin), { draining: false, writes: 0, persisted: 1 });
+    assert.deepEqual(await readState(origin), { draining: false, writes: 0, persisted: 1 });
+  } finally { if (child.exitCode === null) child.kill(); }
+});
+
 test("native once, listener ordering and mutation remain intact and unknown listeners block abort release", async () => {
   const { child, origin } = await startFixture(`
     const http = require('node:http'); const calls = []; let release;

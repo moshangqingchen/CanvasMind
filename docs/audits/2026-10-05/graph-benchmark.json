@@ -1,0 +1,22 @@
+{
+  "baselineCommit": "a32dffc873556dd2649699324e52a2e5d320cbc0",
+  "node": "v24.15.0",
+  "nodes": 2500,
+  "edges": 2499,
+  "warmupRounds": 3,
+  "measuredRounds": 10,
+  "ordering": "alternating before/after",
+  "summary": {
+    "before": {
+      "medianMs": 43.39,
+      "minMs": 25.14,
+      "maxMs": 44.85
+    },
+    "after": {
+      "medianMs": 2.65,
+      "minMs": 2.04,
+      "maxMs": 3.9
+    }
+  },
+  "note": "Local synthetic graph validation only; not network throughput or total UI frame rate."
+}

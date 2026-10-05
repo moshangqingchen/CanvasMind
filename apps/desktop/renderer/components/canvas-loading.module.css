@@ -1,0 +1,30 @@
+.loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 100dvh;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse at 50% 44%, #8d76df12, transparent 48%),
+    radial-gradient(#b6a8ed17 1px, transparent 1px) 0 0 / 24px 24px,
+    #101116;
+  color: #eef0f7;
+}
+.status { text-align: center; }
+.icon {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 24px;
+  border: 1px solid #b9a7ff45;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #b9a7ff24, #9fe6d014);
+  color: #cdbdff;
+}
+.status h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.status p { margin: 12px 0 24px; color: #aab0c2; font-size: 14px; }
+.spinner { color: #b9a7ff; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+:global(html[data-motion="off"]) .spinner { animation: none; }

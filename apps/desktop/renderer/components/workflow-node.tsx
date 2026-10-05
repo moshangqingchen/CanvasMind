@@ -50,6 +50,7 @@ import {
 import { localizeRunError } from "../lib/error-localization";
 import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
 import { TaskEvidence } from "./task-evidence";
+import { FailureDiagnosis } from "./failure-diagnosis";
 import { ReadableName, ResultInformation, ResultToolbar, WaitElapsed } from "./result-information";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
 import { cleanModelDisplayName, modelPriceSummary } from "../lib/model-display";
@@ -1224,7 +1225,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                       {generatedStatus === "archiving" ? (
                         <small>生成已完成，正在取回原图，无需重新生成</small>
                       ) : null}
-                      <ResultInformation data={data} asset={inputAsset} />
+                      <ResultInformation nodeId={id} data={data} asset={inputAsset} />
                     </div>
                   ) : (generatedProblem || generatedCancelled) && !hasArchivedGeneratedMedia ? (
                     <div
@@ -1243,10 +1244,10 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                           ? data.generatedProvider === "cli" && data.generatedCliCancelSupported !== true ? "已停止跟踪" : "生成已取消"
                           : taskOutcomeLabel(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction)}
                       </strong>
-                      <ResultInformation data={data} asset={inputAsset} />
+                      <ResultInformation nodeId={id} data={data} asset={inputAsset} />
                       <TaskEvidence request={{ supplier: data.generatedSupplier, connectionName: data.generatedConnectionName, modelGroup: data.generatedGroup }} evidence={data.generatedDetails?.taskEvidence} />
-                      {generatedError ? <span className="result-error-summary">{generatedError}</span> : null}
-                      {taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction) ? (
+                      {generatedProblem ? <FailureDiagnosis error={generatedErrorDetails} providerTaskStatus={data.generatedDetails?.taskEvidence?.status} recoveryAction={data.generatedRecoveryAction} /> : generatedError ? <span className="result-error-summary">{generatedError}</span> : null}
+                      {!generatedProblem && taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction) ? (
                         <small className="generated-result-attention-note">
                           {taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction)}
                         </small>
@@ -1425,7 +1426,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                   {generatedProvenance &&
                   hasArchivedGeneratedMedia &&
                   inputPreviewUrl ? (
-                    <ResultInformation data={data} asset={inputAsset} overlay />
+                    <ResultInformation nodeId={id} data={data} asset={inputAsset} overlay />
                   ) : null}
                 </div>
                 <button

@@ -68,4 +68,15 @@ describe("shared node availability requests", () => {
       "返回格式不完整",
     );
   });
+
+  it("rejects a late snapshot obtained before credentials changed", async () => {
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
+    const { fetchCangyuanAvailability, invalidateModelCache } = await import("./client-api");
+    const pending = fetchCangyuanAvailability("changed");
+    const assertion = expect(pending).rejects.toThrow("连接已改变");
+    invalidateModelCache("changed");
+    finish(Response.json(fixture()));
+    await assertion;
+  });
 });

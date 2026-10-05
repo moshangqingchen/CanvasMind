@@ -62,23 +62,28 @@ if (process.env.SUPERCANVAS_DESKTOP === 'true') {
     if (write) {
       state.writes++;
       let done = false;
+      let responseFinished = false;
       const finish = () => { if (!done) { done = true; state.writes--; } };
-      res.once('finish', finish);
       const listeners = this.rawListeners('request');
       const work = req[requestState] = {
         observable: listeners.length > 0 && listeners.every(listener => trackedListeners.has(listener)),
         pending: 0,
         dispatched: false,
         check() {
-          // Close alone says nothing about outstanding writes. Next may finish
-          // its async handler without end/finish after the response is destroyed.
-          // Unknown/callback listeners remain fail-closed.
-          if (this.observable && this.dispatched && this.pending === 0 && res.destroyed) finish();
+          // Sending the response does not finish an async handler's writes.
+          // Wait for its Promise too, including cleanup after a streaming reply.
+          // Unknown/callback listeners must explicitly end their response.
+          // Additional request listeners make disconnect-only completion
+          // unobservable, but must not bypass async handlers we do track.
+          if (!this.dispatched || this.pending !== 0) return;
+          if (responseFinished || (this.observable && res.destroyed)) finish();
         },
       };
+      const responseEnd = () => { responseFinished = true; work.check(); };
+      res.once('finish', responseEnd);
       res.once('close', () => work.check());
       const end = res.end;
-      res.end = function (...endArgs) { try { return end.apply(this, endArgs); } finally { finish(); } };
+      res.end = function (...endArgs) { try { return end.apply(this, endArgs); } finally { responseEnd(); } };
       try {
         return original.call(this, event, ...args);
       } finally {

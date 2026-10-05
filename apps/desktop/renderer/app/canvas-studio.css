@@ -102,9 +102,9 @@
 .canvas-editor .inspector .icon-button { background: #222326; border-color: #303236; color: #a3a7af; }
 .canvas-editor .top-actions .icon-button:hover,
 .canvas-editor .inspector .icon-button:hover { background: #33353a; color: #fff; }
-.canvas-editor .top-actions .api-settings-button { background: #222326; color: #bcbfc7; border-color: #303236; font-size: 11px; }
-.canvas-editor .editor-run { min-height: 32px; padding: 6px 10px; font-size: 11px; }
-.canvas-editor .save-state { background: transparent; border: 0; padding: 5px; color: #9da2aa; font-size: 10px; }
+.canvas-editor .top-actions .api-settings-button { background: #282936; color: #d4cfe5; border-color: #444154; font-size: 12px; }
+.canvas-editor .editor-run { min-height: 34px; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+.canvas-editor .save-state { background: transparent; border: 0; padding: 5px; color: #b2b7c5; font-size: 12px; }
 .canvas-editor .save-state:disabled { opacity: 1; }
 .canvas-editor .save-state.is-error,
 .canvas-editor .save-state.is-conflict { color: #ffadb7; background: #3b252c; }

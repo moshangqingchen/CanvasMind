@@ -50,6 +50,7 @@ import {
   WEAI_DEFAULT_IMAGE_MODEL,
   WeAIImageAdapter,
   presentProviderError,
+  extractProviderChargeEvidence,
   ProviderHttpError,
   withProviderSubmissionProgress,
   type ProviderSubmissionPhase,
@@ -60,6 +61,7 @@ import {
   type ProviderAssetInput,
   type ProviderErrorContext,
   type ProviderErrorPresentation,
+  type ProviderChargeEvidence,
   type ProviderOperation,
   type ProviderConnectionResolver,
   type ProviderTask,
@@ -645,6 +647,62 @@ function providerTaskJson(task: ProviderTask): JsonObject {
   ) as JsonObject;
 }
 
+function assertMatchingProviderTask(task: ProviderTask, expectedTaskId: string): void {
+  if (task.providerTaskId !== expectedTaskId)
+    throw new NeedsAttentionError("供应商返回的任务 ID 与原任务不匹配，已停止处理；请核对原任务", { code: "provider_task_mismatch" });
+}
+
+function storedChargeEvidence(value: unknown): ProviderChargeEvidence | undefined {
+  if (!isRecord(value) || value.source !== "provider_response" ||
+      !["charged", "not_charged", "refunded"].includes(String(value.status))) return undefined;
+  return {
+    status: value.status as ProviderChargeEvidence["status"],
+    source: "provider_response",
+    ...(typeof value.amount === "number" && Number.isFinite(value.amount) && value.amount >= 0 ? { amount: value.amount } : {}),
+    ...(typeof value.currency === "string" ? { currency: value.currency } : {}),
+  };
+}
+
+function mergeChargeEvidence(
+  previous: ProviderChargeEvidence | undefined,
+  next: ProviderChargeEvidence | undefined,
+): ProviderChargeEvidence | undefined {
+  if (!next || next.source !== "provider_response" || next.status === "unknown") return previous ?? next;
+  if (!previous || previous.source !== "provider_response" || previous.status === "unknown") return next;
+  // A free status query does not undo a confirmed generation charge. Only an
+  // explicit refund can supersede it; missing fields never erase a receipt.
+  const rank = { unknown: 0, not_charged: 1, charged: 2, refunded: 3 };
+  if (rank[previous.status] > rank[next.status]) return previous;
+  if (previous.status === next.status) {
+    // Keep the original task receipt when a later query is incomplete or gives
+    // a conflicting amount/unit; never attach its currency to another amount.
+    if (previous.amount !== undefined && (next.amount === undefined || next.amount !== previous.amount)) return previous;
+    if (previous.currency && next.currency && previous.currency !== next.currency) return previous;
+    if (previous.amount === next.amount && previous.currency && !next.currency) return { ...next, currency: previous.currency };
+  }
+  return next;
+}
+
+function rememberTaskCharge(input: JsonObject, task: ProviderTask): boolean {
+  const charge = mergeChargeEvidence(storedChargeEvidence(input.providerCharge), extractProviderChargeEvidence(task.result));
+  if (!charge || charge.source !== "provider_response" || charge.status === "unknown" ||
+      JSON.stringify(input.providerCharge) === JSON.stringify(charge)) return false;
+  input.providerCharge = { ...charge };
+  return true;
+}
+
+function taskChargeEvidence(nodeRun: NodeRunRecord, task = storedProviderTask(nodeRun.inputJson.providerTask)): ProviderChargeEvidence | undefined {
+  if (!nodeRun.providerTaskId || (task && !isCloudSubmission(nodeRun.providerTaskId) && task.providerTaskId !== nodeRun.providerTaskId)) return undefined;
+  return mergeChargeEvidence(storedChargeEvidence(nodeRun.inputJson.providerCharge), task ? extractProviderChargeEvidence(task.result) : undefined);
+}
+
+function cancellationDiagnostic(nodeRun: NodeRunRecord, diagnostic: JsonObject | null, task?: ProviderTask): JsonObject | null {
+  const charge = taskChargeEvidence(nodeRun, task);
+  return charge && charge.status !== "unknown"
+    ? { ...(diagnostic ?? { message: "运行已取消" }), charge: { ...charge } }
+    : diagnostic;
+}
+
 function compactCompletedInput(input: JsonObject): JsonObject {
   // The provider task can contain multi-megabyte base64/byte responses needed
   // only while polling or retrying archival. Once the output is durably
@@ -752,6 +810,7 @@ function frozenConnectionsFromGraph(
 // Multiple API/service instances can share one local repository. Coalesce
 // archive-only requests without restarting its cancelled/failed execution.
 const runOutputRecoveries = new WeakMap<Repository, Map<string, Promise<WorkflowRunRecord | null>>>();
+const cancellationUpdates = new WeakMap<Repository, Map<string, Promise<unknown>>>();
 
 class RepoConnectionResolver implements ProviderConnectionResolver {
   constructor(
@@ -1327,9 +1386,8 @@ export class RunService {
       if (nodeRun.status !== "cancel_requested") continue;
       try {
         if (isCloudSubmission(nodeRun.providerTaskId)) {
-          await this.repository.updateNodeRun(nodeRun.id, {
-            status: "cancelled", errorJson: { code: "cloud_tracking_stopped", message: "已停止本机跟踪；云端可能仍在生成并保存原任务结果" },
-          });
+          await this.updateCancelledNode(runId, nodeRun.id,
+            { code: "cloud_tracking_stopped", message: "已停止本机跟踪；云端可能仍在生成并保存原任务结果" }, undefined, "cancelled", nodeRun.errorJson ?? null);
           continue;
         }
         if (!nodeRun.providerTaskId) {
@@ -1365,13 +1423,11 @@ export class RunService {
             nodeRun.providerTaskId,
             { adapter, idempotencyKey: `${runId}:${nodeRun.id}` },
           ));
+        assertMatchingProviderTask(task, nodeRun.providerTaskId);
         await adapter.cancel?.(task);
-        await this.repository.updateNodeRun(nodeRun.id, {
-          status: "cancelled",
-          errorJson: provider === "cli" && cliStopsTracking(task)
+        await this.updateCancelledNode(runId, nodeRun.id, provider === "cli" && cliStopsTracking(task)
             ? { code: "cli_tracking_stopped", message: "已停止跟踪；该网站不支持远端取消，生成可能仍在继续" }
-            : null,
-        });
+            : null, task, "cancelled", nodeRun.errorJson ?? null);
         this.publish({
           type: "node",
           runId,
@@ -1386,22 +1442,18 @@ export class RunService {
         if (provider === "cli" && typeof connectionId === "string" && adapter instanceof CliProviderAdapter) {
           try {
             const task = await adapter.restoreTask(connectionId, `${runId}:${nodeRun.id}`, nodeRun.providerTaskId ?? undefined);
+            if (nodeRun.providerTaskId) assertMatchingProviderTask(task, nodeRun.providerTaskId);
             if (task.status === "succeeded") {
-              await this.repository.updateNodeRun(nodeRun.id, {
-                status: "cancelled",
-                inputJson: { ...nodeRun.inputJson, providerTask: providerTaskJson(task) },
-                errorJson: { code: "cli_completed_after_cancel", message: "已停止跟踪；网站任务已经完成，可取回已有结果" },
-              });
+              await this.updateCancelledNode(runId, nodeRun.id,
+                { code: "cli_completed_after_cancel", message: "已停止跟踪；网站任务已经完成，可取回已有结果" }, task, "cancelled", nodeRun.errorJson ?? null);
               this.publish({ type: "node", runId, nodeRunId: nodeRun.id, payload: { nodeId: nodeRun.nodeId, status: "cancelled" } });
               continue;
             }
           } catch { /* Keep cancellation pending when the local task cannot be restored. */ }
         }
-        await this.repository.updateNodeRun(nodeRun.id, {
-          errorJson: {
+        await this.updateCancelledNode(runId, nodeRun.id, {
             message: `远端取消暂未完成：${error instanceof Error ? error.message : String(error)}`,
-          },
-        });
+          }, undefined, undefined, nodeRun.errorJson ?? null);
       }
     }
   }
@@ -1681,6 +1733,66 @@ export class RunService {
       throw new CancelledError("运行已取消");
     }
     throw new NeedsAttentionError("节点状态已被其他执行器修改；本次执行已停止");
+  }
+
+  private updateCancelledNode(
+    runId: string,
+    nodeRunId: string,
+    diagnostic: JsonObject | null,
+    task?: ProviderTask,
+    status?: "cancelled",
+    previousDiagnostic?: JsonObject | null,
+  ): Promise<NodeRunRecord | null> {
+    let updates = cancellationUpdates.get(this.repository);
+    if (!updates) {
+      updates = new Map();
+      cancellationUpdates.set(this.repository, updates);
+    }
+    const pending = updates.get(nodeRunId) ?? Promise.resolve();
+    const update = pending.catch(() => undefined).then(async () => {
+      for (;;) {
+        // A late query may only supplement a persisted local cancellation.
+        // Shutdown/lost ownership must not let the old executor write again.
+        if ((await this.repository.getRun(runId))?.status !== "cancelled") return null;
+        const current = await this.repository.getNodeRun(nodeRunId);
+        if (!current) return null;
+        if (task) {
+          if (!current.providerTaskId) return null;
+          assertMatchingProviderTask(task, current.providerTaskId);
+        }
+        const inputJson = { ...current.inputJson };
+        const previous = mergeChargeEvidence(taskChargeEvidence(current), storedChargeEvidence(current.errorJson?.charge));
+        if (previous?.source === "provider_response" && previous.status !== "unknown")
+          inputJson.providerCharge = { ...previous };
+        if (task) {
+          rememberTaskCharge(inputJson, task);
+          const saved = storedProviderTask(inputJson.providerTask);
+          // Keep any terminal response another cancellation handler saved first.
+          if (!saved || saved.status === "running" || saved.status === "queued")
+            inputJson.providerTask = providerTaskJson(task);
+        }
+        let retainedDiagnostic = current.errorJson ?? null;
+        if (previousDiagnostic !== undefined) {
+          const { charge: _previousCharge, ...previousDetails } = previousDiagnostic ?? {};
+          const { charge: _currentCharge, ...currentDetails } = current.errorJson ?? {};
+          // Replace only the diagnostic this attempt started with, as a whole.
+          // Preserve concurrently added cancellation details; merge billing separately.
+          if (JSON.stringify(previousDetails) === JSON.stringify(currentDetails)) retainedDiagnostic = diagnostic;
+        }
+        if (this.shutdownSignal?.aborted) return null;
+        const updated = await this.repository.updateNodeRun(nodeRunId, {
+          ...(status ? { status } : {}),
+          inputJson,
+          errorJson: cancellationDiagnostic({ ...current, inputJson }, retainedDiagnostic),
+        }, { expectedStatus: current.status, expectedUpdatedAt: current.updatedAt });
+        if (updated) return updated;
+      }
+    });
+    updates.set(nodeRunId, update);
+    void update.finally(() => {
+      if (updates.get(nodeRunId) === update) updates.delete(nodeRunId);
+    }).catch(() => undefined);
+    return update;
   }
 
   private async completedOutput(
@@ -2150,18 +2262,21 @@ export class RunService {
             : nodeOutcome === "needs_attention"
               ? "needs_attention"
               : "failed";
-        const persistedFailure = await this.repository.updateNodeRun(
+        const persistedFailure = cancellationWon
+          ? await this.updateCancelledNode(runId, nodeRun.id,
+              providerFailure ? { ...providerFailure } : { message }, undefined, "cancelled", nodeRun.errorJson ?? null)
+          : await this.repository.updateNodeRun(
           nodeRun.id,
           {
             status: nodeStatus,
             errorJson: providerFailure
               ? { ...providerFailure }
-              : {
+              : cancellationDiagnostic(authoritativeNode ?? nodeRun, {
                   message,
                   ...(error instanceof NeedsAttentionError && error.code
                     ? { code: error.code }
                     : {}),
-                },
+                }),
           },
         );
         const effectiveStatus =
@@ -2173,7 +2288,9 @@ export class RunService {
           nodeRunId: nodeRun.id,
           payload: { nodeId, status: effectiveStatus, error: message },
         });
-        if (nodeOutcome === "cancelled") return false;
+        // A provider may cancel one task while the run is still active. Finish
+        // scheduling so its descendants become blocked and the run settles.
+        if (nodeOutcome === "cancelled" && cancellationWon) return false;
       }
       return true;
     };
@@ -2648,7 +2765,7 @@ export class RunService {
   private async pollWithRetry(
     adapter: ProviderAdapter,
     state: ProviderTask,
-    options: { persistent?: boolean; signal?: AbortSignal; beforePoll?: () => Promise<void> } = {},
+    options: { persistent?: boolean; signal?: AbortSignal; beforePoll?: () => Promise<void>; onAbortedTask?: (task: ProviderTask) => Promise<void> } = {},
   ): Promise<ProviderTask> {
     if (!adapter.poll)
       throw new NeedsAttentionError(
@@ -2660,11 +2777,16 @@ export class RunService {
         options.signal?.throwIfAborted();
         await options.beforePoll?.();
         options.signal?.throwIfAborted();
-        return options.persistent
-          ? await abortablePoll(adapter.poll(state), options.signal)
-          : await adapter.poll(state);
+        const polling = adapter.poll(state).then(async polled => {
+          assertMatchingProviderTask(polled, state.providerTaskId);
+          // Cancellation still returns immediately. A query that finishes later
+          // can retain its receipt without resuming polling or archival.
+          if (options.signal?.aborted) await options.onAbortedTask?.(polled);
+          return polled;
+        });
+        return options.persistent ? await abortablePoll(polling, options.signal) : await polling;
       } catch (error) {
-        if (options.signal?.aborted || error instanceof CancelledError) throw error;
+        if (options.signal?.aborted || error instanceof CancelledError || error instanceof NeedsAttentionError) throw error;
         const details =
           error instanceof ProviderHttpError ? error.details : undefined;
         const explicitlyRetryable =
@@ -3141,6 +3263,8 @@ export class RunService {
       } : {}),
     };
     const savedTask = storedProviderTask(nodeRun.inputJson.providerTask);
+    if (savedTask && nodeRun.providerTaskId && !isCloudSubmission(nodeRun.providerTaskId))
+      assertMatchingProviderTask(savedTask, nodeRun.providerTaskId);
     const submissionProgress = async (phase: ProviderSubmissionPhase) => {
       if (inputJson.submissionPhase === phase) return;
       recordSubmissionPhase(inputJson, phase);
@@ -3167,6 +3291,7 @@ export class RunService {
           nodeRun.providerTaskId,
           { adapter, idempotencyKey: request.idempotencyKey },
         ));
+      assertMatchingProviderTask(task, nodeRun.providerTaskId);
     } else {
       try {
         const cloud = isRecord(inputJson.cloudGeneration) ? inputJson.cloudGeneration : frozenConnection?.cloudGeneration;
@@ -3204,6 +3329,7 @@ export class RunService {
         throw error;
       }
     }
+    rememberTaskCharge(inputJson, task);
     recordSubmissionPhase(inputJson, task.status === "running" || task.status === "queued" ? "generating" : "downloading");
     const taskSnapshot = {
       ...inputJson,
@@ -3274,6 +3400,7 @@ export class RunService {
           await assertPollingActive();
           state = await this.pollWithRetry(adapter, state, {
             persistent: true, signal, beforePoll: assertPollingActive,
+            onAbortedTask: async task => { await this.updateCancelledNode(runId, nodeRunId, null, task); },
           });
         } catch (error) {
           if (error instanceof CancelledError || signal.aborted) {
@@ -3289,10 +3416,11 @@ export class RunService {
         await delay(cliDeadline === undefined ? interval : Math.max(0, Math.min(interval, cliDeadline - Date.now())));
         state = await this.pollWithRetry(adapter, state);
       }
+      const chargeChanged = rememberTaskCharge(inputJson, state);
       // The provider task id is durably stored immediately after submission.
       // Avoid rewriting the entire local JSON database for every 1.5-second
-      // running poll; only terminal provider state needs another checkpoint.
-      if (state.status !== "running" && state.status !== "queued") {
+      // running poll; terminal state or a new billing receipt needs a checkpoint.
+      if (chargeChanged || (state.status !== "running" && state.status !== "queued")) {
         try {
           await this.updateNodeRunOrCancel(runId, nodeRunId, {
             status: state.status === "succeeded" ? "archiving" : "running",
@@ -3300,6 +3428,7 @@ export class RunService {
           });
         } catch (error) {
           if (error instanceof CancelledError) {
+            await this.updateCancelledNode(runId, nodeRunId, null, state);
             try {
               await adapter.cancel?.(state);
             } catch {
@@ -3368,8 +3497,10 @@ export class RunService {
       if (shouldRefreshRemoteArtifact(error) && adapter.poll) {
         try {
           const refreshed = await retryOperation(() => adapter.poll!(state));
+          assertMatchingProviderTask(refreshed, state.providerTaskId);
           if (refreshed.status === "succeeded") {
             state = refreshed;
+            rememberTaskCharge(inputJson, refreshed);
             await this.updateNodeRunOrCancel(runId, nodeRunId, {
               status: "archiving",
               inputJson: {
@@ -3632,14 +3763,15 @@ function providerFailureFor(
   node: WorkflowNode,
   nodeRun: NodeRunRecord,
 ): ProviderErrorPresentation | undefined {
-  if (error instanceof ProviderRequestValidationError)
-    return error.presentation;
-  if (error instanceof ProviderTaskFailedError) return error.presentation;
+  if (error instanceof CancelledError) return undefined;
   const source =
     error instanceof NeedsAttentionError && error.cause !== undefined
       ? error.cause
       : error;
-  if (!(source instanceof ProviderHttpError)) return undefined;
+  if (!(source instanceof ProviderHttpError) &&
+      !(error instanceof ProviderRequestValidationError) &&
+      !(error instanceof ProviderTaskFailedError) &&
+      !["image-generation", "video-generation"].includes(semanticType(node))) return undefined;
   const data = nodeData(node);
   const provider =
     typeof nodeRun.inputJson.provider === "string"
@@ -3663,12 +3795,35 @@ function providerFailureFor(
     typeof nodeRun.inputJson.supplierWebsiteUrl === "string"
       ? nodeRun.inputJson.supplierWebsiteUrl
       : undefined;
-  return presentProviderError(source, {
+  let presentation = error instanceof ProviderRequestValidationError || error instanceof ProviderTaskFailedError
+    ? error.presentation : presentProviderError(source, {
     provider,
     ...(operation ? { operation } : {}),
     ...(supplier ? { supplier } : {}),
     ...(supplierWebsiteUrl ? { supplierWebsiteUrl } : {}),
   });
+  if (error instanceof NeedsAttentionError && !(source instanceof ProviderHttpError)) {
+    presentation = { ...presentation, message: error.message,
+      ...(error.code ? { code: error.code } : {}) };
+    const storageCode = isRecord(source) && typeof source.code === "string" ? source.code : undefined;
+    if (error.code === "artifact_archive_failed" &&
+        ((storageCode && ["ENOSPC", "EDQUOT", "EIO", "EROFS", "EACCES", "EPERM", "ENOENT"].includes(storageCode)) ||
+          (source instanceof Error && /archive storage .*unavailable/iu.test(source.message)))) {
+      presentation = { ...presentation, failureCategory: "local_storage", type: "本地保存失败" };
+    }
+  }
+  const taskCharge = taskChargeEvidence(nodeRun);
+  // Billing on a failed query/download/cancel belongs to that HTTP request,
+  // not necessarily the generation. Only the matching task's saved response
+  // may update its receipt, including a confirmed refund.
+  const requestCharge = source instanceof ProviderHttpError && source.details.phase !== "submit"
+    ? { status: "unknown", source: "unconfirmed" } as const : presentation.charge;
+  let charge = mergeChargeEvidence(taskCharge, requestCharge);
+  // Validation or a query may be local to this request even though the
+  // generation task was previously accepted and could already be billed.
+  if (nodeRun.providerTaskId && charge?.source === "not_submitted")
+    charge = { status: "unknown", source: "unconfirmed" };
+  return { ...presentation, ...(charge ? { charge } : {}) };
 }
 
 class ProviderRequestValidationError extends Error {
@@ -3690,6 +3845,8 @@ class ProviderRequestValidationError extends Error {
       type: "请求参数错误",
       code: issues[0]?.code || "invalid_request",
       providerMessage: detail,
+      failureCategory: "invalid_request",
+      charge: { status: "not_charged", source: "not_submitted" },
     };
     super(presentation.message);
     this.name = "ProviderRequestValidationError";
