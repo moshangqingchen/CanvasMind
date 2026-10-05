@@ -105,6 +105,19 @@ jobs:
       - name: Packaged desktop smoke test
         run: pnpm --filter @super-canvas/desktop run smoke -- --packaged
 
+      - name: Normal-window GPU startup and restart smoke test
+        run: pnpm --filter @super-canvas/desktop run smoke -- --packaged --windowed
+
+      - name: Preserve desktop rendering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-rendering-evidence
+          path: |
+            apps/desktop/release/smoke*.png
+            apps/desktop/release/smoke*report.json
+          retention-days: 7
+
       - name: Publish desktop installer and update artifacts
         env:
           GH_TOKEN: ${{ github.token }}

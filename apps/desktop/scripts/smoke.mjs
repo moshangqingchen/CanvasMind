@@ -7,6 +7,8 @@ import { smokeCustomSuppliers } from "./smoke-custom-suppliers.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createJpegWithExifThumbnailFixture } from "../renderer/app/api/assets/jpeg-test-fixture.ts";
+import { captureRenderedHome } from "./smoke-rendering.mjs";
+import { runWindowedSmoke } from "./smoke-windowed.mjs";
 const desktop = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const rendererRequire = createRequire(join(desktop, "renderer/package.json"));
 const desktopRequire = createRequire(join(desktop, "package.json"));
@@ -15,6 +17,9 @@ const packaged = process.argv.includes("--packaged");
 const environment = { ...process.env, ELECTRON_ENABLE_LOGGING: "0" };
 delete environment.ELECTRON_RUN_AS_NODE;
 const executablePath = packaged ? join(desktop, "release/win-unpacked/SuperCanvas.exe") : desktopRequire("electron");
+if (process.argv.includes("--windowed")) {
+  await runWindowedSmoke({ electron: _electron, executablePath, baseArgs: packaged ? [] : [desktop], environment, desktop, packaged });
+} else {
 const args = packaged ? ["--smoke-test", "--disable-gpu"] : [desktop, "--smoke-test", "--disable-gpu"];
 if (["1.25", "1.5"].includes(process.env.SMOKE_DISPLAY_SCALE)) args.push(`--force-device-scale-factor=${process.env.SMOKE_DISPLAY_SCALE}`);
 let application = await _electron.launch({ executablePath, args, env: environment, timeout: 90000 });
@@ -271,7 +276,12 @@ try {
   assert.equal(closedService, false);
   application = await _electron.launch({ executablePath, args: [...args, `--smoke-profile=${report.profileRoot}`], env: environment, timeout: 90000 });
   const reopened = await application.firstWindow();
+  const restartErrors = [];
+  reopened.on("pageerror", error => restartErrors.push(error.message));
   await reopened.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/$/, { timeout: 90000 });
+  report.restartRendering = await captureRenderedHome(application, reopened,
+    join(desktop, "release/smoke-home-restart.png"), join(desktop, "release/smoke-home-restart-capture.png"));
+  report.checks.push("existing profile restarts into a visible homepage with nonempty Electron paint");
   assert.equal(new URL(reopened.url()).origin, origin, "reuse the available port so browser drafts keep their origin");
   const reopenedData = await reopened.evaluate(async () => {
     const response = await fetch("/api/projects"); const text = await response.text();
@@ -301,6 +311,8 @@ try {
   assert.deepEqual(restoredBrief.layout, { enabled: true, width: "210", height: "289", safety: "7" });
   report.checks.push("structured poster design requirements survive a desktop restart");
   report.checks.push("restart reuses DPAPI key, database and archived media");
+  assert.equal(restartErrors.length, 0, restartErrors.join("\n"));
+  report.checks.push("no renderer exceptions after restart");
   const finalClose = application.waitForEvent("close", { timeout: 30000 });
   await application.evaluate(({ app }) => { app.quit(); });
   await finalClose;
@@ -317,4 +329,5 @@ try {
   await writeFile(join(desktop, "release/smoke-report.json"), JSON.stringify(report, null, 2));
   if (!succeeded) await application.evaluate(({ app }) => app.exit(1)).catch(() => {});
   console.log(JSON.stringify(report));
+}
 }

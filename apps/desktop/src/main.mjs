@@ -15,9 +15,11 @@ import { DesktopUpdater } from "./updater.mjs";
 import { configureUpdates } from "./update-config.mjs";
 import { ReferenceChannel } from "./reference-channel.mjs";
 import { exitWaitPresentation } from "./exit-policy.mjs";
+import { DesktopRendererRecovery, rendererLoadFailure } from "./renderer-recovery.mjs";
 
 app.setAppUserModelId(APP_ID);
 const smoke = process.argv.includes("--smoke-test");
+const smokeWindowed = smoke && process.argv.includes("--smoke-windowed");
 const development = !app.isPackaged && process.argv.includes("--desktop-dev");
 function smokeRoot() {
   const supplied = process.argv.find((arg) => arg.startsWith("--smoke-profile="))?.slice("--smoke-profile=".length);
@@ -33,7 +35,7 @@ const dataRoot = smoke ? smokeRoot() : development
 app.setPath("userData", join(dataRoot, "browser"));
 const locked = app.requestSingleInstanceLock();
 if (!locked) app.quit();
-let window, tray, backend, origin, token, secrets, updater;
+let window, tray, backend, origin, token, secrets, updater, rendererRecovery;
 let referenceChannel, configuringReference = false;
 let starting = false, quitting = false, intentionalStop = false, waitingExit = false, applyUpdate = false;
 let exitTimer, updateTimer;
@@ -48,8 +50,10 @@ const preparations = new Map();
 const startupPath = join(__dirname, "startup.html");
 const logRoot = join(dataRoot, "logs");
 const logPath = join(logRoot, "desktop.log");
-const send = (channel, value) => { if (window && !window.isDestroyed()) window.webContents.send(channel, value); };
-const show = () => { if (!smoke && window && !window.isDestroyed()) { window.show(); window.focus(); } };
+const send = (channel, value) => {
+  if (window && !window.isDestroyed() && !window.webContents.isDestroyed() && !window.webContents.isCrashed()) window.webContents.send(channel, value);
+};
+const show = () => { if ((!smoke || smokeWindowed) && !quitting && window && !window.isDestroyed()) { window.show(); window.focus(); } };
 function redact(text) {
   let value = String(text).replace(/(bearer\s+|(?:api[-_]?key|token|secret|password|MASTER_KEY)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]");
   value = value.replace(/(https?:\/\/)[^@\s/]+@/gi, "$1[redacted]@");
@@ -105,20 +109,26 @@ async function runtimeRequest(path, body) {
 }
 
 async function start() {
-  if (starting || backend) return;
+  if (starting || quitting || waitingExit) return;
+  if (backend) return rendererRecovery.load({ manual: true });
   starting = true;
+  let runtimeReady = false;
   try {
     await startupScreen();
+    if (quitting || window.isDestroyed()) return;
     state("loading", "正在读取本机资料…");
     secrets = await loadProfile(dataRoot, unprotect);
     if (!secrets && development) secrets = await initializeProfile(dataRoot, { encrypt: protect });
+    if (quitting || window.isDestroyed()) return;
     if (!secrets) { state("setup", "欢迎使用 Windows 桌面版", "迁移会复制画布、素材、历史和 API 配置，保留旧版资料。迁移前请关闭旧版服务及其守护程序。"); return; }
     referenceChannel ??= new ReferenceChannel({ root: dataRoot, protect, unprotect, onState: value => send("desktop:reference-channel", value) });
     await referenceChannel.load();
+    if (quitting || window.isDestroyed()) return;
     state("loading", "正在启动画布服务…");
     const runtime = app.isPackaged ? join(process.resourcesPath, "runtime") : join(__dirname, "../stage");
     token = randomBytes(32).toString("hex");
     const port = await freePort();
+    if (quitting || window.isDestroyed()) return;
     origin = `http://127.0.0.1:${port}`;
     intentionalStop = false;
     const hook = app.isPackaged ? join(runtime, "runtime-hook.cjs") : join(__dirname, "runtime-hook.cjs");
@@ -154,12 +164,13 @@ async function start() {
       void log(`backend exited: ${code}`);
       if (!intentionalStop && !starting && !quitting) {
         clearInterval(exitTimer); waitingExit = false;
-        void startupScreen().then(() => state("error", "本地服务已停止", "你的资料仍保存在本机。重试后会检查未完成任务，不会自动重复付费提交。"));
+        void rendererRecovery.error("本地服务已停止", "你的资料仍保存在本机。重试后会检查未完成任务，不会自动重复付费提交。");
       }
     });
     const deadline = Date.now() + 90000;
     let ready = false;
     while (Date.now() < deadline) {
+      if (quitting || window.isDestroyed()) return;
       if (launchError) throw launchError;
       if (child.exitCode !== null || child.signalCode) throw new Error("本地服务启动失败，请查看日志");
       try { ready = (await runtimeRequest("/api/health")).ok === true; } catch {}
@@ -168,21 +179,31 @@ async function start() {
     }
     if (!ready) throw new Error("本地服务启动超时，请查看日志后重试");
     await runtimeRequest("/api/desktop/lifecycle", { draining: false });
+    runtimeReady = true;
+    if (quitting || window.isDestroyed()) return;
     if (!smoke) await referenceChannel.start({ origin, desktopToken: token, secret: secrets.masterKey });
+    if (quitting || window.isDestroyed()) return;
     await writeFile(join(dataRoot, "runtime-port.json"), JSON.stringify({ port }));
-    await window.loadURL(origin);
-    show();
+    if (quitting || window.isDestroyed()) return;
+    await rendererRecovery.load();
+    if (quitting) return;
     void updater.action("check").catch((error) => void log(error.message));
   } catch (error) {
-    intentionalStop = true;
-    if (backend) { if (development) await stopOwnedChild(backend); else backend.kill(); backend = undefined; }
-    if (development) await stopDevelopmentWatchers();
+    // A failed renderer navigation must not stop a healthy runtime or its tasks.
+    if (!runtimeReady) {
+      intentionalStop = true;
+      if (backend) { if (development) await stopOwnedChild(backend); else backend.kill(); backend = undefined; }
+      if (development) await stopDevelopmentWatchers();
+    }
     await log(error.message);
-    state("error", "无法启动超级画布", redact(error.message));
-  } finally { starting = false; }
+    await rendererRecovery.error("无法启动超级画布", redact(error.message));
+  } finally { starting = false; void rendererRecovery.resume(); }
 }
 
 async function prepareRenderer() {
+  // A lost renderer has no live edits to acknowledge. The backend lifecycle
+  // check below still owns active generations and in-flight writes.
+  if (window.webContents.isDestroyed() || window.webContents.isCrashed() || rendererRecovery?.isRecovering) return;
   if (!isAppUrl(window.webContents.getURL(), origin)) return;
   const id = randomUUID();
   await new Promise((resolve, reject) => {
@@ -192,13 +213,19 @@ async function prepareRenderer() {
   });
 }
 async function cancelExit() {
-  exitEpoch++;
+  const epoch = ++exitEpoch;
   clearInterval(exitTimer); waitingExit = false;
-  if (backend) await runtimeRequest("/api/desktop/lifecycle", { draining: false });
-  send("desktop:draining", false);
-  if (applyUpdate) updater.patch({ phase: "ready" });
-  applyUpdate = false;
-  show();
+  try {
+    if (backend) await runtimeRequest("/api/desktop/lifecycle", { draining: false });
+  } finally {
+    if (epoch === exitEpoch && !quitting) {
+      send("desktop:draining", false);
+      if (applyUpdate) updater.patch({ phase: "ready" });
+      applyUpdate = false;
+      show();
+      void rendererRecovery.resume();
+    }
+  }
 }
 async function finishExit() {
   if (!waitingExit || quitting) return;
@@ -207,6 +234,7 @@ async function finishExit() {
   await runtimeRequest("/api/desktop/lifecycle");
   if (epoch !== exitEpoch) return;
   quitting = true; intentionalStop = true;
+  rendererRecovery.stop();
   await referenceChannel?.stop();
   if (window && !window.isDestroyed()) window.destroy();
   const child = backend;
@@ -225,7 +253,7 @@ async function finishExit() {
 }
 async function requestExit(install = false) {
   if (waitingExit || quitting) return;
-  if (!backend) { quitting = true; await stopDevelopmentWatchers(); app.quit(); return; }
+  if (!backend) { quitting = true; rendererRecovery?.stop(); await stopDevelopmentWatchers(); app.quit(); return; }
   waitingExit = true; applyUpdate = install;
   const epoch = ++exitEpoch;
   send("desktop:draining", true);
@@ -233,7 +261,10 @@ async function requestExit(install = false) {
     await prepareRenderer();
     if (epoch !== exitEpoch) return;
     const current = await runtimeRequest("/api/desktop/lifecycle", { draining: true });
-    if (epoch !== exitEpoch) { await runtimeRequest("/api/desktop/lifecycle", { draining: false }); return; }
+    if (epoch !== exitEpoch) {
+      if (!waitingExit && !quitting) await runtimeRequest("/api/desktop/lifecycle", { draining: false });
+      return;
+    }
     if (current.activeRuns || current.activeWrites) {
       const result = await dialog.showMessageBox(window, { type: "question", ...exitWaitPresentation(current, install),
         buttons: ["完成后继续", "返回软件"], defaultId: 0, cancelId: 1 });
@@ -247,12 +278,21 @@ async function requestExit(install = false) {
           const value = await runtimeRequest("/api/desktop/lifecycle");
           if (epoch !== exitEpoch) return;
           if (!value.activeRuns && !value.activeWrites) await finishExit();
-        } catch (error) { await cancelExit().catch(() => {}); await dialog.showMessageBox(window, { type: "error", message: "未能安全退出", detail: redact(error.message) }); }
+        } catch (error) {
+          if (epoch !== exitEpoch || quitting) return;
+          const cancelledEpoch = exitEpoch + 1;
+          await cancelExit().catch(() => {});
+          if (cancelledEpoch !== exitEpoch || quitting) return;
+          await dialog.showMessageBox(window, { type: "error", message: "未能安全退出", detail: redact(error.message) });
+        }
         finally { checking = false; }
       }, 1500);
     } else await finishExit();
   } catch (error) {
-    await cancelExit().catch(() => { waitingExit = false; send("desktop:draining", false); });
+    if (epoch !== exitEpoch || quitting) return;
+    const cancelledEpoch = exitEpoch + 1;
+    await cancelExit().catch(() => {});
+    if (cancelledEpoch !== exitEpoch || quitting) return;
     await dialog.showMessageBox(window, { type: "error", message: "未退出：请先处理保存或任务状态", detail: redact(error.message) });
   }
 }
@@ -265,6 +305,9 @@ if (locked) {
   app.on("second-instance", show);
   app.on("before-quit", (event) => { if (!quitting) { event.preventDefault(); void requestExit(); } });
   app.on("window-all-closed", () => {});
+  app.on("child-process-gone", (_event, details) => {
+    void log(`child process gone: type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`).catch(() => {});
+  });
   app.whenReady().then(async () => {
     await mkdir(logRoot, { recursive: true });
     if (process.platform === "win32" && app.isPackaged && !smoke) {
@@ -286,7 +329,22 @@ if (locked) {
     }
     window = new BrowserWindow({ title: "超级画布", width: 1440, height: 960, minWidth: 980, minHeight: 680, show: false,
       backgroundColor: "#101114", icon: join(__dirname, "icon.png"),
-      webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, offscreen: smoke } });
+      webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, offscreen: smoke && !smokeWindowed } });
+    rendererRecovery = new DesktopRendererRecovery({
+      context: () => ({ window, origin, backend, starting, quitting, waitingExit }), startupPath, state, show, log,
+      nativeError: (message, detail) => dialog.showErrorBox(message, redact(detail)),
+    });
+    window.webContents.on("render-process-gone", (_event, details) => {
+      for (const prepared of [...preparations.values()]) prepared("界面进程已停止，已取消本次退出；恢复界面后请重新确认");
+      void rendererRecovery.rendererGone(details).catch(error => void log(error.message));
+    });
+    window.webContents.on("did-navigate", (_event, url) => rendererRecovery.rememberPage(url));
+    window.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => { if (isMainFrame) rendererRecovery.rememberPage(url); });
+    window.on("unresponsive", () => { void log("renderer unresponsive").catch(() => {}); });
+    window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      const message = rendererLoadFailure(errorCode, errorDescription, validatedURL, isMainFrame);
+      if (message) void log(message).catch(() => {});
+    });
     window.removeMenu();
     window.on("close", (event) => { if (!quitting) { event.preventDefault(); if (development) void requestExit(); else window.hide(); } });
     const session = window.webContents.session;
@@ -314,6 +372,7 @@ if (locked) {
       { label: "打开超级画布", click: show },
       { label: "检查更新", click: () => { show(); send("desktop:open-update"); void updater.action("check").catch((error) => dialog.showMessageBox(window, { message: error.message })); } },
       { label: "打开资料目录", click: () => void shell.openPath(join(dataRoot, "profile")) },
+      { label: "打开日志", click: () => void shell.openPath(logRoot) },
       { type: "separator" }, { label: "退出", click: () => void requestExit() },
     ]));
     const currentNotes = await readFile(join(__dirname, "release-notes.md"), "utf8").catch(() => "");
