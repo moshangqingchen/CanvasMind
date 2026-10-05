@@ -27,6 +27,21 @@ export function ResultToolbar({
   nodeId: string;
   children: ReactNode;
 }) {
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarSize, setToolbarSize] = useState({ width: 440, height: 38 });
+  useLayoutEffect(() => {
+    const element = toolbarRef.current;
+    if (!element) return;
+    const measure = () => {
+      const { width, height } = element.getBoundingClientRect();
+      setToolbarSize(previous => previous.width === width && previous.height === height
+        ? previous : { width, height });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return () => observer.disconnect();
+  }, []);
   const transform = useStore((state) => {
     const node = state.nodeLookup.get(nodeId);
     if (!node) return "translate(0px, 80px)";
@@ -34,17 +49,20 @@ export function ResultToolbar({
       p = node.internals.positionAbsolute;
     const center = (p.x + (node.measured.width ?? 320) / 2) * zoom + tx;
     const bottom = (p.y + (node.measured.height ?? 240)) * zoom + ty + 12;
+    const halfWidth = toolbarSize.width / 2;
     const x = Math.max(
-      Math.min(300, state.width / 2 + 32),
-      Math.min(center, state.width - Math.min(232, state.width / 2 - 32)),
+      Math.min(halfWidth + 80, state.width / 2 + 32),
+      Math.min(center, state.width - Math.min(halfWidth + 12, state.width / 2 - 32)),
     );
-    const y =
-      bottom < state.height - 110 ? bottom : Math.max(80, p.y * zoom + ty - 48);
-    return `translate(${x}px, ${Math.min(y, state.height - 110)}px) translate(-50%, 0)`;
+    // Wrapped action rows must also remain above the fixed canvas controls.
+    const maxY = Math.max(8, state.height - 72 - toolbarSize.height);
+    const minY = Math.min(80, maxY);
+    const y = bottom <= maxY ? bottom : p.y * zoom + ty - toolbarSize.height - 12;
+    return `translate(${x}px, ${Math.max(minY, Math.min(y, maxY))}px) translate(-50%, 0)`;
   });
   return (
     <NodeToolbar nodeId={nodeId} isVisible style={{ transform }}>
-      {children}
+      <div ref={toolbarRef} style={{ width: "max-content" }}>{children}</div>
     </NodeToolbar>
   );
 }

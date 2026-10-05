@@ -2692,6 +2692,17 @@ test.describe("超级画布完整验收", () => {
     expect(resultActionsBounds).not.toBeNull();
     expect(resultActionsBounds!.y).toBeGreaterThanOrEqual(64);
     expect(resultActionsBounds!.y + resultActionsBounds!.height).toBeLessThan(650);
+    const actionWrap = page.locator(".generated-result-actions-wrap");
+    await actionWrap.evaluate(element => { element.style.maxWidth = "180px"; });
+    await expect.poll(async () => (await resultActions.boundingBox())!.height)
+      .toBeGreaterThan(resultActionsBounds!.height);
+    await expect.poll(async () => {
+      const bounds = (await resultActions.boundingBox())!;
+      return bounds.y + bounds.height;
+    }).toBeLessThan(650);
+    await actionWrap.evaluate(element => { element.style.removeProperty("max-width"); });
+    await expect.poll(async () => (await resultActions.boundingBox())!.height)
+      .toBe(resultActionsBounds!.height);
     const provenanceBadge = card.locator(
       ".generated-result-provenance-overlay",
     );
