@@ -1,8 +1,10 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { modelPriceSummary } from "../lib/model-display";
 import styles from "./model-picker.module.css";
 
 export function ModelPriceDetails({ model, parameters }: { model?: ModelDescriptor | null; parameters: Record<string, unknown> }) {
+  if (model) model = normalizeTk1688CnyModel(model);
   return <div className={`node-config-price-summary ${styles.details}`} aria-label="当前参数价格">
     {model?.metadata?.qualitySupport === "provider-decided" && <span>质量 <strong>由模型决定</strong></span>}
     <span>当前组合价格 <strong>{modelPriceSummary(model ?? undefined, parameters)}</strong></span>

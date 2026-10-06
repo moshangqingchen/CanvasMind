@@ -1,5 +1,5 @@
 import { fetchProviderJson, providerFetch, isTk1688ApiUrl, isTk1688CatalogSource, parseTk1688AccountModelIds,
-  parseTk1688Marketplace, TK1688_MARKETPLACE_URL, type ModelDescriptor } from "@super-canvas/providers";
+  parseTk1688Marketplace, normalizeTk1688CnyModel, TK1688_MARKETPLACE_URL, TK1688_STATUS_URL, type ModelDescriptor } from "@super-canvas/providers";
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { isAgentTextModel } from "./agent-model-capabilities";
@@ -29,7 +29,7 @@ export function mergeTk1688ModelInventory(models: readonly ModelDescriptor[], ma
     const preserved = new Map<string, ModelDescriptor>(saved.map(model => [model.id, { ...model,
       metadata: { ...model.metadata, tk1688CatalogStale: true, tk1688CatalogLastAttemptAt: parsed.checkedAt } }]));
     for (const model of models) if (!preserved.has(model.id)) preserved.set(model.id, model);
-    return [...preserved.values()];
+    return [...preserved.values()].map(normalizeTk1688CnyModel);
   }
   const byId = new Map(parsed.models.map(model => [model.id, model]));
   const result = models.map(model => {
@@ -50,7 +50,7 @@ export function mergeTk1688ModelInventory(models: readonly ModelDescriptor[], ma
   }
   // A channel explicitly offline in a complete fresh market must not remain
   // selectable merely because a broad /models list also returned its alias.
-  return result.filter(model => !parsed.excludedModelIds.includes(model.id));
+  return result.filter(model => !parsed.excludedModelIds.includes(model.id)).map(normalizeTk1688CnyModel);
 }
 
 function savedModels(connection: Connection): ModelDescriptor[] {
@@ -76,7 +76,7 @@ export async function enrichTk1688ModelInventory(connection: Connection, models:
         const session = await openSupplierSiteSession(supplier);
         const read = (url: string, fetcher = providerFetch) => fetchProviderJson(fetcher, url,
           { method: "GET", cache: "no-store" }, { phase: "connect", timeoutMs: 12000, maxResponseBytes: 4 * 1024 * 1024 });
-        const reads = await Promise.allSettled([read(TK1688_MARKETPLACE_URL), read("https://tk1688.com/api/status"),
+        const reads = await Promise.allSettled([read(TK1688_MARKETPLACE_URL), read(TK1688_STATUS_URL),
           session ? read("https://tk1688.com/api/user/models", session.fetch) : Promise.resolve(undefined)]);
         const marketplace = reads[0].status === "fulfilled" ? reads[0].value : undefined;
         const status = reads[1].status === "fulfilled" ? reads[1].value : undefined;
@@ -112,8 +112,8 @@ export function applyTk1688CatalogModel(model: ModelDescriptor, catalog: {
   }
   const limits = { ...model.limits, ...catalog.limits };
   if (model.metadata?.tk1688OmitN === true && catalog.limits?.maxOutputImages === undefined) delete limits.maxOutputImages;
-  return { ...model, ...(parameters ? { parameters } : {}), limits,
+  return normalizeTk1688CnyModel({ ...model, ...(parameters ? { parameters } : {}), limits,
     ...(catalog.inputKinds ? { inputKinds: catalog.inputKinds } : {}), ...(catalog.outputKinds ? { outputKinds: catalog.outputKinds } : {}),
     pricing, metadata: { ...metadata, ...catalog.metadata, tk1688CatalogCheckedAt: checkedAt,
-      canvasRunnable: model.metadata?.canvasRunnable, ...(model.metadata?.canvasUnavailableReason ? { canvasUnavailableReason: model.metadata.canvasUnavailableReason } : {}) } };
+      canvasRunnable: model.metadata?.canvasRunnable, ...(model.metadata?.canvasUnavailableReason ? { canvasUnavailableReason: model.metadata.canvasUnavailableReason } : {}) } });
 }

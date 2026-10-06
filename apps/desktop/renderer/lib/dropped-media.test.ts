@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   droppedMediaUrlsFromStrings,
+  filesFromClipboard,
   filesFromDroppedMediaUrls,
   mapWithConcurrency,
   normalizeClipboardImageFile,
@@ -227,6 +228,55 @@ describe("cross-application media drops", () => {
     });
 
     expect(await prepareImportableMediaFile(source)).toBeNull();
+  });
+
+  it("reads a clipboard bitmap once even when its two wrappers have different timestamps", () => {
+    const file = new File([new Uint8Array([1, 2, 3])], "image.png", {
+      type: "image/png",
+      lastModified: 123,
+    });
+    const itemFile = new File([file], file.name, {
+      type: file.type,
+      lastModified: 124,
+    });
+    const getAsFile = vi.fn(() => itemFile);
+
+    expect(
+      filesFromClipboard({ files: [file], items: [{ kind: "file", getAsFile }] }),
+    ).toEqual([file]);
+    expect(getAsFile).not.toHaveBeenCalled();
+  });
+
+  it("preserves distinct clipboard entries with the same file metadata", () => {
+    const options = { type: "image/png", lastModified: 123 };
+    const first = new File([new Uint8Array([1, 2])], "image.png", options);
+    const second = new File([new Uint8Array([3, 4])], "image.png", options);
+
+    expect(filesFromClipboard({ files: [first, second], items: [] })).toEqual([
+      first,
+      second,
+    ]);
+  });
+
+  it("falls back to file items when the clipboard file list is empty", () => {
+    const file = new File([new Uint8Array([1])], "image.png", {
+      type: "image/png",
+    });
+    const getTextAsFile = vi.fn(() => null);
+    const getAsFile = vi.fn(() => file);
+
+    expect(
+      filesFromClipboard({
+        files: [],
+        items: [
+          { kind: "string", getAsFile: getTextAsFile },
+          { kind: "file", getAsFile: () => null },
+          { kind: "file", getAsFile },
+        ],
+      }),
+    ).toEqual([file]);
+    expect(getTextAsFile).not.toHaveBeenCalled();
+    expect(getAsFile).toHaveBeenCalledTimes(1);
   });
 
   it("names a clipboard PNG that has no filename", () => {

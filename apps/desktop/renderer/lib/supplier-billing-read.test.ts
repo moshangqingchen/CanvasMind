@@ -27,6 +27,23 @@ describe("supplier account amounts", () => {
     expect(parseSupplierBilling("newapi", profile, { quota_per_unit: 500000, quota_display_type: "TOKENS" })).toMatchObject({ balance: 500000, unit: "quota" });
     expect(parseSupplierBilling("newapi", profile, { quota_per_unit: 500000, quota_display_type: "CNY" })).toMatchObject({ balance: 500000, unit: "quota", unitBasis: "raw-quota" });
   });
+  it("shows Tk1688 balances and daily consumption in CNY using its official payment FX", async () => {
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/user/self") return Response.json({ data: { quota: 500000, used_quota: 100000 } });
+      if (path === "/api/status") return Response.json({ data: { quota_per_unit: 500000, quota_display_type: "USD",
+        payment_fx_rate_cny_per_usd: 6.8896, usd_exchange_rate: 99 } });
+      return Response.json({ data: { quota: 125000 } });
+    });
+    const result = await readSupplierBilling({ siteUrl: "https://tk1688.com", sourceId: "tk", kind: "newapi" }, fetcher);
+    expect(result).toMatchObject({ balance: 6.8896, unit: "CNY", status: "live" });
+    expect(result.used).toBeCloseTo(1.37792);
+    expect(result.todayUsed).toBeCloseTo(1.7224);
+    expect(fetcher.mock.calls.every(call => String(call[0]).startsWith("https://tk1688.com/"))).toBe(true);
+    const withoutFx = parseSupplierBilling("newapi", { quota: 500000 }, { quota_per_unit: 500000, quota_display_type: "USD", usd_exchange_rate: 7 },
+      undefined, { siteUrl: "https://tk1688.com" });
+    expect(withoutFx).toMatchObject({ balance: 500000, unit: "quota", unitBasis: "raw-quota" });
+  });
   it("reads account actual cost instead of list pages or standard cost", () => {
     expect(parseSupplierBilling("sub2api", { code: 0, data: { balance: "12.35", currency: "USD" } },
       { code: 0, data: { total_actual_cost: 1.2345, total_cost: 99, today_actual_cost: .1, total_requests: 8, items: [{ actual_cost: 999 }] } }))

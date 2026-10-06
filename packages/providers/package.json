@@ -46,6 +46,11 @@
       "import": "./dist/tk1688-model-policy.js",
       "default": "./dist/tk1688-model-policy.js"
     },
+    "./tk1688-catalog": {
+      "types": "./src/tk1688-catalog.ts",
+      "import": "./dist/tk1688-catalog.js",
+      "default": "./dist/tk1688-catalog.js"
+    },
     "./image-quality-presets": {
       "types": "./src/image-quality-presets.ts",
       "import": "./dist/image-quality-presets.js",

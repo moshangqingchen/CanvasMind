@@ -192,6 +192,7 @@ import {
 } from "../lib/node-configuration-journal";
 import {
   droppedMediaUrlsFromStrings,
+  filesFromClipboard,
   filesFromDroppedMediaUrls,
   mapWithConcurrency,
   normalizeClipboardImageFile,
@@ -203,6 +204,7 @@ import {
   hasEdgeForNodePair,
   keepLatestEdgePerNodePair,
 } from "../lib/canvas-connections";
+import { canvasPickerConnections } from "../lib/canvas-provider-picker";
 import {
   CANVAS_MAX_ZOOM,
   CANVAS_MIN_ZOOM,
@@ -7219,11 +7221,12 @@ function CanvasShell({
           ? nodeType
           : null;
       const nodeConnectionCandidates = generationType
-        ? connections.filter(
+        ? canvasPickerConnections(connections.filter(
             (connection) =>
               providerConnectionUsage(connection) !== "disabled" &&
               (connection.id === node.data.connectionId || connectionSupportsNodeType(connection, generationType, modelDescriptorsForConnection(connection))),
-          )
+          ), node.data.connectionId, connection => connectionIsConfigured(connection) &&
+            connectionSupportsNodeType(connection, generationType, modelDescriptorsForConnection(connection)))
         : [];
       const modelOptions = modelOptionsForNode(
         node,
@@ -8469,20 +8472,7 @@ function CanvasShell({
       );
       if (editing || modalOpen || interactiveControl) return;
 
-      const rawFiles = [
-        ...Array.from(event.clipboardData.files),
-        ...Array.from(event.clipboardData.items)
-          .filter((item) => item.kind === "file")
-          .map((item) => item.getAsFile())
-          .filter((file): file is File => Boolean(file)),
-      ];
-      const uniqueFiles = new Map<string, File>();
-      for (const file of rawFiles)
-        uniqueFiles.set(
-          `${file.name}:${file.size}:${file.type}:${file.lastModified}`,
-          file,
-        );
-      const candidates = Array.from(uniqueFiles.values());
+      const candidates = filesFromClipboard(event.clipboardData);
       const images = preferNamedClipboardImages(
         candidates
           .map((file, index) => normalizeClipboardImageFile(file, index))

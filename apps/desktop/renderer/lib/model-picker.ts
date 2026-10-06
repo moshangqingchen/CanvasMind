@@ -51,6 +51,17 @@ export interface PickerConnection {
   available?: boolean; unavailableReason?: string;
 }
 
+/** Show readable names; a short ID disambiguates only genuinely identical names. */
+export function pickerConnectionLabel(connection: PickerConnection, peers: readonly PickerConnection[]): string {
+  const name = connection.name.trim() || "API 连接";
+  const sameName = peers.filter(peer => (peer.name.trim() || "API 连接") === name);
+  if (sameName.length < 2) return name;
+  let length = Math.min(8, connection.id.length);
+  while (length < connection.id.length && sameName.some(peer => peer.id !== connection.id &&
+    peer.id.slice(0, length) === connection.id.slice(0, length))) length++;
+  return `${name} · ${connection.id.slice(0, length)}`;
+}
+
 export function pickerConnectionGroups<T extends PickerConnection>(connections: readonly T[], supplier: string) {
   const groups = new Map<string, { group: string; available: boolean; connections: T[] }>();
   for (const connection of connections) {

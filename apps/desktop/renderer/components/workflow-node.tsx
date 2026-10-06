@@ -58,7 +58,7 @@ import { cleanModelDisplayName, modelPriceSummary } from "../lib/model-display";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
 import { useSupplierBillingOverview } from "../lib/client-supplier-billing";
 import { billingCompact } from "../lib/supplier-billing-display";
-import { choosePickerConnection, pickerConnectionGroups } from "../lib/model-picker";
+import { choosePickerConnection, pickerConnectionGroups, pickerConnectionLabel } from "../lib/model-picker";
 import { ModelPicker } from "./model-picker";
 import { ModelPriceDetails } from "./model-price-details";
 import {
@@ -685,7 +685,7 @@ function GenerationNodeBody({
                 onChange={event => data.onConnectionChange?.(event.target.value)}>
                 {currentGroupConnections.map(connection => <option key={connection.id} value={connection.id}
                   disabled={connection.available === false && connection.id !== currentConnection}>
-                  {connection.name} · {connection.id}{connection.available === false ? `（${connection.unavailableReason ?? "密钥不可用"}）` : ""}
+                  {pickerConnectionLabel(connection, currentGroupConnections)}{connection.available === false ? `（${connection.unavailableReason ?? "密钥不可用"}）` : ""}
                 </option>)}
               </select>
             </label>}

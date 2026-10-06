@@ -1,4 +1,15 @@
 import type { SupplierBillingSnapshot } from "@super-canvas/db";
+import { isTk1688CatalogSource } from "@super-canvas/providers/tk1688-catalog";
+
+/** Old money snapshots have no recorded FX. Preserve stored evidence and
+ * request a fresh CNY read instead of relabelling or guessing their amounts. */
+export function supplierBillingForDisplay(supplier: { siteUrl: string; apiUrl?: string }, billing?: SupplierBillingSnapshot) {
+  if (!billing || !isTk1688CatalogSource(supplier.siteUrl, supplier.apiUrl) || billing.unit !== "USD") return billing;
+  return { ...billing, balance: undefined, used: undefined, todayUsed: undefined, unit: "CNY",
+    balanceUnit: "CNY", usedUnit: "CNY", todayUnit: "CNY", status: billing.status === "failed" ? "failed" as const : "partial" as const,
+    todayStatus: billing.todayStatus === "failed" ? "failed" as const : "missing" as const,
+    unitNote: "请重新读取人民币余额与消耗；上次金额未保存换算汇率。" };
+}
 export function billingAmount(value: number | undefined, unit = "credits") {
   if (value === undefined || !Number.isFinite(value)) return "未读取";
   return `${new Intl.NumberFormat("zh-CN", { maximumSignificantDigits: 10 }).format(value)} ${unit === "credits" ? "额度" : unit === "quota" ? "原始额度" : unit}`;

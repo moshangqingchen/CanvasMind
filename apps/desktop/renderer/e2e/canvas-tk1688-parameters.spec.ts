@@ -112,7 +112,8 @@ for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
     }
     await expect(width).toHaveValue(size.split("x")[0]!);
     await expect(height).toHaveValue(size.split("x")[1]!);
-    await expect(panel.getByLabel("当前参数价格", { exact: true })).toContainText(/\d+(?:\.\d+)?\s*USD|\$\d+(?:\.\d+)?/u);
+    await expect(panel.getByLabel("当前参数价格", { exact: true })).toContainText(/¥\d+(?:\.\d+)?/u);
+    await expect(panel.getByLabel("当前参数价格", { exact: true })).not.toContainText(/USD|\$/u);
     const qualityOptions = await values("质量");
     expect(qualityOptions).not.toContain("xhigh");
     expect(qualityOptions).not.toContain("max");

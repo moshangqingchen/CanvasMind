@@ -1,4 +1,4 @@
-import { fetchProviderJson, ProviderHttpError, supplierDirectoryBase, type FetchImplementation } from "@super-canvas/providers";
+import { fetchProviderJson, isTk1688CatalogSource, ProviderHttpError, supplierDirectoryBase, type FetchImplementation } from "@super-canvas/providers";
 import type { SupplierBillingSnapshot } from "@super-canvas/db";
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -17,7 +17,8 @@ function data(payload: unknown) {
 const currency = (value: unknown) => typeof value === "string" && /^[A-Z]{3}$/u.test(value.trim().toUpperCase()) ? value.trim().toUpperCase() : undefined;
 
 /** No key-list sums or recent-page sums: only account-wide totals are accepted. */
-export function parseSupplierBilling(kind: "newapi" | "sub2api", profilePayload: unknown, extraPayload: unknown, todayPayload?: unknown) {
+export function parseSupplierBilling(kind: "newapi" | "sub2api", profilePayload: unknown, extraPayload: unknown, todayPayload?: unknown,
+  options: { siteUrl?: string } = {}) {
   const profile = data(profilePayload);
   let extra: Record<string, unknown>;
   try { extra = data(extraPayload); } catch { extra = {}; }
@@ -31,8 +32,9 @@ export function parseSupplierBilling(kind: "newapi" | "sub2api", profilePayload:
     : unit === "credits" ? "站点未注明币种，金额仅按后台额度显示。" : "按站点返回的币种显示，未自动换算。";
   let factor = 1;
   if (kind === "newapi" && divisor && divisor > 0) {
-    const display = String(extra.quota_display_type ?? "").toUpperCase();
-    const exchange = number(extra.usd_exchange_rate);
+    const tk1688 = options.siteUrl !== undefined && isTk1688CatalogSource(options.siteUrl);
+    const display = tk1688 ? "CNY" : String(extra.quota_display_type ?? "").toUpperCase();
+    const exchange = number(tk1688 ? extra.payment_fx_rate_cny_per_usd : extra.usd_exchange_rate);
     const customExchange = number(extra.custom_currency_exchange_rate);
     if (!display) unit = profileCurrency === "USD" || extraCurrency === "USD" ? "USD" : "credits";
     else if (display === "TOKENS") unit = "quota";
@@ -95,7 +97,8 @@ export async function readSupplierBilling(input: { siteUrl: string; sourceId: st
   const [profile, extra, today] = await Promise.allSettled([read(profilePath), read(extraPath),
     input.kind === "newapi" ? read(`/api/log/self/stat?${todayQuery}`) : Promise.resolve(undefined)]);
   if (profile.status === "rejected") throw profile.reason;
-  const amounts = parseSupplierBilling(input.kind, profile.value, extra.status === "fulfilled" ? extra.value : {}, today.status === "fulfilled" ? today.value : {});
+  const amounts = parseSupplierBilling(input.kind, profile.value, extra.status === "fulfilled" ? extra.value : {}, today.status === "fulfilled" ? today.value : {},
+    { siteUrl: input.siteUrl });
   if (amounts.balance === undefined && amounts.used === undefined) throw Error("供应商没有返回可识别的余额或消耗字段");
   const availability = todayAvailability(input.kind === "newapi" ? today : extra, amounts.todayUsed);
   const checkedAt = new Date().toISOString();

@@ -51,6 +51,18 @@ beforeEach(() => {
   mocks.accountKeys.mockReset().mockResolvedValue({ keys: [], skipped: 0, complete: true, checkedAt: new Date().toISOString() });
 });
 describe("supplier service", () => {
+  it("presents saved Tk1688 quotes in CNY without rewriting prices or unconvertible money snapshots", async () => {
+    const supplier = await createSupplierRecord({ name: "词元", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi" });
+    supplier.catalog = { groups: [{ id: "default", label: "默认", models: [{ id: "image@s1c1", capability: "image", priceLabel: "$0.03/次（¥0.206688/次）",
+      metadata: { tk1688Catalog: true, tk1688FxRate: 6.8896, tk1688Pricing: { kind: "per-request", currency: "USD", unitAmount: .03, checkedAt: "then", confidence: "snapshot" } } }] }] };
+    supplier.state!.billing = { sourceId: supplier.state!.sourceId, status: "live", unit: "USD", balance: 5, used: 1, todayUsed: .1,
+      checkedAt: "then", sourceUrl: "https://tk1688.com/api/user/self" };
+    const view = publicSupplierRecord(supplier);
+    expect(view.catalog.groups[0]?.models[0]?.priceLabel).toBe("¥0.206688/次");
+    expect(view.state?.billing).toMatchObject({ unit: "CNY", balance: undefined, used: undefined, todayUsed: undefined });
+    expect(supplier.catalog.groups[0]?.models[0]?.priceLabel).toBe("$0.03/次（¥0.206688/次）");
+    expect(supplier.state?.billing).toMatchObject({ unit: "USD", balance: 5, used: 1, todayUsed: .1 });
+  });
   it.each([undefined, true, false])("does not leave imported Key capability requests after a read-only scan: %s", async verifyCapabilities => {
     const created = await createSupplierRecord({ name: "Read-only import", siteUrl: "https://readonly-import.example.test", kind: "sub2api" });
     const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "fixture-user", password: "fixture-password" } });

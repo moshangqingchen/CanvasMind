@@ -11,7 +11,7 @@ describe("supplier discovery", () => {
         id: 1, base_model: "gpt-image-2.5-sunburst", alias, status: "active", channel_alive: true,
         charge_type: "per_request", input_price_usd: 0.03, description: "Adobe原生4K(3840*2160)，不支持N。",
       }] } });
-      if (String(url).endsWith("/api/status")) return Response.json({ success: true, data: { platform_markup_percent: 20 } });
+      if (String(url).endsWith("/api/status")) return Response.json({ success: true, data: { platform_markup_percent: 20, payment_fx_rate_cny_per_usd: 6.8896 } });
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-site-token");
       if (String(url).endsWith("/self/groups")) return Response.json({ success: true, data: { default: { ratio: 1, desc: "默认" }, vip: { ratio: 1, desc: "VIP" } } });
       return Response.json({ success: true, data: [alias] });
@@ -19,8 +19,8 @@ describe("supplier discovery", () => {
     expect(calls).not.toContain("https://tk1688.com/api/pricing");
     expect(result).toMatchObject({ kind: "newapi", complete: true, status: "live" });
     for (const group of result.groups) {
-      expect(group.models.find(model => model.id === alias)).toMatchObject({ capability: "image", priceLabel: "$0.03/次", limits: { maxOutputImages: 1 },
-        metadata: { tk1688FixedSize: "3840x2160", tk1688OmitN: true, tk1688Pricing: { kind: "per-request", unitAmount: 0.03 } } });
+      expect(group.models.find(model => model.id === alias)).toMatchObject({ capability: "image", priceLabel: "¥0.206688/次", limits: { maxOutputImages: 1 },
+        metadata: { tk1688FixedSize: "3840x2160", tk1688OmitN: true, tk1688Pricing: { kind: "per-request", currency: "CNY", unitAmount: 0.206688 } } });
     }
   });
   it("keeps a failed词元 marketplace read incomplete without probing unrelated platform endpoints", async () => {

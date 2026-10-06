@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelDescriptor } from "@super-canvas/providers";
-import { choosePickerConnection, filterPickerModels, pickerConnectionGroups, readRecentModels, rememberModel } from "./model-picker";
+import { choosePickerConnection, filterPickerModels, pickerConnectionGroups, pickerConnectionLabel, readRecentModels, rememberModel } from "./model-picker";
 
 const connections = [
   { id: "a", name: "主连接", supplier: "supplier", supplierLabel: "供应商", group: "标准", available: true },
@@ -14,6 +14,16 @@ const models: ModelDescriptor[] = [
 ];
 
 describe("connection identity in the canvas picker", () => {
+  it("labels distinct connections by name and adds only enough ID to distinguish identical names", () => {
+    expect(pickerConnectionLabel(connections[0], connections)).toBe("主连接");
+    const peers = [
+      { ...connections[0], id: "12345678-a-unique", name: "同名账号" },
+      { ...connections[1], id: "87654321-b-unique", name: "同名账号" },
+    ];
+    expect(pickerConnectionLabel(peers[0], peers)).toBe("同名账号 · 12345678");
+    peers[1].id = "12345678-b-unique";
+    expect(pickerConnectionLabel(peers[0], peers)).toBe("同名账号 · 12345678-a");
+  });
   it("keeps every same-group connection and uses any usable connection for group availability", () => {
     const groups = pickerConnectionGroups(connections, "supplier");
     expect(groups).toHaveLength(1);

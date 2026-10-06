@@ -15,7 +15,7 @@ describe("Tk1688 agent model display facts", () => {
       id: 47, base_model: base, alias, supplier_id: 47, channel_no: "ID00261", charge_type: "per_token",
       input_price_usd: 0.9, output_price_usd: 5, description: "商家文本服务说明",
       status: "active", channel_alive: true, modalities: ["text"],
-    }] } }, { success: true, data: {} }, {
+    }] } }, { success: true, data: { payment_fx_rate_cny_per_usd: 6.8896 } }, {
       checkedAt: "2026-10-04T00:00:00.000Z", keyModelIds: [base], accountModelIds: [alias],
     }).models;
     await state.repository.saveConnection({ id: "tk-key", name: "词元", provider: "openai", encryptedSecret: "fixture",
@@ -26,7 +26,7 @@ describe("Tk1688 agent model display facts", () => {
       metadata: { tk1688Routing: "smart" } });
     expect(models.find(model => model.modelId === alias)).toMatchObject({ available: false, supplierKey: "tk1688",
       description: "商家文本服务说明", metadata: { tk1688BaseModel: base, tk1688Routing: "merchant" },
-      pricing: { kind: "token", currency: "USD", inputPerMillion: 0.9, outputPerMillion: 5 } });
+      pricing: { kind: "token", currency: "CNY", inputPerMillion: 6.20064, outputPerMillion: 34.448 } });
     await expect(resolveAgentModel("tk-key", alias)).rejects.toThrow("当前 Key 未返回此模型");
   });
 });

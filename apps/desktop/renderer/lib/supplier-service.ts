@@ -18,6 +18,8 @@ import {
   encryptSecret,
   SupplierLoginError,
   readSupplierAccountKeys,
+  isTk1688CatalogSource,
+  normalizeTk1688CnyModel,
   type SupplierAccountKeys,
 } from "@super-canvas/providers";
 import { z } from "zod";
@@ -27,6 +29,7 @@ import { requireServerMasterKey } from "./master-key";
 import { planSupplierAccountImport } from "./supplier-account-import";
 import { isScannedSupplierGroup } from "./supplier-group-source";
 import { openSupplierSiteSession } from "./supplier-site-session";
+import { supplierBillingForDisplay } from "./supplier-billing-display";
 
 const url = z
   .string()
@@ -176,9 +179,13 @@ export class SupplierServiceError extends Error {
 
 /** Strip server-only credentials from every supplier response. */
 export function publicSupplierRecord(supplier: SupplierRecord) {
-  const { siteLogin, ...state } = supplier.state ?? {};
+  const { siteLogin, ...state } = supplier.state ?? {} as Partial<SupplierState>;
+  const tk1688 = isTk1688CatalogSource(supplier.siteUrl, supplier.apiUrl);
+  if (state.billing) state.billing = supplierBillingForDisplay(supplier, state.billing);
   return {
     ...supplier,
+    ...(tk1688 ? { catalog: { ...supplier.catalog, groups: supplier.catalog.groups.map(group => ({ ...group,
+      models: group.models.map(normalizeTk1688CnyModel) })) } } : {}),
     ...(supplier.state ? { state } : {}),
     ...(siteLogin
       ? { siteLogin: siteLogin.authMode === "access-token"

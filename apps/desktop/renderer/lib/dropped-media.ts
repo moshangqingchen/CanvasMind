@@ -471,6 +471,20 @@ export function normalizeDraggedMediaFile(file: File): File | null {
   });
 }
 
+export function filesFromClipboard(clipboard: {
+  files: ArrayLike<File>;
+  items: ArrayLike<Pick<DataTransferItem, "kind" | "getAsFile">>;
+}): File[] {
+  // Both lists expose the same clipboard files. Reading and merging both can
+  // duplicate a bitmap because each File wrapper may get a new lastModified.
+  const files = Array.from(clipboard.files);
+  if (files.length > 0) return files;
+  return Array.from(clipboard.items)
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+}
+
 export function normalizeClipboardImageFile(
   file: File,
   index: number,

@@ -3,6 +3,15 @@ import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, compara
 import { mediaExpressionPricing, type ModelDescriptor } from "@super-canvas/providers";
 
 describe("appendPriceLabelOnce", () => {
+  it("uses CNY for saved Tk1688 quotes while retaining other suppliers' currencies", () => {
+    const model: ModelDescriptor = { id: "gpt-image-2@s1c1", name: "Image", operations: ["image.generate"],
+      metadata: { tk1688Catalog: true, tk1688FxRate: 6.8896, priceLabel: "$0.03/次（¥0.206688/次）" },
+      pricing: { kind: "per-request", currency: "USD", unitAmount: .03, checkedAt: "then", confidence: "snapshot" } };
+    expect(modelPriceSummary(model, {})).toBe("¥0.206688 / 次（参考）");
+    expect(model.pricing?.currency).toBe("USD");
+    expect(modelPriceSummary({ ...model, metadata: { tk1688Catalog: true } }, {})).toBe("人民币价格暂不可用（汇率未读取）");
+    expect(modelPriceSummary({ ...model, metadata: {} }, {})).toBe("0.03 USD / 次（参考）");
+  });
   it("compares exact supplier model prices and refuses unsupported parameter combinations", () => {
     const models: ModelDescriptor[] = [{ id: "image", name: "Image", operations: ["image.generate"], metadata: { priceLabel: "¥0.3/张" },
       parameters: [{ key: "quality", label: "质量", control: "select", options: [{ value: "high", label: "高" }] }] }];

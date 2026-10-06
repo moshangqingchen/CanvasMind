@@ -4,6 +4,7 @@ import { isTk1688ApiUrl } from "./tk1688-model-policy.js";
 
 export const TK1688_MARKETPLACE_URL = "https://tk1688.com/api/marketplace/listings";
 export const TK1688_MARKET_URL = "https://tk1688.com/market";
+export const TK1688_STATUS_URL = "https://tk1688.com/api/status";
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row | undefined => value && typeof value === "object" && !Array.isArray(value) ? value as Row : undefined;
 const text = (value: unknown, maximum = 8000) => typeof value === "string" ? value.trim().slice(0, maximum) : "";
@@ -11,6 +12,54 @@ const number = (value: unknown) => typeof value === "number" && Number.isFinite(
 const money = (value: number) => String(Number(value.toPrecision(10)));
 const tiers = ["1K", "2K", "4K"] as const;
 type Tier = typeof tiers[number];
+
+type PricedModel = { pricing?: StructuredModelPricing; priceLabel?: string; metadata?: Record<string, unknown> };
+const unavailableCnyPrice = "人民币价格暂不可用（汇率未读取）";
+
+/** Use the marketplace's own positive FX rate. This also repairs saved USD
+ * catalogs on read; original supplier prices remain evidence, never CNY input. */
+export function normalizeTk1688CnyModel<T extends PricedModel>(model: T): T {
+  if (model.metadata?.tk1688Catalog !== true) return model;
+  const metadata = { ...model.metadata };
+  const candidate = model.pricing ?? record(metadata.tk1688Pricing) as unknown as StructuredModelPricing | undefined;
+  const fxValue = number(metadata.tk1688FxRate), fx = fxValue && fxValue > 0 ? fxValue : undefined;
+  let pricing = candidate;
+  if (candidate?.currency === "USD") {
+    metadata.tk1688OriginalPricing ??= { ...candidate };
+    const converted = (value: number | undefined) => value === undefined || !fx || !Number.isFinite(value * fx)
+      ? undefined : Number((value * fx).toPrecision(10));
+    const amounts = [candidate.unitAmount, candidate.inputPerMillion, candidate.outputPerMillion, candidate.imageOutputPerMillion,
+      ...(candidate.tiers?.map(tier => tier.price) ?? [])];
+    pricing = fx && amounts.every(value => value === undefined || converted(value) !== undefined) ? {
+      ...candidate, currency: "CNY", ...(candidate.unitAmount !== undefined ? { unitAmount: converted(candidate.unitAmount)! } : {}),
+      ...(candidate.inputPerMillion !== undefined ? { inputPerMillion: converted(candidate.inputPerMillion)! } : {}),
+      ...(candidate.outputPerMillion !== undefined ? { outputPerMillion: converted(candidate.outputPerMillion)! } : {}),
+      ...(candidate.imageOutputPerMillion !== undefined ? { imageOutputPerMillion: converted(candidate.imageOutputPerMillion)! } : {}),
+      ...(candidate.tiers ? { tiers: candidate.tiers.map(tier => ({ ...tier, price: converted(tier.price)! })) } : {}),
+    } : undefined;
+  }
+  const originalLabel = model.priceLabel ?? (typeof metadata.priceLabel === "string" ? metadata.priceLabel : undefined);
+  let priceLabel = originalLabel;
+  if (originalLabel?.includes("$")) {
+    metadata.tk1688OriginalPriceLabel ??= originalLabel;
+    priceLabel = fx ? originalLabel.replace(/（¥[^）]*）/gu, "")
+      .replace(/\$(\d+(?:\.\d+)?(?:e[+-]?\d+)?)/giu, (_, value: string) => {
+        const amount = Number(value) * fx;
+        return Number.isFinite(amount) ? `¥${money(amount)}` : unavailableCnyPrice;
+      }) : unavailableCnyPrice;
+    if (priceLabel.includes("$") || priceLabel.includes(unavailableCnyPrice)) priceLabel = unavailableCnyPrice;
+  }
+  if (candidate?.currency === "USD" && !pricing) priceLabel = unavailableCnyPrice;
+  if (metadata.tk1688Pricing !== undefined) metadata.tk1688Pricing = pricing;
+  if (priceLabel !== undefined) metadata.priceLabel = priceLabel;
+  metadata.tk1688PriceDisplayCurrency = "CNY";
+  if (fx) {
+    metadata.tk1688FxRateSourceUrl ??= TK1688_STATUS_URL;
+    metadata.tk1688FxRateCheckedAt ??= metadata.tk1688CatalogCheckedAt ?? candidate?.checkedAt;
+  }
+  return { ...model, ...(model.pricing !== undefined || candidate ? { pricing } : {}),
+    ...(model.priceLabel !== undefined ? { priceLabel } : {}), metadata };
+}
 
 export function isTk1688CatalogSource(siteUrl: string, apiUrl?: string): boolean {
   try {
@@ -83,7 +132,7 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
   const input = number(row.input_price_usd), output = number(row.output_price_usd);
   const fx = number(status?.payment_fx_rate_cny_per_usd);
   const markup = number(status?.platform_markup_percent);
-  const priceLabel = image && input !== undefined ? `$${money(input)}/次${fx ? `（¥${money(input * fx)}/次）` : ""}`
+  const priceLabel = image && input !== undefined ? `$${money(input)}/次`
     : [input === undefined ? "" : `输入 $${money(input)}/1M`, output === undefined ? "" : `输出 $${money(output)}/1M`].filter(Boolean).join(" · ");
   const pricing: StructuredModelPricing | undefined = image && input !== undefined
     ? { kind: "per-request", currency: "USD", unitAmount: input, billingUnit: "request", sourceUrl: TK1688_MARKET_URL, checkedAt, confidence: "snapshot" }
@@ -91,7 +140,7 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
       ...(output !== undefined ? { outputPerMillion: output } : {}), sourceUrl: TK1688_MARKET_URL, checkedAt, confidence: "snapshot" } : undefined;
   const modalities = Array.isArray(row.modalities) ? row.modalities.filter(value => ["text", "image", "audio", "video"].includes(String(value))) : undefined;
   const declared = parseProviderModelFacts({ ...row, ...(modalities ? { input_modalities: modalities } : {}), output_modalities: [image ? "image" : "text"] }, "supplier-catalog");
-  return {
+  return normalizeTk1688CnyModel<ModelDescriptor>({
     id, name: `${base} · 商家 ${id.split("@")[1]}`, description, operations: image ? ["image.generate", "image.edit"] : [],
     inputKinds: declared.inputKinds ?? ["text", ...(image ? ["image" as const] : [])], outputKinds: [image ? "image" : "text"],
     ...(image ? { parameters: parametersFor(facts) } : {}),
@@ -112,7 +161,7 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
       protocol: image ? "openai-images" : "chat-completions", ...(image ? {} : { agentProtocol: "chat-completions" }),
       canvasRunnable: image, endpointTypes: [image ? "openai-images" : "chat-completions"],
     },
-  };
+  });
 }
 
 function smartModel(base: string, skus: ModelDescriptor[], checkedAt: string): ModelDescriptor {
@@ -127,11 +176,12 @@ function smartModel(base: string, skus: ModelDescriptor[], checkedAt: string): M
   const priceValues = skus.map(model => model.pricing?.unitAmount).filter((value): value is number => value !== undefined);
   const tokenInputs = skus.map(model => model.pricing?.inputPerMillion).filter((value): value is number => value !== undefined);
   const tokenOutputs = skus.map(model => model.pricing?.outputPerMillion).filter((value): value is number => value !== undefined);
-  const range = (values: number[]) => values.length ? `$${money(Math.min(...values))}${Math.max(...values) === Math.min(...values) ? "" : `–$${money(Math.max(...values))}`}` : "未公布";
-  const priceLabel = image ? `${range(priceValues)}/次（自动路由，实际价格由商家决定）`
+  const range = (values: number[]) => values.length ? `¥${money(Math.min(...values))}${Math.max(...values) === Math.min(...values) ? "" : `–¥${money(Math.max(...values))}`}` : "未公布";
+  const unavailable = skus.some(model => model.metadata?.priceLabel === unavailableCnyPrice);
+  const priceLabel = unavailable ? unavailableCnyPrice : image ? `${range(priceValues)}/次（自动路由，实际价格由商家决定）`
     : `输入 ${range(tokenInputs)}/1M · 输出 ${range(tokenOutputs)}/1M（自动路由）`;
   const metadata = { ...first.metadata };
-  for (const key of ["tk1688ListingId", "tk1688MerchantId", "tk1688Channel", "tk1688FixedSize", "fixedOutputCount", "tk1688OmitN"]) delete metadata[key];
+  for (const key of ["tk1688ListingId", "tk1688MerchantId", "tk1688Channel", "tk1688FixedSize", "fixedOutputCount", "tk1688OmitN", "tk1688OriginalPricing", "tk1688OriginalPriceLabel"]) delete metadata[key];
   return { id: base, name: `${base} · 自动路由`, operations: first.operations,
     description: "自动选择商家。参数使用当前可选商家明确支持的交集；商家未公布或档位冲突时使用自动。",
     ...(inputKinds ? { inputKinds } : {}), ...(first.outputKinds ? { outputKinds: first.outputKinds } : {}),

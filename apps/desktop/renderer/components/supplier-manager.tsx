@@ -34,6 +34,7 @@ import {
 import { PROVIDER_SUPPLIER_PROFILES } from "@super-canvas/providers/suppliers";
 import { supplierGroupResolutionLabel } from "@super-canvas/providers/supplier-group-details";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import {
   fetchConnections,
   invalidateModelCache,
@@ -166,7 +167,7 @@ function savedModels(connection?: ProviderConnectionView): ModelDescriptor[] {
         typeof item.id === "string" &&
         Array.isArray(item.operations),
       ),
-    );
+    ).map(normalizeTk1688CnyModel);
   const ids = connection?.config.scannedModelIds;
   return Array.isArray(ids)
     ? ids
@@ -2316,7 +2317,7 @@ function GroupConnectionEditor({
     (model) =>
       grantedIds.includes(model.id) ||
       (model.metadata?.manual !== true && model.metadata?.source !== "manual"),
-  );
+  ).map(normalizeTk1688CnyModel);
   const visibleCatalog = group.models;
   const realScan = modelStatus === "live" || modelStatus === "empty";
   const modelCount = realScan ? supplierModelCount(actualModels) : "0";

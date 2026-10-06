@@ -1,4 +1,5 @@
 import { modelPriceAmount } from "@super-canvas/providers/media-billing";
+import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 /** Keeps catalog names readable when they already contain their price label. */
 export function appendPriceLabelOnce(
   name: string,
@@ -22,6 +23,7 @@ export function cleanModelDisplayName(name: string, priceLabel?: unknown): strin
 
 export function modelPriceSummary(model: import("@super-canvas/providers").ModelDescriptor | undefined, parameters: Readonly<Record<string, unknown>>): string {
   if (!model) return "价格未知";
+  model = normalizeTk1688CnyModel(model);
   const pricing = model.pricing;
   const tier = String(parameters.size_tier ?? parameters.resolution ?? parameters.image_size ?? "").toUpperCase()
     || model.parameters?.find(p => p.key === "size")?.options?.find(option => option.value === parameters.size)?.label.match(/\b[124]K\b/iu)?.[0]?.toUpperCase();
@@ -41,7 +43,7 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
     const defaults = Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default]));
     const amount = modelPriceAmount(pricing, { ...defaults, ...parameters, resolution: parameters.resolution ?? (tier || defaults.resolution), quality });
     const unit = pricing.billingUnit === "second" || pricing.kind === "per-second" ? "秒" : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
-    if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}`;
+    if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}`;
     if (pricing.kind === "token") return "按实际用量计费，详见价格说明";
   }
   return typeof model.metadata?.priceLabel === "string" ? model.metadata.priceLabel : "价格未知";

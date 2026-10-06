@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketplace, tk1688DescriptionFacts } from "./tk1688-catalog.js";
+import { isTk1688CatalogSource, normalizeTk1688CnyModel, parseTk1688AccountModelIds, parseTk1688Marketplace, tk1688DescriptionFacts } from "./tk1688-catalog.js";
 
 const base = "gpt-image-2.5-sunburst";
 const sku = (suffix: string, description: string, extra = {}) => ({ id: 1, base_model: base, alias: `${base}@${suffix}`,
@@ -23,8 +23,9 @@ describe("词元模型广场 contracts", () => {
         tk1688RetailPriceIncludesMarkup: true, tk1688PlatformMarkupPercent: 20 } });
     expect(model.parameters?.find(parameter => parameter.key === "size")?.options).toEqual([{ label: "原生 3840 × 2160", value: "3840x2160" }]);
     expect(model.parameters?.some(parameter => parameter.key === "n")).toBe(false);
-    expect(model.pricing).toMatchObject({ kind: "per-request", billingUnit: "request", unitAmount: 0.03 });
-    expect(model.metadata?.priceLabel).toBe("$0.03/次（¥0.206688/次）");
+    expect(model.pricing).toMatchObject({ kind: "per-request", currency: "CNY", billingUnit: "request", unitAmount: 0.206688 });
+    expect(model.metadata?.priceLabel).toBe("¥0.206688/次");
+    expect(model.metadata?.tk1688OriginalPricing).toMatchObject({ currency: "USD", unitAmount: 0.03 });
   });
   it("uses the safe smart-route intersection and never inherits a merchant's fixed pixels", () => {
     const parsed = parseTk1688Marketplace(market(sku("s47c261", "Adobe支持原生4K(3840*2160)，不支持N。"),
@@ -59,9 +60,33 @@ describe("词元模型广场 contracts", () => {
   it("carries text modalities, context/output limits and retail token prices from the market", () => {
     const model = parseTk1688Marketplace(market({ ...sku("s1c23", "文本渠道"), base_model: "chat-pro", alias: "chat-pro@s1c23",
       charge_type: "per_token", modalities: ["text", "image", "pdf"], context_tokens: 1050000, max_output_tokens: 128000,
-      input_price_usd: 0.9, output_price_usd: 5 })).models[1]!;
-    expect(model).toMatchObject({ operations: [], inputKinds: ["text", "image"], outputKinds: ["text"], pricing: { kind: "token", inputPerMillion: 0.9, outputPerMillion: 5 },
+      input_price_usd: 0.9, output_price_usd: 5 }), status).models[1]!;
+    expect(model).toMatchObject({ operations: [], inputKinds: ["text", "image"], outputKinds: ["text"], pricing: { kind: "token", currency: "CNY", inputPerMillion: 6.20064, outputPerMillion: 34.448 },
       metadata: { agentCapabilities: { imageInput: true }, tk1688ContextTokens: 1050000, tk1688MaxOutputTokens: 128000 } });
+  });
+  it("uses the current official FX for smart price ranges without applying markup twice", () => {
+    const parsed = parseTk1688Marketplace(market(sku("s1c1", "1K"), sku("s2c2", "1K", { input_price_usd: 0.05 })), status,
+      { checkedAt: "2026-10-06T00:00:00Z" });
+    expect(parsed.models[0]?.metadata?.priceLabel).toBe("¥0.206688–¥0.34448/次（自动路由，实际价格由商家决定）");
+    expect(parsed.models[1]?.metadata).toMatchObject({ tk1688FxRateSourceUrl: "https://tk1688.com/api/status", tk1688FxRateCheckedAt: "2026-10-06T00:00:00Z" });
+  });
+  it.each([undefined, 0, -1, Infinity, "6.8896"])("never presents USD or a zero substitute when the official FX is invalid: %s", fx => {
+    const parsed = parseTk1688Marketplace(market(sku("s1c1", "1K")), { success: true, data: { payment_fx_rate_cny_per_usd: fx } });
+    for (const model of parsed.models) {
+      expect(model.pricing).toBeUndefined();
+      expect(model.metadata?.priceLabel).toBe("人民币价格暂不可用（汇率未读取）");
+    }
+  });
+  it("repairs saved USD quotes once, preserves the raw price and leaves other providers intact", () => {
+    const legacy = { metadata: { tk1688Catalog: true, tk1688FxRate: 6.8896, priceLabel: "$0.03/次（¥0.206688/次）" },
+      pricing: { kind: "per-request" as const, currency: "USD", unitAmount: .03, checkedAt: "then", confidence: "snapshot" as const } };
+    const converted = normalizeTk1688CnyModel(legacy);
+    expect(converted).toMatchObject({ pricing: { currency: "CNY", unitAmount: .206688 }, metadata: { priceLabel: "¥0.206688/次" } });
+    expect(normalizeTk1688CnyModel(converted)).toEqual(converted);
+    const other = { ...legacy, metadata: { ...legacy.metadata, tk1688Catalog: false } };
+    expect(normalizeTk1688CnyModel(other)).toBe(other);
+    expect(normalizeTk1688CnyModel({ metadata: { tk1688Catalog: true, tk1688FxRate: 7, priceLabel: "$0.01–$0.05/次（自动路由）" } }).metadata.priceLabel)
+      .toBe("¥0.07–¥0.35/次（自动路由）");
   });
   it("does not label partial listings complete or accept unrelated supplier hosts", () => {
     expect(parseTk1688Marketplace({ success: true, data: { items: [], total: 10 } }).complete).toBe(false);

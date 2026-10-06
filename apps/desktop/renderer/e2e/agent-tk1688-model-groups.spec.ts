@@ -22,7 +22,7 @@ const rows = [base, otherBase].flatMap((model, index) => [47, 48, 49].map(mercha
   modalities: ["text"],
 })));
 const descriptors = parseTk1688Marketplace({ success: true, data: { total: rows.length, items: rows } },
-  { success: true, data: {} }, { checkedAt: "2026-10-04T00:00:00.000Z",
+  { success: true, data: { payment_fx_rate_cny_per_usd: 6.8896 } }, { checkedAt: "2026-10-04T00:00:00.000Z",
     keyModelIds: [base, otherBase], accountModelIds: rows.map(row => row.alias) }).models;
 const options: AgentModelOption[] = descriptors.map(model => ({
   supplierId: "tk1688", supplierName: "词元", supplierKey: "tk1688", group: "文本组",
@@ -86,11 +86,13 @@ test("词元文本型号去重、保留已保存商家，用户选路后显示�
   await expect(route.locator("option")).toHaveText([
     "自动路由", "商家 47 · 渠道 261", "商家 48 · 渠道 262", "商家 49 · 渠道 263",
   ]);
-  await expect(page.getByLabel("智能体模型报价")).toContainText("输入 $0.9/1M · 输出 $5/1M");
+  await expect(page.getByLabel("智能体模型报价")).toContainText("输入 ¥6.20064/1M · 输出 ¥34.448/1M");
+  await expect(page.getByLabel("智能体模型报价")).not.toContainText(/USD|\$/u);
   await expect(page.getByText("商家 47 声明的文本服务", { exact: false })).toBeVisible();
   const newAlias = `${base}@s48c262`;
   await route.selectOption(newAlias);
-  await expect(page.getByLabel("智能体模型报价")).toContainText("输入 $1.2/1M · 输出 $6/1M");
+  await expect(page.getByLabel("智能体模型报价")).toContainText("输入 ¥8.26752/1M · 输出 ¥41.3376/1M");
+  await expect(page.getByLabel("智能体模型报价")).not.toContainText(/USD|\$/u);
   await page.getByText("完整模型 ID", { exact: true }).click();
   await expect(page.locator("code").filter({ hasText: newAlias })).toBeVisible();
   await expect.poll(() => page.evaluate(canvas => localStorage.getItem(`agent-model:${canvas}`), canvasId))

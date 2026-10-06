@@ -1,6 +1,6 @@
 import type { DirectorModelCapabilities, DirectorProtocol, ResolvedDirectorConnection } from "@super-canvas/director";
 import type { ProviderConnectionRecord } from "@super-canvas/db";
-import { normalizeSupplierSiteBase, scanProviderModelCatalog, type ModelDescriptor } from "@super-canvas/providers";
+import { normalizeSupplierSiteBase, normalizeTk1688CnyModel, scanProviderModelCatalog, type ModelDescriptor } from "@super-canvas/providers";
 import { repository } from "./server";
 import { resolveDirectorConnection } from "./director-connections";
 import {
@@ -26,10 +26,10 @@ function descriptors(values: unknown): ModelDescriptor[] {
       outputKinds: metadata.outputKindsSource === "declared" ? value.outputKinds : undefined,
     } : value;
     const fallback = scanProviderModelCatalog([facts]).models[0]!;
-    return [{ ...fallback, ...value, id: value.id.trim(), name: typeof value.name === "string" ? value.name : value.id,
+    return [normalizeTk1688CnyModel({ ...fallback, ...value, id: value.id.trim(), name: typeof value.name === "string" ? value.name : value.id,
       metadata: { ...fallback.metadata, ...agentRecord(value.metadata) },
       operations: Array.isArray(value.operations) ? value.operations.filter(operation =>
-        ["image.generate", "image.edit", "video.generate", "video.image-to-video"].includes(String(operation))) : fallback.operations } as ModelDescriptor];
+        ["image.generate", "image.edit", "video.generate", "video.image-to-video"].includes(String(operation))) : fallback.operations } as ModelDescriptor)];
   });
 }
 
