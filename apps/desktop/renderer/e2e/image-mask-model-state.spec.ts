@@ -69,6 +69,12 @@ test("沧元已保存蒙版型号：核对中、读取失败、恢复成功不�
   const run = edit.getByRole("button", { name: "运行 局部重绘 节点", exact: true });
   try {
     await page.goto(`/canvas/${project.id}`);
+    // A saved, confirmed node is usable before it is selected. There is no
+    // active scan yet, so it must not claim to be checking forever on reload.
+    await expect(edit.getByText("已设置局部修改区域", { exact: true })).toBeVisible();
+    await expect(run).toBeEnabled();
+    await expect(edit.getByText("正在核对模型能力…", { exact: true })).toHaveCount(0);
+    expect(reads).toBe(0);
     await edit.locator(".node-head").click();
     await expect.poll(() => reads).toBeGreaterThan(0);
     await expect(edit.getByText("正在核对模型能力…", { exact: true })).toBeVisible();

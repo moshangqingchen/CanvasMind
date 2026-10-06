@@ -7367,8 +7367,8 @@ function CanvasShell({
                     null
                 ),
             ) &&
-            (connectionModels.connectionId !== node.data.connectionId ||
-              connectionModels.loading),
+            connectionModels.connectionId === node.data.connectionId &&
+            connectionModels.loading,
           ),
           modelOptionsError: Boolean(
             generationType &&
