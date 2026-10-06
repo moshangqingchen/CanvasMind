@@ -65,14 +65,14 @@ function validateFileList(value: unknown, projectId: string): { files: ProjectFi
   return { files, ignoredFiles: typeof response.ignoredFiles === "number" && response.ignoredFiles > 0 ? response.ignoredFiles : 0 };
 }
 
-function FileThumbnail({ file }: { file: ProjectFileItem }) {
-  const [failed, setFailed] = useState(false);
+function FileThumbnail({ file, retryVersion }: { file: ProjectFileItem; retryVersion: number }) {
+  const [failedVersion, setFailedVersion] = useState<number | null>(null);
   if (file.kind !== "image") {
     const Icon = file.kind === "video" ? Film : Music2;
     return <span className={styles.mediaPlaceholder}><Icon size={35} /><span>{file.kind === "video" ? "视频" : "音频"}</span></span>;
   }
-  if (failed) return <span className={styles.thumbnailFailed}><ImageOff size={26} /><span>预览暂不可用</span></span>;
-  return <img src={file.previewUrl} alt={file.name} loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} />;
+  if (failedVersion === retryVersion) return <span className={styles.thumbnailFailed}><ImageOff size={26} /><span>预览暂不可用</span></span>;
+  return <img src={file.previewUrl} alt={file.name} loading="lazy" decoding="async" draggable={false} onError={() => setFailedVersion(retryVersion)} />;
 }
 
 function ProjectFilePreview({ file, onClose }: { file: ProjectFileItem; onClose: () => void }) {
@@ -121,6 +121,7 @@ function ProjectFilesModalSession({ projectId, projectName, onClose, onPlaceOnCa
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [limit, setLimit] = useState(60);
   const [loading, setLoading] = useState(true);
+  const [thumbnailRetryVersion, setThumbnailRetryVersion] = useState(0);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
@@ -155,6 +156,9 @@ function ProjectFilesModalSession({ projectId, projectName, onClose, onPlaceOnCa
       if (!alive.current || controller.signal.aborted || listRequest.current !== controller) return;
       setFiles(result.files);
       setIgnoredFiles(result.ignoredFiles);
+      // Refresh retries failed previews without remounting images that already
+      // loaded successfully, or discarding the current file selection.
+      setThumbnailRetryVersion(version => version + 1);
       const knownIds = new Set(result.files.map(file => file.fileId));
       setSelected(current => new Set([...current].filter(id => knownIds.has(id))));
       setLimit(60);
@@ -305,7 +309,7 @@ function ProjectFilesModalSession({ projectId, projectName, onClose, onPlaceOnCa
             : filtered.length === 0 ? <div className={styles.empty}>{query ? <Search size={38} /> : <FolderOpen size={42} />}<strong>{loadError ? "暂时无法读取文件" : query ? "没有找到匹配的文件" : section === "finished" ? "还没有成品文件" : "还没有草稿媒体"}</strong><p>{loadError ? "请点击刷新重试。" : query ? "换个关键词，或清除搜索条件。" : section === "finished" ? "放入项目成品文件夹的图片、视频和音频会显示在这里。" : "草稿目录中的媒体会显示在这里，画布 JSON 文件不会当作图片展示。"}</p>{query && <button type="button" className={styles.secondary} onClick={() => changeQuery("")}>清除搜索</button>}</div>
             : <><div className={styles.grid} aria-label={`${section === "finished" ? "成品" : "草稿"}文件列表`}>
               {filtered.slice(0, limit).map(file => <article key={file.fileId} className={styles.card} data-selected={selected.has(file.fileId)} data-file-id={file.fileId}>
-                <div className={styles.thumbnail}><button type="button" className={styles.previewButton} disabled={disabled} onClick={() => setPreview(file)} aria-label={`预览 ${file.name}`}><FileThumbnail file={file} /><span className={styles.previewHint}><Maximize2 size={16} />预览</span></button>
+                <div className={styles.thumbnail}><button type="button" className={styles.previewButton} disabled={disabled} onClick={() => setPreview(file)} aria-label={`预览 ${file.name}`}><FileThumbnail file={file} retryVersion={thumbnailRetryVersion} /><span className={styles.previewHint}><Maximize2 size={16} />预览</span></button>
                   <label className={styles.selectFile} title={selected.has(file.fileId) ? "取消选择" : "选择文件"}><input type="checkbox" aria-label={`选择 ${file.name}`} checked={selected.has(file.fileId)} disabled={disabled} onChange={() => setSelected(current => { const next = new Set(current); if (next.has(file.fileId)) next.delete(file.fileId); else next.add(file.fileId); return next; })} /><span><Check size={13} /></span></label>
                   <span className={styles.fileType}>{file.kind === "image" ? "图片" : file.kind === "video" ? "视频" : "音频"}</span>
                 </div>

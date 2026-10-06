@@ -634,8 +634,18 @@
 .image-output-mode-options button[aria-pressed="true"] { background: #353047; border-color: #8a78bd; color: #efe8ff; box-shadow: 0 2px 8px #0002; }
 .image-output-mode-options button:focus-visible { outline: 2px solid #b9a3f5; outline-offset: 2px; }
 .image-output-mode small { color: #bdafd7; font-size: 11px; }
-.node-mask-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 7px 10px; color: #c1b2df; font-size: 11px; }
-.node-mask-summary button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid #62547e; border-radius: 7px; color: #e4d8fa; background: #312b3e; font: inherit; cursor: pointer; }
+.node-mask-summary { min-width: 0; display: grid; gap: 6px; padding: 7px 8px; border: 1px solid #49405d; border-radius: 8px; background: #292431; color: #c1b2df; font-size: 11px; }
+.node-mask-summary[data-state="needs-attention"] { border-color: #75613f; background: #302a22; color: #eed4a6; }
+.node-mask-status { min-width: 0; display: flex; align-items: flex-start; gap: 6px; line-height: 1.45; }
+.node-mask-status svg { flex: 0 0 auto; margin-top: 1px; }
+.node-mask-status span { min-width: 0; overflow-wrap: anywhere; }
+.node-mask-actions { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.node-mask-summary button { min-width: 0; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 7px; border: 1px solid #62547e; border-radius: 6px; color: #e4d8fa; background: #312b3e; font: inherit; cursor: pointer; }
+.node-mask-summary button svg { flex: 0 0 auto; }
+.node-mask-summary button:hover { border-color: #a28bc1; background: #40354e; }
+.node-mask-summary button:focus-visible { outline: 2px solid #b9a3f5; outline-offset: 2px; }
+.node-mask-summary .node-mask-choose-model { color: #fff0cf; border-color: #887248; background: #44392a; }
+.node-mask-summary .node-mask-remove { margin-left: auto; width: 28px; padding: 0; }
 .canvas-editor .node-config-section-heading { display: flex; align-items: center; gap: 8px; }
 .canvas-editor .node-config-section-heading strong { color: #e8eaf5; font-size: 13px; font-weight: 600; }
 .canvas-editor .node-config-parameter-section .parameter-group-note {

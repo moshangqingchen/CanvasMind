@@ -666,6 +666,13 @@ circle.canvas-drawing-selection-outline {
   min-width: 300px;
   min-height: 150px;
 }
+/* Keep these minima aligned with lib/generation-node-layout.ts and NodeResizer. */
+.react-flow__node-workflow:has(.node-card[data-has-image-reference="true"]) {
+  min-height: 270px;
+}
+.react-flow__node-workflow:has(.node-card[data-mask-edit="true"]) {
+  min-height: 330px;
+}
 .react-flow__node-workflow:has(.node-card[data-node-type="prompt"]) {
   width: 320px;
   height: 190px;
@@ -863,12 +870,26 @@ circle.canvas-drawing-selection-outline {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(48px, 1fr) 42px;
+  display: flex;
+  flex-direction: column;
   gap: 7px;
 }
-.node-generation-body.has-linked-assets {
-  grid-template-rows: auto minmax(48px, 1fr) 42px;
+.node-generation-body > .node-inline-editor {
+  flex: 1 1 48px;
+  min-height: 48px;
+}
+.node-generation-body > .node-inline-toolbar,
+.node-generation-body > .node-mask-summary {
+  flex: 0 0 auto;
+}
+.node-generation-body > .node-linked-assets {
+  flex: 0 0 auto;
+  max-height: 80px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.node-card[data-mask-edit="true"] .node-generation-body > .node-linked-assets {
+  max-height: min(80px, 25%);
 }
 .node-linked-assets {
   min-width: 0;
@@ -2161,6 +2182,16 @@ circle.canvas-drawing-selection-outline {
   margin: 0;
   text-align: left;
   word-spacing: normal;
+}
+.tiptap-prompt[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  max-width: 100%;
+  color: #8f9aaf;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .mention-floating-menu {
   position: fixed;

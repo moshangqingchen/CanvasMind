@@ -253,7 +253,19 @@ async function finishExit() {
 }
 async function requestExit(install = false) {
   if (waitingExit || quitting) return;
-  if (!backend) { quitting = true; rendererRecovery?.stop(); await stopDevelopmentWatchers(); app.quit(); return; }
+  if (!backend) {
+    quitting = true; applyUpdate = install;
+    clearInterval(exitTimer); clearInterval(updateTimer);
+    rendererRecovery?.stop();
+    await stopDevelopmentWatchers();
+    // A stopped local service has nothing left to drain, but a downloaded
+    // upgrade still needs the installer rather than an ordinary app quit.
+    if (install) {
+      updater.patch({ phase: "applying" });
+      electronUpdater.autoUpdater.quitAndInstall(false, true);
+    } else app.quit();
+    return;
+  }
   waitingExit = true; applyUpdate = install;
   const epoch = ++exitEpoch;
   send("desktop:draining", true);

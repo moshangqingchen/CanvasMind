@@ -5,6 +5,7 @@ export interface ConnectionModelSnapshot {
   items: ModelDescriptor[];
   authoritative?: boolean;
   loading?: boolean;
+  failed?: boolean;
   displayItems?: ModelDescriptor[];
 }
 

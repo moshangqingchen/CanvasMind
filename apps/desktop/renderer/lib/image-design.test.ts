@@ -151,4 +151,15 @@ describe("image design workflow", () => {
     ]);
     expect({ asset, snapshot }).toEqual(before);
   });
+
+  it("retains a painted mask without pretending an unavailable provider can run it", () => {
+    const draft = createImageEditDraft({ asset, source: null,
+      parameters: { maskAssetId: "saved-mask", maskSourceAssetId: asset.id }, position: { x: 0, y: 0 } });
+    const edit = draft.nodes.find(node => node.id === draft.editNodeId)!;
+    expect(edit.data).toMatchObject({ parameters: { maskAssetId: "saved-mask", maskSourceAssetId: asset.id, n: 1 } });
+    expect(edit.style?.height).toBe(360);
+    expect(edit.data.provider).toBeUndefined();
+    expect(edit.data.connectionId).toBeUndefined();
+    expect(edit.data.model).toBeUndefined();
+  });
 });

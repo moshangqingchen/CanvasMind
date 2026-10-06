@@ -20,6 +20,7 @@ interface PromptEditorProps {
   onChange: (parts: PromptPart[]) => void;
   ariaLabelledBy?: string;
   ariaLabel?: string;
+  placeholder?: string;
 }
 
 function partsToDocument(
@@ -213,6 +214,7 @@ export function PromptEditor({
   onChange,
   ariaLabelledBy,
   ariaLabel,
+  placeholder = "输入提示词，描述你希望生成的内容…",
 }: PromptEditorProps) {
   const onChangeRef = useRef(onChange);
   const pendingPartsRef = useRef<PromptPart[] | null>(null);
@@ -220,6 +222,7 @@ export function PromptEditor({
   const mentionAssetsRef = useRef(mentionAssets);
   const editorRef = useRef<Editor | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const placeholderRef = useRef(placeholder);
   const flushPendingParts = useCallback(() => {
     if (flushTimerRef.current !== null) {
       window.clearTimeout(flushTimerRef.current);
@@ -241,6 +244,13 @@ export function PromptEditor({
   useEffect(() => {
     mentionAssetsRef.current = mentionAssets;
   }, [mentionAssets]);
+  useEffect(() => {
+    placeholderRef.current = placeholder;
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed) return;
+    editor.view.dom.setAttribute("data-placeholder", placeholder);
+    editor.view.dom.setAttribute("aria-placeholder", placeholder);
+  }, [placeholder]);
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -284,10 +294,16 @@ export function PromptEditor({
           class: "tiptap-prompt",
           role: "textbox",
           "aria-multiline": "true",
+          "data-placeholder": placeholderRef.current,
+          "aria-placeholder": placeholderRef.current,
           ...(ariaLabelledBy
             ? { "aria-labelledby": ariaLabelledBy }
             : { "aria-label": ariaLabel ?? "提示词" }),
         },
+      },
+      onTransaction: ({ editor: current }) => {
+        // Presentation only: never put guidance into the saved prompt or a request.
+        current.view.dom.setAttribute("data-empty", String(current.isEmpty));
       },
       onUpdate: ({ editor: current }) => {
         pendingPartsRef.current = documentToParts(current.getJSON());
@@ -296,6 +312,7 @@ export function PromptEditor({
     });
     editorRef.current = editor;
     editor.mount(container);
+    editor.view.dom.setAttribute("data-empty", String(editor.isEmpty));
     const unregisterPendingEdit = registerPendingEditorEdit(flushPendingParts);
     return () => {
       unregisterPendingEdit();

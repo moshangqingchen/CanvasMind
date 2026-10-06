@@ -18,6 +18,8 @@ export function cloudEndpoint(value: string): string {
 export async function readCloudGenerationConfig(): Promise<CloudGenerationConfig | null> {
   try {
     const value = JSON.parse(await readFile(configPath(), "utf8")) as CloudGenerationConfig;
+    if (!value || typeof value.endpoint !== "string" || typeof value.encryptedToken !== "string" || !value.encryptedToken.trim())
+      throw new Error("Invalid cloud configuration");
     return { endpoint: cloudEndpoint(value.endpoint), encryptedToken: value.encryptedToken };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -30,10 +32,13 @@ export function publicCloudGenerationConfig(config: CloudGenerationConfig | null
 export async function saveCloudGenerationConfig(input: { endpoint: string; token?: string }): Promise<CloudGenerationView> {
   if (!key()) throw new Error("缺少本机凭据加密配置");
   const endpoint = cloudEndpoint(input.endpoint);
-  const old = await readCloudGenerationConfig();
   const token = input.token?.trim();
+  if (token && (token.length < 32 || token.length > 4096)) throw new Error("请填写至少 32 位的云端服务访问密钥");
+  // A complete replacement must also repair malformed old files. Only load
+  // the previous configuration when the caller wants to retain its secret.
+  const old = token ? null : await readCloudGenerationConfig();
   const encryptedToken = token ? encryptSecret(token, key()) : old?.endpoint === endpoint ? old.encryptedToken : undefined;
-  if (!encryptedToken || (token && (token.length < 32 || token.length > 4096))) throw new Error("请填写至少 32 位的云端服务访问密钥");
+  if (!encryptedToken) throw new Error("请填写至少 32 位的云端服务访问密钥");
   const config = { endpoint, encryptedToken };
   await mkdir(dirname(configPath()), { recursive: true });
   const tmp = `${configPath()}.${crypto.randomUUID()}.tmp`;
@@ -155,7 +160,13 @@ export async function runCloudGeneration<T>(idempotencyKey: string, config: Clou
         await progress("downloading");
         try {
           const response = await fetchImpl(`${target}/response`, { headers: auth, redirect: "error", signal: requestSignal(120_000) });
-          if (response.headers.get("x-supercanvas-response") !== "1") { await response.body?.cancel(); await delay(3_000); continue; }
+          if (response.headers.get("x-supercanvas-response") !== "1") {
+            // A failed download can leave a stalled stream. Discard it without
+            // blocking recovery of the already-paid result on the same job.
+            void response.body?.cancel().catch(() => {});
+            await delay(3_000);
+            continue;
+          }
           return response;
         } catch { await delay(3_000); continue; }
       }

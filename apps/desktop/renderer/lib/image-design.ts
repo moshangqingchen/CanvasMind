@@ -8,6 +8,7 @@ import type {
   CanvasNode,
   RunSnapshot,
 } from "../components/types";
+import { hasImageMask, IMAGE_REFERENCE_NODE_MIN_HEIGHT, MASK_EDIT_NODE_DEFAULT_HEIGHT } from "./generation-node-layout";
 
 export type ImageDesignSource = NonNullable<
   RunSnapshot["nodes"][number]["request"]
@@ -82,15 +83,14 @@ export function imageDesignSourceForAsset(
 /** Only prepares editable nodes; it never submits a generation or changes old nodes. */
 export function createImageEditDraft(input: {
   asset: AssetView;
-  source: ImageDesignSource;
+  source: ImageDesignSource | null;
+  parameters?: Record<string, string | number | boolean>;
   position: { x: number; y: number };
 }): { nodes: CanvasNode[]; edges: CanvasEdge[]; editNodeId: string } {
   const { asset, source, position } = input;
   if (
     asset.kind !== "image" ||
-    !source.provider ||
-    !source.connectionId ||
-    !source.model
+    (source !== null && (!source.provider || !source.connectionId || !source.model))
   )
     throw new Error("缺少图片编辑所需的原始生成配置");
   const referenceId = `asset-input-${crypto.randomUUID().slice(0, 8)}`;
@@ -113,15 +113,13 @@ export function createImageEditDraft(input: {
     id: editNodeId,
     type: "workflow",
     position: { x: position.x + 380, y: position.y },
-    style: { width: 420, height: 210 },
+    style: { width: 420, height: hasImageMask({ ...source?.parameters, ...input.parameters }) ? MASK_EDIT_NODE_DEFAULT_HEIGHT : IMAGE_REFERENCE_NODE_MIN_HEIGHT },
     data: {
       nodeType: "image-generation",
       label: "继续修改图片",
       description: "已带入保存的评审意见，核对修改要求后运行",
-      provider: source.provider,
-      connectionId: source.connectionId,
-      model: source.model,
-      parameters: { ...source.parameters, n: 1 },
+      ...(source ? { provider: source.provider, connectionId: source.connectionId, model: source.model } : {}),
+      parameters: { ...source?.parameters, ...input.parameters, n: 1 },
       parts: [{ type: "text", text: readImageDesignReview(asset.metadata).note }],
       inputs: [
         { id: "prompt", kind: "text", label: "修改要求", required: false },

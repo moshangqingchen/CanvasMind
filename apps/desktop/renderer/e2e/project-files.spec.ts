@@ -200,6 +200,38 @@ test("项目文件标识不能跨项目读取、导入或删除", async ({ page,
   } finally { f.safe(); }
 });
 
+test("缩略图临时读取失败后刷新可以恢复，保留选择且不重载正常缩略图", async ({ page, request }) => {
+  const f = await fixture(page, request);
+  const alpha = f.aFiles.find(file => file.name.startsWith("alpha-project-file"))!;
+  const beta = f.aFiles.find(file => file.name.startsWith("beta-project-file"))!;
+  const requests = new Map<string, number>();
+  await page.route(`**/api/projects/${f.a}/files/content?*`, route => {
+    const id = new URL(route.request().url()).searchParams.get("fileId")!;
+    const count = (requests.get(id) ?? 0) + 1;
+    requests.set(id, count);
+    return id === alpha.fileId && count === 1
+      ? route.fulfill({ status: 503, contentType: "text/plain", body: "temporary preview outage" })
+      : route.fulfill({ contentType: "image/png", body: png });
+  });
+  try {
+    await page.goto(`/canvas/${f.a}`);
+    await page.getByRole("button", { name: "项目文件", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "项目文件", exact: true });
+    await panel.getByRole("tab", { name: /^草稿/u }).click();
+    const card = panel.locator(`article[data-file-id="${alpha.fileId}"]`);
+    await expect(card.getByText("预览暂不可用", { exact: true })).toBeVisible();
+    const selection = panel.getByRole("checkbox", { name: `选择 ${alpha.name}`, exact: true });
+    await selection.check();
+    await expect.poll(() => panel.locator(`article[data-file-id="${beta.fileId}"] img`).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+    const betaRequests = requests.get(beta.fileId);
+    await panel.getByRole("button", { name: "刷新", exact: true }).click();
+    await expect.poll(() => card.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+    await expect(selection).toBeChecked();
+    expect(requests.get(alpha.fileId)).toBe(2);
+    expect(requests.get(beta.fileId)).toBe(betaRequests);
+  } finally { f.safe(); }
+});
+
 test("批量删除分批提交，后批失败保留未确认文件与已成功结果", async ({ page, request }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   const f = await fixture(page, request);

@@ -73,6 +73,7 @@ import { shouldReselectNodeFromConfigPointer } from "../lib/node-config-pointer"
 import { PromptEditor } from "./prompt-editor";
 import { AssetPreviewImage } from "./asset-preview-image";
 import { useResultPreviewSize } from "../lib/use-result-preview-size";
+import { hasImageMask, IMAGE_REFERENCE_NODE_MIN_HEIGHT, MASK_EDIT_NODE_MIN_HEIGHT } from "../lib/generation-node-layout";
 import type { CanvasNode, CanvasNodeData, RunErrorDetails } from "./types";
 
 const ASSET_DRAG_TYPE = "application/x-super-canvas-asset";
@@ -322,6 +323,9 @@ function PortHandles({
 }
 
 function CanvasPromptEditor({data, active}: {data: CanvasNodeData; active: boolean}) {
+  const placeholder = data.nodeType === "image-generation" && hasImageMask(data.parameters)
+    ? "描述涂抹区域要如何修改，例如：将衣服改成蓝色…"
+    : "输入提示词，描述你希望生成的内容…";
   const compact = useStore((state) => state.transform[2] < .5 && !active);
   const host = useRef<HTMLDivElement>(null);
   const focusRequested = useRef(false);
@@ -341,9 +345,9 @@ function CanvasPromptEditor({data, active}: {data: CanvasNodeData; active: boole
       onPointerDownCapture={(event) => {if(!event.ctrlKey && !event.metaKey)focusRequested.current=true;}}
       onClick={(event) => {if(!event.ctrlKey && !event.metaKey)activate();}}
       onKeyDown={(event) => {if((event.key==="Enter" || event.key===" ") && !event.ctrlKey && !event.metaKey){event.preventDefault();activate();}}}>
-      {renderPromptParts(data.parts ?? [], {resolveAsset:(id) => data.assets?.find(asset=>asset.id===id)?.name ?? "参考素材"}) || "点击编辑提示词"}
+      {renderPromptParts(data.parts ?? [], {resolveAsset:(id) => data.assets?.find(asset=>asset.id===id)?.name ?? "参考素材"}) || placeholder}
     </div> : <PromptEditor parts={data.parts ?? [{type:"text",text:""}]} assets={data.assets ?? []} mentionAssets={data.mentionAssets ?? []}
-      onChange={(parts) => data.onPromptPartsChange?.(parts)} ariaLabel={`编辑 ${data.label} 提示词`} />}
+      onChange={(parts) => data.onPromptPartsChange?.(parts)} ariaLabel={`编辑 ${data.label} 提示词`} placeholder={placeholder} />}
   </div>;
 }
 
@@ -399,6 +403,17 @@ function GenerationNodeBody({
       ? "video-generation"
       : "image-generation";
   const parameters = data.parameters ?? {};
+  const maskEnabled = nodeType === "image-generation" && hasImageMask(parameters);
+  const maskSource = data.linkedAssets?.find(asset => asset.kind === "image");
+  const maskSourceChanged = Boolean(maskEnabled && parameters.maskAssetId && maskSource && parameters.maskSourceAssetId !== maskSource.id);
+  const maskProblem = !maskEnabled ? null
+    : !maskSource ? "请连接蒙版对应的原图"
+    : maskSourceChanged ? "原图已改变，请重新绘制蒙版"
+    : !data.connectionId || !data.model ? "请选择可编辑模型后再生成"
+    : data.modelOptionsLoading ? "正在核对模型能力…"
+    : data.modelOptionsError ? "模型列表读取失败，请重试"
+    : !data.imageEditingCapabilities?.mask ? "当前模型不支持蒙版，请更换模型"
+    : null;
   const currentConnection =
     data.connectionId || (data.provider === "fake" ? "fake-default" : "");
   // A delayed catalog may resolve the default model after the user opens the
@@ -735,19 +750,24 @@ function GenerationNodeBody({
         ? createPortal(settingsPopover, settingsHost)
         : null}
       <LinkedAssetStrip data={data} />
-      {nodeType === "image-generation" && Boolean(data.linkedAssets?.some(asset => asset.kind === "image") || parameters.maskAssetId || parameters.mask) && (
-        <div className="node-mask-summary nodrag nopan nowheel" onPointerDown={event => event.stopPropagation()}>
-          {data.linkedAssets?.some(asset => asset.kind === "image") && <button type="button" onClick={() => {
-            const source = data.linkedAssets?.find(asset => asset.kind === "image");
-            if (source) data.onEditMask?.(source.id, nodeId);
-          }}><Brush size={13} />{parameters.maskAssetId ? "编辑蒙版" : "绘制蒙版"}</button>}
-          {(typeof parameters.maskAssetId === "string" || typeof parameters.mask === "string") && <>
-            <span>{!data.linkedAssets?.some(asset => asset.kind === "image") ? "请连接蒙版对应的原图" : !data.imageEditingCapabilities?.mask ? "当前模型不支持蒙版，请更换模型" : parameters.maskAssetId ? "已设置局部修改区域" : "已设置外部蒙版"}</span>
-            <button type="button" aria-label="移除蒙版" onClick={() => {
+      {nodeType === "image-generation" && Boolean(maskSource || maskEnabled) && (
+        <div className="node-mask-summary nodrag nopan nowheel" data-state={maskProblem ? "needs-attention" : "ready"} onPointerDown={event => event.stopPropagation()}>
+          {maskEnabled && <div className="node-mask-status" role="status">
+            {maskProblem ? <CircleAlert size={13} /> : <Brush size={13} />}
+            <span>{maskProblem ?? (parameters.maskAssetId ? "已设置局部修改区域" : "已设置外部蒙版")}</span>
+          </div>}
+          <div className="node-mask-actions">
+            {maskSource && <button type="button" onClick={() => data.onEditMask?.(maskSource.id, nodeId)}>
+              <Brush size={13} />{parameters.maskAssetId ? "编辑蒙版" : "绘制蒙版"}
+            </button>}
+            {maskEnabled && (!data.connectionId || !data.model || !data.imageEditingCapabilities?.mask || data.modelOptionsError) && <button type="button" className="node-mask-choose-model" onClick={() => {
+              selectNode(); setSettingsOpen(true);
+            }}>选择可编辑模型</button>}
+            {maskEnabled && <button type="button" className="node-mask-remove" aria-label="移除蒙版" title="移除蒙版" onClick={() => {
               const next = { ...parameters }; delete next.maskAssetId; delete next.maskSourceAssetId; delete next.mask;
               data.onParametersChange?.(next);
-            }}><X size={12} /></button>
-          </>}
+            }}><X size={12} /></button>}
+          </div>
         </div>
       )}
       <div
@@ -761,7 +781,7 @@ function GenerationNodeBody({
           event.stopPropagation();
           if (!event.nativeEvent.isComposing && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
             event.preventDefault();
-            if (connectionAvailable) (event.shiftKey ? data.onRunDownstream : data.onRun)?.();
+            if (connectionAvailable && !maskProblem) (event.shiftKey ? data.onRunDownstream : data.onRun)?.();
           }
         }}
       >
@@ -813,11 +833,11 @@ function GenerationNodeBody({
           className="node-run-button"
           type="button"
           aria-label={`运行 ${data.label} 节点`}
-          title={connectionAvailable ? (running ? "创建新的独立任务，当前任务继续生成" : "运行") : "当前 API 连接不可用"}
-          disabled={!connectionAvailable}
+          title={maskProblem ?? (connectionAvailable ? (running ? "创建新的独立任务，当前任务继续生成" : "运行") : "当前 API 连接不可用")}
+          disabled={!connectionAvailable || Boolean(maskProblem)}
           onClick={(event) => {
             event.stopPropagation();
-            data.onRun?.();
+            if (connectionAvailable && !maskProblem) data.onRun?.();
           }}
           onPointerDown={commitPromptBeforeRun}
         >
@@ -859,6 +879,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   const generationNode =
     data.nodeType === "image-generation" ||
     data.nodeType === "video-generation";
+  const maskEdit = data.nodeType === "image-generation" && hasImageMask(data.parameters);
+  const hasImageReference = data.nodeType === "image-generation" && Boolean(data.linkedAssets?.some(asset => asset.kind === "image"));
   const generatedResult =
     data.nodeType === "asset-input" && data.generatedResult === true;
   const generatedPrompt = generatedResult
@@ -1144,7 +1166,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                 ? 260
                 : 230
         }
-        minHeight={generatedResult ? 72 : generationNode ? 150 : 140}
+        minHeight={generatedResult ? 72 : maskEdit ? MASK_EDIT_NODE_MIN_HEIGHT : hasImageReference ? IMAGE_REFERENCE_NODE_MIN_HEIGHT : generationNode ? 150 : 140}
         keepAspectRatio={
           generatedResult && !generatedProblem && !generatedCancelled
         }
@@ -1153,6 +1175,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
       <div
         className={`node-card ${selected ? "selected" : ""} ${generatedResult ? "generated-result-node" : ""}`}
         data-node-type={data.nodeType}
+        data-mask-edit={maskEdit || undefined}
+        data-has-image-reference={hasImageReference || undefined}
         data-pending-import={data.pendingImport || undefined}
         data-director-draft={data.directorDraft || undefined}
         data-connection-highlight={data.connectionHighlight}

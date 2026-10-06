@@ -46,6 +46,21 @@ describe("cloud generation transport", () => {
     expect(responses.length).toBeGreaterThan(0);
     for (const item of responses) expect(item.cancel).toHaveBeenCalledOnce();
   });
+  it("retries an unavailable saved response without waiting for its stalled body cancellation", async () => {
+    const unavailable = unreadResponse(503);
+    let responseReads = 0;
+    const cloudFetch = vi.fn<typeof fetch>(async input => {
+      if (String(input).endsWith("/response")) return responseReads++ === 0 ? unavailable.response : output();
+      return Response.json({ state: "complete" });
+    });
+    const result = await runCloudGeneration("recover-saved-response", config,
+      () => fetchProviderJson(vi.fn(), "https://supplier.example.com/v1/images", { method: "POST", body: "{}" }, { phase: "submit", timeoutMs: 1_000 }),
+      { fetch: cloudFetch, delay: async () => {}, checkpoint: async () => {}, resumeOnly: true });
+    expect(result).toHaveProperty("data");
+    expect(unavailable.cancel).toHaveBeenCalledOnce();
+    expect(responseReads).toBe(2);
+    expect(cloudFetch.mock.calls.every(([, init]) => init?.method !== "PUT")).toBe(true);
+  });
   it("does not create a cloud job after cancellation during the initial lookup", async () => {
     const controller = new AbortController();
     const cloudFetch = vi.fn<typeof fetch>(async (_input, init) => {

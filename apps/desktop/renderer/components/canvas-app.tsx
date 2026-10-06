@@ -3,6 +3,9 @@
 import { savedModelAvailabilityError } from "../lib/model-availability";
 import { getImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
 import { modelImageCapabilities } from "../lib/model-image-capabilities";
+import { selectMaskEditModel } from "../lib/mask-edit-model-selection";
+import { retainedImageModelForDisplay } from "../lib/image-model-presentation";
+import { ensureMaskNodeSize, hasImageMask, MASK_EDIT_NODE_MIN_HEIGHT, MASK_EDIT_NODE_DEFAULT_HEIGHT } from "../lib/generation-node-layout";
 import { imageModeParameters, preserveImageMaskParameters } from "../lib/image-editing";
 import { assetDownloadPath } from "../lib/asset-download";
 import { ImageMaskEditor } from "./image-mask-editor";
@@ -849,11 +852,11 @@ function nodeDimensions(node: CanvasNode): { width: number; height: number } {
       positiveDimension(node.measured?.width, node.width, node.style?.width) ??
       300,
     height:
-      positiveDimension(
+      Math.max(node.data.nodeType === "image-generation" && hasImageMask(node.data.parameters) ? MASK_EDIT_NODE_MIN_HEIGHT : 0, positiveDimension(
         node.measured?.height,
         node.height,
         node.style?.height,
-      ) ?? 230,
+      ) ?? 230),
   };
 }
 
@@ -1629,7 +1632,9 @@ function generationInputsEqual(
 
 function ensureGenerationNodeInputs(nodes: CanvasNode[]): CanvasNode[] {
   let changed = false;
-  const next = nodes.map((node) => {
+  const next = nodes.map((original) => {
+    const node = ensureMaskNodeSize(original);
+    if (node !== original) changed = true;
     const nodeType = node.data.nodeType;
     if (nodeType !== "image-generation" && nodeType !== "video-generation")
       return node;
@@ -5047,7 +5052,7 @@ function CanvasShell({
       checkpoint();
       const state = useCanvasStore.getState();
       const next = state.nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...node.data, ...patch } } : node,
+        node.id === id ? ensureMaskNodeSize({ ...node, data: { ...node.data, ...patch } }) : node,
       );
       const nextEdges = filterEdgesToKnownPorts(next, state.edges);
       setNodes(next);
@@ -5249,23 +5254,17 @@ function CanvasShell({
       const original = state.nodes.find(node => node.data.assetId === session.asset.id);
       const preferredId = original?.data.generatedConnectionId;
       const eligible = connections.filter(connection => connectionIsConfigured(connection) && providerConnectionUsage(connection) === "canvas");
-      eligible.sort((a, b) => Number(b.id === preferredId) - Number(a.id === preferredId));
-      const options = eligible.flatMap(connection => modelDescriptorsForConnection(connection)
-        .filter(model => model.operations.includes("image.edit") && model.metadata?.canvasRunnable !== false)
-        .map(model => {
-          const parameters = parametersWithDefaults(parameterDescriptorsFor("image-generation", connection.provider, model));
-          if (model.id === "gpt-image-2-x") parameters.tier = "4k";
-          return { connection, model, parameters, capabilities: getImageEditingCapabilities(connection, model.id, parameters) };
-        }));
-      const choice = options.find(option => option.capabilities.mask) ?? options[0];
+      const choice = selectMaskEditModel(eligible.flatMap(connection => modelDescriptorsForConnection(connection)
+        .map(model => ({ connection, model }))), {
+        connectionId: preferredId, modelId: original?.data.generatedModel, parameters: original?.data.generatedParameters,
+      });
       const parameters = { ...imageModeParameters(choice?.parameters ?? {}, choice?.capabilities.transparent ?? false, "normal"), maskAssetId: maskAsset.id, maskSourceAssetId: session.asset.id };
       const center = reactFlowRef.current?.screenToFlowPosition({ x: window.innerWidth / 2 - 300, y: window.innerHeight / 2 - 110 }) ?? { x: 360, y: 220 };
       const position = closestAvailableVerticalPosition({ id: "mask-edit-placement", position: center, width: 800, height: 0 },
-        { width: 800, height: 250 }, state.nodes.map(node => ({ id: node.id, position: node.position, ...nodeDimensions(node) })));
-      const draft = createImageEditDraft({ asset: session.asset, source: {
-        provider: choice?.connection.provider ?? "fake", connectionId: choice?.connection.id ?? "fake-default",
-        model: choice?.model.id ?? "fake-image-v1", parameters: parameters as Record<string, string | number | boolean>,
-      }, position });
+        { width: 800, height: MASK_EDIT_NODE_DEFAULT_HEIGHT }, state.nodes.map(node => ({ id: node.id, position: node.position, ...nodeDimensions(node) })));
+      const draft = createImageEditDraft({ asset: session.asset, source: choice ? {
+        provider: choice.connection.provider, connectionId: choice.connection.id, model: choice.model.id,
+      } : null, parameters: parameters as Record<string, string | number | boolean>, position });
       const draftNodes = draft.nodes.map(node => node.id === draft.editNodeId ? { ...node, selected: true, data: {
         ...node.data, label: "局部重绘", description: "已保存蒙版，请填写涂抹区域的修改要求", parts: [{ type: "text" as const, text: "" }],
       } } : node);
@@ -5981,6 +5980,8 @@ function CanvasShell({
             )
               return `${node.data.label}：模型 ${node.data.model} 不在当前分组 Key 的最新扫描结果中，已停止本次付费提交`;
           }
+          if (connectionModels.connectionId === connection.id && connectionModels.failed)
+            return `${node.data.label}：模型列表读取失败，请刷新模型后重试`;
           const inventory = connectionModels.connectionId === connection.id &&
             connectionModels.authoritative && !connectionModels.loading
             ? { ...connection.config, modelScanStatus: "live", modelCatalogModels: connectionModels.items }
@@ -7236,8 +7237,9 @@ function CanvasShell({
           node.data.parameters as Readonly<Record<string, unknown>> | undefined,
         ) ?? null;
       const editingConnection = connections.find(connection => connection.id === node.data.connectionId);
-      const imageEditingCapabilities = generationType === "image-generation" && effectiveModel
-        ? modelImageCapabilities(editingConnection, effectiveModel, node.data.parameters)
+      const editingModel = effectiveModel ?? retainedImageModelForDisplay(editingConnection, node.data.model, connectionModels);
+      const imageEditingCapabilities = generationType === "image-generation" && editingModel
+        ? modelImageCapabilities(editingConnection, editingModel, node.data.parameters)
         : { transparent: false, mask: null };
       const linkedAssets = generationType ? directAssetsForNode(node.id) : [];
       const compatibleInputIds =
@@ -7890,6 +7892,7 @@ function CanvasShell({
           items: [],
           authoritative: requiresAuthoritativeScan,
           loading: false,
+          failed: true,
         });
         setModelLoadError({
           connectionId: modelScanConnectionId,
