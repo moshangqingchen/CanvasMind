@@ -22,6 +22,7 @@ import { isChuangxiangVideoConnection, chuangxiangVideoModel, chuangxiangVideoTr
   validateChuangxiangVideoRequest, normalizeChuangxiangVideoParameters, CHUANGXIANG_VIDEO_POLL_INTERVAL_MS } from "./chuangxiang-video-contract.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
   imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
+import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import {
   assertValidResult,
   getProviderTaskId,
@@ -1263,7 +1264,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     request?: NormalizedRequest,
     task?: ProviderTask,
   ): Promise<unknown> {
-    const body = await this.buildBody(definition, request, task);
+    let body = await this.buildBody(definition, request, task);
     const taskId = task ? getProviderTaskId(task) : undefined;
     const headers = this.headers(
       connection,
@@ -1275,6 +1276,8 @@ export class GenericRestAdapter implements ProviderAdapter {
     const bodyMode =
       definition.bodyMode ??
       (method === "GET" || method === "DELETE" ? "none" : "json");
+    const endpoint = this.resolveUrl(connection.baseUrl, definition.path, config, taskId);
+    if (phase === "submit" && request) body = this.transparentSubmitBody(connection, request, endpoint, method, bodyMode, body);
     const maxResponseBytes =
       phase === "submit" || phase === "poll"
         ? imageJsonMaxResponseBytes(config, request?.parameters)
@@ -1311,7 +1314,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       isChuangxiangVideoConnection(imageEditingConnection(connection).config, request?.model ?? frozenModel);
     return fetchProviderJson<unknown>(
       this.fetchImpl,
-      this.resolveUrl(connection.baseUrl, definition.path, config, taskId),
+      endpoint,
       {
         method,
         headers,
@@ -1328,6 +1331,23 @@ export class GenericRestAdapter implements ProviderAdapter {
         ...(cloudPolling ? { cloudPolling } : {}),
       },
     );
+  }
+
+  /** Keep the saved submit/poll/output contract; extend only its exact verified JSON body. */
+  private transparentSubmitBody(connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>,
+    request: NormalizedRequest, endpoint: string, method: string, bodyMode: string, body: BodyInit | undefined): BodyInit | undefined {
+    if (request.operation !== "image.generate" || request.parameters?.background !== "transparent") return body;
+    const source = imageEditingConnection(connection);
+    const evidence = verifiedTransparentImageEvidence(source, request.model ?? "", request.parameters);
+    // Dedicated adapters (for example PDog async) retain their own measured transport.
+    if (!evidence || evidence.transport.kind !== "saved-rest") return body;
+    const verifiedEndpoint = verifiedTransparentImageJsonEndpoint(source, request.model ?? "", request.parameters, evidence, "saved-rest");
+    if (!verifiedEndpoint || endpoint !== verifiedEndpoint || method !== "POST" || bodyMode !== "json" || typeof body !== "string")
+      throw new Error("已配置的 REST 提交端点或传输与透明证据不一致，当前生成尚未提交");
+    const value: unknown = JSON.parse(body);
+    if (!isRecord(value) || value.model !== evidence.model)
+      throw new Error("已配置的 REST 请求型号与透明证据不一致，当前生成尚未提交");
+    return JSON.stringify({ ...value, background: "transparent", output_format: "png" });
   }
 
   public async testConnection(connectionId: string): Promise<void> {
@@ -1588,7 +1608,10 @@ export class GenericRestAdapter implements ProviderAdapter {
       }
       // Build the request during preflight so unsafe paths and missing mappings
       // fail before a paid endpoint is called.
-      await this.buildBody(config.submit, request, undefined);
+      const body = await this.buildBody(config.submit, request, undefined);
+      const method = config.submit.method ?? (body === undefined ? "GET" : "POST");
+      const bodyMode = config.submit.bodyMode ?? (method === "GET" || method === "DELETE" ? "none" : "json");
+      this.transparentSubmitBody(connection, request, this.resolveUrl(connection.baseUrl, config.submit.path, config), method, bodyMode, body);
     } catch (error) {
       issues.push({
         path: "connection",

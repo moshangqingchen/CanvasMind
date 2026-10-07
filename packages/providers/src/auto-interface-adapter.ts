@@ -6,7 +6,7 @@ import { isPdogImageConnection, PdogImageAdapter } from "./pdog-image.js";
 import { isChuangxiangImageConnection, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { imageEditingConnection, imageEditingRequestIssues, usesDeclaredImagesEditingRoute } from "./image-editing-capabilities.js";
 import { assertValidResult } from "./contracts.js";
-import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
+import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import { isCangyuanMusicRequest } from "./cangyuan-music.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
@@ -80,8 +80,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
           (Array.isArray(ids) && !ids.includes(request.model)))
         throw new Error("当前分组没有此图片型号的可用权限或完整接口");
       if (transparentEvidence && request.parameters?.background === "transparent" &&
-          (transparentEvidence.transport.kind !== "openai-images" ||
-           transparentEvidence.transport.path !== "/v1/images/generations" || transparentEvidence.transport.bodyMode !== "json"))
+          !verifiedTransparentImageJsonEndpoint(source, request.model, request.parameters, transparentEvidence, "openai-images"))
         throw new Error("此已验证透明接口需要对应的专用传输配置，不能切换为通用图片接口");
       return this.fallback;
     }

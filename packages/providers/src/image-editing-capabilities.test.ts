@@ -65,9 +65,39 @@ describe("exact image editing capabilities", () => {
     expect(imageEditingRequestIssues(source, { ...edit, operation: "image.generate" })).toContainEqual(expect.objectContaining({ code: "mask_requires_edit" }));
     expect(imageEditingRequestIssues(source, { ...edit, assets: [original, { ...mask, mimeType: "image/jpeg" }] })).toContainEqual(expect.objectContaining({ code: "invalid_mask" }));
   });
+
+  it("does not extend measured transparent generation to reference editing without an existing editing contract", () => {
+    const transparentEdit = { ...edit, assets: [original], parameters: { background: "transparent", output_format: "png" } };
+    for (const source of [
+      connection("asian-acc.we-token.cc", "生图-openai-codex-token计费", "weai"),
+      connection("api.3365api.cn", "image-2稳定生图", "rest"),
+    ]) {
+      expect(getImageEditingCapabilities(source, "gpt-image-2").transparent).toBe(true);
+      expect(imageEditingRequestIssues(source, transparentEdit)).toContainEqual(expect.objectContaining({
+        code: "unverified_transparent_edit", message: "此线路仅验证透明文生图；参考图/编辑透明尚未验证。",
+      }));
+      expect(imageEditingRequestIssues(source, { ...transparentEdit, operation: "image.generate", assets: [] })).toEqual([]);
+    }
+    expect(imageEditingRequestIssues(connection("tu.988236.xyz", "image2.5全参"),
+      { ...transparentEdit, model: "gpt-image-2.5-flare" })).toEqual([]);
+    expect(imageEditingRequestIssues(connection("token.secure-skill.com"), transparentEdit)).toEqual([]);
+  });
 });
 
 describe("actual transparent and mask transport", () => {
+  it.each([
+    ["asian-acc.we-token.cc", "生图-openai-codex-token计费", "weai"],
+    ["api.3365api.cn", "image-2稳定生图", "rest"],
+  ])("rejects unverified transparent edits before any request on %s/%s", async (host, group, provider) => {
+    const connector: RestConnectorConfig = { submit: { path: "/v1/images/generations", method: "POST", bodyMode: "json",
+      template: { model: "gpt-image-2" }, mappings: [{ target: "/prompt", source: { kind: "request", path: "$.prompt" } }] },
+      output: { path: "$.data", kind: "image", urlPath: "$.url" } };
+    const f = fixture(host, group, provider, { connector });
+    await expect(f.adapter.submit({ ...edit, assets: [original], parameters: { background: "transparent", output_format: "png" } }))
+      .rejects.toThrow(/仅验证透明文生图/u);
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["token.secure-skill.com", "default", "gpt-image-2"],
     ["tu.988236.xyz", "image2.5全参", "gpt-image-2.5-flare"],
@@ -79,8 +109,7 @@ describe("actual transparent and mask transport", () => {
     expect(f.fetch).toHaveBeenCalledOnce();
     const body = JSON.parse(String(f.fetch.mock.calls[0]![1]?.body));
     expect(body.background).toBe("transparent");
-    // Secure Skill documents intrinsic RGBA PNG, not an output_format field.
-    if (host !== "token.secure-skill.com") expect(body.output_format).toBe("png");
+    expect(body.output_format).toBe("png");
     f.fetch.mockClear();
     await f.adapter.submit({ ...request, model, parameters: { background: "opaque" } });
     expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).background).toBe("opaque");

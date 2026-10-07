@@ -1,5 +1,5 @@
 import type { NormalizedRequest, ProviderAssetInput, ResolvedProviderConnection, ValidationIssue } from "./contracts.js";
-import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
+import { failedTransparentImageEvidence, verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
 
 export interface ImageEditingConnection {
   provider: string;
@@ -48,7 +48,8 @@ function declaredImageEditingCapabilities(connection: ImageEditingConnection, mo
 export function getImageEditingCapabilities(connection: ImageEditingConnection, modelId: string,
   parameters: Readonly<Record<string, unknown>> = {}): ImageEditingCapabilities {
   const declared = declaredImageEditingCapabilities(connection, modelId, parameters);
-  return { ...declared, transparent: declared.transparent || Boolean(verifiedTransparentImageEvidence(connection, modelId, parameters)) };
+  return { ...declared, transparent: !failedTransparentImageEvidence(connection, modelId, parameters) &&
+    (declared.transparent || Boolean(verifiedTransparentImageEvidence(connection, modelId, parameters))) };
 }
 
 /** Preserve existing normal/mask routing when a declared contract gains live proof. */
@@ -75,7 +76,15 @@ export function imageEditingRequestIssues(connection: ImageEditingConnection, re
   const issues: ValidationIssue[] = [];
   const add = (path: string, code: string, message: string) => issues.push({ path, code, message });
   if (request.parameters?.background === "transparent") {
-    if (!capabilities.transparent) add("parameters.background", "unsupported_background", "当前供应商分组和型号未确认支持透明背景，请选择普通模式。");
+    if (!capabilities.transparent) {
+      const failed = failedTransparentImageEvidence(connection, request.model ?? "", request.parameters);
+      add("parameters.background", failed ? "transparent_test_failed" : "unsupported_background", failed
+        ? "此线路的透明背景实测未通过，请使用普通模式。"
+        : "当前供应商分组和型号未确认支持透明背景，请选择普通模式。");
+    }
+    else if (request.operation === "image.edit" &&
+      !declaredImageEditingCapabilities(connection, request.model ?? "", request.parameters).transparent)
+      add("parameters.background", "unverified_transparent_edit", "此线路仅验证透明文生图；参考图/编辑透明尚未验证。");
     const format = request.parameters.output_format;
     if (format !== undefined && format !== "png" && format !== "auto")
       add("parameters.output_format", "transparent_requires_png", "透明模式必须使用 PNG 输出。");
@@ -113,7 +122,9 @@ export function imageEditingRequestIssues(connection: ImageEditingConnection, re
 export function normalizeImageEditingParameters(connection: ImageEditingConnection, model: string,
   parameters: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
   const result = { ...parameters };
-  if (getImageEditingCapabilities(connection, model, parameters).transparent) {
+  // A failed transparency test does not change declared normal-mode fields or routing.
+  if (getImageEditingCapabilities(connection, model, parameters).transparent ||
+    declaredImageEditingCapabilities(connection, model, parameters).transparent) {
     result.background = result.background === "transparent" ? "transparent" : "opaque";
     if (result.background === "transparent") result.output_format = "png";
   } else if (result.background === "opaque" || result.background === "auto") delete result.background;

@@ -6,10 +6,10 @@ import type { NormalizedRequest, ProviderTask } from "./contracts.js";
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const pending = () => response({ code: "success", data: { task_id: "img-test", status: "PENDING" } });
-const makeAdapter = (fetcher: typeof fetch, baseUrl = "https://token.secure-skill.com/v1") =>
+const makeAdapter = (fetcher: typeof fetch, baseUrl = "https://token.secure-skill.com/v1", settings: Readonly<Record<string, unknown>> = {}) =>
   createDefaultProviderRegistry(new StaticConnectionResolver([{
     id: "secure", provider: "openai", baseUrl, apiKey: "test-key",
-    settings: { defaultModel: "gpt-image-2.5-flare", supplierKey: "custom-supplier-id" },
+    settings: { defaultModel: "gpt-image-2.5-flare", supplierKey: "custom-supplier-id", ...settings },
   }]), { fetch: fetcher }).get("openai");
 const request: NormalizedRequest = {
   connectionId: "secure", model: "gpt-image-2.5-flare", operation: "image.edit", prompt: "Keep the reference subject",
@@ -38,6 +38,32 @@ describe("Secure Skill GPT Images protocol", () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pending());
     await makeAdapter(fetcher, "https://token.secure-skill.com").submit({ ...request, model: undefined, operation: "image.generate", assets: [], parameters: { size: "auto", quality: "auto" } });
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ model: "gpt-image-2.5-flare", prompt: request.prompt, response_format: "url" });
+  });
+
+  it("preserves the measured PNG parameter on native gpt-image-2 transparent generation", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pending());
+    const task = await makeAdapter(fetcher, "https://token.secure-skill.com", {
+      defaultModel: "gpt-image-2", modelGroup: "image-2-1k", accountKeyGroup: "image-2-1k",
+    }).submit({ ...request, model: "gpt-image-2", operation: "image.generate", assets: [],
+      parameters: { size: "1024x1024", quality: "high", n: 1, background: "transparent", output_format: "png" } });
+    expect(task).toMatchObject({ providerTaskId: "img-test", status: "queued", result: { secureSkillImage: true } });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]![0]).toBe("https://token.secure-skill.com/v1/images/async/generations");
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ response_format: "url", model: "gpt-image-2",
+      prompt: request.prompt, size: "1024x1024", quality: "high", background: "transparent", n: 1, output_format: "png" });
+  });
+
+  it.each(["image.generate", "image.edit"] as const)("keeps PNG transmission scoped away from ordinary or reference %s requests", async operation => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pending());
+    const background = operation === "image.edit" ? "transparent" : "opaque";
+    await makeAdapter(fetcher).submit({ ...request, model: "gpt-image-2", operation,
+      assets: operation === "image.edit" ? request.assets : [],
+      parameters: { size: "1024x1024", quality: "high", n: 1, background, output_format: "png" } });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]![0]).toBe("https://token.secure-skill.com/v1/images/async/generations");
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ response_format: "url", model: "gpt-image-2",
+      prompt: request.prompt, size: "1024x1024", quality: "high", background, n: 1,
+      ...(operation === "image.edit" ? { image: ["https://assets.example.com/reference.png"] } : {}) });
   });
 
   it.each([

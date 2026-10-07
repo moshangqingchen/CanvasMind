@@ -35,6 +35,14 @@ const CONNECTOR: RestConnectorConfig = {
         target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` },
         omitIfUndefined: true, omitValues: ["auto"],
       })),
+      // Case 059's native transparent generation was measured with PNG output.
+      // Preserve that parameter without extending ordinary or reference requests.
+      { target: "/output_format", source: { kind: "request", path: "$.parameters.output_format" },
+        when: [
+          { path: "$.operation", values: ["image.generate"] },
+          { path: "$.model", values: ["gpt-image-2"] },
+          { path: "$.parameters.background", values: ["transparent"] },
+        ], omitIfUndefined: true },
       { target: "/image", source: { kind: "assets", assetKind: "image", select: "all" }, omitIfEmpty: true },
     ],
     response: { taskIdPath: "$.data.task_id", statusPath: "$.data.status", errorPath: "$.data.error.message", errorFallbackPaths: ["$.message"] },

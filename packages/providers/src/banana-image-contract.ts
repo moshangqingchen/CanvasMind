@@ -5,6 +5,7 @@ export type BananaRoute = { kind: "native" | "chuangxiang" | "secure-async"; aut
 export const GEMINI_NANO_BANANA_21_MODEL = "gemini-nano-banana-2.1";
 const RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
 const EXTENDED_RATIOS = [...RATIOS, "1:8", "8:1", "1:4", "4:1"];
+const SECURE_NANO_21_GROUPS = new Set(["banana-全系列", "banana-pro统一价格"]);
 const imageModel = (id: string) => id === GEMINI_NANO_BANANA_21_MODEL || /^(?:gemini-[\w.-]*image[\w.-]*|(?:N )?nano-banana[\w.-]*)$/iu.test(id);
 
 /** Supplier documentation is scoped by origin and model; GPT never enters this path. */
@@ -39,7 +40,12 @@ export function bananaImageRoute(connection: Connection, model: string): BananaR
       ...(!["gemini-3-pro-image", "gemini-3.1-flash-image-preview"].includes(model)
         ? { unavailableReason: "PDog 香蕉文档仅声明 gemini-3-pro-image 和 gemini-3.1-flash-image-preview；请使用当前分组确认的型号" } : {}) };
   if (url.hostname === "token.secure-skill.com")
-    return { ...native("https://token.secure-skill.com/docs", "google", 16), ratios: RATIOS,
+    return { ...native("https://token.secure-skill.com/docs", "google", 16),
+      // The deployed official DocsView-B-l46QTb.js explicitly adds these four
+      // ratios for the exact 2.1 ID. Preserve every other saved group/model route.
+      ratios: model === GEMINI_NANO_BANANA_21_MODEL &&
+        SECURE_NANO_21_GROUPS.has(String(connection.config.accountKeyGroup ?? connection.config.modelGroup))
+        ? EXTENDED_RATIOS : RATIOS,
       asyncTextGeneration: ["nano-banana-pro", "nano-banana-2", "nano-banana-2-lite", "gemini-3-pro-image-preview", "gemini-3.0-pro-image", "gemini-3.1-flash-image"].includes(model),
       sizes: /lite/iu.test(model) ? ["1K"] : ["1K", "2K", "4K"] };
   if ((url.hostname === "we-token.cc" || url.hostname.endsWith(".we-token.cc")) &&

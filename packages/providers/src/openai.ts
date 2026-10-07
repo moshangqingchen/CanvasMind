@@ -22,7 +22,7 @@ import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection,
 import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
   imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
-import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
+import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
@@ -3512,7 +3512,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const connection = await this.connections.resolve(request.connectionId);
     const apiKey = requireApiKey(connection);
     const supplierKey = configuredSupplierKey(connection);
-    let baseUrl = configuredBaseUrl(
+    const baseUrl = configuredBaseUrl(
       connection,
       this.defaultBaseUrl,
       this.profile,
@@ -3524,12 +3524,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     if (native) return native.submit({ ...request, model: selectedModel });
     const transparentEvidence = request.operation === "image.generate" && request.parameters?.background === "transparent"
       ? verifiedTransparentImageEvidence(imageEditingConnection(connection), selectedModel, request.parameters) : undefined;
-    // A measured connection accepts both the official root and /v1 in settings.
-    // Pin only its transparent generation to the tested Images contract.
-    if (transparentEvidence?.transport.kind === "openai-images" &&
-        transparentEvidence.transport.path === "/v1/images/generations" &&
-        transparentEvidence.transport.method === "POST" && transparentEvidence.transport.bodyMode === "json")
-      baseUrl = `${new URL(baseUrl).origin}/v1`;
+    // Pin only transparent generation to the exact measured Images path.
+    const transparentEndpoint = verifiedTransparentImageJsonEndpoint(imageEditingConnection(connection), selectedModel,
+      request.parameters ?? {}, transparentEvidence, "openai-images");
+    if (transparentEvidence?.transport.kind === "openai-images" && !transparentEndpoint)
+      throw new Error("此透明证据的图片提交路径未受支持，当前生成尚未提交");
     if (this.profile === "openai" && isPdogImageConnection({ ...connection.settings, baseUrl }, selectedModel)) {
       const adapter = connection.settings?.pdogImageMode === "sync" ? new PdogImageAdapter(this.connections, { fetch: this.fetchImpl }, "sync") : this.pdog;
       return adapter.submit({ ...request, model: selectedModel });
@@ -3566,6 +3565,9 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const imageRequestParameters = {
       ...imageParameters(effectiveParameters, model, this.profile, modelGroup, supplierKey, baseUrl, tk1688Model),
       ...(forceWeAIUrlOutput ? { response_format: "url" } : {}),
+      // Exact live proof can extend a conservative group allowlist for transparent generation.
+      // Keep normal requests on their existing parameter contract.
+      ...(transparentEvidence ? { background: "transparent", output_format: "png" } : {}),
     };
     const geminiProtocol = useGemini
       ? configuredGeminiProtocol(connection)
@@ -3614,7 +3616,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         commonHeaders.set("content-type", "application/json");
         response = await fetchProviderJson<OpenAIImageResponse>(
           this.fetchImpl,
-          joinUrl(baseUrl, "/images/generations"),
+          transparentEndpoint ?? joinUrl(baseUrl, "/images/generations"),
           {
             method: "POST",
             headers: commonHeaders,
@@ -3896,7 +3898,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       commonHeaders.set("content-type", "application/json");
       response = await fetchProviderJson<OpenAIImageResponse>(
         submitFetch,
-        joinUrl(baseUrl, "/images/generations"),
+        transparentEndpoint ?? joinUrl(baseUrl, "/images/generations"),
         {
           method: "POST",
           headers: commonHeaders,

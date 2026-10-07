@@ -53,6 +53,53 @@ describe("supplier banana image protocols", () => {
     expect(JSON.parse(String(init?.body)).contents[0].parts[1]).toEqual({ inlineData: { mimeType: "image/png", data: png } });
   });
 
+  it.each(["banana-全系列", "banana-pro统一价格"].flatMap(group =>
+    ["4:1", "1:4", "8:1", "1:8"].map(ratio => [group, ratio]),
+  ))("preserves Secure Skill nano2.1's documented %s / %s ratio in controls and native requests", async (group, ratio) => {
+    const selected = "gemini-nano-banana-2.1";
+    const f = fixture("https://token.secure-skill.com/v1", { model: selected, group });
+    const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config },
+      { id: selected, name: selected, operations: ["image.generate"] });
+    expect(descriptor.parameters?.find(parameter => parameter.key === "aspect_ratio")?.options?.map(option => option.value)).toContain(ratio);
+    expect(descriptor.limits?.maxInputImages).toBe(16);
+    const task = await f.adapter.submit({ ...request, model: selected, parameters: { image_size: "2K", aspect_ratio: ratio } });
+    const [url, init] = f.fetch.mock.calls[0]!;
+    expect(String(url)).toBe(`https://token.secure-skill.com/v1beta/models/${selected}:generateContent`);
+    expect(new Headers(init?.headers).get("x-goog-api-key")).toBe("fixture-key");
+    expect(JSON.parse(String(init?.body)).generationConfig.imageConfig).toEqual({ aspectRatio: ratio, imageSize: "2K" });
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(await f.adapter.extractOutputs(task.result)).toHaveLength(1);
+  });
+
+  it("keeps Secure Skill nano2.1's sixteen-reference contract and rejects a seventeenth before submission", async () => {
+    const selected = "gemini-nano-banana-2.1";
+    const f = fixture("https://token.secure-skill.com/v1", { model: selected, group: "banana-全系列" });
+    const assets = Array.from({ length: 16 }, (_, index) => ({ id: `ref-${index}`, kind: "image" as const, mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }));
+    await f.adapter.submit({ ...request, model: selected, operation: "image.edit", assets, parameters: { image_size: "4K", aspect_ratio: "1:8" } });
+    const body = JSON.parse(String(f.fetch.mock.calls[0]![1]?.body));
+    expect(body.contents[0].parts).toHaveLength(17);
+    expect(body.contents[0].parts.slice(1).every((part: { inlineData?: unknown }) => Boolean(part.inlineData))).toBe(true);
+    expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: "1:8", imageSize: "4K" });
+    f.fetch.mockClear();
+    await expect(f.adapter.submit({ ...request, model: selected, operation: "image.edit", assets: [...assets, { ...assets[0]!, id: "ref-17" }] })).rejects.toThrow();
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not expand other Secure Skill groups/models or Genimage nano2.1 ratios", () => {
+    for (const [baseUrl, group, selected] of [
+      ["https://token.secure-skill.com/v1", "banana-全系列", model],
+      ["https://token.secure-skill.com/v1", "banana-pro统一价格", "gemini-3.1-flash-image"],
+      ["https://token.secure-skill.com/v1", "unrelated-group", "gemini-nano-banana-2.1"],
+      ["https://genimage.pro/v1", "default", "gemini-nano-banana-2.1"],
+      ["https://genimage.pro/v1", "geminiResponseUrl", "gemini-nano-banana-2.1"],
+    ]) {
+      const route = bananaImageRoute({ provider: "openai", config: { baseUrl, modelGroup: group } }, selected!)!;
+      for (const ratio of ["4:1", "1:4", "8:1", "1:8"]) expect(route.ratios).not.toContain(ratio);
+    }
+    const route = bananaImageRoute({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com/v1", modelGroup: "different", accountKeyGroup: "banana-pro统一价格" } }, "gemini-nano-banana-2.1")!;
+    expect(normalizeBananaParameters(route, { image_size: "4K", aspect_ratio: "4:1" }).aspect_ratio).toBe("4:1");
+  });
+
   it("persists Secure Skill's async generation ID and resumes querying without another POST", async () => {
     let queries = 0;
     const f = fixture("https://token.secure-skill.com/v1", { group: "banana-全系列", fetch: async (_url, init) => {
