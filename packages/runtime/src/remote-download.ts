@@ -14,6 +14,52 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_BYTES = 256 * 1024 * 1024;
 const DEFAULT_MAX_REDIRECTS = 3;
 
+const PROXY_CONNECTION_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EPIPE",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+function isProxyConnectionError(
+  error: unknown,
+  seen = new Set<object>(),
+  depth = 0,
+): boolean {
+  if (!error || typeof error !== "object" || depth >= 8 || seen.has(error))
+    return false;
+  seen.add(error);
+  const candidate = error as {
+    code?: unknown;
+    cause?: unknown;
+    errors?: unknown;
+  };
+  if (
+    typeof candidate.code === "string" &&
+    !PROXY_CONNECTION_ERROR_CODES.has(candidate.code)
+  )
+    return false;
+  const causes = [
+    ...(candidate.cause !== undefined ? [candidate.cause] : []),
+    ...(Array.isArray(candidate.errors) ? candidate.errors : []),
+  ];
+  // Fetch wraps socket errors in TypeError; multi-address connects may wrap
+  // them in AggregateError. Every cause must be a known connection failure.
+  // Never use a generic message to bypass configuration or TLS failures.
+  return causes.length > 0
+    ? causes.every((cause) =>
+        isProxyConnectionError(cause, new Set(seen), depth + 1),
+      )
+    : typeof candidate.code === "string" &&
+        PROXY_CONNECTION_ERROR_CODES.has(candidate.code);
+}
+
 export interface ResolvedAddress {
   address: string;
   family: number;
@@ -97,7 +143,8 @@ function ipv4IsPublic(address: string): boolean {
   if (a === 172 && b >= 16 && b <= 31) return false;
   if (a === 192 && (b === 0 || b === 168)) return false;
   if (a === 192 && b === 88 && c === 99) return false;
-  if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return false;
+  if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100)))
+    return false;
   if (a === 203 && b === 0 && c === 113) return false;
   if (a >= 224) return false;
   return true;
@@ -112,7 +159,10 @@ export function isPublicNetworkAddress(address: string): boolean {
   // bytes or hexadecimal words. Apply the IPv4 policy to both consistently.
   let normalized: string;
   try {
-    normalized = new URL(`http://[${address}]`).hostname.replace(/^\[|\]$/gu, "");
+    normalized = new URL(`http://[${address}]`).hostname.replace(
+      /^\[|\]$/gu,
+      "",
+    );
   } catch {
     // Scoped/link-local addresses cannot be remote artifact destinations.
     return false;
@@ -125,7 +175,8 @@ export function isPublicNetworkAddress(address: string): boolean {
   }
   const [firstSegment, secondSegment] = normalized.split(":", 2);
   const first = Number.parseInt(firstSegment ?? "", 16);
-  if (first === 0x2001 && Number.parseInt(secondSegment ?? "", 16) === 0xdb8) return false;
+  if (first === 0x2001 && Number.parseInt(secondSegment ?? "", 16) === 0xdb8)
+    return false;
   if (!firstSegment) return false;
   return first >= 0x2000 && first <= 0x3fff;
 }
@@ -431,6 +482,9 @@ export async function consumeRemoteArtifact<T>(
           AbortSignal.any([signal, AbortSignal.timeout(6_000)]),
         )
       ).map((address) => ({ address, family: 4 })));
+  let useConfiguredProxy =
+    options.transport === undefined &&
+    hasProviderHttpProxy(process.env.ARTIFACT_HTTP_PROXY);
   const transport = options.transport
     ? async (
         ...args: Parameters<RemoteDownloadTransport>
@@ -438,9 +492,22 @@ export async function consumeRemoteArtifact<T>(
         const response = await options.transport!(...args);
         return { ...response, chunks: singleChunk(response.bytes), close() {} };
       }
-    : hasProviderHttpProxy(process.env.ARTIFACT_HTTP_PROXY)
-      ? requestThroughProviderProxy
-      : requestPinned;
+    : async (
+        ...args: Parameters<typeof requestPinned>
+      ): Promise<RemoteStreamResponse> => {
+        if (useConfiguredProxy) {
+          try {
+            return await requestThroughProviderProxy(...args);
+          } catch (error) {
+            if (args[2].aborted || !isProxyConnectionError(error)) throw error;
+            // Only retry this read-only artifact request before a response
+            // reaches the consumer. Reuse the validated destination and total
+            // deadline, then keep system routing for this download's redirects.
+            useConfiguredProxy = false;
+          }
+        }
+        return requestPinned(...args);
+      };
   let current = parseRemoteUrl(value);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
