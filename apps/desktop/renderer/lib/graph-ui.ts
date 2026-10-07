@@ -5,7 +5,7 @@ import type {
   ProviderOperation,
 } from "@super-canvas/providers";
 
-export type GenerationNodeType = "image-generation" | "video-generation";
+export type GenerationNodeType = "image-generation" | "video-generation" | "music-generation";
 export type AutoConnectNodeType = GenerationNodeType | "preview";
 
 export interface AutoConnectionOption {
@@ -20,6 +20,8 @@ interface AutoConnectionCandidate extends AutoConnectionOption {
 }
 
 const autoConnectionCandidates: readonly AutoConnectionCandidate[] = [
+  { nodeType: "music-generation", targetHandle: "prompt", targetKind: "text", sourceKinds: ["text"], label: "音乐生成" },
+  { nodeType: "preview", targetHandle: "audio", targetKind: "audio[]", sourceKinds: ["audio", "audio[]"], label: "结果预览" },
   {
     nodeType: "image-generation",
     targetHandle: "prompt",
@@ -116,6 +118,7 @@ const providerOperations: Readonly<
   Record<string, readonly ProviderOperation[]>
 > = {
   fake: [
+    "music.generate",
     "image.generate",
     "image.edit",
     "video.generate",
@@ -126,6 +129,7 @@ const providerOperations: Readonly<
   runway: ["video.generate", "video.image-to-video"],
   // A REST connector declares its operation in its model/configuration.
   rest: [
+    "music.generate",
     "image.generate",
     "image.edit",
     "video.generate",
@@ -139,7 +143,7 @@ function operationsForNodeType(
 ): readonly ProviderOperation[] {
   return nodeType === "image-generation"
     ? ["image.generate", "image.edit"]
-    : ["video.generate", "video.image-to-video"];
+    : nodeType === "music-generation" ? ["music.generate"] : ["video.generate", "video.image-to-video"];
 }
 
 export function providerSupportsNodeType(
@@ -166,15 +170,16 @@ export function modelSupportsNodeType(
   // Use output capability, never reference-image inputs, to classify a model.
   const modality =
     model.metadata?.catalogCapability ?? model.metadata?.modality;
+  if (modality === "music" || modality === "audio") return nodeType === "music-generation";
   if (modality === "video" || modality === "image")
     return nodeType === `${modality}-generation`;
   if (modality === "chat" || modality === "text") return false;
   const outputs =
-    model.outputKinds?.filter((kind) => kind === "image" || kind === "video") ??
+    model.outputKinds?.map(kind => kind.replace(/\[\]$/u, "")).filter((kind) => kind === "image" || kind === "video" || kind === "audio") ??
     [];
   if (outputs.length)
     return outputs.includes(
-      nodeType === "image-generation" ? "image" : "video",
+      nodeType === "image-generation" ? "image" : nodeType === "music-generation" ? "audio" : "video",
     );
   const required = operationsForNodeType(nodeType);
   if (model.operations.length === 0) {
@@ -198,6 +203,7 @@ export function connectionSupportsNodeType(
   if (Array.isArray(connection.config.modelCatalogModels)) return false;
   const connector = connection.config.connector as { output?: { kind?: string } } | undefined;
   const output = connector?.output?.kind;
+  if (output === "audio") return nodeType === "music-generation";
   if (output === "image" || output === "video") return nodeType === `${output}-generation`;
   // An unread generic REST connection must not appear in both selectors.
   return connection.provider !== "rest" && connection.provider !== "cli" && providerSupportsNodeType(connection.provider, nodeType);

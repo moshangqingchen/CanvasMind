@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { clickBlankCanvas } from "./canvas-test-actions";
 
 async function chooseOpenNativeOption(
   page: Page,
@@ -101,7 +102,8 @@ for (const zoom of [0.4, 1, 1.74])
         title: "供应商鼠标回归",
         graph: {
           schemaVersion: 1,
-          viewport: { x: 0, y: 0, zoom },
+          // Keep the 40% panel exposed to real pointer input beside the floating rail.
+          viewport: { x: zoom < 0.5 ? 140 : 0, y: 0, zoom },
           edges: [],
           nodes: [
             {
@@ -137,11 +139,22 @@ for (const zoom of [0.4, 1, 1.74])
     await page
       .getByRole("button", { name: "打开 选择测试 模型与参数", exact: true })
       .click();
+    if (zoom < 0.5) {
+      await expect(page.locator(".canvas-zoom-value")).toHaveText("40%");
+      const panel = page.getByRole("dialog", { name: "选择测试 模型与参数", exact: true });
+      await expect.poll(async () => {
+        const [box, rail, pane] = await Promise.all([
+          panel.boundingBox(), page.getByRole("navigation", { name: "创作工具", exact: true }).boundingBox(),
+          page.locator(".react-flow__pane").boundingBox(),
+        ]);
+        return Boolean(box && rail && pane && box.x >= rail.x + rail.width + 16 &&
+          box.y >= pane.y && box.x + box.width <= pane.x + pane.width &&
+          box.y + box.height <= pane.y + pane.height);
+      }, { message: "40% 参数面板应位于可见画布内，避开创作轨栏" }).toBe(true);
+    }
     // The popover remains open after clearing canvas selection. Opening a field
     // must not reselect its node or open the inspector over the native popup.
-    await page
-      .locator(".react-flow__pane")
-      .click({ position: { x: 15, y: 90 } });
+    await clickBlankCanvas(page);
     await expect(
       page.locator('.react-flow__node[data-id="source"]'),
     ).not.toHaveClass(/selected/);

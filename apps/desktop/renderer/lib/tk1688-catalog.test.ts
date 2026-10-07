@@ -11,6 +11,33 @@ const sku = (alias: string, description: string, extra = {}) => ({ base_model: b
 const market = (...items: unknown[]) => ({ success: true, data: { items, total: items.length } });
 
 describe("词元 inventory permission join", () => {
+  it("syncs the new text merchants only through the current Key, account and online market intersection", () => {
+    const families = ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"];
+    const products = [
+      ...["grok-4.5", "grok-4.6", "grok-4.7"].map(base_model => ({ base_model, alias: `${base_model}@s1c359` })),
+      ...["s1c360", "s1c361"].flatMap(channel => families.map(base_model => ({ base_model, alias: `${base_model}@${channel}` }))),
+    ].map(row => ({ ...row, charge_type: "per_token", status: "active", channel_alive: true,
+      input_price_usd: 0.104506, output_price_usd: 0.52253 }));
+    const keys: ModelDescriptor[] = [...families, "grok-4.5", "grok-4.6", "grok-4.7", "gpt-5.4"].map(id => ({
+      id, name: id, provider: "openai", operations: [], inputKinds: ["text"], outputKinds: ["text"],
+    }));
+    const allAliases = products.map(product => product.alias);
+    const status = { success: true, data: { payment_fx_rate_cny_per_usd: 6.8896, platform_markup_percent: 20 } };
+    const merged = mergeTk1688ModelInventory(keys, market(...products), status, { accountModelIds: allAliases });
+    expect(merged.filter(model => /@s1c(?:359|360|361)$/u.test(model.id))).toHaveLength(15);
+    expect(merged.find(model => model.id === "gpt-5.4")?.outputKinds).toEqual(["text"]);
+    expect(merged.find(model => model.id === "gpt-6.1-sol@s1c361")?.pricing).toMatchObject({
+      kind: "token", currency: "CNY", inputPerMillion: 0.7200045376,
+    });
+    const narrowed = mergeTk1688ModelInventory(keys.filter(model => model.id !== "grok-4.7"),
+      market(...products.map(product => product.alias === "gpt-5.5@s1c360" ? { ...product, channel_alive: false } : product)),
+      status, { accountModelIds: allAliases.filter(id => id !== "gpt-6-astra@s1c361") });
+    expect(narrowed.filter(model => /@s1c(?:359|360|361)$/u.test(model.id))).toHaveLength(12);
+    expect(narrowed.map(model => model.id)).not.toContain("grok-4.7@s1c359");
+    expect(narrowed.map(model => model.id)).not.toContain("gpt-5.5@s1c360");
+    expect(narrowed.map(model => model.id)).not.toContain("gpt-6-astra@s1c361");
+    expect(mergeTk1688ModelInventory(keys, market(...products), status).some(model => model.id.includes("@"))).toBe(false);
+  });
   it("retains an agent's live text default despite the directory marking it unavailable on the canvas", () => {
     const text: ModelDescriptor = { id: "gpt-6.1-sol", name: "GPT", operations: [], outputKinds: ["text"],
       metadata: { canvasRunnable: false, outputKindsSource: "declared" } };

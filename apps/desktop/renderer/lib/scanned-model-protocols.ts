@@ -6,10 +6,13 @@ import {
   type RestRequestDefinition,
   cangyuanCurrentModel,
   canApplyCangyuanCurrentContract,
+  cangyuanMusicModel,
+  isCangyuanMusicRequest,
 } from "@super-canvas/providers";
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
+import { applyChuangxiangCurrentVideoCapabilities } from "@super-canvas/providers/chuangxiang-video-contract";
 import { mikotoGroup } from "./mikoto-presets";
 import { chentuFallbackImageDescriptor } from "./chentu-catalog";
 import { supplierKeyForConnection } from "./supplier-identity";
@@ -137,7 +140,8 @@ function bindExistingModelProtocols(
           model.id,
           String(connection.config.modelGroup ?? ""),
         );
-        if (!descriptor || descriptor.metadata?.protocol !== "openai-images") return model;
+        const nativeGemini = model.id === "gemini-nano-banana-2.1" && descriptor?.metadata?.protocol === "gemini-generate-content";
+        if (!descriptor || descriptor.metadata?.protocol !== "openai-images" && !nativeGemini) return model;
         const metadata: Record<string, unknown> = {
           ...descriptor.metadata,
           ...model.metadata,
@@ -148,9 +152,11 @@ function bindExistingModelProtocols(
         return {
           ...model,
           operations: descriptor.operations,
+          inputKinds: descriptor.inputKinds,
+          outputKinds: descriptor.outputKinds,
           parameters: descriptor.parameters,
           limits: descriptor.limits,
-          metadata: { ...metadata, protocol: "openai-images" },
+          metadata: { ...metadata, protocol: descriptor.metadata?.protocol },
         };
       }),
     };
@@ -224,6 +230,8 @@ function bindExistingModelProtocols(
   };
   const models = scanned.map((model): ModelDescriptor => {
     if (!canInherit(model)) return model;
+    if (supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection) &&
+      isCangyuanMusicRequest(model.id, String(connection.config.baseUrl ?? ""))) return cangyuanMusicModel(model);
     // Dedicated contracts execute dynamically for their exact IDs. Do not
     // inherit and persist a generic sibling route into the shared connector.
     if (supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection) &&
@@ -350,7 +358,8 @@ export function bindScannedModelProtocols(
   const currentCangyuan = connection.provider === "rest" && supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection);
   const models = applySavedModelInterfaces(connection, compatibleModels)
     .map(model => applyBananaImageCapabilities(connection, model))
-    .map(model => applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, model))).map(withHighestModelQualityDefault);
+    .map(model => applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, model)))
+    .map(model => applyChuangxiangCurrentVideoCapabilities(connection, model)).map(withHighestModelQualityDefault);
   if (currentCangyuan) {
     for (let i = 0; i < models.length; i++) if (canInherit(models[i]!) &&
       canApplyCangyuanCurrentContract(connection.config, String(connection.config.baseUrl ?? ""), models[i]!.id))

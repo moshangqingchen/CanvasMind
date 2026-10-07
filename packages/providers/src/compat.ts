@@ -45,7 +45,7 @@ export interface CoreAssetInput {
 export interface CoreNormalizedRequest {
   readonly provider: string;
   readonly model: string;
-  readonly capability: "image.generate" | "image.edit" | "video.generate";
+  readonly capability: "image.generate" | "image.edit" | "video.generate" | "music.generate";
   readonly prompt: readonly CorePromptPart[];
   readonly assets: readonly CoreAssetInput[];
   readonly parameters: Readonly<Record<string, unknown>>;
@@ -57,13 +57,13 @@ export interface CoreModelDescriptor {
   readonly name: string;
   readonly provider: string;
   readonly capabilities: readonly (
-    "image.generate" | "image.edit" | "video.generate"
+    "image.generate" | "image.edit" | "video.generate" | "music.generate"
   )[];
   readonly inputKinds?: readonly (
     "text" | "image" | "image[]" | "video" | "video[]" | "audio" | "audio[]"
   )[];
   readonly outputKinds?: readonly (
-    "text" | "image" | "image[]" | "video" | "video[]"
+    "text" | "image" | "image[]" | "video" | "video[]" | "audio" | "audio[]"
   )[];
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
@@ -245,7 +245,7 @@ export function providerModelToCoreModel(
           if (
             operation === "image.generate" ||
             operation === "image.edit" ||
-            operation === "video.generate"
+            operation === "video.generate" || operation === "music.generate"
           ) {
             return [operation];
           }

@@ -26,7 +26,7 @@ export function assertDesktopPublicAssets(graph: WorkflowGraph, selected: Readon
     const data = node.data as Record<string, unknown>;
     if (hasAssetReference(data)) return true;
     const type = data.nodeType ?? node.type;
-    if (["asset-input", "image-generation", "video-generation"].includes(String(type))) return true;
+    if (["asset-input", "image-generation", "video-generation", "music-generation"].includes(String(type))) return true;
     return graph.edges.filter((edge) => edge.target === id).some((edge) => containsMedia(edge.source, visited));
   };
   for (const node of graph.nodes) {

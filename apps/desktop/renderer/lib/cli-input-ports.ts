@@ -1,6 +1,7 @@
 import type { ModelDescriptor, ProviderOperation } from "@super-canvas/providers";
 
-export function cliOperationForNode(nodeType: "image-generation" | "video-generation", hasImage: boolean): ProviderOperation {
+export function cliOperationForNode(nodeType: "image-generation" | "video-generation" | "music-generation", hasImage: boolean): ProviderOperation {
+  if (nodeType === "music-generation") return "music.generate";
   return nodeType === "image-generation" ? hasImage ? "image.edit" : "image.generate" : hasImage ? "video.image-to-video" : "video.generate";
 }
 

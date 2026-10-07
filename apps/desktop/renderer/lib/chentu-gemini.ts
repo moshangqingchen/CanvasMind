@@ -3,6 +3,7 @@ import type {
   RestConnectorConfig,
   RestRequestDefinition,
 } from "@super-canvas/providers";
+import { applyBananaImageCapabilities, GEMINI_NANO_BANANA_21_MODEL } from "@super-canvas/providers/banana-image-contract";
 
 // Exact IDs tested against the keyed Gemini endpoint on 2026-09-10.
 // Their OpenAI Images requests fail upstream with convert_request_failed.
@@ -12,10 +13,17 @@ export const CHENTU_NATIVE_GEMINI_MODELS = [
   "leo-gemini-3.1-flash-image-preview",
 ] as const;
 export function isChentuNativeGeminiModel(id: string): boolean {
-  return (CHENTU_NATIVE_GEMINI_MODELS as readonly string[]).includes(id);
+  return id === GEMINI_NANO_BANANA_21_MODEL || (CHENTU_NATIVE_GEMINI_MODELS as readonly string[]).includes(id);
 }
 
 export function chentuNativeGeminiDescriptor(id: string): ModelDescriptor {
+  if (id === GEMINI_NANO_BANANA_21_MODEL) {
+    const model = applyBananaImageCapabilities({ provider: "openai", config: { baseUrl: "https://tu.988236.xyz/v1" } }, {
+      id, name: id, operations: ["image.generate", "image.edit"], metadata: { supplier: "chentu", canvasRunnable: true, liveInventory: true },
+    });
+    // This is the connector's upload limit, not a supplier claim for the new alias.
+    return { ...model, limits: { ...model.limits, maxInputImages: 14 } };
+  }
   return {
     id,
     name: id,
@@ -71,6 +79,7 @@ export function chentuNativeGeminiDescriptor(id: string): ModelDescriptor {
 }
 
 function nativeRequest(id: string): RestRequestDefinition {
+  const newAlias = id === GEMINI_NANO_BANANA_21_MODEL;
   return {
     path: `/v1beta/models/${encodeURIComponent(id)}:generateContent`,
     method: "POST",
@@ -79,7 +88,7 @@ function nativeRequest(id: string): RestRequestDefinition {
       contents: [{ role: "user", parts: [{ text: "" }] }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: { imageSize: "1K" },
+        imageConfig: newAlias ? {} : { imageSize: "1K" },
       },
     },
     mappings: [
@@ -87,14 +96,14 @@ function nativeRequest(id: string): RestRequestDefinition {
         target: "/contents/0/parts/0/text",
         source: { kind: "request", path: "$.prompt" },
       },
-      ...Array.from({ length: 10 }, (_, offset) => ({
+      ...Array.from({ length: newAlias ? 14 : 10 }, (_, offset) => ({
         target: `/contents/0/parts/${offset + 1}`,
         source: {
           kind: "assets" as const,
           assetKind: "image" as const,
           select: "first" as const,
           offset,
-          encoding: "gemini-part" as const,
+          encoding: newAlias ? "gemini-inline-part" as const : "gemini-part" as const,
         },
         omitIfUndefined: true,
       })),
@@ -108,6 +117,7 @@ function nativeRequest(id: string): RestRequestDefinition {
         target: "/generationConfig/imageConfig/imageSize",
         source: { kind: "request", path: "$.parameters.image_size" },
         omitIfUndefined: true,
+        omitValues: ["auto"],
       },
     ],
     response: { errorPath: "$.error.message" },
@@ -128,7 +138,7 @@ export function chentuNativeGeminiConnector(
       native.map((m) => [m.id, { submit: nativeRequest(m.id) }]),
     ),
     output: {
-      path: "$.candidates[0].content.parts",
+      path: "$.candidates[*].content.parts[*]",
       kind: "image",
       base64Path: "inlineData.data",
       base64FallbackPaths: ["inline_data.data"],

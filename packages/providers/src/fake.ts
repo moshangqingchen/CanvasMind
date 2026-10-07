@@ -54,7 +54,7 @@ function persistedFakeResult(value: unknown): FakeResult | undefined {
     if (!isRecord(output)) return false;
     const kind = output.kind;
     return (
-      (kind === "image" || kind === "video") &&
+      (kind === "image" || kind === "video" || kind === "audio") &&
       (typeof output.url === "string" || output.data instanceof Uint8Array)
     );
   });
@@ -146,6 +146,7 @@ const FAKE_MODELS: readonly ModelDescriptor[] = [
     operations: ["video.generate", "video.image-to-video"],
     parameters: FAKE_VIDEO_PARAMETERS,
   },
+  { id: "fake-music-v1", name: "Fake Music", operations: ["music.generate"], inputKinds: ["text"], outputKinds: ["audio"], parameters: [] },
 ];
 
 function scenarioFrom(
@@ -169,19 +170,25 @@ function scenarioFrom(
 
 function defaultOutputs(request: NormalizedRequest): RemoteArtifact[] {
   const video = request.operation.startsWith("video.");
-  const extension = video ? "mp4" : "png";
+  const music = request.operation === "music.generate";
+  const extension = video ? "mp4" : music ? "wav" : "png";
   const requestedCount = Number(request.parameters?.["n"] ?? 1);
   const count = Number.isFinite(requestedCount)
     ? Math.min(10, Math.max(1, Math.trunc(requestedCount)))
     : 1;
-  const data = video
+  const audio = Buffer.alloc(8044);
+  audio.write("RIFF"); audio.writeUInt32LE(audio.length - 8, 4); audio.write("WAVEfmt ", 8);
+  audio.writeUInt32LE(16, 16); audio.writeUInt16LE(1, 20); audio.writeUInt16LE(1, 22);
+  audio.writeUInt32LE(8000, 24); audio.writeUInt32LE(8000, 28); audio.writeUInt16LE(1, 32); audio.writeUInt16LE(8, 34);
+  audio.write("data", 36); audio.writeUInt32LE(8000, 40); audio.fill(128, 44);
+  const data = music ? new Uint8Array(audio) : video
     ? new TextEncoder().encode("SUPER_CANVAS_FAKE_VIDEO")
     : new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
   return Array.from({ length: count }, (_, index) => ({
-    kind: video ? "video" : "image",
+    kind: video ? "video" : music ? "audio" : "image",
     url: `https://example.invalid/fake/${encodeURIComponent(request.idempotencyKey)}-${index + 1}.${extension}`,
     data,
-    mimeType: video ? "video/mp4" : "image/png",
+    mimeType: video ? "video/mp4" : music ? "audio/wav" : "image/png",
     metadata: { fake: true },
   }));
 }
@@ -373,7 +380,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
       if (!output || typeof output !== "object") return false;
       const candidate = output as Partial<RemoteArtifact>;
       return (
-        (candidate.kind === "image" || candidate.kind === "video") &&
+        (candidate.kind === "image" || candidate.kind === "video" || candidate.kind === "audio") &&
         (typeof candidate.url === "string" ||
           candidate.data instanceof Uint8Array)
       );

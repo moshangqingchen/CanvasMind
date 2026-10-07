@@ -24,6 +24,7 @@ import { getImageEditingCapabilities, imageEditingConnection, imageEditingReques
   imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
 import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
+import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
   assetToBlob,
@@ -2628,6 +2629,18 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
   }
 
+  /** This alias declares Gemini/Chat endpoints, never an OpenAI Images route. */
+  private nanoBanana21Adapter(connection: ResolvedProviderConnection, model: string): BananaImageAdapter | undefined {
+    if (this.profile !== "openai" || model !== GEMINI_NANO_BANANA_21_MODEL) return;
+    const source = imageEditingConnection(connection);
+    const route = bananaImageRoute(source, model);
+    if (!route) return;
+    const descriptor = applyBananaImageCapabilities(source, { id: model, name: model,
+      operations: ["image.generate", "image.edit"], metadata: { liveInventory: true } });
+    return new BananaImageAdapter(this.connections, route, descriptor, { fetch: this.fetchImpl,
+      requestTimeoutMs: configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs") });
+  }
+
   public async testConnection(connectionId: string): Promise<void> {
     const connection = await this.connections.resolve(connectionId);
     const apiKey = requireApiKey(connection);
@@ -2845,8 +2858,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         ),
       ];
     });
-    return listed.map(model => applyChuangxiangCurrentImageCapabilities({ provider: connection.provider,
-      config: { ...connection.settings, baseUrl: connection.baseUrl } }, model));
+    return listed.map(model => {
+      const source = imageEditingConnection(connection);
+      const described = applyChuangxiangCurrentImageCapabilities(source, model);
+      return model.id === GEMINI_NANO_BANANA_21_MODEL ? applyBananaImageCapabilities(source, described) : described;
+    });
   }
 
   public async validate(request: NormalizedRequest): Promise<ValidationResult> {
@@ -2903,6 +2919,19 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           )
         : this.defaultModel);
     if (resolvedConnection) issues.push(...imageEditingRequestIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
+    if (resolvedConnection) {
+      const native = this.nanoBanana21Adapter(resolvedConnection, requestedModel);
+      if (native) {
+        const result = await native.validate({ ...request, model: requestedModel });
+        const ids = resolvedConnection.settings?.scannedModelIds;
+        const models = resolvedConnection.settings?.modelCatalogModels;
+        const current = Array.isArray(models) ? models.find(model => isRecord(model) && model.id === requestedModel) : undefined;
+        if ((Array.isArray(ids) && !ids.includes(requestedModel)) ||
+            (isRecord(current) && isRecord(current.metadata) && current.metadata.canvasRunnable === false))
+          issues.push({ path: "model", code: "model_group_mismatch", message: "当前分组没有此 Gemini 型号的可用权限" });
+        return { valid: !issues.length && result.valid, issues: [...issues, ...result.issues] };
+      }
+    }
     if (this.profile === "openai" && resolvedConnection && isPdogImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
       return this.pdog.validate({ ...request, model: requestedModel });
     if (this.profile === "openai" && resolvedConnection && isChuangxiangImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
@@ -3491,6 +3520,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const selectedModel =
       request.model ??
       configuredImageModel(connection, this.defaultModel, this.profile);
+    const native = this.nanoBanana21Adapter(connection, selectedModel);
+    if (native) return native.submit({ ...request, model: selectedModel });
     const transparentEvidence = request.operation === "image.generate" && request.parameters?.background === "transparent"
       ? verifiedTransparentImageEvidence(imageEditingConnection(connection), selectedModel, request.parameters) : undefined;
     // A measured connection accepts both the official root and /v1 in settings.
@@ -3905,6 +3936,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   }
 
   public async extractOutputs(result: unknown): Promise<RemoteArtifact[]> {
+    const banana = bananaNativeOutputs(result);
+    if (banana) return banana;
     if (isChuangxiangImageResult(result)) return this.chuangxiang.extractOutputs(result);
     if (isPdogImageResult(result)) return this.pdog.extractOutputs(result);
     if (isSecureSkillImageResult(result)) return this.secureSkill.extractOutputs(result);

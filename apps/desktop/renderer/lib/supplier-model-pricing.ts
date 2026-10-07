@@ -352,7 +352,7 @@ export function applySupplierCatalogPrices(
     return {
       ...model,
       name,
-      pricing: pricingFromSupplierEvidence(modelPrice, priceDetails, catalog.checkedAt, sourceUrl) ?? (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined),
+      pricing: (catalogModel?.metadata?.chuangxiangCatalogPricing as ModelDescriptor["pricing"] | undefined) ?? pricingFromSupplierEvidence(modelPrice, priceDetails, catalog.checkedAt, sourceUrl) ?? (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined),
       metadata: {
         ...model.metadata,
         priceLabel,

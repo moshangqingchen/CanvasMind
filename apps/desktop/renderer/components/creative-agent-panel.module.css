@@ -1,4 +1,8 @@
 .panel {
+  --agent-text: #edeaf9;
+  --agent-muted: #aaa3c0;
+  --agent-line: rgb(201 184 251 / 16%);
+  --agent-surface: linear-gradient(135deg, rgb(81 59 129 / 15%), rgb(49 54 107 / 11%));
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -95,9 +99,30 @@
   color:var(--muted);
   line-height: 1.7;
 }
+.welcomeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgb(203 180 255 / 24%);
+  border-radius: 16px;
+  color: #d6c5ff;
+  background: radial-gradient(circle at 20% 10%, rgb(178 130 255 / 19%), transparent 70%), linear-gradient(145deg, rgb(78 54 120 / 52%), rgb(36 42 82 / 49%));
+  box-shadow: inset 0 1px 0 rgb(245 230 255 / 13%), 0 7px 23px rgb(79 41 142 / 15%);
+  backdrop-filter: blur(12px);
+}
+.welcomeIcon svg {
+  width: 30px;
+  height: 30px;
+  filter: drop-shadow(0 0 10px rgb(176 126 255 / 23%));
+}
 .welcome h3 {
-  font-size: 19px;
-  color:#afb6f5;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -.4px;
+  color: #f0eafb;
   margin: 10px 0;
 }
 .welcome div {
@@ -442,19 +467,30 @@
   width: 100%;
   margin: 8px 0;
 }
-:global(.canvas-editor) .panel { background:transparent; color:var(--text); }
-:global(.canvas-editor) .panel :is(button, select, input, textarea) { background:var(--panel-2); color:var(--text); border-color:var(--line); }
-:global(.canvas-editor) .panel button:hover { background:var(--panel-3); border-color:#696072; }
-:global(.canvas-editor) .panel :is(.header, .question, .artifact, details) { border-color:var(--line); }
-:global(.canvas-editor) .panel :is(.welcome, small, .context) { color:var(--muted); }
-:global(.canvas-editor) .welcome h3 { color:var(--text); }
-:global(.canvas-editor) .panel :is(.message, .card, .settings, .stage, .attachments > span) { background:#27272d; color:var(--muted); border-color:#403947; }
-:global(.canvas-editor) .panel .user { background:#36303f; color:#e4d7f7; }
-:global(.canvas-editor) .panel .primary { background:var(--panel-3); color:#afb6f5; border-color:transparent; }
-:global(.canvas-editor) .composer { background:#151517; border-color:var(--line); border-radius: 16px; }
+:global(.canvas-editor) .panel { background: linear-gradient(180deg, rgb(61 37 105 / 8%), transparent 65%); color: var(--agent-text); color-scheme: dark; }
+:global(.canvas-editor) .panel :is(button, select, input, textarea) { background: var(--agent-surface); color: var(--agent-text); border-color: var(--agent-line); }
+:global(.canvas-editor) .panel button { box-shadow: inset 0 1px 0 rgb(240 227 255 / 4%); transition: background 140ms, border-color 140ms, box-shadow 140ms; }
+:global(.canvas-editor) .panel :is(select, input[type="number"], input[type="text"]) { background: linear-gradient(140deg, rgb(33 27 53 / 87%), rgb(22 24 43 / 92%)); }
+:global(.canvas-editor) .panel option { background: #1b1830; color: var(--agent-text); }
+:global(.canvas-editor) .panel textarea::placeholder { color: #958aaa; opacity: 1; }
+:global(.canvas-editor) .panel input[type="checkbox"] { accent-color: #a586f0; }
+:global(.canvas-editor) .panel :is(button, select, input, textarea):focus-visible { outline-color: #b798fa; }
+:global(.canvas-editor) .panel button:hover { background: linear-gradient(135deg, rgb(114 79 192 / 20%), rgb(71 83 162 / 14%)); border-color: rgb(201 184 251 / 29%); }
+:global(.canvas-editor) .header svg { color: #c9b7ff; }
+:global(.canvas-editor) .conversation { scrollbar-color: #514368 transparent; }
+:global(.canvas-editor) .panel :is(.header, .question, .artifact, details) { border-color: var(--agent-line); }
+:global(.canvas-editor) .panel :is(.welcome, small, .context) { color: var(--agent-muted); }
+:global(.canvas-editor) .welcome h3 { color: #f0eafb; }
+:global(.canvas-editor) .panel :is(.message, .card, .settings, .stage) { background: linear-gradient(135deg, rgb(46 33 72 / 73%), rgb(24 25 46 / 85%)); color: #d1c8e5; border-color: var(--agent-line); box-shadow: inset 0 1px 0 rgb(227 211 255 / 4%); }
+:global(.canvas-editor) .panel .attachments > span { background: rgb(126 94 189 / 12%); color: #c4b8de; }
+:global(.canvas-editor) .panel .user { background: linear-gradient(125deg, rgb(94 63 151 / 27%), rgb(54 48 111 / 26%)); color: #eee3ff; border-color: rgb(183 148 248 / 24%); }
+:global(.canvas-editor) .panel .primary { background: linear-gradient(135deg, #a080f1, #7c77de); color: #fff; border-color: rgb(217 194 255 / 42%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%), 0 3px 11px rgb(114 66 205 / 18%); }
+:global(.canvas-editor) .panel .primary:hover { background: linear-gradient(135deg, #b291ff, #8d87ef); border-color: rgb(225 205 255 / 50%); }
+:global(.canvas-editor) .composer { background: radial-gradient(ellipse at 0% 0%, rgb(130 85 222 / 12%), transparent 70%), linear-gradient(145deg, rgb(32 25 51 / 97%), rgb(17 21 41 / 98%)); border-color: rgb(189 160 251 / 24%); border-radius: 16px; box-shadow: inset 0 1px 0 rgb(235 219 255 / 7%), 0 6px 22px rgb(5 4 20 / 16%); }
+:global(.canvas-editor) .composer:focus-within { border-color: rgb(187 151 253 / 40%); box-shadow: inset 0 1px 0 rgb(235 219 255 / 9%), 0 0 20px rgb(129 73 212 / 8%); }
 :global(.canvas-editor) .composer > textarea { background:transparent; }
-:global(.canvas-editor) .preflight { background:#24332d; border-color:#3b574a; color:#91cdb6; }
-:global(.canvas-editor) .error { background:#39282e; border-color:#64404b; color:#e9a4ae; }
+:global(.canvas-editor) .preflight { background: rgb(45 75 61 / 28%); border-color: rgb(136 206 168 / 25%); color: #a7d9bd; }
+:global(.canvas-editor) .error { background: rgb(100 43 66 / 28%); border-color: rgb(229 146 170 / 30%); color: #efb0bf; }
 
 @media (max-width: 600px) {
   .header {
@@ -475,4 +511,8 @@
   .composer > textarea {
     min-height: 70px;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.canvas-editor) .panel button { transition: none; }
 }

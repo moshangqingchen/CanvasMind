@@ -159,7 +159,7 @@ function stringMap(value: unknown): Record<string, string> {
 }
 
 function formatPrice(value: number): string {
-  const formatted = value.toFixed(4).replace(/0+$/u, "").replace(/\.$/u, "");
+  const formatted = String(Number(value.toPrecision(10)));
   return formatted.includes(".") && formatted.split(".")[1]!.length === 1
     ? `${formatted}0`
     : formatted;

@@ -153,6 +153,99 @@ try {
   const imageSize = await page.evaluate(async (id) => (await (await fetch(`/api/assets/${id}/content`)).arrayBuffer()).byteLength, imageId);
   assert.ok(imageSize > 0);
   report.checks.push("Fake Provider generation, archival, download and idempotent resubmission");
+  // This runs only against the fresh --smoke-test profile and the local Fake
+  // adapter. Exercise Chromium media and Electron's authenticated download
+  // path, which the browser test runner's download context does not share.
+  const musicCanvas = await api("/api/canvas", { title: "桌面音乐离线验收", graph: {
+    schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [
+      { id: "music-smoke", type: "workflow", position: { x: 150, y: 160 }, style: { width: 420, height: 230 }, data: {
+        nodeType: "music-generation", label: "桌面音乐 mock", provider: "fake", connectionId: "fake-default", model: "fake-music-v1",
+        parts: [{ type: "text", text: "舒缓的钢琴与弦乐" }], parameters: {}, inputs: [{ id: "prompt", kind: "text", label: "音乐描述" }], outputs: [{ id: "audio", kind: "audio", label: "音乐" }],
+      } },
+    ],
+  } });
+  await page.goto(`${origin}/canvas/${musicCanvas.id}`);
+  const musicNode = page.locator('.react-flow__node[data-id="music-smoke"]');
+  await musicNode.waitFor({ state: "visible", timeout: 30000 });
+  const musicResponse = page.waitForResponse(response => new URL(response.url()).pathname === "/api/runs" && response.request().method() === "POST");
+  await musicNode.getByRole("button", { name: "运行 桌面音乐 mock 节点", exact: true }).click();
+  const musicSubmission = await musicResponse;
+  assert.equal(musicSubmission.status(), 201, "packaged UI must submit the isolated fake music node");
+  const musicInitial = await musicSubmission.json();
+  let musicRun;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    musicRun = await api(`/api/runs/${musicInitial.run.id}`);
+    if (!["queued", "running"].includes(musicRun.run.status)) break;
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
+  assert.equal(musicRun.run.status, "succeeded", JSON.stringify(musicRun));
+  const musicOutput = musicRun.nodes.find(node => node.nodeId === "music-smoke");
+  assert.equal(musicOutput.request.provider, "fake", "desktop music smoke must never use a paid supplier");
+  const musicId = musicOutput.outputAssetIds[0];
+  const musicAsset = await api(`/api/assets/${musicId}`);
+  assert.equal(musicAsset.kind, "audio");
+  assert.equal(musicAsset.mimeType, "audio/wav");
+  await page.getByRole("button", { name: "Fit View", exact: true }).click();
+  const musicResult = page.locator('.react-flow__node:has(.generated-result-node audio)');
+  await musicResult.waitFor({ state: "visible", timeout: 15000 });
+  const musicAudio = musicResult.locator("audio");
+  await page.waitForFunction(() => {
+    const audio = document.querySelector(".generated-result-node audio");
+    return audio instanceof HTMLAudioElement && audio.readyState >= 1 && Number.isFinite(audio.duration) && audio.duration > 0;
+  }, undefined, { timeout: 15000 });
+  const musicPlayback = await musicAudio.evaluate(async audio => {
+    audio.loop = true;
+    await audio.play();
+    return { duration: audio.duration, controls: audio.controls, src: audio.currentSrc };
+  });
+  await page.waitForFunction(() => {
+    const audio = document.querySelector(".generated-result-node audio");
+    return audio instanceof HTMLAudioElement && !audio.paused && audio.currentTime > 0;
+  }, undefined, { timeout: 10000 });
+  await musicAudio.evaluate(audio => { audio.pause(); audio.loop = false; });
+  assert.equal(musicPlayback.controls, true);
+  assert.equal(new URL(musicPlayback.src).origin, origin, "audio playback must use the authenticated local archive");
+  report.musicPlayback = { duration: musicPlayback.duration, controls: musicPlayback.controls };
+  await application.evaluate(({ BrowserWindow }, assetId) => {
+    const session = BrowserWindow.getAllWindows()[0].webContents.session;
+    globalThis.__musicSmokeDownload = null;
+    const listener = (_event, item) => {
+      const url = new URL(item.getURL());
+      if (url.pathname !== `/api/assets/${assetId}/content` || url.searchParams.get("download") !== "1") return;
+      globalThis.__musicSmokeDownload = { state: "progressing", filename: item.getFilename() };
+      item.once("done", (_event, state) => {
+        globalThis.__musicSmokeDownload = { state, filename: item.getFilename(), path: item.getSavePath(), receivedBytes: item.getReceivedBytes(), mimeType: item.getMimeType() };
+      });
+    };
+    globalThis.__musicSmokeDownloadListener = listener;
+    session.on("will-download", listener);
+  }, musicId);
+  let musicDownload;
+  try {
+    await musicResult.locator(".generated-result-node").click({ position: { x: 15, y: 12 } });
+    await page.getByRole("toolbar", { name: "生成结果操作", exact: true }).getByRole("link", { name: /^下载 /u }).click();
+    for (let attempt = 0; attempt < 100; attempt++) {
+      musicDownload = await application.evaluate(() => globalThis.__musicSmokeDownload);
+      if (musicDownload && musicDownload.state !== "progressing") break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.equal(musicDownload?.state, "completed", `Electron music download must complete: ${JSON.stringify(musicDownload)}`);
+    assert.match(musicDownload.filename, /\.wav$/u);
+    const musicBytes = await readFile(musicDownload.path);
+    assert.equal(musicBytes.byteLength, musicAsset.size);
+    assert.equal(musicDownload.receivedBytes, musicBytes.byteLength);
+    assert.equal(musicBytes.subarray(0, 4).toString(), "RIFF");
+    assert.equal(musicBytes.subarray(8, 12).toString(), "WAVE");
+    report.musicDownload = { state: musicDownload.state, filename: musicDownload.filename, bytes: musicBytes.byteLength };
+  } finally {
+    await application.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].webContents.session.removeListener("will-download", globalThis.__musicSmokeDownloadListener);
+      delete globalThis.__musicSmokeDownloadListener;
+      delete globalThis.__musicSmokeDownload;
+    });
+  }
+  await page.getByRole("button", { name: "画布自动保存状态" }).filter({ hasText: "已保存" }).waitFor({ timeout: 15000 });
+  report.checks.push("packaged fake music generation, local audio playback and completed Electron WAV download");
   const reviewedImage = await api(`/api/assets/${imageId}/design-review`, {
     status: "approved", note: "桌面图片设计验收：保留这一版", expectedRevision: 0,
   }, "PATCH");

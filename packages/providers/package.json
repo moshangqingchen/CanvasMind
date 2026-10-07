@@ -6,6 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./chuangxiang-video-contract": {
+      "types": "./src/chuangxiang-video-contract.ts",
+      "import": "./dist/chuangxiang-video-contract.js",
+      "default": "./dist/chuangxiang-video-contract.js"
+    },
     "./image-editing-capabilities": {
       "types": "./src/image-editing-capabilities.ts",
       "import": "./dist/image-editing-capabilities.js",

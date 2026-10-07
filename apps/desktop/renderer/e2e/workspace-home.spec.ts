@@ -633,13 +633,13 @@ test.describe("画布工作台", () => {
     const state = await mockWorkspace(page, []);
     await page.goto("/");
     const home = page.locator("div[data-motion]");
-    const aura = page.locator('[aria-hidden="true"][data-animating]');
-    await expect(aura.locator("canvas")).toHaveCount(1);
+    const trail = page.locator('canvas[class*="pointerTrail"]');
+    await expect(trail).toHaveCount(1);
     await expect(home).toHaveAttribute("data-motion", "on");
-    await expect(aura).toHaveAttribute("data-animating", "true");
+    await expect(trail).toBeVisible();
     await page.getByRole("button", { name: "暂停动效" }).click();
     await expect(home).toHaveAttribute("data-motion", "off");
-    await expect(aura).toHaveAttribute("data-animating", "false");
+    await expect(trail).toBeHidden();
     expect(
       await page.evaluate(() =>
         localStorage.getItem("super-canvas:gentle-motion"),
@@ -648,19 +648,19 @@ test.describe("画布工作台", () => {
 
     await page.reload();
     await expect(home).toHaveAttribute("data-motion", "off");
-    await expect(aura).toHaveAttribute("data-animating", "false");
+    await expect(trail).toBeHidden();
     const enableMotion = page.getByRole("button", { name: "开启动效" });
     await expect(enableMotion).toHaveAttribute("aria-pressed", "false");
     await enableMotion.click();
     await expect(home).toHaveAttribute("data-motion", "on");
-    await expect(aura).toHaveAttribute("data-animating", "true");
+    await expect(trail).toBeVisible();
     await expect(
       page.getByRole("button", { name: "暂停动效" }),
     ).toHaveAttribute("aria-pressed", "true");
 
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(home).toHaveAttribute("data-motion", "off");
-    await expect(aura).toHaveAttribute("data-animating", "false");
+    await expect(trail).toBeHidden();
     expect(
       await page.evaluate(() =>
         localStorage.getItem("super-canvas:gentle-motion"),
@@ -668,7 +668,30 @@ test.describe("画布工作台", () => {
     ).toBe("on");
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await expect(home).toHaveAttribute("data-motion", "on");
-    await expect(aura).toHaveAttribute("data-animating", "true");
+    await expect(trail).toBeVisible();
+    expect(state.mutations).toEqual([]);
+    expect(state.canvasReads).toEqual([]);
+  });
+
+  test("Ctrl K 聚焦项目搜索，创建弹窗内保留名称输入焦点", async ({ page }) => {
+    const state = await mockWorkspace(page, [older, newer]);
+    await page.goto("/");
+    await expect(page.getByRole("article")).toHaveCount(2);
+    const search = page.getByLabel("搜索画布", { exact: true });
+    await page.keyboard.press("Control+k");
+    await expect(search).toBeFocused();
+    await search.fill("品牌");
+    await expect(page.getByRole("article")).toHaveCount(1);
+    await expect(page.getByRole("article").first()).toHaveAccessibleName(
+      older.title,
+    );
+    await page.getByRole("button", { name: "创建画布", exact: true }).click();
+    const title = page
+      .getByRole("dialog", { name: "创建新画布" })
+      .getByLabel("画布名称");
+    await expect(title).toBeFocused();
+    await page.keyboard.press("Control+k");
+    await expect(title).toBeFocused();
     expect(state.mutations).toEqual([]);
     expect(state.canvasReads).toEqual([]);
   });

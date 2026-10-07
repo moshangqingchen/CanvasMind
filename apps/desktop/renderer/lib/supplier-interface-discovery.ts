@@ -1,20 +1,44 @@
 import {
   compileDocumentedInterface, savedModelInterfaces,
   type ModelDescriptor, type DocumentedModelInterface,
+  cangyuanMusicModel, isCangyuanMusicRequest,
+  chuangxiangVideoModel, isChuangxiangVideoConnection,
 } from "@super-canvas/providers";
+import { bananaImageRoute, applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
 
 import { readSupplierInterfaceDocuments, type InterfaceDocumentReadOptions } from "./supplier-interface-documents";
 export { readSupplierInterfaceDocuments, type InterfaceDocument } from "./supplier-interface-documents";
 type Connection = { provider: string; config: Record<string, unknown> };
 
 function mayBind(model: ModelDescriptor) {
-  return model.metadata?.canvasRunnable !== false || (model.metadata?.autoInterfaceStatus === "incomplete" || /协议|接口|尚未内置/u.test(String(model.metadata.canvasUnavailableReason ?? "")))
-    && !/403|权限|未开通|拒绝|下架|停用|未返回/u.test(String(model.metadata.canvasUnavailableReason ?? ""));
+  const reason = String(model.metadata?.canvasUnavailableReason ?? "");
+  if (/401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|disabled/iu.test(reason)) return false;
+  return model.metadata?.canvasRunnable !== false || model.metadata?.autoInterfaceStatus === "incomplete" || /协议|接口|尚未内置|protocol|adapter/iu.test(reason);
+}
+
+function nativeContract(connection: Connection, model: ModelDescriptor): ModelDescriptor | undefined {
+  if (!mayBind(model)) return undefined;
+  if (connection.provider === "rest" && isCangyuanMusicRequest(model.id, String(connection.config.baseUrl ?? ""))) return cangyuanMusicModel(model);
+  if (connection.provider === "rest" && isChuangxiangVideoConnection(connection.config, model.id)) {
+    const metadata: Record<string, unknown> = { ...model.metadata, canvasRunnable: true };
+    delete metadata.canvasUnavailableReason;
+    if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
+    return chuangxiangVideoModel(model.id, { ...model, metadata });
+  }
+  if (model.id === "gemini-nano-banana-2.1" && bananaImageRoute(connection, model.id)) {
+    const metadata: Record<string, unknown> = { ...model.metadata, canvasRunnable: true };
+    delete (metadata as Record<string, unknown>).canvasUnavailableReason;
+    if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
+    return applyBananaImageCapabilities(connection, { ...model, metadata });
+  }
+  return undefined;
 }
 
 export function applySavedModelInterfaces(connection: Connection, models: readonly ModelDescriptor[]): ModelDescriptor[] {
   const bindings = savedModelInterfaces(connection.config);
   return models.map(model => {
+    const native = nativeContract(connection, model);
+    if (native) return native;
     const binding = bindings[model.id];
     if (!binding || !mayBind(model) || model.metadata?.autoInterfaceStatus === "incomplete") return model;
     const metadata = { ...model.metadata, canvasRunnable: true, autoInterfaceStatus: "connected", protocol: "documented-rest",
@@ -36,10 +60,12 @@ export async function discoverSupplierModelInterfaces(connection: Connection, mo
   const sameSource = connection.config.baseUrl === previous.config.baseUrl && connection.config.supplierSourceId === previous.config.supplierSourceId;
   const bindings = Object.assign(Object.create(null) as Record<string, DocumentedModelInterface>,
     Object.fromEntries(Object.entries(sameSource ? savedModelInterfaces(connection.config) : {}).filter(([id]) => visible.has(id))));
+  const native = new Map(models.flatMap(model => { const descriptor = nativeContract(connection, model); return descriptor ? [[model.id, descriptor] as const] : []; }));
+  for (const id of native.keys()) delete bindings[id];
   if (["agent", "disabled"].includes(String(connection.config.usage)) || connection.config.supplierArchived === true
     || !["openai", "weai", "rest", "runway"].includes(connection.provider)) return { models: [...models], bindings };
-  const candidates = models.filter(model => mayBind(model) && model.operations.length);
-  if (!candidates.length) return { models: [...models], bindings };
+  const candidates = models.filter(model => !native.has(model.id) && mayBind(model) && model.operations.length);
+  if (!candidates.length) return { models: models.map(model => native.get(model.id) ?? model), bindings };
   const baseUrl = String(connection.config.baseUrl ?? "");
   const docs = await read(baseUrl, candidates, String(connection.config.supplierWebsiteUrl ?? baseUrl), options);
   const reasons = new Map<string, string>();
@@ -63,8 +89,8 @@ export async function discoverSupplierModelInterfaces(connection: Connection, mo
       && value.startsWith("/") && !["/images/generations", "/v1/images/generations", "/images/edits", "/v1/images/edits"].includes(value)))
       reasons.set(model.id, "供应商声明了专用接口，尚未取得完整的请求、鉴权和结果定义");
   }
-  const annotated = models.map(model => reasons.has(model.id) ? { ...model, metadata: { ...model.metadata,
+  const annotated = models.map(model => native.get(model.id) ?? (reasons.has(model.id) ? { ...model, metadata: { ...model.metadata,
     canvasRunnable: false, autoInterfaceStatus: "incomplete", autoInterfaceLabel: "接口说明待补充", canvasUnavailableReason: reasons.get(model.id) } }
-    : connected.has(model.id) ? { ...model, metadata: { ...model.metadata, autoInterfaceStatus: "connected" } } : model);
+    : connected.has(model.id) ? { ...model, metadata: { ...model.metadata, autoInterfaceStatus: "connected" } } : model));
   return { models: applySavedModelInterfaces({ ...connection, config: { ...connection.config, autoModelInterfaces: bindings } }, annotated), bindings };
 }

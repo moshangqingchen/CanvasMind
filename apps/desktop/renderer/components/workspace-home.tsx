@@ -66,11 +66,17 @@ function projectUrl(id: string) {
 function nextDesignProjectTitle(label: string, projects: ProjectSummaryView[]) {
   // Built-in task labels contain no reserved filename characters. Account for
   // the trailing dots/spaces that Windows removes from existing project names.
-  const titles = new Set(projects.map((project) =>
-    project.title.trim().replace(/[. ]+$/gu, "").normalize("NFC"),
-  ));
+  const titles = new Set(
+    projects.map((project) =>
+      project.title
+        .trim()
+        .replace(/[. ]+$/gu, "")
+        .normalize("NFC"),
+    ),
+  );
   let title = label;
-  for (let index = 2; titles.has(title); index += 1) title = `${label} ${index}`;
+  for (let index = 2; titles.has(title); index += 1)
+    title = `${label} ${index}`;
   return title;
 }
 
@@ -131,6 +137,7 @@ function ProjectActionDialog({
   onSubmit: (title: string) => Promise<void>;
 }) {
   const element = useRef<HTMLDialogElement>(null);
+  const titleInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(
     dialog.kind === "create" ? "" : dialog.project.title,
   );
@@ -150,6 +157,7 @@ function ProjectActionDialog({
         ? document.activeElement
         : null;
     modal?.showModal();
+    titleInput.current?.focus({ preventScroll: true });
     return () => {
       modal?.close();
       if (previousFocus?.isConnected)
@@ -208,6 +216,7 @@ function ProjectActionDialog({
           <label className={styles.dialogLabel}>
             画布名称
             <input
+              ref={titleInput}
               autoFocus
               value={title}
               maxLength={160}
@@ -281,7 +290,12 @@ export function WorkspaceHome() {
       // Read browser-only preferences after hydration to keep server markup stable.
       /* eslint-disable react-hooks/set-state-in-effect */
       if (savedView === "grid" || savedView === "list") setView(savedView);
-      if (savedOrder === "recent" || savedOrder === "created" || savedOrder === "name") setOrder(savedOrder);
+      if (
+        savedOrder === "recent" ||
+        savedOrder === "created" ||
+        savedOrder === "name"
+      )
+        setOrder(savedOrder);
       /* eslint-enable react-hooks/set-state-in-effect */
     } catch {
       // Defaults remain usable when local storage is unavailable.
@@ -294,6 +308,22 @@ export function WorkspaceHome() {
     message: string;
     error?: boolean;
   } | null>(null);
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLocaleLowerCase() === "k" &&
+        !settingsOpen &&
+        !dialog
+      ) {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, [dialog, settingsOpen]);
   const loadVersion = useRef(0);
   const reload = useCallback(async () => {
     const version = ++loadVersion.current;
@@ -561,26 +591,41 @@ export function WorkspaceHome() {
                   href={projectUrl(recentProject.id)}
                   title={`继续编辑「${recentProject.title}」`}
                 >
-                  继续最近创作
-                  <ArrowRight size={16} />
+                  <span className={styles.recentHeading}>
+                    继续最近创作
+                    <ArrowRight size={14} />
+                  </span>
+                  <strong title={recentProject.title}>
+                    {recentProject.title}
+                  </strong>
                 </Link>
               ) : (
                 <span className={styles.heroHint}>从一张空白画布开始</span>
               )}
             </div>
-            <div className={styles.quickDesignHeading}>从一个任务开始</div>
             <div className={styles.quickDesigns} aria-label="按设计任务开始">
               {(
                 [
-                  ["event-poster", "做活动海报", ImageIcon],
-                  ["revise", "修改客户原图", WandSparkles],
-                  ["event-material", "制作多尺寸物料", PanelsTopLeft],
+                  ["event-poster", "做活动海报", "从主题到完整视觉", ImageIcon],
+                  [
+                    "revise",
+                    "修改客户原图",
+                    "保留原图，精准调整",
+                    WandSparkles,
+                  ],
+                  [
+                    "event-material",
+                    "制作多尺寸物料",
+                    "一套设计，多种规格",
+                    PanelsTopLeft,
+                  ],
                 ] as const
-              ).map(([kind, label, Icon]) => (
+              ).map(([kind, label, description, Icon]) => (
                 <button
                   type="button"
                   key={kind}
                   data-task={kind}
+                  title={description}
                   aria-busy={startingDesignKind === kind}
                   disabled={startingDesign}
                   onClick={async () => {
@@ -589,7 +634,9 @@ export function WorkspaceHome() {
                     setStartingDesignKind(kind);
                     try {
                       const currentProjects = await fetchProjects();
-                      const project = await createProject(nextDesignProjectTitle(label, currentProjects));
+                      const project = await createProject(
+                        nextDesignProjectTitle(label, currentProjects),
+                      );
                       router.push(`${projectUrl(project.id)}?design=${kind}`);
                     } catch (error) {
                       setNotice({
@@ -611,7 +658,10 @@ export function WorkspaceHome() {
                       <Icon size={16} strokeWidth={1.7} />
                     )}
                   </span>
-                  <span>{label}</span>
+                  <span className={styles.quickDesignCopy}>
+                    <strong>{label}</strong>
+                    <span aria-hidden="true">{description}</span>
+                  </span>
                   <ArrowUpRight size={13} className={styles.quickDesignArrow} />
                 </button>
               ))}
@@ -631,18 +681,18 @@ export function WorkspaceHome() {
             <div className={styles.sectionHeadingCopy}>
               <div className={styles.sectionTitle}>
                 <h2 id="projects-heading">我的画布</h2>
-                {projects ? (
-                  <span>{projects.length.toString().padStart(2, "0")}</span>
-                ) : null}
+                {projects ? <span>{projects.length}</span> : null}
               </div>
               <p aria-live="polite" aria-atomic="true">
                 {query.trim()
                   ? `找到 ${visibleProjects.length} 张画布`
-                  : "收藏每一次灵感，继续未完的精彩"}
+                  : projects?.length
+                    ? `共 ${projects.length} 张画布 · 点击作品继续编辑`
+                    : "新建画布，开始你的第一个项目"}
               </p>
             </div>
             <div className={styles.listTools}>
-              <label className={styles.search}>
+              <label className={styles.search} title="搜索画布 · Ctrl / ⌘ K">
                 <Search size={17} />
                 <input
                   ref={searchRef}
@@ -662,7 +712,9 @@ export function WorkspaceHome() {
                   >
                     <X size={15} />
                   </button>
-                ) : null}
+                ) : (
+                  <kbd aria-hidden="true">Ctrl K</kbd>
+                )}
               </label>
               <label className={styles.sort}>
                 <ArrowDownWideNarrow size={16} />
@@ -786,7 +838,7 @@ export function WorkspaceHome() {
                           {updatedLabel(project.updatedAt)}
                         </span>
                         <span className={styles.nodeCount}>
-                          <span />
+                          <Layers3 size={12} />
                           {project.nodeCount ?? 0} 个节点
                         </span>
                       </div>
@@ -973,13 +1025,13 @@ export function WorkspaceHome() {
         <footer className={styles.footer}>
           <span className={styles.footerBrand}>
             <Layers3 size={14} />
-            SUPER CANVAS<span>让创意不设边界</span>
+            SUPER CANVAS<span>你的创作，持续生长</span>
           </span>
           <span className={styles.footerStorage}>
             <HardDrive size={13} />
             作品保存在本机
             <span className={styles.footerDot} />
-            随时开始，自在创作
+            本地创作工作空间
           </span>
         </footer>
       </main>

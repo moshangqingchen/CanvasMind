@@ -37,12 +37,25 @@ import {
   measuredPricesFromVerification,
   applyDocumentedModelPrice,
 } from "./supplier-model-pricing";
+import { parseSupplierCatalog } from "@super-canvas/providers";
+import { bindScannedModelProtocols } from "./scanned-model-protocols";
 const model: ModelDescriptor = {
   id: "new-image",
   name: "new-image（价格以平台为准）",
   operations: [],
   metadata: { canvasRunnable: false },
 };
+
+it("retains Chuangxiang's structured resolution prices through saved-model enrichment and video binding", () => {
+  const parsed = parseSupplierCatalog({ data: { groups: [{ name: "视频", models: [{ name: "sd10-seedance-2.0", effective_rate_multiplier: .1,
+    video_pricing: { billing_mode: "per_request", prices: { "720p": 52 } } }] }] } }, { supplierSiteUrl: "https://vapi.chuangxiangai.asia", checkedAt: "2026-10-07" });
+  const enriched = applySupplierCatalogPrices([{ id: "sd10-seedance-2.0", name: "SD10", operations: ["video.generate"], metadata: { canvasRunnable: true } }], "视频",
+    { groups: parsed.groups, kind: "sub2api", status: "live", checkedAt: "2026-10-07" });
+  const bound = bindScannedModelProtocols({ provider: "rest", config: { baseUrl: "https://vapi.chuangxiangai.asia", modelGroup: "视频" } }, enriched).models[0]!;
+  expect(modelPriceSummary(bound, { resolution: "720p", duration: 15 })).toBe("5.2 CNY / 次（参考）");
+  expect(bound.parameters?.find(p => p.key === "resolution")?.options).toEqual([{ label: "720p", value: "720p" }]);
+  expect(bound.parameters?.find(p => p.key === "duration")?.options?.map(o => o.value)).toEqual([5, 10, 15]);
+});
 const catalog: SupplierCatalogDiscovery = {
   kind: "newapi",
   status: "live",

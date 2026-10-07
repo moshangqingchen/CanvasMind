@@ -142,7 +142,7 @@ function operationsForNodeType(
 ): readonly ProviderOperation[] {
   return nodeType === "image-generation"
     ? ["image.generate", "image.edit"]
-    : ["video.generate", "video.image-to-video"];
+    : nodeType === "music-generation" ? ["music.generate"] : ["video.generate", "video.image-to-video"];
 }
 
 export function parameterDescriptorsFor(
@@ -176,6 +176,7 @@ export function parameterDescriptorsFor(
       : declared;
   }
   if (provider === "cli") return [];
+  if (nodeType === "music-generation") return [];
   if (nodeType === "image-generation") {
     const fallback = [...IMAGE_PARAMETERS];
     return model?.metadata?.fixedOutputCount === 1

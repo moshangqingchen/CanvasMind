@@ -19,6 +19,7 @@ export const BUILT_IN_NODE_TYPES = [
   "prompt",
   "image-generation",
   "video-generation",
+  "music-generation",
   "preview",
 ] as const;
 
@@ -290,6 +291,7 @@ export const PROVIDER_CAPABILITIES = [
   "image.generate",
   "image.edit",
   "video.generate",
+  "music.generate",
 ] as const;
 
 export type ProviderCapability = (typeof PROVIDER_CAPABILITIES)[number];
@@ -317,7 +319,7 @@ export interface ValidationResult {
 
 export interface NormalizedAssetInput {
   readonly assetId: string;
-  readonly kind: "image" | "video";
+  readonly kind: "image" | "video" | "audio";
   readonly role?: PromptAssetRole;
   readonly mimeType?: string;
   readonly url?: string;
@@ -340,7 +342,7 @@ export interface ProviderTask {
 }
 
 export interface RemoteArtifact {
-  readonly kind: "image" | "video";
+  readonly kind: "image" | "video" | "audio";
   readonly url: string;
   readonly mimeType?: string;
   readonly filename?: string;

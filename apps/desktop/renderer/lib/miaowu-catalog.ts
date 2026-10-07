@@ -4,6 +4,7 @@ import {
   type ModelParameterDescriptor,
   type ModelParameterOption,
   type RestConnectorConfig,
+  type StructuredPriceTier,
 } from "@super-canvas/providers";
 import {
   MIAOWU_CONNECTOR,
@@ -56,6 +57,7 @@ interface VideoApiRecord {
   audios_max?: unknown;
   seconds_min?: unknown;
   seconds_max?: unknown;
+  seconds_options?: unknown;
   size_seconds_max?: unknown;
   sizes?: unknown;
   ratios?: unknown;
@@ -149,6 +151,8 @@ interface ParameterOverrides {
   resolutions?: readonly string[];
   defaultResolution?: string;
   ratios?: readonly string[];
+  secondsOptions?: readonly number[];
+  durationMaxByResolution?: Record<string, number>;
 }
 
 /**
@@ -165,14 +169,22 @@ function parameters(
     {
       key: "duration",
       label: "时长（秒）",
-      control: "number",
+      control: input.secondsOptions?.length ? "select" : "number",
       valueType: "integer",
-      default: input.defaultSeconds ?? 5,
+      default: input.secondsOptions?.[0] ?? input.defaultSeconds ?? 5,
       min: input.minSeconds ?? 1,
       max: input.maxSeconds ?? 30,
       step: 1,
+      ...(input.secondsOptions?.length ? { options: input.secondsOptions.map(value => ({ label: `${value} 秒`, value })) } : {}),
+      ...(input.durationMaxByResolution && Object.keys(input.durationMaxByResolution).length ? {
+        constraints: Object.entries(input.durationMaxByResolution).map(([resolution, max]) => ({
+          when: [{ parameter: "resolution", values: [resolution] }], max,
+        })),
+      } : {}),
       description:
-        input.maxSeconds === undefined
+        input.secondsOptions?.length
+          ? `该型号仅支持 ${input.secondsOptions.join(" / ")} 秒，按公开离散档位发送。`
+        : input.maxSeconds === undefined
           ? "喵呜文档仅规定 seconds 为正整数，未公开该模型上限；画布为防误输入暂限制 30 秒。"
           : "喵呜 OpenAI Videos API 的 seconds 字段；范围按模型广场已知限制设置。",
       operations: VIDEO_OPERATIONS,
@@ -230,6 +242,9 @@ function videoParameterOverrides(videoApi: VideoApiRecord): ParameterOverrides {
   const maxSeconds = nonNegativeInteger(videoApi.seconds_max) || undefined;
   const resolutions = [...new Set(strings(videoApi.sizes))];
   const ratios = [...new Set(strings(videoApi.ratios))];
+  const secondsOptions = Array.isArray(videoApi.seconds_options) ? [...new Set(videoApi.seconds_options
+    .map(value => typeof value === "number" || typeof value === "string" ? Number(value) : NaN)
+    .filter(value => Number.isInteger(value) && value > 0))] : [];
   return {
     ...(minSeconds ? { minSeconds, defaultSeconds: minSeconds } : {}),
     ...(maxSeconds ? { maxSeconds } : {}),
@@ -237,6 +252,8 @@ function videoParameterOverrides(videoApi: VideoApiRecord): ParameterOverrides {
       ? { resolutions, defaultResolution: resolutions[0] }
       : {}),
     ...(ratios.length > 0 ? { ratios } : {}),
+    ...(secondsOptions.length ? { secondsOptions } : {}),
+    durationMaxByResolution: numberRecord(videoApi.size_seconds_max),
   };
 }
 
@@ -250,6 +267,7 @@ interface ParsedPricing {
   billingLabel: string;
   unit: "second" | "request";
   maximum?: number;
+  tiers?: StructuredPriceTier[];
 }
 
 function videoRulePrices(record: PricingRecord): number[] {
@@ -300,6 +318,13 @@ function pricingFor(
   const yuanPrices = rawPrices.map((price) => price * QUOTA_TO_CNY * ratio);
   const yuanRange = formattedPriceRange(yuanPrices);
   const maximum = yuanPrices.length > 0 ? Math.max(...yuanPrices) : undefined;
+  const mediaApi = imageApiRecord(record) ?? videoApiRecord(record);
+  const rules = mediaApi && isRecord(mediaApi.pricing) && Array.isArray(mediaApi.pricing.rules) ? mediaApi.pricing.rules : [];
+  const pricedSizes = rules.flatMap(rule => isRecord(rule) && typeof rule.size === "string" &&
+    typeof rule.price === "number" && Number.isFinite(rule.price) && rule.price >= 0 ? [{ size: rule.size, price: rule.price }] : []);
+  const tiers: StructuredPriceTier[] | undefined = pricedSizes.length && new Set(pricedSizes.map(rule => rule.size)).size === pricedSizes.length
+    ? pricedSizes.map(({size,price}) => ({ id: size, label: size, dimension: "resolution", value: size,
+      price: Number((price * QUOTA_TO_CNY * ratio).toPrecision(12)) })) : undefined;
   if (!yuanRange) {
     return {
       group,
@@ -314,6 +339,7 @@ function pricingFor(
     ratio,
     unit,
     maximum,
+    ...(tiers ? { tiers } : {}),
     priceLabel: `¥${yuanRange}/${unit === "second" ? "秒" : "次"}`,
     billingLabel: unit === "second" ? "按秒计费" : "按次计费",
   };
@@ -355,6 +381,8 @@ function descriptorFor(
             kind: pricing.unit === "second" ? "per-second" : "per-request",
             currency: "CNY",
             unitAmount: pricing.maximum,
+            ...(pricing.tiers ? { tiers: pricing.tiers } : {}),
+            billingUnit: pricing.unit === "second" ? "second" : "request",
             sourceUrl: MIAOWU_CATALOG_SOURCE,
             checkedAt,
             confidence: "exact",
@@ -414,6 +442,7 @@ function imageDescriptorFor(id: string, record: PricingRecord, pricing: ParsedPr
         description: "按喵呜当前型号原生 ratio 枚举发送。" }] : []),
     ],
     ...(pricing.maximum === undefined ? {} : { pricing: { kind: "per-request" as const, currency: "CNY", unitAmount: pricing.maximum,
+      ...(pricing.tiers ? { tiers: pricing.tiers } : {}), billingUnit: "request",
       sourceUrl: MIAOWU_CATALOG_SOURCE, checkedAt, confidence: "exact" as const } }),
     metadata: {
       modality: "image", catalogCapability: "image", marketplaceGroup: pricing.group,

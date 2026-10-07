@@ -8,6 +8,25 @@ import {
   miaowuDefaultModel,
   miaowuModelsForGroup,
 } from "./miaowu-catalog";
+import { modelPriceAmount } from "@super-canvas/providers";
+
+it("uses October per-call rules, audio limits, aspect ratios and discrete Sora seconds", () => {
+  const catalog = miaowuCatalogFromPricing({ group_ratio: { default: 1 }, data: [
+    { model_name: "seedance-2.0-deal", model_price: .2857142857, enable_groups: ["default"], video_api: { images_max: 9, audios_max: 3, seconds_min: 4, seconds_max: 15, sizes: ["720p"], ratios: ["16:9", "9:16", "4:3", "3:4", "21:9", "1:1"], pricing: { unit: "per_call", rules: [{ size: "720p", price: .44642857142857145 }] } } },
+    { model_name: "seedance-2.5-pro", enable_groups: ["default"], video_api: { images_max: 30, audios_max: 10, seconds_min: 4, seconds_max: 30, sizes: ["480p", "720p"], pricing: { unit: "per_call", rules: [{ size: "480p", price: .8571428571428571 }, { size: "720p", price: 1.4285714285714286 }] } } },
+    { model_name: "sora-2", model_price: 1 / 7, enable_groups: ["default"], video_api: { images_max: 1, seconds_options: ["8"], sizes: ["720p"], ratios: ["16:9", "9:16"], pricing: { unit: "per_call" } } },
+  ] });
+  const models = new Map(catalog.models.map(m => [m.id, m]));
+  const deal = models.get("seedance-2.0-deal")!;
+  expect(deal.pricing).toMatchObject({ kind: "per-request", currency: "CNY", unitAmount: 3.125, billingUnit: "request" });
+  expect(deal.limits?.maxInputAudios).toBe(3);
+  expect(deal.parameters?.find(p => p.key === "aspect_ratio")?.options).toHaveLength(6);
+  const pro = models.get("seedance-2.5-pro")!;
+  expect(pro.limits).toMatchObject({ maxInputImages: 30, maxInputAudios: 10 });
+  expect(modelPriceAmount(pro.pricing!, { resolution: "480p", duration: 30 })).toBe(6);
+  expect(modelPriceAmount(pro.pricing!, { resolution: "720p", duration: 4 })).toBe(10);
+  expect(models.get("sora-2")?.parameters?.find(p => p.key === "duration")).toMatchObject({ control: "select", default: 8, options: [{ label: "8 秒", value: 8 }] });
+});
 
 /**
  * Trimmed from the verbatim 2026-08-28 probe of

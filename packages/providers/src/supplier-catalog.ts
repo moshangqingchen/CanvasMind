@@ -1,6 +1,7 @@
 import { fetchProviderJson, providerFetch, ProviderHttpError } from "./http.js";
 import type { FetchImplementation, ModelDescriptor } from "./contracts.js";
 import { catalogPriceLabel } from "./catalog-pricing.js";
+import { chuangxiangCatalogPricing, isChuangxiangCatalogSource } from "./chuangxiang-catalog-pricing.js";
 import { parseProviderModelFacts } from "./model-catalog.js";
 import { parseSupplierGroupDetails, type SupplierGroupDetails } from "./supplier-group-details.js";
 import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketplace, TK1688_MARKETPLACE_URL } from "./tk1688-catalog.js";
@@ -184,7 +185,7 @@ function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
 /** Parse public New API pricing, Sub2API model plaza, and OpenAI model lists. */
 export function parseSupplierCatalog(
   payload: unknown,
-  priceDisplay: { currency?: string; multiplier?: number } = {},
+  priceDisplay: { currency?: string; multiplier?: number; supplierSiteUrl?: string; checkedAt?: string } = {},
 ): {
   groups: DiscoveredSupplierGroup[];
   kind: SupplierSiteKind;
@@ -220,8 +221,15 @@ export function parseSupplierCatalog(
       const saved = byGroup.get(id);
       const details = parseSupplierGroupDetails(group, "model-plaza");
       if (saved && details) saved.details = details;
-      for (const model of Array.isArray(group.models) ? group.models : [])
-        add(id, label, modelFrom(model));
+      for (const rawModel of Array.isArray(group.models) ? group.models : []) {
+        const model = modelFrom(rawModel);
+        if (!model) continue;
+        const current = isChuangxiangCatalogSource(priceDisplay.supplierSiteUrl) ? chuangxiangCatalogPricing(rawModel, priceDisplay.checkedAt) : undefined;
+        add(id, label, current ? { ...model, priceLabel: current.priceLabel,
+          metadata: { ...model.metadata, chuangxiangCatalogPricing: current.pricing,
+            chuangxiangEffectiveRateMultiplier: record(rawModel)?.effective_rate_multiplier,
+            ...(current.resolutions ? { videoSupportedResolutions: current.resolutions } : {}) } } : model);
+      }
     }
     return { groups: [...byGroup.values()], kind: "sub2api", recognized: true };
   }
@@ -622,7 +630,7 @@ export async function discoverSupplierCatalog(
       });
     const data = record(record(plaza.payload)?.data);
     if (plaza.status === 200 && data && Array.isArray(data.groups)) {
-      const parsed = parseSupplierCatalog(plaza.payload);
+      const parsed = parseSupplierCatalog(plaza.payload, { supplierSiteUrl: siteUrl, checkedAt });
       if (parsed.groups.length) {
         // Model plaza can publish prices for only a subset of an account's
         // groups. Always include the API-key page's selectable groups too.

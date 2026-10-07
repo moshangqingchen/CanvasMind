@@ -114,7 +114,7 @@ async function cyberAfeiRunPreflight(input: {
     const connection = await repository.getConnection(connectionId);
     if (!connection) return { message: "连接已删除，请为画布节点重新选择连接", status: 409 };
     try { await assertCurrentSupplierConnection(connection); } catch (e) { return { message: e instanceof Error ? e.message : "连接来源已改变", status: 409 }; }
-    if (data.nodeType === "image-generation" || data.nodeType === "video-generation") {
+    if (data.nodeType === "image-generation" || data.nodeType === "video-generation" || data.nodeType === "music-generation") {
       const unavailable = savedModelAvailabilityError(connection.config, typeof data.model === "string" ? data.model : undefined);
       if (unavailable) return { message: `${unavailable}；本次付费提交已停止`, status: 422 };
     }

@@ -653,7 +653,7 @@ export function AgentPanel(props: Props) {
           <>
             {!session?.messages.length && (
               <div className={styles.welcome}>
-                <Bot size={30} />
+                <span className={styles.welcomeIcon}><Bot size={30} /></span>
                 <h3>把创作任务交给我</h3>
                 <p>写分镜、改图片、优化文案，或把多个步骤组合成画布工作流。</p>
                 <div>

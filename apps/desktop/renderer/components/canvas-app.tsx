@@ -89,10 +89,13 @@ import {
   MousePointer2,
   Palette,
   MoreHorizontal,
+  Music,
   Minus,
   Pencil,
   Play,
   RefreshCw,
+  Search,
+  ScanLine,
   Square,
   Trash2,
   Type,
@@ -282,6 +285,7 @@ import {
 import { AgentPanel } from "./creative-agent-panel";
 import { AgentCanvasContext, type AgentCanvasBridge } from "./agent-canvas-context";
 import { CanvasSaveConflictModal } from "./canvas-save-conflict-modal";
+import { CanvasCommandMenu, type CanvasCommand } from "./canvas-command-menu";
 import { DrawingLayer } from "./drawing-layer";
 import { parametersForResolutionModelChange } from "../lib/model-resolution-family";
 import { refreshSupplierAccountAfterRun } from "../lib/client-supplier-billing";
@@ -536,7 +540,7 @@ function createNode(
             ? "图片生成"
             : type === "video-generation"
               ? "视频生成"
-              : "结果预览",
+              : type === "music-generation" ? "音乐生成" : "结果预览",
   };
   if (type === "asset-input")
     Object.assign(base, {
@@ -585,6 +589,10 @@ function createNode(
       outputs: [port("video", "video", "视频")],
       parameters: { duration: 5, ratio: "1280:720" },
     });
+  if (type === "music-generation") Object.assign(base, {
+    provider: "fake", model: "fake-music-v1", parts: [{ type: "text", text: "" } satisfies PromptPart],
+    inputs: [port("prompt", "text", "音乐描述")], outputs: [port("audio", "audio", "音乐")], parameters: {},
+  });
   if (type === "preview")
     Object.assign(base, {
       inputs: [
@@ -593,6 +601,7 @@ function createNode(
         // keeping fan-in available for multi-output providers.
         port("image", "image[]", "图片", false, true),
         port("video", "video[]", "视频", false, true),
+        port("audio", "audio[]", "音频", false, true),
       ],
     });
   return {
@@ -600,7 +609,7 @@ function createNode(
     type: "workflow",
     position,
     style:
-      type === "image-generation" || type === "video-generation"
+      type === "image-generation" || type === "video-generation" || type === "music-generation"
         ? { width: 420, height: 210 }
         : type === "prompt"
           ? { width: 360, height: 210 }
@@ -789,7 +798,7 @@ function createPendingAssetInputNode(
       ? "audio"
       : "image";
   const previewUrl =
-    (kind === "image" || kind === "video") &&
+    (kind === "image" || kind === "video" || kind === "audio") &&
     typeof URL.createObjectURL === "function"
       ? URL.createObjectURL(file)
       : undefined;
@@ -836,6 +845,7 @@ function parseAspectRatio(value: unknown): number | undefined {
 }
 
 function generatedMediaAspectRatio(source: CanvasNode): number {
+  if (source.data.nodeType === "music-generation") return 2.5;
   const parameters = source.data.parameters ?? {};
   const candidates =
     source.data.nodeType === "video-generation"
@@ -913,7 +923,7 @@ function generatedResultPosition(
 function createGeneratedResultNode(
   source: CanvasNode,
   runId: string,
-  kind: "image" | "video",
+  kind: "image" | "video" | "audio",
   outputIndex: number,
   status: NodeRunStatus,
   assetId: string | undefined,
@@ -935,7 +945,7 @@ function createGeneratedResultNode(
       label:
         kind === "video"
           ? `生成视频 ${outputIndex + 1}`
-          : `生成图片 ${outputIndex + 1}`,
+          : kind === "audio" ? `生成音乐 ${outputIndex + 1}` : `生成图片 ${outputIndex + 1}`,
       assetId,
       assetKind: kind,
       generatedResult: true,
@@ -950,7 +960,7 @@ function createGeneratedResultNode(
       generatedOutputIndex: outputIndex,
       mediaAspectRatio: aspectRatio,
       inputs: [port(GENERATED_RESULT_INPUT_HANDLE, kind, "生成来源")],
-      outputs: [port("asset", kind, kind === "video" ? "视频" : "图片")],
+      outputs: [port("asset", kind, kind === "video" ? "视频" : kind === "audio" ? "音乐" : "图片")],
     },
   };
 }
@@ -961,15 +971,15 @@ function generatedResultEdgeId(resultNodeId: string): string {
 
 function generatedResultSourceHandle(
   source: CanvasNode,
-  kind: "image" | "video",
+  kind: "image" | "video" | "audio",
 ): string {
   const compatibleKinds =
     kind === "video"
       ? new Set(["video", "video[]"])
-      : new Set(["image", "image[]"]);
+      : kind === "audio" ? new Set(["audio", "audio[]"]) : new Set(["image", "image[]"]);
   return (
     source.data.outputs?.find((output) => compatibleKinds.has(output.kind))
-      ?.id ?? (kind === "video" ? "video" : "images")
+      ?.id ?? (kind === "video" ? "video" : kind === "audio" ? "audio" : "images")
   );
 }
 
@@ -977,7 +987,7 @@ function ensureGeneratedResultInputs(nodes: CanvasNode[]): CanvasNode[] {
   let changed = false;
   const next = nodes.map((node) => {
     if (node.data.generatedResult !== true) return node;
-    const kind = node.data.assetKind === "video" ? "video" : "image";
+    const kind = node.data.assetKind === "video" ? "video" : node.data.assetKind === "audio" ? "audio" : "image";
     const input = node.data.inputs?.find(
       (candidate) => candidate.id === GENERATED_RESULT_INPUT_HANDLE,
     );
@@ -1005,7 +1015,7 @@ function generatedResultEdge(
   source: CanvasNode,
   result: CanvasNode,
 ): CanvasEdge {
-  const kind = result.data.assetKind === "video" ? "video" : "image";
+  const kind = result.data.assetKind === "video" ? "video" : result.data.assetKind === "audio" ? "audio" : "image";
   const status = result.data.generatedStatus;
   const animated = status
     ? !terminalGeneratedResultStatuses.has(status)
@@ -1162,7 +1172,7 @@ function generationNodesForRun(
     return nodes.filter(
       (node) =>
         node.data.nodeType === "image-generation" ||
-        node.data.nodeType === "video-generation",
+        node.data.nodeType === "video-generation" || node.data.nodeType === "music-generation",
     );
   }
   if (!nodeId) return [];
@@ -1183,7 +1193,7 @@ function generationNodesForRun(
     (node) =>
       selected.has(node.id) &&
       (node.data.nodeType === "image-generation" ||
-        node.data.nodeType === "video-generation"),
+        node.data.nodeType === "video-generation" || node.data.nodeType === "music-generation"),
   );
 }
 
@@ -1299,7 +1309,7 @@ function createPendingGeneratedResults(
 
   for (const source of sources) {
     const kind =
-      source.data.nodeType === "video-generation" ? "video" : "image";
+      source.data.nodeType === "video-generation" ? "video" : source.data.nodeType === "music-generation" ? "audio" : "image";
     const outputCount = generatedOutputCount(source, 0);
     for (let outputIndex = 0; outputIndex < outputCount; outputIndex += 1) {
       const matchesPendingOutput = (node: CanvasNode) =>
@@ -1439,11 +1449,11 @@ function modelDescriptorsForConnection(
 
 function modelForConnectionAndNode(
   connection: ProviderConnectionView,
-  nodeType: "image-generation" | "video-generation",
+  nodeType: "image-generation" | "video-generation" | "music-generation",
   preferredId?: string,
 ): ModelDescriptor | null {
   const compatible = modelDescriptorsForConnection(connection).filter((model) =>
-    modelSupportsNodeType(model, nodeType),
+    modelSupportsNodeType(model, nodeType) && !modelCanvasUnavailableReason(model),
   );
   return (
     modelDescriptorForSavedSelection(compatible, preferredId) ??
@@ -1470,7 +1480,7 @@ function connectionIsConfigured(connection: ProviderConnectionView): boolean {
 
 function newGenerationConnectionPriority(
   connection: ProviderConnectionView,
-  nodeType: "image-generation" | "video-generation",
+  nodeType: "image-generation" | "video-generation" | "music-generation",
 ): number {
   if (providerConnectionUsage(connection) === "disabled") return -1;
   if (!connectionIsConfigured(connection)) return -1;
@@ -1490,7 +1500,7 @@ export function configureNewGenerationNode(
   connections: readonly ProviderConnectionView[],
 ): CanvasNode | null {
   const nodeType = node.data.nodeType;
-  if (nodeType !== "image-generation" && nodeType !== "video-generation")
+  if (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
     return node;
   const rankedConnections = connections
     .map((connection, index) => ({
@@ -1537,7 +1547,7 @@ export function configureNewGenerationNode(
       connection.provider === "cli",
     );
     const configuredNode = configure(model, defaultParameters);
-    if (nodeType === "video-generation") return configuredNode;
+    if (nodeType === "video-generation" || nodeType === "music-generation") return configuredNode;
     fallback ??= configuredNode;
     const preferred = weAiImageGenerationDefault(connection, modelDescriptorsForConnection(connection));
     if (preferred) return configure(preferred.model, preferred.parameters);
@@ -1546,10 +1556,11 @@ export function configureNewGenerationNode(
 }
 
 function generationInputsForModel(
-  nodeType: "image-generation" | "video-generation",
+  nodeType: "image-generation" | "video-generation" | "music-generation",
   model: ModelDescriptor | null | undefined,
   fallback: CanvasNodeData["inputs"],
 ): CanvasNodeData["inputs"] {
+  if (nodeType === "music-generation") return [port("prompt", "text", "音乐描述")];
   if (model?.provider === "cli") return cliInputPorts(model);
   if (nodeType === "image-generation") {
     const existing = [...(fallback ?? [])];
@@ -1638,7 +1649,7 @@ function ensureGenerationNodeInputs(nodes: CanvasNode[]): CanvasNode[] {
     const node = ensureMaskNodeSize(original);
     if (node !== original) changed = true;
     const nodeType = node.data.nodeType;
-    if (nodeType !== "image-generation" && nodeType !== "video-generation")
+    if (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
       return node;
     const inputs = generationInputsForModel(nodeType, null, node.data.inputs);
     if (generationInputsEqual(node.data.inputs, inputs)) return node;
@@ -1656,7 +1667,7 @@ function ensureGenerationNodeInputs(nodes: CanvasNode[]): CanvasNode[] {
  * a page reload.
  */
 export function modelDiscoveryMigrationPatch(
-  nodeType: "image-generation" | "video-generation",
+  nodeType: "image-generation" | "video-generation" | "music-generation",
   data: CanvasNodeData,
   provider: string,
   model: ModelDescriptor,
@@ -1742,7 +1753,7 @@ function migrateSavedWeAiAdobeNodes(
   let changed = false;
   const migrated = nodes.map((node) => {
     const nodeType = node.data.nodeType;
-    if (nodeType !== "image-generation" && nodeType !== "video-generation")
+    if (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
       return node;
     const connectionId = node.data.connectionId;
     const connection =
@@ -1849,17 +1860,17 @@ function modelOptionsForNode(
   },
 ): ModelDescriptor[] {
   const nodeType = node.data.nodeType;
-  if (nodeType !== "image-generation" && nodeType !== "video-generation")
+  if (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
     return [];
   if (node.data.provider === "fake") {
     return [
       {
-        id: nodeType === "video-generation" ? "fake-video-v1" : "fake-image-v1",
+        id: nodeType === "video-generation" ? "fake-video-v1" : nodeType === "music-generation" ? "fake-music-v1" : "fake-image-v1",
         name: "Fake",
         operations:
           nodeType === "video-generation"
             ? ["video.generate", "video.image-to-video"]
-            : ["image.generate", "image.edit"],
+            : nodeType === "music-generation" ? ["music.generate"] : ["image.generate", "image.edit"],
       },
     ];
   }
@@ -1945,7 +1956,7 @@ export function normalizeGenerationNodeForRun(
 ): CanvasNode {
   if (node.data.provider === "cli") return node;
   const nodeType = node.data.nodeType;
-  if (nodeType !== "image-generation" && nodeType !== "video-generation")
+  if (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
     return node;
   const connection = connections.find(
     (candidate) => candidate.id === node.data.connectionId,
@@ -2071,7 +2082,7 @@ function copyableCanvasNode(node: CanvasNode): CanvasNode | null {
   const data = { ...copy.data };
   for (const key of generatedResultIdentityKeys) delete data[key];
   data.inputs = [];
-  data.label = data.assetKind === "video" ? "固定视频" : "固定图片";
+  data.label = data.assetKind === "video" ? "固定视频" : data.assetKind === "audio" ? "固定音乐" : "固定图片";
   return { ...copy, data };
 }
 
@@ -2591,6 +2602,16 @@ function CanvasShell({
     loading: false,
   });
   const [modelScanRevision, setModelScanRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    const upgraded = () => { void fetchConnections().then(next => {
+      if (!active) return;
+      setConnections(next);
+      setModelScanRevision(value => value + 1);
+    }).catch(() => {}); };
+    window.addEventListener("supplier-catalog-upgraded", upgraded);
+    return () => { active = false; window.removeEventListener("supplier-catalog-upgraded", upgraded); };
+  }, []);
   const [nodeRunStatuses, setNodeRunStatuses] = useState<
     Map<string, NodeRunStatus>
   >(new Map());
@@ -2609,6 +2630,7 @@ function CanvasShell({
     useState<CanvasSaveConflictState | null>(null);
   const [saveConflictOpen, setSaveConflictOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialCangyuanGroup, setSettingsInitialCangyuanGroup] =
     useState<string | null>(null);
@@ -4118,7 +4140,7 @@ function CanvasShell({
   const effectiveInputsForNode = useCallback(
     (node: CanvasNode): CanvasNodeData["inputs"] => {
       const nodeType = node.data.nodeType;
-      if (nodeType !== "image-generation" && nodeType !== "video-generation")
+      if (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
         return node.data.inputs;
       const options = modelOptionsForNode(node, connections, connectionModels);
       const model =
@@ -5044,6 +5066,25 @@ function CanvasShell({
     });
   }, [showToast]);
 
+  const locateCanvasNode = useCallback((id: string) => {
+    flushPendingEditorEdits();
+    const state = useCanvasStore.getState();
+    if (!state.nodes.some((node) => node.id === id)) return;
+    useCanvasStore.setState({
+      nodes: state.nodes.map((node) => ({ ...node, selected: node.id === id })),
+      selectedId: id,
+    });
+    setMobileLibraryOpen(false);
+    setMobileProjectsOpen(false);
+    void reactFlowRef.current?.fitView({
+      nodes: [{ id }],
+      padding: 0.35,
+      minZoom: CANVAS_MIN_ZOOM,
+      maxZoom: 1,
+      duration: canvasMotionEnabled() ? 320 : 0,
+    });
+  }, []);
+
   const updateNodeData = useCallback(
     (
       id: string,
@@ -5093,7 +5134,7 @@ function CanvasShell({
       const nodeType = node?.data.nodeType;
       if (
         !node ||
-        (nodeType !== "image-generation" && nodeType !== "video-generation")
+        (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
       )
         return;
       if (connectionId === "fake-default") {
@@ -5106,7 +5147,7 @@ function CanvasShell({
             model:
               nodeType === "video-generation"
                 ? "fake-video-v1"
-                : "fake-image-v1",
+                : nodeType === "music-generation" ? "fake-music-v1" : "fake-image-v1",
             parameters: preserveImageMaskParameters(parametersWithDefaults(
               parameterDescriptorsFor(nodeType, "fake", null),
             ), node.data.parameters ?? {}),
@@ -5156,7 +5197,7 @@ function CanvasShell({
       const nodeType = node?.data.nodeType;
       if (
         !node ||
-        (nodeType !== "image-generation" && nodeType !== "video-generation")
+        (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
       )
         return;
       const connection = connections.find(
@@ -5383,7 +5424,7 @@ function CanvasShell({
             ? "video"
             : node.data.nodeType === "image-generation"
               ? "image"
-              : node.data.assetKind;
+              : node.data.nodeType === "music-generation" ? "audio" : node.data.assetKind;
         if (
           !outputIdsChanged &&
           node.data.assetKind === nextAssetKind &&
@@ -5413,7 +5454,7 @@ function CanvasShell({
             ? "image"
             : source?.data.nodeType === "video-generation"
               ? "video"
-              : null;
+              : source?.data.nodeType === "music-generation" ? "audio" : null;
         if (!source || !kind) continue;
         const status = nodeRun.status as NodeRunStatus;
         const runRequest = nodeRun.request;
@@ -6024,7 +6065,7 @@ function CanvasShell({
         }
         if (savedConnection?.provider === "cli") {
           if (!model || !options.some(option => option.id === node.data.model)) return `${node.data.label}：所选模型不在当前 CLI 目录中，请同步模型或重新选择`;
-          const validation = validateModelParameters(model, node.data.parameters ?? {}, cliOperationForNode(node.data.nodeType === "image-generation" ? "image-generation" : "video-generation", linked.some(asset => asset.kind === "image")));
+          const validation = validateModelParameters(model, node.data.parameters ?? {}, cliOperationForNode(node.data.nodeType as "image-generation" | "video-generation" | "music-generation", linked.some(asset => asset.kind === "image")));
           if (!validation.valid) return `${node.data.label}：${validation.issues.map(issue => issue.message).join("；")}`;
         }
         const immediate = validateLinkedMediaInputs(
@@ -6107,7 +6148,7 @@ function CanvasShell({
       }
       const requestKey = runRequestKey(runRequest);
       const independentGeneration = scope === "node" && currentState.nodes.some(
-        node => node.id === nodeId && ["image-generation", "video-generation"].includes(String(node.data.nodeType)),
+        node => node.id === nodeId && ["image-generation", "video-generation", "music-generation"].includes(String(node.data.nodeType)),
       );
       // Each accepted click has its own subscription/lock, even on one source.
       const requestId = crypto.randomUUID();
@@ -6460,7 +6501,7 @@ function CanvasShell({
       const state = useCanvasStore.getState();
       const currentResult = state.nodes.find((node) => node.id === resultNodeId);
       if (!currentResult) return;
-      const kind = result.data.assetKind === "video" ? "video-generation" : "image-generation";
+      const kind = result.data.assetKind === "video" ? "video-generation" : result.data.assetKind === "audio" ? "music-generation" : "image-generation";
       const base = createNode(kind, generatedResultPosition(currentResult, 420, 210, state.nodes), state.nodes.length);
       const node: CanvasNode = {
         ...base,
@@ -6521,6 +6562,21 @@ function CanvasShell({
   useEffect(() => {
     if (initialization.status !== "ready") return;
     const handler = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k") {
+        if (document.querySelector('dialog[open], [role="dialog"]:not([data-canvas-command-menu])')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        flushPendingEditorEdits();
+        setProjectMenuOpen(false);
+        setCanvasMenu(null);
+        setNodeMenu(null);
+        setConnectionMenu(null);
+        setCommandMenuOpen((open) => !open);
+        return;
+      }
+      // The search dialog owns every key while open, including canvas modes.
+      if (document.querySelector('[data-canvas-command-menu]')) return;
       if (event.key === "Escape") {
         if (event.target instanceof Element && event.target.closest(".connection-menu")) return;
         setShortcutsOpen(false);
@@ -7217,7 +7273,7 @@ function CanvasShell({
     return contentNodes.map((node): CanvasNode => {
       const nodeType = node.data.nodeType;
       const generationType =
-        nodeType === "image-generation" || nodeType === "video-generation"
+        nodeType === "image-generation" || nodeType === "video-generation" || nodeType === "music-generation"
           ? nodeType
           : null;
       const nodeConnectionCandidates = generationType
@@ -7697,7 +7753,7 @@ function CanvasShell({
         const current = state.nodes.find(node => node.id === modelScanNodeId);
         const model = items.find(item => item.id === current?.data.model);
         const nodeType = current?.data.nodeType;
-        if (current && model && (nodeType === "image-generation" || nodeType === "video-generation")) {
+        if (current && model && (nodeType === "image-generation" || nodeType === "video-generation" || nodeType === "music-generation")) {
           const patch = modelDiscoveryMigrationPatch(nodeType, current.data, "cli", model, new Set(state.edges.flatMap(edge => edge.target === current.id && edge.targetHandle ? [edge.targetHandle] : [])));
           if (patch) updateNodeData(current.id, patch);
         }
@@ -7764,7 +7820,7 @@ function CanvasShell({
       const nodeType = currentNode?.data.nodeType;
       if (
         !currentNode ||
-        (nodeType !== "image-generation" && nodeType !== "video-generation")
+        (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
       )
         return;
       const compatible = items.filter((model) =>
@@ -8840,7 +8896,7 @@ function CanvasShell({
             ? node.data.label
             : "节点",
         runnable:
-          nodeType === "image-generation" || nodeType === "video-generation",
+          nodeType === "image-generation" || nodeType === "video-generation" || nodeType === "music-generation",
       });
     },
     [selectCanvasNode],
@@ -9055,6 +9111,34 @@ function CanvasShell({
     }
   }
 
+  // Build search contents only while the menu is open. Large graphs should not
+  // parse every prompt again when the user pans or resizes the canvas.
+  const canvasCommands: CanvasCommand[] = commandMenuOpen ? [
+    { id: "create-image", label: "新建图片节点", description: "从提示词或参考图生成图片", group: "开始创作", icon: <ImageIcon size={18} />, onSelect: () => addNewNode("image-generation") },
+    { id: "create-prompt", label: "新建提示词节点", description: "编写文案与结构化 Prompt", group: "开始创作", icon: <Type size={18} />, onSelect: () => addNewNode("prompt") },
+    { id: "create-video", label: "新建视频节点", description: "创建视频生成工作流", group: "开始创作", icon: <Video size={18} />, onSelect: () => addNewNode("video-generation") },
+    { id: "create-music", label: "新建音乐节点", description: "创作歌曲或纯音乐，支持歌词与音频格式", group: "开始创作", icon: <Music size={18} />, onSelect: () => addNewNode("music-generation") },
+    { id: "graphic-design", label: "打开平面设计", description: "海报、宣传图与多尺寸物料", group: "开始创作", icon: <Palette size={18} />, onSelect: openGraphicDesign },
+    { id: "fit-all", label: "适应全部节点", description: "缩放到整张工作流", shortcut: "F", group: "画布操作", icon: <Maximize size={18} />, onSelect: fitViewToCanvas },
+    ...(selectedId ? [{ id: "locate-selected", label: "定位所选节点", description: selectedNode?.data.label, group: "画布操作", icon: <ScanLine size={18} />, onSelect: () => locateCanvasNode(selectedId) }] : []),
+    { id: "tidy", label: "一键整理画布", description: "整理连线和节点位置", group: "画布操作", icon: <LayoutGrid size={18} />, onSelect: tidyCanvasLayout },
+    { id: "library", label: "节点与素材库", description: "导入素材并放入画布", group: "工作台", icon: <FolderOpen size={18} />, onSelect: () => { setMobileLibraryOpen(true); setMobileProjectsOpen(false); } },
+    { id: "history", label: "历史生成", description: "查看作品、比稿与继续修改", group: "工作台", icon: <History size={18} />, onSelect: () => setHistoryOpen(true) },
+    { id: "tasks", label: "任务中心", description: "查看运行历史与任务进度", group: "工作台", icon: <Play size={18} />, onSelect: () => setRunHistoryOpen(true) },
+    { id: "files", label: "项目文件", description: "查看当前项目成品和草稿", group: "工作台", icon: <FolderOpen size={18} />, onSelect: openProjectFiles },
+    { id: "agent", label: mobileInspectorOpen ? "收起智能体面板" : "展开智能体面板", description: "对话、分镜与创作方案", group: "工作台", icon: <Bot size={18} />, onSelect: () => setMobileInspectorOpen((open) => !open) },
+    { id: "settings", label: "供应商与模型设置", description: "管理 API、密钥和可用模型", group: "工作台", icon: <KeyRound size={18} />, onSelect: () => setSettingsOpen(true) },
+    { id: "shortcuts", label: "键盘快捷键", shortcut: "?", group: "工作台", icon: <Keyboard size={18} />, onSelect: () => setShortcutsOpen(true) },
+    ...nodes.filter((node) => !node.hidden).map((node): CanvasCommand => ({
+      id: `node:${node.id}`,
+      label: node.data.label || "未命名节点",
+      description: `${node.data.nodeType === "prompt" ? "提示词" : node.data.nodeType === "image-generation" ? "图片生成" : node.data.nodeType === "video-generation" ? "视频生成" : node.data.nodeType === "music-generation" ? "音乐生成" : node.data.generatedResult ? "生成结果" : "画布节点"} · ${renderPromptParts(node.data.parts ?? []) || node.data.generatedPromptText || node.data.description || "点击定位到画布"}`,
+      group: "画布节点",
+      icon: node.data.nodeType === "prompt" ? <Type size={18} /> : node.data.nodeType === "video-generation" ? <Video size={18} /> : <ScanLine size={18} />,
+      onSelect: () => locateCanvasNode(node.id),
+    })),
+  ] : [];
+
   return (
     <AgentCanvasContext.Provider value={{ perform: performAgentAction }}>
       {agentMutation && <div role="status" className={feedbackStyles.overlay}>
@@ -9071,7 +9155,7 @@ function CanvasShell({
         <div className="brand">
           <span className="brand-mark">✦</span>
           <span className="editor-project-title" title={title}><ReadableName text={title} /></span>
-          <span className="brand-version">节点 {nodes.length}</span>
+          <span className="brand-version">节点 {nodes.length} <span aria-hidden="true">·</span> 连线 {edges.length}</span>
         </div>
         <nav className="top-create-actions" aria-label="生成工具">
           <button
@@ -9113,6 +9197,9 @@ function CanvasShell({
           </button>
         </nav>
         <div className="top-actions">
+          <button className="canvas-command-trigger" type="button" aria-label="搜索操作与节点" title="搜索操作与节点 (Ctrl+K)" disabled={initialization.status !== "ready" || leaving} onClick={() => { flushPendingEditorEdits(); setCommandMenuOpen(true); }}>
+            <Search size={15} /><span>搜索操作 / 节点</span><kbd>Ctrl K</kbd>
+          </button>
           <button className="button small project-files-button" type="button" onClick={openProjectFiles}
             disabled={initialization.status !== "ready"} title="在页面内查看当前项目的成品和草稿文件" aria-label="打开项目文件">
             <FolderOpen size={14} /><span>项目文件</span>
@@ -9146,6 +9233,7 @@ function CanvasShell({
             title={mobileInspectorOpen ? "收起智能体面板" : "展开智能体面板"}
           >
             <Bot size={15} />
+            <span>智能体</span>
           </button>
           <button
             type="button"
@@ -9391,10 +9479,12 @@ function CanvasShell({
           <button type="button" title="海报、宣传图、活动物料" aria-label="打开平面设计" disabled={initialization.status !== "ready"} onClick={openGraphicDesign}><Palette size={20} /><span>设计</span></button>
           <button type="button" title="图片生成" aria-label="新建图片节点" onClick={() => addNewNode("image-generation")}><ImageIcon size={20} /><span>图片</span></button>
           <button type="button" title="视频生成" aria-label="新建视频节点" onClick={() => addNewNode("video-generation")}><Video size={20} /><span>视频</span></button>
+          <button type="button" title="音乐生成" aria-label="新建音乐节点" onClick={() => addNewNode("music-generation")}><Music size={20} /><span>音乐</span></button>
           <button type="button" title="提示词" aria-label="新建提示词节点" onClick={() => addNewNode("prompt")}><Type size={20} /><span>文本</span></button>
           <span className="rail-divider" />
           <button type="button" title="节点与素材库" aria-label="打开节点与素材库" aria-pressed={mobileLibraryOpen} onClick={() => { setMobileLibraryOpen((open) => !open); setMobileProjectsOpen(false); }}><FolderOpen size={20} /><span>素材</span></button>
-          <button type="button" aria-label="历史生成" onClick={() => setHistoryOpen(true)}><History size={20} /><span>历史</span></button>
+          <button type="button" aria-label="历史生成" onClick={() => setHistoryOpen(true)}><History size={20} /><span>作品</span></button>
+          <button type="button" aria-label="打开任务中心" onClick={() => setRunHistoryOpen(true)}><Play size={20} /><span>任务</span></button>
           <button type="button" aria-label="项目文件" title="项目文件" disabled={initialization.status !== "ready"} onClick={openProjectFiles}><FolderOpen size={20} /><span>项目文件</span></button>
           <span className="rail-divider" />
           <button type="button" aria-label="打开智能体" aria-pressed={mobileInspectorOpen} onClick={() => { setMobileInspectorOpen(true); setMobileProjectsOpen(false); }}><Bot size={20} /><span>智能体</span></button>
@@ -9580,6 +9670,8 @@ function CanvasShell({
                       />
                     ) : asset.kind === "video" ? (
                       <Video size={15} />
+                    ) : asset.kind === "audio" ? (
+                      <Music size={15} />
                     ) : (
                       <FolderOpen size={15} />
                     )}
@@ -9607,6 +9699,7 @@ function CanvasShell({
           <CanvasPointerTrail enabled={showEffects && canvasMode === "pan" && !connectingFrom} />
           <div className={`canvas-toolbar ${canvasMode === "draw" ? "is-drawing" : ""} ${canvasMode === "select-drawing" ? "is-selecting-drawing" : ""}`}>
             <div className="toolbar-group">
+              {selectedId ? <button className="button small canvas-locate-button" type="button" aria-label="定位所选节点" title={`定位：${selectedNode?.data.label ?? "所选节点"}`} onClick={() => locateCanvasNode(selectedId)}><ScanLine size={14} /><span>定位所选</span></button> : null}
               <button
                 className="button small canvas-tidy-button"
                 type="button"
@@ -10040,6 +10133,7 @@ function CanvasShell({
               >
                 <Video size={13} /> 视频节点
               </button>
+              <button type="button" role="menuitem" onClick={() => insertNodeAt("music-generation", canvasMenu.position)}><Music size={13} /> 音乐节点</button>
               <button
                 type="button"
                 role="menuitem"
@@ -10228,6 +10322,7 @@ function CanvasShell({
           </div>
         </aside>
       </main>
+      <CanvasCommandMenu open={commandMenuOpen} onClose={() => setCommandMenuOpen(false)} commands={canvasCommands} />
       {saveConflict ? (
         <CanvasSaveConflictModal
           open={saveConflictOpen}

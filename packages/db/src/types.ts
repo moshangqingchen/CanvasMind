@@ -93,7 +93,7 @@ export interface SupplierCatalogModel {
   priceLabel?: string;
   /** Model declarations do not grant a saved Key access to the public directory. */
   inputKinds?: readonly ("text" | "image" | "image[]" | "video" | "video[]" | "audio" | "audio[]")[];
-  outputKinds?: readonly ("text" | "image" | "image[]" | "video" | "video[]")[];
+  outputKinds?: readonly ("text" | "image" | "image[]" | "video" | "video[]" | "audio" | "audio[]")[];
   metadata?: Readonly<Record<string, unknown>>;
   limits?: {
     maxPromptCharacters?: number;

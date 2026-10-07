@@ -7,10 +7,44 @@ import {
   cangyuanCatalogFromPricing,
   cangyuanConnectorForModels,
   loadCangyuanCatalog,
+  refreshSavedCangyuanPrices,
 } from "./cangyuan-catalog";
-import { CANGYUAN_BACKUP_IMAGE_GROUP } from "./provider-presets";
+import { CANGYUAN_BACKUP_IMAGE_GROUP, cangyuanImageConnectionConfig } from "./provider-presets";
 import { applySupplierCatalogPrices } from "./supplier-model-pricing";
 import { modelPriceSummary } from "./model-display";
+
+it("keeps October independent Image2/Grok quotes separate from the integrated x contract", () => {
+  const catalog = cangyuanCatalogFromPricing({ group_ratio: { IMAGE: 1 }, data: [
+    ...[["gpt-image-2", .017], ["gpt-image-2-2k", .07], ["gpt-image-2-4k", .08], ["grok-imagine-image", .039], ["grok-imagine-image-2.0", .039]].map(([model_name, model_price]) => ({ model_name, model_price, request_unit: "image", enable_groups: ["IMAGE"] })),
+    { model_name: "gpt-image-2-x", model_price: .015, request_unit: "image", enable_groups: ["IMAGE"], billing_mode: "tiered_expr",
+      billing_expr: 'param("tier") == "4k" ? tier("4k", n * 0.095) : param("tier") == "2k" ? tier("2k", n * 0.075) : param("tier") == "1k" ? tier("1k", n * 0.055) : tier("web", n * 0.015)' },
+  ] });
+  const models = new Map(catalog.groups.IMAGE.map(m => [m.id, m]));
+  expect(models.get("gpt-image-2")?.pricing?.unitAmount).toBe(.017);
+  expect(models.get("gpt-image-2-2k")?.pricing?.unitAmount).toBe(.07);
+  expect(models.get("gpt-image-2-4k")?.pricing?.unitAmount).toBe(.08);
+  expect(models.get("grok-imagine-image")?.pricing?.unitAmount).toBe(.039);
+  expect(models.get("grok-imagine-image-2.0")?.pricing?.unitAmount).toBe(.039);
+  expect(modelPriceSummary(models.get("gpt-image-2-x")!, { tier: "4k" })).toBe("0.095 CNY / 张");
+  expect(models.get("gpt-image-2-x")?.metadata?.priceContractWarning).toContain("独立分档");
+});
+
+it("refreshes version-two saved quotes without widening the Key's model IDs", async () => {
+  const fresh = { data: [{ model_name: "gpt-image-2", model_price: .017, request_unit: "image", enable_groups: ["IMAGE"] }, { model_name: "gpt-image-2-4k", model_price: .08, request_unit: "image", enable_groups: ["IMAGE"] }] };
+  await loadCangyuanCatalog({ force: true, fetch: vi.fn(async () => Response.json(fresh)) });
+  const models = [{ id: "gpt-image-2", name: "Old", operations: ["image.generate" as const], metadata: { cangyuanBillingVersion: 2, privatePermission: "keep" }, pricing: { kind: "per-image" as const, unitAmount: .015, currency: "CNY", checkedAt: "2026-10-06", confidence: "exact" as const } }];
+  const refreshed = await refreshSavedCangyuanPrices({ provider: "rest", config: cangyuanImageConnectionConfig() }, models);
+  expect(refreshed.map(m => m.id)).toEqual(["gpt-image-2"]);
+  expect(refreshed[0]?.pricing?.unitAmount).toBe(.017);
+  expect(refreshed[0]?.metadata).toMatchObject({ cangyuanBillingVersion: 3, privatePermission: "keep" });
+});
+
+it("includes exact Lyria music IDs in the all-model group without an image route", () => {
+  const catalog = cangyuanCatalogFromPricing({ data: ["lyria-3-pro", "lyria-3.5"].map(model_name => ({ model_name, model_price: .1, enable_groups: ["全模型-无claude/gpt", "MUSIC"] })) });
+  expect(catalog.groups["全模型-无claude/gpt"].map(m => m.operations)).toEqual([["music.generate"], ["music.generate"]]);
+  expect(catalog.groups["全模型-无claude/gpt"].every(m => m.outputKinds?.includes("audio") && m.pricing?.unitAmount === .1)).toBe(true);
+  expect(catalog.marketplaceGroups.find(g => g.id === "MUSIC")?.models.every(m => m.capability === "audio")).toBe(true);
+});
 
 it("keeps documented quality billing through a newer text-only catalog refresh", () => {
   const model = cangyuanCatalogFromPricing({ data: [{ model_name: "gpt-image-2.5-flare-4k", model_price: 0.2,

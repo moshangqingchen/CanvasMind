@@ -619,6 +619,8 @@ function ParameterControl({
             </option>
           ))}
         </select>
+      ) : descriptor.key === "lyrics" ? (
+        <textarea id={id} value={String(value)} rows={6} maxLength={20000} disabled={Boolean(disabledReason)} placeholder="[Verse] 你的歌词…" onChange={event => update(event.target.value)} />
       ) : (
         <>
           <input

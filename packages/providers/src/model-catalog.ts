@@ -42,7 +42,8 @@ function operationsForModel(
         item === "image.generate" ||
         item === "image.edit" ||
         item === "video.generate" ||
-        item === "video.image-to-video",
+        item === "video.image-to-video" ||
+        item === "music.generate",
     );
     if (operations.length > 0) return operations;
   }
@@ -54,9 +55,11 @@ function operationsForModel(
     const kinds = output.filter((item): item is string => typeof item === "string").map(item => item.toLowerCase());
     if (kinds.some(kind => kind === "video" || kind === "video[]")) return ["video.generate", "video.image-to-video"];
     if (kinds.some(kind => kind === "image" || kind === "image[]")) return ["image.generate", "image.edit"];
+    if (kinds.some(kind => kind === "audio" || kind === "audio[]")) return ["music.generate"];
     if (kinds.includes("text")) return [];
   }
   const kind = `${id} ${text(value.type) ?? ""} ${text(value.kind) ?? ""}`;
+  if (/^lyria-(?:3-pro|3\.5)$/iu.test(id)) return ["music.generate"];
   if (/video|kling|runway|seedance|sora|hailuo|luma|veo|happyhorse|minimax-h\d|(?:^|[\s/_-])wan\d|视频/iu.test(kind))
     return ["video.generate", "video.image-to-video"];
   if (
@@ -230,7 +233,7 @@ export function parseProviderModelFacts(entry: Record<string, unknown>, source: 
   const kind = text(entry.type ?? entry.kind ?? metadata.modelKind);
   return {
     ...(input ? { inputKinds: input.filter((v): v is NonNullable<ModelDescriptor["inputKinds"]>[number] => ["text", "image", "image[]", "video", "video[]", "audio", "audio[]"].includes(v)) } : {}),
-    ...(output ? { outputKinds: output.filter((v): v is NonNullable<ModelDescriptor["outputKinds"]>[number] => ["text", "image", "image[]", "video", "video[]"].includes(v)) } : {}),
+    ...(output ? { outputKinds: output.filter((v): v is NonNullable<ModelDescriptor["outputKinds"]>[number] => ["text", "image", "image[]", "video", "video[]", "audio", "audio[]"].includes(v)) } : {}),
     ...(Object.keys(limits).length ? { limits } : {}),
     metadata: {
       modelFactsSource: source,
@@ -360,7 +363,7 @@ export function scanProviderModelCatalog(
           ? "video"
           : operations.some((op) => op.startsWith("image."))
             ? "image"
-            : "text",
+            : operations.includes("music.generate") ? "audio" : "text",
       ],
       isDefault: id === options.defaultModel,
       ...(facts.limits ? { limits: facts.limits } : {}),

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { saveBeforeDesktopExit } from "../lib/desktop-client";
-import { fetchAppUpdate, requestAppUpdate, type AppUpdateView } from "../lib/client-api";
+import { fetchAppUpdate, requestAppUpdate, invalidateModelCache, type AppUpdateView } from "../lib/client-api";
 import { AppUpdateModal } from "./app-update-modal";
 import feedbackStyles from "./blocking-feedback.module.css";
 
@@ -12,6 +12,25 @@ export function DesktopBridge() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const noticedVersion = useRef("");
+  useEffect(() => {
+    if (!window.superCanvasDesktop) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = async (method: "GET" | "POST") => {
+      try {
+        const response = await fetch("/api/suppliers/catalog-upgrade", { method, cache: "no-store" });
+        if (!response.ok || cancelled) return;
+        const result = await response.json() as { phase?: string; updatedConnectionIds?: string[] };
+        if (cancelled) return;
+        if (result.phase === "complete") {
+          for (const id of result.updatedConnectionIds ?? []) invalidateModelCache(id);
+          if (result.updatedConnectionIds?.length) window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded"));
+        } else timer = setTimeout(() => { void read("GET"); }, 3000);
+      } catch { /* Existing inventories remain usable; retry on the next launch. */ }
+    };
+    void read("POST");
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, []);
   useEffect(() => {
     const api = window.superCanvasDesktop;
     if (!api) return;

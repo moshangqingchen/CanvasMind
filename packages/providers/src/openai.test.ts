@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { StaticConnectionResolver } from "./credentials";
 import { OpenAIImageAdapter, WeAIImageAdapter } from "./openai";
+import type { FetchImplementation, NormalizedRequest } from "./contracts";
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -8,6 +9,83 @@ function jsonResponse(value: unknown): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+describe("Gemini Nano Banana 2.1 native supplier contract", () => {
+  const model = "gemini-nano-banana-2.1";
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKcAAAAASUVORK5CYII=";
+  const request: NormalizedRequest = { connectionId: "nano-21", model, operation: "image.generate", prompt: "a blue vase", idempotencyKey: "native-alias-once" };
+  const suppliers = [["chentu", "https://tu.988236.xyz/v1", "稳定gemini生图"], ["frimodel", "https://api.frimodel.com/v1", "gemini_pro"]] as const;
+  function fixture(supplierKey: string, baseUrl: string, modelGroup: string, fetch?: FetchImplementation, scannedModelIds = [model]) {
+    const fetchMock = vi.fn<FetchImplementation>(fetch ?? (async (_url, init) => init?.method === "GET"
+      ? jsonResponse({ data: [{ id: model }] })
+      : jsonResponse({ candidates: [{ content: { parts: [{ text: "done" }, { inlineData: { mimeType: "image/png", data: png } }] } }] })));
+    const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{ id: request.connectionId, provider: "openai", apiKey: "fixture-key", baseUrl,
+      settings: { supplierKey, modelGroup, scannedModelIds, protocol: "gemini-openai-compatible" } }]), { fetch: fetchMock });
+    return { adapter, fetchMock };
+  }
+
+  it.each(suppliers)("recognizes the exact %s ID and exposes native parameters with honest defaults", async (supplier, base, group) => {
+    const f = fixture(supplier, base, group);
+    const [descriptor] = await f.adapter.listModels(request.connectionId);
+    expect(descriptor?.id).toBe(model);
+    expect(descriptor?.operations).toEqual(["image.generate", "image.edit"]);
+    expect(descriptor?.parameters?.map(p => p.key)).toEqual(["aspect_ratio", "image_size", "n"]);
+    expect(descriptor?.parameters?.find(p => p.key === "image_size")).toMatchObject({ default: "auto" });
+    expect(descriptor?.metadata).toMatchObject({ protocol: "gemini-generate-content", supportsImageEdit: true,
+      resolutionVerification: "model-dependent-not-generation-tested", bananaInputLimitSource: "adapter" });
+    expect(descriptor?.limits?.maxInputImages).toBeUndefined();
+    expect(String(f.fetchMock.mock.calls[0]![0])).toBe(`${base}/models`);
+  });
+
+  it.each(suppliers)("submits %s only once to generateContent, omitting unverified default size", async (supplier, base, group) => {
+    const f = fixture(supplier, base, group);
+    const task = await f.adapter.submit({ ...request, parameters: { quality: "max", response_format: "url", output_format: "png", n: 1 } });
+    expect(f.fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = f.fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe(`${new URL(base).origin}/v1beta/models/${model}:generateContent`);
+    const headers = new Headers(init?.headers);
+    expect(headers.get("x-goog-api-key")).toBe("fixture-key");
+    expect(headers.has("authorization")).toBe(false);
+    expect(JSON.parse(String(init?.body))).toEqual({ contents: [{ role: "user", parts: [{ text: request.prompt }] }], generationConfig: { responseModalities: ["IMAGE"] } });
+    expect(await f.adapter.extractOutputs(task.result)).toEqual([{ kind: "image", mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }]);
+  });
+
+  it.each(suppliers)("submits %s reference bytes and public URLs in order with native imageConfig", async (supplier, base, group) => {
+    const f = fixture(supplier, base, group, async (url, init) => init?.method === "POST"
+      ? jsonResponse({ candidates: [{ content: { parts: [{ text: "done" }] } }, { content: { parts: [{ inline_data: { mime_type: "image/jpeg", data: Buffer.from("jpeg result").toString("base64") } }] } }] })
+      : String(url) === "https://assets.example/reference.png" ? new Response(Buffer.from(png, "base64"), { headers: { "content-type": "image/png" } }) : new Response(null, { status: 404 }));
+    const task = await f.adapter.submit({ ...request, operation: "image.edit", parameters: { image_size: "2K", aspect_ratio: "16:9", n: 1 },
+      assets: [{ id: "local", kind: "image", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+        { id: "remote", kind: "image", mimeType: "image/png", url: "https://assets.example/reference.png" }] });
+    const posts = f.fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts).toHaveLength(1);
+    const body = JSON.parse(String(posts[0]![1]?.body));
+    expect(body.contents[0].parts).toEqual([{ text: request.prompt }, { inlineData: { mimeType: "image/png", data: "AQID" } }, { inlineData: { mimeType: "image/png", data: png } }]);
+    expect(body.generationConfig).toEqual({ responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "16:9", imageSize: "2K" } });
+    expect(await f.adapter.extractOutputs(task.result)).toEqual([{ kind: "image", mimeType: "image/jpeg", data: new Uint8Array(Buffer.from("jpeg result")) }]);
+  });
+
+  it.each(suppliers)("rejects invalid %s parameters, excess references, and wrong key inventory before submitting", async (supplier, base, group) => {
+    const f = fixture(supplier, base, group);
+    for (const parameters of [{ image_size: "8K" }, { n: 2 }]) await expect(f.adapter.submit({ ...request, parameters })).rejects.toThrow(/invalid/);
+    await expect(f.adapter.submit({ ...request, operation: "image.edit", assets: Array.from({ length: 15 }, (_, index) => ({ id: String(index), kind: "image", mimeType: "image/png", data: new Uint8Array([1]) })) })).rejects.toThrow(/适配器最多/);
+    expect(f.fetchMock).not.toHaveBeenCalled();
+    const wrongKey = fixture(supplier, base, group, undefined, ["gpt-image-2"]);
+    await expect(wrongKey.adapter.submit(request)).rejects.toThrow(/没有此 Gemini/);
+    expect(wrongKey.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(suppliers)("surfaces %s rejection and text-only responses without retrying a paid submission", async (supplier, base, group) => {
+    const rejected = fixture(supplier, base, group, async () => Response.json({ error: { message: "MODEL_NOT_SUPPORTED" } }, { status: 400 }));
+    await expect(rejected.adapter.submit(request)).rejects.toThrow(/HTTP 400/);
+    expect(rejected.fetchMock).toHaveBeenCalledOnce();
+    const empty = fixture(supplier, base, group, async () => jsonResponse({ candidates: [{ content: { parts: [{ text: "blocked" }] }, finishReason: "SAFETY" }] }));
+    await expect(empty.adapter.submit(request)).rejects.toMatchObject({ message: expect.stringMatching(/没有图片/),
+      details: { kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true,
+        responseBody: { candidates: [{ finishReason: "SAFETY" }] } } });
+    expect(empty.fetchMock).toHaveBeenCalledOnce();
+  });
+});
 
 describe("OpenAIImageAdapter", () => {
   it.each(["api.eaheng.com", "pool.chaozhiyuanai.com"])(

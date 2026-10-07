@@ -1,12 +1,13 @@
 import type { ModelDescriptor, ModelParameterDescriptor } from "@super-canvas/providers";
+import { applyBananaImageCapabilities, GEMINI_NANO_BANANA_21_MODEL } from "@super-canvas/providers/banana-image-contract";
 import {
   imageQualityPresetsAfterSuccess,
   IMAGE_QUALITY_PRESET_DESCRIPTION,
 } from "@super-canvas/providers/image-quality-presets";
 
 /**
- * FriModel is a New API deployment that exposes image generation through the
- * OpenAI-compatible Images API endpoint. The canvas deliberately asks
+ * FriModel exposes GPT through OpenAI Images and Gemini through native
+ * generateContent. The canvas deliberately asks
  * the gateway for /v1/models with
  * the saved key, instead of carrying a static copy of the model plaza: the
  * key's group is the source of truth for what can actually be called.
@@ -104,6 +105,10 @@ export function friModelFallbackImageDescriptor(
   group?: string,
 ): ModelDescriptor | undefined {
   const id = modelId.trim();
+  if (id === GEMINI_NANO_BANANA_21_MODEL) return applyBananaImageCapabilities({ provider: "openai", config: { baseUrl: FRIMODEL_BASE_URL } }, {
+    id, name: `${id}（FriModel）`, operations: ["image.generate", "image.edit"],
+    metadata: { supplier: "frimodel", liveInventory: true, pendingLiveScan: true, ...(group ? { modelGroup: group } : {}) },
+  });
   if (!id || !friModelSupportsImageEdit(id)) return undefined;
   const fixedQuality = /^gpt-image-2-(low|medium|high)$/iu.exec(id)?.[1]?.toLowerCase();
   return {

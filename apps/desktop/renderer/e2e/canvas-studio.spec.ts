@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { clickBlankCanvas } from "./canvas-test-actions";
 
 test.use({ video: process.env.STUDIO_RECORD_VIDEO === "1" ? { mode: "on", size: { width: 1600, height: 1000 } } : "off" });
 
@@ -113,7 +114,7 @@ test("only selected connections have continuous feathered light, switching and c
   await expect(edge.locator(".studio-edge-beam")).toHaveCount(0);
   await expect(otherEdge.locator(".studio-edge-beam")).toHaveCount(1);
   if (process.env.STUDIO_RECORD_VIDEO === "1") await page.waitForTimeout(3700);
-  await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+  await clickBlankCanvas(page);
   await expect(page.locator(".studio-edge-beam")).toHaveCount(0);
   // Clicking an edge lights that edge alone; clicking its source lights both outgoing edges.
   await edge.locator(".react-flow__edge-interaction").click();
@@ -141,7 +142,7 @@ test("only selected connections have continuous feathered light, switching and c
   await page.screenshot({ path: testInfo.outputPath("studio-feathered-detail.png") });
   await page.getByRole("button", { name: "显示连线", exact: true }).click();
   await expect(page.locator(".react-flow__edges")).toHaveCSS("visibility", "hidden");
-  await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+  await clickBlankCanvas(page);
   const saved = await (await request.get(`/api/canvas/${project.id}`)).json();
   expect(saved.graph.edges).toEqual(graph.edges);
 });

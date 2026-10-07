@@ -1,9 +1,9 @@
 import type { ModelDescriptor, NormalizedRequest, ProviderConnectionResolver, ProviderTask, RemoteArtifact, ValidationResult } from "./contracts.js";
-import { assetToBlob, providerFetch } from "./http.js";
+import { assetToBlob, providerFetch, ProviderHttpError } from "./http.js";
 import { assertValidResult } from "./contracts.js";
 import { imageEditingConnection, imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
-import { normalizeBananaParameters, type BananaRoute } from "./banana-image-contract.js";
+import { GEMINI_NANO_BANANA_21_MODEL, normalizeBananaParameters, type BananaRoute } from "./banana-image-contract.js";
 export * from "./banana-image-contract.js";
 function connector(route: BananaRoute, descriptor: ModelDescriptor): RestConnectorConfig {
   const parameter = (target: string, key: string) => ({ target, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitValues: ["auto"] });
@@ -86,7 +86,12 @@ export class BananaImageAdapter extends GenericRestAdapter {
     const task = await super.submit(normalized);
     if (this.route.kind === "secure-async" && task.status !== "succeeded" && task.status !== "failed" && task.providerTaskId?.startsWith("rest:sync:"))
       throw new Error("供应商已响应，但未返回香蕉任务编号；不能查询结果，请核对供应商记录，避免重复提交");
-    return { ...task, result: { ...(task.result as Record<string, unknown>), bananaImage: true } };
+    const result: Record<string, unknown> = { ...(task.result as Record<string, unknown>), bananaImage: true };
+    if (this.route.model === GEMINI_NANO_BANANA_21_MODEL && task.status === "succeeded" && !bananaNativeOutputs(result)?.length)
+      throw new ProviderHttpError("Gemini 已返回响应但没有图片；请核对供应商记录及响应中的安全限制，避免重复提交。", {
+        kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: result.remote,
+      });
+    return { ...task, result };
   }
 }
 

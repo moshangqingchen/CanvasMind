@@ -7,6 +7,7 @@ import { isChuangxiangImageConnection, ChuangxiangImageAdapter } from "./chuangx
 import { imageEditingConnection, imageEditingRequestIssues, usesDeclaredImagesEditingRoute } from "./image-editing-capabilities.js";
 import { assertValidResult } from "./contracts.js";
 import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
+import { isCangyuanMusicRequest } from "./cangyuan-music.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -34,6 +35,12 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     assertValidResult({ valid: !editingIssues.length, issues: editingIssues });
     const catalog = connection.settings?.modelCatalogModels;
     const current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
+    if (connection.provider === "rest" && isCangyuanMusicRequest(request.model, connection.baseUrl)) {
+      const ids = connection.settings?.scannedModelIds;
+      if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
+        throw new Error("当前沧元分组没有此音乐模型的可用权限");
+      return this.fallback;
+    }
     const source = imageEditingConnection(connection);
     const transparentEvidence = verifiedTransparentImageEvidence(source, request.model, request.parameters);
     const bananaRoute = bananaImageRoute(source, request.model);

@@ -37,6 +37,8 @@ import {
   isPdogImageConnection,
   pdogImageSizeForTier,
   GenericRestAdapter,
+  cangyuanMusicTransport,
+  isCangyuanMusicRequest,
   AutoInterfaceAdapter,
   restRequestRequiresPublicAssets,
   secureSkillRequiresPublicAssets,
@@ -563,7 +565,7 @@ function hasInlineGenerationPrompt(node: WorkflowNode | undefined): boolean {
   if (!node) return false;
   const type = semanticType(node);
   return (
-    (type === "image-generation" || type === "video-generation") &&
+    (type === "image-generation" || type === "video-generation" || type === "music-generation") &&
     hasPromptText(promptPartsFromNodeData(nodeData(node)))
   );
 }
@@ -731,6 +733,7 @@ function operationFor(
     return hasImage ? "image.edit" : "image.generate";
   if (semanticType(node) === "video-generation")
     return hasImage ? "video.image-to-video" : "video.generate";
+  if (semanticType(node) === "music-generation") return "music.generate";
   return null;
 }
 
@@ -919,7 +922,7 @@ export class RunService {
     if (provider === "fake")
       return nodeType === "video-generation"
         ? "fake-video-v1"
-        : "fake-image-v1";
+        : nodeType === "music-generation" ? "fake-music-v1" : "fake-image-v1";
 
     const connection =
       frozenConnection ?? (await this.repository.getConnection(connectionId));
@@ -960,7 +963,7 @@ export class RunService {
         // Canvas/project JSON is untrusted. Only this server may mint execution snapshots.
         delete data.__runtimeConnection;
         const type = semanticType(node);
-        if (type !== "image-generation" && type !== "video-generation") return;
+        if (type !== "image-generation" && type !== "video-generation" && type !== "music-generation") return;
         const provider =
           typeof data.provider === "string" ? data.provider : "fake";
         const connectionId =
@@ -1423,7 +1426,8 @@ export class RunService {
             provider,
             connectionId,
             nodeRun.providerTaskId,
-            { adapter, idempotencyKey: `${runId}:${nodeRun.id}` },
+            { adapter, idempotencyKey: `${runId}:${nodeRun.id}`, model: typeof nodeRun.inputJson.model === "string" ? nodeRun.inputJson.model : data.model,
+              parameters: isRecord(nodeRun.inputJson.parameters) ? nodeRun.inputJson.parameters : data.parameters, frozenConnection: frozenConnectionFromUnknown(data.__runtimeConnection) },
           ));
         assertMatchingProviderTask(task, nodeRun.providerTaskId);
         await adapter.cancel?.(task);
@@ -1825,12 +1829,12 @@ export class RunService {
     ) {
       const asset = await this.repository.getAsset(data.assetId);
       return {
-        kind: asset?.kind === "video" ? "video" : "image",
+        kind: inputAssetKind(asset?.kind ?? "image"),
         assetIds: [data.assetId],
       };
     }
     return {
-      kind: semanticType(node) === "video-generation" ? "video" : "image",
+      kind: semanticType(node) === "video-generation" ? "video" : semanticType(node) === "music-generation" ? "audio" : "image",
       assetIds: nodeRun.outputAssetIds,
     };
   }
@@ -2421,7 +2425,7 @@ export class RunService {
     provider: string,
     connectionId: string,
     providerTaskId: string,
-    cliRecovery?: { adapter: ProviderAdapter; idempotencyKey: string },
+    cliRecovery?: { adapter: ProviderAdapter; idempotencyKey: string; model?: string | undefined; parameters?: Readonly<Record<string, unknown>> | undefined; frozenConnection?: FrozenProviderConnection | null | undefined },
   ): Promise<ProviderTask> {
     if (provider === "cli") {
       if (cliRecovery?.adapter instanceof CliProviderAdapter) {
@@ -2441,13 +2445,17 @@ export class RunService {
       };
     }
     if (provider === "rest") {
-      const connection = await this.repository.getConnection(connectionId);
-      const config = connection?.config.connector;
-      if (!config || typeof config !== "object") {
+      const connection = cliRecovery?.frozenConnection ?? await this.repository.getConnection(connectionId);
+      const savedConfig = connection?.config.connector;
+      if (!isRecord(savedConfig)) {
         throw new NeedsAttentionError(
           "无法恢复 REST 任务：连接配置已缺失或发生变化",
         );
       }
+      const baseUrl = connectionConfigString(connection?.config, "baseUrl");
+      const config = isCangyuanMusicRequest(cliRecovery?.model, baseUrl)
+        ? { ...savedConfig, ...cangyuanMusicTransport(cliRecovery?.parameters?.audio_format) }
+        : savedConfig;
       return {
         providerTaskId,
         status: "running",
@@ -2458,7 +2466,8 @@ export class RunService {
                 .pollIntervalMs as number,
             }
           : {}),
-        result: { connectionId, config, remote: {} },
+        result: { connectionId, config, remote: {}, taskId: providerTaskId,
+          ...(cliRecovery?.model ? { model: cliRecovery.model } : {}), ...(baseUrl ? { baseUrl } : {}) },
       };
     }
     throw new NeedsAttentionError(
@@ -2980,7 +2989,7 @@ export class RunService {
         ));
     const storedOperation = nodeRun.inputJson.operation;
     const operation = resumingTask && typeof storedOperation === "string" &&
-      ["image.generate", "image.edit", "video.generate", "video.image-to-video"].includes(storedOperation)
+      ["image.generate", "image.edit", "video.generate", "video.image-to-video", "music.generate"].includes(storedOperation)
       ? storedOperation as NormalizedRequest["operation"]
       : operationFor(node, values.some((value) => value.kind === "image") || assets.some((asset) => asset.kind === "image"));
     if (!operation) throw new Error(`不支持的节点类型: ${semanticType(node)}`);
@@ -3324,7 +3333,7 @@ export class RunService {
           providerName,
           connectionId,
           nodeRun.providerTaskId,
-          { adapter, idempotencyKey: request.idempotencyKey },
+          { adapter, idempotencyKey: request.idempotencyKey, model: request.model, parameters: request.parameters, frozenConnection },
         ));
       assertMatchingProviderTask(task, nodeRun.providerTaskId);
     } else {
@@ -3549,7 +3558,7 @@ export class RunService {
             if (refreshedArtifacts.length > 0) {
               ids = await archiveArtifacts(refreshedArtifacts);
               return {
-                kind: operation.startsWith("video") ? "video" : "image",
+                kind: operation.startsWith("video") ? "video" : operation === "music.generate" ? "audio" : "image",
                 assetIds: ids,
               };
             }
@@ -3566,7 +3575,7 @@ export class RunService {
       );
     }
     return {
-      kind: operation.startsWith("video") ? "video" : "image",
+      kind: operation.startsWith("video") ? "video" : operation === "music.generate" ? "audio" : "image",
       assetIds: ids,
     };
   }
@@ -3614,10 +3623,7 @@ export class RunService {
     nodeId: string,
     outputIndex: number,
   ): Promise<string> {
-    // Providers currently type outputs as image/video, but the asset pipeline
-    // also accepts audio artifacts from compatible adapters.
-    const artifactKind = (artifact as { kind: "image" | "video" | "audio" })
-      .kind;
+    const artifactKind = artifact.kind;
     const id = createHash("sha256")
       .update(`${runId}\0${nodeId}\0${outputIndex}`)
       .digest("hex");
@@ -3633,7 +3639,8 @@ export class RunService {
     const localExtension = artifact.localFile && artifact.mimeType
       ? ({ "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as Record<string, string>)[artifact.mimeType]
       : undefined;
-    const extension = localExtension ?? (artifactKind === "video" ? "mp4" : artifactKind === "audio" ? "mp3" : "png");
+    const extension = localExtension ?? (artifactKind === "video" ? "mp4" : artifactKind === "audio" ?
+      ({ "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a", "audio/aac": "m4a", "audio/mpeg": "mp3" } as Record<string, string>)[artifact.mimeType ?? ""] ?? "mp3" : "png");
     const storageKey = `assets/${id}/original.${extension}`;
     let persisted: StoredObjectMetadata | undefined;
     let bytes = artifact.data;
@@ -3806,7 +3813,7 @@ function providerFailureFor(
   if (!(source instanceof ProviderHttpError) &&
       !(error instanceof ProviderRequestValidationError) &&
       !(error instanceof ProviderTaskFailedError) &&
-      !["image-generation", "video-generation"].includes(semanticType(node))) return undefined;
+      !["image-generation", "video-generation", "music-generation"].includes(semanticType(node))) return undefined;
   const data = nodeData(node);
   const provider =
     typeof nodeRun.inputJson.provider === "string"
@@ -3819,7 +3826,7 @@ function providerFailureFor(
     rawOperation === "image.generate" ||
     rawOperation === "image.edit" ||
     rawOperation === "video.generate" ||
-    rawOperation === "video.image-to-video"
+    rawOperation === "video.image-to-video" || rawOperation === "music.generate"
       ? (rawOperation as ProviderOperation)
       : undefined;
   const supplier =
@@ -3847,6 +3854,8 @@ function providerFailureFor(
       presentation = { ...presentation, failureCategory: "local_storage", type: "本地保存失败" };
     }
   }
+  if (error instanceof NeedsAttentionError && isRecord(source) && source.code === "music_submit_missing_id")
+    presentation = { ...presentation, message: error.message, code: "music_submit_missing_id" };
   const taskCharge = taskChargeEvidence(nodeRun);
   // Billing on a failed query/download/cancel belongs to that HTTP request,
   // not necessarily the generation. Only the matching task's saved response

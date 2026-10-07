@@ -17,6 +17,10 @@ interface ShortcutGroup {
 /** `Ctrl` is rewritten to `Cmd` on macOS when the modal opens. */
 const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   {
+    title: "快速查找",
+    rows: [{ label: "搜索操作与节点", keys: ["Ctrl", "K"] }],
+  },
+  {
     title: "运行",
     rows: [
       { keys: ["Ctrl", "Enter"], label: "运行当前节点" },

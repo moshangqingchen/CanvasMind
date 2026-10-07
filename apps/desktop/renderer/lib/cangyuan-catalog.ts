@@ -6,6 +6,8 @@ import {
   cangyuanCurrentModel,
   cangyuanCurrentPricing,
   isCangyuanCurrentModel,
+  cangyuanMusicModel,
+  isCangyuanMusicModel,
   type ModelDescriptor,
   type ModelParameterDescriptor,
   type ModelParameterOption,
@@ -78,7 +80,7 @@ export interface CangyuanMarketplaceModel {
   id: string;
   name: string;
   description?: string;
-  capability: "chat" | "image" | "video" | "other";
+  capability: "chat" | "image" | "video" | "audio" | "other";
   priceLabel: string;
   billingLabel: string;
   tags: string[];
@@ -182,6 +184,7 @@ function marketplaceCapability(
   record: PricingRecord,
 ): CangyuanMarketplaceModel["capability"] {
   const tags = pricingTags(record.tags);
+  if (isCangyuanMusicModel(String(record.model_name))) return "audio";
   if (isRecord(record.video_ui_params) || tags.includes("video"))
     return "video";
   if (
@@ -232,7 +235,7 @@ function marketplacePriceLabel(
       billingLabel: "按 Token 计费",
     };
   }
-  const price = formatPrice(record.model_price);
+  const price = formatPrice(typeof record.model_price === "number" ? record.model_price * groupRatio : undefined);
   const unit =
     typeof record.model_name === "string" &&
     /^midjourney-8\.2-/iu.test(record.model_name.trim())
@@ -268,7 +271,7 @@ function marketplaceModelForRecord(
 
 function priceUnit(record: PricingRecord, video = false): string {
   if (providerPriceUnit(record) === "second") return "秒";
-  if (record.request_unit === "request" || /^midjourney-/iu.test(String(record.model_name))) return "请求";
+  if (record.request_unit === "request" || isCangyuanMusicModel(String(record.model_name)) || /^midjourney-/iu.test(String(record.model_name))) return "请求";
   return video ? "次" : "张";
 }
 
@@ -961,7 +964,9 @@ export function cangyuanCatalogFromPricing(
   };
 
   for (const record of pricingRecords) {
-    const descriptor = isVideoPricingRecord(record)
+    const descriptor = isCangyuanMusicModel(String(record.model_name))
+      ? cangyuanMusicModel({ id: String(record.model_name), name: String(record.model_name), operations: [] })
+      : isVideoPricingRecord(record)
       ? videoDescriptorForRecord(record)
       : isImagePricingRecord(record)
         ? imageDescriptorForRecord(record, knownModels)
@@ -990,7 +995,8 @@ export function cangyuanCatalogFromPricing(
           ...(record.billing_mode === "tiered_expr"
             ? { name: descriptor.name.replace(/[（(]¥[^）)]+\/(?:张|次|秒|请求|条)[）)]$/u, ""), pricing: expressionPricing, metadata: { ...descriptor.metadata,
                 priceLabel: expressionPricing ? mediaPricingLabel(expressionPricing) : "按条件/用量计费，详见供应商规则",
-                priceSource: "billing-expression", priceCheckedAt: checkedAt } }
+                priceSource: "billing-expression", priceCheckedAt: checkedAt, cangyuanBillingVersion: 3,
+                ...(descriptor.id === "gpt-image-2-x" ? { priceContractWarning: "整合型号按其独立分档表达式计费；不可套用 gpt-image-2 / -2k / -4k 的独立型号报价。" } : {}) } }
             : rawPrice === undefined
             ? {}
             : {
@@ -1006,6 +1012,9 @@ export function cangyuanCatalogFromPricing(
                   checkedAt,
                   confidence: "exact",
                 } as const,
+                name: `${descriptor.name.replace(/[（(]¥[^）)]+\/(?:张|次|秒|请求|条)[）)]$/u, "")}（${marketplacePriceLabel(record, ratio).priceLabel}）`,
+                metadata: { ...descriptor.metadata, priceLabel: marketplacePriceLabel(record, ratio).priceLabel,
+                  priceSource: "supplier-catalog", priceCheckedAt: checkedAt, cangyuanBillingVersion: 3 },
               }),
         });
       }
@@ -1480,12 +1489,13 @@ export async function loadCangyuanCatalog(options?: {
 export async function refreshSavedCangyuanPrices(
   connection: { provider: string; config: Readonly<Record<string, unknown>> },
   models: readonly ModelDescriptor[],
+  options: { force?: boolean } = {},
 ): Promise<ModelDescriptor[]> {
   const group = normalizeCangyuanImageGroup(connection.config.modelGroup);
   if (!group || !matchesSupplierTemplate(connection) ||
       !/cangyuansuanli\.cn/iu.test(String(connection.config.baseUrl)) ||
-      models.every(model => model.metadata?.cangyuanBillingVersion === 2)) return [...models];
-  const catalog = await loadCangyuanCatalog();
+      (!options.force && models.every(model => model.metadata?.cangyuanBillingVersion === 3))) return [...models];
+  const catalog = await loadCangyuanCatalog({ force: options.force });
   if (catalog.source !== "live") return [...models];
   const current = new Map(catalog.groups[group].map(model => [model.id, model]));
   return models.map(model => {
@@ -1494,7 +1504,8 @@ export async function refreshSavedCangyuanPrices(
     return { ...model, name: fresh.name, pricing: fresh.pricing,
       metadata: { ...model.metadata, priceLabel: fresh.metadata?.priceLabel,
         priceSource: fresh.metadata?.priceSource, priceCheckedAt: catalog.checkedAt,
-        cangyuanBillingVersion: 2 } };
+        cangyuanBillingVersion: 3,
+        ...(fresh.metadata?.priceContractWarning ? { priceContractWarning: fresh.metadata.priceContractWarning } : {}) } };
   });
 }
 

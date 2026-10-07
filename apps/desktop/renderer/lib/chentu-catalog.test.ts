@@ -10,6 +10,19 @@ import {
   type ChentuPricingPayload,
 } from "./chentu-catalog";
 
+it("keeps October group quote precision and Gemini 3.6 token reference units", () => {
+  const catalog = chentuCatalogFromPricing({ group_ratio: { "1k福利生图": .25, "低价gemni生图": .7143, "gemini大语言模型": .2 }, data: [
+    { model_name: "gpt-image2", model_price: .04, enable_groups: ["1k福利生图"] },
+    { model_name: "gemini-image", model_price: .07, enable_groups: ["低价gemni生图"] },
+    { model_name: "gemini-3.6-flash", model_price: 0, model_ratio: .375, completion_ratio: 5, quota_type: 0, enable_groups: ["gemini大语言模型"] },
+  ] });
+  const model = (group: string) => catalog.marketplaceGroups.find(g => g.id === group)?.models[0];
+  expect(model("1k福利生图")?.priceLabel).toBe("￥ 0.01 / 请求");
+  expect(model("低价gemni生图")?.priceLabel).toBe("￥ 0.050001 / 请求");
+  expect(model("gemini大语言模型")?.priceLabel).toBe("输入 ￥0.15 / 1M · 输出 ￥0.75 / 1M");
+  expect(model("gemini大语言模型")?.capability).toBe("chat");
+});
+
 it("binds keyed GPT Image aliases and newer versions without requiring exact built-in IDs", () => {
   const ids = ["gpt-image-2-low", "gpt-image-2.5", "gpt-image-2.5-flare"];
   const catalog = chentuCatalogFromPricing({
@@ -227,7 +240,7 @@ describe("chentu catalog", () => {
       cheapGroup?.models.find((model) => model.id === "gpt-image-2"),
     ).toMatchObject({
       capability: "image",
-      priceLabel: "￥ 0.015 / 请求",
+      priceLabel: "￥ 0.0150425 / 请求",
       billingLabel: "按次计费",
       canvasRunnable: true,
     });
@@ -361,13 +374,13 @@ describe("chentu catalog", () => {
       (model) => model.id === "gpt-image-2",
     );
     expect(image).toMatchObject({
-      name: "gpt-image-2 · ￥ 0.015 / 请求",
+      name: "gpt-image-2 · ￥ 0.0150425 / 请求",
       operations: ["image.generate", "image.edit"],
       metadata: {
         supplier: "chentu",
         modelGroup: "1k低价生图",
         groupRatio: 0.55,
-        priceLabel: "￥ 0.015 / 请求",
+        priceLabel: "￥ 0.0150425 / 请求",
         billingLabel: "按次计费",
         canvasRunnable: true,
         protocol: "openai-images",

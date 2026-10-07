@@ -17,6 +17,9 @@ import type {
 } from "./contracts.js";
 import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
 import { cangyuanCurrentRequestIssues, cangyuanCurrentTransport, isCangyuanCurrentRequest, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
+import { cangyuanMusicModel, cangyuanMusicRequestIssues, cangyuanMusicTransport, isCangyuanMusicRequest, withCangyuanMusicRequestParameters } from "./cangyuan-music.js";
+import { isChuangxiangVideoConnection, chuangxiangVideoModel, chuangxiangVideoTransport,
+  validateChuangxiangVideoRequest, normalizeChuangxiangVideoParameters, CHUANGXIANG_VIDEO_POLL_INTERVAL_MS } from "./chuangxiang-video-contract.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
   imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
 import {
@@ -32,6 +35,7 @@ import {
   mergeHeaders,
   providerFetch,
   providerSubmitTransportActive,
+  ProviderHttpError,
   type ProviderFetchOptions,
   requireApiKey,
 } from "./http.js";
@@ -194,10 +198,12 @@ interface RestTaskEnvelope {
   baseUrl?: string;
   taskId?: string;
   status?: ProviderTaskStatus;
+  model?: string;
 }
 
 /** The selected request, not a mixed group's blanket flag, decides transport. */
 export function restRequestRequiresPublicAssets(value: unknown, model?: string, operation?: ProviderOperation, settings?: unknown): boolean {
+  if (operation?.startsWith("video.") && isRecord(settings) && isChuangxiangVideoConnection(settings, model)) return true;
   if (operation?.startsWith("image.") && isRecord(settings) &&
     canApplyCangyuanCurrentContract(settings, typeof settings.baseUrl === "string" ? settings.baseUrl : undefined, model)) return true;
   if (!isRecord(value) || value.assetsRequirePublicUrls !== true) return false;
@@ -575,8 +581,8 @@ function assertConfig(value: unknown): asserts value is RestConnectorConfig {
       throw new Error(`REST connector output.${key} must be JSONPaths`);
     }
   }
-  if (value.output.kind !== "image" && value.output.kind !== "video") {
-    throw new Error("REST connector output.kind must be image or video");
+  if (value.output.kind !== "image" && value.output.kind !== "video" && value.output.kind !== "audio") {
+    throw new Error("REST connector output.kind must be image, video or audio");
   }
   if (value.output.contentFallback !== undefined) {
     const fallback = value.output.contentFallback;
@@ -691,7 +697,7 @@ function assertConfig(value: unknown): asserts value is RestConnectorConfig {
         (!isRecord(override.output) ||
           typeof override.output.path !== "string" ||
           (override.output.kind !== "image" &&
-            override.output.kind !== "video"))
+            override.output.kind !== "video" && override.output.kind !== "audio"))
       ) {
         throw new Error(
           `REST connector modelOverrides.${model}.output is invalid`,
@@ -723,6 +729,7 @@ function assertOperationOverrides(
     "image.edit",
     "video.generate",
     "video.image-to-video",
+    "music.generate",
   ]);
   for (const [operation, override] of Object.entries(value)) {
     if (!operations.has(operation as ProviderOperation) || !isRecord(override))
@@ -737,7 +744,7 @@ function assertOperationOverrides(
       override.output !== undefined &&
       (!isRecord(override.output) ||
         typeof override.output.path !== "string" ||
-        (override.output.kind !== "image" && override.output.kind !== "video"))
+        (override.output.kind !== "image" && override.output.kind !== "video" && override.output.kind !== "audio"))
     )
       throw new Error(`REST connector ${label}.${operation}.output is invalid`);
   }
@@ -1078,6 +1085,11 @@ export class GenericRestAdapter implements ProviderAdapter {
         : undefined;
     const selected = applyOverride(operationConfig, modelOperationOverride);
     assertConfig(selected);
+    if (!this.fixedConfig && isCangyuanMusicRequest(model, connection.baseUrl)) {
+      return { ...applyOverride(selected, cangyuanMusicTransport()), assetsRequirePublicUrls: false };
+    }
+    if (connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, model))
+      return { ...applyOverride(selected, chuangxiangVideoTransport()), assetsRequirePublicUrls: true };
     // Repair stale family-inherited mappings for these exact public IDs only.
     // Model restrictions and credentials remain owned by the saved connection.
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, base, model)) {
@@ -1294,6 +1306,9 @@ export class GenericRestAdapter implements ProviderAdapter {
         ...(config.pollIntervalMs === undefined ? {} : { intervalMs: config.pollIntervalMs }),
       };
     }
+    const frozenModel = isRecord(task?.result) && typeof task.result.model === "string" ? task.result.model : undefined;
+    const chuangxiangVideo = connection.provider === "rest" && config.output.kind === "video" &&
+      isChuangxiangVideoConnection(imageEditingConnection(connection).config, request?.model ?? frozenModel);
     return fetchProviderJson<unknown>(
       this.fetchImpl,
       this.resolveUrl(connection.baseUrl, definition.path, config, taskId),
@@ -1305,7 +1320,8 @@ export class GenericRestAdapter implements ProviderAdapter {
       },
       {
         phase,
-        timeoutMs: this.timeoutFor(connection, phase === "submit" && request?.operation.startsWith("image.") === true),
+        timeoutMs: chuangxiangVideo ? phase === "submit" ? 60_000 : 30_000
+          : this.timeoutFor(connection, phase === "submit" && request?.operation.startsWith("image.") === true),
         ...(maxResponseBytes === undefined ? {} : { maxResponseBytes }),
         idempotent: definition.idempotent === true,
         allowEmpty: phase === "cancel",
@@ -1346,6 +1362,17 @@ export class GenericRestAdapter implements ProviderAdapter {
       const connection = await this.connections.resolve(request.connectionId);
       issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
       const baseConfig = this.configFrom(connection);
+      const musicRequest = !this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl);
+      if (musicRequest) issues.push(...cangyuanMusicRequestIssues(request));
+      const videoRequest = connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
+      if (videoRequest) {
+        // Temporary hosting is authorized by this saved connection. Only image
+        // bytes use that channel; video/audio still require existing public URLs.
+        const hosting = referenceImageHostingEnabled(connection.settings);
+        const assets = request.assets?.map(asset => hosting && asset.kind === "image" && asset.data && !asset.url
+          ? { ...asset, url: `https://pending-reference.super-canvas.invalid/${encodeURIComponent(asset.id)}` } : asset);
+        issues.push(...validateChuangxiangVideoRequest({ ...request, ...(assets ? { assets } : {}) }));
+      }
       if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, baseConfig, request.model)) issues.push(...cangyuanCurrentRequestIssues(request, connection.baseUrl));
       const config = this.configFrom(
         connection,
@@ -1357,9 +1384,11 @@ export class GenericRestAdapter implements ProviderAdapter {
         if (capabilities.mask && (capabilities.mask !== "url" || config.submit.bodyMode !== "json"))
           issues.push({ path: "assets", code: "unsupported_mask_transport", message: "当前已配置的接口传输方式不支持此蒙版；请使用供应商的图片编辑接口。" });
       }
-      const configuredModel = baseConfig.models?.find(
+      const savedModel = baseConfig.models?.find(
         (model) => model.id === request.model,
       );
+      const configuredModel = musicRequest && savedModel ? cangyuanMusicModel(savedModel)
+        : videoRequest && savedModel ? chuangxiangVideoModel(savedModel.id, savedModel) : savedModel;
       if (baseConfig.restrictModels && request.model && !configuredModel) {
         issues.push({
           path: "model",
@@ -1599,6 +1628,10 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     let outboundRequest = withNearestSupportedAspectRatio({ ...request,
       parameters: normalizeImageEditingParameters(editingConnection, request.model ?? "", request.parameters) }, config);
+    if (!this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl)) {
+      outboundRequest = withCangyuanMusicRequestParameters(request);
+      config = { ...config, ...cangyuanMusicTransport(outboundRequest.parameters?.audio_format) };
+    }
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, this.configFrom(connection), request.model))
       outboundRequest = withCangyuanCurrentRequestParameters(outboundRequest, connection.baseUrl);
     if (request.assets?.length && restRequestRequiresPublicAssets(config)) {
@@ -1607,6 +1640,8 @@ export class GenericRestAdapter implements ProviderAdapter {
         throw new Error("该模型需要参考图 HTTPS 链接。请在供应商分组中启用参考图临时链接，再重新运行；当前生成尚未提交。");
       if (needsHosting) outboundRequest = { ...outboundRequest, assets: await uploadTemporaryReferenceImages(request.assets, this.fetchImpl) };
     }
+    const videoRequest = connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
+    if (videoRequest) outboundRequest = { ...outboundRequest, parameters: normalizeChuangxiangVideoParameters(outboundRequest) };
     const received = await this.execute(
       connection,
       config,
@@ -1620,6 +1655,17 @@ export class GenericRestAdapter implements ProviderAdapter {
     const rawTaskId = mapping
       ? responseValue(remote, mapping.taskIdPath, mapping.taskIdFallbackPaths)
       : undefined;
+    if (!this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl) && !cloudTask &&
+        !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId))) {
+      throw Object.assign(new ProviderHttpError("沧元已响应音乐提交但没有返回任务 ID；任务可能已受理，请核对供应商记录，禁止自动重复提交。", {
+        kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
+      }), { code: "music_submit_missing_id" });
+    }
+    if (videoRequest && !cloudTask &&
+        !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId)))
+      throw new ProviderHttpError("创想已响应但未返回视频任务 ID；请核对供应商记录，避免重复提交。", {
+        kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
+      });
     const providerTaskId =
       cloudTask ?? (typeof rawTaskId === "string" || typeof rawTaskId === "number"
         ? String(rawTaskId)
@@ -1636,6 +1682,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       remote,
       ...(cloudTask ? { taskId: cloudTask } : typeof rawTaskId === "string" || typeof rawTaskId === "number" ? { taskId: String(rawTaskId) } : {}),
       status,
+      ...(request.model ? { model: request.model } : {}),
       ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
     };
     const result: ProviderTask = {
@@ -1664,6 +1711,14 @@ export class GenericRestAdapter implements ProviderAdapter {
     if (!envelope.config.poll)
       throw new Error("REST connector does not define polling");
     const connection = await this.connections.resolve(envelope.connectionId);
+    // Resuming an old task repairs only its GET route and continues the same ID.
+    if (connection.provider === "rest" && envelope.config.output.kind === "video" &&
+        isChuangxiangVideoConnection(imageEditingConnection(connection).config, envelope.model)) {
+      const current = chuangxiangVideoTransport();
+      envelope.config = { ...envelope.config, poll: current.poll!, output: current.output!, statusMap: current.statusMap!,
+        pollIntervalMs: CHUANGXIANG_VIDEO_POLL_INTERVAL_MS };
+    }
+    if (!envelope.config.poll) throw new Error("REST connector does not define polling");
     const remote = await this.execute(
       connection,
       envelope.config,

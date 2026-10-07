@@ -4,6 +4,7 @@ import { cliOperationForNode } from "../lib/cli-input-ports";
 
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import musicStyles from "./music-node.module.css";
 import {
   Handle,
   NodeResizer,
@@ -94,6 +95,7 @@ const icons: Record<string, React.ReactNode> = {
   prompt: <Type size={14} />,
   "image-generation": <ImageIcon size={14} />,
   "video-generation": <Film size={14} />,
+  "music-generation": <Music size={14} />,
   preview: <Send size={14} />,
 };
 
@@ -105,7 +107,7 @@ function portTop(
 ): string {
   const generationNode =
     node.data.nodeType === "image-generation" ||
-    node.data.nodeType === "video-generation";
+    node.data.nodeType === "video-generation" || node.data.nodeType === "music-generation";
   if (generationNode && direction === "input") {
     const preferred = 58 + index * 42;
     const bottomClearance = (total - index) * 24;
@@ -325,7 +327,7 @@ function PortHandles({
 function CanvasPromptEditor({data, active}: {data: CanvasNodeData; active: boolean}) {
   const placeholder = data.nodeType === "image-generation" && hasImageMask(data.parameters)
     ? "描述涂抹区域要如何修改，例如：将衣服改成蓝色…"
-    : "输入提示词，描述你希望生成的内容…";
+    : data.nodeType === "music-generation" ? "描述曲风、乐器、人声和情绪…" : "输入提示词，描述你希望生成的内容…";
   const compact = useStore((state) => state.transform[2] < .5 && !active);
   const host = useRef<HTMLDivElement>(null);
   const focusRequested = useRef(false);
@@ -401,7 +403,7 @@ function GenerationNodeBody({
   const nodeType =
     data.nodeType === "video-generation"
       ? "video-generation"
-      : "image-generation";
+      : data.nodeType === "music-generation" ? "music-generation" : "image-generation";
   const parameters = data.parameters ?? {};
   const maskEnabled = nodeType === "image-generation" && hasImageMask(parameters);
   const maskSource = data.linkedAssets?.find(asset => asset.kind === "image");
@@ -465,7 +467,7 @@ function GenerationNodeBody({
   const selectedModel = modelOptions.find((model) => model.id === data.model);
   const modelName = selectedModel ? cleanModelDisplayName(selectedModel.name, selectedModel.metadata?.priceLabel) : data.model ?? "自动模型";
   const cangyuanAvailabilityEnabled =
-    currentSupplier === "cangyuan" &&
+    currentSupplier === "cangyuan" && nodeType !== "music-generation" &&
     Boolean(currentConnection) &&
     connectionAvailable;
   const availabilityItems =
@@ -483,7 +485,7 @@ function GenerationNodeBody({
   const parameterControlsUnavailable =
     selectedModel?.metadata?.parameterControlsUnavailable === true;
   const summary =
-    nodeType === "video-generation"
+    nodeType === "music-generation" ? [parameters.instrumental ? "纯音乐" : "歌曲", parameters.audio_format ? String(parameters.audio_format).toUpperCase() : "MP3", parameters.duration ? `目标 ${parameters.duration}s` : null].filter(Boolean).join(" · ") : nodeType === "video-generation"
       ? parameterControlsUnavailable
         ? ""
         : [
@@ -878,7 +880,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
       : null);
   const generationNode =
     data.nodeType === "image-generation" ||
-    data.nodeType === "video-generation";
+    data.nodeType === "video-generation" || data.nodeType === "music-generation";
   const maskEdit = data.nodeType === "image-generation" && hasImageMask(data.parameters);
   const hasImageReference = data.nodeType === "image-generation" && Boolean(data.linkedAssets?.some(asset => asset.kind === "image"));
   const generatedResult =
@@ -918,7 +920,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   const generatedProblem = generatedFailed || generatedNeedsAttention;
   const hasArchivedGeneratedMedia = Boolean(
     data.assetId && inputPreviewUrl && !fakeResult && !generatedPending &&
-    (data.assetKind === "image" || data.assetKind === "video"),
+    (data.assetKind === "image" || data.assetKind === "video" || data.assetKind === "audio"),
   );
   const recoveredGeneratedMedia = hasArchivedGeneratedMedia && (generatedProblem || generatedCancelled);
   const generatedErrorDetails = localizeRunError(data.generatedError, {
@@ -1434,6 +1436,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                           data.onMediaAspectRatio?.(videoWidth / videoHeight);
                       }}
                     />
+                  ) : data.assetKind === "audio" && inputPreviewUrl ? (
+                    <div className={`${musicStyles.result} nodrag nopan nowheel`}><Music size={28} /><audio src={inputPreviewUrl} controls preload="metadata" aria-label={inputAsset?.name ?? "生成音乐"} onLoadedMetadata={event => { if (data.assetId && Number.isFinite(event.currentTarget.duration)) data.onLinkedAssetDuration?.(data.assetId, event.currentTarget.duration); }} /></div>
                   ) : data.assetKind === "image" &&
                     inputPreviewUrl &&
                     !fakeResult ? (
@@ -1457,7 +1461,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                     />
                   ) : (
                     <span>
-                      {data.assetKind === "video" ? "视频结果" : "图片结果"}
+                      {data.assetKind === "video" ? "视频结果" : data.assetKind === "audio" ? "音乐结果" : "图片结果"}
                     </span>
                   )}
                   {recoveredGeneratedMedia ? (
@@ -1539,6 +1543,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                   }}
                 />
               </div>
+            ) : inputPreviewUrl && inputAsset?.kind === "audio" ? (
+              <div className={`node-preview ${musicStyles.result} nodrag nopan nowheel`}><Music size={28} /><audio src={inputPreviewUrl} controls preload="metadata" aria-label={inputAsset.name} /></div>
             ) : (
               <div>{data.assetId ? "素材已就绪" : "拖入图片、视频或音频"}</div>
             )
@@ -1549,7 +1555,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           ) : null}
 
           {data.nodeType === "preview" ? (
-            previewUrl && outputKind !== "video" ? (
+            previewUrl && outputKind === "audio" ? <div className={`node-preview ${musicStyles.result} nodrag nopan nowheel`}><Music size={28} /><audio src={previewUrl} controls preload="metadata" aria-label="音乐结果预览" /></div> : previewUrl && outputKind !== "video" ? (
               <div
                 className="node-preview previewable-image"
                 draggable={Boolean(firstOutput)}

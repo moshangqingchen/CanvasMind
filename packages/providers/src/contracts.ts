@@ -1,5 +1,5 @@
 export type ProviderOperation =
-  "image.generate" | "image.edit" | "video.generate" | "video.image-to-video";
+  "image.generate" | "image.edit" | "video.generate" | "video.image-to-video" | "music.generate";
 
 export type ModelParameterValue = string | number | boolean;
 
@@ -78,7 +78,7 @@ export interface ModelParameterDescriptor {
   constraints?: readonly ModelParameterConstraint[];
 }
 
-export type ArtifactKind = "image" | "video";
+export type ArtifactKind = "image" | "video" | "audio";
 
 export type ProviderTaskStatus =
   "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -93,7 +93,7 @@ export interface ModelDescriptor {
   inputKinds?: readonly (
     "text" | "image" | "image[]" | "video" | "video[]" | "audio" | "audio[]"
   )[];
-  outputKinds?: readonly ("text" | "image" | "image[]" | "video" | "video[]")[];
+  outputKinds?: readonly ("text" | "image" | "image[]" | "video" | "video[]" | "audio" | "audio[]")[];
   metadata?: Readonly<Record<string, unknown>>;
   pricing?: StructuredModelPricing;
   parameters?: readonly ModelParameterDescriptor[];
