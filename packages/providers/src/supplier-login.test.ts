@@ -4,23 +4,47 @@ import {
   generateKeyPairSync,
   privateDecrypt,
 } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const network = vi.hoisted(() => ({
+  lookup: vi.fn(async (hostname: string, _options?: unknown) => {
+    // Preserve the real-host scope test without sending a DNS request.
+    if (hostname !== "tk1688.com") throw new Error("Unexpected DNS in supplier login test");
+    return [{ address: "203.0.113.10", family: 4 }];
+  }),
+  fetch: vi.fn(),
+}));
+vi.mock("node:dns/promises", () => ({ lookup: network.lookup }));
 import { loginSupplierSite } from "./supplier-login.js";
 import { discoverSupplierCatalog } from "./supplier-catalog.js";
 import { readSupplierBilling } from "../../../apps/desktop/renderer/lib/supplier-billing-read.js";
 
-const siteUrl = "https://site.example.com/gateway/keys";
+beforeEach(() => {
+  network.lookup.mockClear();
+  network.fetch.mockReset().mockRejectedValue(new Error("Unexpected HTTP in supplier login test"));
+  vi.stubGlobal("fetch", network.fetch);
+});
+afterEach(() => {
+  try {
+    expect(network.fetch).not.toHaveBeenCalled();
+    expect(network.lookup.mock.calls.every(([hostname]) => hostname === "tk1688.com")).toBe(true);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+const siteUrl = "https://site.test/gateway/keys";
 const credentials = {
   username: " user@example.com ",
   password: " password with spaces ",
 };
 
 describe("supplier website access token", () => {
-  const base = "https://site.example.com/gateway";
+  const base = "https://site.test/gateway";
   const accessToken = "fake-dashboard-token";
   it("forwards词元 website credentials only to its exact GET account model inventory", async () => {
     const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => Response.json({ success: true, data: { id: 42 } }));
     const session = await loginSupplierSite({ siteUrl: "https://tk1688.com", kind: "newapi", credentials: { accessToken } }, fetcher);
+    expect(network.lookup).toHaveBeenCalledExactlyOnceWith("tk1688.com", { all: true, verbatim: true });
     await session.fetch("https://tk1688.com/api/user/models", { method: "GET" });
     expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe(`Bearer ${accessToken}`);
     expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
@@ -131,13 +155,13 @@ describe("supplier website access token", () => {
       expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
     }
     for (const [url, method] of [
-      ["https://api.example.com/v1/images/generations", "POST"],
+      ["https://api.test/v1/images/generations", "POST"],
       [base + "/v1/images/generations", "POST"], [base + "/v1/models", "GET"],
       [base + "/api/token/42/key?redirect=leak", "POST"], [base + "/api/token/42/key", "GET"],
       [base + "/api/pricing#fragment", "GET"], [base + "/api/pricing?redirect=leak", "GET"],
       [base + "/api/v1/keys/42", "DELETE"], [base + "/api/v1/keys?page=all", "GET"],
-      ["https://other.example/api/user/self", "GET"], ["https://site.example.com/api/user/self", "GET"],
-      ["https://user:pass@site.example.com/gateway/api/user/self", "GET"],
+      ["https://other.test/api/user/self", "GET"], ["https://site.test/api/user/self", "GET"],
+      ["https://user:pass@site.test/gateway/api/user/self", "GET"],
     ]) {
       await session.fetch(url!, { method });
       const headers = new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers);
@@ -165,7 +189,7 @@ describe("supplier website access token", () => {
 });
 
 describe("NewAPI account today-stat session", () => {
-  const base = "https://site.example.com/gateway";
+  const base = "https://site.test/gateway";
   it.each(["token", "password-bearer", "password-cookie"] as const)("authenticates the actual billing reader's today URL with %s", async mode => {
     const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const path = new URL(String(url)).pathname;
@@ -209,7 +233,7 @@ describe("NewAPI account today-stat session", () => {
       [base + "/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1790810000&redirect=leak", "GET"],
       [base + "/api/log/self/stat?type=2&type=2&start_timestamp=1790784000&end_timestamp=1790810000", "GET"],
       [base + "/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1790810000#fragment", "GET"],
-      ["https://other.example/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1790810000", "GET"],
+      ["https://other.test/api/log/self/stat?type=2&start_timestamp=1790784000&end_timestamp=1790810000", "GET"],
       [base + "/api/log/self/stat/?type=2&start_timestamp=1790784000&end_timestamp=1790810000", "GET"],
     ]) {
       await session.fetch(url!, { method });
@@ -245,7 +269,7 @@ describe("supplier website login", () => {
     const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
       Response.json({ success: true, data: { access_token: "session-secret", user: { id: 42 } } }));
     const session = await loginSupplierSite({ siteUrl, kind, credentials }, fetcher);
-    const base = "https://site.example.com/gateway";
+    const base = "https://site.test/gateway";
     const profile = kind === "newapi" ? "/api/user/self" : "/api/v1/user/profile";
     const usage = kind === "newapi" ? "/api/log/self/" : "/api/v1/usage";
     for (const path of [profile, usage + "?p=0&page_size=100&type=2&request_id=request-123", ...(kind === "sub2api" ? ["/api/v1/usage/dashboard/stats"] : [])]) {
@@ -254,12 +278,12 @@ describe("supplier website login", () => {
       expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
     }
     for (const [url, method] of [
-      [base + usage, "POST"], [base + profile + "?redirect=https://other.example", "GET"],
+      [base + usage, "POST"], [base + profile + "?redirect=https://other.test", "GET"],
       [base + usage + "?callback=leak", "GET"], [base + usage + "?page=all", "GET"],
       [base + usage + "?request_id=a#fragment", "GET"],
       [base + "/api/v1/usage/dashboard/stats?redirect=leak", "GET"],
       [base + "/api/v1/usage/dashboard/stats", "POST"],
-      ["https://other.example" + usage, "GET"], [base + "/api/log/", "GET"],
+      ["https://other.test" + usage, "GET"], [base + "/api/log/", "GET"],
     ]) {
       await session.fetch(url!, { method });
       const headers = new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers);
@@ -292,7 +316,7 @@ describe("supplier website login", () => {
     });
     expect(calls[0]?.init?.redirect).toBe("error");
     const result = await discoverSupplierCatalog(
-      { siteUrl, apiUrl: "https://api.example.com", kind: session.kind },
+      { siteUrl, apiUrl: "https://api.test", kind: session.kind },
       session.fetch,
     );
     expect(result.groups).toMatchObject([{ id: "图像组" }]);
@@ -303,9 +327,9 @@ describe("supplier website login", () => {
       "Bearer session-secret",
     );
     for (const url of [
-      "https://api.example.com/api/v1/groups/available",
-      "https://site.example.com/gateway/v1/models",
-      "https://site.example.com/api/v1/groups/available",
+      "https://api.test/api/v1/groups/available",
+      "https://site.test/gateway/v1/models",
+      "https://site.test/api/v1/groups/available",
     ]) {
       await session.fetch(url);
       expect(
@@ -339,7 +363,7 @@ describe("supplier website login", () => {
         fetcher,
       );
       await session.fetch(
-        "https://site.example.com/gateway/api/user/self/groups",
+        "https://site.test/gateway/api/user/self/groups",
       );
       const headers = new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers);
       expect(headers.get("New-Api-User")).toBe("42");
