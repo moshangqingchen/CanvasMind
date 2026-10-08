@@ -1,7 +1,38 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const offlineNetwork = vi.hoisted(() => ({
+  lookup: vi.fn<(hostname: string, options?: unknown) => Promise<{ address: string; family: number }[]>>(
+    async () => [{ address: "203.0.113.10", family: 4 }]),
+  fetch: vi.fn(),
+}));
+// Keep official-origin routing assertions exact while isolating the endpoint
+// guard's DNS lookup before the tests' injected HTTP transports.
+vi.mock("node:dns/promises", () => ({ lookup: offlineNetwork.lookup }));
 import { StaticConnectionResolver } from "./credentials";
 import { OpenAIImageAdapter, WeAIImageAdapter } from "./openai";
 import type { FetchImplementation, NormalizedRequest } from "./contracts";
+
+const fixtureHosts = new Set([
+  "api.eaheng.com", "pool.chaozhiyuanai.com", "tu.988236.xyz", "api.frimodel.com",
+  "api.mikoto.vip", "asian-acc.we-token.cc", "vapi.chuangxiangai.asia", "api.openai.com",
+  "api.funai.works", "assets.example", "canvas.example",
+]);
+beforeEach(() => {
+  offlineNetwork.lookup.mockClear();
+  offlineNetwork.fetch.mockReset().mockRejectedValue(new Error("Unexpected real HTTP in OpenAI adapter test"));
+  vi.stubGlobal("fetch", offlineNetwork.fetch);
+});
+afterEach(() => {
+  try {
+    expect(offlineNetwork.fetch).not.toHaveBeenCalled();
+    for (const [hostname, options] of offlineNetwork.lookup.mock.calls) {
+      expect(fixtureHosts.has(hostname)).toBe(true);
+      expect(options).toEqual({ all: true, verbatim: true });
+    }
+  } finally {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  }
+});
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
