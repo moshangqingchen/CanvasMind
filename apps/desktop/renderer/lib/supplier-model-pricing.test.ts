@@ -40,6 +40,33 @@ import {
 } from "./supplier-model-pricing";
 import { parseSupplierCatalog, parseSupplierPricingChannels } from "@super-canvas/providers";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
+import { cyberAfeiCatalogFromPricing, resolveCyberAfeiScannedGroup } from "./cyberafei-catalog";
+
+it("keeps Afei's pending declared video unpriced through public parsing and an old serialized token catalog", () => {
+  const origin = "https://api.3365api.cn", id = "ya-sd25-30s", group = "special", checkedAt = "2026-10-08T23:10:00Z";
+  const raw = { model_name: id, quota_type: 0, model_price: 0, model_ratio: 37.5, completion_ratio: 1, enable_groups: [group] };
+  const payload = { data: [raw], group_ratio: { [group]: 1 }, usable_group: { [group]: "视频特价，0.3/秒" } };
+  const current: SupplierCatalogDiscovery = { ...parseSupplierCatalog(payload, { supplierSiteUrl: origin }), checkedAt, status: "live", complete: true };
+  const legacy: ModelDescriptor = { id, name: `${id} · 输入 $75 / 1M · 输出 $75 / 1M`, operations: ["video.generate"], metadata: { supplier: "cyberafei", canvasRunnable: false,
+    priceLabel: "输入 $75 / 1M · 输出 $75 / 1M" } };
+  const repaired = applySupplierCatalogPrices([legacy], group, current, origin)[0]!;
+  expect(repaired.metadata).toMatchObject({ canvasRunnable: false, cyberAfeiCatalogPricingIncomplete: true, priceStatus: "unconfirmed", priceLabel: "价格条件待确认" });
+  expect(repaired.pricing).toBeUndefined();
+  expect(repaired.name).toBe(id);
+  expect(modelEstimatedCost(repaired, { duration: 30 })).toBeUndefined();
+  const resolved = resolveCyberAfeiScannedGroup(cyberAfeiCatalogFromPricing(payload), group, [id]);
+  const pending: ModelDescriptor = JSON.parse(JSON.stringify(resolved.canvasDisplayModels[0]));
+  const oldCatalog: SupplierCatalogDiscovery = { ...parseSupplierCatalog(payload), checkedAt: "2026-10-07T23:10:00Z", status: "live", complete: true };
+  const cached = applySupplierCatalogPrices([pending], group, oldCatalog, origin, { savedCatalog: true })[0]!;
+  expect(cached.metadata?.priceLabel).toBe("价格条件待确认");
+  expect(cached.pricing).toBeUndefined();
+  expect(modelEstimatedCost(cached, { duration: 30 })).toBeUndefined();
+  const manual: ModelDescriptor = { ...legacy, pricing: { kind: "per-second", currency: "CNY", unitAmount: .3, confidence: "exact", checkedAt },
+    metadata: { ...legacy.metadata, priceSource: "manual", priceLabel: "¥0.3/秒" } };
+  expect(applySupplierCatalogPrices([manual], group, current, origin)[0]?.pricing).toBe(manual.pricing);
+  const unrelated = applySupplierCatalogPrices([{ ...legacy, metadata: { ...legacy.metadata, priceSource: "supplier-catalog" } }], group, oldCatalog, "https://other.invalid")[0]!;
+  expect(unrelated.metadata?.priceLabel).toContain("$75/1M");
+});
 const model: ModelDescriptor = {
   id: "new-image",
   name: "new-image（价格以平台为准）",
@@ -58,6 +85,59 @@ const secureCatalog = (multiplier = 1): SupplierCatalogDiscovery => ({
 const secureVideo: ModelDescriptor = { id: "doubao-seedance-2-0-260128", name: "Seedance 2.0", operations: ["video.generate"],
   parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "720p", options: [{ label: "720p", value: "720p" }] }],
 };
+
+it("replaces Miaowu's catalog-owned token placeholder with exact native video rules through saved and cached enrichment", async () => {
+  const checkedAt = "2026-10-08T22:37:14.000Z", origin = "https://api.miaowuai.store";
+  const payload = JSON.parse(readFileSync(new URL("./miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
+  const parsed = parseSupplierCatalog(payload, { supplierSiteUrl: origin, currency: "CNY", multiplier: 7, checkedAt });
+  const group = parsed.groups.find(item => item.id === "default")!;
+  expect(group.models.filter(item => item.capability === "video")).toHaveLength(11);
+  expect(group.models.filter(item => item.capability === "image")).toHaveLength(7);
+  const old: ModelDescriptor = { id: "dola-seedance-2.0-fast", name: "Dola", operations: ["video.generate"], outputKinds: ["video"],
+    pricing: { kind: "token", currency: "CNY", inputPerMillion: 525, checkedAt: "2026-10-08T11:24:06Z", confidence: "exact", sourceUrl: origin + "/api/pricing" },
+    metadata: { priceSource: "supplier-catalog", priceLabel: "输入 ¥525/1M", supplierPriceGroup: "default", canvasRunnable: false } };
+  const catalog: SupplierCatalogDiscovery = { groups: parsed.groups, status: "live", kind: "newapi", complete: true, checkedAt };
+  const model = applySupplierCatalogPrices([old], "default", catalog, origin)[0]!;
+  expect(model.pricing).toMatchObject({ kind: "per-request", currency: "CNY", billingUnit: "request", tiers: [{ value: "720p", price: .875 }] });
+  expect(model.metadata).toMatchObject({ priceSource: "supplier-catalog", priceCheckedAt: checkedAt, supplierPriceGroup: "default", canvasRunnable: false });
+  expect(modelPriceSummary(model, { resolution: "720p" })).toBe("0.875 CNY / 次");
+  expect(modelEstimatedCost(model, { resolution: "720p", duration: 30 })).toBe("0.875 CNY");
+  expect(modelEstimatedCost(model, { resolution: "1080p", duration: 30 })).toBeUndefined();
+  const saved = JSON.parse(JSON.stringify(model)) as ModelDescriptor;
+  const supplier = { id: "miaowu-cached-price-fixture", siteUrl: origin, apiUrl: origin, kind: "newapi", state: { sourceId: "miaowu-fixture-source" },
+    catalog: { groups: parsed.groups }, scanStatus: "live", scanComplete: true, scannedAt: checkedAt, updatedAt: checkedAt };
+  vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+  const reads = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+  const cached = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: supplier.state.sourceId, baseUrl: origin, modelGroup: "default" } }, [saved], false, false);
+  expect(cached[0]?.pricing).toEqual(saved.pricing);
+  expect(modelPriceSummary(cached[0], { resolution: "720p" })).toBe("0.875 CNY / 次");
+  expect(vi.mocked(discoverSupplierCatalog).mock.calls.length).toBe(reads);
+  // A native adapter's same-model quote is independently owned, so the
+  // placeholder catalog cannot replace its established media pricing.
+  const own = { ...saved, metadata: { priceLabel: "¥0.875/次", parameterSource: "pricing.video_api" } };
+  expect(applySupplierCatalogPrices([own], "default", { ...catalog, groups: [{ ...group, models: [{ id: own.id, capability: "video", priceLabel: "输入 ¥525/1M" }] }] }, origin)[0]).toBe(own);
+  vi.mocked(getSupplierRecord).mockResolvedValue(null);
+});
+
+it("keeps unknown Miaowu media price conditions pending and recovers only from fresh exact rules", () => {
+  const origin = "https://api.miaowuai.store", id = "dola-seedance-2.5", checkedAt = "2026-10-08T22:37:14Z";
+  const row = { model_name: id, quota_type: 0, model_ratio: 37.5, enable_groups: ["default"], video_api: { pricing: { unit: "per_call", rules: [{ size: "720p", price: .125 }] } } };
+  const discovery = (payload: unknown): SupplierCatalogDiscovery => ({ kind: "newapi", status: "live", complete: true, checkedAt,
+    groups: parseSupplierCatalog({ data: [payload] }, { supplierSiteUrl: origin, currency: "CNY", multiplier: 7, checkedAt }).groups });
+  const model: ModelDescriptor = { id, name: id, operations: ["video.generate"], metadata: { canvasRunnable: false } };
+  const current = applySupplierCatalogPrices([model], "default", discovery(row), origin)[0]!;
+  const pending = applySupplierCatalogPrices([current], "default", discovery({ ...row, video_api: { pricing: { unit: "token", rules: row.video_api.pricing.rules } } }), origin)[0]!;
+  expect(pending.pricing).toBeUndefined();
+  expect(pending.metadata).toMatchObject({ priceStatus: "unconfirmed", priceLabel: "价格条件待确认", miaowuCatalogPricingIncomplete: true });
+  expect(modelEstimatedCost(pending, { resolution: "720p" })).toBeUndefined();
+  const restored = applySupplierCatalogPrices([pending], "default", discovery(row), origin)[0]!;
+  expect(restored.metadata?.miaowuCatalogPricingIncomplete).toBeUndefined();
+  expect(modelPriceSummary(restored, { resolution: "720p" })).toBe("0.875 CNY / 次");
+  const partial = applySupplierCatalogPrices([restored], "default", { ...discovery(row), groups: [], complete: false }, origin)[0]!;
+  expect(partial.pricing).toEqual(restored.pricing);
+  expect(partial.metadata?.priceStatus).toBe("partial");
+  expect(modelEstimatedCost(partial, { resolution: "720p" })).toBeUndefined();
+});
 
 it.each([
   { field: "weaiLegacyPricing", origin: "https://asian-acc.we-token.cc", path: "/api/v1/model-plaza-legacy/models?group_id=42" },

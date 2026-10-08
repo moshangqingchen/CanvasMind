@@ -1,9 +1,40 @@
-import { describe, expect, it } from "vitest";
-import type { NormalizedRequest } from "./contracts.js";
-import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanVideoRequest, normalizeCangyuanVideoParameters, validateCangyuanVideoRequest } from "./cangyuan-video-contract.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const offlineNetwork = vi.hoisted(() => ({
+  lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]),
+  fetch: vi.fn(),
+}));
+// Keep the real supplier origin checks, while isolating pre-transport DNS.
+vi.mock("node:dns/promises", () => ({ lookup: offlineNetwork.lookup }));
+import type { ModelDescriptor, NormalizedRequest, StructuredModelPricing } from "./contracts.js";
+import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanVideoModel, isCangyuanVideoRequest, normalizeCangyuanVideoParameters, validateCangyuanVideoRequest } from "./cangyuan-video-contract.js";
+import { StaticConnectionResolver } from "./credentials.js";
+import { GenericRestAdapter, type RestConnectorConfig } from "./rest.js";
 const request = (model: string, parameters: Record<string, unknown> = {}): NormalizedRequest => ({ connectionId: "test", model, operation: "video.generate", prompt: "海边公路", idempotencyKey: "test", parameters });
 const model = (id: string) => cangyuanVideoModel({ id, name: id, operations: ["video.generate"], metadata: { canvasRunnable: false, canvasUnavailableReason: "403 权限不足" } });
+
+const sd8s = "sd8-seedance-2.5-s";
+function sd8Fixture(models: readonly ModelDescriptor[] = [{ id: sd8s, name: sd8s, operations: ["video.generate"], outputKinds: ["video"], metadata: { canvasRunnable: true } }]) {
+  const connector: RestConnectorConfig = {
+    auth: { type: "bearer" }, restrictModels: true, models,
+    submit: { path: "/stale-images", method: "POST", bodyMode: "json" },
+    poll: { path: "/stale-images/{taskId}", method: "GET", bodyMode: "none" },
+    output: { path: "$.old_images", kind: "image" },
+  };
+  const connection = { id: "test", provider: "rest" as const, apiKey: "synthetic-sd8s-key", baseUrl: "https://ai.cangyuansuanli.cn/v1", settings: { connector } };
+  const fetcher = vi.fn<typeof fetch>(async () => { throw new Error("Unexpected mocked Cangyuan request"); });
+  return { connection, fetcher, adapter: new GenericRestAdapter(new StaticConnectionResolver([connection]), { fetch: fetcher }) };
+}
+
 describe("fresh Cangyuan per-model video contracts", () => {
+  beforeEach(() => {
+    offlineNetwork.lookup.mockClear();
+    offlineNetwork.fetch.mockReset().mockRejectedValue(new Error("Unexpected real HTTP in Cangyuan contract test"));
+    vi.stubGlobal("fetch", offlineNetwork.fetch);
+  });
+  afterEach(() => {
+    try { expect(offlineNetwork.fetch).not.toHaveBeenCalled(); }
+    finally { vi.unstubAllGlobals(); }
+  });
   it("keeps an explicit Key denial and scopes transport to the official supplier", () => {
     expect(model("sd10-seedance-2.0").metadata).toMatchObject({ canvasRunnable: false, canvasUnavailableReason: "403 权限不足" });
     expect(isCangyuanVideoRequest("sd10-seedance-2.0", "https://ai.cangyuansuanli.cn/v1")).toBe(true);
@@ -56,5 +87,100 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(validateCangyuanVideoRequest({ ...request("niulai-pro", { duration: 6, reference_image_urls: ["https://assets.example/i.jpg"] }), assets: [audio] })).not.toEqual([]);
     expect(cangyuanVideoTransport("sd10-seedance-2.0")?.submit?.mappings?.some(m => m.target === "/camera_movement")).toBe(true);
     expect(cangyuanVideoTransport("sd10-seedance-2.0")?.submit?.mappings?.some(m => m.target === "/generate_audio")).toBe(false);
+  });
+
+  it("keeps the new SD8 S contract distinct, with its own checked date and no guessed price or resolution field", () => {
+    const current = model(sd8s);
+    expect(current.operations).toEqual(["video.generate", "video.image-to-video"]);
+    expect(current.outputKinds).toEqual(["video"]);
+    expect(current.inputKinds).toEqual(["text", "image", "image[]", "video", "video[]", "audio", "audio[]"]);
+    expect(current.limits).toMatchObject({ maxInputImages: 30, maxInputVideos: 10, maxInputAudios: 10 });
+    expect(current.parameters?.map(p => p.key)).toEqual(["duration", "aspect_ratio"]);
+    expect(current.parameters?.find(p => p.key === "duration")).toMatchObject({ default: 30, options: [{ label: "30 秒", value: 30 }] });
+    expect(current.metadata).toMatchObject({ canvasRunnable: false, canvasUnavailableReason: "403 权限不足", facePolicy: "open", videoFixedResolution: "720p",
+      supportsFirstLastFrames: false, referenceNeedsDuration: false, cangyuanVideoContractCheckedAt: "2026-10-08",
+      documentationUrl: "https://ai.cangyuansuanli.cn/docs-static/models/sd8-seedance-2.5-s.json", videoPollingTimeoutMs: 1_800_000 });
+    expect(current.pricing).toBeUndefined();
+    const price: StructuredModelPricing = { kind: "per-request", currency: "CNY", billingUnit: "request", unitAmount: 3, checkedAt: "fixture", confidence: "exact" };
+    expect(cangyuanVideoModel({ ...current, pricing: price }).pricing).toBe(price);
+    expect(model("sd8-seedance-2.5").limits).toMatchObject({ maxInputImages: 9, maxInputVideos: 0, maxInputAudios: 0 });
+    expect(model("sd8-seedance-2.5").metadata?.cangyuanVideoContractCheckedAt).toBe("2026-10-07");
+    expect(isCangyuanVideoModel("sd8-seedance-2.5-s-fast")).toBe(false);
+    expect(isCangyuanVideoRequest(sd8s, "https://another-supplier.test/v1")).toBe(false);
+  });
+
+  it.each(["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"])("accepts the SD8 S official %s ratio at its fixed duration", aspect_ratio => {
+    expect(validateCangyuanVideoRequest(request(sd8s, { duration: 30, aspect_ratio }))).toEqual([]);
+  });
+
+  it("accepts exact reference-count limits without borrowing another model's input-duration rules", () => {
+    const refs = { reference_image_urls: Array.from({ length: 30 }, (_, i) => `https://media.test/${i}.jpg`),
+      reference_videos: Array.from({ length: 10 }, (_, i) => `https://media.test/${i}.mp4`),
+      reference_audios: Array.from({ length: 10 }, (_, i) => `https://media.test/${i}.mp3`) };
+    expect(validateCangyuanVideoRequest(request(sd8s, { duration: 30, ...refs }))).toEqual([]);
+    const video = { id: "video", kind: "video" as const, mimeType: "video/mp4", url: "https://media.test/unknown-duration.mp4" };
+    const audio = { id: "audio", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://media.test/unknown-duration.mp3" };
+    expect(validateCangyuanVideoRequest({ ...request(sd8s, { duration: 30 }), assets: [video, audio] })).toEqual([]);
+  });
+
+  it.each([
+    { name: "29-second output", parameters: { duration: 29 } },
+    { name: "string duration", parameters: { duration: "30" } },
+    { name: "unsupported ratio", parameters: { aspect_ratio: "2:3" } },
+    { name: "resolution despite fixed output", parameters: { resolution: "720p" } },
+    { name: "first frame", parameters: { first_image_url: "https://media.test/first.jpg" } },
+    { name: "last frame", parameters: { last_image_url: "https://media.test/last.jpg" } },
+    { name: "borrowed face switch", parameters: { face_mode: true } },
+    { name: "borrowed sound switch", parameters: { generate_audio: true } },
+    { name: "multiple tasks", parameters: { n: 2 } },
+    { name: "31 images", parameters: { reference_image_urls: Array.from({ length: 31 }, (_, i) => `https://media.test/${i}.jpg`) } },
+    { name: "11 videos", parameters: { reference_videos: Array.from({ length: 11 }, (_, i) => `https://media.test/${i}.mp4`) } },
+    { name: "11 audios", parameters: { reference_audios: Array.from({ length: 11 }, (_, i) => `https://media.test/${i}.mp3`) } },
+    { name: "authenticated HTTPS URL", parameters: { reference_videos: ["https://user:password@media.test/a.mp4"] } },
+    { name: "HTTP audio", parameters: { reference_audios: ["http://media.test/a.mp3"] } },
+    { name: "borrowed asset library", parameters: { reference_image_urls: ["asset://image"] } },
+  ])("rejects SD8 S $name before making a generation request", async ({ parameters }) => {
+    const f = sd8Fixture(), input = request(sd8s, parameters);
+    expect((await f.adapter.validate(input)).valid).toBe(false);
+    await expect(f.adapter.submit(input)).rejects.toThrow();
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([{ models: [] }, { models: [model(sd8s)] }])("does not grant SD8 S access when the current Key catalog is absent or denied", async ({ models }) => {
+    const f = sd8Fixture(models);
+    await expect(f.adapter.submit(request(sd8s, { duration: 30 }))).rejects.toThrow();
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
+  it("submits the exact SD8 S JSON, polls its task and extracts video while repairing a stale saved image transport", async () => {
+    const f = sd8Fixture(), original = structuredClone(f.connection);
+    const assets = [
+      { id: "image", kind: "image" as const, mimeType: "image/png", url: "https://media.test/image.png" },
+      { id: "video", kind: "video" as const, mimeType: "video/mp4", url: "https://media.test/video.mp4" },
+      { id: "audio", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://media.test/audio.mp3" },
+    ];
+    f.fetcher.mockResolvedValueOnce(Response.json({ id: "video_42", status: "queued", progress: 0 }))
+      .mockResolvedValueOnce(Response.json({ status: "completed", progress: 100, video_url: "https://media.test/result.mp4" }));
+    const input = { ...request(sd8s, { duration: 30, aspect_ratio: "9:16" }), assets };
+    expect((await f.adapter.validate(input)).valid).toBe(true);
+    expect(f.fetcher).not.toHaveBeenCalled();
+    const task = await f.adapter.submit(input);
+    expect(task).toMatchObject({ providerTaskId: "video_42", status: "queued", pollAfterMs: 5000 });
+    const [url, init] = f.fetcher.mock.calls[0]!;
+    expect(url).toBe("https://ai.cangyuansuanli.cn/v1/videos");
+    expect(init).toMatchObject({ method: "POST", redirect: "error" });
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-sd8s-key");
+    expect(JSON.parse(String(init?.body))).toEqual({ model: sd8s, prompt: input.prompt, duration: 30, aspect_ratio: "9:16",
+      reference_image_urls: [assets[0]!.url], reference_videos: [assets[1]!.url], reference_audios: [assets[2]!.url] });
+    const restarted = JSON.parse(JSON.stringify(task));
+    const state = await f.adapter.poll(restarted);
+    expect(state.status).toBe("succeeded");
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://ai.cangyuansuanli.cn/v1/videos/video_42");
+    expect(f.fetcher.mock.calls[1]?.[1]?.method).toBe("GET");
+    expect(await f.adapter.extractOutputs(state.result)).toEqual([{ kind: "video", url: "https://media.test/result.mp4", mimeType: "video/mp4" }]);
+    expect(f.fetcher).toHaveBeenCalledTimes(2);
+    expect(f.connection).toEqual(original);
+    expect(offlineNetwork.lookup).toHaveBeenCalled();
+    for (const [hostname] of offlineNetwork.lookup.mock.calls as unknown as [string][]) expect(hostname).toBe("ai.cangyuansuanli.cn");
   });
 });

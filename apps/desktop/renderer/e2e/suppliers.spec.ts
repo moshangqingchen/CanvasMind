@@ -441,6 +441,52 @@ test("刷新全部供应商同步分组和模型，显示新增与未再返回�
   expect(api.connections()[0]!.apiKeySet).toBe(true);
 });
 
+test("后台目录升级同步已打开的官网与 Key 清单，并保留未保存的 Key 草稿", async ({ page }, testInfo) => {
+  const api = await mockSuppliers(page, { existing: true, restVideo: true });
+  const supplier = api.suppliers()[0]!;
+  const connection = api.connections()[0]!;
+  supplier.catalog.groups[0]!.models = [{ id: "seedance-2.0-fast", capability: "video", outputKinds: ["video"] }];
+  connection.config = { ...connection.config, modelScanCheckedAt: supplier.scannedAt, scannedModelIds: ["seedance-2.0-fast"],
+    modelCatalogModels: [{ id: "seedance-2.0-fast", name: "Seedance Fast", operations: ["video.generate"], outputKinds: ["video"] }] };
+  let cachedReads = 0;
+  await page.route("**/api/providers/connection-fixture/models?**", async route => {
+    expect(new URL(route.request().url()).searchParams.get("cached")).toBe("1");
+    cachedReads++;
+    await route.fulfill({ json: connection.config.modelCatalogModels, headers: { "X-Model-Scan-Status": "live" } });
+  });
+  const mutations = supplierMutations(page);
+  await openSettings(page);
+  const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
+  const group = dialog.locator(".sm-group-card").filter({ has: page.getByRole("heading", { name: "vip", exact: true }) });
+  await expect(group.getByLabel("官网与 Key 目录对照")).toContainText("官网目录 1 · Key 1");
+  await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
+  await group.getByLabel("vip API Key", { exact: true }).fill("unsaved-fixture-key");
+
+  const checkedAt = "2026-10-08T23:00:00.000Z";
+  supplier.scannedAt = checkedAt;
+  supplier.catalog.groups[0]!.models.push({ id: "dola-seedance-2.5", capability: "video", outputKinds: ["video"], priceLabel: "720p ¥0.875/次" });
+  supplier.catalog.groups.push({ id: "video-new", label: "新视频组", source: "catalog", models: [] });
+  connection.config = { ...connection.config, modelScanCheckedAt: checkedAt, scannedModelIds: ["seedance-2.0-fast", "dola-seedance-2.5"],
+    modelCatalogModels: [...connection.config.modelCatalogModels as object[], { id: "dola-seedance-2.5", name: "Dola Seedance 2.5",
+      operations: ["video.generate"], outputKinds: ["video"], metadata: { priceLabel: "720p ¥0.875/次" } }] };
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded")));
+  await expect(dialog.getByRole("heading", { name: "video-new", exact: true })).toBeVisible();
+  await expect(group.getByLabel("vip API Key", { exact: true })).toHaveValue("unsaved-fixture-key");
+  await expect(group.getByLabel("官网与 Key 目录对照")).toContainText("官网目录 2 · Key 2");
+  await dialog.getByRole("tab", { name: "模型与分组", exact: true }).click();
+  await group.getByLabel("vip 模型类型", { exact: true }).selectOption("video");
+  await expect(group.locator(".sm-model-item").filter({ hasText: "dola-seedance-2.5" })).toContainText("720p ¥0.875/次");
+  await group.getByLabel("vip 模型来源", { exact: true }).selectOption("catalog");
+  const publicDola = group.locator(".sm-model-item").filter({ hasText: "dola-seedance-2.5" });
+  await expect(publicDola).toBeVisible();
+  await expect(publicDola).toContainText("720p ¥0.875/次");
+  await page.screenshot({ path: testInfo.outputPath("catalog-upgraded-open-settings.png"), fullPage: true });
+  expect(cachedReads).toBeGreaterThanOrEqual(2);
+  expect(api.writes).toEqual([]);
+  expect(mutations).toEqual([]);
+  expect(connection.apiKeySet).toBe(true);
+});
+
 test("单家刷新独立于其他供应商，详情列出分组模型接口价格变化并支持键盘与窄窗口", async ({ page }, testInfo) => {
   const api = await mockSuppliers(page, { existing: true });
   const record = api.suppliers()[0]!;

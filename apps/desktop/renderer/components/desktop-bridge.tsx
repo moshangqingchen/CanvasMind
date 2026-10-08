@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { saveBeforeDesktopExit } from "../lib/desktop-client";
-import { fetchAppUpdate, requestAppUpdate, invalidateModelCache, type AppUpdateView } from "../lib/client-api";
+import { fetchAppUpdate, requestAppUpdate, invalidateConnections, invalidateModelCache, type AppUpdateView } from "../lib/client-api";
 import { AppUpdateModal } from "./app-update-modal";
 import feedbackStyles from "./blocking-feedback.module.css";
 
@@ -15,6 +15,7 @@ export function DesktopBridge() {
   useEffect(() => {
     if (!window.superCanvasDesktop) return;
     let cancelled = false;
+    const publishedConnections = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const read = async (method: "GET" | "POST") => {
       try {
@@ -22,10 +23,14 @@ export function DesktopBridge() {
         if (!response.ok || cancelled) return;
         const result = await response.json() as { phase?: string; updatedConnectionIds?: string[] };
         if (cancelled) return;
-        if (result.phase === "complete") {
-          for (const id of result.updatedConnectionIds ?? []) invalidateModelCache(id);
-          if (result.updatedConnectionIds?.length) window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded"));
-        } else timer = setTimeout(() => { void read("GET"); }, 3000);
+        const updated = (Array.isArray(result.updatedConnectionIds) ? result.updatedConnectionIds : [])
+          .filter((id): id is string => typeof id === "string" && Boolean(id) && !publishedConnections.has(id));
+        if (updated.length) {
+          for (const id of updated) { invalidateModelCache(id); publishedConnections.add(id); }
+          invalidateConnections();
+          window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded", { detail: { updatedConnectionIds: updated } }));
+        }
+        if (result.phase !== "complete") timer = setTimeout(() => { void read("GET"); }, 3000);
       } catch { /* Existing inventories remain usable; retry on the next launch. */ }
     };
     void read("POST");

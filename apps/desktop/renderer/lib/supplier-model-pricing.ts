@@ -9,6 +9,7 @@ import {
   type SupplierCatalogDiscovery,
   parseProviderModelFacts,
 } from "@super-canvas/providers";
+import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "@super-canvas/providers/supplier-group-details";
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
@@ -35,7 +36,7 @@ const hasOwnPrice = (model: ModelDescriptor) =>
 /** These catalog parsers already resolved currency, units, conditions and group multipliers. */
 function structuredCatalogPrice(metadata: ModelDescriptor["metadata"]): ModelDescriptor["pricing"] {
   return (metadata?.secureSkillCatalogPricing ?? metadata?.chuangxiangCatalogPricing ?? metadata?.tk1688Pricing ??
-    metadata?.weaiLegacyPricing ?? metadata?.sub2apiPlazaPricing) as ModelDescriptor["pricing"];
+    metadata?.weaiLegacyPricing ?? metadata?.sub2apiPlazaPricing ?? metadata?.miaowuCatalogPricing) as ModelDescriptor["pricing"];
 }
 
 function isImportedConditionalCatalogPrice(model: ModelDescriptor): boolean {
@@ -45,7 +46,8 @@ function isImportedConditionalCatalogPrice(model: ModelDescriptor): boolean {
     if (source.protocol !== "https:" || source.username || source.password) return false;
     return source.origin === "https://token.secure-skill.com" && source.pathname === "/api/v1/pricing/channels" ||
       source.origin === "https://asian-acc.we-token.cc" && source.pathname === "/api/v1/model-plaza-legacy/models" ||
-      ["https://api.eaheng.com", "https://ai.whyshy.cn"].includes(source.origin) && source.pathname === "/api/v1/model-plaza";
+      ["https://api.eaheng.com", "https://ai.whyshy.cn"].includes(source.origin) && source.pathname === "/api/v1/model-plaza" ||
+      source.origin === "https://api.miaowuai.store" && source.pathname === "/api/pricing";
   } catch { return false; }
 }
 
@@ -294,6 +296,20 @@ export function applySupplierCatalogPrices(
   const incomplete = catalog.complete === false || ["failed", "unauthorized"].includes(catalog.status);
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   return models.map((model) => {
+    const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
+    const cyberPending = isCyberAfeiUnpricedCatalogVideo(sourceUrl, model.id) &&
+      (catalogModel?.metadata?.cyberAfeiCatalogPricingIncomplete === true || model.metadata?.cyberAfeiCatalogPricingIncomplete === true ||
+        model.metadata?.supplier === "cyberafei" && model.metadata?.canvasRunnable === false);
+    // Repair the old automatic token placeholder even when that dedicated
+    // descriptor had no priceSource. Preserve separately authored non-token rates.
+    const cyberToken = cyberPending && (model.pricing?.kind === "token" || /(?:\/\s*1M|token)/iu.test(String(model.metadata?.priceLabel ?? "")));
+    if (cyberPending && (!hasOwnPrice(model) || cyberToken || model.metadata?.priceLabel === "价格条件待确认")) {
+      const oldLabel = String(model.metadata?.priceLabel ?? "");
+      const name = cyberToken && oldLabel ? model.name.replace(` · ${oldLabel}`, "").replace(`（${oldLabel}）`, "").replace(`(${oldLabel})`, "") : model.name;
+      return { ...model, name, pricing: undefined, metadata: { ...model.metadata,
+        priceLabel: "价格条件待确认", priceSource: "supplier-catalog", priceStatus: "unconfirmed", cyberAfeiCatalogPricingIncomplete: true,
+        priceUnavailableReason: "官方价格条件待确认", priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt, supplierPriceGroup: group } };
+    }
     // Opening a picker must not roll a successful connection price back to an
     // older supplier snapshot. Scope this to the same group; a copied model or
     // a group change must still be priced from that group's own evidence.
@@ -304,11 +320,10 @@ export function applySupplierCatalogPrices(
       ["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) &&
       (model.pricing || typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel)) &&
       Number.isFinite(priceAt) && Number.isFinite(catalogAt) && priceAt > catalogAt) return model;
-    const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
-    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
+    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete", "miaowuCatalogPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
     if (incompletePricingFields.length && !hasOwnPrice(model)) {
       const metadata = { ...model.metadata };
-      delete metadata.weaiLegacyPricing; delete metadata.sub2apiPlazaPricing;
+      delete metadata.weaiLegacyPricing; delete metadata.sub2apiPlazaPricing; delete metadata.miaowuCatalogPricing;
       return { ...model, pricing: undefined, metadata: { ...metadata, priceLabel: "价格条件待确认", priceSource: "supplier-catalog",
         priceStatus: "unconfirmed", ...Object.fromEntries(incompletePricingFields.map(field => [field, true])), priceUnavailableReason: "官方价格条件待确认",
         priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt, supplierPriceGroup: group } };
@@ -332,7 +347,7 @@ export function applySupplierCatalogPrices(
     }
     if (catalogModel?.metadata?.supplierPriceConflict === true && !hasOwnPrice(model)) {
       const metadata = { ...model.metadata };
-      for (const field of ["secureSkillCatalogPricing", "chuangxiangCatalogPricing", "tk1688Pricing", "weaiLegacyPricing", "sub2apiPlazaPricing"]) delete metadata[field];
+      for (const field of ["secureSkillCatalogPricing", "chuangxiangCatalogPricing", "tk1688Pricing", "weaiLegacyPricing", "sub2apiPlazaPricing", "miaowuCatalogPricing"]) delete metadata[field];
       return {
         ...model,
         pricing: undefined,
@@ -342,10 +357,12 @@ export function applySupplierCatalogPrices(
       };
     }
     if (catalogModel?.metadata?.sub2apiPlazaPricing && model.metadata?.sub2apiPlazaPricingIncomplete === true ||
-      catalogModel?.metadata?.weaiLegacyPricing && model.metadata?.weaiLegacyPricingIncomplete === true) {
+      catalogModel?.metadata?.weaiLegacyPricing && model.metadata?.weaiLegacyPricingIncomplete === true ||
+      catalogModel?.metadata?.miaowuCatalogPricing && model.metadata?.miaowuCatalogPricingIncomplete === true) {
       const metadata = { ...model.metadata };
       if (catalogModel?.metadata?.sub2apiPlazaPricing) delete metadata.sub2apiPlazaPricingIncomplete;
       if (catalogModel?.metadata?.weaiLegacyPricing) delete metadata.weaiLegacyPricingIncomplete;
+      if (catalogModel?.metadata?.miaowuCatalogPricing) delete metadata.miaowuCatalogPricingIncomplete;
       if (metadata.priceUnavailableReason === "官方价格条件待确认") delete metadata.priceUnavailableReason;
       model = { ...model, metadata };
     }

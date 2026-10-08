@@ -37,6 +37,7 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import {
   fetchConnections,
+  invalidateConnections,
   invalidateModelCache,
   saveConnection,
   saveReferenceImageHosting,
@@ -210,11 +211,11 @@ export function SupplierManager({
     onConnectionsRef.current = onConnectionsChanged;
   }, [onConnectionsChanged]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options: { fresh?: boolean } = {}) => {
     const version = ++loadVersion.current;
     setLoading(true);
     const results = await Promise.allSettled([
-      fetchSuppliers(),
+      fetchSuppliers(options),
       fetchConnections(),
     ]);
     if (version !== loadVersion.current) return;
@@ -247,6 +248,11 @@ export function SupplierManager({
     window.addEventListener("supplier-billing-updated", scheduleLoad);
     return () => { window.removeEventListener("supplier-billing-updated", scheduleLoad); };
   }, [scheduleLoad]);
+  useEffect(() => {
+    const upgraded = () => { invalidateConnections(); void load({ fresh: true }); };
+    window.addEventListener("supplier-catalog-upgraded", upgraded);
+    return () => { window.removeEventListener("supplier-catalog-upgraded", upgraded); };
+  }, [load]);
   useEffect(() => () => { clearTimeout(reloadTimer.current); loadVersion.current += 1; }, []);
 
   useEffect(() => {

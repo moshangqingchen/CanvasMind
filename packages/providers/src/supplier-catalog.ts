@@ -9,6 +9,9 @@ import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketpla
 import { secureSkillCatalogPricing, secureSkillCatalogVideoDeclaration } from "./secure-skill-catalog-pricing.js";
 import { isWeAiLegacyCatalogSource, readWeAiLegacyCatalog, WEAI_LEGACY_PRICE_UNIT_NOTE } from "./weai-legacy-catalog.js";
 import { isSub2apiPlazaPricingSource, sub2apiPlazaPricing } from "./sub2api-plaza-pricing.js";
+import { isMiaowuCatalogSource, miaowuCatalogMediaKind, miaowuCatalogMediaPricing } from "./miaowu-catalog-pricing.js";
+import { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
+export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
   "auto" | "newapi" | "sub2api" | "openai-compatible";
@@ -55,6 +58,7 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     : undefined;
 const text = (value: unknown): string =>
   typeof value === "string" ? value.trim().slice(0, 256) : "";
+
 const values = (value: unknown): string[] =>
   Array.isArray(value)
     ? value.map(text).filter(Boolean)
@@ -372,11 +376,19 @@ export function parseSupplierCatalog(
     raw: unknown,
     id: string,
   ) => {
+    if (isCyberAfeiUnpricedCatalogVideo(priceDisplay.supplierSiteUrl, model.id)) {
+      return { ...model, capability: "video" as const, protocol: "unknown" as const, outputKinds: ["video" as const],
+        priceLabel: "价格条件待确认", metadata: { ...model.metadata, catalogCapability: "video", outputKindsSource: "declared",
+          canvasRunnable: false, autoInterfaceStatus: "incomplete", canvasUnavailableReason: "视频调用协议待供应商文档确认",
+          cyberAfeiCatalogPricingIncomplete: true, priceStatus: "unconfirmed", priceUnavailableReason: "官方价格条件待确认" } };
+    }
+    const miaowuKind = miaowuCatalogMediaKind(raw, priceDisplay.supplierSiteUrl);
+    const nativeCurrency = miaowuKind ? text(record(record(record(raw)?.[miaowuKind === "image" ? "image_api" : "video_api"])?.pricing)?.currency) : undefined;
     const explicitCurrency = text(
-      record(record(raw)?.pricing)?.currency ??
+      nativeCurrency || (record(record(raw)?.pricing)?.currency ??
         record(raw)?.currency ??
         root?.currency ??
-        data?.currency,
+        data?.currency),
     );
     const multiplier =
       Number(ratios?.[id] ?? 1) *
@@ -384,6 +396,16 @@ export function parseSupplierCatalog(
     const currency = text(
       root?.currency ?? data?.currency ?? priceDisplay.currency,
     );
+    const nativeDisplayCurrency = explicitCurrency || currency;
+    const miaowuNative = isMiaowuCatalogSource(priceDisplay.supplierSiteUrl) && (record(record(raw)?.image_api) || record(record(raw)?.video_api));
+    if (miaowuNative) {
+      const native = miaowuCatalogMediaPricing(raw, { ...(priceDisplay.supplierSiteUrl ? { supplierSiteUrl: priceDisplay.supplierSiteUrl } : {}),
+        multiplier, ...(nativeDisplayCurrency ? { currency: nativeDisplayCurrency } : {}), ...(priceDisplay.checkedAt ? { checkedAt: priceDisplay.checkedAt } : {}) });
+      return { ...model, ...(miaowuKind ? { capability: miaowuKind, protocol: miaowuKind === "image" ? "openai-images" as const : "openai-videos" as const,
+        outputKinds: [miaowuKind] } : {}), priceLabel: native?.priceLabel ?? "价格条件待确认",
+        metadata: { ...model.metadata, ...(miaowuKind ? { catalogCapability: miaowuKind, outputKindsSource: "declared" } : {}),
+          ...(native ? { miaowuCatalogPricing: native.pricing } : { miaowuCatalogPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" }) } };
+    }
     const priceLabel = catalogPriceLabel(raw, {
       newApi: isNewApi,
       multiplier,
@@ -748,7 +770,7 @@ export async function discoverSupplierCatalog(
     if ([401, 403].includes(pricing.status) && siteHeaders("newapi"))
       pricing = await probe(pricingUrl, siteHeaders("newapi"));
     const payload = record(pricing.payload);
-    const parsed = parseSupplierCatalog(pricing.payload);
+    const parsed = parseSupplierCatalog(pricing.payload, { supplierSiteUrl: siteUrl, checkedAt });
     if (
       pricing.status === 200 &&
       payload &&
@@ -782,6 +804,8 @@ export async function discoverSupplierCatalog(
               parseSupplierCatalog(pricing.payload, {
                 currency,
                 multiplier: exchange,
+                supplierSiteUrl: siteUrl,
+                checkedAt,
               }),
               "newapi",
             );

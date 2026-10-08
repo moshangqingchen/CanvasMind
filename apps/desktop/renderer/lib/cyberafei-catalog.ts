@@ -6,6 +6,7 @@ import type {
   RestRequestMapping,
 } from "@super-canvas/providers";
 import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
+import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
 import { providerPriceUnit } from "./provider-pricing-unit";
 
 export const CYBERAFEI_SUPPLIER_KEY = "cyberafei";
@@ -320,6 +321,8 @@ function priceFor(
   record: PricingRecord,
   groupRatio: number,
 ): { label: string; billing: string } {
+  if (isCyberAfeiUnpricedCatalogVideo(CYBERAFEI_BASE_URL, String(record.model_name ?? "")))
+    return { label: "价格条件待确认", billing: "计费条件待确认" };
   const quotaType = record.quota_type;
   const modelRatio =
     typeof record.model_ratio === "number" ? record.model_ratio : undefined;
@@ -1377,6 +1380,9 @@ export function resolveCyberAfeiScannedGroup(
       priceLabel: model.priceLabel,
       billingLabel: model.billingLabel,
       catalogCapability: model.capability,
+      ...(isCyberAfeiUnpricedCatalogVideo(CYBERAFEI_BASE_URL, model.id) ? {
+        cyberAfeiCatalogPricingIncomplete: true, priceStatus: "unconfirmed", priceUnavailableReason: "官方价格条件待确认",
+      } : {}),
     } as const;
     const descriptor = model.canvasRunnable
       ? descriptors.get(model.id)

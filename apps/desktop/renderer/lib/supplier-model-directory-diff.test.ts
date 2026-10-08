@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ModelDescriptor } from "@super-canvas/providers";
+import { parseSupplierCatalog, type ModelDescriptor } from "@super-canvas/providers";
+import { readFileSync } from "node:fs";
 import type { ProviderConnectionView } from "./client-api";
 import type { SupplierCatalogModel, SupplierRecord } from "./client-suppliers";
 import { modelCanvasUnavailableReason } from "./graph-ui";
@@ -16,6 +17,20 @@ const keyModels: ModelDescriptor[] = Array.from({ length: 15 }, (_, i) => ({ id:
 const publicModels = [...Array.from({ length: 10 }, (_, i) => catalogModel(`video-${i}`)), ...Array.from({ length: 8 }, (_, i) => catalogModel(`official-video-${i}`))];
 
 describe("public media directory differences", () => {
+  it("shows all eleven Miaowu native videos including Dola and Jimeng with their own rule prices and no Key grant", () => {
+    const payload = JSON.parse(readFileSync(new URL("./miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
+    const groups = parseSupplierCatalog(payload, { supplierSiteUrl: "https://api.miaowuai.store", currency: "CNY", multiplier: 7, checkedAt: "2026-10-08T22:37:14Z" }).groups;
+    const models = groups.find(group => group.id === "default")!.models as SupplierCatalogModel[];
+    const source = supplier(models);
+    const directory = catalogPickerDirectory(connection, [source], [], "video-generation", true)!;
+    expect(directory.catalogCount).toBe(11);
+    expect(directory.models.map(model => model.id)).toEqual(expect.arrayContaining(["dola-seedance-2.0-fast", "dola-seedance-2.5", "jimeng-seedance-2.5"]));
+    expect(modelPriceSummary(directory.models.find(model => model.id === "dola-seedance-2.5"), { resolution: "720p" })).toBe("0.875 CNY / 次");
+    expect(modelPriceSummary(directory.models.find(model => model.id === "jimeng-seedance-2.5"), { resolution: "480p" })).toBe("0.625 CNY / 秒");
+    expect(directory.models.every(model => model.metadata?.canvasRunnable === false && !model.operations.length)).toBe(true);
+    expect(catalogPickerDirectory(connection, [source], [], "image-generation", true)?.catalogCount).toBe(7);
+    expect(filterPickerModels(directory.models, "", "all", "runnable", [])).toEqual([]);
+  });
   it("reports public 18, Key 15, intersection 10 and eight public-only rows without changing Key models", () => {
     const before = structuredClone(keyModels);
     const result = catalogPickerDirectory(connection, [supplier(publicModels)], keyModels, "video-generation", true)!;

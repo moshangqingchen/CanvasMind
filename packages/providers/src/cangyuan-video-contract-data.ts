@@ -1,7 +1,9 @@
-// Extracted from official per-model documents, fresh GET 2026-10-07.
+// Extracted from official per-model documents, fresh GET 2026-10-07;
+// individually rechecked/new contracts carry their own checkedAt date.
 // Source: https://ai.cangyuansuanli.cn/docs-static/models/{id}.json
 // Public documentation does not grant a Key permission to use a model.
 export interface CangyuanVideoContractData {
+ checkedAt?: string; facePolicy?: "open"; fixedResolution?: string;
  fields: readonly string[];
  parameters: readonly { key: string; description: string; values?: readonly (string | number)[]; min?: number; max?: number; default?: string | number | boolean }[];
  references: { images: number | null; videos: number | null; audios: number | null };
@@ -14,6 +16,16 @@ export interface CangyuanVideoContractData {
  maxTotalInputAudioDurationSeconds?: number; approximateDurationSeconds?: number; maxPromptCharacters?: number;
 }
 export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanVideoContractData>> = {
+ "sd8-seedance-2.5-s": {
+  checkedAt: "2026-10-08", facePolicy: "open", fixedResolution: "720p",
+  fields: ["duration", "aspect_ratio", "reference_image_urls", "reference_videos", "reference_audios"],
+  parameters: [
+   { key: "duration", description: "时长固定 30 秒，成片固定 720p；不要发送 resolution。", values: [30] },
+   { key: "aspect_ratio", description: "画幅比例，可选 21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16。", values: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] },
+  ],
+  references: { images: 30, videos: 10, audios: 10 },
+  frames: false, framePairRequired: false, allowFrameMediaMix: false,
+ },
  "minimax-h3-2k": {"fields":["duration","aspect_ratio","resolution","reference_image_urls","reference_videos","reference_audios","first_image_url","last_image_url"],"parameters":[{"key":"duration","description":"时长秒数，5–15。","min":5,"max":15},{"key":"aspect_ratio","description":"画幅比例，可选 16:9 / 9:16 / 1:1 / 4:3 / 3:4。","values":["16:9","9:16","1:1","4:3","3:4"]},{"key":"resolution","description":"清晰度，固定 2K。","values":["2K"]}],"references":{"images":5,"videos":3,"audios":3},"frames":true,"framePairRequired":true,"allowFrameMediaMix":false,"maxTotalInputVideoDurationSeconds":15},
  "seedance-2.0-720p": {"fields":["duration","aspect_ratio","resolution","generate_audio","reference_image_urls","first_image_url","last_image_url"],"parameters":[{"key":"duration","description":"时长秒数，可选 4 / 5 / 6 / 7 / 8 / 9 / 10 / 11 / 12 / 13 / 14 / 15。","values":[4,5,6,7,8,9,10,11,12,13,14,15]},{"key":"aspect_ratio","description":"画幅比例，可选 16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。","values":["16:9","9:16","1:1","4:3","3:4","21:9"]},{"key":"resolution","description":"清晰度，固定 720p。","values":["720p"]},{"key":"generate_audio","description":"是否生成音频，true / false。"}],"references":{"images":9,"videos":0,"audios":0},"frames":true,"framePairRequired":true,"allowFrameMediaMix":false},
  "seedance-2.0-1080p": {"fields":["duration","aspect_ratio","resolution","generate_audio","reference_image_urls","reference_videos","reference_audios"],"parameters":[{"key":"duration","description":"时长秒数，可选 4 / 5 / 6 / 7 / 8 / 9 / 10 / 11 / 12 / 13 / 14 / 15。","values":[4,5,6,7,8,9,10,11,12,13,14,15]},{"key":"aspect_ratio","description":"画幅比例，可选 16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9。","values":["16:9","9:16","1:1","4:3","3:4","21:9"]},{"key":"resolution","description":"清晰度，固定 1080p。","values":["1080p"]},{"key":"generate_audio","description":"是否生成音频，true / false。"}],"references":{"images":5,"videos":3,"audios":3},"frames":false,"framePairRequired":false,"allowFrameMediaMix":false},

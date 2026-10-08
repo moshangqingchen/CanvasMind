@@ -6,6 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./cyberafei-catalog-evidence": {
+      "types": "./src/cyberafei-catalog-evidence.ts",
+      "import": "./dist/cyberafei-catalog-evidence.js",
+      "default": "./dist/cyberafei-catalog-evidence.js"
+    },
     "./remaining-video-contracts": {
       "types": "./src/remaining-video-contracts.ts",
       "import": "./dist/remaining-video-contracts.js",

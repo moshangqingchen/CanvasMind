@@ -14,6 +14,25 @@ const weai = JSON.parse(readFileSync(new URL("./__fixtures__/weai-legacy-price-2
   groups: Array<{ groupId: number; payload: unknown }>;
 };
 
+it("keeps the exact official Afei declared video pending without borrowing its token placeholder or another video contract", () => {
+  const id = "ya-sd25-30s";
+  const payload = { data: [{ model_name: id, quota_type: 0, model_price: 0, model_ratio: 37.5,
+    completion_ratio: 1, enable_groups: ["special"] }], group_ratio: { special: 1 }, usable_group: { special: "视频特价，0.3/秒" } };
+  const model = parseSupplierCatalog(payload, { supplierSiteUrl: "https://api.3365api.cn" }).groups[0]!.models[0]!;
+  expect(model).toMatchObject({ id, capability: "video", protocol: "unknown", outputKinds: ["video"], priceLabel: "价格条件待确认",
+    metadata: { canvasRunnable: false, autoInterfaceStatus: "incomplete", cyberAfeiCatalogPricingIncomplete: true, priceStatus: "unconfirmed" } });
+  expect(model.metadata?.autoModelInterfaces).toBeUndefined();
+  expect(model.priceLabel).not.toMatch(/75|1M|0\.3/u);
+  for (const supplierSiteUrl of ["https://other.invalid", "https://api.3365api.cn.evil.invalid", "https://user@api.3365api.cn", "https://api.3365api.cn/?token=fixture"]) {
+    const unrelated = parseSupplierCatalog(payload, { supplierSiteUrl }).groups[0]!.models[0]!;
+    expect(unrelated.metadata?.cyberAfeiCatalogPricingIncomplete).toBeUndefined();
+    expect(unrelated.priceLabel).toContain("$75/1M");
+  }
+  const otherId = parseSupplierCatalog({ ...payload, data: [{ ...payload.data[0], model_name: `${id}-other` }] }, { supplierSiteUrl: "https://api.3365api.cn" }).groups[0]!.models[0]!;
+  expect(otherId.metadata?.cyberAfeiCatalogPricingIncomplete).toBeUndefined();
+  expect(otherId.priceLabel).toContain("$75/1M");
+});
+
 describe("supplier discovery", () => {
   const weaiFetch = (failureId?: string, failure = 404): typeof fetch => async url => {
     const parsed = new URL(String(url));

@@ -26,6 +26,22 @@ it("does not promote a token placeholder price to a free per-request price", () 
   expect(catalog.groups.video?.[0]?.pricing?.kind).not.toBe("per-request");
 });
 
+it("shows the exact declared ya-sd25-30s video without token fees or a guessed executable connector", () => {
+  const id = "ya-sd25-30s", group = "special";
+  const catalog = cyberAfeiCatalogFromPricing({ group_ratio: { [group]: 1 }, usable_group: { [group]: "视频特价，0.3/秒" },
+    data: [{ model_name: id, quota_type: 0, model_price: 0, model_ratio: 37.5, completion_ratio: 1, enable_groups: [group], supported_endpoint_types: ["openai"] }] });
+  expect(catalog.marketplaceGroups[0]?.models[0]).toMatchObject({ id, capability: "video", priceLabel: "价格条件待确认", billingLabel: "计费条件待确认" });
+  const resolved = resolveCyberAfeiScannedGroup(catalog, group, [id]);
+  expect(resolved.canvasModels).toEqual([]);
+  const pending = resolved.canvasDisplayModels[0]!;
+  expect(pending).toMatchObject({ id, metadata: { canvasRunnable: false, cyberAfeiCatalogPricingIncomplete: true, priceStatus: "unconfirmed", priceLabel: "价格条件待确认" } });
+  expect(pending.pricing).toBeUndefined();
+  expect(pending.parameters).toBeUndefined();
+  const connector = cyberAfeiConnectorForModels(resolved.canvasModels);
+  expect(connector.models?.some(model => model.id === id)).toBe(false);
+  expect(connector.modelOverrides?.[id]).toBeUndefined();
+});
+
 describe("cyberafei catalog", () => {
   it.each(["gpt-image-4K", "gpt-image-2-4K"])("offers documented 2K requests on %s as well as 4K", (id) => {
     const catalog = cyberAfeiCatalogFromPricing({ data: [{ model_name: id, model_price: 0.35, quota_type: 1, enable_groups: ["image-2稳定生图"], supported_endpoint_types: ["openai"] }] });
