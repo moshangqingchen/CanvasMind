@@ -28,7 +28,11 @@ async function fixture(t) {
     assert.ok(basename(root).startsWith("super-canvas-next-cache-"));
     await rm(root, { recursive: true, force: true });
   });
-  const serverDistDir = join(root, "resources/runtime/server/apps/desktop/renderer/.next-desktop/server");
+  // Linux /tmp is shorter than a Windows install root. Pad one installation
+  // directory so both platforms exercise long cache paths, with valid components.
+  const installationName = "SuperCanvas".padEnd(Math.max("SuperCanvas".length, 100 - root.length - 1), "x");
+  assert.ok(installationName.length <= 255, "fixture directory must fit the filesystem component limit");
+  const serverDistDir = join(root, installationName, "resources/runtime/server/apps/desktop/renderer/.next-desktop/server");
   await mkdir(serverDistDir, { recursive: true });
   const writes = [];
   const reads = [];
