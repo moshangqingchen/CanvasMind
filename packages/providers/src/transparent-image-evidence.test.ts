@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const offlineNetwork = vi.hoisted(() => ({
+  lookup: vi.fn<(hostname: string, options?: unknown) => Promise<{ address: string; family: number }[]>>(
+    async () => [{ address: "203.0.113.10", family: 4 }]),
+  fetch: vi.fn(),
+}));
+// Preserve exact official host identities used by measured contract assertions,
+// while isolating the endpoint safety guard's pre-transport DNS lookup.
+vi.mock("node:dns/promises", () => ({ lookup: offlineNetwork.lookup }));
 import type { FetchImplementation, NormalizedRequest } from "./contracts.js";
 import { StaticConnectionResolver } from "./credentials.js";
 import { createDefaultProviderRegistry } from "./registry.js";
@@ -30,9 +38,26 @@ const saved = { autoModelInterfaces: { [model]: {
 } } };
 const codexEvidence = VERIFIED_TRANSPARENT_IMAGES.find(row => row.provider === "weai" &&
   row.hostname === "asian-acc.we-token.cc" && row.group === "生图-openai-codex-token计费" && row.model === "gpt-image-2")!;
+const fixtureHosts = new Set([...VERIFIED_TRANSPARENT_IMAGES, ...FAILED_TRANSPARENT_IMAGE_TESTS].map(row => row.hostname));
 
 describe("measured transparent image routes", () => {
-  afterEach(() => vi.restoreAllMocks());
+  beforeEach(() => {
+    offlineNetwork.lookup.mockClear();
+    offlineNetwork.fetch.mockReset().mockRejectedValue(new Error("Unexpected real HTTP in transparent evidence test"));
+    vi.stubGlobal("fetch", offlineNetwork.fetch);
+  });
+  afterEach(() => {
+    try {
+      expect(offlineNetwork.fetch).not.toHaveBeenCalled();
+      for (const [hostname, options] of offlineNetwork.lookup.mock.calls) {
+        expect(fixtureHosts.has(hostname)).toBe(true);
+        expect(options).toEqual({ all: true, verbatim: true });
+      }
+    } finally {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
+  });
 
   it("accepts only exact static Images JSON paths and retains all identity and selector boundaries", () => {
     const evidence: TransparentImageEvidence = { ...codexEvidence, selectors: { tier: "1k" } };
