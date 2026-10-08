@@ -48,6 +48,22 @@ describe("supplier catalog upgrade", () => {
     expect(current.config.modelCatalogModels).toEqual([{ id: "gpt-5.5", operations: [] }, { id: "gpt-5.4", operations: [] }]);
     expect(current.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
   });
+  it("refreshes a recently completed 0.2.64 catalog once after the 0.2.65 upgrade", async () => {
+    const f = await fixture();
+    await f.save("active");
+    f.service.start(); await f.service.settle();
+    const saved = (await f.repository.getConnection("active"))!;
+    await f.repository.saveConnection({ ...saved, config: { ...saved.config,
+      catalogUpgradeRevision: "2026-10-07-media", catalogUpgradeAttemptRevision: "2026-10-07-media",
+    } });
+    const upgraded = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels,
+      now: () => Date.parse("2026-10-07T04:00:00Z") });
+    upgraded.start(); await upgraded.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(2);
+    expect((await f.repository.getConnection("active"))!.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
+    upgraded.start(); await upgraded.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(2);
+  });
   it("persists completion across launches and scans again after a Key identity change", async () => {
     const f = await fixture();
     await f.save("active");
