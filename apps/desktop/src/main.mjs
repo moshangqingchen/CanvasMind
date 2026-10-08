@@ -12,6 +12,7 @@ import { APP_ID, TOKEN_HEADER, UPDATE_INTERVAL, backendEnvironment, isAppUrl, is
 import { developmentCommands, stopOwnedChild } from "./development.mjs";
 import { discoverSource, initializeProfile, loadProfile } from "./data.mjs";
 import { DesktopUpdater } from "./updater.mjs";
+import { createUpdateDiagnostics } from "./update-diagnostics.mjs";
 import { configureUpdates } from "./update-config.mjs";
 import { ReferenceChannel } from "./reference-channel.mjs";
 import { exitWaitPresentation } from "./exit-policy.mjs";
@@ -415,7 +416,7 @@ if (locked) {
       await configureUpdates(electronUpdater.autoUpdater, process.resourcesPath, dataRoot);
     } catch (error) { updateConfigurationError = error; await log(error.message); }
     updater = new DesktopUpdater(electronUpdater.autoUpdater, app.getVersion(), { packaged: app.isPackaged && !smoke,
-      currentNotes, changed: (value) => send("desktop:update-changed", value), apply: () => requestExit(true) });
+      currentNotes, diagnostic: createUpdateDiagnostics(logRoot), changed: (value) => send("desktop:update-changed", value), apply: () => requestExit(true) });
     if (updateConfigurationError) updater.fail(updateConfigurationError);
     handle("desktop:update-status", () => updater.snapshot());
     handle("desktop:update-action", (action) => updater.action(action));

@@ -159,7 +159,24 @@ export interface AppUpdateView {
     assetSize?: number;
   };
   downloadedVersion?: string;
-  progress?: { downloadedBytes: number; totalBytes?: number };
+  progress?: {
+    downloadedBytes: number;
+    totalBytes?: number;
+    bytesPerSecond?: number;
+    estimatedRemainingSeconds?: number;
+  };
+  download?: {
+    mode: "preparing" | "differential" | "full" | "cached";
+    fallback?: boolean;
+    reason?: string;
+  };
+  diagnostic?: {
+    stage: "check" | "download" | "verify" | "apply";
+    category: "network" | "timeout" | "not-found" | "http" | "cache" | "checksum" | "signature" | "configuration" | "unknown";
+    code?: string;
+    statusCode?: number;
+    retryable?: boolean;
+  };
   lastCheckedAt?: string;
   lastSuccessfulCheckAt?: string;
   error?: string;
