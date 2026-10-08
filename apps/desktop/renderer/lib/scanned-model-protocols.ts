@@ -12,6 +12,10 @@ import {
   modelGenerationMediaKinds,
   remainingVideoModel,
   remainingVideoSupplier,
+  isMiaowuUnverifiedKeyScanVideoModel,
+  isMiaowuUnverifiedAutoVideoContract,
+  MIAOWU_VIDEO_CONTRACT_PENDING_REASON,
+  savedModelInterfaces,
 } from "@super-canvas/providers";
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
@@ -30,6 +34,15 @@ import { applySavedModelInterfaces } from "./supplier-interface-discovery";
 import { guardNativeVideoRunnableContract } from "./native-video-runnable-contract";
 
 type Connection = { provider: string; config: Record<string, unknown> };
+
+function isDefaultMiaowuConnection(connection: Connection): boolean {
+  if (connection.provider !== "rest" || connection.config.preset !== "miaowu-openai-videos" ||
+      (connection.config.accountKeyGroup ?? connection.config.modelGroup) !== "default") return false;
+  try {
+    const url = new URL(String(connection.config.baseUrl ?? ""));
+    return url.origin === "https://api.miaowuai.store" && !url.username && !url.password && !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname);
+  } catch { return false; }
+}
 
 function connectorOf(connection: Connection): RestConnectorConfig | undefined {
   const value = connection.config.connector;
@@ -83,6 +96,9 @@ function transportForModel(connector: RestConnectorConfig, sourceId: string, tar
 
 function canInherit(model: ModelDescriptor): boolean {
   if (model.metadata?.canvasRunnable !== false) return true;
+  // A pending directory ID cannot regain a guessed sibling transport on a
+  // second cached read. Exact documented bindings are applied separately.
+  if (model.metadata.miaowuVideoContractPending === true && isMiaowuUnverifiedKeyScanVideoModel(model)) return false;
   const reason = String(model.metadata.canvasUnavailableReason ?? "");
   // An absent catalog entry is different from an upstream permission denial.
   return (
@@ -386,7 +402,21 @@ export function bindScannedModelProtocols(
   scanned: readonly ModelDescriptor[],
   previous: Connection = connection,
 ): ReturnType<typeof bindExistingModelProtocols> {
-  const bound = bindExistingModelProtocols(connection, scanned, previous);
+  // Only undo a refusal that this guard produced, after its automatic transport
+  // was replaced with a custom/verified contract. Existing Key denials stay put.
+  const prepared = scanned.map(model => {
+    if (model.metadata?.miaowuVideoContractPending !== true || model.metadata.canvasRunnable !== false ||
+        model.metadata.canvasUnavailableReason !== MIAOWU_VIDEO_CONTRACT_PENDING_REASON ||
+        !isDefaultMiaowuConnection(connection) ||
+        connection.config.supplierArchived === true || ["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) ||
+        Array.isArray(connection.config.scannedModelIds) && !connection.config.scannedModelIds.includes(model.id) ||
+        !connectorOf(connection) || isMiaowuUnverifiedAutoVideoContract(connection.config, model)) return model;
+    const metadata: Record<string, unknown> = { ...model.metadata, canvasRunnable: true };
+    delete metadata.miaowuVideoContractPending;
+    delete metadata.canvasUnavailableReason;
+    return { ...model, metadata };
+  });
+  const bound = bindExistingModelProtocols(connection, prepared, previous);
   const compatibleModels = bound.models.map((model) =>
     withHighestModelQualityDefault(
       withKnownPriceLabel(
@@ -454,13 +484,38 @@ export function bindScannedModelProtocols(
     return { ...documented, metadata };
   });
   models = models.map(model => guardNativeVideoRunnableContract(connection, model));
+  const miaowuPending = new Set<string>();
+  const miaowuBindings = isDefaultMiaowuConnection(connection) ? savedModelInterfaces(connection.config) : {};
+  models = models.map(model => {
+    const original = originalById.get(model.id), binding = miaowuBindings[model.id];
+    if (isMiaowuUnverifiedKeyScanVideoModel(original) && model.metadata?.canvasRunnable !== false &&
+        model.metadata?.autoInterfaceStatus === "connected" && modelGenerationMediaKinds(model).join("+") === "video" &&
+        binding?.model.id === model.id && binding.connector.submit?.path && binding.connector.output?.kind === "video" &&
+        modelGenerationMediaKinds(binding.model).join("+") === "video") {
+      // A documented text-to-video binding cannot also grant the inferred
+      // image-to-video operation from the old Key-only directory descriptor.
+      const operations = model.operations.filter(operation => original!.operations.includes(operation) && binding.model.operations.includes(operation));
+      if (operations.length) model = { ...model, operations };
+    }
+    if (connection.provider !== "rest" || !isMiaowuUnverifiedAutoVideoContract(connection.config, model, bound.connector)) return model;
+    miaowuPending.add(model.id);
+    return { ...model, metadata: { ...model.metadata, canvasRunnable: false, parameterControlsUnavailable: true,
+      miaowuVideoContractPending: true, canvasUnavailableReason: model.metadata?.canvasRunnable === false &&
+        model.metadata.canvasUnavailableReason ? model.metadata.canvasUnavailableReason : MIAOWU_VIDEO_CONTRACT_PENDING_REASON } };
+  });
+  const withoutAutomaticMiaowuOverrides = (connector: RestConnectorConfig): RestConnectorConfig => ({
+    ...connector,
+    models: connector.models?.filter(model => !miaowuPending.has(model.id)),
+    modelOverrides: Object.fromEntries(Object.entries(connector.modelOverrides ?? {}).filter(([id]) => !miaowuPending.has(id))),
+  });
   return {
     ...bound,
     models,
+    ...(miaowuPending.size && bound.templateConnector ? { templateConnector: withoutAutomaticMiaowuOverrides(bound.templateConnector) } : {}),
     ...(bound.connector
       ? {
           connector: {
-            ...bound.connector,
+            ...(miaowuPending.size ? withoutAutomaticMiaowuOverrides(bound.connector) : bound.connector),
             models: models.filter(
               (m) =>
                 m.operations.length && m.metadata?.canvasRunnable !== false,

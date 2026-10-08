@@ -1,5 +1,7 @@
 import {
   providerFetch,
+  isMiaowuUnverifiedKeyScanVideoModel,
+  MIAOWU_VIDEO_CONTRACT_PENDING_REASON,
   type ModelDescriptor,
   type ModelParameterDescriptor,
   type ModelParameterOption,
@@ -817,10 +819,20 @@ export function miaowuConnectorForModels(
   models: readonly ModelDescriptor[],
 ): RestConnectorConfig {
   const connector = structuredClone(MIAOWU_CONNECTOR);
+  const connectedModels = models.map(model => {
+    const copy = structuredClone(model);
+    return isMiaowuUnverifiedKeyScanVideoModel(model) && (model.metadata?.marketplaceGroup ?? "default") === "default"
+      ? { ...copy, metadata: { ...copy.metadata, canvasRunnable: false, miaowuVideoContractPending: true,
+        canvasUnavailableReason: model.metadata?.canvasRunnable === false && model.metadata.canvasUnavailableReason
+          ? model.metadata.canvasUnavailableReason : MIAOWU_VIDEO_CONTRACT_PENDING_REASON } }
+      : copy;
+  });
   const modelOverrides = Object.fromEntries(
-    models.flatMap((model) =>
+    connectedModels.flatMap((model) =>
       model.outputKinds?.includes("image")
         ? [[model.id, structuredClone(MIAOWU_IMAGE_OVERRIDE)]]
+        : model.metadata?.miaowuVideoContractPending === true && isMiaowuUnverifiedKeyScanVideoModel(model)
+        ? []
         : model.metadata?.parameterControlsUnavailable === true
         ? [[model.id, structuredClone(MIAOWU_CHAT_VIDEO_OVERRIDE)]]
         : [],
@@ -828,7 +840,7 @@ export function miaowuConnectorForModels(
   );
   return {
     ...connector,
-    models: models.map((model) => structuredClone(model)),
+    models: connectedModels,
     modelOverrides,
   };
 }

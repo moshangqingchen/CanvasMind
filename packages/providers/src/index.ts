@@ -12,6 +12,7 @@ export * from "./openai.js";
 export * from "./suppliers.js";
 export * from "./model-catalog.js";
 export * from "./model-media.js";
+export * from "./miaowu-video-contract-pending.js";
 export * from "./remaining-video-contracts.js";
 export * from "./documented-interface.js";
 export * from "./auto-interface-adapter.js";

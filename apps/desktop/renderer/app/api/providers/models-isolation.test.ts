@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository } from "@super-canvas/db";
 const mocks = vi.hoisted(() => ({
   repository: undefined as unknown as MemoryRepository,
   fetch: vi.fn(),
   syncCangyuan: vi.fn(),
   document: vi.fn(),
+  unexpectedNetwork: vi.fn(),
 }));
 vi.mock("../../../lib/supplier-document", () => ({ readSupplierDocument: mocks.document }));
 vi.mock("../../../lib/cangyuan-catalog", async (original) => ({
@@ -18,10 +19,16 @@ vi.mock("../../../lib/server", () => ({
   jsonError: (error: string, status: number) =>
     Response.json({ error }, { status }),
 }));
-vi.mock("@super-canvas/providers", async (original) => ({
-  ...(await original<typeof import("@super-canvas/providers")>()),
-  providerFetch: mocks.fetch,
-}));
+vi.mock("@super-canvas/providers", async (original) => {
+  const providers = await original<typeof import("@super-canvas/providers")>();
+  return {
+    ...providers,
+    providerFetch: mocks.fetch,
+    // Preserve real authentication while replacing its module-local default transport.
+    loginSupplierSite: (input: Parameters<typeof providers.loginSupplierSite>[0], fetchImpl = mocks.fetch) =>
+      providers.loginSupplierSite(input, fetchImpl),
+  };
+});
 import { encryptSecret } from "@super-canvas/providers";
 import {
   createSupplierRecord,
@@ -47,14 +54,23 @@ beforeEach(() => {
   mocks.fetch.mockReset();
   mocks.syncCangyuan.mockReset();
   mocks.document.mockReset();
+  mocks.unexpectedNetwork.mockReset().mockRejectedValue(new Error("Unexpected network in isolated model test"));
+  vi.stubGlobal("fetch", mocks.unexpectedNetwork);
   process.env.MASTER_KEY = "isolated-test-master";
+});
+afterEach(() => {
+  try {
+    expect(mocks.unexpectedNetwork).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 async function fixture(supplierKey?: string) {
   const supplier = await createSupplierRecord({
     name: "Instance",
     supplierKey,
-    siteUrl: "https://instance.example.com/prefix",
-    apiUrl: "https://instance.example.com/prefix/v1",
+    siteUrl: "https://instance.test/prefix",
+    apiUrl: "https://instance.test/prefix/v1",
   });
   const connection = await mocks.repository.saveConnection({
     id: "group",
@@ -268,8 +284,8 @@ describe("model refresh source boundary", () => {
   });
   it.each([false, true])("does not revive removed catalog interface metadata after REST binding, fresh API override=%s", async apiOverride => {
     const { connection } = await fixture();
-    const oldDoc = "https://instance.example.com/old-interface.json";
-    const apiDoc = "https://instance.example.com/current-api-interface.json";
+    const oldDoc = "https://instance.test/old-interface.json";
+    const apiDoc = "https://instance.test/current-api-interface.json";
     const descriptor = { id: "gpt-image-2", name: "Image", operations: ["image.generate", "image.edit"], metadata: {
       endpointTypes: ["/old-draw"], documentationUrl: oldDoc,
       supplierCatalogEndpointTypes: ["/old-draw"], supplierCatalogDocumentationUrl: oldDoc,
@@ -278,7 +294,7 @@ describe("model refresh source boundary", () => {
     const connector = mikotoConnectorForGroup(MIKOTO_IMAGE_GROUP);
     await mocks.repository.saveConnection({ ...connection, provider: "rest", config: { ...connection.config,
       manualModels: [], modelScanStatus: "live", modelCatalogModels: [descriptor],
-      connector: { ...connector, allowedHosts: ["instance.example.com"], models: [descriptor] },
+      connector: { ...connector, allowedHosts: ["instance.test"], models: [descriptor] },
     } });
     mocks.fetch.mockImplementation(async (url: string | URL | Request) => {
       if (String(url).endsWith("/api/pricing")) return Response.json({ group_ratio: { "same-name": 1 }, data: [
@@ -306,13 +322,13 @@ describe("model refresh source boundary", () => {
     expect(savedModels[0]?.metadata.supplierCatalogDocumentationUrl).toBeUndefined();
     expect((saved.config.connector as typeof connector).models?.[0]?.metadata?.documentationUrl).toBe(apiOverride ? apiDoc : undefined);
   });
-  it.each(["site-login", "revision-only"])("checks private site login identity after async documentation without blocking $mode changes", async mode => {
+  it.each(["site-login", "revision-only"])("checks private site login identity after async documentation without blocking %s changes", async mode => {
     const { supplier, connection } = await fixture();
     await mocks.repository.saveSupplier({ ...supplier, kind: "newapi", state: { ...supplier.state!, siteLogin: {
       authMode: "access-token", siteUrl: supplier.siteUrl,
       encryptedAccessToken: encryptSecret("fixture-old-site-token", "isolated-test-master"),
     } } });
-    const docUrl = `https://instance.example.com/private-site-scope-${mode}.json`;
+    const docUrl = `https://instance.test/private-site-scope-${mode}.json`;
     mocks.fetch.mockImplementation(async (url: string | URL | Request) => {
       if (String(url).endsWith("/api/pricing")) return Response.json({ group_ratio: { "same-name": 1 }, data: [
         { model_name: "future-image", quota_type: 1, model_price: 0.08, enable_groups: ["same-name"] },
@@ -396,7 +412,7 @@ describe("model refresh source boundary", () => {
   });
   it.each([false, true])("discovers and persists interfaces without paid calls, discarding stale results: %s", async stale => {
     const { connection } = await fixture();
-    const docUrl = `https://instance.example.com/prefix/new-interface-${stale}.json`;
+    const docUrl = `https://instance.test/prefix/new-interface-${stale}.json`;
     const spec = { openapi: "3.0.3", servers: [{ url: "/prefix/v1" }], security: [{ bearer: [] }],
       components: { securitySchemes: { bearer: { type: "http", scheme: "bearer" } } },
       paths: { "/draw": { post: { requestBody: { content: { "application/json": { schema: { type: "object", properties: {
@@ -673,7 +689,7 @@ describe("model refresh source boundary", () => {
       provider: "rest",
       config: {
         ...connection.config,
-        connector: { ...connector, allowedHosts: ["instance.example.com"] },
+        connector: { ...connector, allowedHosts: ["instance.test"] },
       },
     });
     mocks.fetch.mockResolvedValueOnce(
@@ -828,7 +844,7 @@ describe("model refresh source boundary", () => {
     expect((await refresh(connection.id)).status).toBe(409);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
     expect(String(mocks.fetch.mock.calls[0]![0])).toContain(
-      "instance.example.com/prefix",
+      "instance.test/prefix",
     );
   });
   it.each([
@@ -861,7 +877,7 @@ describe("model refresh source boundary", () => {
       ]);
       expect(
         mocks.fetch.mock.calls.every((call) =>
-          String(call[0]).startsWith("https://instance.example.com/prefix/"),
+          String(call[0]).startsWith("https://instance.test/prefix/"),
         ),
       ).toBe(true);
       expect(

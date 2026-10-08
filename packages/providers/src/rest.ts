@@ -21,6 +21,7 @@ import { cangyuanMusicModel, cangyuanMusicRequestIssues, cangyuanMusicTransport,
 import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanVideoRequest, normalizeCangyuanVideoParameters, validateCangyuanVideoRequest } from "./cangyuan-video-contract.js";
 import { remainingVideoSupplier, isRemainingVideoModel, remainingVideoModel, remainingVideoTransport, normalizeRemainingVideoParameters, remainingVideoRequestIssues, type RemainingVideoContext } from "./remaining-video-contracts.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
+import { isMiaowuUnverifiedAutoVideoContract, MIAOWU_VIDEO_CONTRACT_PENDING_REASON } from "./miaowu-video-contract-pending.js";
 import { getModelParameterDescriptor, validateModelParameters } from "./cli-contracts.js";
 
 function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor): RemainingVideoContext {
@@ -1398,6 +1399,11 @@ export class GenericRestAdapter implements ProviderAdapter {
       const connection = await this.connections.resolve(request.connectionId);
       issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
       const baseConfig = this.configFrom(connection);
+      const catalog = connection.settings?.modelCatalogModels;
+      const selectedModel = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
+      const miaowuModel = selectedModel ?? baseConfig.models?.find(model => model.id === request.model);
+      if (request.operation.startsWith("video.") && isMiaowuUnverifiedAutoVideoContract(imageEditingConnection(connection).config, miaowuModel, baseConfig, request.operation))
+        issues.push({ path: "model", code: "interface_unavailable", message: `${MIAOWU_VIDEO_CONTRACT_PENDING_REASON}，当前生成尚未提交` });
       const cangyuanVideo = !this.fixedConfig && isCangyuanVideoRequest(request.model, connection.baseUrl);
       const remainingSupplier = !this.fixedConfig ? remainingVideoSupplier(connection.baseUrl) : undefined;
       const videoContext = remainingVideoContext(connection.settings, baseConfig.models?.find(m => m.id === request.model));
