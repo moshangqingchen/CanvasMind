@@ -31,6 +31,20 @@ beforeEach(() => {
   mocks.schedule.mockReset().mockResolvedValue(undefined);
 });
 describe("supplier directory refresh verification boundary", () => {
+  it.each([undefined, true, false])("catalog-only refresh never imports Keys or schedules generation even when verifyCapabilities is %s", async verifyCapabilities => {
+    const supplier = await createSupplierRecord({ name: "Catalog only", siteUrl: "https://catalog-only-route.example.test" });
+    const connection = await mocks.repository.saveConnection({ id: "keep", name: "Kept", provider: "openai", encryptedSecret: "opaque-key",
+      config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId, supplierVerificationRequestId: "existing-request" } });
+    mocks.discover.mockResolvedValue({ groups: [], kind: "newapi", status: "empty", complete: true, checkedAt: "2026-10-08T15:00:00Z" });
+    const response = await POST(new Request(`http://localhost/api/suppliers/${supplier.id}/scan`, {
+      method: "POST", body: JSON.stringify({ expectedRevision: supplier.state!.revision, verifyCapabilities, catalogOnly: true }),
+    }), { params: Promise.resolve({ id: supplier.id }) });
+    expect(response.status).toBe(200);
+    expect(mocks.accountKeys).not.toHaveBeenCalled();
+    expect(mocks.models).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
+    expect(await mocks.repository.getConnection(connection.id)).toEqual(connection);
+  });
   it.each([false, undefined])("propagates read-only preference %s into actual imported Key records, including future restart requests", async verifyCapabilities => {
     const created = await createSupplierRecord({ name: "Mock account", siteUrl: "https://readonly-scan.example.test", kind: "sub2api" });
     const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "fixture-user", password: "fixture-password" } });

@@ -2,6 +2,43 @@ import { describe, expect, it, vi } from "vitest";
 import { discoverSupplierCatalog, normalizeSupplierSiteBase, normalizeSupplierUrl, parseSupplierCatalog, parseSupplierKeyGroups, parseSupplierPricingChannels, supplierModelUrls } from "./supplier-catalog.js";
 
 describe("supplier discovery", () => {
+  it.each(["timeout", "unauthorized", "invalid-body", "rejected-body"] as const)(
+    "keeps NewAPI account groups but marks a %s price feed incomplete",
+    async failure => {
+      const calls: string[] = [];
+      const result = await discoverSupplierCatalog({ kind: "newapi", siteUrl: "https://partial-price.example", apiUrl: "https://partial-price.example/v1" }, async url => {
+        const endpoint = new URL(String(url)).pathname;
+        calls.push(endpoint);
+        if (endpoint === "/api/pricing") {
+          if (failure === "timeout") throw new DOMException("Synthetic price timeout", "TimeoutError");
+          if (failure === "unauthorized") return Response.json({ success: false }, { status: 401 });
+          if (failure === "rejected-body") return Response.json({ success: true, code: 503, data: [], group_ratio: { default: 1 } });
+          return Response.json({ success: true, data: { unavailable: true } });
+        }
+        if (endpoint === "/api/user/self/groups") return Response.json({ success: true, data: {
+          default: { ratio: .5, desc: "当前账号默认分组" }, vip: { ratio: 1, desc: "当前账号 VIP 分组" },
+        } });
+        throw new Error("Unexpected synthetic catalog endpoint");
+      });
+      expect(result).toMatchObject({ kind: "newapi", status: "live", complete: false });
+      expect(result.error).toContain("模型价格目录");
+      expect(result.groups.map(group => ({ id: group.id, models: group.models }))).toEqual([
+        { id: "default", models: [] }, { id: "vip", models: [] },
+      ]);
+      expect(result.groups[0]?.details?.rateMultiplier).toBe(.5);
+      expect(calls).toEqual(["/api/pricing", "/api/user/self/groups"]);
+    },
+  );
+  it("distinguishes a confirmed empty NewAPI price feed from a failed one while retaining account groups", async () => {
+    const result = await discoverSupplierCatalog({ kind: "newapi", siteUrl: "https://empty-price.example", apiUrl: "https://empty-price.example/v1" }, async url => {
+      const endpoint = new URL(String(url)).pathname;
+      if (endpoint === "/api/pricing") return Response.json({ success: true, data: [], group_ratio: { default: 1 } });
+      if (endpoint === "/api/user/self/groups") return Response.json({ success: true, data: { default: { ratio: 1, desc: "当前账号默认分组" } } });
+      throw new Error("Unexpected synthetic catalog endpoint");
+    });
+    expect(result).toMatchObject({ kind: "newapi", status: "live", complete: true, groups: [{ id: "default", models: [] }] });
+    expect(result.error).toBeUndefined();
+  });
   it.each([
     [{ quota_display_type: "CUSTOM", custom_currency_symbol: "￥", custom_currency_exchange_rate: 1, usd_exchange_rate: 7.3 }, "¥0.2/请求"],
     [{ quota_display_type: "CNY", usd_exchange_rate: 7.3 }, "¥1.46/请求"],
@@ -92,6 +129,63 @@ describe("supplier discovery", () => {
     ] } });
     expect(plaza.groups.map(group => group.supplierGroupId)).toEqual(["53", "54"]);
     expect(new Set(plaza.groups.map(group => group.id)).size).toBe(2);
+  });
+  it("imports Secure Skill resolution prices through exact account group IDs and preserves final image-group rates", async () => {
+    const channels = [
+      { name: "sd2.5-2", platforms: [{ groups: [{ id: 54, name: "视频生成", rate_multiplier: 1 }], supported_models: [{ name: "seedance-2.5",
+        pricing: { billing_mode: "per_second", intervals: [{ tier_label: "480p", per_request_price: .4 }, { tier_label: "720p", per_request_price: .62 }, { tier_label: "1080p", per_request_price: 1.45 }] } }] }] },
+      { name: "sd-first", platforms: [{ groups: [{ id: 53, name: "视频生成", rate_multiplier: 1 }], supported_models: [{ name: "seedance-2.5",
+        pricing: { billing_mode: "per_second", intervals: [{ tier_label: "480p", per_request_price: .45 }, { tier_label: "720p", per_request_price: .55 }] } }] }] },
+      { name: "image", platforms: [{ groups: [{ id: 9, name: "image-2-1k", rate_multiplier: .3, image_price_1k: .05, image_price_2k: .05, image_price_4k: .05 }],
+        supported_models: [{ name: "gpt-image-2", pricing: { billing_mode: "image", per_request_price: .9 } }] }] },
+    ];
+    const calls: string[] = [];
+    const result = await discoverSupplierCatalog({ siteUrl: "https://token.secure-skill.com", apiUrl: "", kind: "sub2api" }, async url => {
+      calls.push(String(url));
+      if (String(url).endsWith("/model-plaza")) return Response.json({}, { status: 404 });
+      if (String(url).endsWith("/pricing/channels")) return Response.json({ code: 0, data: channels });
+      if (String(url).endsWith("/groups/available")) return Response.json({ data: [{ id: 54, name: "sd2.5特价分组-2" }, { id: 53, name: "sd特价分组1" }, { id: 9, name: "image-2-1k" }] });
+      throw new Error("Unexpected mock endpoint");
+    });
+    expect(result.groups.find(group => group.id === "sd2.5特价分组-2")).toMatchObject({ supplierGroupId: "54", models: [{ id: "seedance-2.5",
+      metadata: { secureSkillCatalogPricing: { kind: "tiered", billingUnit: "second", tiers: [{ price: .4 }, { price: .62 }, { price: 1.45 }] } } }] });
+    expect(result.groups.find(group => group.id === "sd特价分组1")).toMatchObject({ supplierGroupId: "53", models: [{ id: "seedance-2.5",
+      metadata: { secureSkillCatalogPricing: { kind: "tiered", billingUnit: "second", tiers: [{ price: .45 }, { price: .55 }] } } }] });
+    expect(result.groups.find(group => group.id === "image-2-1k")?.models[0]).toMatchObject({ priceLabel: "1K ¥0.05/张 · 2K ¥0.05/张 · 4K ¥0.05/张",
+      metadata: { secureSkillCatalogPricing: { kind: "tiered", billingUnit: "image", tiers: [{ price: .05 }, { price: .05 }, { price: .05 }] } } });
+    expect(calls).toHaveLength(3);
+    expect(result.complete).toBe(true);
+  });
+  it("lists the three exact Secure Skill video declarations with prices while their generation protocol remains unconfirmed", () => {
+    const channels = [{ name: "flow", platforms: [{ platform: "flow2", groups: [{ id: 14, name: "flow" }],
+      supported_models: [{ name: "omni", pricing: { billing_mode: "per_request", per_request_price: .63 } },
+        { name: "gemini-3-pro-image", pricing: { billing_mode: "image", per_request_price: .1 } }] }] },
+    { name: "enterprise", platforms: [{ platform: "newtoken-sd", groups: [{ id: 16, name: "video-企业版" }],
+      supported_models: [{ name: "video-2.0-fast", pricing: { billing_mode: "per_second", per_request_price: .55 } },
+        { name: "video-2.0-pro", pricing: { billing_mode: "per_second", per_request_price: .65 } }] }] }];
+    const groups = parseSupplierPricingChannels({ code: 0, data: channels }, "CNY", { supplierSiteUrl: "https://token.secure-skill.com", checkedAt: "2026-10-08T14:33:39.047Z" });
+    for (const [groupId, id, kind, price] of [["14", "omni", "per-request", .63], ["16", "video-2.0-fast", "per-second", .55], ["16", "video-2.0-pro", "per-second", .65]]) {
+      expect(groups.find(group => group.supplierGroupId === groupId)?.models.find(model => model.id === id)).toMatchObject({ capability: "video", outputKinds: ["video"], protocol: "unknown",
+        metadata: { canvasRunnable: false, outputKindsSource: "declared", catalogGenerationDeclarationSource: "official-price-page",
+          canvasUnavailableReason: "官网已列出视频型号 · 调用协议待确认", secureSkillCatalogPricing: { kind, unitAmount: price, currency: "CNY" } } });
+    }
+    expect(groups[0]?.models[1]).toMatchObject({ capability: "image", outputKinds: ["image"] });
+    expect(groups[0]?.models[1]?.metadata?.catalogGenerationDeclarationSource).toBeUndefined();
+  });
+  it("preserves explicit understanding outputs and does not borrow Secure Skill declarations on another host or platform", () => {
+    const payload = (platform: string, row: Record<string, unknown> = {}) => ({ code: 0, data: [{ platforms: [{ platform, groups: [{ id: 14, name: "flow" }], supported_models: [{ name: "omni", ...row }] }] }] });
+    const official = { supplierSiteUrl: "https://token.secure-skill.com" };
+    for (const row of [{ output_modalities: ["text"], input_modalities: ["image", "video"] }, { capability: "chat" }]) {
+      const textModel = parseSupplierPricingChannels(payload("flow2", row), "CNY", official)[0]?.models[0];
+      expect(textModel?.capability).toBe("chat");
+      if ("output_modalities" in row) expect(textModel?.outputKinds).toEqual(["text"]);
+      expect(textModel?.metadata?.catalogGenerationDeclarationSource).toBeUndefined();
+    }
+    for (const model of [parseSupplierPricingChannels(payload("flow2"), "CNY", { supplierSiteUrl: "https://other.example" })[0]?.models[0],
+      parseSupplierPricingChannels(payload("unknown"), "CNY", official)[0]?.models[0]]) {
+      expect(model?.capability).not.toBe("video");
+      expect(model?.metadata?.catalogGenerationDeclarationSource).toBeUndefined();
+    }
   });
   it.each(["plaza", "fallback"])("joins %s public pricing to only the same official account ID without losing public-only groups", async mode => {
     const groups = [{ id: 36, name: "MiniMax H3" }, { id: 54, name: "视频生成" },
@@ -244,6 +338,56 @@ it.each(["/dashboard", "/pricing/", "/api/v1/model-plaza", "/model-plaza", "/cha
 });
 
 describe("API-key page group fallback", () => {
+  // Shapes from the four authenticated 2026-10-08 reads: the account group
+  // endpoint succeeded while both model/price endpoints returned 404.
+  it.each([
+    { siteUrl: "https://api.mikoto.vip", group: { id: 5, name: "生图（1k）", description: "1k 0.02\n量大同行稳定有量0.01", rate_multiplier: 1 } },
+    { siteUrl: "https://asian-acc.we-token.cc", group: { id: 6, name: "生图-openai-codex-token计费", rate_multiplier: .7 } },
+    { siteUrl: "https://api.hangzhale.com", group: { id: 74, name: "Grok Heavy", description: "生图5分一张", rate_multiplier: .2 } },
+    { siteUrl: "https://synoralink.com", group: { id: 81, name: "CCMax（0注入）", description: "0注入，禁止蒸馏", rate_multiplier: 1.5 } },
+  ])("keeps $siteUrl account groups without treating two 404 directories as complete prices", async ({ siteUrl, group }) => {
+    const calls: string[] = [];
+    const result = await discoverSupplierCatalog({ siteUrl, apiUrl: `${siteUrl}/v1`, kind: "sub2api" }, async url => {
+      const request = new URL(String(url));
+      expect(request.origin).toBe(siteUrl);
+      calls.push(request.pathname);
+      if (request.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: [group] });
+      if (["/api/v1/model-plaza", "/api/v1/pricing/channels"].includes(request.pathname)) return Response.json({}, { status: 404 });
+      throw new Error("Unexpected synthetic account/catalog endpoint");
+    });
+    expect(result).toMatchObject({ kind: "sub2api", status: "live", complete: false,
+      groups: [{ id: group.name, supplierGroupId: String(group.id), models: [], details: { rateMultiplier: group.rate_multiplier } }] });
+    expect(result.error).toContain("模型价格目录");
+    expect(calls).toEqual(["/api/v1/model-plaza", "/api/v1/groups/available", "/api/v1/pricing/channels"]);
+  });
+  it.each(["unauthorized", "timeout", "invalid-body", "rejected-body"] as const)(
+    "preserves successful Sub2API account groups when the separate price page is %s",
+    async failure => {
+      const result = await discoverSupplierCatalog({ siteUrl: "https://sub2api-price.example", apiUrl: "", kind: "sub2api" }, async url => {
+        const endpoint = new URL(String(url)).pathname;
+        if (endpoint === "/api/v1/model-plaza") return Response.json({}, { status: 404 });
+        if (endpoint === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 4, name: "images", rate_multiplier: .8 }] });
+        if (endpoint !== "/api/v1/pricing/channels") throw new Error("Unexpected synthetic catalog endpoint");
+        if (failure === "unauthorized") return Response.json({}, { status: 401 });
+        if (failure === "timeout") throw new DOMException("Synthetic price timeout", "TimeoutError");
+        if (failure === "rejected-body") return Response.json({ code: 401, data: [] });
+        return Response.json({ code: 0, data: { unavailable: true } });
+      });
+      expect(result).toMatchObject({ kind: "sub2api", status: "live", complete: false, groups: [{ id: "images", models: [] }] });
+      expect(result.error).toContain("模型价格目录");
+    },
+  );
+  it.each([[], { channels: [] }])("distinguishes a real empty Sub2API price-page envelope %j from an unreadable page", async data => {
+    const result = await discoverSupplierCatalog({ siteUrl: "https://sub2api-empty.example", apiUrl: "", kind: "sub2api" }, async url => {
+      const endpoint = new URL(String(url)).pathname;
+      if (endpoint === "/api/v1/model-plaza") return Response.json({}, { status: 404 });
+      if (endpoint === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 4, name: "images" }] });
+      if (endpoint === "/api/v1/pricing/channels") return Response.json({ code: 0, data });
+      throw new Error("Unexpected synthetic catalog endpoint");
+    });
+    expect(result).toMatchObject({ status: "live", complete: true, groups: [{ id: "images", models: [] }] });
+    expect(result.error).toBeUndefined();
+  });
   it.each(["newapi", "sub2api"] as const)("supplements %s model prices with group descriptions without cross-group leakage", async (kind) => {
     const result = await discoverSupplierCatalog({ kind, siteUrl: "https://fixture.example", apiUrl: "" }, async url => {
       if (String(url).endsWith("/pricing")) return Response.json({ success: true, data: [{ model_name: "gpt-image-2", enable_groups: ["images"], price_label: "$0.2/张" }] });

@@ -18,7 +18,8 @@ const nextConfig = {
     "../stage/**/*", "../release/**/*",
   ] },
   distDir: ".next-desktop",
-  experimental: { proxyClientMaxBodySize: "500mb" },
+  // Runtime response caches can exceed Windows installer path limits. Keep them in memory.
+  experimental: { proxyClientMaxBodySize: "500mb", isrFlushToDisk: false },
   transpilePackages: ["@super-canvas/core", "@super-canvas/db", "@super-canvas/providers", "@super-canvas/runtime", "@super-canvas/storage"],
   typedRoutes: false,
   env: { NEXT_PUBLIC_APP_VERSION: rootPackage.version },

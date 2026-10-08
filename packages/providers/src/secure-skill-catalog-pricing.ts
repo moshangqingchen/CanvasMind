@@ -1,4 +1,5 @@
 import type { StructuredModelPricing, StructuredPriceTier } from "./contracts.js";
+import { mediaPricingLabel } from "./media-billing.js";
 
 const site = "https://token.secure-skill.com";
 const models = new Set([
@@ -8,6 +9,20 @@ const models = new Set([
 ]);
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const amount = (value: unknown): number | undefined => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+function officialSource(supplierSiteUrl?: string): boolean {
+  try {
+    const url = new URL(supplierSiteUrl ?? "");
+    return url.origin === site && url.pathname === "/" && !url.username && !url.password && !url.search && !url.hash;
+  } catch { return false; }
+}
+
+/** Exact video-directory declarations from the official price page. This is
+ * an output fact only; it supplies no generation endpoint or Key permission.
+ */
+export function secureSkillCatalogVideoDeclaration(modelId: unknown, platform: unknown, supplierSiteUrl?: string): boolean {
+  return officialSource(supplierSiteUrl) && (platform === "flow2" && modelId === "omni" ||
+    platform === "newtoken-sd" && (modelId === "video-2.0-fast" || modelId === "video-2.0-pro"));
+}
 
 /** Secure Skill's own price page converts these fields from CNY/token to CNY/1M
  * tokens, then applies the group multiplier once. Its USD conversion is only
@@ -17,21 +32,22 @@ const amount = (value: unknown): number | undefined => typeof value === "number"
  * list prices for an unconfigured field or turn token rates into a task quote.
  */
 export function secureSkillCatalogPricing(value: unknown, options: {
-  supplierSiteUrl?: string; multiplier?: number; checkedAt?: string;
+  supplierSiteUrl?: string; multiplier?: number; checkedAt?: string; group?: unknown;
 }): { pricing: StructuredModelPricing; priceLabel: string } | undefined {
-  try {
-    const url = new URL(options.supplierSiteUrl ?? "");
-    if (url.origin !== site || url.pathname !== "/" || url.username || url.password || url.search || url.hash) return undefined;
-  } catch { return undefined; }
+  if (!officialSource(options.supplierSiteUrl)) return undefined;
   const row = record(value), raw = record(row.pricing);
   const id = row.id ?? row.model_name ?? row.model ?? row.name;
-  if (typeof id !== "string" || !models.has(id) || raw.billing_mode !== "token") return undefined;
-  // A new token-volume tier schema needs its own contract; flat rates cannot
-  // override an additional interval that this decoder cannot yet represent.
-  if (raw.intervals !== undefined && raw.intervals !== null && (!Array.isArray(raw.intervals) || raw.intervals.length)) return undefined;
+  if (typeof id !== "string" || !id.trim()) return undefined;
   for (const currency of [raw.currency, row.currency]) if (currency !== undefined && currency !== null && currency !== "CNY" && currency !== "RMB") return undefined;
   const multiplier = options.multiplier ?? 1;
   if (!Number.isFinite(multiplier) || multiplier < 0) return undefined;
+  if (["image", "per_request", "per_second"].includes(String(raw.billing_mode))) {
+    return mediaPricing(raw, options, multiplier);
+  }
+  if (!models.has(id) || raw.billing_mode !== "token") return undefined;
+  // A new token-volume tier schema needs its own contract; flat rates cannot
+  // override an additional interval that this decoder cannot yet represent.
+  if (raw.intervals !== undefined && raw.intervals !== null && (!Array.isArray(raw.intervals) || raw.intervals.length)) return undefined;
   const scaled = (value: unknown) => {
     const price = amount(value);
     if (price === undefined) return undefined;
@@ -62,4 +78,59 @@ export function secureSkillCatalogPricing(value: unknown, options: {
       checkedAt: options.checkedAt ?? "", sourceUrl: `${site}/api/v1/pricing/channels`, confidence: "exact" },
     priceLabel: tiers.map(tier => `${tier.label} ¥${tier.price}/1M tokens`).join("；"),
   };
+}
+
+/** The same official page displays media intervals in their declared unit.
+ * Resolution labels do not describe token-volume intervals. Group image_price_*
+ * fields are final CNY prices in the page, already independent of its multiplier.
+ */
+function mediaPricing(raw: Record<string, unknown>, options: {
+  checkedAt?: string; group?: unknown;
+}, multiplier: number): { pricing: StructuredModelPricing; priceLabel: string } | undefined {
+  const billingUnit = raw.billing_mode === "image" ? "image" : raw.billing_mode === "per_second" ? "second" : "request";
+  const base: Omit<StructuredModelPricing, "kind"> = { currency: "CNY", billingUnit, checkedAt: options.checkedAt ?? "",
+    sourceUrl: `${site}/api/v1/pricing/channels`, confidence: "exact" as const };
+  const tiers: StructuredPriceTier[] = [];
+  const price = (value: unknown, scale = multiplier) => {
+    const n = amount(value);
+    const scaled = n === undefined ? undefined : Number((n * scale).toPrecision(12));
+    return scaled !== undefined && Number.isFinite(scaled) ? scaled : undefined;
+  };
+  const add = (resolution: string, value: unknown, scale?: number) => {
+    const n = price(value, scale);
+    if (n === undefined) return false;
+    const duplicate = tiers.find(tier => tier.id === resolution);
+    if (duplicate) return duplicate.price === n;
+    tiers.push({ id: resolution, label: resolution, dimension: "resolution", value: resolution, price: n });
+    return true;
+  };
+  if (billingUnit === "image") {
+    const group = record(options.group);
+    for (const resolution of ["1K", "2K", "4K"]) {
+      const configured = group[`image_price_${resolution.toLowerCase()}`];
+      if (configured !== undefined && configured !== null && !add(resolution, configured, 1)) return undefined;
+    }
+  }
+  // Configured group image rates take precedence in the official page. It does
+  // not display model intervals or multiply these final rates a second time.
+  if (!tiers.length) {
+    if (raw.intervals !== undefined && raw.intervals !== null && !Array.isArray(raw.intervals)) return undefined;
+    for (const interval of Array.isArray(raw.intervals) ? raw.intervals : []) {
+      const tier = record(interval);
+      const label = typeof tier.tier_label === "string" ? tier.tier_label.trim() : "";
+      const resolution = /^(?:480p|720p|1080p|2160p)$/iu.test(label) ? label.toLowerCase()
+        : /^(?:1k|2k|4k)$/iu.test(label) ? label.toUpperCase() : undefined;
+      if (!resolution || (tier.min_tokens !== undefined && tier.min_tokens !== 0) ||
+        (tier.max_tokens !== undefined && tier.max_tokens !== null) || !add(resolution, tier.per_request_price)) return undefined;
+    }
+  }
+  if (tiers.length) {
+    const pricing: StructuredModelPricing = { ...base, kind: "tiered", tiers };
+    return { pricing, priceLabel: mediaPricingLabel(pricing) };
+  }
+  const unitAmount = price(raw.per_request_price);
+  if (unitAmount === undefined) return undefined;
+  const pricing: StructuredModelPricing = { ...base,
+    kind: billingUnit === "image" ? "per-image" : billingUnit === "second" ? "per-second" : "per-request", unitAmount };
+  return { pricing, priceLabel: `¥${unitAmount}/${billingUnit === "image" ? "张" : billingUnit === "second" ? "秒" : "请求"}` };
 }

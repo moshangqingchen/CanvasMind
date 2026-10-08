@@ -166,6 +166,7 @@ export const SupplierScanSchema = z
     token: z.string().trim().min(1).max(32768).optional(),
     expectedRevision: z.number().int().nonnegative().optional(),
     verifyCapabilities: z.boolean().optional(),
+    catalogOnly: z.boolean().optional(),
   })
   .strict();
 
@@ -300,13 +301,16 @@ export function mergeSupplierCatalog(
   complete = true,
 ): SupplierRecord["catalog"] {
   const groups = new Map<string, SupplierRecord["catalog"]["groups"][number]>();
+  const retainModels = (models: SupplierRecord["catalog"]["groups"][number]["models"]) => models.map(model => ({
+    ...model, metadata: { ...model.metadata, supplierCatalogModelStale: true },
+  }));
   for (const group of current.groups)
     groups.set(
       group.id,
       scanning && complete && group.source !== "manual"
         ? { ...group, status: "missing" }
         : scanning && !complete && group.source !== "manual"
-          ? { ...group, details: { source: "model-plaza", ...group.details, stale: true } }
+          ? { ...group, models: retainModels(group.models), details: { source: "model-plaza", ...group.details, stale: true } }
         : group,
     );
   for (const group of incoming.groups) {
@@ -314,7 +318,7 @@ export function mergeSupplierCatalog(
     if (!scanning && group.source === "catalog") continue;
     const previous = groups.get(group.id);
     const retainedModels = scanning && (!complete || group.details?.stale === true) && previous
-      ? previous.models.filter(model => !group.models.some(incoming => incoming.id === model.id)) : [];
+      ? retainModels(previous.models.filter(model => !group.models.some(incoming => incoming.id === model.id))) : [];
     groups.set(group.id, {
       ...group,
       ...(retainedModels.length ? { models: [...group.models, ...retainedModels] } : {}),
@@ -732,7 +736,7 @@ export async function scanSupplierRecord(
   id: string,
   token?: string,
   expectedRevision?: number,
-  options: { verifyCapabilities?: boolean } = {},
+  options: { verifyCapabilities?: boolean; catalogOnly?: boolean } = {},
 ): Promise<SupplierRecord> {
   const ctx = await context(id, expectedRevision);
   if (token && !ctx.supplier.siteUrl)
@@ -741,7 +745,7 @@ export async function scanSupplierRecord(
   let supplier = await commit(ctx, {
     ...ctx.supplier,
     state: { ...ctx.supplier.state!, scanId },
-  });
+  }, options.catalogOnly ? [] : undefined);
   let initialConnections = currentConnections(
     supplier,
     (await repository.listConnections()).filter((c) => owns(supplier, c)),
@@ -760,7 +764,7 @@ export async function scanSupplierRecord(
       },
       session?.fetch,
     );
-    if (session) {
+    if (session && !options.catalogOnly) {
       try {
         accountKeys = await readSupplierAccountKeys(
           { siteUrl: supplier.siteUrl, kind: session.kind }, session.fetch,
@@ -792,7 +796,7 @@ export async function scanSupplierRecord(
           ? error.message
           : "站点目录或密钥读取失败，请检查网络并稍后重试；原有配置已保留",
     };
-    if (supplier.state?.siteLogin) accountKeys = {
+    if (!options.catalogOnly && supplier.state?.siteLogin) accountKeys = {
       keys: [], skipped: 0, complete: false, checkedAt: result.checkedAt,
       error: "登录未完成，无法同步已有 API 密钥；原有配置已保留。",
     };
@@ -806,6 +810,24 @@ export async function scanSupplierRecord(
     );
   };
   if (!(await isCurrent())) return (await getSupplierRecord(id))!;
+  if (options.catalogOnly && !["failed", "unauthorized"].includes(result.status)) {
+    // A public directory does not prove that an existing account Key's group
+    // disappeared. Preserve that exact current-source group as historical
+    // evidence without reading/importing Keys or granting new model access.
+    const known = new Set(result.groups.map(group => group.id));
+    for (const connection of initialConnections) {
+      if (!connection.encryptedSecret || connection.config.usage === "disabled") continue;
+      const groupId = connection.config.accountKeyGroup ?? connection.config.modelGroup;
+      if (typeof groupId !== "string" || !groupId || known.has(groupId)) continue;
+      const previous = supplier.catalog.groups.find(group => group.id === groupId);
+      if (previous?.source === "manual") continue;
+      result.groups.push({ id: groupId, label: previous?.label ?? groupId, source: "catalog",
+        models: (previous?.models ?? []).map(model => ({ ...model, protocol: model.protocol === "rest" ? "unknown" : model.protocol, metadata: { ...model.metadata,
+          supplierCatalogModelStale: true, supplierCatalogPriceCheckedAt: model.metadata?.supplierCatalogPriceCheckedAt ?? supplier.scanLastSuccessAt ?? supplier.scannedAt ?? "" } })),
+        details: { ...previous?.details, source: "key-groups", stale: true } });
+      known.add(groupId);
+    }
+  }
   if (accountKeys) {
     const current = await context(id, supplier.state!.revision);
     const failed = result.status === "failed" || result.status === "unauthorized";
@@ -836,7 +858,7 @@ export async function scanSupplierRecord(
       (await repository.listConnections()).filter(connection => owns(supplier, connection)));
   }
   let connectionFailure = false;
-  for (const connection of initialConnections) {
+  for (const connection of options.catalogOnly ? [] : initialConnections) {
     if (
       !connection.encryptedSecret ||
       !(await isCurrent()) ||
@@ -893,7 +915,7 @@ export async function scanSupplierRecord(
   };
   // Missing entries stay solely in the collapsed history, never the current count.
   try {
-    return await commit(latest, next);
+    return await commit(latest, next, options.catalogOnly ? [] : undefined);
   } catch (error) {
     if (error instanceof SupplierConflictError)
       return (await getSupplierRecord(id))!;

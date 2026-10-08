@@ -133,9 +133,9 @@ function numberRecord(value: unknown): Record<string, number> {
   );
 }
 
-/** 人民币价格格式化：最多两位小数并去掉末尾多余的 0。 */
+/** 保留官网单价的小数精度，同时去除配额换算产生的浮点尾数。 */
 function formatYuan(value: number): string {
-  return `${Number(value.toFixed(2))}`;
+  return `${Number(value.toPrecision(12))}`;
 }
 
 const RATIO_OPTIONS: readonly ModelParameterOption[] = [
@@ -737,6 +737,9 @@ export function miaowuModelsForGroup(
   return group.models.flatMap((marketplaceModel) => {
     const model = byId.get(marketplaceModel.id);
     if (!model) return [];
+    const priceRatio = group.ratio /
+      (typeof model.metadata?.pricingGroupRatio === "number"
+        ? model.metadata.pricingGroupRatio : 1);
     return [
       {
         ...structuredClone(model),
@@ -746,12 +749,10 @@ export function miaowuModelsForGroup(
           : {
               pricing: {
                 ...model.pricing,
-                unitAmount:
-                  model.pricing.unitAmount *
-                  (group.ratio /
-                    (typeof model.metadata?.pricingGroupRatio === "number"
-                      ? model.metadata.pricingGroupRatio
-                      : 1)),
+                unitAmount: Number((model.pricing.unitAmount * priceRatio).toPrecision(12)),
+                ...(model.pricing.tiers ? { tiers: model.pricing.tiers.map(tier => ({
+                  ...tier, price: Number((tier.price * priceRatio).toPrecision(12)),
+                })) } : {}),
               },
             }),
         metadata: {
@@ -760,6 +761,7 @@ export function miaowuModelsForGroup(
           priceLabel: marketplaceModel.priceLabel,
           billingLabel: marketplaceModel.billingLabel,
           groupRatio: group.ratio,
+          pricingGroupRatio: group.ratio,
         },
       },
     ];
@@ -829,7 +831,9 @@ export function miaowuConnectorForModels(
   });
   const modelOverrides = Object.fromEntries(
     connectedModels.flatMap((model) =>
-      model.outputKinds?.includes("image")
+      model.metadata?.canvasRunnable === false
+        ? []
+        : model.outputKinds?.includes("image")
         ? [[model.id, structuredClone(MIAOWU_IMAGE_OVERRIDE)]]
         : model.metadata?.miaowuVideoContractPending === true && isMiaowuUnverifiedKeyScanVideoModel(model)
         ? []

@@ -26,6 +26,8 @@
 .option[data-active="true"], .option:hover { outline: 1px solid #9b8cff; outline-offset: -1px; background: #252d40; }
 .option[aria-disabled="true"] { color: #8d99b1; cursor: not-allowed; }
 .note { color: #adb7cd; font-size: 11px; line-height: 1.4; margin: 4px 0; }
+.directorySummary { display: flex; flex-wrap: wrap; gap: 3px 10px; flex: 0 0 auto; margin: 0; padding: 3px 2px; color: #adb7cd; font-size: 11px; line-height: 1.5; }
+.directorySummary span { overflow-wrap: anywhere; }
 .pagination { display: flex; justify-content: space-between; align-items: center; gap: 5px; font-size: 11px; color: #aab5cc; flex: 0 0 auto; }
 .pagination button, .manual { color: var(--text); background: #252d40; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; font-size: 11px; cursor: pointer; }
 .pagination button:disabled { opacity: .4; cursor: default; }

@@ -51,6 +51,43 @@ beforeEach(() => {
   mocks.accountKeys.mockReset().mockResolvedValue({ keys: [], skipped: 0, complete: true, checkedAt: new Date().toISOString() });
 });
 describe("supplier service", () => {
+  it("refreshes only the supplier directory without reading Keys, changing connections or scanning models", async () => {
+    const created = await createSupplierRecord({ name: "Catalog refresh", siteUrl: "https://catalog-only.example.test", kind: "sub2api" });
+    const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "fixture-user", password: "fixture-password" } });
+    await mocks.repository.saveConnection({ id: "untouched", name: "Existing group", provider: "openai", encryptedSecret: "opaque-key",
+      config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId, modelGroup: "video", usage: "canvas" } });
+    const before = await mocks.repository.listConnections();
+    mocks.login.mockResolvedValue({ kind: "sub2api", fetch: vi.fn() });
+    mocks.discover.mockResolvedValue({ kind: "sub2api", status: "live", complete: true, checkedAt: "2026-10-08T15:00:00Z",
+      groups: [{ id: "video", label: "Video", source: "catalog", models: [{ id: "seedance-2.5", capability: "video", priceLabel: "720p ¥0.62/秒" }] }] });
+    const refreshed = await scanSupplierRecord(supplier.id, undefined, supplier.state!.revision, { catalogOnly: true, verifyCapabilities: false });
+    expect(refreshed.catalog.groups[0]?.models[0]?.priceLabel).toBe("720p ¥0.62/秒");
+    expect(refreshed.scanComplete).toBe(true);
+    expect(mocks.accountKeys).not.toHaveBeenCalled();
+    expect(mocks.models).not.toHaveBeenCalled();
+    expect(await mocks.repository.listConnections()).toEqual(before);
+  });
+  it("catalog-only reads retain current Key-owned groups as stale evidence without reviving old sources", async () => {
+    const supplier = await createSupplierRecord({ name: "Account groups", siteUrl: "https://catalog-only.example.test", kind: "sub2api" });
+    supplier.catalog = { groups: ["account-only", "old-source", "disabled"].map(id => ({ id, label: id, source: "catalog" as const,
+      models: [{ id: "seedance-2.5", capability: "video" as const, priceLabel: "¥5.5/请求" }] })) };
+    await mocks.repository.saveSupplier(supplier);
+    for (const id of ["account-only", "old-source", "disabled"]) await mocks.repository.saveConnection({ id, name: id, provider: "openai", encryptedSecret: "opaque-key",
+      config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId,
+        modelGroup: id, accountKeyGroup: id, usage: id === "disabled" ? "disabled" : "canvas" } });
+    const snapshot = mocks.repository.exportSnapshot();
+    snapshot.connections.find(connection => connection.id === "old-source")!.config.supplierSourceId = "old";
+    mocks.repository = new MemoryRepository(snapshot);
+    const before = await mocks.repository.listConnections();
+    mocks.discover.mockResolvedValue({ kind: "sub2api", status: "live", complete: true, checkedAt: "2026-10-08T15:00:00Z", groups: [] });
+    const refreshed = await scanSupplierRecord(supplier.id, undefined, supplier.state!.revision, { catalogOnly: true });
+    expect(refreshed.catalog.groups.find(group => group.id === "account-only")).toMatchObject({ status: "available",
+      details: { stale: true, source: "key-groups" }, models: [{ id: "seedance-2.5", priceLabel: "¥5.5/请求" }] });
+    expect(refreshed.catalog.groups.filter(group => group.status === "missing").map(group => group.id)).toEqual(["old-source", "disabled"]);
+    expect(await mocks.repository.listConnections()).toEqual(before);
+    expect(mocks.accountKeys).not.toHaveBeenCalled();
+    expect(mocks.models).not.toHaveBeenCalled();
+  });
   it("presents saved Tk1688 quotes in CNY without rewriting prices or unconvertible money snapshots", async () => {
     const supplier = await createSupplierRecord({ name: "词元", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi" });
     supplier.catalog = { groups: [{ id: "default", label: "默认", models: [{ id: "image@s1c1", capability: "image", priceLabel: "$0.03/次（¥0.206688/次）",
@@ -117,6 +154,8 @@ describe("supplier service", () => {
     expect(partial.groups[0]?.models.map(model => model.id)).toEqual(["updated", "new", "retained"]);
     expect(partial.groups[0]?.models[0]?.name).toBe("Current name");
     expect(partial.groups[0]?.models[2]?.protocol).toBe("rest");
+    expect(partial.groups[0]?.models[2]?.metadata?.supplierCatalogModelStale).toBe(true);
+    expect(partial.groups[0]?.models[0]?.metadata?.supplierCatalogModelStale).toBeUndefined();
     expect(partial.groups.find(group => group.id === "unreturned")).toMatchObject({ details: { stale: true } });
     expect(partial.groups.find(group => group.id === "manual")).toEqual(catalog.groups[2]);
     const complete = mergeSupplierCatalog(partial, incoming, true, true);

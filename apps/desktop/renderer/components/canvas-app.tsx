@@ -141,6 +141,7 @@ import {
   fetchConnections,
   fetchAppUpdate,
   getCachedModels,
+  getCachedModelInventoryStatus,
   invalidateModelCache,
   fetchModels,
   refreshModels,
@@ -160,6 +161,8 @@ import {
   type ProjectSummaryView,
   type RenameProjectResult,
 } from "../lib/client-api";
+import { fetchSuppliers, type SupplierRecord } from "../lib/client-suppliers";
+import { catalogPickerDirectory } from "../lib/supplier-model-directory-diff";
 import {
   ProjectActionDialog,
   type ProjectActionDialogState,
@@ -2029,6 +2032,7 @@ const transientNodeDataKeys = new Set([
   "generatedPromptText",
   "connectionOptions",
   "modelOptions",
+  "catalogPickerDirectory",
   "assets",
   "mentionAssets",
   "linkedAssets",
@@ -2571,6 +2575,8 @@ function CanvasShell({
   >({});
   const [connections, setConnections] = useState<ProviderConnectionView[]>([]);
   const [connectionsSettled, setConnectionsSettled] = useState(false);
+  const [supplierDirectories, setSupplierDirectories] = useState<SupplierRecord[]>([]);
+  const [supplierDirectoryReadFailed, setSupplierDirectoryReadFailed] = useState(false);
   const connectionsSettledRef = useRef(false);
   const [modelEditorNodeId, setModelEditorNodeId] = useState<string | null>(null);
   const [openConfigurationNodeIds, setOpenConfigurationNodeIds] = useState<Set<string>>(() => new Set());
@@ -2595,6 +2601,17 @@ function CanvasShell({
     loading: false,
   });
   const [modelScanRevision, setModelScanRevision] = useState(0);
+  const supplierDirectoryRevision = useRef(modelScanRevision);
+  useEffect(() => {
+    if (!connectionsSettled) return;
+    let active = true;
+    const fresh = supplierDirectoryRevision.current !== modelScanRevision;
+    supplierDirectoryRevision.current = modelScanRevision;
+    void fetchSuppliers({ fresh }).then(records => {
+      if (active) { setSupplierDirectories(records); setSupplierDirectoryReadFailed(false); }
+    }).catch(() => { if (active) setSupplierDirectoryReadFailed(true); });
+    return () => { active = false; };
+  }, [connectionsSettled, connections, modelScanRevision]);
   useEffect(() => {
     let active = true;
     const upgraded = () => { void fetchConnections().then(next => {
@@ -7293,6 +7310,7 @@ function CanvasShell({
       return assets.filter((asset) => assetIds.has(asset.id));
     };
 
+    const catalogDirectories = new Map<string, ReturnType<typeof catalogPickerDirectory>>();
     return contentNodes.map((node): CanvasNode => {
       const nodeType = node.data.nodeType;
       const generationType =
@@ -7319,6 +7337,15 @@ function CanvasShell({
           node.data.parameters as Readonly<Record<string, unknown>> | undefined,
         ) ?? null;
       const editingConnection = connections.find(connection => connection.id === node.data.connectionId);
+      const directoryKey = `${node.data.connectionId ?? ""}:${generationType ?? ""}`;
+      const directoryStatus = getCachedModelInventoryStatus(node.data.connectionId ?? "");
+      if (!catalogDirectories.has(directoryKey)) catalogDirectories.set(directoryKey,
+        catalogPickerDirectory(editingConnection, supplierDirectories, modelOptions, generationType,
+          connectionModels.connectionId === node.data.connectionId
+            ? Boolean(connectionModels.authoritative && !connectionModels.loading && !connectionModels.failed &&
+              ["live", "empty"].includes(directoryStatus?.scanStatus ?? "") && directoryStatus?.complete !== false)
+            : ["live", "empty"].includes(String(editingConnection?.config.modelScanStatus)) &&
+              editingConnection?.config.modelScanAttemptStatus !== "failed", supplierDirectoryReadFailed));
       const editingModel = effectiveModel ?? retainedImageModelForDisplay(editingConnection, node.data.model, connectionModels);
       const imageEditingCapabilities = generationType === "image-generation" && editingModel
         ? modelImageCapabilities(editingConnection, editingModel, node.data.parameters)
@@ -7434,6 +7461,7 @@ function CanvasShell({
             }),
           ],
           modelOptions,
+          catalogPickerDirectory: catalogDirectories.get(directoryKey),
           modelOptionsAuthoritative: Boolean(
             generationType &&
             ((connectionModels.connectionId === node.data.connectionId &&
@@ -7585,6 +7613,8 @@ function CanvasShell({
     connectingFrom,
     connectionModels,
     connections,
+    supplierDirectories,
+    supplierDirectoryReadFailed,
     edges,
     effectiveInputsForNode,
     deleteNode,

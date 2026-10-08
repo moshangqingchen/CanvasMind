@@ -2,12 +2,19 @@ import { SupplierCatalogUpgrade } from "../../../../lib/supplier-catalog-upgrade
 import { trackDesktopBackgroundWrite } from "../../../../lib/desktop-server";
 import { readProviderModelInventory } from "../../../../lib/provider-model-inventory";
 import { repository } from "../../../../lib/server";
+import { scanSupplierRecord } from "../../../../lib/supplier-service";
 
 export const dynamic = "force-dynamic";
 const scope = globalThis as typeof globalThis & { __supplierCatalogUpgrade?: SupplierCatalogUpgrade };
 function service() {
   return scope.__supplierCatalogUpgrade ??= new SupplierCatalogUpgrade({ repository,
     readModels: readProviderModelInventory, trackWrite: trackDesktopBackgroundWrite,
+    refreshSupplierCatalog: async supplier => {
+      const refreshed = await scanSupplierRecord(supplier.id, undefined, supplier.state?.revision,
+        { catalogOnly: true, verifyCapabilities: false });
+      return refreshed.state?.sourceId === supplier.state?.sourceId && refreshed.scanComplete === true &&
+        ["live", "empty"].includes(refreshed.scanStatus);
+    },
     canContinue: () => globalThis.__superCanvasDesktopLifecycle?.draining !== true });
 }
 // The desktop session proxy authorizes browser requests before this route.

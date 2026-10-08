@@ -11,6 +11,8 @@ import {
 import { decryptSecret, providerFetch } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
 import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
+import { createHash } from "node:crypto";
+import type { ModelDescriptor } from "@super-canvas/providers";
 import {
   MIAOWU_BASE_URL,
   MIAOWU_PRESET_ID,
@@ -33,6 +35,101 @@ export interface MiaowuKeyScan {
   checkedAt: string;
   modelIds: string[];
   error?: string;
+  complete?: boolean;
+  openaiModelIds?: string[];
+  mediaDirectory?: MiaowuMediaDirectory;
+}
+
+export interface MiaowuMediaDirectory {
+  status: "live" | "empty" | "unsupported" | "unauthorized" | "failed" | "not-applicable";
+  sourceUrl: string;
+  checkedAt: string;
+  models: { id: string; kind: "image" | "video" }[];
+  httpStatus?: number;
+  error?: string;
+  stale?: boolean;
+  lastSuccessfulCheckedAt?: string;
+}
+
+function officialMiaowuBase(base: string): boolean {
+  try {
+    const url = new URL(base);
+    return url.origin === MIAOWU_BASE_URL && !url.username && !url.password && !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname);
+  } catch { return false; }
+}
+
+async function scanMiaowuMediaDirectory(apiKey: string, fetchImpl: typeof fetch): Promise<MiaowuMediaDirectory> {
+  const sourceUrl = `${MIAOWU_BASE_URL}/v1/dream/model_list`;
+  const result: MiaowuMediaDirectory = { status: "failed", sourceUrl, checkedAt: new Date().toISOString(), models: [] };
+  try {
+    const response = await fetchImpl(sourceUrl, { method: "GET", redirect: "error", headers: { Authorization: `Bearer ${apiKey}` }, cache: "no-store", signal: AbortSignal.timeout(20_000) });
+    result.httpStatus = response.status;
+    if (!response.ok) {
+      await response.body?.cancel();
+      result.checkedAt = new Date().toISOString();
+      result.status = response.status === 404 ? "unsupported" : [401, 403].includes(response.status) ? "unauthorized" : "failed";
+      result.error = response.status === 404 ? "喵呜媒体目录接口当前返回 HTTP 404，保留同一密钥已有媒体目录"
+        : `喵呜媒体目录检查失败（HTTP ${response.status}）`;
+      return result;
+    }
+    const payload = await readBoundedModelJson(response) as { data?: unknown } | null;
+    if (!payload || !Array.isArray(payload.data)) throw new Error("Invalid media inventory");
+    const byId = new Map<string, "image" | "video">();
+    for (const item of payload.data) {
+      if (!item || typeof item !== "object") continue;
+      const record = item as Record<string, unknown>;
+      const id = typeof record.id === "string" ? record.id.trim() : "";
+      if (id && (record.type === "image" || record.type === "video")) byId.set(id, record.type);
+    }
+    if (payload.data.length && !byId.size) throw new Error("Missing declared media types");
+    result.models = [...byId].map(([id, kind]) => ({ id, kind }));
+    result.status = result.models.length ? "live" : "empty";
+    result.checkedAt = new Date().toISOString();
+    return result;
+  } catch {
+    result.checkedAt = new Date().toISOString();
+    result.error = "喵呜媒体目录网络失败或响应无法解析，保留同一密钥已有媒体目录";
+    return result;
+  }
+}
+
+const credentialFingerprint = (connection: ProviderConnectionRecord) => createHash("sha256").update(connection.encryptedSecret ?? "").digest("hex");
+
+function preserveFailedMediaDirectory(scan: MiaowuKeyScan, connection: ProviderConnectionRecord): MiaowuKeyScan {
+  const current = scan.mediaDirectory;
+  const previous = connection.config.miaowuMediaDirectory as unknown as MiaowuMediaDirectory | undefined;
+  if (!current || !["failed", "unsupported"].includes(current.status) ||
+    connection.config.miaowuDirectoryCredentialFingerprint !== credentialFingerprint(connection) ||
+    connection.config.miaowuDirectoryGroup !== (connection.config.accountKeyGroup ?? connection.config.modelGroup) ||
+    connection.config.miaowuDirectorySupplierSourceId !== (connection.config.supplierSourceId ?? null) ||
+    !previous || previous.sourceUrl !== current.sourceUrl || !Array.isArray(previous.models)) return scan;
+  const models = previous.models.filter(model => typeof model.id === "string" && (model.kind === "image" || model.kind === "video"));
+  const modelIds = [...new Set([...scan.modelIds, ...models.map(model => model.id)])];
+  return { ...scan, status: modelIds.length ? "live" : "empty", modelIds,
+    mediaDirectory: { ...current, models, stale: true, lastSuccessfulCheckedAt: previous.lastSuccessfulCheckedAt ?? previous.checkedAt } };
+}
+
+function modelsFromScannedDirectories(catalogModels: ModelDescriptor[], scan: MiaowuKeyScan, group: string | undefined): ModelDescriptor[] {
+  const scannedSet = new Set(scan.modelIds);
+  const groupCatalogIds = new Set(catalogModels.map(model => model.id));
+  const openaiIds = new Set(scan.openaiModelIds ?? scan.modelIds);
+  const mediaModels = new Map(scan.mediaDirectory?.models.map(model => [model.id, model.kind]) ?? []);
+  const models = [...catalogModels.filter(model => scannedSet.has(model.id)), ...scan.modelIds.filter(id => !groupCatalogIds.has(id)).map(id => {
+    const descriptor = miaowuUnparameterizedVideoDescriptor(id, { group, parameterSource: "key-model-scan" });
+    const model = { ...descriptor, metadata: { ...descriptor.metadata, canvasRunnable: false,
+      canvasUnavailableReason: "当前分组列出此型号，但尚未提供其参数与调用合同" } };
+    const mediaKind = mediaModels.get(id);
+    return mediaKind ? { ...model, description: `喵呜${mediaKind === "image" ? "图片" : "视频"}型号；当前分组的参数与调用合同待确认。`,
+      operations: mediaKind === "image" ? ["image.generate"] as const : model.operations,
+      outputKinds: [mediaKind], metadata: { ...model.metadata, modality: mediaKind, outputKindsSource: "declared",
+        catalogCapability: mediaKind, canvasRunnable: false,
+        canvasUnavailableReason: "媒体目录列出此型号，但当前分组尚未提供其参数合同" } } : model;
+  })];
+  return models.map(model => ({ ...model, metadata: { ...model.metadata,
+    modelDirectorySources: [...(openaiIds.has(model.id) ? ["openai-key-models"] : []), ...(mediaModels.has(model.id) ? ["authenticated-dream-media-directory"] : [])],
+    ...(mediaModels.has(model.id) ? { mediaDirectoryStatus: scan.mediaDirectory!.status,
+      mediaDirectoryCheckedAt: scan.mediaDirectory!.checkedAt, mediaDirectoryStale: scan.mediaDirectory!.stale === true } : {}),
+  } }));
 }
 
 export interface MiaowuConnectionScan extends MiaowuKeyScan {
@@ -77,8 +174,8 @@ function miaowuScanFailure(
 
 /**
  * Reads the models granted to one exact 喵呜 key via the free `/v1/models`
- * endpoint. The key's live list may include vip-only models missing from the
- * public pricing catalog; never falls back to an older inventory.
+ * endpoint plus the same Key's authenticated Dream media directory. The chat
+ * compatible directory alone does not enumerate every native media model.
  */
 export async function scanMiaowuKeyModels(
   apiKey: string,
@@ -90,6 +187,8 @@ export async function scanMiaowuKeyModels(
     const response = await fetchImpl(
       `${base.replace(/\/v1$/u, "")}/v1/models`,
       {
+        method: "GET",
+        redirect: "error",
         headers: { Authorization: `Bearer ${apiKey}` },
         cache: "no-store",
         signal: AbortSignal.timeout(30_000),
@@ -127,11 +226,18 @@ export async function scanMiaowuKeyModels(
         }),
       ),
     ];
-    return {
+    const baseScan: MiaowuKeyScan = {
       status: modelIds.length > 0 ? "live" : "empty",
       checkedAt,
       modelIds,
+      openaiModelIds: [...modelIds],
     };
+    if (!officialMiaowuBase(base)) return { ...baseScan, complete: true };
+    const mediaDirectory = await scanMiaowuMediaDirectory(apiKey, fetchImpl);
+    const combined = [...new Set([...modelIds, ...mediaDirectory.models.map(model => model.id)])];
+    return { ...baseScan, checkedAt: mediaDirectory.checkedAt, status: combined.length ? "live" : "empty", modelIds: combined,
+      complete: mediaDirectory.status === "live" || mediaDirectory.status === "empty", mediaDirectory,
+      ...(mediaDirectory.error ? { error: mediaDirectory.error } : {}) };
   } catch {
     return miaowuScanFailure(
       "failed",
@@ -189,7 +295,7 @@ export async function scanMiaowuConnection(
       connection,
     };
   }
-  const [catalog, scan] = await Promise.all([
+  const [catalog, freshScan] = await Promise.all([
     loadMiaowuCatalog({
       force: options?.forcePricing,
       ...(options?.fetch ? { fetch: options.fetch } : {}),
@@ -202,6 +308,7 @@ export async function scanMiaowuConnection(
       ...(options?.fetch ? { fetch: options.fetch } : {}),
     }),
   ]);
+  const scan = preserveFailedMediaDirectory(freshScan, connection);
   const baseResult: MiaowuConnectionScan = { ...scan, connection };
   if (
     (scan.status !== "live" && scan.status !== "empty") ||
@@ -216,17 +323,7 @@ export async function scanMiaowuConnection(
       : undefined;
   const catalogModels = miaowuModelsForGroup(catalog, configuredGroup);
   const pricedIds = new Set(catalog.models.map((model) => model.id));
-  const callable = [
-    ...catalogModels.filter((model) => scannedSet.has(model.id)),
-    ...scan.modelIds
-      .filter((modelId) => !pricedIds.has(modelId))
-      .map((modelId) =>
-        miaowuUnparameterizedVideoDescriptor(modelId, {
-          group: configuredGroup,
-          parameterSource: "key-model-scan",
-        }),
-      ),
-  ];
+  const callable = modelsFromScannedDirectories(catalogModels, scan, configuredGroup);
   const latest = await repository.getConnection(id);
   if (
     !latest ||
@@ -255,6 +352,12 @@ export async function scanMiaowuConnection(
     catalogCheckedAt: catalog.checkedAt,
     modelScanStatus: scan.status,
     modelScanCheckedAt: scan.checkedAt,
+    modelScanComplete: scan.complete ?? true,
+    modelScanError: scan.error ?? null,
+    ...(scan.mediaDirectory ? { miaowuMediaDirectory: scan.mediaDirectory as unknown as JsonObject,
+      miaowuOpenaiModelIds: scan.openaiModelIds ?? [], miaowuDirectoryCredentialFingerprint: credentialFingerprint(latest),
+      miaowuDirectorySupplierSourceId: latest.config.supplierSourceId ?? null,
+      miaowuDirectoryGroup: latest.config.accountKeyGroup ?? scanScope } : {}),
     scannedModelIds: [...scan.modelIds],
     unavailableModels: catalogModels
       .filter((model) => !scannedSet.has(model.id))
@@ -304,22 +407,13 @@ async function syncMiaowuConnectionFromCatalog(
       ]
     : [];
   const scannedSet = new Set(scannedModelIds);
-  const catalogIds = new Set(catalog.models.map((model) => model.id));
   const models =
     scanStatus === "empty"
       ? []
       : scanStatus === "live"
-        ? [
-            ...catalogModels.filter((model) => scannedSet.has(model.id)),
-            ...scannedModelIds
-              .filter((modelId) => !catalogIds.has(modelId))
-              .map((modelId) =>
-                miaowuUnparameterizedVideoDescriptor(modelId, {
-                  group: groupId,
-                  parameterSource: "key-model-scan",
-                }),
-              ),
-          ]
+        ? modelsFromScannedDirectories(catalogModels, { status: "live", checkedAt: String(connection.config.modelScanCheckedAt ?? ""), modelIds: scannedModelIds,
+            ...(Array.isArray(connection.config.miaowuOpenaiModelIds) ? { openaiModelIds: configuredModelIds(connection.config.miaowuOpenaiModelIds) } : {}),
+            ...(connection.config.miaowuMediaDirectory ? { mediaDirectory: connection.config.miaowuMediaDirectory as unknown as MiaowuMediaDirectory } : {}) }, groupId)
         : catalogModels;
   if (models.length === 0 && !authoritativeScan) return connection;
   const configuredDefault =

@@ -17,9 +17,16 @@ const CANVAS_REQUEST_ATTEMPTS = 3;
 const CANVAS_REQUEST_TIMEOUT_MS = 12_000;
 const RUN_READ_TIMEOUT_MS = 15_000;
 
-interface ModelListCacheEntry {
+interface ModelInventoryStatus {
+  scanStatus?: string;
+  complete?: boolean;
+}
+interface ModelListCacheEntry extends ModelInventoryStatus {
   items: ModelDescriptor[];
   expiresAt: number;
+}
+interface ModelInventoryResponse extends ModelInventoryStatus {
+  items: ModelDescriptor[];
 }
 
 class ProviderModelsRequestError extends Error {
@@ -40,6 +47,12 @@ const pendingModelRequests = new Map<string, Promise<ModelDescriptor[]>>();
 export function getCachedModels(id: string): ModelDescriptor[] | undefined {
   const cached = modelListCache.get(id);
   return cached ? [...cached.items] : undefined;
+}
+
+/** Response provenance for display only; the public model-array API is unchanged. */
+export function getCachedModelInventoryStatus(id: string): ModelInventoryStatus | undefined {
+  const cached = modelListCache.get(id);
+  return cached ? { scanStatus: cached.scanStatus, complete: cached.complete } : undefined;
 }
 
 export function invalidateModelCache(id: string): void {
@@ -1012,7 +1025,7 @@ async function fetchModelsUncached(
   id: string,
   refresh = false,
   clearUnavailable = false,
-): Promise<ModelDescriptor[]> {
+): Promise<ModelInventoryResponse> {
   const query = new URLSearchParams({ fresh: String(Date.now()) });
   if (refresh) query.set("refresh", "1");
   if (clearUnavailable) query.set("clearUnavailable", "1");
@@ -1030,13 +1043,19 @@ async function fetchModelsUncached(
       response.headers.get("X-Model-Scan-Status") ?? undefined,
     );
   }
-  return response.json() as Promise<ModelDescriptor[]>;
+  const status = response.headers.get("X-Model-Scan-Status") ?? "";
+  const complete = response.headers.get("X-Model-Scan-Complete");
+  return { items: await response.json() as ModelDescriptor[],
+    ...(["live", "empty", "stale", "failed", "unauthorized", "unscanned", "partial"].includes(status) ? { scanStatus: status } : {}),
+    ...(complete === "true" || complete === "false" ? { complete: complete === "true" } : {}) };
 }
 
-function cacheModels(id: string, items: readonly ModelDescriptor[]) {
+function cacheModels(id: string, items: readonly ModelDescriptor[], status: ModelInventoryStatus = {}) {
   modelListCache.set(id, {
     items: [...items],
     expiresAt: Date.now() + MODEL_LIST_CACHE_TTL_MS,
+    scanStatus: status.scanStatus,
+    complete: status.complete,
   });
   return [...items];
 }
@@ -1049,9 +1068,9 @@ export async function fetchModels(id: string): Promise<ModelDescriptor[]> {
   if (pending) return pending;
 
   const epoch = modelEpochs.get(id) ?? 0;
-  const request = fetchModelsUncached(id).then((items) => {
+  const request = fetchModelsUncached(id).then((result) => {
     if ((modelEpochs.get(id) ?? 0) !== epoch) throw new ProviderModelsRequestError("连接已改变，请重新读取模型", 409);
-    return cacheModels(id, items);
+    return cacheModels(id, result.items, result);
   });
   pendingModelRequests.set(id, request);
   try {
@@ -1075,7 +1094,7 @@ export async function refreshModels(
     true,
     options?.clearUnavailable === true,
   )
-    .then((items) => { if (modelEpochs.get(id) !== epoch) throw new ProviderModelsRequestError("连接已改变，请重新读取模型", 409); return cacheModels(id, items); })
+    .then((result) => { if (modelEpochs.get(id) !== epoch) throw new ProviderModelsRequestError("连接已改变，请重新读取模型", 409); return cacheModels(id, result.items, result); })
     .catch((error: unknown) => {
       // A refresh is advisory. Keep the last successful inventory during
       // transient network/5xx failures so an otherwise usable canvas does not
@@ -1097,7 +1116,7 @@ export async function refreshModels(
           status >= 500 ||
           scanStatus === "failed");
       if (modelEpochs.get(id) === epoch && retryable && previous && previous.length > 0)
-        return cacheModels(id, previous);
+        return cacheModels(id, previous, { scanStatus: "stale", complete: false });
       throw error;
     });
   pendingModelRequests.set(id, request);

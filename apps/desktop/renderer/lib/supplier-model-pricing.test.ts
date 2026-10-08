@@ -58,6 +58,63 @@ const secureVideo: ModelDescriptor = { id: "doubao-seedance-2-0-260128", name: "
   parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "720p", options: [{ label: "720p", value: "720p" }] }],
 };
 
+it("opening cached inventory cannot replace a newer same-group quote with the old supplier directory", async () => {
+  const group = "sd2.5特价分组-2";
+  const siteUrl = "https://token.secure-skill.com";
+  const supplier = { id: "saved-secure", siteUrl, apiUrl: `${siteUrl}/v1`, kind: "sub2api", scanStatus: "live", scanComplete: true,
+    state: { sourceId: "current-source" }, scannedAt: "2026-10-08T11:26:22.084Z", updatedAt: "2026-10-08T11:26:22.084Z",
+    catalog: { groups: [{ id: group, label: group, models: [{ id: "seedance-2.5", capability: "video" }] }] } };
+  const saved: ModelDescriptor = { id: "seedance-2.5", name: "seedance-2.5", operations: ["video.generate"],
+    metadata: { catalogGroup: group, priceSource: "supplier-catalog", priceStatus: "available",
+      priceLabel: "480p ¥0.4/秒 · 720p ¥0.62/秒 · 1080p ¥1.45/秒", priceCheckedAt: "2026-10-08T14:30:53.685Z" } };
+  vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+  const reads = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+  try {
+    const result = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: "current-source",
+      baseUrl: supplier.apiUrl, modelGroup: group } }, [saved], false, false);
+    expect(result[0]?.metadata).toEqual(saved.metadata);
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(reads);
+  } finally { vi.mocked(getSupplierRecord).mockResolvedValue(null); }
+});
+
+it("snapshot age protection is group scoped and still accepts authoritative newer price removal", () => {
+  const current = secureCatalog();
+  const priced = applySupplierCatalogPrices([secureVideo], "seedance-官方token版", current)[0]!;
+  const older: SupplierCatalogDiscovery = { ...current, checkedAt: "2026-10-08T10:00:00Z", groups: [] };
+  expect(applySupplierCatalogPrices([priced], "seedance-官方token版", older, undefined, { savedCatalog: true })[0]).toBe(priced);
+  expect(applySupplierCatalogPrices([priced], "other-group", older, undefined, { savedCatalog: true })[0]?.pricing).toBeUndefined();
+  const removed: SupplierCatalogDiscovery = { ...older, checkedAt: "2026-10-08T15:00:00Z" };
+  expect(applySupplierCatalogPrices([priced], "seedance-官方token版", removed, undefined, { savedCatalog: true })[0]?.pricing).toBeUndefined();
+  // Explicit online refresh remains authoritative even with an older supplied timestamp.
+  expect(applySupplierCatalogPrices([priced], "seedance-官方token版", older)[0]?.pricing).toBeUndefined();
+});
+
+it("retained account-group quotes stay historical and keep their own checked time", () => {
+  const group = "private-video";
+  const oldAt = "2026-10-08T11:26:00Z", attemptAt = "2026-10-08T15:00:00Z";
+  const lookup: SupplierCatalogDiscovery = { kind: "sub2api", status: "live", complete: true, checkedAt: attemptAt,
+    groups: [{ id: group, label: group, source: "catalog", details: { source: "key-groups", stale: true },
+      models: [{ id: "seedance-2.5", capability: "video", priceLabel: "¥5.5/请求",
+        metadata: { supplierCatalogModelStale: true, supplierCatalogPriceCheckedAt: oldAt } }] }] };
+  const unpriced: ModelDescriptor = { id: "seedance-2.5", name: "Seedance", operations: ["video.generate"] };
+  const historical = applySupplierCatalogPrices([unpriced], group, lookup)[0]!;
+  expect(historical.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: oldAt, priceLastAttemptAt: attemptAt,
+    priceLabel: "¥5.5/请求（上次价格）" });
+  expect(historical.pricing?.checkedAt).toBe(oldAt);
+  expect(modelPriceSummary(historical, {})).toBe("上次 5.5 CNY / 次");
+  expect(modelEstimatedCost(historical, {})).toBeUndefined();
+  const connectionQuote = { ...historical, pricing: { ...historical.pricing!, unitAmount: 4.8, checkedAt: "2026-10-08T14:00:00Z" },
+    metadata: { ...historical.metadata, priceLabel: "¥4.8/请求", priceCheckedAt: "2026-10-08T14:00:00Z", priceStatus: "available" } };
+  expect(applySupplierCatalogPrices([connectionQuote], group, lookup)[0]!.metadata).toMatchObject({
+    priceLabel: "¥4.8/请求（上次价格）", priceCheckedAt: "2026-10-08T14:00:00Z", priceStatus: "partial" });
+  const fresh = structuredClone(lookup);
+  fresh.groups[0]!.details = { source: "model-plaza" };
+  fresh.groups[0]!.models[0]!.metadata = {};
+  fresh.groups[0]!.models[0]!.priceLabel = "¥6/请求";
+  expect(applySupplierCatalogPrices([historical], group, fresh)[0]!.metadata).toMatchObject({
+    priceLabel: "¥6/请求", priceStatus: "available", priceCheckedAt: attemptAt });
+});
+
 it("persists exact supplier token conditions and shows compact rates without inventing task totals", () => {
   const enriched = applySupplierCatalogPrices([secureVideo], "seedance-官方token版", secureCatalog())[0]!;
   const saved = JSON.parse(JSON.stringify(enriched)) as ModelDescriptor;
@@ -280,7 +337,7 @@ describe("universal supplier price lookup", () => {
     }
     expect(results[2]?.pricing).toBeUndefined();
     expect(results[2]?.metadata?.priceLabel).toBe("价格未公布");
-    expect(modelPriceSummary(results[2], { size_tier: "4K" })).toBe("价格未公布");
+    expect(modelPriceSummary(results[2], { size_tier: "4K" })).toBe("价格目录未完整读取");
   });
   it("recognizes catalog model IDs so a future pro declaration cannot price a base-only inventory", () => {
     const futureCatalog: SupplierCatalogDiscovery = {
@@ -369,7 +426,7 @@ describe("universal supplier price lookup", () => {
     for (const result of results) {
       expect(result.pricing).toBeUndefined();
       expect(result.metadata?.priceLabel).toBe("价格未公布");
-      expect(modelPriceSummary(result, { size_tier: "4K", quality: "max" })).toBe("价格未公布");
+      expect(modelPriceSummary(result, { size_tier: "4K", quality: "max" })).toBe(complete ? "暂未取得报价" : "价格目录未完整读取");
       expect(result.metadata?.priceLabel).not.toContain("上次价格");
       for (const line of mikotoHighQualityLines) expect(result.metadata?.priceLabel).not.toContain(line);
     }
@@ -381,7 +438,7 @@ describe("universal supplier price lookup", () => {
     for (const result of results) {
       expect(result.pricing).toBeUndefined();
       expect(result.metadata).toMatchObject({ priceLabel: "价格未公布", supplierGroupInfoStale: true });
-      expect(modelPriceSummary(result, { size_tier: "4K", quality: "max" })).toBe("价格未公布");
+      expect(modelPriceSummary(result, { size_tier: "4K", quality: "max" })).toBe(complete ? "暂未取得报价" : "价格目录未完整读取");
       expect(result.metadata?.priceLabel).not.toContain("上次价格");
       for (const line of mikotoHighQualityLines) expect(result.metadata?.priceLabel).not.toContain(line);
     }

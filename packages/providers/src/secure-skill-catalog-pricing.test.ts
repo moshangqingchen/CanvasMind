@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { secureSkillCatalogPricing } from "./secure-skill-catalog-pricing.js";
+import { secureSkillCatalogPricing, secureSkillCatalogVideoDeclaration } from "./secure-skill-catalog-pricing.js";
+import { modelPriceAmount } from "./media-billing.js";
 
 const options = { supplierSiteUrl: "https://token.secure-skill.com", checkedAt: "2026-10-08T11:21:08.582Z" };
 const id = "doubao-seedance-2-0-260128";
@@ -62,5 +63,92 @@ describe("Secure Skill official video token prices", () => {
     for (const price of [null,undefined,"", "0.01", -1,Number.NaN,Number.POSITIVE_INFINITY,1e308]) expect(secureSkillCatalogPricing({ id,pricing:{billing_mode:"token",output_price:price} },options)).toBeUndefined();
     for (const multiplier of [-1,Number.NaN,Number.POSITIVE_INFINITY,1e308]) expect(secureSkillCatalogPricing(row,{ ...options,multiplier })).toBeUndefined();
     expect(secureSkillCatalogPricing(row,{ ...options,multiplier:0 })?.pricing.tiers?.every(tier=>tier.price===0)).toBe(true);
+  });
+});
+
+describe("Secure Skill declared media units and resolution prices", () => {
+  const seconds = { name: "seedance-2.5", pricing: { billing_mode: "per_second", per_request_price: 1.2,
+    intervals: [
+      { min_tokens: 0, max_tokens: null, tier_label: "480p", per_request_price: .4 },
+      { min_tokens: 0, max_tokens: null, tier_label: "720p", per_request_price: .62 },
+      { min_tokens: 0, max_tokens: null, tier_label: "1080p", per_request_price: 1.45 },
+    ] } };
+
+  it("preserves the live group 54 second prices and selects only the requested resolution", () => {
+    const decoded = secureSkillCatalogPricing(seconds, options)!;
+    expect(decoded.pricing).toMatchObject({ kind: "tiered", currency: "CNY", billingUnit: "second", confidence: "exact" });
+    expect(decoded.priceLabel).toBe("480p ¥0.4/秒 · 720p ¥0.62/秒 · 1080p ¥1.45/秒");
+    expect(["480p", "720p", "1080p"].map(resolution => modelPriceAmount(decoded.pricing, { resolution }))).toEqual([.4, .62, 1.45]);
+    expect(modelPriceAmount(decoded.pricing, {})).toBeUndefined();
+    expect(modelPriceAmount(decoded.pricing, { resolution: "4K" })).toBeUndefined();
+    expect(decoded.pricing.unitAmount).toBeUndefined();
+  });
+
+  it("keeps other groups of the same model separate and applies only their own multiplier once", () => {
+    const first = secureSkillCatalogPricing({ ...seconds, pricing: { ...seconds.pricing, intervals: [
+      { tier_label: "480p", per_request_price: .45 }, { tier_label: "720p", per_request_price: .55 },
+    ] } }, { ...options, multiplier: .5 })!;
+    const second = secureSkillCatalogPricing(seconds, { ...options, multiplier: 2 })!;
+    expect(first.pricing.tiers?.map(tier => tier.price)).toEqual([.225, .275]);
+    expect(second.pricing.tiers?.map(tier => tier.price)).toEqual([.8, 1.24, 2.9]);
+    expect(modelPriceAmount(first.pricing, { resolution: "1080p" })).toBeUndefined();
+  });
+
+  it("retains request billing when its interval is resolution dependent instead of converting it to seconds", () => {
+    const decoded = secureSkillCatalogPricing({ name: "seedance2.0", pricing: { billing_mode: "per_request",
+      intervals: [{ tier_label: "720p", per_request_price: 3.5 }] } }, options)!;
+    expect(decoded.pricing).toMatchObject({ kind: "tiered", billingUnit: "request" });
+    expect(decoded.priceLabel).toBe("720p ¥3.5/请求");
+    expect(modelPriceAmount(decoded.pricing, { resolution: "720p", duration: 15 })).toBe(3.5);
+    expect(modelPriceAmount(decoded.pricing, { resolution: "1080p" })).toBeUndefined();
+  });
+
+  it("imports explicit flat image, request and second rates without the token-unit conversion", () => {
+    for (const [billing_mode, kind, billingUnit] of [["image", "per-image", "image"], ["per_request", "per-request", "request"], ["per_second", "per-second", "second"]]) {
+      const decoded = secureSkillCatalogPricing({ name: "grok-imagine-video-1.5", pricing: { billing_mode, per_request_price: .48, intervals: [] } }, { ...options, multiplier: .5 })!;
+      expect(decoded.pricing).toMatchObject({ kind, billingUnit, unitAmount: .24, currency: "CNY" });
+      expect(modelPriceAmount(decoded.pricing, {})).toBe(.24);
+    }
+    expect(secureSkillCatalogPricing({ name: "seedance-2.5", pricing: { billing_mode: "per_second", per_request_price: 0 } }, options)?.pricing.unitAmount).toBe(0);
+  });
+
+  it("uses final group image rates without multiplying again or substituting the model's higher interval", () => {
+    const decoded = secureSkillCatalogPricing({ name: "gpt-image-2", pricing: { billing_mode: "image", per_request_price: .9,
+      intervals: [{ tier_label: "1K", per_request_price: .7 }] } }, { ...options, multiplier: .3,
+      group: { image_price_1k: .17, image_price_2k: .17, image_price_4k: .17 } })!;
+    expect(decoded.pricing).toMatchObject({ kind: "tiered", billingUnit: "image" });
+    expect(decoded.pricing.tiers?.map(tier => tier.price)).toEqual([.17, .17, .17]);
+    expect(modelPriceAmount(decoded.pricing, { resolution: "2k" })).toBe(.17);
+    expect(decoded.priceLabel).toBe("1K ¥0.17/张 · 2K ¥0.17/张 · 4K ¥0.17/张");
+  });
+
+  it("rejects unrepresentable intervals and conflicting resolution prices rather than using a flat fallback", () => {
+    for (const intervals of [[{ tier_label: "480p with audio", per_request_price: .4 }], [{ tier_label: "480p", min_tokens: 1, per_request_price: .4 }],
+      [{ tier_label: "480p", max_tokens: 1000, per_request_price: .4 }], [{ tier_label: "480p", per_request_price: null }],
+      [{ tier_label: "480p", per_request_price: "0.4" }], [{ tier_label: "480p", per_request_price: .4 }, { tier_label: "480p", per_request_price: .5 }], {}]) {
+      expect(secureSkillCatalogPricing({ ...seconds, pricing: { ...seconds.pricing, intervals } }, options)).toBeUndefined();
+    }
+  });
+
+  it("does not extend the official currency and host convention to other suppliers or malformed media amounts", () => {
+    expect(secureSkillCatalogPricing(seconds, { ...options, supplierSiteUrl: "https://other.example" })).toBeUndefined();
+    expect(secureSkillCatalogPricing({ ...seconds, pricing: { ...seconds.pricing, currency: "USD" } }, options)).toBeUndefined();
+    for (const per_request_price of [-1, "0.4", Number.NaN, Number.POSITIVE_INFINITY, 1e308]) {
+      expect(secureSkillCatalogPricing({ name: "seedance-2.5", pricing: { billing_mode: "per_second", per_request_price } }, { ...options, multiplier: 2 })).toBeUndefined();
+    }
+    expect(secureSkillCatalogPricing({ ...seconds, name: "" }, options)).toBeUndefined();
+  });
+
+  it("restricts additional video-directory declarations to the exact official host, platform and full model ID", () => {
+    for (const [platform, modelId] of [["flow2", "omni"], ["newtoken-sd", "video-2.0-fast"], ["newtoken-sd", "video-2.0-pro"]]) {
+      expect(secureSkillCatalogVideoDeclaration(modelId, platform, options.supplierSiteUrl)).toBe(true);
+      expect(secureSkillCatalogVideoDeclaration(`${modelId}-preview`, platform, options.supplierSiteUrl)).toBe(false);
+      expect(secureSkillCatalogVideoDeclaration(modelId, "unknown", options.supplierSiteUrl)).toBe(false);
+      for (const url of ["https://other.example", "https://token.secure-skill.com.evil.example", "http://token.secure-skill.com", "https://user@token.secure-skill.com", "https://token.secure-skill.com/gateway", "https://token.secure-skill.com?auth=example"]) {
+        expect(secureSkillCatalogVideoDeclaration(modelId, platform, url)).toBe(false);
+      }
+    }
+    expect(secureSkillCatalogVideoDeclaration("gemini-3-pro-image", "flow2", options.supplierSiteUrl)).toBe(false);
+    expect(secureSkillCatalogVideoDeclaration("omni", "newtoken-sd", options.supplierSiteUrl)).toBe(false);
   });
 });

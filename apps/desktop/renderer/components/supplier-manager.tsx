@@ -78,6 +78,7 @@ import "./supplier-manager.css";
 import { inventoryModels, modelAvailability } from "../lib/model-availability";
 import { buildSupplierRefreshResult, recordSupplierRefreshResult, refreshAllSuppliers, refreshSupplier, supplierRefreshStatus, subscribeSupplierRefresh, type SupplierRefreshProgress, type SupplierRefreshResult } from "../lib/refresh-suppliers";
 import { SupplierRefreshDetails, SupplierRefreshIndicator } from "./supplier-refresh-details";
+import { supplierCatalogDisplayPrice, supplierModelDirectoryDiff } from "../lib/supplier-model-directory-diff";
 
 const DEFAULT_API_URLS: Record<string, string> = {
   cangyuan: "https://ai.cangyuansuanli.cn",
@@ -2321,6 +2322,8 @@ function GroupConnectionEditor({
   ).map(normalizeTk1688CnyModel);
   const visibleCatalog = group.models;
   const realScan = modelStatus === "live" || modelStatus === "empty";
+  const directoryDiff = supplierModelDirectoryDiff(actualModels, visibleCatalog);
+  const returnedIds = new Set(actualModels.map(model => model.id));
   const modelCount = realScan ? supplierModelCount(actualModels) : "0";
   return (
     <form
@@ -2443,6 +2446,9 @@ function GroupConnectionEditor({
           </button>
         </div>
       </div>
+      {group.source !== "manual" && <p className="sm-model-freshness" aria-label="官网与 Key 目录对照">
+        官网目录 {directoryDiff.catalogCount} · Key {realScan ? directoryDiff.keyCount : "目录待确认"} · 双方 {realScan ? directoryDiff.sharedCount : "待确认"} · 官网额外 {realScan ? directoryDiff.catalogOnlyIds.length : "待对照"}（仅目录）
+      </p>}
       {addingModel && (
         <div className="sm-manual-model-form">
           {protocols.length ? (
@@ -2588,7 +2594,10 @@ function GroupConnectionEditor({
               active={modelSource === "catalog"} searchQuery={searchQuery} kindFilter={kindFilter} stateFilter={stateFilter}
               title={group.source === "manual" ? "手动目录" : "站点目录"}
               badge="目录参考 · 未验证 Key"
-              models={visibleCatalog.map(model => ({ ...model, availability: { label: group.status === "missing" ? "分组未再返回" : "目录参考", tone: "unknown", detail: "供应商公开目录不代表当前 Key 可调用" } }))}
+              models={visibleCatalog.map(model => ({ ...model, runnable: false, verified: false, availability: {
+                label: group.status === "missing" ? "分组未再返回" : !realScan ? "Key 目录待确认" : returnedIds.has(model.id) ? "Key 已返回" : "官网已列出 · 当前 Key 未返回",
+                tone: "unknown", detail: "官网目录与当前 Key 返回结果分别记录；目录缺失不等于无权限，实际调用仍需对应协议。",
+              } }))}
               empty="目录未提供对应模型。"
             />
           <ModelList
@@ -2680,7 +2689,7 @@ function SupplierModelRow({ model, route = false }: { model: SupplierModelListIt
         {model.interfaceLabel && <small>{model.interfaceLabel}{model.interfaceSource && <> · <a href={model.interfaceSource} target="_blank" rel="noreferrer">接口说明</a></>}</small>}
         {model.availability && <details className="sm-model-evidence"><summary>查看依据</summary><p>{model.availability.detail}</p></details>}
       </div>
-      <div className="sm-model-price">{model.priceLabel || "价格未公布"}</div>
+      <div className="sm-model-price">{supplierCatalogDisplayPrice(model)}</div>
       {routeSummary && <p className="sm-model-route-summary">{routeSummary}</p>}
     </div>
   );

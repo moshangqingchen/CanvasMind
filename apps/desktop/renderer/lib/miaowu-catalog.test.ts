@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { MIAOWU_CONNECTOR, MIAOWU_MODELS } from "./miaowu-presets";
 import {
   MIAOWU_CATALOG_SOURCE,
@@ -9,6 +10,104 @@ import {
   miaowuModelsForGroup,
 } from "./miaowu-catalog";
 import { modelPriceAmount } from "@super-canvas/providers";
+
+// Public /api/pricing captured at 2026-10-08T14:33:14Z. Its generic
+// `openai` endpoint label is not the declared image/video output contract.
+const CURRENT_PUBLIC_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
+
+it("retains all eighteen exact public media models and their native contracts despite a generic chat endpoint label", () => {
+  const catalog = miaowuCatalogFromPricing(CURRENT_PUBLIC_FIXTURE);
+  expect(catalog.models.map(model => model.id)).toEqual([
+    "dola-seedance-2.5", "seedance-2.0-mini-deal", "jimeng-seedance-2.5", "minimax-h3-max",
+    "gpt-image-2.5-flare", "doubao-seedance-2.0-fast", "seedream-5-0-pro", "sora-2", "minimax-h3",
+    "doubao-seedance-2.5", "GPT-image-2", "Image-nano-banana-pro", "wan3.0-video", "gpt-image-2.5-sunburs",
+    "Image-nano-banana-2", "dola-seedance-2.0-fast", "Image-nano-banana", "seedance-2.0-deal",
+  ]);
+  expect(catalog.models.filter(model => model.outputKinds?.includes("video"))).toHaveLength(11);
+  expect(catalog.models.filter(model => model.outputKinds?.includes("image"))).toHaveLength(7);
+  const connector = miaowuConnectorForModels(catalog.models);
+  for (const model of catalog.models) {
+    expect(model.pricing).toMatchObject({ currency: "CNY", confidence: "exact", sourceUrl: MIAOWU_CATALOG_SOURCE });
+    expect(model.parameters?.length).toBeGreaterThan(0);
+    const image = model.outputKinds?.includes("image");
+    expect(model.operations.every(operation => operation.startsWith(image ? "image." : "video."))).toBe(true);
+    expect(model.metadata?.parameterSource).toBe(image ? "pricing.image_api" : "pricing.video_api");
+    expect(connector.modelOverrides?.[model.id]?.submit?.path ?? connector.submit.path).toBe(image ? "/v1/images" : "/v1/videos");
+  }
+  const mini = catalog.models.find(model => model.id === "seedance-2.0-mini-deal")!;
+  expect(mini.parameters?.find(parameter => parameter.key === "duration")?.constraints).toEqual([
+    { when: [{ parameter: "resolution", values: ["720p"] }], max: 12 },
+  ]);
+});
+
+it("preserves current fractional request and second prices instead of rounding them to cents", () => {
+  const catalog = miaowuCatalogFromPricing(CURRENT_PUBLIC_FIXTURE);
+  const models = new Map(catalog.models.map(model => [model.id, model]));
+  for (const [id, label] of [
+    ["dola-seedance-2.5", "¥0.875/次"], ["dola-seedance-2.0-fast", "¥0.875/次"],
+    ["doubao-seedance-2.0-fast", "¥2.5/次"], ["doubao-seedance-2.5", "¥6.25/次"],
+    ["seedance-2.0-deal", "¥3.125/次"], ["minimax-h3", "¥0.0625/秒"],
+    ["wan3.0-video", "¥0.195–0.65/秒"], ["gpt-image-2.5-flare", "¥0.04–0.2/次"],
+    ["GPT-image-2", "¥0.05/次"],
+  ]) {
+    expect(models.get(id!)?.metadata?.priceLabel).toBe(label);
+    expect(models.get(id!)?.name).toBe(`${id}（${label}）`);
+  }
+  expect(modelPriceAmount(models.get("dola-seedance-2.5")!.pricing!, { resolution: "720p", duration: 30 })).toBe(.875);
+  expect(models.get("minimax-h3")!.pricing!.kind).toBe("per-second");
+  expect(modelPriceAmount(models.get("minimax-h3")!.pricing!, { resolution: "720p" })).toBe(.0625);
+  expect(modelPriceAmount(models.get("wan3.0-video")!.pricing!, { resolution: "480p" })).toBe(.195);
+});
+
+it("matches every current media model's own public enums, durations, reference limits and wire fields", () => {
+  const catalog = miaowuCatalogFromPricing(CURRENT_PUBLIC_FIXTURE);
+  for (const model of catalog.models) {
+    const row = CURRENT_PUBLIC_FIXTURE.data.find((item: { model_name: string }) => item.model_name === model.id)!;
+    const image = model.outputKinds?.includes("image");
+    const contract = image ? row.image_api : row.video_api;
+    expect(model.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(contract.sizes);
+    expect(model.parameters?.find(parameter => parameter.key === "aspect_ratio")?.options?.map(option => option.value)).toEqual(contract.ratios);
+    expect(model.limits).toMatchObject({ maxInputImages: contract.images_max ?? 0,
+      maxInputVideos: image ? 0 : contract.videos_max ?? 0, maxInputAudios: image ? 0 : contract.audios_max ?? 0 });
+    expect(model.metadata?.remoteMediaUrlsOnly).toBe(true);
+    expect(model.parameters?.some(parameter => ["seed", "watermark", "generate_audio"].includes(parameter.key))).toBe(false);
+    if (image) {
+      expect(model.parameters?.some(parameter => parameter.key === "duration")).toBe(false);
+      expect(model.operations).toEqual(["image.generate", "image.edit"]);
+    } else {
+      const duration = model.parameters?.find(parameter => parameter.key === "duration");
+      if (contract.seconds_options?.length) {
+        expect(duration?.control).toBe("select");
+        expect(duration?.options?.map(option => option.value)).toEqual(contract.seconds_options.map(Number));
+      } else {
+        expect(duration).toMatchObject({ min: contract.seconds_min, max: contract.seconds_max, step: 1 });
+      }
+      expect(model.metadata?.videoWireFields).toEqual(["model", "prompt", "seconds", "ratio", "resolution",
+        ...(contract.images_max ? ["image_urls"] : []), ...(contract.videos_max ? ["video_urls"] : []), ...(contract.audios_max ? ["audio_urls"] : [])]);
+      expect(model.metadata?.supportsFirstLastFrames).toBe(false);
+    }
+  }
+});
+
+it("applies a declared group ratio once to every resolution tier as well as the headline price", () => {
+  const fixture = structuredClone(CURRENT_PUBLIC_FIXTURE);
+  // Synthetic alternate-group ratio; the real anonymous response exposes only default=1.
+  fixture.group_ratio.vip = .8;
+  const catalog = miaowuCatalogFromPricing(fixture);
+  const repriced = miaowuModelsForGroup(catalog, "vip");
+  const flare = repriced.find(model => model.id === "gpt-image-2.5-flare")!;
+  expect(flare.pricing?.unitAmount).toBe(.16);
+  expect(flare.metadata?.pricingGroupRatio).toBe(.8);
+  expect(modelPriceAmount(flare.pricing!, { resolution: "1080p" })).toBe(.032);
+  expect(modelPriceAmount(flare.pricing!, { resolution: "4K" })).toBe(.16);
+  const jimeng = repriced.find(model => model.id === "jimeng-seedance-2.5")!;
+  expect(jimeng.pricing!.kind).toBe("per-second");
+  expect(modelPriceAmount(jimeng.pricing!, { resolution: "480p" })).toBe(.5);
+  expect(modelPriceAmount(jimeng.pricing!, { resolution: "720p" })).toBe(.6);
+  const rescope = miaowuModelsForGroup({ ...catalog, models: repriced }, "vip");
+  expect(rescope.find(model => model.id === flare.id)?.pricing).toEqual(flare.pricing);
+  expect(catalog.models.find(model => model.id === flare.id)?.pricing?.unitAmount).toBe(.2);
+});
 
 it("uses October per-call rules, audio limits, aspect ratios and discrete Sora seconds", () => {
   const catalog = miaowuCatalogFromPricing({ group_ratio: { default: 1 }, data: [

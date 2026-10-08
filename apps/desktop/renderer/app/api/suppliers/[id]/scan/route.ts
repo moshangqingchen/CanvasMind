@@ -24,8 +24,8 @@ export async function POST(
   if (!parsed.success) return parsed.response;
   try {
     const supplier = await scanSupplierRecord(id.data, parsed.data.token, parsed.data.expectedRevision,
-      { verifyCapabilities: parsed.data.verifyCapabilities });
-    if (parsed.data.verifyCapabilities !== false) {
+      { verifyCapabilities: parsed.data.verifyCapabilities, catalogOnly: parsed.data.catalogOnly });
+    if (!parsed.data.catalogOnly && parsed.data.verifyCapabilities !== false) {
       const pendingKeys = (await repository.listConnections()).some(connection => connection.config.supplierId === supplier.id
         && connection.config.supplierVerificationRequestId && connection.config.supplierArchived !== true);
       if (supplier.scanStatus === "live" || pendingKeys) {

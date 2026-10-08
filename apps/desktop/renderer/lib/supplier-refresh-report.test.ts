@@ -31,7 +31,7 @@ describe("supplier refresh evidence", () => {
     const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [connection([old])], [connection([current], { modelScanCheckedAt: "after" })]);
     expect(report.connections![0]!.priceChanges[0]!.after).toBe("720p · 输出 ¥18.2–29/1M tokens（参考视频条件未确认）");
     expect(report.connections![0]!.priceChanges[0]!.after).not.toContain("待确认");
-    expect(report.connections![0]!.priceChanges[0]!.before).toBe("价格未公布");
+    expect(report.connections![0]!.priceChanges[0]!.before).toBe("暂未取得报价");
   });
   it("reports this attempt's removals without counting cumulative removed history", () => {
     const before = connection([model("keep"), model("just-removed")]);

@@ -2,6 +2,15 @@ import { modelPriceAmount } from "@super-canvas/providers/media-billing";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { getModelParameterDescriptor, validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import type { ModelDescriptor } from "@super-canvas/providers";
+
+/** A missing local quote is not evidence that the supplier never published one. */
+export function displayPriceLabel(label: unknown, status?: unknown): string {
+  if (typeof label === "string" && label.trim() && label.trim() !== "价格未公布") return label;
+  if (status === "unauthorized") return "价格需登录查询";
+  if (status === "failed") return "价格查询失败";
+  if (status === "partial") return "价格目录未完整读取";
+  return "暂未取得报价";
+}
 /** Keeps catalog names readable when they already contain their price label. */
 export function appendPriceLabelOnce(
   name: string,
@@ -45,7 +54,7 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
     const defaults = Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default]));
     const amount = modelPriceAmount(pricing, { ...defaults, ...parameters, resolution: parameters.resolution ?? (tier || defaults.resolution), quality });
     const unit = pricing.billingUnit === "second" || pricing.kind === "per-second" ? "秒" : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
-    if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}`;
+    if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）") ? "上次 " : ""}${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}`;
     if (pricing.kind === "token") {
       if (pricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" && pricing.tiers?.length) {
         const resolution = String(parameters.resolution ?? defaults.resolution ?? "").toLowerCase();
@@ -68,12 +77,12 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
       return "按实际用量计费，详见价格说明";
     }
   }
-  return typeof model.metadata?.priceLabel === "string" ? model.metadata.priceLabel : "价格未知";
+  return typeof model.metadata?.priceLabel === "string" ? displayPriceLabel(model.metadata.priceLabel, model.metadata?.priceStatus) : "价格未知";
 }
 
 /** A preview of the selected request, separate from the supplier's unit price. */
 export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
-  if (!model || model.metadata?.priceSource === "generated-result") return undefined;
+  if (!model || model.metadata?.priceSource === "generated-result" || model.metadata?.priceStatus === "partial") return undefined;
   model = normalizeTk1688CnyModel(model);
   const pricing = model.pricing;
   if (!pricing || !["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return undefined;

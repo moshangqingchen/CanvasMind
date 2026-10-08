@@ -704,6 +704,7 @@ function GenerationNodeBody({
               onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
               anchorKey={settingsAnchor} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
+              catalogDirectory={data.catalogPickerDirectory}
               badge={cangyuanAvailabilityEnabled ? model => <CangyuanAvailabilityBadge
                 availability={cangyuanAvailabilityForModel(model, availabilityItems, availabilityOptions)}
                 loadState={availabilityState} checkedAt={availabilitySnapshot.checkedAt} /> : undefined} />

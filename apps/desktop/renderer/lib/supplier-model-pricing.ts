@@ -252,6 +252,7 @@ export function applySupplierCatalogPrices(
   group: string,
   catalog: SupplierCatalogDiscovery,
   sourceUrl?: string,
+  options: { savedCatalog?: boolean } = {},
 ): ModelDescriptor[] {
   const selected = catalog.groups.find((g) => g.id === group);
   const generic =
@@ -276,7 +277,34 @@ export function applySupplierCatalogPrices(
   const incomplete = catalog.complete === false || ["failed", "unauthorized"].includes(catalog.status);
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   return models.map((model) => {
+    // Opening a picker must not roll a successful connection price back to an
+    // older supplier snapshot. Scope this to the same group; a copied model or
+    // a group change must still be priced from that group's own evidence.
+    const priceGroup = model.metadata?.supplierPriceGroup ?? model.metadata?.catalogGroup;
+    const priceAt = Date.parse(String(model.metadata?.priceCheckedAt ?? model.pricing?.checkedAt ?? ""));
+    const catalogAt = Date.parse(catalog.checkedAt);
+    if (options.savedCatalog && priceGroup === group &&
+      ["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) &&
+      (model.pricing || typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel)) &&
+      Number.isFinite(priceAt) && Number.isFinite(catalogAt) && priceAt > catalogAt) return model;
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
+    if (catalogModel?.metadata?.supplierCatalogModelStale === true && !hasOwnPrice(model)) {
+      const retainedPricing = (catalogModel.metadata.secureSkillCatalogPricing ?? catalogModel.metadata.chuangxiangCatalogPricing ?? catalogModel.metadata.tk1688Pricing) as ModelDescriptor["pricing"];
+      const retainedCheckedAt = retainedPricing?.checkedAt ?? catalogModel.metadata.supplierCatalogPriceCheckedAt;
+      const retainedAt = Date.parse(String(retainedCheckedAt ?? ""));
+      const sameGroupPrice = priceGroup === group && typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel) &&
+        (!Number.isFinite(retainedAt) || Number.isFinite(priceAt) && priceAt >= retainedAt);
+      const label = sameGroupPrice ? String(model.metadata!.priceLabel) : catalogModel.priceLabel;
+      const previousPricing = sameGroupPrice ? model.pricing : retainedPricing;
+      const checkedAt = sameGroupPrice ? model.metadata?.priceCheckedAt ?? previousPricing?.checkedAt :
+        retainedCheckedAt;
+      const priced = typeof label === "string" && !unknownPrice.test(label);
+      return { ...model, pricing: priced ? previousPricing ?? pricingFromSupplierEvidence(label, undefined, String(checkedAt ?? ""), sourceUrl) : undefined,
+        metadata: { ...catalogInterfaceMetadata(model, catalogModel, catalog, true),
+          priceLabel: priced ? `${label.replace(/（上次价格）$/u, "")}（上次价格）` : reason,
+          priceSource: "supplier-catalog", supplierPriceGroup: group, priceStatus: "partial",
+          priceCheckedAt: checkedAt ?? "", priceLastAttemptAt: catalog.checkedAt } };
+    }
     if (catalogModel?.metadata?.supplierPriceConflict === true && !hasOwnPrice(model)) {
       const metadata = { ...model.metadata };
       delete metadata.secureSkillCatalogPricing; delete metadata.chuangxiangCatalogPricing;
@@ -384,6 +412,7 @@ export function applySupplierCatalogPrices(
             : catalog.status,
         priceCheckedAt: old && !fresh && incomplete ? model.metadata?.priceCheckedAt : catalog.checkedAt,
         priceLastAttemptAt: catalog.checkedAt,
+        supplierPriceGroup: group,
       },
     };
   });
@@ -443,7 +472,7 @@ export async function enrichSupplierModelPrices(
       { groups: supplier.catalog.groups.map(group => ({ ...group, source: "catalog", models: group.models.map(model => ({ ...model, protocol: model.protocol === "rest" ? "unknown" : model.protocol })) })),
         kind: supplier.kind, status: supplier.scanStatus === "unscanned" ? "failed" : supplier.scanStatus,
         complete: supplier.scanComplete === true,
-        checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl) : [...models];
+        checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl, { savedCatalog: true }) : [...models];
     return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, supplier?.siteUrl || apiUrl, false), group, supplier?.state?.sourceId ?? "legacy");
   }
   const siteUrl = sameSource

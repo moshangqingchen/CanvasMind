@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, comparableModelPrice, modelEstimatedCost } from "./model-display";
+import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, comparableModelPrice, modelEstimatedCost, displayPriceLabel } from "./model-display";
 import { mediaExpressionPricing, type ModelDescriptor } from "@super-canvas/providers";
 
 describe("appendPriceLabelOnce", () => {
+  it("distinguishes missing local quotes from failed, restricted and incomplete price reads", () => {
+    expect(displayPriceLabel("价格未公布", "unpublished")).toBe("暂未取得报价");
+    expect(displayPriceLabel(undefined, "unauthorized")).toBe("价格需登录查询");
+    expect(displayPriceLabel("价格未公布", "partial")).toBe("价格目录未完整读取");
+    expect(displayPriceLabel(undefined, "failed")).toBe("价格查询失败");
+    expect(displayPriceLabel("¥0.875/次", "partial")).toBe("¥0.875/次");
+    expect(modelPriceSummary({ id: "model", name: "model", operations: [], metadata: { priceLabel: "价格未公布" } }, {})).toBe("暂未取得报价");
+  });
   it("estimates request quantities and per-second video costs with selected tiers", () => {
     const model: ModelDescriptor = { id: "video", name: "Video", operations: ["video.generate"],
       parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", min: 4, max: 15, default: 5 },

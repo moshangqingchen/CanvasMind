@@ -166,6 +166,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
     unavailableReason?: string;
   }>;
   modelOptions?: ModelDescriptor[];
+  catalogPickerDirectory?: import("../lib/supplier-model-directory-diff").CatalogPickerDirectory;
   modelOptionsAuthoritative?: boolean;
   modelOptionsLoading?: boolean;
   modelOptionsError?: boolean;

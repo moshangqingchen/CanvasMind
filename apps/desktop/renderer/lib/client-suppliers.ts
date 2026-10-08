@@ -117,7 +117,8 @@ const supplierRequests = createSharedRequest(() =>
   }),
 );
 
-export function fetchSuppliers(): Promise<SupplierRecord[]> {
+export function fetchSuppliers(options: { fresh?: boolean } = {}): Promise<SupplierRecord[]> {
+  if (options.fresh) supplierRequests.invalidate();
   return supplierRequests.read();
 }
 export function createSupplier(input: SupplierInput): Promise<SupplierRecord> {

@@ -10,6 +10,7 @@ import { filterPickerModels, MODEL_PICKER_PAGE_SIZE, readRecentModels, RECENT_MO
   type ModelKindFilter, type ModelStatusFilter } from "../lib/model-picker";
 import styles from "./model-picker.module.css";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary } from "../lib/tk1688-model-display";
+import type { CatalogPickerDirectory } from "../lib/supplier-model-directory-diff";
 
 type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
 
@@ -31,13 +32,14 @@ function ModelIdentity({ model, parameters, capabilities, price = false, details
 }
 
 export function ModelPicker({ id, label, connectionId, models, value, onChange, parameters = {}, capabilities = {},
-  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge,
+  open: controlledOpen, onOpenChange, anchorKey, loading = false, failed = false, authoritative = true, allowManual = false, badge, catalogDirectory,
 }: {
   id?: string; label: string; connectionId: string; models: readonly ModelDescriptor[]; value: string;
   onChange: (modelId: string) => void; parameters?: Record<string, unknown>; open?: boolean;
   onOpenChange?: (open: boolean) => void; anchorKey?: string; loading?: boolean; failed?: boolean;
   authoritative?: boolean; allowManual?: boolean; badge?: (model: ModelDescriptor) => ReactNode;
   capabilities?: Readonly<Record<string, ImageEditingCapabilities>>;
+  catalogDirectory?: CatalogPickerDirectory;
 }) {
   const generatedId = useId();
   const listId = `${id ?? generatedId}-options`;
@@ -55,8 +57,9 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
   const list = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const selected = models.find(model => model.id === value);
-  const filtered = useMemo(() => filterPickerModels(models, query, kind, status, recentIds), [models, query, kind, status, recentIds]);
-  const grouped = models.some(model => tk1688ModelFamily(model));
+  const displayModels = useMemo(() => [...models, ...(catalogDirectory?.models ?? []).filter(model => !models.some(key => key.id === model.id))], [models, catalogDirectory]);
+  const filtered = useMemo(() => filterPickerModels(displayModels, query, kind, status, recentIds), [displayModels, query, kind, status, recentIds]);
+  const grouped = displayModels.some(model => tk1688ModelFamily(model));
   const hasFilters = Boolean(query.trim()) || kind !== "all" || status !== "all";
   const options = useMemo<PickerOption[]>(() => {
     const automatic: PickerOption[] = !hasFilters && !family ? [{ id: "", label: "自动模型", reason: null }] : [];
@@ -81,15 +84,16 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
     if (next) {
       try { setRecentIds(readRecentModels(localStorage.getItem(RECENT_MODELS_KEY)).find(item => item.connectionId === connectionId)?.modelIds ?? []); } catch { setRecentIds([]); }
       setQuery(""); setKind("all"); setStatus("all"); setFamily(null);
-      const index = models.findIndex(model => model.id === value);
-      const groups = groupTk1688Models(models);
+      const index = displayModels.findIndex(model => model.id === value);
+      const groups = groupTk1688Models(displayModels);
       const selectedFamily = selected && tk1688ModelFamily(selected);
       const groupedIndex = selectedFamily ? groups.findIndex(group => group.id === selectedFamily)
-        : groups.length + models.filter(model => !tk1688ModelFamily(model)).findIndex(model => model.id === value);
+        : groups.length + displayModels.filter(model => !tk1688ModelFamily(model)).findIndex(model => model.id === value);
       setActive(grouped && index >= 0 ? groupedIndex + 1 : index < 0 ? 0 : index + 1);
     }
   };
   const choose = (modelId: string) => {
+    if (modelId && !models.some(model => model.id === modelId) && displayModels.some(model => model.id === modelId && model.metadata?.publicCatalogOnly === true)) return;
     if (modelId && connectionId) {
       try { localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify(rememberModel(readRecentModels(localStorage.getItem(RECENT_MODELS_KEY)), connectionId, modelId))); } catch { /* Storage can be disabled; choosing a model still works. */ }
     }
@@ -226,11 +230,17 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
           <option value="all">全部模型</option><option value="runnable">可运行</option><option value="verified">已实测</option><option value="recent">最近选择</option>
         </select>
       </div>
+      {catalogDirectory && <p className={styles.directorySummary} role="status" aria-label="官网与 Key 目录对照">
+        <span>官网目录 {catalogDirectory.catalogCount}</span><span>Key {catalogDirectory.keyConfirmed ? catalogDirectory.keyCount : "目录待确认"}</span>
+        <span>双方 {catalogDirectory.keyConfirmed ? catalogDirectory.sharedCount : "待确认"}</span>
+        <span>官网额外 {catalogDirectory.keyConfirmed ? catalogDirectory.catalogOnlyIds.length : "待对照"}（仅目录）</span>
+        {catalogDirectory.catalogStale && <span>官网目录为上次记录</span>}
+      </p>}
       <div ref={list} id={listId} className={styles.list} role="listbox" aria-label={`${label} 可选模型`}>
         {visible.map((option, offset) => <button key={option.id} id={`${listId}-${pageStart + offset}`} type="button" role="option"
           aria-label={option.label} aria-selected={option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id} aria-disabled={Boolean(option.reason)} aria-setsize={options.length} aria-posinset={pageStart + offset + 1}
           aria-describedby={option.model ? `${listId}-${pageStart + offset}-id ${listId}-${pageStart + offset}-price${family ? ` ${listId}-${pageStart + offset}-summary` : ""}${option.reason ? ` ${listId}-${pageStart + offset}-reason` : ""}${capabilities[option.model.id]?.transparent || capabilities[option.model.id]?.mask ? ` ${listId}-${pageStart + offset}-capabilities` : ""}` : undefined}
-          className={styles.option} data-index={pageStart + offset} data-active={activeIndex === pageStart + offset || undefined}
+          className={styles.option} data-index={pageStart + offset} data-active={activeIndex === pageStart + offset || undefined} data-catalog-only={option.model?.metadata?.publicCatalogOnly === true || undefined}
           title={option.family ? "查看此模型的自动路由与商家渠道" : option.reason ? `不可运行：${option.reason}` : option.id || "使用连接默认模型"} tabIndex={-1}
           onMouseDown={event => event.preventDefault()} onClick={() => activate(option)}>
           {option.family ? <span className={styles.identity}><strong>{option.label}</strong><span className={styles.summary}>{option.merchants} 条商家渠道 · 查看线路与报价</span></span>
@@ -242,7 +252,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       <div className={styles.pagination}><span>{options.length ? `${pageStart + 1}–${Math.min(pageStart + MODEL_PICKER_PAGE_SIZE, options.length)} / ${options.length}${grouped ? family ? " 条线路" : " 个模型选项" : ""}` : "0 个模型"}</span>
         {options.length > MODEL_PICKER_PAGE_SIZE && <><button type="button" disabled={!page} onClick={() => { setActive(Math.max(0, pageStart - MODEL_PICKER_PAGE_SIZE)); search.current?.focus(); }}>上一页</button><button type="button" disabled={pageStart + MODEL_PICKER_PAGE_SIZE >= options.length} onClick={() => { setActive(pageStart + MODEL_PICKER_PAGE_SIZE); search.current?.focus(); }}>下一页</button></>}
       </div>
-      {allowManual && !grouped && query.trim() && !models.some(model => model.id === query.trim()) && <button className={styles.manual} type="button" onClick={() => choose(query.trim())}>使用手动模型 ID：{query.trim()}</button>}
+      {allowManual && !grouped && query.trim() && !displayModels.some(model => model.id === query.trim()) && <button className={styles.manual} type="button" onClick={() => choose(query.trim())}>使用手动模型 ID：{query.trim()}</button>}
     </div>}
   </div>;
 }

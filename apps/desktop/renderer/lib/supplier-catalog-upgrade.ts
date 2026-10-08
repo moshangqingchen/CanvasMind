@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { MemoryRepository, ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
 
-export const SUPPLIER_CATALOG_REVISION = "2026-10-08-video-pricing-0.2.69";
+export const SUPPLIER_CATALOG_REVISION = "2026-10-08-complete-catalog-pricing-v2";
 const RETRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const UPGRADED_HOSTS = new Set([
   "ai.cangyuansuanli.cn", "tu.988236.xyz", "api.frimodel.com", "api.mikoto.vip",
@@ -22,6 +22,7 @@ export interface CatalogUpgradeStatus {
 interface Dependencies {
   repository: Repository;
   readModels: (request: Request, context: { params: Promise<{ id: string }>; supplierRefreshId: string }) => Promise<Response>;
+  refreshSupplierCatalog?: (supplier: SupplierRecord) => Promise<boolean>;
   now?: () => number;
   trackWrite?: (work: () => Promise<void>) => Promise<void>;
   canContinue?: () => boolean;
@@ -85,6 +86,17 @@ export class SupplierCatalogUpgrade {
     this.state.total = connections.length;
     // Connections from the same supplier share pricing/document refresh caches.
     const refreshId = `catalog-upgrade-${SUPPLIER_CATALOG_REVISION}-${now}`;
+    const catalogReads = new Map<string, Promise<boolean>>();
+    const ensureCatalog = (supplier: SupplierRecord | undefined): Promise<boolean> => {
+      if (!supplier || !this.dependencies.refreshSupplierCatalog) return Promise.resolve(true);
+      const key = `${supplier.id}:${supplier.state?.sourceId ?? "legacy"}`;
+      let read = catalogReads.get(key);
+      if (!read) {
+        read = Promise.resolve().then(() => this.dependencies.refreshSupplierCatalog!(supplier)).catch(() => false);
+        catalogReads.set(key, read);
+      }
+      return read;
+    };
     let index = 0;
     const worker = async () => {
       while (index < connections.length) {
@@ -96,13 +108,21 @@ export class SupplierCatalogUpgrade {
         const currentSources = new Map((await repository.listSuppliers()).map(supplier => [supplier.id, supplier]));
         if (!currentSupplierSource(current, currentSources)) continue;
         if (this.dependencies.canContinue?.() === false) return;
+        // Persist public/account group prices before connection refreshes so
+        // subsequent cached picker reads see the same directory revision.
+        const catalogComplete = await ensureCatalog(currentSources.get(String(current.config.supplierId ?? "")));
+        if (this.dependencies.canContinue?.() === false) return;
+        const afterCatalog = await repository.getConnection(connection.id);
+        const afterCatalogSources = new Map((await repository.listSuppliers()).map(supplier => [supplier.id, supplier]));
+        if (!afterCatalog || !supported(afterCatalog) || identity(afterCatalog) !== fingerprint ||
+          !currentSupplierSource(afterCatalog, afterCatalogSources)) continue;
         let complete = false;
         try {
           const response = await this.dependencies.readModels(new Request(
             `http://localhost/api/providers/${encodeURIComponent(connection.id)}/models?refresh=1`,
           ), { params: Promise.resolve({ id: connection.id }), supplierRefreshId: refreshId });
           const scanStatus = response.headers.get("X-Model-Scan-Status");
-          complete = response.ok && response.headers.get("X-Model-Scan-Complete") === "true" &&
+          complete = catalogComplete && response.ok && response.headers.get("X-Model-Scan-Complete") === "true" &&
             (scanStatus === "live" || scanStatus === "empty");
           if (complete) this.state.refreshed++;
           else if (response.status === 401 || response.status === 403 || scanStatus === "unauthorized") this.state.unavailable++;

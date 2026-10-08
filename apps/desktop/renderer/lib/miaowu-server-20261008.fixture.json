@@ -1,0 +1,126 @@
+{
+  "capturedAt": "2026-10-08T14:50:12.357Z",
+  "openaiSource": "https://api.miaowuai.store/v1/models",
+  "dreamSource": "https://api.miaowuai.store/v1/dream/model_list",
+  "openaiModels": [
+    {
+      "id": "dreamina-seedance-2.0-fast"
+    },
+    {
+      "id": "dreamina-seedance-2.0-mini"
+    },
+    {
+      "id": "GPT-image-2"
+    },
+    {
+      "id": "Image-nano-banana"
+    },
+    {
+      "id": "Image-nano-banana-2"
+    },
+    {
+      "id": "Image-nano-banana-pro"
+    },
+    {
+      "id": "minimax-h3"
+    },
+    {
+      "id": "minimax-h3-max"
+    },
+    {
+      "id": "seedance-2.0-deal"
+    },
+    {
+      "id": "seedance-2.0-fast-deal"
+    },
+    {
+      "id": "seedance-2.0-mini-deal"
+    },
+    {
+      "id": "seedance-2.5-deal"
+    },
+    {
+      "id": "sora-2"
+    },
+    {
+      "id": "video-editing"
+    },
+    {
+      "id": "wan3.0-video"
+    }
+  ],
+  "dreamModels": [
+    {
+      "id": "dola-seedance-2.0-fast",
+      "type": "video"
+    },
+    {
+      "id": "jimeng-seedance-2.5",
+      "type": "video"
+    },
+    {
+      "id": "seedance-2.0-deal",
+      "type": "video"
+    },
+    {
+      "id": "sora-2",
+      "type": "video"
+    },
+    {
+      "id": "dola-seedance-2.5",
+      "type": "video"
+    },
+    {
+      "id": "seedream-5-0-pro",
+      "type": "image"
+    },
+    {
+      "id": "doubao-seedance-2.5",
+      "type": "video"
+    },
+    {
+      "id": "doubao-seedance-2.0-fast",
+      "type": "video"
+    },
+    {
+      "id": "minimax-h3",
+      "type": "video"
+    },
+    {
+      "id": "minimax-h3-max",
+      "type": "video"
+    },
+    {
+      "id": "wan3.0-video",
+      "type": "video"
+    },
+    {
+      "id": "gpt-image-2.5-sunburs",
+      "type": "image"
+    },
+    {
+      "id": "gpt-image-2.5-flare",
+      "type": "image"
+    },
+    {
+      "id": "seedance-2.0-mini-deal",
+      "type": "video"
+    },
+    {
+      "id": "GPT-image-2",
+      "type": "image"
+    },
+    {
+      "id": "Image-nano-banana-2",
+      "type": "image"
+    },
+    {
+      "id": "Image-nano-banana-pro",
+      "type": "image"
+    },
+    {
+      "id": "Image-nano-banana",
+      "type": "image"
+    }
+  ]
+}

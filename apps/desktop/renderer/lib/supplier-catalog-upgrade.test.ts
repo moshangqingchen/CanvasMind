@@ -26,6 +26,48 @@ async function fixture() {
 }
 
 describe("supplier catalog upgrade", () => {
+  it("refreshes each supplier directory once before its connection models and includes both stages in completion", async () => {
+    const f = await fixture();
+    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "test", supplierKey: "tk1688", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi", catalog: { groups: [] }, scanStatus: "unscanned",
+      state: { version: 1, revision: 1, visibility: "visible", sourceId: "source", fingerprint: "fp", history: [] } });
+    await f.save("one", { supplierId: supplier.id, supplierSourceId: "source" });
+    await f.save("two", { supplierId: supplier.id, supplierSourceId: "source", modelGroup: "second" });
+    const order: string[] = [];
+    const refreshSupplierCatalog = vi.fn(async () => { order.push("catalog"); return true; });
+    const service = new SupplierCatalogUpgrade({ repository: f.repository, refreshSupplierCatalog,
+      readModels: async (...args) => { order.push("models"); return f.readModels(...args); } });
+    service.start(); await service.settle();
+    expect(refreshSupplierCatalog).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["catalog", "models", "models"]);
+    expect(service.status()).toMatchObject({ refreshed: 2, failed: 0 });
+    service.start(); await service.settle();
+    expect(refreshSupplierCatalog).toHaveBeenCalledTimes(1);
+  });
+  it("does not mark a model-only success complete when the supplier price directory failed", async () => {
+    const f = await fixture();
+    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "test", supplierKey: "tk1688", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi", catalog: { groups: [] }, scanStatus: "unscanned",
+      state: { version: 1, revision: 1, visibility: "visible", sourceId: "source", fingerprint: "fp", history: [] } });
+    await f.save("one", { supplierId: supplier.id, supplierSourceId: "source" });
+    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels, refreshSupplierCatalog: async () => false });
+    service.start(); await service.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(1);
+    expect(service.status()).toMatchObject({ refreshed: 0, failed: 1 });
+    expect((await f.repository.getConnection("one"))!.config.catalogUpgradeRevision).toBeUndefined();
+  });
+  it("rechecks ownership after an in-flight supplier directory refresh before reading a replacement connection", async () => {
+    const f = await fixture();
+    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "test", supplierKey: "tk1688", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi", catalog: { groups: [] }, scanStatus: "unscanned",
+      state: { version: 1, revision: 1, visibility: "visible", sourceId: "source", fingerprint: "fp", history: [] } });
+    await f.save("one", { supplierId: supplier.id, supplierSourceId: "source" });
+    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels, refreshSupplierCatalog: async () => {
+      const existing = (await f.repository.getConnection("one"))!;
+      await f.repository.saveConnection({ ...existing, encryptedSecret: "replacement-opaque-key" });
+      return true;
+    } });
+    service.start(); await service.settle();
+    expect(f.readModels).not.toHaveBeenCalled();
+    expect((await f.repository.getConnection("one"))!.config.catalogUpgradeIdentity).toBeUndefined();
+  });
   it("refreshes only documented active API connections and never probes CLI or arbitrary endpoints", async () => {
     const f = await fixture();
     await f.save("active");

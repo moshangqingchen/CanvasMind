@@ -6,7 +6,7 @@ import { parseProviderModelFacts, scanProviderModelCatalog } from "./model-catal
 import { modelGenerationMediaKinds } from "./model-media.js";
 import { parseSupplierGroupDetails, type SupplierGroupDetails } from "./supplier-group-details.js";
 import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketplace, TK1688_MARKETPLACE_URL } from "./tk1688-catalog.js";
-import { secureSkillCatalogPricing } from "./secure-skill-catalog-pricing.js";
+import { secureSkillCatalogPricing, secureSkillCatalogVideoDeclaration } from "./secure-skill-catalog-pricing.js";
 
 export type SupplierSiteKind =
   "auto" | "newapi" | "sub2api" | "openai-compatible";
@@ -455,11 +455,18 @@ export function parseSupplierPricingChannels(payload: unknown, currency?: string
         const multiplier = typeof rawGroup.rate_multiplier === "number" ? rawGroup.rate_multiplier : 1;
         for (const raw of platform.supported_models.slice(0, 3000)) {
           const row = record(raw);
-          const model = modelFrom(row);
+          let model = modelFrom(row);
           if (!row || !model) continue;
+          if (secureSkillCatalogVideoDeclaration(model.id, platform.platform, source.supplierSiteUrl) &&
+            (!model.metadata?.catalogCapability || model.metadata.catalogCapability === "video") &&
+            (!model.outputKinds?.length || model.metadata?.outputKindsSource === "inferred")) {
+            model = { ...model, capability: "video", outputKinds: ["video"], metadata: { ...model.metadata,
+              catalogCapability: "video", outputKindsSource: "declared", catalogGenerationDeclarationSource: "official-price-page",
+              canvasRunnable: false, canvasUnavailableReason: "官网已列出视频型号 · 调用协议待确认" } };
+          }
           const pricing = record(row.pricing);
           const intervals = Array.isArray(pricing?.intervals) ? pricing.intervals.map(record).filter(item => item && typeof item.per_request_price === "number") : [];
-          const secure = secureSkillCatalogPricing(row, { supplierSiteUrl: source.supplierSiteUrl ?? "", multiplier,
+          const secure = secureSkillCatalogPricing(row, { supplierSiteUrl: source.supplierSiteUrl ?? "", multiplier, group: rawGroup,
             ...(source.checkedAt ? { checkedAt: source.checkedAt } : {}) });
           const priceLabel = secure?.priceLabel ?? (intervals.length
             ? intervals.map(tier => `${text(tier!.tier_label)} ${catalogPriceLabel({ pricing: { ...pricing, per_request_price: tier!.per_request_price } }, { ...(currency ? { currency } : {}), multiplier }) ?? ""}`).join(" · ")
@@ -592,10 +599,23 @@ export async function discoverSupplierCatalog(
   };
   const pricePage = async (groups: DiscoveredSupplierGroup[]) => {
     const response = await probe(`${siteUrl}/api/v1/pricing/channels`, siteHeaders("sub2api"));
+    const payload = record(response.payload);
+    const channels = Array.isArray(payload?.data) ? payload.data : record(payload?.data)?.channels;
+    // A missing/blocked page cannot establish an empty price catalogue. Only
+    // the real channel envelope (including a genuinely empty array) can do so.
+    const complete = response.status === 200 && !!payload && payload.success !== false && !payload.error &&
+      !(typeof payload.code === "number" && ![0, 200].includes(payload.code)) && Array.isArray(channels) &&
+      channels.every(value => {
+        const channel = record(value);
+        return !!channel && Array.isArray(channel.platforms) && channel.platforms.every(value => {
+          const platform = record(value);
+          return !!platform && Array.isArray(platform.groups) && Array.isArray(platform.supported_models);
+        });
+      });
     // Secure Skill's current price page explicitly displays CNY (see the
     // 2026-09-23 price/usage audit); this is a currency convention, not a price.
     const currency = new URL(siteUrl).hostname === "token.secure-skill.com" ? "CNY" : undefined;
-    const prices = parseSupplierPricingChannels(response.payload, currency, { supplierSiteUrl: siteUrl, checkedAt });
+    const prices = complete ? parseSupplierPricingChannels(response.payload, currency, { supplierSiteUrl: siteUrl, checkedAt }) : [];
     const merged = new Map(groups.map(group => [groupIdentity(group), group]));
     for (const price of prices) {
       const key = groupIdentity(price);
@@ -603,7 +623,7 @@ export async function discoverSupplierCatalog(
       if (!previous) { merged.set(key, price); continue; }
       merged.set(key, mergeCatalogGroups(previous, price));
     }
-    return distinctGroupNames([...merged.values()]);
+    return { groups: distinctGroupNames([...merged.values()]), complete };
   };
   const fallbackGroups = async (
     platform: "newapi" | "sub2api",
@@ -611,13 +631,30 @@ export async function discoverSupplierCatalog(
   ) => {
     const available = await keyGroups(platform);
     const result = available ?? fallback;
-    if (platform !== "sub2api") return result;
+    if (platform === "newapi") {
+      // Account-selectable groups do not prove that the price/model feed was
+      // read. Keep them usable while preventing a failed feed from erasing
+      // previously known prices as if it were a confirmed empty directory.
+      const priceComplete = (fallback.status === "live" || fallback.status === "empty") && fallback.complete !== false;
+      const accountComplete = available?.status === "live" || available?.status === "empty";
+      return { ...result, complete: priceComplete && accountComplete,
+        ...(!priceComplete && accountComplete ? {
+          error: "账号分组已读取，但模型价格目录暂不可完整读取；保留历史报价，请稍后重试",
+        } : {}) };
+    }
     const priced = await pricePage(result.groups);
-    const groups = available?.status === "live" || available?.status === "empty" ? accountGroupNames(priced, available.groups) : priced;
-    return groups.length ? { ...result, groups, status: "live" as const, complete: result.status !== "failed" && result.status !== "unauthorized" } : result;
+    const accountComplete = available?.status === "live" || available?.status === "empty";
+    const priceComplete = priced.complete ||
+      ((fallback.status === "live" || fallback.status === "empty") && fallback.complete !== false);
+    const groups = accountComplete ? accountGroupNames(priced.groups, available.groups) : priced.groups;
+    return { ...result, groups, ...(groups.length ? { status: "live" as const } : {}),
+      complete: priceComplete && accountComplete,
+      ...(!priceComplete && accountComplete ? {
+        error: "账号分组已读取，但模型价格目录暂不可完整读取；保留历史报价，请稍后重试",
+      } : {}) };
   };
   const supplementGroups = async (parsed: ReturnType<typeof parseSupplierCatalog>, platform: "newapi" | "sub2api") => {
-    if (platform === "sub2api") parsed = { ...parsed, groups: await pricePage(parsed.groups) };
+    if (platform === "sub2api") parsed = { ...parsed, groups: (await pricePage(parsed.groups)).groups };
     const available = await keyGroups(platform);
     if (available?.status === "live" || available?.status === "empty") {
       return success({ ...parsed, groups: accountGroupNames(parsed.groups, available.groups) }, platform);
@@ -667,6 +704,8 @@ export async function discoverSupplierCatalog(
       payload &&
       "data" in payload &&
       payload.success !== false &&
+      !payload.error &&
+      !(typeof payload.code === "number" && ![0, 200].includes(payload.code)) &&
       parsed.recognized
     ) {
       if (parsed.groups.length) {

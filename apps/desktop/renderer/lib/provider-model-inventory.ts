@@ -686,6 +686,12 @@ async function readModels(
       "Cache-Control": "no-store",
       "X-Model-Scan-Status": scan.status,
       "X-Model-Scan-Checked-At": scan.checkedAt,
+      "X-Model-Scan-Complete": String(scan.complete !== false && ["live", "empty"].includes(scan.status)),
+      ...(scan.complete === false ? {
+        "X-Model-Scan-Error-Code": "incomplete_directory",
+        "X-Miaowu-Media-Directory-Status": scan.mediaDirectory?.status ?? "failed",
+        ...(scan.mediaDirectory?.httpStatus ? { "X-Model-Scan-Http-Status": String(scan.mediaDirectory.httpStatus) } : {}),
+      } : {}),
     };
     if (scan.status === "unauthorized")
       return Response.json(
@@ -1058,6 +1064,7 @@ async function readModelResponse(
       return withModelInventoryMetadata(Response.json(models, {
         headers: {
           "X-Model-Scan-Status": modelInventoryScanStatus(original.config),
+          ...(original.config.preset === MIAOWU_PRESET_ID ? { "X-Model-Scan-Complete": String(original.config.modelScanComplete !== false) } : {}),
           "Cache-Control": "no-store",
         },
       }), original.config, "saved");
@@ -1093,6 +1100,7 @@ async function readModelResponse(
       return withModelInventoryMetadata(Response.json([], {
         headers: {
           "X-Model-Scan-Status": modelInventoryScanStatus(original.config),
+          ...(original.config.preset === MIAOWU_PRESET_ID ? { "X-Model-Scan-Complete": String(original.config.modelScanComplete !== false) } : {}),
           "Cache-Control": "no-store",
         },
       }), original.config, "saved");
@@ -1121,6 +1129,7 @@ async function readModelResponse(
           headers: {
             "X-Model-Scan-Status":
               original.config.modelScanStatus === "failed" ? "stale" : "live",
+            ...(original.config.preset === MIAOWU_PRESET_ID ? { "X-Model-Scan-Complete": String(original.config.modelScanComplete !== false) } : {}),
             "Cache-Control": "no-store",
           },
         },
@@ -1145,6 +1154,38 @@ async function readModelResponse(
             .catch(() => null)
         : null;
       let config = { ...latest.config };
+      // Miaowu has two independently authenticated inventories. A partial
+      // media read still supplies this attempt's successful generic models;
+      // update that snapshot so a later cached GET cannot resurrect denied
+      // Dream-only IDs. Only a complete union establishes a new success time.
+      const partialMiaowu = latest.config.preset === MIAOWU_PRESET_ID && matchesSupplierTemplate(latest) &&
+        response.ok && Array.isArray(payload) && response.headers.get("X-Model-Scan-Complete") === "false" &&
+        ["live", "empty"].includes(response.headers.get("X-Model-Scan-Status") ?? "");
+      if (partialMiaowu) {
+        if ((payload as ModelDescriptor[]).some(model => !model || typeof model.id !== "string" || !model.id.trim() || !Array.isArray(model.operations)))
+          throw new ModelInventoryReadError("invalid_response", 200);
+        const bound = bindScannedModelProtocols(latest, payload as ModelDescriptor[], original);
+        const models = bound.models.map(withHighestModelQualityDefault);
+        const failure = modelInventoryFailure(undefined, response);
+        config = {
+          ...config,
+          ...(bound.connector ? {
+            connector: { ...bound.connector, models: models.filter(model => model.operations.length && model.metadata?.canvasRunnable !== false) } as unknown as typeof config.connector,
+            modelProtocolTemplate: bound.templateConnector as unknown as typeof config.connector,
+          } : {}),
+          modelScanStatus: models.length ? "live" : "empty",
+          modelScanAttemptStatus: "failed",
+          modelScanLastSuccessAt: modelInventoryLastSuccessAt(original.config) ?? null,
+          ...modelInventoryFailureConfig(failure),
+          modelCatalogModels: models as unknown as typeof config.modelCatalogModels,
+          scannedModelIds: models.map(model => model.id),
+          modelCatalogSource: "live",
+        };
+        latest = await repository.saveConnection({ ...latest, config }, { expected: latest });
+        return withModelInventoryMetadata(Response.json(mergeManualProviderModels(latest, models, true), {
+          headers: response.headers,
+        }), config, "live");
+      }
       if (isCompleteModelInventoryResponse(response, payload)) {
         if ((payload as ModelDescriptor[]).some(model => !model || typeof model.id !== "string" || !model.id.trim() || !Array.isArray(model.operations)))
           throw new ModelInventoryReadError("invalid_response", 200);

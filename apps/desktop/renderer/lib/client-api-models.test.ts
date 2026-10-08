@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchModels, invalidateModelCache, getCachedModels, refreshModels } from "./client-api";
+import { fetchModels, invalidateModelCache, getCachedModels, getCachedModelInventoryStatus, refreshModels } from "./client-api";
 
 describe("fetchModels cache", () => {
   afterEach(() => {
@@ -87,6 +87,37 @@ describe("fetchModels cache", () => {
       refreshModels("stale-refresh-connection"),
     ).resolves.toEqual(models);
     expect(getCachedModels("stale-refresh-connection")).toEqual(models);
+    expect(getCachedModelInventoryStatus("stale-refresh-connection")).toEqual({ scanStatus: "stale", complete: false });
+  });
+
+  it("keeps successful HTTP response provenance separate from the returned model array", async () => {
+    const models = [{ id: "pending-video", name: "Pending", operations: [] }];
+    for (const [status, complete] of [["live", "true"], ["empty", "true"], ["stale", "false"], ["failed", "false"], ["live", "false"]]) {
+      const id = `provenance-${status}-${complete}`;
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(models, { headers: { "X-Model-Scan-Status": status!, "X-Model-Scan-Complete": complete! } })));
+      expect(await fetchModels(id)).toEqual(models);
+      expect(getCachedModelInventoryStatus(id)).toEqual({ scanStatus: status, complete: complete === "true" });
+    }
+  });
+
+  it("never lets an old response or its finally replace a new scan's provenance or pending request", async () => {
+    const id = "provenance-race";
+    let finishOld!: (response: Response) => void;
+    let finishFresh!: (response: Response) => void;
+    const fetch = vi.fn().mockImplementationOnce(() => new Promise<Response>(resolve => { finishOld = resolve; }))
+      .mockImplementationOnce(() => new Promise<Response>(resolve => { finishFresh = resolve; }));
+    vi.stubGlobal("fetch", fetch);
+    const old = fetchModels(id);
+    const rejected = expect(old).rejects.toThrow("连接已改变");
+    const fresh = refreshModels(id);
+    finishOld(Response.json([{ id: "old", operations: [] }], { headers: { "X-Model-Scan-Status": "stale" } }));
+    await rejected;
+    const shared = fetchModels(id);
+    finishFresh(Response.json([{ id: "fresh", operations: [] }], { headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } }));
+    expect(await Promise.all([fresh, shared])).toEqual([[{ id: "fresh", operations: [] }], [{ id: "fresh", operations: [] }]]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(getCachedModelInventoryStatus(id)).toEqual({ scanStatus: "live", complete: true });
+    expect(getCachedModels(id)?.[0]?.id).toBe("fresh");
   });
 
   it.each([401, 403])("does not hide an authentication failure (%i) behind a stale model snapshot", async (status) => {
@@ -111,5 +142,6 @@ it("never repopulates the cache with a request invalidated by a connection chang
   finish(Response.json([{ id: "old-model", name: "Old", operations: [] }]));
   await rejected;
   expect(getCachedModels("late-connection")).toBeUndefined();
+  expect(getCachedModelInventoryStatus("late-connection")).toBeUndefined();
   vi.unstubAllGlobals();
 });
