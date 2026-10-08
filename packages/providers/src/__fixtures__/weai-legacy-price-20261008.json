@@ -1,0 +1,1857 @@
+{
+  "source": "https://asian-acc.we-token.cc/api/v1/model-plaza-legacy/models",
+  "sampledAt": "2026-10-08T16:10:48.880Z",
+  "currency": "USD",
+  "accountingConvention": "Platform states CNY 1 = USD 1; no exchange-rate conversion",
+  "initial": {
+    "code": 0,
+    "data": {
+      "groups": [
+        {
+          "id": 101,
+          "name": "fixture-group-1",
+          "platform": "openai",
+          "rate_multiplier": 0.7
+        },
+        {
+          "id": 102,
+          "name": "fixture-group-2",
+          "platform": "openai",
+          "rate_multiplier": 0.2
+        },
+        {
+          "id": 103,
+          "name": "fixture-group-3",
+          "platform": "openai",
+          "rate_multiplier": 0.28
+        },
+        {
+          "id": 104,
+          "name": "fixture-group-4",
+          "platform": "gemini",
+          "rate_multiplier": 1
+        },
+        {
+          "id": 105,
+          "name": "fixture-group-5",
+          "platform": "openai",
+          "rate_multiplier": 2
+        },
+        {
+          "id": 106,
+          "name": "fixture-group-6",
+          "platform": "anthropic",
+          "rate_multiplier": 1.8
+        },
+        {
+          "id": 107,
+          "name": "fixture-group-7",
+          "platform": "openai",
+          "rate_multiplier": 1
+        },
+        {
+          "id": 108,
+          "name": "fixture-group-8",
+          "platform": "openai",
+          "rate_multiplier": 0.7
+        },
+        {
+          "id": 109,
+          "name": "fixture-group-9",
+          "platform": "openai",
+          "rate_multiplier": 1
+        },
+        {
+          "id": 110,
+          "name": "fixture-group-10",
+          "platform": "gemini",
+          "rate_multiplier": 1
+        },
+        {
+          "id": 111,
+          "name": "fixture-group-11",
+          "platform": "openai",
+          "rate_multiplier": 1
+        }
+      ],
+      "selected_group_id": 101,
+      "token_multiplier": 0.7,
+      "image_multiplier": 0.7,
+      "image_quality_billing": false,
+      "models": [
+        {
+          "name": "gpt-image-2",
+          "platform": "openai",
+          "billing_mode": "token",
+          "input_price": 0.000005,
+          "output_price": 0.00001,
+          "cache_write_price": 0,
+          "cache_read_price": 0.00000125,
+          "image_input_price": 0.000008,
+          "image_output_price": 0.00003,
+          "per_request_price": null,
+          "image_tiers": null
+        },
+        {
+          "name": "gpt-image-2.5-flare",
+          "platform": "openai",
+          "billing_mode": "token",
+          "input_price": 0.000005,
+          "output_price": 0.00001,
+          "cache_write_price": 0,
+          "cache_read_price": 0.00000125,
+          "image_input_price": 0.000008,
+          "image_output_price": 0.00003,
+          "per_request_price": null,
+          "image_tiers": null
+        },
+        {
+          "name": "gpt-image-2.5-sunburst",
+          "platform": "openai",
+          "billing_mode": "token",
+          "input_price": 0.000005,
+          "output_price": 0.00001,
+          "cache_write_price": 0,
+          "cache_read_price": 0.00000125,
+          "image_input_price": 0.000008,
+          "image_output_price": 0.00003,
+          "per_request_price": null,
+          "image_tiers": null
+        }
+      ]
+    }
+  },
+  "groups": [
+    {
+      "groupId": 101,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 101,
+          "token_multiplier": 0.7,
+          "image_multiplier": 0.7,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "gpt-image-2",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00001,
+              "cache_write_price": 0,
+              "cache_read_price": 0.00000125,
+              "image_input_price": 0.000008,
+              "image_output_price": 0.00003,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-image-2.5-flare",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00001,
+              "cache_write_price": 0,
+              "cache_read_price": 0.00000125,
+              "image_input_price": 0.000008,
+              "image_output_price": 0.00003,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-image-2.5-sunburst",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00001,
+              "cache_write_price": 0,
+              "cache_read_price": 0.00000125,
+              "image_input_price": 0.000008,
+              "image_output_price": 0.00003,
+              "per_request_price": null,
+              "image_tiers": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 102,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 102,
+          "token_multiplier": 0.2,
+          "image_multiplier": 0.2,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "codex-auto-review",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 2e-7,
+              "output_price": 0.0000012,
+              "cache_write_price": 2.5e-7,
+              "cache_read_price": 2e-8,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.4",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.0000025,
+              "output_price": 0.000015,
+              "cache_write_price": null,
+              "cache_read_price": 2.5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.4-mini",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 7.5e-7,
+              "output_price": 0.0000045,
+              "cache_write_price": null,
+              "cache_read_price": 7.5e-8,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.5",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00003,
+              "cache_write_price": null,
+              "cache_read_price": 5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.6-luna",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 2e-7,
+              "output_price": 0.0000012,
+              "cache_write_price": 2.5e-7,
+              "cache_read_price": 2e-8,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.6-sol",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000004,
+              "output_price": 0.00002,
+              "cache_write_price": 0.000005,
+              "cache_read_price": 4e-7,
+              "image_input_price": 0,
+              "image_output_price": 0,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.6-terra",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000002,
+              "output_price": 0.000012,
+              "cache_write_price": 0.0000025,
+              "cache_read_price": 2e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-6-sol",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000002,
+              "output_price": 0.00001,
+              "cache_write_price": 0.0000025,
+              "cache_read_price": 2e-7,
+              "image_input_price": 0,
+              "image_output_price": 0,
+              "per_request_price": null,
+              "image_tiers": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 103,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 103,
+          "token_multiplier": 0.28,
+          "image_multiplier": 0.28,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "codex-auto-review",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 2e-7,
+              "output_price": 0.0000012,
+              "cache_write_price": 2.5e-7,
+              "cache_read_price": 2e-8,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.5",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00003,
+              "cache_write_price": null,
+              "cache_read_price": 5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.6-sol",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000004,
+              "output_price": 0.00002,
+              "cache_write_price": 0.000005,
+              "cache_read_price": 4e-7,
+              "image_input_price": 0,
+              "image_output_price": 0,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-5.6-terra",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000002,
+              "output_price": 0.000012,
+              "cache_write_price": 0.0000025,
+              "cache_read_price": 2e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-6-astra",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.00001,
+              "output_price": 0.00005,
+              "cache_write_price": 0.0000125,
+              "cache_read_price": 0.000001,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-6-sol",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000002,
+              "output_price": 0.00001,
+              "cache_write_price": 0.0000025,
+              "cache_read_price": 2e-7,
+              "image_input_price": 0,
+              "image_output_price": 0,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-6.1-sol",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000002,
+              "output_price": 0.00001,
+              "cache_write_price": 0.0000025,
+              "cache_read_price": 1e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-reserve",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.0000025,
+              "output_price": 0.000015,
+              "cache_write_price": null,
+              "cache_read_price": 2.5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 104,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 104,
+          "token_multiplier": 1,
+          "image_multiplier": 1,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "gemini-3-pro-image",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.1,
+              "image_tiers": {
+                "price_1k": 0.06,
+                "price_2k": 0.08,
+                "price_4k": 0.1,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-3-pro-image-preview",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.1,
+              "image_tiers": {
+                "price_1k": 0.06,
+                "price_2k": 0.08,
+                "price_4k": 0.1,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-3.0-pro-image",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.1,
+              "image_tiers": {
+                "price_1k": 0.06,
+                "price_2k": 0.08,
+                "price_4k": 0.1,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-3.0-pro-image-preview",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.1,
+              "image_tiers": {
+                "price_1k": 0.06,
+                "price_2k": 0.08,
+                "price_4k": 0.1,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-3.1-flash-image",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.08,
+              "image_tiers": {
+                "price_1k": 0.04,
+                "price_2k": 0.06,
+                "price_4k": 0.08,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-3.1-flash-image-preview",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.08,
+              "image_tiers": {
+                "price_1k": 0.04,
+                "price_2k": 0.06,
+                "price_4k": 0.08,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 105,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 105,
+          "token_multiplier": 2,
+          "image_multiplier": 2,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "gpt-image-2",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00001,
+              "cache_write_price": 0,
+              "cache_read_price": 0.00000125,
+              "image_input_price": 0.000008,
+              "image_output_price": 0.00003,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-image-2.5-flare",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00001,
+              "cache_write_price": 0,
+              "cache_read_price": 0.00000125,
+              "image_input_price": 0.000008,
+              "image_output_price": 0.00003,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "gpt-image-2.5-sunburst",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00001,
+              "cache_write_price": 0,
+              "cache_read_price": 0.00000125,
+              "image_input_price": 0.000008,
+              "image_output_price": 0.00003,
+              "per_request_price": null,
+              "image_tiers": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 106,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 106,
+          "token_multiplier": 1.8,
+          "image_multiplier": 1.8,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "claude-fable-5",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.00001,
+              "output_price": 0.00005,
+              "cache_write_price": 0.0000125,
+              "cache_read_price": 0.000001,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-fable-5-1",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.00001,
+              "output_price": 0.00005,
+              "cache_write_price": 0.0000125,
+              "cache_read_price": 2.5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-haiku-4-5",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000001,
+              "output_price": 0.000005,
+              "cache_write_price": 0.00000125,
+              "cache_read_price": 1e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-haiku-4-5-20251001",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000001,
+              "output_price": 0.000005,
+              "cache_write_price": 0.00000125,
+              "cache_read_price": 1e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-opus-4-5-20251101",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.000025,
+              "cache_write_price": 0.00000625,
+              "cache_read_price": 5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-opus-4-6",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.000025,
+              "cache_write_price": 0.00000625,
+              "cache_read_price": 5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-opus-4-7",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.000025,
+              "cache_write_price": 0.00000625,
+              "cache_read_price": 5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-opus-4-8",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.000025,
+              "cache_write_price": 0.00000625,
+              "cache_read_price": 5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-opus-5",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.000025,
+              "cache_write_price": 0.00000625,
+              "cache_read_price": 5e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-opus-5-5",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000004,
+              "output_price": 0.00002,
+              "cache_write_price": 0.000005,
+              "cache_read_price": 2e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-sonnet-4-5-20250929",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000003,
+              "output_price": 0.000015,
+              "cache_write_price": 0.00000375,
+              "cache_read_price": 3e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-sonnet-4-6",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000003,
+              "output_price": 0.000015,
+              "cache_write_price": 0.00000375,
+              "cache_read_price": 3e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            },
+            {
+              "name": "claude-sonnet-5",
+              "platform": "anthropic",
+              "billing_mode": "token",
+              "input_price": 0.000002,
+              "output_price": 0.00001,
+              "cache_write_price": 0.0000025,
+              "cache_read_price": 2e-7,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 107,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 107,
+          "token_multiplier": 1,
+          "image_multiplier": 1,
+          "image_quality_billing": true,
+          "models": [
+            {
+              "name": "gpt-image-2",
+              "platform": "openai",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": {
+                "price_1k": null,
+                "price_2k": null,
+                "price_4k": null,
+                "price_low": 0.03,
+                "price_medium": 0.05,
+                "price_high": 0.15
+              }
+            },
+            {
+              "name": "gpt-image-2-high",
+              "platform": "openai",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.15,
+              "image_tiers": {
+                "price_1k": 0.15,
+                "price_2k": 0.15,
+                "price_4k": 0.15,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gpt-image-2-low",
+              "platform": "openai",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.03,
+              "image_tiers": {
+                "price_1k": 0.03,
+                "price_2k": 0.03,
+                "price_4k": 0.03,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gpt-image-2-medium",
+              "platform": "openai",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.05,
+              "image_tiers": {
+                "price_1k": 0.05,
+                "price_2k": 0.05,
+                "price_4k": 0.05,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 108,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 108,
+          "token_multiplier": 0.7,
+          "image_multiplier": 0.7,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "gpt-image-2",
+              "platform": "openai",
+              "billing_mode": "token",
+              "input_price": 0.000005,
+              "output_price": 0.00001,
+              "cache_write_price": 0,
+              "cache_read_price": 0.00000125,
+              "image_input_price": 0.000008,
+              "image_output_price": 0.00003,
+              "per_request_price": null,
+              "image_tiers": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 109,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 109,
+          "token_multiplier": 1,
+          "image_multiplier": 1,
+          "image_quality_billing": true,
+          "models": [
+            {
+              "name": "gpt-image-2",
+              "platform": "openai",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": null,
+              "image_tiers": {
+                "price_1k": null,
+                "price_2k": null,
+                "price_4k": null,
+                "price_low": 0.03,
+                "price_medium": 0.05,
+                "price_high": 0.15
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 110,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 110,
+          "token_multiplier": 1,
+          "image_multiplier": 1,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "gemini-3-pro-image",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.1,
+              "image_tiers": {
+                "price_1k": 0.1,
+                "price_2k": 0.1,
+                "price_4k": 0.1,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-3-pro-image-preview",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.1,
+              "image_tiers": {
+                "price_1k": 0.1,
+                "price_2k": 0.1,
+                "price_4k": 0.1,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-3.1-flash-image",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.08,
+              "image_tiers": {
+                "price_1k": 0.08,
+                "price_2k": 0.08,
+                "price_4k": 0.08,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-3.1-flash-image-preview",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.08,
+              "image_tiers": {
+                "price_1k": 0.08,
+                "price_2k": 0.08,
+                "price_4k": 0.08,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gemini-nano-banana-2.1",
+              "platform": "gemini",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.08,
+              "image_tiers": {
+                "price_1k": 0.08,
+                "price_2k": 0.08,
+                "price_4k": 0.08,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "groupId": 111,
+      "payload": {
+        "code": 0,
+        "data": {
+          "groups": [
+            {
+              "id": 101,
+              "name": "fixture-group-1",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 102,
+              "name": "fixture-group-2",
+              "platform": "openai",
+              "rate_multiplier": 0.2
+            },
+            {
+              "id": 103,
+              "name": "fixture-group-3",
+              "platform": "openai",
+              "rate_multiplier": 0.28
+            },
+            {
+              "id": 104,
+              "name": "fixture-group-4",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 105,
+              "name": "fixture-group-5",
+              "platform": "openai",
+              "rate_multiplier": 2
+            },
+            {
+              "id": 106,
+              "name": "fixture-group-6",
+              "platform": "anthropic",
+              "rate_multiplier": 1.8
+            },
+            {
+              "id": 107,
+              "name": "fixture-group-7",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 108,
+              "name": "fixture-group-8",
+              "platform": "openai",
+              "rate_multiplier": 0.7
+            },
+            {
+              "id": 109,
+              "name": "fixture-group-9",
+              "platform": "openai",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 110,
+              "name": "fixture-group-10",
+              "platform": "gemini",
+              "rate_multiplier": 1
+            },
+            {
+              "id": 111,
+              "name": "fixture-group-11",
+              "platform": "openai",
+              "rate_multiplier": 1
+            }
+          ],
+          "selected_group_id": 111,
+          "token_multiplier": 1,
+          "image_multiplier": 1,
+          "image_quality_billing": false,
+          "models": [
+            {
+              "name": "gpt-image-2.5-flare",
+              "platform": "openai",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.1,
+              "image_tiers": {
+                "price_1k": 0.1,
+                "price_2k": 0.1,
+                "price_4k": 0.1,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            },
+            {
+              "name": "gpt-image-2.5-sunburst",
+              "platform": "openai",
+              "billing_mode": "image",
+              "input_price": null,
+              "output_price": null,
+              "cache_write_price": null,
+              "cache_read_price": null,
+              "image_input_price": null,
+              "image_output_price": null,
+              "per_request_price": 0.1,
+              "image_tiers": {
+                "price_1k": 0.1,
+                "price_2k": 0.1,
+                "price_4k": 0.1,
+                "price_low": null,
+                "price_medium": null,
+                "price_high": null
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "fixtureNote": "Account group identities are synthetic; public model IDs, pricing schema and amounts retain the official sample shape. The full private account-scope audit is excluded from source."
+}

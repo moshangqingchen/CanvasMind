@@ -32,6 +32,23 @@ const hasOwnPrice = (model: ModelDescriptor) =>
     (typeof model.metadata?.priceLabel === "string" &&
       !unknownPrice.test(model.metadata.priceLabel)));
 
+/** These catalog parsers already resolved currency, units, conditions and group multipliers. */
+function structuredCatalogPrice(metadata: ModelDescriptor["metadata"]): ModelDescriptor["pricing"] {
+  return (metadata?.secureSkillCatalogPricing ?? metadata?.chuangxiangCatalogPricing ?? metadata?.tk1688Pricing ??
+    metadata?.weaiLegacyPricing ?? metadata?.sub2apiPlazaPricing) as ModelDescriptor["pricing"];
+}
+
+function isImportedConditionalCatalogPrice(model: ModelDescriptor): boolean {
+  if (model.metadata?.priceSource !== "supplier-catalog" || !model.pricing?.sourceUrl) return false;
+  try {
+    const source = new URL(model.pricing.sourceUrl);
+    if (source.protocol !== "https:" || source.username || source.password) return false;
+    return source.origin === "https://token.secure-skill.com" && source.pathname === "/api/v1/pricing/channels" ||
+      source.origin === "https://asian-acc.we-token.cc" && source.pathname === "/api/v1/model-plaza-legacy/models" ||
+      ["https://api.eaheng.com", "https://ai.whyshy.cn"].includes(source.origin) && source.pathname === "/api/v1/model-plaza";
+  } catch { return false; }
+}
+
 type MeasuredPrice = {
   label: string;
   checkedAt: string;
@@ -288,8 +305,16 @@ export function applySupplierCatalogPrices(
       (model.pricing || typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel)) &&
       Number.isFinite(priceAt) && Number.isFinite(catalogAt) && priceAt > catalogAt) return model;
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
+    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
+    if (incompletePricingFields.length && !hasOwnPrice(model)) {
+      const metadata = { ...model.metadata };
+      delete metadata.weaiLegacyPricing; delete metadata.sub2apiPlazaPricing;
+      return { ...model, pricing: undefined, metadata: { ...metadata, priceLabel: "价格条件待确认", priceSource: "supplier-catalog",
+        priceStatus: "unconfirmed", ...Object.fromEntries(incompletePricingFields.map(field => [field, true])), priceUnavailableReason: "官方价格条件待确认",
+        priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt, supplierPriceGroup: group } };
+    }
     if (catalogModel?.metadata?.supplierCatalogModelStale === true && !hasOwnPrice(model)) {
-      const retainedPricing = (catalogModel.metadata.secureSkillCatalogPricing ?? catalogModel.metadata.chuangxiangCatalogPricing ?? catalogModel.metadata.tk1688Pricing) as ModelDescriptor["pricing"];
+      const retainedPricing = structuredCatalogPrice(catalogModel.metadata);
       const retainedCheckedAt = retainedPricing?.checkedAt ?? catalogModel.metadata.supplierCatalogPriceCheckedAt;
       const retainedAt = Date.parse(String(retainedCheckedAt ?? ""));
       const sameGroupPrice = priceGroup === group && typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel) &&
@@ -307,7 +332,7 @@ export function applySupplierCatalogPrices(
     }
     if (catalogModel?.metadata?.supplierPriceConflict === true && !hasOwnPrice(model)) {
       const metadata = { ...model.metadata };
-      delete metadata.secureSkillCatalogPricing; delete metadata.chuangxiangCatalogPricing;
+      for (const field of ["secureSkillCatalogPricing", "chuangxiangCatalogPricing", "tk1688Pricing", "weaiLegacyPricing", "sub2apiPlazaPricing"]) delete metadata[field];
       return {
         ...model,
         pricing: undefined,
@@ -315,6 +340,14 @@ export function applySupplierCatalogPrices(
           supplierPriceConflict: true, supplierPriceAlternatives: catalogModel.metadata.supplierPriceAlternatives,
           priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt },
       };
+    }
+    if (catalogModel?.metadata?.sub2apiPlazaPricing && model.metadata?.sub2apiPlazaPricingIncomplete === true ||
+      catalogModel?.metadata?.weaiLegacyPricing && model.metadata?.weaiLegacyPricingIncomplete === true) {
+      const metadata = { ...model.metadata };
+      if (catalogModel?.metadata?.sub2apiPlazaPricing) delete metadata.sub2apiPlazaPricingIncomplete;
+      if (catalogModel?.metadata?.weaiLegacyPricing) delete metadata.weaiLegacyPricingIncomplete;
+      if (metadata.priceUnavailableReason === "官方价格条件待确认") delete metadata.priceUnavailableReason;
+      model = { ...model, metadata };
     }
     if (model.metadata?.supplierPriceConflict && catalogModel && !incomplete && catalogModel.metadata?.supplierPriceConflict !== true) {
       const metadata = { ...model.metadata };
@@ -363,9 +396,8 @@ export function applySupplierCatalogPrices(
       model = { ...model, metadata };
     }
     // A text-only catalog cannot replace parameter-dependent billing rules.
-    const importedSecureTokenPrice = model.pricing?.kind === "token" && model.pricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" &&
-      model.metadata?.priceSource === "supplier-catalog";
-    if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise) && !catalogModel?.metadata?.secureSkillCatalogPricing && !importedSecureTokenPrice) return model;
+    const catalogPricing = structuredCatalogPrice(catalogModel?.metadata);
+    if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise) && !catalogPricing && !isImportedConditionalCatalogPrice(model)) return model;
     if (hasOwnPrice(model)) return model;
     const modelPrice = prices.get(model.id);
     const priceDetails = image ? supplierGroupModelPriceDetails(details, model.id, groupModelIds) : undefined;
@@ -398,7 +430,7 @@ export function applySupplierCatalogPrices(
     return {
       ...model,
       name,
-      pricing: (catalogModel?.metadata?.secureSkillCatalogPricing as ModelDescriptor["pricing"] | undefined) ?? (catalogModel?.metadata?.chuangxiangCatalogPricing as ModelDescriptor["pricing"] | undefined) ?? pricingFromSupplierEvidence(modelPrice, priceDetails, catalog.checkedAt, sourceUrl) ?? (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined),
+      pricing: catalogPricing ?? pricingFromSupplierEvidence(modelPrice, priceDetails, catalog.checkedAt, sourceUrl) ?? (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined),
       metadata: {
         ...model.metadata,
         priceLabel,
@@ -410,7 +442,7 @@ export function applySupplierCatalogPrices(
           : reason === "价格未公布"
             ? "unpublished"
             : catalog.status,
-        priceCheckedAt: old && !fresh && incomplete ? model.metadata?.priceCheckedAt : catalog.checkedAt,
+        priceCheckedAt: old && !fresh && incomplete ? model.metadata?.priceCheckedAt : catalogPricing?.checkedAt || catalog.checkedAt,
         priceLastAttemptAt: catalog.checkedAt,
         supplierPriceGroup: group,
       },
@@ -507,7 +539,7 @@ export async function enrichSupplierModelPrices(
         const deadline = AbortSignal.timeout(12000);
         const fetcher = session?.fetch ?? providerFetch;
         return await discoverSupplierCatalog(
-          { siteUrl, apiUrl, kind: session?.kind ?? kind },
+          { siteUrl, apiUrl, kind: session?.kind ?? kind, signal: deadline },
           (url, init) =>
             fetcher(url, {
               ...init,
@@ -537,10 +569,10 @@ export async function enrichSupplierModelPrices(
     }
   }
   const discovered = await cached.result;
-  // Failed/partial reads must not prevent the next user retry for five minutes.
+  // Retry on the next user operation, while all groups in this explicit
+  // operation share its partial result instead of repeatedly reading the site.
   if (["failed", "unauthorized"].includes(discovered.status) || discovered.complete === false) {
     if (cache.get(key) === cached) cache.delete(key);
-    if (refreshKey && refreshCache.get(refreshKey) === cached) refreshCache.delete(refreshKey);
   }
   const catalogModels = applySupplierCatalogPrices(
     models,

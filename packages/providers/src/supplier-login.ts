@@ -7,6 +7,7 @@ import {
 } from "node:crypto";
 import { fetchProviderJson, providerFetch, ProviderHttpError } from "./http.js";
 import type { FetchImplementation } from "./contracts.js";
+import { isWeAiLegacyAuthenticatedRead } from "./weai-legacy-catalog.js";
 import {
   supplierDirectoryBase,
   type SupplierSiteKind,
@@ -357,6 +358,7 @@ function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", hea
         );
         authenticatedTarget = !parsed.hash && !parsed.username && !parsed.password && (
           accountRead ||
+          (kind === "sub2api" && isWeAiLegacyAuthenticatedRead(base, parsed, method)) ||
           (method === "GET" && allowedUrls.has(target)) ||
           (method === "GET" && paginationOnly && (
             (kind === "sub2api" && (endpoint === `${base}/api/v1/keys` ||

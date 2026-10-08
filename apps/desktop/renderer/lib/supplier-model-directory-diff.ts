@@ -40,12 +40,14 @@ export function supplierCatalogDisplayPrice(model: SupplierCatalogModel): string
 function displayDescriptor(model: SupplierCatalogModel, keyConfirmed: boolean): ModelDescriptor {
   const metadata = model.metadata ?? {};
   const previousPrice = metadata.supplierCatalogModelStale === true;
+  const pricing = metadata.supplierPriceConflict === true || metadata.sub2apiPlazaPricingIncomplete === true || metadata.weaiLegacyPricingIncomplete === true ? undefined : (metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
+    metadata.weaiLegacyPricing ?? metadata.sub2apiPlazaPricing) as ModelDescriptor["pricing"];
   return { id: model.id, name: model.name || model.id, operations: [], parameters: [],
     inputKinds: model.inputKinds, outputKinds: model.outputKinds, limits: model.limits,
-    pricing: (metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing) as ModelDescriptor["pricing"],
+    pricing,
     metadata: { ...metadata, catalogCapability: model.capability,
       ...((model.priceLabel || previousPrice) ? { priceLabel: supplierCatalogDisplayPrice(model) } : {}),
-      ...(previousPrice ? { priceStatus: "partial", priceCheckedAt: metadata.supplierCatalogPriceCheckedAt } : {}),
+      ...(previousPrice ? { priceStatus: "partial", priceCheckedAt: pricing?.checkedAt || metadata.supplierCatalogPriceCheckedAt } : {}),
       canvasRunnable: false, canvasUnavailableReason: keyConfirmed ? CATALOG_ONLY_MODEL_REASON : CATALOG_UNCONFIRMED_MODEL_REASON,
       publicCatalogOnly: true, parameterControlsUnavailable: true, imageCapabilitiesVerifiedAt: undefined } };
 }

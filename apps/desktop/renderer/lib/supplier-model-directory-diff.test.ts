@@ -68,4 +68,33 @@ describe("public media directory differences", () => {
     expect(supplierCatalogDisplayPrice({ ...catalogModel("video"), metadata: { supplierCatalogModelStale: true } })).toBe("¥0.62/秒（上次价格）");
     expect(supplierCatalogDisplayPrice({ ...catalogModel("video"), priceLabel: "¥0.62/秒（上次价格）", metadata: { supplierCatalogModelStale: true } })).toBe("¥0.62/秒（上次价格）");
   });
+
+  it.each(["weaiLegacyPricing", "sub2apiPlazaPricing"])("keeps %s typed image quotes and conditions in disabled public rows with the original read time", field => {
+    const checkedAt = "2026-10-08T16:18:29.747Z";
+    const pricing: NonNullable<ModelDescriptor["pricing"]> = { kind: "tiered", billingUnit: "image", currency: "USD", checkedAt, confidence: "exact", tiers: [
+      { id: "1K", label: "1K", price: .02, conditions: [{ parameter: "resolution", operator: "equals", value: "1K" }] },
+      { id: "2K", label: "2K", price: .02, conditions: [{ parameter: "resolution", operator: "equals", value: "2K" }] },
+      { id: "4K", label: "4K", price: .02, conditions: [{ parameter: "resolution", operator: "equals", value: "4K" }] },
+    ] };
+    const source = supplier([{ id: "gpt-image-2", capability: "image", outputKinds: ["image"], priceLabel: "1K $0.02/张 · 2K $0.02/张 · 4K $0.02/张",
+      metadata: { [field]: pricing, supplierCatalogModelStale: true } }]);
+    const directory = catalogPickerDirectory(connection, [source], [], "image-generation", true)!;
+    const displayed = directory.models[0]!;
+    expect(displayed.pricing).toEqual(pricing);
+    expect(displayed.metadata).toMatchObject({ canvasRunnable: false, publicCatalogOnly: true, priceStatus: "partial", priceCheckedAt: checkedAt });
+    expect(modelPriceSummary(displayed, { resolution: "2K" })).toBe("上次 0.02 USD / 张");
+    expect(filterPickerModels(directory.models, "", "all", "runnable", [])).toEqual([]);
+    expect(catalogPickerDirectory(connection, [source], [], "video-generation", true)?.models).toEqual([]);
+    expect(catalogPickerDirectory(connection, [source], [], "music-generation", true)?.models).toEqual([]);
+    source.catalog.groups[0]!.models[0]!.priceLabel = "价格存在冲突，待确认";
+    source.catalog.groups[0]!.models[0]!.metadata = { [field]: pricing, supplierPriceConflict: true };
+    const conflicted = catalogPickerDirectory(connection, [source], [], "image-generation", true)!.models[0]!;
+    expect(conflicted.pricing).toBeUndefined();
+    expect(modelPriceSummary(conflicted, { resolution: "2K" })).toBe("价格存在冲突，待确认");
+    source.catalog.groups[0]!.models[0]!.priceLabel = "价格条件待确认";
+    source.catalog.groups[0]!.models[0]!.metadata = { [field]: pricing, [`${field}Incomplete`]: true };
+    const pending = catalogPickerDirectory(connection, [source], [], "image-generation", true)!.models[0]!;
+    expect(pending.pricing).toBeUndefined();
+    expect(modelPriceSummary(pending, { resolution: "2K" })).toBe("价格条件待确认");
+  });
 });

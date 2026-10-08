@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const network = vi.hoisted(() => ({
   lookup: vi.fn(async (hostname: string, _options?: unknown) => {
     // Preserve the real-host scope test without sending a DNS request.
-    if (hostname !== "tk1688.com") throw new Error("Unexpected DNS in supplier login test");
+    if (!["tk1688.com", "asian-acc.we-token.cc"].includes(hostname)) throw new Error("Unexpected DNS in supplier login test");
     return [{ address: "203.0.113.10", family: 4 }];
   }),
   fetch: vi.fn(),
@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => {
   try {
     expect(network.fetch).not.toHaveBeenCalled();
-    expect(network.lookup.mock.calls.every(([hostname]) => hostname === "tk1688.com")).toBe(true);
+    expect(network.lookup.mock.calls.every(([hostname]) => ["tk1688.com", "asian-acc.we-token.cc"].includes(hostname))).toBe(true);
   } finally {
     vi.unstubAllGlobals();
   }
@@ -41,6 +41,35 @@ const credentials = {
 describe("supplier website access token", () => {
   const base = "https://site.test/gateway";
   const accessToken = "fake-dashboard-token";
+  it("limits We-AI legacy website credentials to exact free group reads", async () => {
+    const base = "https://asian-acc.we-token.cc";
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ code: 0, data: { id: 42 } }));
+    const session = await loginSupplierSite({ siteUrl: base, kind: "sub2api", credentials: { accessToken } }, fetcher);
+    for (const suffix of ["", "?group_id=23"]) {
+      await session.fetch(`${base}/api/v1/model-plaza-legacy/models${suffix}`, { method: "GET" });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe(`Bearer ${accessToken}`);
+      expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    }
+    for (const [url, method] of [
+      [`${base}/api/v1/model-plaza-legacy/models`, "POST"],
+      [`${base}/api/v1/model-plaza-legacy/models/`, "GET"],
+      ["https://another.test/api/v1/model-plaza-legacy/models?group_id=23", "GET"],
+      [`${base}/api/v1/model-plaza-legacy/models?group_id=23&extra=1`, "GET"],
+      [`${base}/api/v1/model-plaza-legacy/models?group_id=23&group_id=23`, "GET"],
+      ...["0", "-1", "NaN", "9007199254740992", "", "01"].map(id => [`${base}/api/v1/model-plaza-legacy/models?group_id=${id}`, "GET"]),
+      [`${base}/api/v1/model-plaza-legacy/models?group_id=23#fragment`, "GET"],
+      ["https://user@asian-acc.we-token.cc/api/v1/model-plaza-legacy/models", "GET"],
+    ]) {
+      await session.fetch(url!, { method });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+    }
+    const generic = await loginSupplierSite({ siteUrl: "https://site.test", kind: "sub2api", credentials: { accessToken } }, fetcher);
+    await generic.fetch(`${base}/api/v1/model-plaza-legacy/models?group_id=23`);
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+    const wrongKind = await loginSupplierSite({ siteUrl: base, kind: "newapi", credentials: { accessToken } }, fetcher);
+    await wrongKind.fetch(`${base}/api/v1/model-plaza-legacy/models?group_id=23`);
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+  });
   it("forwards词元 website credentials only to its exact GET account model inventory", async () => {
     const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => Response.json({ success: true, data: { id: 42 } }));
     const session = await loginSupplierSite({ siteUrl: "https://tk1688.com", kind: "newapi", credentials: { accessToken } }, fetcher);

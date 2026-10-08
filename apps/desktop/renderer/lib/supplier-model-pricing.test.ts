@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import type {
   ModelDescriptor,
   SupplierCatalogDiscovery,
@@ -57,6 +58,178 @@ const secureCatalog = (multiplier = 1): SupplierCatalogDiscovery => ({
 const secureVideo: ModelDescriptor = { id: "doubao-seedance-2-0-260128", name: "Seedance 2.0", operations: ["video.generate"],
   parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "720p", options: [{ label: "720p", value: "720p" }] }],
 };
+
+it.each([
+  { field: "weaiLegacyPricing", origin: "https://asian-acc.we-token.cc", path: "/api/v1/model-plaza-legacy/models?group_id=42" },
+  { field: "sub2apiPlazaPricing", origin: "https://ai.whyshy.cn", path: "/api/v1/model-plaza" },
+])("carries $field conditions from catalog through saved connection and cached enrichment without label parsing or another multiplier", async ({ field, origin, path }) => {
+  const group = "actual-image-group", priceAt = "2026-10-08T16:18:29.747Z", scanAt = "2026-10-08T16:20:00.000Z";
+  const pricing: NonNullable<ModelDescriptor["pricing"]> = { kind: "tiered", billingUnit: "image", currency: "USD", checkedAt: priceAt,
+    sourceUrl: origin + path, confidence: "exact", tiers: [
+      { id: "1K-high", label: "1K high", price: .02, conditionMode: "all", conditions: [{ parameter: "resolution", operator: "equals", value: "1K" }, { parameter: "quality", operator: "equals", value: "high" }] },
+      { id: "4K-high", label: "4K high", price: .08, conditionMode: "all", conditions: [{ parameter: "resolution", operator: "equals", value: "4K" }, { parameter: "quality", operator: "equals", value: "high" }] },
+    ] };
+  const unpriced: ModelDescriptor = { id: "gpt-image-2", name: "GPT Image 2", operations: ["image.generate"], outputKinds: ["image"], metadata: { canvasRunnable: false } };
+  const lookup: SupplierCatalogDiscovery = { kind: "sub2api", status: "live", complete: true, checkedAt: scanAt,
+    groups: [{ id: group, label: group, source: "catalog", details: { source: "model-plaza", rateMultiplier: 7 },
+      models: [{ id: unpriced.id, capability: "image", outputKinds: ["image"], priceLabel: "已按官方组倍率报价 · 1K/4K quality conditions",
+        metadata: { [field]: pricing } }] }] };
+  const fresh = applySupplierCatalogPrices([unpriced], group, lookup, origin)[0]!;
+  expect(fresh.pricing).toEqual(pricing);
+  expect(fresh.metadata).toMatchObject({ canvasRunnable: false, priceSource: "supplier-catalog", supplierPriceGroup: group, priceCheckedAt: priceAt, priceLastAttemptAt: scanAt });
+  expect(modelPriceSummary(fresh, { resolution: "4K", quality: "high" })).toBe("0.08 USD / 张");
+  const saved = JSON.parse(JSON.stringify(fresh)) as ModelDescriptor;
+  const supplier = { id: `${field}-cached-supplier`, siteUrl: origin, apiUrl: origin, kind: "sub2api", state: { sourceId: `${field}-source` },
+    catalog: { groups: lookup.groups }, scanStatus: "live", scanComplete: true, scannedAt: scanAt, updatedAt: scanAt };
+  vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+  const reads = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+  try {
+    const config = { supplierId: supplier.id, supplierSourceId: supplier.state.sourceId, baseUrl: origin, modelGroup: group };
+    const cached = await enrichSupplierModelPrices({ config }, [saved], false, false);
+    expect(cached[0]?.pricing).toEqual(pricing);
+    expect(cached[0]?.metadata?.priceCheckedAt).toBe(priceAt);
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(reads);
+    const partial = applySupplierCatalogPrices(cached, group, { ...lookup, groups: [], complete: false, checkedAt: "2026-10-08T16:30:00.000Z" })[0]!;
+    expect(partial.pricing).toEqual(pricing);
+    expect(partial.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: priceAt, priceLastAttemptAt: "2026-10-08T16:30:00.000Z" });
+    expect(modelPriceSummary(partial, { resolution: "4K", quality: "high" })).toBe("上次 0.08 USD / 张");
+    const removed = applySupplierCatalogPrices([partial], group, { ...lookup, groups: [], checkedAt: "2026-10-08T16:35:00.000Z" })[0]!;
+    expect(removed.pricing).toBeUndefined();
+    const manual = { ...saved, metadata: { ...saved.metadata, priceSource: "manual" } };
+    expect(applySupplierCatalogPrices([manual], group, lookup)[0]?.pricing).toBe(manual.pricing);
+    expect(applySupplierCatalogPrices([saved], "different-group", lookup)[0]?.pricing).toBeUndefined();
+    const stale = structuredClone(lookup);
+    stale.groups[0]!.models[0]!.metadata = { ...stale.groups[0]!.models[0]!.metadata, supplierCatalogModelStale: true };
+    const historical = applySupplierCatalogPrices([unpriced], group, stale)[0]!;
+    expect(historical.pricing).toEqual(pricing);
+    expect(historical.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: priceAt });
+    const conflict = structuredClone(lookup);
+    conflict.groups[0]!.models[0]!.metadata = { supplierPriceConflict: true };
+    const conflicted = applySupplierCatalogPrices([{ ...fresh, metadata: { ...fresh.metadata, [field]: pricing } }], group, conflict)[0]!;
+    expect(conflicted.pricing).toBeUndefined();
+    expect(conflicted.metadata?.[field]).toBeUndefined();
+    const unsupported = structuredClone(lookup);
+    unsupported.groups[0]!.models[0]!.metadata = { [`${field}Incomplete`]: true };
+    unsupported.groups[0]!.models[0]!.priceLabel = "$0.02/张";
+    const pending = applySupplierCatalogPrices([fresh], group, unsupported)[0]!;
+    expect(pending.pricing).toBeUndefined();
+    expect(pending.metadata).toMatchObject({ priceStatus: "unconfirmed", priceLabel: "价格条件待确认" });
+    expect(applySupplierCatalogPrices([manual], group, unsupported)[0]?.pricing).toBe(manual.pricing);
+    const recovered = applySupplierCatalogPrices([pending], group, lookup)[0]!;
+    expect(recovered.pricing).toEqual(pricing);
+    expect(recovered.metadata?.[`${field}Incomplete`]).toBeUndefined();
+  } finally { vi.mocked(getSupplierRecord).mockResolvedValue(null); }
+});
+
+it("uses the real We-AI legacy discovery before persisting token, cache and image-tier quotes in cached inventory", async () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/__fixtures__/weai-legacy-price-20261008.json", import.meta.url), "utf8")) as {
+    initial: { data: { groups: { id: number; name: string }[] } };
+    groups: { groupId: number; payload: unknown }[];
+  };
+  const actual = await vi.importActual<typeof import("@super-canvas/providers")>("@super-canvas/providers");
+  const origin = "https://asian-acc.we-token.cc", requests: string[] = [];
+  const discoverFixture = (currency?: string) => actual.discoverSupplierCatalog({ kind: "sub2api", siteUrl: origin, apiUrl: `${origin}/v1` }, async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    expect(url.origin).toBe(origin);
+    expect(init?.method ?? "GET").toBe("GET");
+    requests.push(url.pathname + url.search);
+    if (url.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: fixture.initial.data.groups });
+    if (url.pathname === "/api/v1/model-plaza-legacy/models") {
+      const id = url.searchParams.get("group_id");
+      const payload = id ? fixture.groups.find(group => group.groupId === Number(id))?.payload : fixture.initial;
+      if (!payload) return Response.json({ code: 404 }, { status: 404 });
+      const copied = structuredClone(payload) as { data: { selected_group_id: number; models: Record<string, unknown>[] } };
+      if (currency && copied.data.selected_group_id === 101) copied.data.models[0]!.currency = currency;
+      return Response.json(copied);
+    }
+    return Response.json({ code: 404 }, { status: 404 });
+  });
+  const discovered = await discoverFixture();
+  expect(discovered).toMatchObject({ status: "live", complete: true });
+  expect(requests).toContain("/api/v1/model-plaza-legacy/models");
+  expect(requests).toContain("/api/v1/model-plaza-legacy/models?group_id=104");
+  const reads = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+  for (const [groupId, id] of [[101, "gpt-image-2"], [104, "gemini-3-pro-image"], [107, "gpt-image-2"]] as const) {
+    const group = discovered.groups.find(item => item.id === `fixture-group-${groupId - 100}`)!;
+    const catalogModel = group.models.find(item => item.id === id)!;
+    const expected = catalogModel.metadata?.weaiLegacyPricing as ModelDescriptor["pricing"];
+    expect(expected?.currency).toBe("USD");
+    const models = [{ id, name: id, operations: ["image.generate" as const], outputKinds: ["image" as const] }];
+    const current = applySupplierCatalogPrices(models, group.id, discovered, origin)[0]!;
+    expect(current.pricing).toEqual(expected);
+    const supplier = { id: `actual-weai-${groupId}`, siteUrl: origin, apiUrl: `${origin}/v1`, kind: "sub2api", state: { sourceId: "weai-fixture-source" },
+      catalog: { groups: discovered.groups }, scanStatus: "live", scanComplete: true, scannedAt: discovered.checkedAt, updatedAt: discovered.checkedAt };
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    try {
+      const saved = JSON.parse(JSON.stringify(current)) as ModelDescriptor;
+      const cached = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: supplier.state.sourceId,
+        baseUrl: supplier.apiUrl, modelGroup: group.id } }, [saved], false, false);
+      expect(cached[0]?.pricing).toEqual(expected);
+      expect(cached[0]?.metadata?.priceCheckedAt).toBe(expected?.checkedAt);
+      if (groupId === 101) {
+        expect(cached[0]?.pricing).toMatchObject({ kind: "token", inputPerMillion: 3.5, outputPerMillion: 7, imageOutputPerMillion: 21 });
+        expect(cached[0]?.pricing?.tiers?.some(tier => tier.id.includes("cache"))).toBe(true);
+        expect(modelEstimatedCost(cached[0], { n: 2 })).toBeUndefined();
+        for (const currency of ["EUR", "CNY"]) {
+          const undecodable = await discoverFixture(currency);
+          const pending = applySupplierCatalogPrices(cached, group.id, undecodable, origin)[0]!;
+          expect(pending.pricing).toBeUndefined();
+          expect(pending.metadata).toMatchObject({ weaiLegacyPricingIncomplete: true, priceStatus: "unconfirmed", priceLabel: "价格条件待确认" });
+          const restored = applySupplierCatalogPrices([pending], group.id, discovered, origin)[0]!;
+          expect(restored.pricing).toEqual(expected);
+          expect(restored.metadata?.weaiLegacyPricingIncomplete).toBeUndefined();
+        }
+      } else {
+        expect(cached[0]?.pricing).toMatchObject({ kind: "per-request", billingUnit: "request" });
+        expect(cached[0]?.pricing?.tiers).toHaveLength(3);
+        const parameters = groupId === 104 ? { resolution: "4K" } : { quality: "high" };
+        expect(modelPriceSummary(cached[0], parameters)).toBe(groupId === 104 ? "0.1 USD / 次" : "0.15 USD / 次");
+        expect(modelEstimatedCost(cached[0], { ...parameters, n: 2 })).toBe(groupId === 104 ? "0.2 USD" : "0.3 USD");
+      }
+    } finally { vi.mocked(getSupplierRecord).mockResolvedValue(null); }
+  }
+  expect(discoverSupplierCatalog).toHaveBeenCalledTimes(reads);
+});
+
+it("parses pDog's exact official resolution intervals before saved cached pricing and never borrows another group", async () => {
+  const group = "【生图】image2/2.5-1K", origin = "https://ai.whyshy.cn", checkedAt = "2026-10-08T16:18:29.747Z";
+  const parsed = parseSupplierCatalog({ code: 0, data: { groups: [{ id: 4, name: group, rate_multiplier: 1, peak_rate_enabled: false,
+    image_rate_independent: false, image_rate_multiplier: 1, models: [{ name: "gpt-image-2", platform: "openai", pricing: {
+      billing_mode: "image", input_price: .000005, output_price: .00001, cache_write_price: 0, cache_read_price: .00000125,
+      per_request_price: .02, intervals: ["1K", "2K", "4K"].map(tier_label => ({ min_tokens: 0, max_tokens: null, tier_label, per_request_price: .02 })),
+    } }] }] } }, { supplierSiteUrl: origin, checkedAt });
+  const lookup: SupplierCatalogDiscovery = { ...parsed, status: "live", complete: true, checkedAt };
+  const keyModel: ModelDescriptor = { id: "gpt-image-2", name: "GPT Image 2", operations: ["image.generate"], outputKinds: ["image"] };
+  const fresh = applySupplierCatalogPrices([keyModel], group, lookup, origin)[0]!;
+  expect(fresh.pricing).toMatchObject({ kind: "tiered", currency: "USD", billingUnit: "image", tiers: [{ price: .02 }, { price: .02 }, { price: .02 }] });
+  expect(fresh.pricing?.sourceUrl).toBe(`${origin}/api/v1/model-plaza`);
+  expect(modelPriceSummary(fresh, { resolution: "4K" })).toBe("0.02 USD / 张");
+  const unsupported = structuredClone(lookup);
+  unsupported.groups[0]!.models[0]!.metadata = { sub2apiPlazaPricingIncomplete: true };
+  unsupported.groups[0]!.models[0]!.priceLabel = "$0.02/张";
+  const pending = applySupplierCatalogPrices([fresh], group, unsupported, origin)[0]!;
+  expect(pending.pricing).toBeUndefined();
+  expect(pending.metadata).toMatchObject({ priceStatus: "unconfirmed", priceLabel: "价格条件待确认" });
+  expect(modelEstimatedCost(pending, { resolution: "4K", n: 2 })).toBeUndefined();
+  unsupported.groups[0]!.models[0]!.metadata = { ...unsupported.groups[0]!.models[0]!.metadata, supplierCatalogModelStale: true };
+  expect(applySupplierCatalogPrices([fresh], group, unsupported, origin)[0]?.pricing).toBeUndefined();
+  const restored = applySupplierCatalogPrices([pending], group, lookup, origin)[0]!;
+  expect(restored.pricing).toEqual(fresh.pricing);
+  expect(restored.metadata?.sub2apiPlazaPricingIncomplete).toBeUndefined();
+  const supplier = { id: "actual-pdog", siteUrl: origin, apiUrl: origin, kind: "sub2api", state: { sourceId: "pdog-fixture-source" },
+    catalog: { groups: lookup.groups }, scanStatus: "live", scanComplete: true, scannedAt: checkedAt, updatedAt: checkedAt };
+  vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+  const reads = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+  try {
+    const saved = JSON.parse(JSON.stringify(fresh)) as ModelDescriptor;
+    const cached = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: supplier.state.sourceId,
+      baseUrl: origin, modelGroup: group } }, [saved], false, false);
+    expect(cached[0]?.pricing).toEqual(saved.pricing);
+    expect(modelPriceSummary(cached[0], { resolution: "2K" })).toBe("0.02 USD / 张");
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(reads);
+    expect(applySupplierCatalogPrices([keyModel], "【生图】image2/2.5-2K4K(原生)", lookup)[0]?.pricing).toBeUndefined();
+  } finally { vi.mocked(getSupplierRecord).mockResolvedValue(null); }
+});
 
 it("opening cached inventory cannot replace a newer same-group quote with the old supplier directory", async () => {
   const group = "sd2.5特价分组-2";
@@ -738,6 +911,24 @@ describe("universal supplier price lookup", () => {
     expect(ordinary[0]?.metadata?.priceLabel).toBe("$0.3/张");
     expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count + 2);
   });
+  it("shares partial catalog results across one operation's later batches but lets the next operation retry", async () => {
+    vi.mocked(getSupplierRecord).mockResolvedValue(null);
+    const partial: SupplierCatalogDiscovery = { ...catalog, complete: false, checkedAt: "2026-10-08T16:00:00Z" };
+    const fresh: SupplierCatalogDiscovery = { ...catalog, complete: true, checkedAt: "2026-10-08T16:01:00Z" };
+    vi.mocked(discoverSupplierCatalog).mockResolvedValueOnce(partial).mockResolvedValueOnce(fresh);
+    const config = { baseUrl: "https://partial-operation-price-cache.invalid/v1", modelGroup: "cheap" };
+    const count = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+    const first = await enrichSupplierModelPrices({ config }, [model], true, true, { refreshId: "partial-operation-a" });
+    expect(first[0]?.metadata?.priceLabel).toBe("$0.02/张");
+    const batch = await Promise.all(["cheap", "expensive", "cheap"].map(modelGroup => enrichSupplierModelPrices({ config: { ...config, modelGroup } },
+      [model], true, true, { refreshId: "partial-operation-a" })));
+    expect(batch.map(result => result[0]?.metadata?.priceLabel)).toEqual(["$0.02/张", "$0.2/张", "$0.02/张"]);
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count + 1);
+    await enrichSupplierModelPrices({ config }, [model], true, true, { refreshId: "partial-operation-b" });
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count + 2);
+    await enrichSupplierModelPrices({ config }, [model]);
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count + 2);
+  });
   it("makes every force read without an operation ID fresh while ordinary reads retain their TTL", async () => {
     vi.mocked(getSupplierRecord).mockResolvedValue(null);
     const connection = { config: { baseUrl: "https://force-price-no-id.invalid/v1", modelGroup: "new-group" } };
@@ -760,6 +951,7 @@ describe("universal supplier price lookup", () => {
         siteUrl: "https://brand-new.example",
         apiUrl: "https://brand-new.example/v1",
         kind: "auto",
+        signal: expect.any(AbortSignal),
       },
       expect.any(Function),
     );

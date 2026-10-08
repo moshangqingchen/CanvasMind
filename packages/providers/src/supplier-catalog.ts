@@ -7,6 +7,8 @@ import { modelGenerationMediaKinds } from "./model-media.js";
 import { parseSupplierGroupDetails, type SupplierGroupDetails } from "./supplier-group-details.js";
 import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketplace, TK1688_MARKETPLACE_URL } from "./tk1688-catalog.js";
 import { secureSkillCatalogPricing, secureSkillCatalogVideoDeclaration } from "./secure-skill-catalog-pricing.js";
+import { isWeAiLegacyCatalogSource, readWeAiLegacyCatalog, WEAI_LEGACY_PRICE_UNIT_NOTE } from "./weai-legacy-catalog.js";
+import { isSub2apiPlazaPricingSource, sub2apiPlazaPricing } from "./sub2api-plaza-pricing.js";
 
 export type SupplierSiteKind =
   "auto" | "newapi" | "sub2api" | "openai-compatible";
@@ -98,6 +100,8 @@ function mergeCatalogModel(previous: DiscoveredSupplierModel, incoming: Discover
   delete merged.metadata.secureSkillCatalogPricing;
   delete merged.metadata.chuangxiangCatalogPricing;
   delete merged.metadata.tk1688Pricing;
+  delete merged.metadata.weaiLegacyPricing;
+  delete merged.metadata.sub2apiPlazaPricing;
   return { ...merged, priceLabel: "价格存在冲突，待确认", metadata: { ...merged.metadata,
     supplierPriceConflict: true, supplierPriceAlternatives: unique } };
 }
@@ -316,6 +320,13 @@ export function parseSupplierCatalog(
         const model = modelFrom(rawModel);
         if (!model) continue;
         const current = isChuangxiangCatalogSource(priceDisplay.supplierSiteUrl) ? chuangxiangCatalogPricing(rawModel, priceDisplay.checkedAt) : undefined;
+        if (isSub2apiPlazaPricingSource(priceDisplay.supplierSiteUrl)) {
+          const plaza = sub2apiPlazaPricing(rawModel, group, { supplierSiteUrl: priceDisplay.supplierSiteUrl ?? "",
+            ...(priceDisplay.checkedAt ? { checkedAt: priceDisplay.checkedAt } : {}) });
+          add(id, label, { ...model, priceLabel: plaza?.priceLabel ?? "价格条件待确认", metadata: { ...model.metadata,
+            ...(plaza ? { sub2apiPlazaPricing: plaza.pricing } : { sub2apiPlazaPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" }) } }, officialId);
+          continue;
+        }
         add(id, label, current ? { ...model, priceLabel: current.priceLabel,
           metadata: { ...model.metadata, chuangxiangCatalogPricing: current.pricing,
             chuangxiangEffectiveRateMultiplier: record(rawModel)?.effective_rate_multiplier,
@@ -494,6 +505,7 @@ export async function discoverSupplierCatalog(
     apiUrl: string;
     kind?: SupplierSiteKind;
     token?: string;
+    signal?: AbortSignal;
   },
   fetchImpl: FetchImplementation = providerFetch,
 ): Promise<SupplierCatalogDiscovery> {
@@ -521,6 +533,7 @@ export async function discoverSupplierCatalog(
           phase: "connect",
           timeoutMs: 8000,
           maxResponseBytes: 4 * 1024 * 1024,
+          ...(input.signal ? { signal: input.signal } : {}),
         },
       );
       return { status: 200, payload };
@@ -644,6 +657,43 @@ export async function discoverSupplierCatalog(
     }
     const priced = await pricePage(result.groups);
     const accountComplete = available?.status === "live" || available?.status === "empty";
+    if (!priced.complete && isWeAiLegacyCatalogSource(siteUrl)) {
+      const legacy = await readWeAiLegacyCatalog(siteUrl, fetchImpl, siteHeaders("sub2api"), input.signal);
+      const merged = new Map(priced.groups.map(group => [groupIdentity(group), group]));
+      for (const evidence of legacy.groups) {
+        const group: DiscoveredSupplierGroup = { id: evidence.group.name, label: evidence.group.name,
+          supplierGroupId: String(evidence.group.id), source: "catalog", models: evidence.models.flatMap(row => {
+            const model = modelFrom({ name: row.id });
+            return model ? [{ ...model, priceLabel: row.priceLabel ?? "价格条件待确认", metadata: {
+              ...model.metadata, priceSource: "supplier-weai-legacy-price-page",
+              ...(row.pricing ? { weaiLegacyPricing: row.pricing } : { weaiLegacyPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" }),
+              weaiLegacyPriceUnitNote: WEAI_LEGACY_PRICE_UNIT_NOTE,
+              weaiLegacyPriceEvidence: { groupId: evidence.group.id, platform: row.platform,
+                tokenMultiplier: evidence.tokenMultiplier, imageMultiplier: evidence.imageMultiplier,
+                imageQualityBilling: evidence.imageQualityBilling, pricesAlreadyAdjusted: true,
+                configuredPriceFields: row.configuredPriceFields, unconfiguredPriceFields: row.unconfiguredPriceFields,
+                ...(row.imageTierPricesComplete !== undefined ? { imageTierPricesComplete: row.imageTierPricesComplete } : {}) },
+            } }] : [];
+          }) };
+        const old = merged.get(groupIdentity(group));
+        // The legacy sample is current pricing evidence for this exact group.
+        // Keep unrelated prior model facts, but do not conflict with an empty
+        // placeholder or turn its option list into shared model membership.
+        merged.set(groupIdentity(group), old ? { ...old, ...group } : group);
+      }
+      const legacyIds = new Set(legacy.availableGroups.map(group => String(group.id)));
+      const accountCovered = accountComplete && available.groups.every(group =>
+        group.supplierGroupId !== undefined && legacyIds.has(group.supplierGroupId));
+      const groups = accountComplete ? accountGroupNames([...merged.values()], available.groups) : distinctGroupNames([...merged.values()]);
+      const complete = legacy.complete && accountCovered;
+      return { kind: "sub2api" as const, groups, checkedAt: legacy.checkedAt,
+        status: groups.length ? "live" as const : legacy.status, complete,
+        ...(!complete ? {
+          error: legacy.status === "unauthorized" ? "We-AI 历史模型价格页需要网站登录；保留历史报价" :
+            legacy.failedGroups.length ? `We-AI 部分分组价格读取失败（ID ${legacy.failedGroups.map(group => group.groupId).join("、")}）；保留未完成分组的历史报价` :
+              "We-AI 模型价格目录暂不可完整读取；保留历史报价，请稍后重试",
+        } : {}) };
+    }
     const priceComplete = priced.complete ||
       ((fallback.status === "live" || fallback.status === "empty") && fallback.complete !== false);
     const groups = accountComplete ? accountGroupNames(priced.groups, available.groups) : priced.groups;

@@ -1,7 +1,119 @@
-import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const isolatedNetwork = vi.hoisted(() => ({ fetch: vi.fn(), lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]) }));
+vi.mock("node:dns/promises", () => ({ lookup: isolatedNetwork.lookup }));
 import { discoverSupplierCatalog, normalizeSupplierSiteBase, normalizeSupplierUrl, parseSupplierCatalog, parseSupplierKeyGroups, parseSupplierPricingChannels, supplierModelUrls } from "./supplier-catalog.js";
+import { WEAI_LEGACY_MODELS_URL, WEAI_LEGACY_ORIGIN } from "./weai-legacy-catalog.js";
+beforeEach(() => {
+  isolatedNetwork.fetch.mockReset().mockRejectedValue(new Error("Unexpected real HTTP in supplier catalog test"));
+  vi.stubGlobal("fetch", isolatedNetwork.fetch);
+});
+afterEach(() => { try { expect(isolatedNetwork.fetch).not.toHaveBeenCalled(); } finally { vi.unstubAllGlobals(); } });
+const weai = JSON.parse(readFileSync(new URL("./__fixtures__/weai-legacy-price-20261008.json", import.meta.url), "utf8")) as {
+  initial: { code: number; data: { groups: Array<{ id: number; name: string }> } };
+  groups: Array<{ groupId: number; payload: unknown }>;
+};
 
 describe("supplier discovery", () => {
+  const weaiFetch = (failureId?: string, failure = 404): typeof fetch => async url => {
+    const parsed = new URL(String(url));
+    expect(parsed.origin).toBe(WEAI_LEGACY_ORIGIN);
+    if (parsed.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: weai.initial.data.groups });
+    if (parsed.pathname === "/api/v1/model-plaza-legacy/models") {
+      const id = parsed.searchParams.get("group_id");
+      if (id === failureId) return Response.json({ code: failure }, { status: failure });
+      return Response.json(id ? weai.groups.find(group => group.groupId === Number(id))!.payload : weai.initial);
+    }
+    if (["/api/v1/model-plaza", "/api/v1/pricing/channels"].includes(parsed.pathname)) return Response.json({}, { status: 404 });
+    throw new Error("Unexpected official legacy fixture endpoint");
+  };
+  it("uses the exact We-AI legacy fallback for 11 separately priced account groups and 54 complete IDs", async () => {
+    const result = await discoverSupplierCatalog({ siteUrl: WEAI_LEGACY_ORIGIN, apiUrl: `${WEAI_LEGACY_ORIGIN}/v1`, kind: "sub2api" }, weaiFetch());
+    expect(result).toMatchObject({ status: "live", kind: "sub2api", complete: true });
+    expect(result.error).toBeUndefined();
+    expect(result.groups).toHaveLength(11);
+    expect(result.groups.reduce((total, group) => total + group.models.length, 0)).toBe(54);
+    const model = result.groups.find(group => group.supplierGroupId === "101")!.models[0]!;
+    expect(model).toMatchObject({ id: "gpt-image-2", capability: "image", protocol: "unknown", metadata: {
+      weaiLegacyPricing: { currency: "USD", kind: "token", inputPerMillion: 3.5, imageOutputPerMillion: 21 },
+      weaiLegacyPriceEvidence: { groupId: 101, tokenMultiplier: .7, imageMultiplier: .7, pricesAlreadyAdjusted: true },
+    } });
+    expect(model.metadata?.weaiLegacyPriceUnitNote).toContain("账面额度");
+    expect(result.groups.find(group => group.supplierGroupId === "102")!.models.some(row => row.id === "gpt-image-2")).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("authorization");
+  });
+  it("marks an authenticated We-AI model's unknown currency as pending price conditions instead of unpublished", async () => {
+    const fetcher = weaiFetch();
+    const result = await discoverSupplierCatalog({ siteUrl: WEAI_LEGACY_ORIGIN, apiUrl: "", kind: "sub2api" }, async (url, init) => {
+      const response = await fetcher(url, init);
+      const parsed = new URL(String(url));
+      if (parsed.pathname === "/api/v1/model-plaza-legacy/models" && !parsed.search) {
+        const payload = await response.json();
+        // Keep the actual official schema shape and model rate, but reject a
+        // currency change rather than quoting it under the established USD rule.
+        payload.data.models[0].currency = "EUR";
+        return Response.json(payload);
+      }
+      return response;
+    });
+    expect(result.complete).toBe(true); // All model directories were read.
+    const group = result.groups.find(group => group.supplierGroupId === "101")!;
+    expect(group.models[0]).toMatchObject({ id: "gpt-image-2", priceLabel: "价格条件待确认", metadata: {
+      weaiLegacyPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认",
+    } });
+    expect(group.models[0]!.metadata?.weaiLegacyPricing).toBeUndefined();
+    expect(group.models[1]!.metadata?.weaiLegacyPricing).toMatchObject({ currency: "USD", inputPerMillion: 3.5 });
+    expect(result.groups.reduce((total, group) => total + group.models.length, 0)).toBe(54);
+  });
+  it.each([401, 403, 404, 503])("keeps successful group prices but marks a legacy group HTTP %s partial", async status => {
+    const result = await discoverSupplierCatalog({ siteUrl: WEAI_LEGACY_ORIGIN, apiUrl: "", kind: "sub2api" }, weaiFetch("104", status));
+    expect(result).toMatchObject({ status: "live", complete: false });
+    expect(result.error).toContain("104");
+    expect(result.groups).toHaveLength(11);
+    expect(result.groups.find(group => group.supplierGroupId === "104")?.models).toEqual([]);
+    expect(result.groups.find(group => group.supplierGroupId === "101")?.models).toHaveLength(3);
+  });
+  it("does not borrow the legacy fallback or its currency convention for another Sub2API site", async () => {
+    const calls: string[] = [];
+    const result = await discoverSupplierCatalog({ siteUrl: "https://other.test", apiUrl: "", kind: "sub2api" }, async url => {
+      calls.push(String(url));
+      return String(url).endsWith("/groups/available") ? Response.json({ code: 0, data: [{ id: 101, name: "synthetic" }] }) : Response.json({}, { status: 404 });
+    });
+    expect(result.complete).toBe(false);
+    expect(calls.some(url => url.includes("model-plaza-legacy"))).toBe(false);
+  });
+  it("does not fallback after a valid current price-channel feed", async () => {
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("groups/available")) return Response.json({ code: 0, data: [{ id: 101, name: "synthetic" }] });
+      if (path.endsWith("pricing/channels")) return Response.json({ code: 0, data: [] });
+      return Response.json({}, { status: 404 });
+    });
+    const result = await discoverSupplierCatalog({ siteUrl: WEAI_LEGACY_ORIGIN, apiUrl: "", kind: "sub2api" }, fetcher);
+    expect(result.complete).toBe(true);
+    expect(fetcher.mock.calls.some(([url]) => String(url).startsWith(WEAI_LEGACY_MODELS_URL))).toBe(false);
+  });
+  it("keeps exact monster/pDog billing scopes through the real nested plaza parser", () => {
+    const payload = { code: 0, data: { groups: [{ id: 101, name: "fixture-image", rate_multiplier: .7, user_rate_multiplier: .5,
+      image_rate_independent: true, image_rate_multiplier: .25, models: [{ name: "gpt-image-2", pricing: { billing_mode: "image", per_request_price: .1,
+        intervals: [{ tier_label: "1K", min_tokens: 0, max_tokens: null, per_request_price: .1 },
+          { tier_label: "2K", min_tokens: 0, max_tokens: null, per_request_price: .2 }] } }] }] } };
+    for (const supplierSiteUrl of ["https://api.eaheng.com", "https://ai.whyshy.cn"]) {
+      const result = parseSupplierCatalog(payload, { supplierSiteUrl, checkedAt: "2026-10-08T16:10:00Z" });
+      expect(result.groups[0]!.models[0]).toMatchObject({ capability: "image", metadata: { sub2apiPlazaPricing: {
+        currency: "USD", billingUnit: "image", kind: "tiered", tiers: [{ price: .025, value: "1K" }, { price: .05, value: "2K" }],
+      } } });
+      expect(result.groups[0]!.models[0]!.metadata?.sub2apiPlazaPricing).not.toHaveProperty("unitAmount");
+    }
+  });
+  it.each(["peak", "time", "unknown-tier"])("does not fall back to a generic flat price for unknown official %s billing conditions", failure => {
+    const group = { id: 101, name: "fixture-image", rate_multiplier: .5, peak_rate_enabled: failure === "peak", models: [{ name: "gpt-image-2",
+      time_pricing: failure === "time" ? { periods: [{ price: 1 }] } : null,
+      pricing: { billing_mode: "image", per_request_price: .1, intervals: failure === "unknown-tier" ? [{ tier_label: "unknown", per_request_price: .2 }] : [] } }] };
+    const parsed = parseSupplierCatalog({ data: { groups: [group] } }, { supplierSiteUrl: "https://ai.whyshy.cn" });
+    expect(parsed.groups[0]!.models[0]).toMatchObject({ priceLabel: "价格条件待确认", metadata: { sub2apiPlazaPricingIncomplete: true } });
+    expect(parsed.groups[0]!.models[0]!.metadata?.sub2apiPlazaPricing).toBeUndefined();
+  });
   it.each(["timeout", "unauthorized", "invalid-body", "rejected-body"] as const)(
     "keeps NewAPI account groups but marks a %s price feed incomplete",
     async failure => {
@@ -352,13 +464,14 @@ describe("API-key page group fallback", () => {
       expect(request.origin).toBe(siteUrl);
       calls.push(request.pathname);
       if (request.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: [group] });
-      if (["/api/v1/model-plaza", "/api/v1/pricing/channels"].includes(request.pathname)) return Response.json({}, { status: 404 });
+      if (["/api/v1/model-plaza", "/api/v1/pricing/channels", "/api/v1/model-plaza-legacy/models"].includes(request.pathname)) return Response.json({}, { status: 404 });
       throw new Error("Unexpected synthetic account/catalog endpoint");
     });
     expect(result).toMatchObject({ kind: "sub2api", status: "live", complete: false,
       groups: [{ id: group.name, supplierGroupId: String(group.id), models: [], details: { rateMultiplier: group.rate_multiplier } }] });
     expect(result.error).toContain("模型价格目录");
-    expect(calls).toEqual(["/api/v1/model-plaza", "/api/v1/groups/available", "/api/v1/pricing/channels"]);
+    expect(calls).toEqual(["/api/v1/model-plaza", "/api/v1/groups/available", "/api/v1/pricing/channels",
+      ...(siteUrl === WEAI_LEGACY_ORIGIN ? ["/api/v1/model-plaza-legacy/models"] : [])]);
   });
   it.each(["unauthorized", "timeout", "invalid-body", "rejected-body"] as const)(
     "preserves successful Sub2API account groups when the separate price page is %s",

@@ -30,6 +30,7 @@ export * from "./tk1688-model-policy.js";
 export * from "./tk1688-catalog.js";
 export * from "./chentu-az.js";
 export * from "./supplier-catalog.js";
+export * from "./weai-legacy-catalog.js";
 export * from "./supplier-group-details.js";
 export * from "./supplier-login.js";
 export * from "./supplier-account-keys.js";
