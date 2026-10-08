@@ -914,6 +914,169 @@ test.describe("超级画布完整验收", () => {
     await expect(page.getByRole("button", { name: "重新加载" })).toBeVisible();
   });
 
+  test("延迟加载画布时新建与拖入入口保持禁用，完成后新增文本正确保存并保留既有节点", async ({ page, request }, testInfo) => {
+    const created = await request.post("/api/canvas", { data: { title: `加载期间节点保护-${Date.now()}`, graph: workflowGraph() } });
+    expect(created.ok()).toBeTruthy();
+    const fixture = await created.json() as CanvasResponse;
+    const errors: string[] = [];
+    const earlyWrites: string[] = [];
+    let submissions = 0;
+    let readReleased = false;
+    let releaseRead!: () => void;
+    const readAllowed = new Promise<void>(resolve => { releaseRead = resolve; });
+    let releaseProviders!: () => void;
+    const providersAllowed = new Promise<void>(resolve => { releaseProviders = resolve; });
+    page.on("pageerror", error => errors.push(error.message));
+    await page.route(/\/api\/providers(?:\?.*)?$/u, async route => {
+      await providersAllowed;
+      return route.fulfill({ status: 503, json: { error: "隔离测试供应商目录暂时不可用" } });
+    });
+    await page.route(`**/api/canvas/${fixture.id}`, async route => {
+      if (route.request().method() !== "GET") {
+        if (!readReleased) earlyWrites.push(route.request().method());
+        return route.continue();
+      }
+      await readAllowed;
+      return route.continue();
+    });
+    await page.route("**/api/assets**", async route => {
+      if (route.request().method() !== "GET") {
+        earlyWrites.push(`assets:${route.request().method()}`);
+        return route.abort();
+      }
+      return route.continue();
+    });
+    await page.route("**/api/runs", async route => {
+      if (route.request().method() === "POST") { submissions++; return route.abort(); }
+      return route.continue();
+    });
+    try {
+      await page.goto(`/canvas/${fixture.id}`);
+      for (const label of ["新建图片节点", "新建视频节点", "新建音乐节点", "新建提示词节点"]) {
+        const button = page.getByRole("button", { name: label, exact: true });
+        await expect(button).toBeDisabled();
+        await button.evaluate(element => (element as HTMLButtonElement).click());
+      }
+      const pane = page.locator(".react-flow__pane");
+      await pane.dispatchEvent("contextmenu", { button: 2, clientX: 850, clientY: 550 });
+      await expect(page.getByRole("menu", { name: "新建节点", exact: true })).toHaveCount(0);
+      await page.locator(".canvas-wrap").evaluate((element, data) => {
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([Uint8Array.from(atob(data), char => char.charCodeAt(0))], "isolated-loading.png", { type: "image/png" }));
+        for (const type of ["dragover", "drop"]) element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true, clientX: 850, clientY: 550 }));
+      }, PNG_1X1.toString("base64"));
+      await expect(page.locator(".react-flow__node")).toHaveCount(0);
+      await expect(page.locator(".canvas-drop-overlay")).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "供应商与模型设置", exact: true })).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath("canvas-loading-mutations-disabled.png"), animations: "disabled" });
+      readReleased = true;
+      releaseRead();
+      const prompt = page.getByRole("button", { name: "新建提示词节点", exact: true });
+      await expect(prompt).toBeEnabled();
+      for (const label of ["新建图片节点", "新建视频节点", "新建音乐节点"])
+        await expect(page.getByRole("button", { name: label, exact: true })).toBeDisabled();
+      for (const title of ["新建图片生成节点", "新建视频生成节点"])
+        await expect(page.locator(".top-create-actions").getByTitle(title, { exact: true })).toBeDisabled();
+      await pane.dispatchEvent("contextmenu", { button: 2, clientX: 850, clientY: 550 });
+      const createMenu = page.getByRole("menu", { name: "新建节点", exact: true });
+      for (const label of ["图片节点", "视频节点", "音乐节点"])
+        await expect(createMenu.getByRole("menuitem", { name: label, exact: true })).toBeDisabled();
+      await expect(createMenu.getByRole("menuitem", { name: "Prompt", exact: true })).toBeEnabled();
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "打开节点与素材库", exact: true }).click();
+      for (const label of ["图片生成", "视频生成"])
+        await expect(page.locator(".node-menu").getByRole("button", { name: label, exact: true })).toBeDisabled();
+      await expect(page.locator(".node-menu").getByRole("button", { name: "Prompt", exact: true })).toBeEnabled();
+      await page.getByRole("button", { name: "关闭素材库", exact: true }).click();
+      await expect(page.locator('.react-flow__node[data-id="e2e-prompt"]')).toBeVisible();
+      await prompt.click();
+      await expect.poll(async () => (await getJson<CanvasResponse>(request, `/api/canvas/${fixture.id}`)).graph.nodes.length).toBe(fixture.graph.nodes.length + 1);
+      const saved = await getJson<CanvasResponse>(request, `/api/canvas/${fixture.id}`);
+      expect(saved.graph.nodes.find(node => node.id === "e2e-prompt")?.data.parts).toEqual(fixture.graph.nodes.find(node => node.id === "e2e-prompt")?.data.parts);
+      releaseProviders();
+      await expect(page.getByText("无法读取供应商连接，画布仍可继续编辑", { exact: true })).toBeVisible();
+      for (const label of ["新建图片节点", "新建视频节点", "新建音乐节点"])
+        await expect(page.getByRole("button", { name: label, exact: true })).toBeEnabled();
+      expect(earlyWrites).toEqual([]);
+      expect(submissions).toBe(0);
+      expect(errors).toEqual([]);
+      await page.reload();
+      await expect(page.locator(".react-flow__node")).toHaveCount(fixture.graph.nodes.length + 1);
+    } finally {
+      releaseRead();
+      releaseProviders();
+      await testInfo.attach("canvas-loading-entry-observation", { body: JSON.stringify({ earlyWrites, submissions, errors }), contentType: "application/json" });
+      await request.delete(`/api/projects/${fixture.id}`);
+    }
+  });
+
+  test("退出保存失败期间已开始的素材导入仍完成，恢复后可以保存并刷新", async ({ page }, testInfo) => {
+    await openWorkspace(page);
+    await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("已保存");
+    const fixture = await savedCanvas(page);
+    let releaseUpload!: () => void;
+    let uploadStarted!: () => void;
+    let releaseSave!: () => void;
+    let saveStarted!: () => void;
+    const uploadAllowed = new Promise<void>(resolve => { releaseUpload = resolve; });
+    const uploading = new Promise<void>(resolve => { uploadStarted = resolve; });
+    const saveAllowed = new Promise<void>(resolve => { releaseSave = resolve; });
+    const saving = new Promise<void>(resolve => { saveStarted = resolve; });
+    let failedSaveBody: string | undefined;
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.route("**/api/assets/upload*", async route => {
+      uploadStarted();
+      await uploadAllowed;
+      return route.continue();
+    });
+    await page.route(`**/api/canvas/${fixture.id}`, async route => {
+      if (route.request().method() === "PUT") {
+        failedSaveBody ??= route.request().postData() ?? "";
+        if (route.request().postData() === failedSaveBody) {
+          saveStarted();
+          await saveAllowed;
+          return route.fulfill({ status: 500, json: { error: "隔离测试退出保存失败" } });
+        }
+      }
+      return route.continue();
+    });
+    try {
+      await page.locator(".react-flow__pane").evaluate((pane, input) => {
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([Uint8Array.from(atob(input), char => char.charCodeAt(0))], "finish-during-leave.png", { type: "image/png" }));
+        const bounds = pane.getBoundingClientRect();
+        const options = { dataTransfer: transfer, bubbles: true, cancelable: true, clientX: bounds.left + 420, clientY: bounds.top + 420 };
+        pane.dispatchEvent(new DragEvent("dragover", options));
+        pane.dispatchEvent(new DragEvent("drop", options));
+      }, PNG_1X1.toString("base64"));
+      await uploading;
+      const placeholder = page.locator('.node-card[data-pending-import="true"]', { hasText: "finish-during-leave.png" });
+      await expect(placeholder).toBeVisible();
+      const home = page.getByRole("button", { name: "返回主界面", exact: true });
+      await home.click();
+      await saving;
+      await expect(home).toBeDisabled();
+      await expect(page.getByRole("button", { name: "新建提示词节点", exact: true })).toBeDisabled();
+      releaseUpload();
+      await expect(placeholder).toHaveCount(0);
+      await expect(page.locator('.node-card', { hasText: "finish-during-leave.png" })).toBeVisible();
+      releaseSave();
+      await expect(home).toBeEnabled();
+      await expect(page).toHaveURL(new RegExp(`/canvas/${fixture.id}$`, "u"));
+      await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(node => node.data.label === "finish-during-leave.png")?.data.assetId).toEqual(expect.any(String));
+      const saved = await savedCanvas(page);
+      expect(saved.graph.nodes.some(node => node.id === "e2e-prompt")).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("accepted-import-finishes-after-failed-leave.png"), animations: "disabled" });
+      await page.reload();
+      await expect(page.locator('.node-card', { hasText: "finish-during-leave.png" })).toBeVisible();
+      expect(errors).toEqual([]);
+    } finally {
+      releaseUpload();
+      releaseSave();
+    }
+  });
+
   test("画布加载失败可以返回首页再打开健康项目，加载中保护入口且失败画布不保存", async ({ page, request }, testInfo) => {
     const fixture = await getJson<CanvasResponse>(request, "/api/canvas");
     const healthyTitle = `错误恢复健康画布-${Date.now()}`;
@@ -939,9 +1102,16 @@ test.describe("超级画布完整验收", () => {
       await page.goto(`/canvas/${fixture.id}`);
       const home = page.locator("button.editor-home");
       await expect(home).toBeDisabled();
+      for (const label of ["新建图片节点", "新建视频节点", "新建音乐节点", "新建提示词节点"])
+        await expect(page.getByRole("button", { name: label, exact: true })).toBeDisabled();
       releaseRead();
       await expect(page.locator('.canvas-empty-state[role="alert"]')).toContainText("画布加载失败");
       await expect(home).toBeEnabled();
+      for (const label of ["新建图片节点", "新建视频节点", "新建音乐节点", "新建提示词节点"])
+        await expect(page.getByRole("button", { name: label, exact: true })).toBeDisabled();
+      await page.locator(".react-flow__pane").dispatchEvent("contextmenu", { button: 2, clientX: 850, clientY: 550 });
+      await expect(page.getByRole("menu", { name: "新建节点", exact: true })).toHaveCount(0);
+      await expect(page.locator(".react-flow__node")).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath("canvas-initialization-error-can-leave.png") });
       await home.click();
       await expect(page).toHaveURL(/\/$/u);

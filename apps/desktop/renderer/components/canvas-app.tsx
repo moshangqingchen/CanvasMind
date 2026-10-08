@@ -2552,10 +2552,12 @@ function CanvasShell({
     };
   }, [flowStore]);
   const [leaving, setLeaving] = useState(false);
+  const leavingRef = useRef(false);
   const [draftStorageError, setDraftStorageError] = useState(false);
   const [canvasId, setCanvasId] = useState<string | null>(projectId);
   const [initialization, setInitialization] =
     useState<CanvasInitializationState>({ status: "loading" });
+  const editableCanvasProjectRef = useRef<string | null>(null);
   const {
     title,
     nodes,
@@ -2579,6 +2581,8 @@ function CanvasShell({
     Record<string, boolean>
   >({});
   const [connections, setConnections] = useState<ProviderConnectionView[]>([]);
+  const [connectionsSettled, setConnectionsSettled] = useState(false);
+  const connectionsSettledRef = useRef(false);
   const [modelEditorNodeId, setModelEditorNodeId] = useState<string | null>(null);
   const [openConfigurationNodeIds, setOpenConfigurationNodeIds] = useState<Set<string>>(() => new Set());
   const onConfigurationOpenChange = useCallback((nodeId: string, open: boolean) => {
@@ -2825,6 +2829,13 @@ function CanvasShell({
   const agentMutationRef = useRef(false);
   const draftVersion = useRef(0);
   const activeProjectIdRef = useRef(projectId);
+  const canvasProjectIsReady = useCallback(() => (
+    instanceActive.current && !saveSuspended.current &&
+    editableCanvasProjectRef.current === projectId && activeProjectIdRef.current === projectId
+  ), [projectId]);
+  const canEditCanvas = useCallback(() => (
+    canvasProjectIsReady() && !leavingRef.current
+  ), [canvasProjectIsReady]);
   useEffect(() => {
     instanceActive.current = true;
     return () => {
@@ -3244,6 +3255,8 @@ function CanvasShell({
     const streams = eventSources.current;
     let active = true;
     let initializationSettled = false;
+    editableCanvasProjectRef.current = null;
+    connectionsSettledRef.current = false;
     // Switching projects keeps the page shell mounted, so clear only the
     // canvas-scoped state before the next snapshot arrives.
     /* eslint-disable react-hooks/set-state-in-effect */
@@ -3256,11 +3269,16 @@ function CanvasShell({
     setProjectFilesOpen(false);
     latestSaveAttempt.current += 1;
     setInitialization({ status: "loading" });
+    setConnectionsSettled(false);
     setCanvasId(projectId);
     setNodes([]);
     setEdges([]);
     setDrawings([]);
     setSelectedId(null);
+    setCanvasMenu(null);
+    setNodeMenu(null);
+    setConnectionMenu(null);
+    setDropActive(false);
     setViewport({ x: 0, y: 0, zoom: 0.85 });
     graphRef.current = { nodes: [], edges: [] };
     initialViewportApplied.current = false;
@@ -3284,6 +3302,7 @@ function CanvasShell({
       if (!active || initializationSettled) return;
       initializationSettled = true;
       window.clearTimeout(initializationTimeout);
+      editableCanvasProjectRef.current = null;
       const message =
         error instanceof Error && error.message
           ? error.message
@@ -3389,6 +3408,7 @@ function CanvasShell({
         setViewport(graphViewport);
         initializationSettled = true;
         window.clearTimeout(initializationTimeout);
+        editableCanvasProjectRef.current = canvas.id;
         setInitialization({ status: "ready" });
         if (recovery === "conflict" && recoveredDraft) {
           const conflict = {
@@ -3419,6 +3439,8 @@ function CanvasShell({
         void connectionsPromise
           .then((loadedConnections) => {
             if (!active) return;
+            connectionsSettledRef.current = true;
+            setConnectionsSettled(true);
             setConnections(loadedConnections);
             setNodes((current) => {
               const migrated = migrateSavedWeAiAdobeNodes(
@@ -3441,11 +3463,14 @@ function CanvasShell({
             });
           })
           .catch((error: unknown) => {
-            if (active)
+            if (active) {
+              connectionsSettledRef.current = true;
+              setConnectionsSettled(true);
               showToast(
                 `${error instanceof Error ? error.message : "API 连接读取失败"}，画布仍可继续编辑`,
                 "error",
               );
+            }
           });
 
         if (recovery !== "conflict" && (recoveredDraft || graphWasReconciled)) {
@@ -3504,6 +3529,7 @@ function CanvasShell({
     })();
     return () => {
       active = false;
+      editableCanvasProjectRef.current = null;
       window.clearTimeout(initializationTimeout);
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -3597,7 +3623,7 @@ function CanvasShell({
       nextViewport = useCanvasStore.getState().viewport,
       nextDrawings = useCanvasStore.getState().drawings,
     ) => {
-      if (!instanceActive.current || !canvasId || saveSuspended.current) return;
+      if (!instanceActive.current || !canvasId || saveSuspended.current || editableCanvasProjectRef.current !== canvasId) return;
       geometryCheckpoints.take();
       if (saveTimer.current) clearTimeout(saveTimer.current);
       latestSaveAttempt.current += 1;
@@ -3650,7 +3676,8 @@ function CanvasShell({
   }, [canvasId, saveGraph]);
 
   const leaveCanvas = useCallback(async (destination: () => void | Promise<void>) => {
-    if (leaving || initialization.status === "loading") return;
+    if (leavingRef.current || initialization.status === "loading") return;
+    leavingRef.current = true;
     setLeaving(true);
     try {
       if (initialization.status === "ready") await saveNow();
@@ -3658,9 +3685,10 @@ function CanvasShell({
     } catch (error) {
       showToast(error instanceof Error ? error.message : "画布尚未保存，请重试", "error");
     } finally {
+      leavingRef.current = false;
       setLeaving(false);
     }
-  }, [initialization.status, leaving, saveNow, showToast]);
+  }, [initialization.status, saveNow, showToast]);
 
   useEffect(() => registerDesktopSave(async () => {
     if (initialization.status !== "ready" || saveConflictRef.current || saveSuspended.current || !instanceActive.current) throw new Error("画布尚未就绪或存在保存冲突，请先处理再退出");
@@ -3923,7 +3951,7 @@ function CanvasShell({
 
   const onDrawingPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || canvasMode === "pan") return;
+      if (!canEditCanvas() || event.button !== 0 || canvasMode === "pan") return;
       const point = drawingPointForEvent(event);
       if (!point) return;
       event.preventDefault();
@@ -3991,6 +4019,7 @@ function CanvasShell({
       brushColor,
       brushSize,
       canvasMode,
+      canEditCanvas,
       checkpoint,
       drawingTool,
       drawingPointForEvent,
@@ -4441,6 +4470,8 @@ function CanvasShell({
 
   const insertNodeAt = useCallback(
     (type: string, position: { x: number; y: number }) => {
+      if (!canEditCanvas()) return null;
+      if (!connectionsSettledRef.current && ["image-generation", "video-generation", "music-generation"].includes(type)) return null;
       checkpoint(true);
       const state = useCanvasStore.getState();
       const node = configureNewGenerationNode(
@@ -4463,7 +4494,7 @@ function CanvasShell({
       setConnectionMenu(null);
       return node;
     },
-    [checkpoint, connections, scheduleSave, setNodes, setSelectedId, showToast],
+    [canEditCanvas, checkpoint, connections, scheduleSave, setNodes, setSelectedId, showToast],
   );
 
   const graphicDesignModels = useMemo(
@@ -4532,17 +4563,19 @@ function CanvasShell({
 
   const addNewNode = useCallback(
     (type: string) => {
+      if (!canEditCanvas()) return;
       const position = reactFlowRef.current?.screenToFlowPosition({
         x: 360 + Math.random() * 260,
         y: 150 + Math.random() * 260,
       }) ?? { x: 360, y: 180 };
       insertNodeAt(type, position);
     },
-    [insertNodeAt],
+    [canEditCanvas, insertNodeAt],
   );
 
   const reuseHistoricalAsset = useCallback(
     (assetId: string, offset = 0) => {
+      if (!canEditCanvas()) return;
       const asset = assets.find((item) => item.id === assetId);
       if (!asset || asset.kind === "text") {
         showToast("历史输出素材不存在或类型不受支持");
@@ -4570,6 +4603,7 @@ function CanvasShell({
     },
     [
       assets,
+      canEditCanvas,
       checkpoint,
       nodes.length,
       scheduleSave,
@@ -8007,7 +8041,7 @@ function CanvasShell({
   );
   const placeAssetsOnCanvas = useCallback(
     (items: AssetView[], position: { x: number; y: number }) => {
-      if (!instanceActive.current || saveSuspended.current) return;
+      if (!canEditCanvas()) return;
       const media = items.filter(
         (asset): asset is AssetView & { kind: "image" | "video" | "audio" } =>
           asset.kind === "image" ||
@@ -8029,7 +8063,7 @@ function CanvasShell({
       setSelectedId(added.at(-1)?.id ?? null);
       scheduleSave(nextNodes, state.edges);
     },
-    [checkpoint, scheduleSave, setNodes, setSelectedId],
+    [canEditCanvas, checkpoint, scheduleSave, setNodes, setSelectedId],
   );
 
   const handleUpload = useCallback(
@@ -8101,7 +8135,7 @@ function CanvasShell({
 
   const beginPendingAssetImports = useCallback(
     (files: readonly File[], position: { x: number; y: number }) => {
-      if (!instanceActive.current || saveSuspended.current) return [];
+      if (!canEditCanvas()) return [];
       if (files.length === 0) return [];
       checkpoint(true);
       const state = useCanvasStore.getState();
@@ -8132,12 +8166,12 @@ function CanvasShell({
       graphRef.current = { nodes: nextNodes, edges: state.edges };
       return pending;
     },
-    [checkpoint],
+    [canEditCanvas, checkpoint],
   );
 
   const completePendingAssetImport = useCallback(
     (nodeId: string, asset: AssetView) => {
-      if (!instanceActive.current || saveSuspended.current) return false;
+      if (!canvasProjectIsReady()) return false;
       const state = useCanvasStore.getState();
       const pendingNode = state.nodes.find((node) => node.id === nodeId);
       if (!pendingNode) {
@@ -8165,12 +8199,12 @@ function CanvasShell({
       scheduleSave(nextNodes, state.edges, state.viewport);
       return true;
     },
-    [revokePendingPreview, scheduleSave],
+    [canvasProjectIsReady, revokePendingPreview, scheduleSave],
   );
 
   const failPendingAssetImport = useCallback(
     (nodeId: string) => {
-      if (!instanceActive.current || saveSuspended.current) return;
+      if (!canvasProjectIsReady()) return;
       const state = useCanvasStore.getState();
       const nextNodes = state.nodes.filter((node) => node.id !== nodeId);
       if (nextNodes.length !== state.nodes.length) {
@@ -8182,7 +8216,7 @@ function CanvasShell({
       }
       revokePendingPreview(nodeId);
     },
-    [revokePendingPreview],
+    [canvasProjectIsReady, revokePendingPreview],
   );
 
   const uploadPendingAssetImports = useCallback(
@@ -8632,15 +8666,20 @@ function CanvasShell({
     // boundary first, then validate its actual payload on drop.
     event.preventDefault();
     event.stopPropagation();
+    if (!canEditCanvas()) {
+      event.dataTransfer.dropEffect = "none";
+      return;
+    }
     event.dataTransfer.dropEffect = "copy";
     setDropActive(true);
-  }, []);
+  }, [canEditCanvas]);
 
   const onCanvasDrop = useCallback(
     async (event: ReactDragEvent) => {
       event.preventDefault();
       event.stopPropagation();
       setDropActive(false);
+      if (!canEditCanvas()) return;
       setCanvasMenu(null);
       setConnectionMenu(null);
       const position = reactFlowRef.current?.screenToFlowPosition({
@@ -8673,6 +8712,7 @@ function CanvasShell({
           Array.from(event.dataTransfer.items),
         ),
       );
+      if (!canEditCanvas()) return;
       let downloadedAssets: AssetView[] = [];
       let sourceFailures: Array<{ index: number; message: string }> = [];
       if (files.length === 0 && droppedSources.length > 0) {
@@ -8686,11 +8726,13 @@ function CanvasShell({
           files = await prepareFilesForImport(
             await filesFromDroppedMediaUrls(inlineSources),
           );
+        if (!canEditCanvas()) return;
         if (downloadableSources.length > 0) {
           showToast("正在下载微信/网页拖入的素材…");
           try {
             const imported =
               await importDroppedMediaSources(downloadableSources);
+            if (!canEditCanvas()) return;
             downloadedAssets = imported.assets;
             sourceFailures = imported.failures;
             void archiveProjectAssets(
@@ -8708,6 +8750,7 @@ function CanvasShell({
           }
         }
       }
+      if (!canEditCanvas()) return;
       if (files.length === 0 && downloadedAssets.length === 0) {
         showToast(
           sourceFailures[0]?.message ??
@@ -8760,10 +8803,12 @@ function CanvasShell({
       void materialDropPollRef.current?.();
       await new Promise<void>((resolve) => window.setTimeout(resolve, 80));
       await materialDropPollRef.current?.();
+      if (!canvasProjectIsReady()) return;
       await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
       await materialDropPollRef.current?.();
 
       const results = await mapWithConcurrency(pending, 3, async (item) => {
+        if (!canvasProjectIsReady()) return false;
         const contentKey = nativeDropContentKey(item.file);
         const bridgeDeadline = Date.now() + 15_000;
         while (
@@ -8772,6 +8817,7 @@ function CanvasShell({
         )
           await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
         if (activeBridgeDropsRef.current.has(item.nodeId)) return false;
+        if (!canvasProjectIsReady()) return false;
         const bridgeHandledAt =
           bridgeHandledNativeDropsRef.current.get(item.nodeId) ?? 0;
         if (Date.now() - bridgeHandledAt < NATIVE_DROP_DEDUPE_WINDOW_MS) {
@@ -8787,8 +8833,7 @@ function CanvasShell({
             return false;
           }
           recentNativeDropsRef.current.set(contentKey, Date.now());
-          completePendingAssetImport(item.nodeId, asset);
-          return true;
+          return completePendingAssetImport(item.nodeId, asset);
         } finally {
           nativeUploadInProgressRef.current.delete(item.nodeId);
           bridgeHandledNativeDropsRef.current.delete(item.nodeId);
@@ -8796,6 +8841,7 @@ function CanvasShell({
         }
       });
       const completed = results.filter(Boolean).length;
+      if (!canvasProjectIsReady()) return;
       // Some Electron/WeChat builds expose a non-empty virtual File whose
       // bytes cannot actually be read. If that upload failed, retry the text
       // URL/cache-path payload through the downloader instead of asking the
@@ -8808,6 +8854,7 @@ function CanvasShell({
           showToast("正在重试下载微信拖入的素材…");
           try {
             const imported = await importDroppedMediaSources(fallbackSources);
+            if (!canEditCanvas()) return;
             downloadedAssets = imported.assets;
             sourceFailures = imported.failures;
             void archiveProjectAssets(
@@ -8850,6 +8897,8 @@ function CanvasShell({
     },
     [
       assets,
+      canEditCanvas,
+      canvasProjectIsReady,
       beginPendingAssetImports,
       completePendingAssetImport,
       failPendingAssetImport,
@@ -8864,6 +8913,7 @@ function CanvasShell({
 
   const openCanvasMenu = useCallback((event: MouseEvent | ReactMouseEvent) => {
     event.preventDefault();
+    if (!canEditCanvas()) return;
     const position = reactFlowRef.current?.screenToFlowPosition({
       x: event.clientX,
       y: event.clientY,
@@ -8876,7 +8926,7 @@ function CanvasShell({
       y: Math.min(Math.max(62, event.clientY), window.innerHeight - 272),
       position,
     });
-  }, []);
+  }, [canEditCanvas]);
 
   const openNodeMenu = useCallback(
     (event: MouseEvent | ReactMouseEvent, node: CanvasNode) => {
@@ -9114,10 +9164,10 @@ function CanvasShell({
   // Build search contents only while the menu is open. Large graphs should not
   // parse every prompt again when the user pans or resizes the canvas.
   const canvasCommands: CanvasCommand[] = commandMenuOpen ? [
-    { id: "create-image", label: "新建图片节点", description: "从提示词或参考图生成图片", group: "开始创作", icon: <ImageIcon size={18} />, onSelect: () => addNewNode("image-generation") },
+    ...(connectionsSettled ? [{ id: "create-image", label: "新建图片节点", description: "从提示词或参考图生成图片", group: "开始创作", icon: <ImageIcon size={18} />, onSelect: () => addNewNode("image-generation") }] : []),
     { id: "create-prompt", label: "新建提示词节点", description: "编写文案与结构化 Prompt", group: "开始创作", icon: <Type size={18} />, onSelect: () => addNewNode("prompt") },
-    { id: "create-video", label: "新建视频节点", description: "创建视频生成工作流", group: "开始创作", icon: <Video size={18} />, onSelect: () => addNewNode("video-generation") },
-    { id: "create-music", label: "新建音乐节点", description: "创作歌曲或纯音乐，支持歌词与音频格式", group: "开始创作", icon: <Music size={18} />, onSelect: () => addNewNode("music-generation") },
+    ...(connectionsSettled ? [{ id: "create-video", label: "新建视频节点", description: "创建视频生成工作流", group: "开始创作", icon: <Video size={18} />, onSelect: () => addNewNode("video-generation") }] : []),
+    ...(connectionsSettled ? [{ id: "create-music", label: "新建音乐节点", description: "创作歌曲或纯音乐，支持歌词与音频格式", group: "开始创作", icon: <Music size={18} />, onSelect: () => addNewNode("music-generation") }] : []),
     { id: "graphic-design", label: "打开平面设计", description: "海报、宣传图与多尺寸物料", group: "开始创作", icon: <Palette size={18} />, onSelect: openGraphicDesign },
     { id: "fit-all", label: "适应全部节点", description: "缩放到整张工作流", shortcut: "F", group: "画布操作", icon: <Maximize size={18} />, onSelect: fitViewToCanvas },
     ...(selectedId ? [{ id: "locate-selected", label: "定位所选节点", description: selectedNode?.data.label, group: "画布操作", icon: <ScanLine size={18} />, onSelect: () => locateCanvasNode(selectedId) }] : []),
@@ -9172,6 +9222,7 @@ function CanvasShell({
             className="top-create-action"
             type="button"
             onClick={() => addNewNode("image-generation")}
+            disabled={initialization.status !== "ready" || !connectionsSettled || leaving}
             title="新建图片生成节点"
           >
             <WandSparkles size={14} />
@@ -9181,6 +9232,7 @@ function CanvasShell({
             className="top-create-action"
             type="button"
             onClick={() => addNewNode("video-generation")}
+            disabled={initialization.status !== "ready" || !connectionsSettled || leaving}
             title="新建视频生成节点"
           >
             <Video size={14} />
@@ -9477,10 +9529,10 @@ function CanvasShell({
         ) : null}
         <nav className="editor-rail" aria-label="创作工具">
           <button type="button" title="海报、宣传图、活动物料" aria-label="打开平面设计" disabled={initialization.status !== "ready"} onClick={openGraphicDesign}><Palette size={20} /><span>设计</span></button>
-          <button type="button" title="图片生成" aria-label="新建图片节点" onClick={() => addNewNode("image-generation")}><ImageIcon size={20} /><span>图片</span></button>
-          <button type="button" title="视频生成" aria-label="新建视频节点" onClick={() => addNewNode("video-generation")}><Video size={20} /><span>视频</span></button>
-          <button type="button" title="音乐生成" aria-label="新建音乐节点" onClick={() => addNewNode("music-generation")}><Music size={20} /><span>音乐</span></button>
-          <button type="button" title="提示词" aria-label="新建提示词节点" onClick={() => addNewNode("prompt")}><Type size={20} /><span>文本</span></button>
+          <button type="button" title="图片生成" aria-label="新建图片节点" disabled={initialization.status !== "ready" || !connectionsSettled || leaving} onClick={() => addNewNode("image-generation")}><ImageIcon size={20} /><span>图片</span></button>
+          <button type="button" title="视频生成" aria-label="新建视频节点" disabled={initialization.status !== "ready" || !connectionsSettled || leaving} onClick={() => addNewNode("video-generation")}><Video size={20} /><span>视频</span></button>
+          <button type="button" title="音乐生成" aria-label="新建音乐节点" disabled={initialization.status !== "ready" || !connectionsSettled || leaving} onClick={() => addNewNode("music-generation")}><Music size={20} /><span>音乐</span></button>
+          <button type="button" title="提示词" aria-label="新建提示词节点" disabled={initialization.status !== "ready" || leaving} onClick={() => addNewNode("prompt")}><Type size={20} /><span>文本</span></button>
           <span className="rail-divider" />
           <button type="button" title="节点与素材库" aria-label="打开节点与素材库" aria-pressed={mobileLibraryOpen} onClick={() => { setMobileLibraryOpen((open) => !open); setMobileProjectsOpen(false); }}><FolderOpen size={20} /><span>素材</span></button>
           <button type="button" aria-label="历史生成" onClick={() => setHistoryOpen(true)}><History size={20} /><span>作品</span></button>
@@ -9567,6 +9619,7 @@ function CanvasShell({
           <div className="node-menu">
             <button
               type="button"
+              disabled={initialization.status !== "ready" || !connectionsSettled || leaving}
               onClick={() => {
                 addNewNode("image-generation");
                 setMobileLibraryOpen(false);
@@ -9583,6 +9636,7 @@ function CanvasShell({
                 addNewNode("video-generation");
                 setMobileLibraryOpen(false);
               }}
+              disabled={initialization.status !== "ready" || !connectionsSettled || leaving}
             >
               <span className="icon">
                 <Video size={14} />
@@ -9595,6 +9649,7 @@ function CanvasShell({
                 addNewNode("prompt");
                 setMobileLibraryOpen(false);
               }}
+              disabled={initialization.status !== "ready" || leaving}
             >
               <span className="icon">
                 <Type size={14} />
@@ -9607,6 +9662,7 @@ function CanvasShell({
                 addNewNode("preview");
                 setMobileLibraryOpen(false);
               }}
+              disabled={initialization.status !== "ready" || leaving}
             >
               <span className="icon">
                 <FolderOpen size={14} />
@@ -10076,6 +10132,7 @@ function CanvasShell({
                   className="button primary small"
                   type="button"
                   onClick={() => addNewNode("image-generation")}
+                  disabled={!connectionsSettled || leaving}
                 >
                   <WandSparkles size={13} /> 新建图片生成
                 </button>
@@ -10083,6 +10140,7 @@ function CanvasShell({
                   className="button small"
                   type="button"
                   onClick={() => addNewNode("video-generation")}
+                  disabled={!connectionsSettled || leaving}
                 >
                   <Video size={13} /> 新建视频生成
                 </button>
@@ -10090,6 +10148,7 @@ function CanvasShell({
                   className="button small"
                   type="button"
                   onClick={() => addNewNode("prompt")}
+                  disabled={leaving}
                 >
                   <Type size={13} /> 新建 Prompt
                 </button>
@@ -10129,6 +10188,7 @@ function CanvasShell({
                 onClick={() =>
                   insertNodeAt("image-generation", canvasMenu.position)
                 }
+                disabled={!connectionsSettled || leaving}
               >
                 <ImageIcon size={13} /> 图片节点
               </button>
@@ -10138,10 +10198,11 @@ function CanvasShell({
                 onClick={() =>
                   insertNodeAt("video-generation", canvasMenu.position)
                 }
+                disabled={!connectionsSettled || leaving}
               >
                 <Video size={13} /> 视频节点
               </button>
-              <button type="button" role="menuitem" onClick={() => insertNodeAt("music-generation", canvasMenu.position)}><Music size={13} /> 音乐节点</button>
+              <button type="button" role="menuitem" disabled={!connectionsSettled || leaving} onClick={() => insertNodeAt("music-generation", canvasMenu.position)}><Music size={13} /> 音乐节点</button>
               <button
                 type="button"
                 role="menuitem"
