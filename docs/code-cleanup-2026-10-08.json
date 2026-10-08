@@ -12,7 +12,8 @@
     "sharedCssAndHistoryApisRetained": true
   },
   "refactors": {
-    "downloadCallSites": 4,
+    "downloadCallerComponents": 4,
+    "downloadCallSites": 5,
     "temporaryUrlRevokeDelayMs": 1000,
     "preflight": "Incoming edge index and iterative ancestor traversal",
     "supplierAndBillingContractsUnchanged": true,

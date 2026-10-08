@@ -7,7 +7,7 @@
 | 范围 | 修改与依据 |
 | --- | --- |
 | 旧界面文件 | 删除 `components/agent-panel.tsx` 和 `components/super-director-panel.tsx`，共 3,012 行。初轮 TypeScript AST 扫描全仓 808 个源码模块的 import/export/require/dynamic import，确认这两个组件无引用；当前入口实际使用 `creative-agent-panel.tsx` |
-| 文件下载与导出 | 项目 JSON/完整项目包、定稿交付、设计方案包和任务诊断四处调用统一的 `lib/blob-download.ts`。保持各调用方原始 Blob、MIME、文件名和 1 秒 URL 回收时序，失败继续向原调用方抛出，并清理临时链接 |
+| 文件下载与导出 | 项目 JSON/完整项目包、定稿交付、设计方案包和任务诊断等四个组件、五处调用统一的 `lib/blob-download.ts`。保持各调用方原始 Blob、MIME、文件名和 1 秒 URL 回收时序，失败继续向原调用方抛出，并清理临时链接 |
 | 长工作流预检 | `desktop-preflight.ts` 对入边建立一次索引，以显式栈代替递归与重复扫描全体边。基线 12,000 节点合成链会抛 `Maximum call stack size exceeded`，整理后得到正确业务错误或正常放行纯文本链 |
 | 无效配置 | 去掉无读取引用的 `NEXT_PUBLIC_DIRECTOR_ENABLED`、两条被通用规则覆盖的 test-results 忽略项，以及只匹配旧 Next 16.3.3 的两条 override |
 | 锁文件 | 只同步删除上述两条 override，依赖解析图保持原样。`importers/packages/snapshots` 前后 SHA256 相同：`ea543f6a04b83a26b18f3985ecf3be6c7c41c8daeb406e8907232dba0ae665c0`，离线 frozen-lockfile 检查通过 |
