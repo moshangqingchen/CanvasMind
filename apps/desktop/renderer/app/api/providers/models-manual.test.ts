@@ -1,15 +1,42 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository } from "@super-canvas/db";
-import { ProviderHttpError } from "@super-canvas/providers";
-const mocks = vi.hoisted(() => ({ repository: undefined as unknown as MemoryRepository, fetch: vi.fn() }));
+import { ProviderHttpError, type ModelDescriptor } from "@super-canvas/providers";
+const mocks = vi.hoisted(() => ({
+  repository: undefined as unknown as MemoryRepository,
+  fetch: vi.fn(),
+  unexpectedFetch: vi.fn(),
+  prices: vi.fn(),
+  interfaces: vi.fn(),
+  capabilities: vi.fn(),
+}));
 vi.mock("../../../lib/server", () => ({ get repository() { return mocks.repository; }, jsonError: (error: string, status: number) => Response.json({ error }, { status }) }));
 vi.mock("../../../lib/master-key", () => ({ requireServerMasterKey: () => "unit-test-key" }));
-vi.mock("@super-canvas/providers", async (importOriginal) => ({ ...await importOriginal<typeof import("@super-canvas/providers")>(), fetchProviderJson: mocks.fetch, decryptSecret: () => "unit-test-token" }));
+vi.mock("@super-canvas/providers", async (importOriginal) => ({ ...await importOriginal<typeof import("@super-canvas/providers")>(), fetchProviderJson: mocks.fetch, providerFetch: mocks.unexpectedFetch, decryptSecret: () => "unit-test-token" }));
+// This suite checks catalog authentication and declared manual contracts.
+// Price, interface-document and agent-capability reads have their own suites;
+// replacing fetchProviderJson alone leaves those independent network paths live.
+vi.mock("../../../lib/supplier-model-pricing", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../lib/supplier-model-pricing")>(),
+  enrichSupplierModelPrices: mocks.prices,
+}));
+vi.mock("../../../lib/supplier-interface-discovery", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../lib/supplier-interface-discovery")>(),
+  discoverSupplierModelInterfaces: mocks.interfaces,
+}));
+vi.mock("../../../lib/agent-model-discovery", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../lib/agent-model-discovery")>(),
+  discoverAgentModelCapabilities: mocks.capabilities,
+}));
 import { GET } from "./[id]/models/route";
 beforeEach(async () => {
   mocks.repository = new MemoryRepository(); mocks.fetch.mockReset();
+  mocks.unexpectedFetch.mockReset().mockRejectedValue(new Error("Unexpected external read in manual model contract test"));
+  mocks.prices.mockReset().mockImplementation(async (_connection: unknown, models: readonly ModelDescriptor[]) => [...models]);
+  mocks.interfaces.mockReset().mockImplementation(async (_connection: unknown, models: readonly ModelDescriptor[]) => ({ models: [...models], bindings: {} }));
+  mocks.capabilities.mockReset().mockImplementation(async (_connection: unknown, models: readonly ModelDescriptor[]) => [...models]);
   await mocks.repository.saveConnection({ id: "manual", provider: "openai", name: "Manual", encryptedSecret: "test-encrypted", config: { customGroup: true, modelGroup: "Manual", baseUrl: "https://example.com/v1", usage: "canvas", manualModels: [{ id: "custom-model", capability: "image", protocol: "openai-images" }] } });
 });
+afterEach(() => expect(mocks.unexpectedFetch).not.toHaveBeenCalled());
 const read = () => GET(new Request("http://localhost/api/providers/manual/models?refresh=1"), { params: Promise.resolve({ id: "manual" }) });
 describe("manual model scan behavior", () => {
   it("never falls back to manual models after an explicit 401", async () => {
@@ -34,7 +61,18 @@ describe("manual model scan behavior", () => {
   it("uses a declared manual protocol for an authenticated unknown model ID", async () => {
     mocks.fetch.mockResolvedValue({ data: [{ id: "custom-model" }] });
     const response = await read();
-    expect(await response.json()).toMatchObject([{ id: "custom-model", operations: ["image.generate", "image.edit"] }]);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Model-Scan-Status")).toBe("live");
+    expect(await response.json()).toMatchObject([{ id: "custom-model", operations: ["image.generate", "image.edit"], metadata: { protocol: "openai-images" } }]);
     expect((await mocks.repository.getConnection("manual"))?.config.scannedModelIds).toEqual(["custom-model"]);
+    expect(mocks.fetch).toHaveBeenCalledExactlyOnceWith(
+      mocks.unexpectedFetch,
+      "https://example.com/v1/models",
+      expect.objectContaining({ method: "GET", headers: { authorization: "Bearer unit-test-token" } }),
+      expect.objectContaining({ phase: "connect" }),
+    );
+    expect(mocks.prices).toHaveBeenCalledOnce();
+    expect(mocks.interfaces).toHaveBeenCalledOnce();
+    expect(mocks.capabilities).toHaveBeenCalledOnce();
   });
 });

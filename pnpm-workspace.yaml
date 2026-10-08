@@ -12,8 +12,6 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - electron@44.4.1
 overrides:
-  "next@16.3.3>postcss": 8.5.26
-  "next@16.3.3>sharp": 0.35.5
   browserslist: 4.28.7
   js-yaml@^4.1.0: 4.3.2
   "brace-expansion@>=1 <2": 1.1.18

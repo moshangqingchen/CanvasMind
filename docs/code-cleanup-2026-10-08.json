@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-08",
+  "timezone": "America/Los_Angeles",
+  "baselineCommit": "864b5f8a266a07d7a5bf5d3ef81d59704540c72d",
+  "phase": "Pre-release source-cleanup validation",
+  "delivery": "Source cleanup validated before publication; stable release at validation time was 0.2.66. Subsequent upgrade notes: docs/releases/v0.2.67.md",
+  "removedUnusedComponents": {
+    "files": ["apps/desktop/renderer/components/agent-panel.tsx", "apps/desktop/renderer/components/super-director-panel.tsx"],
+    "sourceLines": 3012,
+    "initialAstModulesScanned": 808,
+    "currentCreativeAgentRetained": true,
+    "sharedCssAndHistoryApisRetained": true
+  },
+  "refactors": {
+    "downloadCallSites": 4,
+    "temporaryUrlRevokeDelayMs": 1000,
+    "preflight": "Incoming edge index and iterative ancestor traversal",
+    "supplierAndBillingContractsUnchanged": true,
+    "randomGraphsCompared": 4000,
+    "differentialStartsCompared": 49425,
+    "differentialMismatches": 0,
+    "maximumChainNodesTested": 12000
+  },
+  "configuration": {
+    "obsoleteOverridesRemoved": 2,
+    "obsoleteEnvironmentSwitchesRemoved": 1,
+    "redundantIgnoreRulesRemoved": 2,
+    "lockResolutionGraphUnchanged": true,
+    "lockResolutionBodySha256": "ea543f6a04b83a26b18f3985ecf3be6c7c41c8daeb406e8907232dba0ae665c0"
+  },
+  "generatedCleanup": {
+    "bytesRemovedByOperation": 969142,
+    "filesRemoved": 3,
+    "paths": ["apps/desktop/renderer/playwright-report", "apps/desktop/renderer/test-results", "apps/desktop/renderer/tsconfig.tsbuildinfo"],
+    "uniqueHistoricalScreenshotsRetained": true,
+    "netDiskSavingAfterRebuild": "Not claimed; verification regenerates necessary caches"
+  },
+  "tests": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "units": {"passed": 3850, "failed": 0},
+    "unitPackages": {"core": 30, "db": 50, "storage": 27, "providers": 1187, "director": 24, "desktop": 76, "runtime": 366, "renderer": 2090},
+    "maintenancePassed": 12,
+    "manualContractIndependentProcesses": 5,
+    "manualContractIndependentPassed": 15,
+    "manualContractExtraRequests": 0,
+    "browser": {"channel": "chrome", "passed": 7, "failed": 0, "automaticRetries": 0, "durationSeconds": 18.6},
+    "packagedStandardPassed": 27,
+    "packagedNormalGpuWindowedPassed": 4,
+    "windowedRendererErrors": 0,
+    "productionUnpackedBuild": "passed",
+    "buildId": "u_4tOmlhNVgOpiXxGF69V"
+  },
+  "initialFailuresPreserved": [
+    "Manual model unit test timeout at 5000ms; fixed missing isolation of independent price/document/capability reads",
+    "Cached Chromium spawn UNKNOWN before functional assertions; separate final run with installed Chrome passed"
+  ],
+  "safety": {
+    "formalProfileRead": false,
+    "formalProfileWritten": false,
+    "formalInstallationStarted": false,
+    "paidGenerationSubmissions": 0,
+    "realKeysRead": false,
+    "storageGcExecuted": false,
+    "backupsAndEvidenceRetained": true,
+    "optionalCloudGatewayRetained": true,
+    "testsUsedIsolatedSyntheticData": true
+  },
+  "limits": ["These results record local cleanup validation before the subsequent 0.2.67 publication; the unpacked build is not a new installer", "Short desktop smoke is not a multi-hour stability or memory-leak proof", "Iterative graph traversal does not remove all nested-object recursion"],
+  "evidenceRoot": ".codex-temp/source-cleanup-20261008/"
+}

@@ -104,7 +104,7 @@ async function readCharge(
 }
 
 const documentCache = new Map<string, Promise<string | undefined>>();
-async function readDocument(supplier: SupplierRecord, model: ModelDescriptor) {
+async function readDocument(_supplier: SupplierRecord, model: ModelDescriptor) {
   const raw = model.metadata?.documentationUrl ?? model.metadata?.docsUrl;
   if (typeof raw !== "string") return undefined;
   let url: URL;

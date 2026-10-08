@@ -8,6 +8,7 @@ import { retainedImageModelForDisplay } from "../lib/image-model-presentation";
 import { ensureMaskNodeSize, hasImageMask, MASK_EDIT_NODE_MIN_HEIGHT, MASK_EDIT_NODE_DEFAULT_HEIGHT } from "../lib/generation-node-layout";
 import { imageModeParameters, preserveImageMaskParameters } from "../lib/image-editing";
 import { assetDownloadPath } from "../lib/asset-download";
+import { downloadBlob } from "../lib/blob-download";
 import { ImageMaskEditor } from "./image-mask-editor";
 import { ProjectFilesModal, type ProjectFileItem } from "./project-files-modal";
 import { generationDetailsFromRun, resultGenerationConfiguration, resultPrompt } from "../lib/result-provenance";
@@ -2124,18 +2125,6 @@ function safeDownloadBaseName(value: string): string {
       .replace(/[. ]+$/gu, "")
       .slice(0, 120) || "super-canvas"
   );
-}
-
-function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.style.display = "none";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 function nodePortKind(

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertDesktopPublicAssets } from "../src/desktop-preflight.js";
+import { assertDesktopPublicAssets, DesktopPublicAssetError } from "../src/desktop-preflight.js";
 import type { WorkflowGraph } from "@super-canvas/core";
 import { cangyuanCurrentTransport } from "@super-canvas/providers";
 
@@ -9,6 +9,65 @@ const graph = { schemaVersion: 1, nodes: [
   { id: "video", type: "video-generation", position: { x: 1, y: 0 }, data: { type: "video-generation", provider: "rest", __runtimeConnection: { provider: "rest", config: { connector: { assetsRequirePublicUrls: true } } } } },
 ], edges: [{ id: "e", source: "source", target: "video", sourceHandle: "image", targetHandle: "firstFrame" }], viewport: { x: 0, y: 0, zoom: 1 } } as unknown as WorkflowGraph;
 describe("desktop public asset preflight", () => {
+  function longReferenceChain(hasMedia: boolean): WorkflowGraph {
+    const nodes = Array.from({ length: 12_000 }, (_, index) => ({
+      id: `prompt-${index}`,
+      type: "prompt",
+      data: { nodeType: "prompt" },
+    }));
+    const edges = nodes.slice(1).map((node, index) => ({
+      id: `chain-${index}`,
+      source: nodes[index]!.id,
+      target: node.id,
+    }));
+    return {
+      nodes: [
+        {
+          id: "source",
+          type: hasMedia ? "asset-input" : "prompt",
+          data: hasMedia ? { nodeType: "asset-input", assetId: "synthetic-image" } : { nodeType: "prompt" },
+        },
+        ...nodes,
+        graph.nodes[1]!,
+      ],
+      edges: [
+        { id: "first", source: "source", target: nodes[0]!.id },
+        ...edges,
+        { id: "last", source: nodes.at(-1)!.id, target: "video" },
+      ],
+    };
+  }
+
+  it("rejects a public-asset dependency across 12,000 nodes without exhausting the call stack", () => {
+    vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
+    vi.stubEnv("SUPERCANVAS_REFERENCE_CHANNEL_FILE", "");
+    expect(() => assertDesktopPublicAssets(longReferenceChain(true), new Set(["video"])))
+      .toThrow(DesktopPublicAssetError);
+  });
+
+  it("allows a 12,000-node text-only dependency chain", () => {
+    vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
+    vi.stubEnv("SUPERCANVAS_REFERENCE_CHANNEL_FILE", "");
+    expect(() => assertDesktopPublicAssets(longReferenceChain(false), new Set(["video"])))
+      .not.toThrow();
+  });
+
+  it("terminates on upstream text-only cycles and still detects media reached through a cycle", () => {
+    vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
+    vi.stubEnv("SUPERCANVAS_REFERENCE_CHANNEL_FILE", "");
+    const cyclic = longReferenceChain(false);
+    const lastPrompt = "prompt-11999";
+    const edges = [...cyclic.edges, { id: "loop", source: lastPrompt, target: "source" }];
+    expect(() => assertDesktopPublicAssets({ ...cyclic, edges }, new Set(["video"])))
+      .not.toThrow();
+    const withMedia = { ...cyclic, nodes: [
+      ...cyclic.nodes,
+      { id: "music", type: "music-generation", data: { nodeType: "music-generation" } },
+    ], edges: [...edges, { id: "music-source", source: "music", target: "source" }] };
+    expect(() => assertDesktopPublicAssets(withMedia, new Set(["video"])))
+      .toThrow(DesktopPublicAssetError);
+  });
+
   it("requires configured reference delivery for current Chuangxiang GPT edits", () => {
     vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
     const current = structuredClone(graph);

@@ -18,16 +18,30 @@ export function assertDesktopPublicAssets(graph: WorkflowGraph, selected: Readon
   if (process.env.SUPERCANVAS_DESKTOP !== "true") return;
   if (localReferenceChannel()) return;
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-  const containsMedia = (id: string, visited = new Set<string>()): boolean => {
-    if (visited.has(id)) return false;
-    visited.add(id);
-    const node = byId.get(id);
-    if (!node) return false;
-    const data = node.data as Record<string, unknown>;
-    if (hasAssetReference(data)) return true;
-    const type = data.nodeType ?? node.type;
-    if (["asset-input", "image-generation", "video-generation", "music-generation"].includes(String(type))) return true;
-    return graph.edges.filter((edge) => edge.target === id).some((edge) => containsMedia(edge.source, visited));
+  const incoming = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    const sources = incoming.get(edge.target);
+    if (sources) sources.push(edge.source);
+    else incoming.set(edge.target, [edge.source]);
+  }
+  const containsMedia = (id: string): boolean => {
+    const pending = [id];
+    const visited = new Set<string>();
+    // Imported workflows can exceed the JavaScript call stack. Inspect each
+    // upstream node once without repeatedly filtering the complete edge list.
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const node = byId.get(current);
+      if (!node) continue;
+      const data = node.data as Record<string, unknown>;
+      if (hasAssetReference(data)) return true;
+      const type = data.nodeType ?? node.type;
+      if (["asset-input", "image-generation", "video-generation", "music-generation"].includes(String(type))) return true;
+      for (const source of incoming.get(current) ?? []) pending.push(source);
+    }
+    return false;
   };
   for (const node of graph.nodes) {
     if (!selected.has(node.id)) continue;
@@ -44,7 +58,7 @@ export function assertDesktopPublicAssets(graph: WorkflowGraph, selected: Readon
         !secureSkillRequiresPublicAssets(provider, connection?.config, model, operation) &&
         !chuangxiangRequiresPublicAssets(provider, connection?.config, model, operation) &&
         !bananaRequiresPublicAssets(provider, connection?.config, model) && !urlMask) continue;
-    if (hasAssetReference(data) || graph.edges.filter((edge) => edge.target === node.id).some((edge) => containsMedia(edge.source))) {
+    if (hasAssetReference(data) || (incoming.get(node.id) ?? []).some(containsMedia)) {
       throw new DesktopPublicAssetError();
     }
   }

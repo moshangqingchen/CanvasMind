@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { readImageDesignReview } from "@super-canvas/core";
 import type { AssetView } from "./types";
 import type { ProjectResult } from "../lib/project-results";
+import { downloadBlob } from "../lib/blob-download";
 import {
   createDesignDelivery,
   DELIVERY_CHECKS,
@@ -76,12 +77,7 @@ export function DesignDeliveryCheck({
               dimensions,
               checks,
             });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `定稿交付-${asset.id}.zip`;
-            link.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            downloadBlob(blob, `定稿交付-${asset.id}.zip`);
             setMessage("已导出原始成图与交付检查记录");
           } catch (error) {
             setMessage(

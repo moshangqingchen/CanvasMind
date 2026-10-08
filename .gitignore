@@ -29,8 +29,6 @@ test-results/
 test-results-*/
 .ui-*-results/
 project development*.codex-temp*/
-apps/desktop/renderer/test-results-mention/
-apps/desktop/renderer/test-results-suppliers/
 
 # local secrets & tool artifacts
 .claude/

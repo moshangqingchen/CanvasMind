@@ -15,6 +15,7 @@ import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
 import { TaskEvidence } from "./task-evidence";
 import { FailureDiagnosis } from "./failure-diagnosis";
 import { resultElapsed } from "../lib/result-provenance";
+import { downloadBlob } from "../lib/blob-download";
 import { useDialogFocus } from "./use-dialog-focus";
 import type { RunSnapshot } from "./types";
 import "./task-center.css";
@@ -338,16 +339,12 @@ export function RunHistoryModal({
                             timeline: node.request?.submissionTimeline,
                           })),
                         };
-                        const url = URL.createObjectURL(
+                        downloadBlob(
                           new Blob([JSON.stringify(diagnostic, null, 2)], {
                             type: "application/json",
                           }),
+                          `task-${run.id}.json`,
                         );
-                        const link = document.createElement("a");
-                        link.href = url;
-                        link.download = `task-${run.id}.json`;
-                        link.click();
-                        setTimeout(() => URL.revokeObjectURL(url), 1000);
                       }}
                     >
                       <Download size={12} /> 导出诊断信息

@@ -36,7 +36,7 @@ describe("deleteAssets", () => {
       (_, index) => `asset-${index}`,
     );
     const fetchMock = vi.fn(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body)) as { assetIds: string[] };
         return Response.json({ deletedIds: body.assetIds, failedIds: [] });
       },

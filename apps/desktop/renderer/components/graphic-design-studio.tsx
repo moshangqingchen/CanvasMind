@@ -32,6 +32,7 @@ import {
 import styles from "./graphic-design-studio.module.css";
 import { designBatchPrice } from "../lib/design-batch-price";
 import { createPortableProjectPackage } from "../lib/project-transfer";
+import { downloadBlob } from "../lib/blob-download";
 
 type ModelOption = {
   key: string;
@@ -1032,7 +1033,7 @@ export function GraphicDesignStudio(props: GraphicDesignStudioProps) {
                 try {
                   const draft = createGraphicDesignDraft({ brief, model: selectedModel.model, connection: {id: selectedModel.connectionId, provider: selectedModel.provider}, assets: imageAssets, position: {x: 100, y: 100} });
                   const blob = await createPortableProjectPackage({title: recipeName.trim() || brief.headline || "常用设计方案", graph: { schemaVersion: 1, nodes: draft.nodes, edges: draft.edges }, assets: imageAssets});
-                  const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "常用设计方案.supercanvas"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  downloadBlob(blob, "常用设计方案.supercanvas");
                   setNotice("已导出包含需求与参考素材的方案包，可通过项目菜单导入后继续使用。");
                 } catch (cause) { setError(cause instanceof Error ? cause.message : "方案导出失败"); }
                 finally { busyRef.current = false; setBusy(null); }
