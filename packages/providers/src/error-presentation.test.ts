@@ -4,6 +4,46 @@ import { presentProviderError } from "./error-presentation";
 import { ProviderHttpError } from "./http";
 
 describe("provider error presentation", () => {
+  it.each([
+    ['JSON API key', '{"api_key":"synthetic-qa-marker"}'],
+    ['quoted password with spaces', '{"password":"synthetic-qa-marker with spaces"}'],
+    ['bare field with quoted password', 'password="first part synthetic-qa-marker"'],
+    ['YAML quoted API key', 'api_key: "first part synthetic-qa-marker"'],
+    ['escaped quoted secret', '{"secret":"synthetic-qa-marker\\\" suffix"}'],
+    ['single quoted token', "{'access_token':'synthetic-qa-marker'}"],
+    ['URL userinfo', 'request https://qa-user:synthetic-qa-marker@provider.example/task?id=42'],
+    ['encoded URL token', 'request https://provider.example/task?access_token=synthetic%2Dqa%2Dmarker&id=42'],
+  ])("redacts %s echoed in a provider error before exposing diagnostics", (_label, message) => {
+    const error = new ProviderHttpError("Provider returned HTTP 500", {
+      kind: "provider", phase: "submit", status: 500, retryable: false,
+      submissionMayHaveOccurred: true, responseBody: { error: { message } },
+    });
+    const presentation = presentProviderError(error, { provider: "rest" });
+    expect(presentation.providerMessage).toContain("redacted");
+    expect(JSON.stringify(presentation)).not.toMatch(/synthetic(?:-|%2D)qa(?:-|%2D)marker/iu);
+    expect(presentation).toMatchObject({ statusCode: 500, retryable: false, submissionMayHaveOccurred: true });
+  });
+
+  it("redacts credential assignments in provider error codes", () => {
+    const error = new ProviderHttpError("Provider returned HTTP 500", {
+      kind: "provider", phase: "submit", status: 500, retryable: false,
+      submissionMayHaveOccurred: true, responseBody: { error: { code: 'token=synthetic-qa-marker', message: 'Provider failed' } },
+    });
+    const presentation = presentProviderError(error, { provider: "rest" });
+    expect(presentation.code).toContain("redacted");
+    expect(JSON.stringify(presentation)).not.toContain("synthetic-qa-marker");
+  });
+
+  it("keeps public URLs and ordinary provider codes useful after diagnostic sanitization", () => {
+    const error = new ProviderHttpError("Provider returned HTTP 400", {
+      kind: "invalid_request", phase: "submit", status: 400, retryable: false,
+      submissionMayHaveOccurred: false, responseBody: { error: { code: 'unsupported_parameter',
+        message: 'See https://provider.example/docs/model?id=42 for supported resolution' } },
+    });
+    expect(presentProviderError(error, { provider: "rest" })).toMatchObject({ code: 'unsupported_parameter',
+      providerMessage: 'See https://provider.example/docs/model?id=42 for supported resolution' });
+  });
+
   it("explains a repeated-content 24-hour rejection without inventing billing evidence", () => {
     const error = new ProviderHttpError("Provider returned HTTP 451", {
       kind: "invalid_request", phase: "submit", status: 451, retryable: false, submissionMayHaveOccurred: false,

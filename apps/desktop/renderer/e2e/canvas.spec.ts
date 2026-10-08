@@ -914,6 +914,56 @@ test.describe("超级画布完整验收", () => {
     await expect(page.getByRole("button", { name: "重新加载" })).toBeVisible();
   });
 
+  test("画布加载失败可以返回首页再打开健康项目，加载中保护入口且失败画布不保存", async ({ page, request }, testInfo) => {
+    const fixture = await getJson<CanvasResponse>(request, "/api/canvas");
+    const healthyTitle = `错误恢复健康画布-${Date.now()}`;
+    const created = await request.post("/api/canvas", { data: { title: healthyTitle, graph: workflowGraph() } });
+    expect(created.ok()).toBeTruthy();
+    const healthy = await created.json() as CanvasResponse;
+    const errors: string[] = [];
+    let damagedWrites = 0;
+    page.on("pageerror", error => errors.push(error.message));
+    let releaseRead!: () => void;
+    const readAllowed = new Promise<void>(resolve => { releaseRead = resolve; });
+    await page.route(`**/api/canvas/${fixture.id}`, async route => {
+      if (route.request().method() !== "GET") {
+        damagedWrites++;
+        return route.fulfill({ status: 500, json: { error: "失败画布不能被空草稿覆盖" } });
+      }
+      await readAllowed;
+      return route.fulfill({ json: { id: fixture.id, title: "持续损坏画布", revision: 1,
+        graph: { schemaVersion: 1, nodes: [{ id: "broken-node", type: "workflow", position: { x: 0, y: 0 }, data: null }], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      } });
+    });
+    try {
+      await page.goto(`/canvas/${fixture.id}`);
+      const home = page.locator("button.editor-home");
+      await expect(home).toBeDisabled();
+      releaseRead();
+      await expect(page.locator('.canvas-empty-state[role="alert"]')).toContainText("画布加载失败");
+      await expect(home).toBeEnabled();
+      await page.screenshot({ path: testInfo.outputPath("canvas-initialization-error-can-leave.png") });
+      await home.click();
+      await expect(page).toHaveURL(/\/$/u);
+      await expect(page.getByRole("heading", { name: "我的画布", exact: true })).toBeVisible();
+      await page.locator(`a[href="/canvas/${healthy.id}"]`).last().click();
+      const editor = page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt');
+      await expect(editor).toContainText("电影感的未来城市");
+      await editor.fill("从损坏画布返回后仍可编辑保存健康项目");
+      await page.getByRole("button", { name: "返回主界面", exact: true }).click();
+      await expect(page).toHaveURL(/\/$/u);
+      const saved = await getJson<CanvasResponse>(request, `/api/canvas/${healthy.id}`);
+      expect(JSON.stringify(saved.graph.nodes.find(node => node.id === "e2e-prompt")?.data.parts)).toContain("从损坏画布返回后仍可编辑保存健康项目");
+      expect(damagedWrites).toBe(0);
+      const unchanged = await getJson<CanvasResponse>(request, `/api/canvas/${fixture.id}`);
+      expect(unchanged.graph).toEqual(fixture.graph);
+      expect(errors).toEqual([]);
+    } finally {
+      releaseRead();
+      await testInfo.attach("canvas-error-navigation-observation", { body: JSON.stringify({ damagedWrites, errors }), contentType: "application/json" });
+    }
+  });
+
   test("智能体直接进入供应商设置，界面不再显示导演台和手动能力配置", async ({ page }) => {
     await openWorkspace(page);
     await page.getByRole("button", { name: "打开智能体", exact: true }).click();
@@ -2779,11 +2829,10 @@ test.describe("超级画布完整验收", () => {
     await expect(previewDialog).toBeVisible();
     await expect(previewDialog.locator(".asset-zoom-level")).toHaveText("100%");
     const imageStage = previewDialog.locator(".image-zoom-stage");
-    await imageStage.dispatchEvent("wheel", {
-      deltaY: -100,
-      clientX: 320,
-      clientY: 240,
-    });
+    const wheelConsumed = await imageStage.evaluate(element => !element.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true, cancelable: true, deltaY: -100, clientX: 320, clientY: 240,
+    })));
+    expect(wheelConsumed, "预览缩放拦截原始滚轮，避免同时滚动背景").toBe(true);
     await expect(previewDialog.locator(".asset-zoom-level")).toHaveText("115%");
     await expect(imageStage).toHaveClass(/can-pan/);
     const stageBounds = await imageStage.boundingBox();

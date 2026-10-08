@@ -1,6 +1,3 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
@@ -61,14 +58,12 @@ const music: ModelDescriptor = {
 const understanding: ModelDescriptor = { id: "ui-image-understanding", name: "只读图片理解模型", operations: [], inputKinds: ["image", "text"], outputKinds: ["text"] };
 const speech: ModelDescriptor = { id: "ui-text-to-speech", name: "只读语音合成模型", operations: [], inputKinds: ["text"], outputKinds: ["audio"] };
 const models = [image, video, alternateVideo, music, understanding, speech];
-const screenshots = fileURLToPath(new URL("../../../../docs/supplier-media-ui-2026-10-07/", import.meta.url));
 type MediaKind = "image" | "video" | "music";
 const initialModel = { image, video, music };
 const labels = { image: "图片合同验收", video: "视频合同验收", music: "音乐合同验收" };
 
 test.beforeAll(async () => {
   expect(process.env.PLAYWRIGHT_BASE_URL, "媒体合同验收只能使用 globalSetup 创建的隔离数据目录").toBeFalsy();
-  await mkdir(screenshots, { recursive: true });
 });
 
 async function setup(page: Page, request: APIRequestContext, kind: MediaKind) {
@@ -144,7 +139,7 @@ async function expectContained(locator: Locator, viewportWidth: number) {
 }
 
 for (const kind of ["image", "video", "music"] as const) {
-  test(`${labels[kind]}：混合分组只显示当前媒体类型，理解与语音合成不会混入`, async ({ page, request }) => {
+  test(`${labels[kind]}：混合分组只显示当前媒体类型，理解与语音合成不会混入`, async ({ page, request }, testInfo) => {
     const f = await setup(page, request, kind);
     try {
       await f.picker.click();
@@ -153,7 +148,7 @@ for (const kind of ["image", "video", "music"] as const) {
       for (const model of expected) await expect(f.panel.getByRole("option", { name: model.name, exact: true })).toBeVisible();
       for (const model of models.filter(model => !expected.includes(model)))
         await expect(f.panel.getByRole("option", { name: model.name, exact: true })).toHaveCount(0);
-      await f.panel.screenshot({ path: join(screenshots, `${kind}-typed-model-menu.png`) });
+      await f.panel.screenshot({ path: testInfo.outputPath(`${kind}-typed-model-menu.png`) });
       if (kind === "image") {
         await page.keyboard.press("Escape");
         const prices = f.panel.getByLabel("当前参数价格", { exact: true });
@@ -164,13 +159,13 @@ for (const kind of ["image", "video", "music"] as const) {
         await page.reload(); await f.open();
         await expect(f.panel.getByLabel("生成数量", { exact: true })).toHaveValue("3");
         await expect(prices).toContainText("本次预计费用 0.24 CNY");
-        await f.panel.screenshot({ path: join(screenshots, "image-count-price-restored.png") });
+        await f.panel.screenshot({ path: testInfo.outputPath("image-count-price-restored.png") });
       }
     } finally { f.safe(); }
   });
 }
 
-test("视频分辨率切换收紧离散时长，费用随秒数和数量变化，型号与参数刷新恢复", async ({ page, request }) => {
+test("视频分辨率切换收紧离散时长，费用随秒数和数量变化，型号与参数刷新恢复", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, "video");
   try {
     const resolution = f.panel.getByLabel("视频分辨率", { exact: true });
@@ -199,7 +194,7 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await f.panel.getByText("参考素材与限制", { exact: true }).click();
     await expect(prices).toContainText("图片最多 9 张");
     await expect(prices).toContainText("首尾帧与参考素材分别使用");
-    await f.panel.screenshot({ path: join(screenshots, "video-dynamic-parameters-price.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("video-dynamic-parameters-price.png") });
 
     await f.picker.click();
     await f.panel.getByRole("option", { name: alternateVideo.name, exact: true }).click();
@@ -214,11 +209,11 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await expect(f.picker).toContainText(alternateVideo.name);
     await expect(duration).toHaveValue("4");
     await expect(f.panel.getByRole("alert")).toHaveCount(0);
-    await f.panel.screenshot({ path: join(screenshots, "video-fixed-request-model-restored.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("video-fixed-request-model-restored.png") });
   } finally { f.safe(); }
 });
 
-test("音乐歌词占完整行，纯音乐切换隐藏歌词，音频参数与费用保存恢复", async ({ page, request }) => {
+test("音乐歌词占完整行，纯音乐切换隐藏歌词，音频参数与费用保存恢复", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, "music");
   try {
     const lyrics = f.panel.getByLabel("歌词", { exact: true });
@@ -234,7 +229,7 @@ test("音乐歌词占完整行，纯音乐切换隐藏歌词，音频参数与�
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ title: "晨光", lyrics: "[Verse]\n晨光照进窗\n[Chorus]\n一起出发", duration: 120, audio_format: "wav" });
     await page.reload(); await f.open();
     await expect(lyrics).toHaveValue("[Verse]\n晨光照进窗\n[Chorus]\n一起出发");
-    await f.panel.screenshot({ path: join(screenshots, "music-lyrics-parameters.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("music-lyrics-parameters.png") });
     await f.panel.getByLabel("纯音乐", { exact: true }).check();
     await expect(lyrics).toHaveCount(0);
     await expect.poll(async () => (await f.saved()).parameters.instrumental).toBe(true);
@@ -246,7 +241,7 @@ test("音乐歌词占完整行，纯音乐切换隐藏歌词，音频参数与�
     await expect(lyrics).toHaveCount(0);
     await expect(f.panel.getByRole("alert")).toHaveCount(0);
     await expect(f.panel.getByLabel("当前参数价格", { exact: true })).toContainText("本次预计费用 0.8 CNY");
-    await f.panel.screenshot({ path: join(screenshots, "music-instrumental-restored.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("music-instrumental-restored.png") });
     await page.setViewportSize({ width: 720, height: 1000 });
     const closeAgent = page.getByRole("button", { name: "关闭智能体", exact: true });
     if (await closeAgent.isVisible()) await closeAgent.click();
@@ -256,11 +251,11 @@ test("音乐歌词占完整行，纯音乐切换隐藏歌词，音频参数与�
     await expectContained(f.panel, 720);
     await expectContained(f.panel.locator(".parameter-grid"), 720);
     await expectContained(lyrics, 720);
-    await f.panel.screenshot({ path: join(screenshots, "music-narrow-window-lyrics.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("music-narrow-window-lyrics.png") });
   } finally { f.safe(); }
 });
 
-test("窄窗口长型号菜单、参数网格与费用说明不横向溢出", async ({ page, request }) => {
+test("窄窗口长型号菜单、参数网格与费用说明不横向溢出", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, "video");
   try {
     await page.setViewportSize({ width: 720, height: 1000 });
@@ -275,11 +270,11 @@ test("窄窗口长型号菜单、参数网格与费用说明不横向溢出", as
     await expectContained(menu, 720);
     await expectContained(menu.getByRole("listbox"), 720);
     await expect(f.panel.getByRole("option", { name: video.name, exact: true })).toBeVisible();
-    await page.screenshot({ path: join(screenshots, "video-narrow-window-model-menu.png") });
+    await page.screenshot({ path: testInfo.outputPath("video-narrow-window-model-menu.png") });
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
     await f.panel.getByText("价格与参数依据", { exact: true }).click();
     await expectContained(f.panel.getByLabel("当前参数价格", { exact: true }), 720);
-    await f.panel.screenshot({ path: join(screenshots, "video-narrow-window-parameters-price.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("video-narrow-window-parameters-price.png") });
   } finally { f.safe(); }
 });

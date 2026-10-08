@@ -1,3 +1,16 @@
+.sm-verification-preview {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  line-height: 0;
+}
+.sm-verification-preview:focus-visible {
+  outline: 2px solid var(--sm-accent);
+  outline-offset: 3px;
+}
 .sm-settings-backdrop {
   position: fixed;
   inset: 0;

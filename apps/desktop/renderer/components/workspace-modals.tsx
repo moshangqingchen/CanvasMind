@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Brush, Film, X } from "lucide-react";
 import { useDialogFocus } from "./use-dialog-focus";
 import { assetDownloadPath, downloadAssetPreferLocal } from "../lib/asset-download";
@@ -13,13 +13,15 @@ export function AssetPreviewModal({
   onClose,
   onBack,
   onEditMask,
+  returnFocus,
 }: {
   asset: AssetView | null;
   onClose: () => void;
   onBack?: () => void;
   onEditMask?: (assetId: string) => void;
+  returnFocus?: HTMLElement | null;
 }) {
-  const dialogRef = useDialogFocus(Boolean(asset), onClose);
+  const dialogRef = useDialogFocus(Boolean(asset), onClose, returnFocus);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const imageDragRef = useRef<{
     pointerId: number;
@@ -30,6 +32,32 @@ export function AssetPreviewModal({
   } | null>(null);
   const [imageZoom, setImageZoom] = useState(1);
   const [imageDragging, setImageDragging] = useState(false);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || asset?.kind !== "image") return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const previousZoom = imageZoom;
+      const nextZoom = Math.min(5, Math.max(0.25,
+        Number((previousZoom + (event.deltaY < 0 ? 0.15 : -0.15)).toFixed(2)),
+      ));
+      if (nextZoom === previousZoom) return;
+      const bounds = stage.getBoundingClientRect();
+      const cursorX = event.clientX - bounds.left;
+      const cursorY = event.clientY - bounds.top;
+      const contentX = stage.scrollLeft + cursorX;
+      const contentY = stage.scrollTop + cursorY;
+      setImageZoom(nextZoom);
+      window.requestAnimationFrame(() => {
+        const scale = nextZoom / previousZoom;
+        stage.scrollLeft = contentX * scale - cursorX;
+        stage.scrollTop = contentY * scale - cursorY;
+      });
+    };
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", onWheel);
+  }, [asset?.id, asset?.kind, imageZoom]);
   if (!asset) return null;
   const url = assetDownloadPath(asset.id);
   const stopImageDrag = (pointerId: number, releaseCapture = true) => {
@@ -125,35 +153,6 @@ export function AssetPreviewModal({
           onLostPointerCapture={(event) =>
             stopImageDrag(event.pointerId, false)
           }
-          onWheel={(event) => {
-            if (asset.kind !== "image") return;
-            event.preventDefault();
-            event.stopPropagation();
-            const stage = stageRef.current;
-            if (!stage) return;
-            const previousZoom = imageZoom;
-            const nextZoom = Math.min(
-              5,
-              Math.max(
-                0.25,
-                Number(
-                  (previousZoom + (event.deltaY < 0 ? 0.15 : -0.15)).toFixed(2),
-                ),
-              ),
-            );
-            if (nextZoom === previousZoom) return;
-            const bounds = stage.getBoundingClientRect();
-            const cursorX = event.clientX - bounds.left;
-            const cursorY = event.clientY - bounds.top;
-            const contentX = stage.scrollLeft + cursorX;
-            const contentY = stage.scrollTop + cursorY;
-            setImageZoom(nextZoom);
-            window.requestAnimationFrame(() => {
-              const scale = nextZoom / previousZoom;
-              stage.scrollLeft = contentX * scale - cursorX;
-              stage.scrollTop = contentY * scale - cursorY;
-            });
-          }}
         >
           {asset.kind === "video" && asset.metadata.fake !== true ? (
             <video src={url} controls preload="metadata" />

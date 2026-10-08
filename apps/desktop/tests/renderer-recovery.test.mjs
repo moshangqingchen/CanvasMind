@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { EventEmitter } from "node:events";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DesktopRendererRecovery, rendererLoadFailure } from "../src/renderer-recovery.mjs";
 
 const deferred = () => {
@@ -157,6 +160,242 @@ test("only main-frame failures are logged and no URL query, fragment or credenti
 
 const mainSource = await readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
 const functionSource = (name, next) => mainSource.slice(mainSource.indexOf(`async function ${name}(`), mainSource.indexOf(`\nasync function ${next}(`));
+const backendExitSource = mainSource.slice(mainSource.indexOf('    child.on("exit", (code) => {'), mainSource.indexOf("    const deadline = Date.now()"));
+const initializeSource = mainSource.slice(mainSource.indexOf('    handle("desktop:initialize",'), mainSource.indexOf('    ipcMain.on("desktop:prepared",'));
+
+function setupWindowFixture() {
+  const calls = { gone: 0, prepared: 0, external: [], loads: [], states: [] };
+  class Window extends EventEmitter {
+    constructor(options) { super(); this.options = options; this.bounds = { x: 90, y: 70, width: 1100, height: 760 }; this.normal = { ...this.bounds }; this.maximized = true; this.fullscreen = false; this.minimized = false; this.destroyed = false;
+      this.webContents = Object.assign(new EventEmitter(), { crashed: false, url: "", zoom: 1.25,
+        isCrashed() { return this.crashed; }, getURL() { return this.url; }, getZoomFactor() { return this.zoom; }, setZoomFactor(value) { this.zoom = value; },
+        setWindowOpenHandler(handler) { this.open = handler; },
+      });
+    }
+    isDestroyed() { return this.destroyed; } isMaximized() { return this.maximized; } isFullScreen() { return this.fullscreen; } isMinimized() { return this.minimized; }
+    getBounds() { return this.bounds; } getNormalBounds() { return this.normal; }
+    maximize() { this.maximized = true; } setFullScreen(value) { this.fullscreen = value; } minimize() { this.minimized = true; }
+    destroy() { this.destroyed = true; this.webContents.emit("render-process-gone", {}, crash); } removeMenu() {} hide() { this.hidden = true; }
+  }
+  const context = { Window, BrowserWindow: Window, window: new Window({}), quitting: false, backend: undefined, startupPath: "fixture/startup.html", __dirname: "fixture", join, pathToFileURL,
+    smoke: true, smokeWindowed: true, development: false, preparations: new Map([["test", () => { calls.prepared++; }]]),
+    origin: "http://127.0.0.1:43210", log: async () => {}, requestExit: async () => {}, rendererLoadFailure,
+    rendererRecovery: { rendererGone: async () => { calls.gone++; }, rememberPage() {} },
+    isAppUrl: (url, origin) => url.startsWith(origin + "/"), externalUrl: url => url.startsWith("https://") ? url : null,
+    shell: { openExternal: async url => { calls.external.push(url); } },
+  };
+  context.window.webContents.crashed = true;
+  context.window.webContents.url = pathToFileURL(context.startupPath).href;
+  const helpers = mainSource.slice(mainSource.indexOf("function createMainWindow("), mainSource.indexOf("\nasync function prepareRenderer("));
+  vm.runInNewContext(helpers, context);
+  return { context, calls };
+}
+
+test("a crashed setup gets a new secured window with its geometry and zoom while stale events are ignored", async () => {
+  const { context, calls } = setupWindowFixture();
+  const previous = context.window;
+  context.recoverCrashedSetupWindow();
+  const current = context.window;
+  assert.notEqual(current, previous);
+  assert.equal(previous.destroyed, true);
+  assert.equal(calls.gone, 0, "destroying the retired window must not create a recovery for the current one");
+  assert.equal(calls.prepared, 0);
+  assert.equal(current.options.x, previous.normal.x);
+  assert.equal(current.options.width, previous.normal.width);
+  assert.equal(current.maximized, true);
+  assert.equal(current.webContents.zoom, previous.webContents.zoom);
+  assert.equal(current.options.webPreferences.sandbox, true);
+  assert.equal(current.options.webPreferences.contextIsolation, true);
+  assert.equal(current.options.webPreferences.nodeIntegration, false);
+  assert.equal(current.options.webPreferences.preload, join("fixture", "preload.cjs"));
+  assert.equal(current.webContents.open({ url: "https://example.com/" }).action, "deny");
+  let blocked = 0;
+  current.webContents.emit("will-navigate", { preventDefault() { blocked++; } }, "file:///outside.html");
+  current.webContents.emit("will-redirect", { preventDefault() { blocked++; } }, "https://example.com/redirect");
+  current.webContents.emit("will-attach-webview", { preventDefault() { blocked++; } });
+  assert.equal(blocked, 3);
+  assert.deepEqual(calls.external, ["https://example.com/", "https://example.com/redirect"]);
+  const retired = current;
+  retired.webContents.crashed = true;
+  retired.webContents.url = pathToFileURL(context.startupPath).href;
+  context.recoverCrashedSetupWindow();
+  retired.webContents.emit("render-process-gone", {}, crash);
+  assert.equal(calls.gone, 0);
+  let closePrevented = false;
+  context.window.emit("close", { preventDefault() { closePrevented = true; } });
+  assert.equal(closePrevented, true);
+  assert.equal(context.window.hidden, true);
+});
+
+test("setup recreation never replaces a healthy window, an unknown file, a live backend or a quitting app", () => {
+  for (const reason of ["healthy", "unknown-file", "backend", "quitting"]) {
+    const { context } = setupWindowFixture();
+    const previous = context.window;
+    if (reason === "healthy") previous.webContents.crashed = false;
+    if (reason === "unknown-file") previous.webContents.url += "?nonce=unknown";
+    if (reason === "backend") context.backend = { pid: 42 };
+    if (reason === "quitting") context.quitting = true;
+    context.recoverCrashedSetupWindow();
+    assert.equal(context.window, previous);
+    assert.equal(previous.destroyed, false);
+  }
+});
+
+test("startup after successful initialization prepares a crashed setup before bounded file navigation", async () => {
+  const { recovery, context, calls } = fixture();
+  context.window.loadFile = async () => { throw new Error("retired renderer must not be reused"); };
+  recovery.prepareErrorWindow = () => { context.window = { isDestroyed: () => false, loadFile: async path => { calls.files.push(path); } }; };
+  Object.assign(context, { rendererRecovery: recovery, show: () => { calls.shows++; } });
+  await vm.runInNewContext(functionSource("startupScreen", "freePort") + "; startupScreen()", context);
+  assert.deepEqual(calls.files, ["startup.html"]);
+  assert.equal(calls.shows, 1);
+});
+
+test("manual setup retry clears the old fallback so another setup crash can recover", async () => {
+  const { recovery, context, calls } = fixture();
+  context.origin = undefined; context.backend = undefined;
+  await recovery.rendererGone(crash);
+  assert.equal(recovery.fallback, true);
+  recovery.nativeShown = true; recovery.attempts = [1, 2];
+  await recovery.loadStartup();
+  assert.equal(recovery.fallback, false);
+  assert.equal(recovery.nativeShown, false);
+  assert.deepEqual(recovery.attempts, []);
+  await recovery.rendererGone(crash);
+  assert.equal(calls.files.length, 3, "second setup crash must load its actionable error page again");
+  assert.deepEqual(calls.native, []);
+  assert.equal(calls.states.length, 2);
+});
+
+test("error navigation uses the replacement window and retains the requested error state", async () => {
+  const { recovery, context, calls } = fixture();
+  context.backend = undefined;
+  context.window.loadFile = async () => { throw new Error("retired renderer must not be reused"); };
+  recovery.prepareErrorWindow = () => { context.window = { isDestroyed: () => false, loadFile: async path => { calls.files.push(path); } }; };
+  await recovery.rendererGone(crash);
+  assert.deepEqual(calls.files, ["startup.html"]);
+  assert.equal(calls.states[0][0], "error");
+  assert.equal(calls.states[0][1], "界面进程已停止");
+  assert.deepEqual(calls.native, []);
+});
+
+test("a renderer crash during a cancelled migration picker resumes after initialization releases the window", async () => {
+  const { recovery, context, calls } = fixture();
+  const picker = deferred(), entered = deferred();
+  let initialized = 0, started = 0;
+  Object.assign(context, { backend: undefined, origin: undefined, rendererRecovery: recovery,
+    handle: (_channel, callback) => { context.initialize = callback; },
+    dialog: { showOpenDialog: () => { entered.resolve(); return picker.promise; } },
+    state: (...value) => calls.states.push(value), discoverSource: async () => "fixture-source",
+    initializeProfile: async () => { initialized++; }, dataRoot: "fixture-profile", protect: async value => value,
+    start: async () => { started++; },
+  });
+  vm.runInNewContext(initializeSource, context);
+  const initialization = context.initialize("migrate");
+  await entered.promise;
+  await recovery.rendererGone(crash);
+  assert.equal(context.starting, true);
+  assert.equal(calls.files.length, 0);
+  picker.resolve({ canceled: true });
+  await initialization;
+  await recovery.operation;
+  assert.equal(context.starting, false);
+  assert.deepEqual(calls.files, ["startup.html"], "cancelled initialization must recover the crashed page");
+  assert.equal(recovery.pending, false);
+  assert.deepEqual(calls.urls, []);
+  assert.equal(initialized, 0);
+  assert.equal(started, 0);
+});
+
+test("a renderer crash during failed initialization resumes while preserving the initialization error", async () => {
+  const { recovery, context, calls } = fixture();
+  const entered = deferred();
+  let rejectInitialization, started = 0;
+  const writing = new Promise((_resolve, reject) => { rejectInitialization = reject; });
+  Object.assign(context, { backend: undefined, origin: undefined, rendererRecovery: recovery,
+    handle: (_channel, callback) => { context.initialize = callback; },
+    state: (...value) => calls.states.push(value),
+    initializeProfile: () => { entered.resolve(); return writing; }, dataRoot: "fixture-profile", protect: async value => value,
+    start: async () => { started++; },
+  });
+  vm.runInNewContext(initializeSource, context);
+  const initialization = context.initialize("fresh");
+  const rejection = assert.rejects(initialization, /fixture initialization failure/);
+  await entered.promise;
+  await recovery.rendererGone(crash);
+  assert.equal(context.starting, true);
+  assert.equal(calls.files.length, 0);
+  rejectInitialization(new Error("fixture initialization failure"));
+  await rejection;
+  await recovery.operation;
+  assert.equal(context.starting, false);
+  assert.deepEqual(calls.files, ["startup.html"], "failed initialization must recover the crashed page");
+  assert.equal(recovery.pending, false);
+  assert.deepEqual(calls.urls, []);
+  assert.equal(started, 0);
+});
+
+test("successful initialization hands a pending renderer recovery to backend startup without an early error page", async () => {
+  const { recovery, context, calls, backend } = fixture();
+  const entered = deferred(), writing = deferred();
+  const origin = context.origin;
+  Object.assign(context, { backend: undefined, origin: undefined, rendererRecovery: recovery,
+    handle: (_channel, callback) => { context.initialize = callback; },
+    state: (...value) => calls.states.push(value),
+    initializeProfile: async () => { entered.resolve(); await writing.promise; }, dataRoot: "fixture-profile", protect: async value => value,
+    start: async () => {
+      assert.deepEqual(calls.files, [], "initialization must not race startup into a missing-backend error page");
+      context.starting = true;
+      context.backend = backend;
+      context.origin = origin;
+      await recovery.load();
+      context.starting = false;
+      await recovery.resume();
+    },
+  });
+  vm.runInNewContext(initializeSource, context);
+  const initialization = context.initialize("fresh");
+  await entered.promise;
+  await recovery.rendererGone(crash);
+  writing.resolve();
+  await initialization;
+  await recovery.operation;
+  assert.equal(context.starting, false);
+  assert.deepEqual(calls.files, []);
+  assert.deepEqual(calls.urls, [origin]);
+  assert.equal(recovery.isRecovering, false);
+});
+
+for (const response of [0, 1]) {
+  test(`a backend failure invalidates an open exit confirmation before response=${response}`, async () => {
+    const confirmation = deferred(), entered = deferred();
+    const calls = { timers: 0, cancellations: 0, dialogs: [], failures: [] };
+    const child = { pid: 42, on: (event, callback) => { assert.equal(event, "exit"); context.backendExited = callback; } };
+    const context = { waitingExit: false, quitting: false, backend: child, child, starting: false, intentionalStop: false,
+      applyUpdate: false, exitEpoch: 0, exitTimer: undefined, window: {}, send() {}, prepareRenderer: async () => {},
+      runtimeRequest: async () => ({ activeRuns: 0, activeWrites: 1 }), exitWaitPresentation: () => ({}),
+      dialog: { showMessageBox: async (_window, value) => { calls.dialogs.push(value.type); entered.resolve(); return confirmation.promise; } },
+      setInterval: () => { calls.timers++; return 1; }, clearInterval() {}, log: async () => {},
+      referenceChannel: { stop: async () => {} }, rendererRecovery: { error: async message => { calls.failures.push(message); } },
+      cancelExit: async () => { calls.cancellations++; }, finishExit: async () => {}, redact: value => value,
+    };
+    const requestExit = mainSource.slice(mainSource.indexOf("async function requestExit("), mainSource.indexOf("\nif (locked)"));
+    vm.runInNewContext(backendExitSource + requestExit, context);
+    const exit = context.requestExit();
+    await entered.promise;
+    const oldEpoch = context.exitEpoch;
+    context.backendExited(1);
+    assert.equal(context.backend, undefined);
+    assert.equal(context.waitingExit, false);
+    assert.deepEqual(calls.failures, ["本地服务已停止"]);
+    confirmation.resolve({ response });
+    await exit;
+    assert.equal(calls.timers, 0, "a stopped backend must not reactivate the old exit poll");
+    assert.equal(calls.cancellations, 0, "an obsolete confirmation must not cancel another exit");
+    assert.deepEqual(calls.dialogs, ["question"]);
+    assert.ok(context.exitEpoch > oldEpoch, "backend failure must invalidate pending exit work");
+  });
+}
 
 test("main retry reloads a healthy backend without starting a second runtime", async () => {
   let loaded = 0;

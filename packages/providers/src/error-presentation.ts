@@ -65,8 +65,32 @@ function safeProviderMessage(value: unknown): string | undefined {
   const redacted = message
     .replace(/data:[^,\s;]+;base64,[a-z0-9+/=_-]+/giu, "data:[redacted]")
     .replace(/\b((?:bearer|basic))\s+[a-z0-9._~+/=-]+/giu, "$1 [redacted]")
+    .replace(/\bhttps?:\/\/[^\s<>"']+/giu, raw => {
+      try {
+        const url = new URL(raw);
+        let changed = false;
+        if (url.username || url.password) {
+          url.username = "[redacted]";
+          url.password = "";
+          changed = true;
+        }
+        for (const name of [...url.searchParams.keys()]) {
+          if (/(?:authorization|api[-_]?key|(?:access|refresh)[_-]?token|token|secret|password|credential|signature|^key$|^sig$)$/iu.test(name)) {
+            url.searchParams.set(name, "[redacted]");
+            changed = true;
+          }
+        }
+        return changed ? url.toString() : raw;
+      } catch {
+        return raw.replace(/(https?:\/\/)[^\s/]*@/giu, "$1[redacted]@");
+      }
+    })
     .replace(
-      /((?:authorization|proxy-authorization|x-api-key|api[-_]?key|token|secret|password|credential|signature)\s*[:=]\s*)[^\s,;]+/giu,
+      /(["']?(?:authorization|proxy-authorization|x-api-key|x-goog-api-key|xi-api-key|api[\s_-]?key|(?:access|refresh)[_-]?token|token|secret|password|credential|signature)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/giu,
+      '$1"[redacted]"',
+    )
+    .replace(
+      /((?:authorization|proxy-authorization|x-api-key|x-goog-api-key|xi-api-key|api[\s_-]?key|(?:access|refresh)[_-]?token|token|secret|password|credential|signature)\s*[:=]\s*)[^\s,;&]+/giu,
       "$1[redacted]",
     )
     .trim();
@@ -197,8 +221,8 @@ function codeFor(
   fallback?: string,
 ): string {
   return (
-    extracted.code ??
-    extracted.type ??
+    safeProviderMessage(extracted.code)?.slice(0, 256) ??
+    safeProviderMessage(extracted.type)?.slice(0, 256) ??
     (status === undefined ? undefined : `HTTP ${status}`) ??
     fallback ??
     "provider_error"

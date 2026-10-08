@@ -3650,10 +3650,10 @@ function CanvasShell({
   }, [canvasId, saveGraph]);
 
   const leaveCanvas = useCallback(async (destination: () => void | Promise<void>) => {
-    if (leaving || initialization.status !== "ready") return;
+    if (leaving || initialization.status === "loading") return;
     setLeaving(true);
     try {
-      await saveNow();
+      if (initialization.status === "ready") await saveNow();
       await destination();
     } catch (error) {
       showToast(error instanceof Error ? error.message : "画布尚未保存，请重试", "error");
@@ -9149,7 +9149,7 @@ function CanvasShell({
       </div>}
     <div inert={agentMutation} className={`shell canvas-editor ${showEffects ? "" : "motion-disabled"} ${mobileInspectorOpen ? "inspector-visible" : ""} ${leaving ? "is-leaving" : ""}`} style={{ "--inspector-width": `${inspectorWidth}px` } as CSSProperties}>
       <header className="topbar">
-        <button className="icon-button editor-home" type="button" aria-label="返回主界面" title="保存并返回主界面" disabled={leaving || initialization.status !== "ready"} onClick={() => void leaveCanvas(() => router.push("/"))}>
+        <button className="icon-button editor-home" type="button" aria-label="返回主界面" title={initialization.status === "error" ? "返回主界面" : "保存并返回主界面"} disabled={leaving || initialization.status === "loading"} onClick={() => void leaveCanvas(() => router.push("/"))}>
           <ArrowLeft size={18} />
         </button>
         <div className="brand">
@@ -10052,6 +10052,14 @@ function CanvasShell({
                   onClick={() => window.location.reload()}
                 >
                   <RefreshCw size={13} /> 重新加载
+                </button>
+                <button
+                  className="button small"
+                  type="button"
+                  disabled={leaving}
+                  onClick={() => void leaveCanvas(() => router.push("/"))}
+                >
+                  <ArrowLeft size={13} /> 返回主界面
                 </button>
               </div>
             </div>

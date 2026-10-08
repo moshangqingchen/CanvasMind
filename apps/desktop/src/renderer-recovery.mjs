@@ -18,8 +18,9 @@ export function rendererLoadFailure(errorCode, errorDescription, url, isMainFram
 /** Owns only the window. A renderer failure must never restart a paid backend task. */
 export class DesktopRendererRecovery {
   constructor({ context, startupPath, state, show, log, nativeError, now = Date.now,
+    prepareErrorWindow = () => {},
     maxAttempts = 2, retryWindowMs = 60_000, navigationTimeoutMs = 30_000 }) {
-    Object.assign(this, { context, startupPath, state, show, log, nativeError, now, maxAttempts, retryWindowMs, navigationTimeoutMs });
+    Object.assign(this, { context, startupPath, state, show, log, nativeError, now, prepareErrorWindow, maxAttempts, retryWindowMs, navigationTimeoutMs });
     this.attempts = [];
     this.pending = false;
     this.stopped = false;
@@ -87,6 +88,16 @@ export class DesktopRendererRecovery {
     return this.run(() => this.reload(false));
   }
 
+  loadStartup() {
+    // Retrying setup is a new user action even before a backend exists.
+    this.attempts = [];
+    this.nativeShown = false;
+    this.fallback = false;
+    this.pending = false;
+    this.prepareErrorWindow();
+    return this.navigation(this.context().window.loadFile(this.startupPath));
+  }
+
   async navigation(work) {
     let timer;
     try {
@@ -151,6 +162,7 @@ export class DesktopRendererRecovery {
     this.fallback = true;
     const crashes = this.crashes;
     try {
+      this.prepareErrorWindow();
       await this.navigation(this.context().window.loadFile(this.startupPath));
       if (!this.active() || this.context().waitingExit) return false;
       if (crashes !== this.crashes) throw new Error("错误提示页面的渲染进程已停止");

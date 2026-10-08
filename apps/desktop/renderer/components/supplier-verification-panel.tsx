@@ -6,6 +6,9 @@ import type {
   SupplierVerificationCase,
 } from "@super-canvas/db";
 import { EVIDENCE_LABELS } from "../lib/supplier-capabilities";
+import { fetchAsset } from "../lib/client-api";
+import type { AssetView } from "./types";
+import { AssetPreviewModal } from "./workspace-modals";
 
 type RecordView = Omit<SupplierVerificationRecord, "cases"> & {
   cases: Array<
@@ -44,6 +47,11 @@ function SupplierVerificationSession({
   const [retestId, setRetestId] = useState<string | null>(null);
   const [newRound, setNewRound] = useState(false);
   const [group, setGroup] = useState("");
+  const [previewAsset, setPreviewAsset] = useState<AssetView | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const previewRequest = useRef<AbortController | null>(null);
+  const [previewTrigger, setPreviewTrigger] = useState<HTMLButtonElement | null>(null);
   const requestVersion = useRef(0);
   const actionPending = useRef(false);
   const mounted = useRef(true);
@@ -52,8 +60,41 @@ function SupplierVerificationSession({
     return () => {
       mounted.current = false;
       requestVersion.current += 1;
+      previewRequest.current?.abort();
     };
   }, []);
+  useEffect(() => {
+    if (active) return;
+    previewRequest.current?.abort();
+    previewRequest.current = null;
+    // The tab may hide without unmounting its supplier session.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setPreviewAsset(null);
+    setPreviewLoading(false);
+    setPreviewError("");
+    setPreviewTrigger(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [active]);
+  async function openPreview(assetId: string | undefined) {
+    if (!assetId || previewLoading) return;
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
+    setPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const asset = await fetchAsset(assetId, controller.signal);
+      if (!controller.signal.aborted && mounted.current && previewRequest.current === controller) setPreviewAsset(asset);
+    } catch (error) {
+      if (!controller.signal.aborted && mounted.current && previewRequest.current === controller)
+        setPreviewError(error instanceof Error ? error.message : "核验原图暂时无法读取，请重试");
+    } finally {
+      if (previewRequest.current === controller) {
+        previewRequest.current = null;
+        if (mounted.current) setPreviewLoading(false);
+      }
+    }
+  }
   const read = useCallback(
     async (signal?: AbortSignal) => {
       if (!supplierId || actionPending.current) return;
@@ -182,6 +223,8 @@ function SupplierVerificationSession({
           {error}
         </p>
       )}
+      {previewError && <p role="alert" className="sm-notice is-error">{previewError}</p>}
+      {previewLoading && <p role="status" className="sm-muted">正在读取核验原图…</p>}
       {record?.policyVersion === 1 && record.used >= record.limit && (
         <div className="sm-notice">
           本轮额度已用完。
@@ -223,17 +266,23 @@ function SupplierVerificationSession({
             data-status={test.status}
           >
             {test.assetId && (
-              <a
-                href={`/api/assets/${test.assetId}/content`}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                className="sm-verification-preview"
+                aria-label={`查看 ${test.resolution} 核验原图`}
+                title={previewLoading ? "正在读取核验原图…" : "查看核验原图"}
+                disabled={previewLoading}
+                onClick={event => {
+                  setPreviewTrigger(event.currentTarget);
+                  void openPreview(test.assetId);
+                }}
               >
                 <img
-                  src={`/api/assets/${test.assetId}/preview?size=160`}
+                  src={`/api/assets/${encodeURIComponent(test.assetId)}/preview?size=160`}
                   alt={`${test.resolution} 核验结果`}
                   loading="lazy"
                 />
-              </a>
+              </button>
             )}
             <div>
               <header>
@@ -360,6 +409,7 @@ function SupplierVerificationSession({
           保存有效连接并读取模型后，会自动建立核验计划。没有可执行协议的型号会显示原因。
         </p>
       )}
+      <AssetPreviewModal key={previewAsset?.id ?? "no-verification-preview"} asset={previewAsset} returnFocus={previewTrigger} onClose={() => setPreviewAsset(null)} />
     </section>
   );
 }

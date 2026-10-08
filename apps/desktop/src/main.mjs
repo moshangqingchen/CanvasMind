@@ -83,7 +83,7 @@ async function unprotect(bytes) {
   return safeStorage.decryptString(bytes);
 }
 async function startupScreen() {
-  await window.loadFile(startupPath);
+  await rendererRecovery.loadStartup();
   show();
 }
 async function freePort() {
@@ -163,6 +163,7 @@ async function start() {
       void referenceChannel?.stop().catch(() => {});
       void log(`backend exited: ${code}`);
       if (!intentionalStop && !starting && !quitting) {
+        ++exitEpoch;
         clearInterval(exitTimer); waitingExit = false;
         void rendererRecovery.error("本地服务已停止", "你的资料仍保存在本机。重试后会检查未完成任务，不会自动重复付费提交。");
       }
@@ -198,6 +199,46 @@ async function start() {
     await log(error.message);
     await rendererRecovery.error("无法启动超级画布", redact(error.message));
   } finally { starting = false; void rendererRecovery.resume(); }
+}
+function createMainWindow(bounds = {}) {
+  const created = new BrowserWindow({ title: "超级画布", width: 1440, height: 960, ...bounds, minWidth: 980, minHeight: 680, show: false,
+    backgroundColor: "#101114", icon: join(__dirname, "icon.png"),
+    webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, offscreen: smoke && !smokeWindowed } });
+  created.webContents.on("render-process-gone", (_event, details) => {
+    if (created !== window) return;
+    for (const prepared of [...preparations.values()]) prepared("界面进程已停止，已取消本次退出；恢复界面后请重新确认");
+    void rendererRecovery.rendererGone(details).catch(error => void log(error.message));
+  });
+  created.webContents.on("did-navigate", (_event, url) => { if (created === window) rendererRecovery.rememberPage(url); });
+  created.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => { if (created === window && isMainFrame) rendererRecovery.rememberPage(url); });
+  created.on("unresponsive", () => { void log("renderer unresponsive").catch(() => {}); });
+  created.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    const message = rendererLoadFailure(errorCode, errorDescription, validatedURL, isMainFrame);
+    if (message) void log(message).catch(() => {});
+  });
+  created.removeMenu();
+  created.on("close", (event) => { if (!quitting) { event.preventDefault(); if (development) void requestExit(); else created.hide(); } });
+  const openExternal = (url) => { const safe = externalUrl(url); if (safe) void shell.openExternal(safe); };
+  created.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: "deny" }; });
+  created.webContents.on("will-navigate", (event, url) => { if (!isAppUrl(url, origin)) { event.preventDefault(); openExternal(url); } });
+  created.webContents.on("will-redirect", (event, url) => { if (!isAppUrl(url, origin)) { event.preventDefault(); openExternal(url); } });
+  created.webContents.on("will-attach-webview", (event) => event.preventDefault());
+  return created;
+}
+function recoverCrashedSetupWindow() {
+  if (quitting || backend || !window || window.isDestroyed()) return;
+  const previous = window;
+  if (!previous.webContents.isCrashed() || previous.webContents.getURL() !== pathToFileURL(startupPath).href) return;
+  const maximized = previous.isMaximized(), fullscreen = previous.isFullScreen(), minimized = previous.isMinimized();
+  const bounds = maximized || fullscreen ? previous.getNormalBounds() : previous.getBounds();
+  const zoom = previous.webContents.getZoomFactor();
+  window = createMainWindow(bounds);
+  window.webContents.setZoomFactor(zoom);
+  if (maximized) window.maximize();
+  if (fullscreen) window.setFullScreen(true);
+  if (minimized) window.minimize();
+  previous.destroy();
+  void log("replaced crashed setup window; profile and backend unchanged").catch(() => {});
 }
 
 async function prepareRenderer() {
@@ -339,26 +380,12 @@ if (locked) {
         }
       } catch { /* Icon repair must not block application startup. */ }
     }
-    window = new BrowserWindow({ title: "超级画布", width: 1440, height: 960, minWidth: 980, minHeight: 680, show: false,
-      backgroundColor: "#101114", icon: join(__dirname, "icon.png"),
-      webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, offscreen: smoke && !smokeWindowed } });
+    window = createMainWindow();
     rendererRecovery = new DesktopRendererRecovery({
       context: () => ({ window, origin, backend, starting, quitting, waitingExit }), startupPath, state, show, log,
       nativeError: (message, detail) => dialog.showErrorBox(message, redact(detail)),
+      prepareErrorWindow: recoverCrashedSetupWindow,
     });
-    window.webContents.on("render-process-gone", (_event, details) => {
-      for (const prepared of [...preparations.values()]) prepared("界面进程已停止，已取消本次退出；恢复界面后请重新确认");
-      void rendererRecovery.rendererGone(details).catch(error => void log(error.message));
-    });
-    window.webContents.on("did-navigate", (_event, url) => rendererRecovery.rememberPage(url));
-    window.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => { if (isMainFrame) rendererRecovery.rememberPage(url); });
-    window.on("unresponsive", () => { void log("renderer unresponsive").catch(() => {}); });
-    window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-      const message = rendererLoadFailure(errorCode, errorDescription, validatedURL, isMainFrame);
-      if (message) void log(message).catch(() => {});
-    });
-    window.removeMenu();
-    window.on("close", (event) => { if (!quitting) { event.preventDefault(); if (development) void requestExit(); else window.hide(); } });
     const session = window.webContents.session;
     const clipboardWriteAllowed = (contents, permission) => contents?.id === window.webContents.id && isAppUrl(contents.getURL(), origin) && ["clipboard-sanitized-write", "clipboard-write"].includes(permission);
     session.setPermissionRequestHandler((contents, permission, callback) => callback(clipboardWriteAllowed(contents, permission)));
@@ -372,11 +399,6 @@ if (locked) {
       if (smoke) item.setSavePath(join(dataRoot, item.getFilename()));
       else item.setSaveDialogOptions({ title: "保存超级画布文件" });
     });
-    const openExternal = (url) => { const safe = externalUrl(url); if (safe) void shell.openExternal(safe); };
-    window.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: "deny" }; });
-    window.webContents.on("will-navigate", (event, url) => { if (!isAppUrl(url, origin)) { event.preventDefault(); openExternal(url); } });
-    window.webContents.on("will-redirect", (event, url) => { if (!isAppUrl(url, origin)) { event.preventDefault(); openExternal(url); } });
-    window.webContents.on("will-attach-webview", (event) => event.preventDefault());
     tray = new Tray(nativeImage.createFromPath(join(__dirname, "icon.png")));
     tray.setToolTip("超级画布 · 关闭窗口后继续运行");
     tray.on("double-click", show);
@@ -415,6 +437,7 @@ if (locked) {
       if (!["fresh", "migrate"].includes(mode)) throw new Error("无效的初始化操作");
       if (starting || backend) throw new Error("服务已经启动");
       starting = true;
+      let initialized = false;
       try {
         let source;
         if (mode === "migrate") {
@@ -424,7 +447,13 @@ if (locked) {
         }
         state("loading", source ? "正在复制并校验旧版资料…" : "正在创建本机资料库…", "请保持窗口打开。旧版资料不会被修改。");
         await initializeProfile(dataRoot, { source, encrypt: protect });
-      } finally { starting = false; }
+        initialized = true;
+      } finally {
+        starting = false;
+        // Successful initialization hands recovery to start(); cancelled or
+        // failed initialization must release any crash recovery waiting here.
+        if (!initialized) void rendererRecovery.resume();
+      }
       await start();
     });
     ipcMain.on("desktop:prepared", (event, value) => {
