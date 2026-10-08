@@ -33,6 +33,29 @@ const scanned = (
 });
 
 describe("scanned model protocol binding", () => {
+  it.each(["grok-video1.5-fast", "grok-imagine-video-1.5（按次）"])("requires an exact Chentu contract for inferred native video %s", id => {
+    const model: ModelDescriptor = { id, name: id, operations: ["video.generate", "video.image-to-video"], outputKinds: ["video"],
+      metadata: { canvasRunnable: true, operationsSource: "inferred", priceLabel: "¥0.59/请求" } };
+    const result = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://tu.988236.xyz", modelGroup: "grok纯享视频" } }, [model]).models[0]!;
+    expect(result.metadata).toMatchObject({ canvasRunnable: false, parameterControlsUnavailable: true, priceLabel: "¥0.59/请求" });
+    expect(result.parameters).toEqual([]);
+    expect(result.outputKinds).toEqual(["video"]);
+  });
+  it("requires an endpoint for declared native Chentu controls and preserves exact models and upstream denials", () => {
+    const connection = { provider: "openai", config: { baseUrl: "https://tu.988236.xyz", modelGroup: "视频" } };
+    const model: ModelDescriptor = { id: "future-video-schema", name: "Future", operations: ["video.generate"], outputKinds: ["video"],
+      parameters: [{ key: "duration", label: "时长", control: "select", options: [{ label: "6秒", value: 6 }] }],
+      metadata: { canvasRunnable: true, operationsSource: "declared" } };
+    const result = bindScannedModelProtocols(connection, [model]).models[0]!;
+    expect(result.metadata?.canvasRunnable).toBe(false);
+    expect(result.parameters).toEqual([]);
+    const documented = bindScannedModelProtocols(connection, [{ ...model, id: "seedance-2.0-720p", parameters: undefined,
+      metadata: { canvasRunnable: true, operationsSource: "inferred" } }]).models[0]!;
+    expect(documented.metadata?.canvasRunnable).toBe(true);
+    expect(documented.parameters?.length).toBeGreaterThan(0);
+    const denied = { ...model, parameters: undefined, metadata: { canvasRunnable: false, canvasUnavailableReason: "当前分组未开通视频生成（已确认上游 403）" } };
+    expect(bindScannedModelProtocols(connection, [denied]).models[0]?.metadata).toMatchObject(denied.metadata);
+  });
   it("removes a stale guessed Chentu alias schema while preserving a real exact saved contract", () => {
     const live = scanned("veo-new-alias", ["video.generate"]);
     const stale = { id: live.id, name: "Old guess", operations: ["video.generate"], outputKinds: ["video"],

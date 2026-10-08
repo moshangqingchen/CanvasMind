@@ -29,7 +29,7 @@ vi.mock("@super-canvas/providers", async (original) => ({
 import { discoverSupplierCatalog, encryptSecret, loginSupplierSite, SupplierLoginError } from "@super-canvas/providers";
 import { getSupplierRecord } from "./supplier-service";
 import { repository } from "./server";
-import { modelPriceSummary } from "./model-display";
+import { modelEstimatedCost, modelPriceSummary } from "./model-display";
 import { requireServerMasterKey } from "./master-key";
 import {
   applySupplierCatalogPrices,
@@ -37,7 +37,7 @@ import {
   measuredPricesFromVerification,
   applyDocumentedModelPrice,
 } from "./supplier-model-pricing";
-import { parseSupplierCatalog } from "@super-canvas/providers";
+import { parseSupplierCatalog, parseSupplierPricingChannels } from "@super-canvas/providers";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
 const model: ModelDescriptor = {
   id: "new-image",
@@ -45,6 +45,72 @@ const model: ModelDescriptor = {
   operations: [],
   metadata: { canvasRunnable: false },
 };
+
+const secureCatalog = (multiplier = 1): SupplierCatalogDiscovery => ({
+  kind: "sub2api", status: "live", complete: true, checkedAt: "2026-10-08T11:21:08.582Z",
+  groups: parseSupplierPricingChannels({ data: [{ name: "seedance官方token计费模型", platforms: [{ platform: "newtoken-sd",
+    groups: [{ id: 37, name: "seedance-官方token版", rate_multiplier: multiplier }],
+    supported_models: [{ name: "doubao-seedance-2-0-260128", pricing: { billing_mode: "token", input_price: .0000299,
+      output_price: .000029, reference_video_output_price: .0000182, output_price_1080p: null, intervals: [] } }],
+  }] }] }, "CNY", { supplierSiteUrl: "https://token.secure-skill.com", checkedAt: "2026-10-08T11:21:08.582Z" }),
+});
+const secureVideo: ModelDescriptor = { id: "doubao-seedance-2-0-260128", name: "Seedance 2.0", operations: ["video.generate"],
+  parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "720p", options: [{ label: "720p", value: "720p" }] }],
+};
+
+it("persists exact supplier token conditions and shows compact rates without inventing task totals", () => {
+  const enriched = applySupplierCatalogPrices([secureVideo], "seedance-官方token版", secureCatalog())[0]!;
+  const saved = JSON.parse(JSON.stringify(enriched)) as ModelDescriptor;
+  expect(saved.pricing).toMatchObject({ kind: "token", currency: "CNY", tiers: [{ price: 29.9 }, { price: 29 }, { price: 18.2 }] });
+  expect(saved.metadata?.priceStatus).toBe("available");
+  expect(saved.metadata?.priceLabel).toContain("输入 ¥29.9/1M tokens");
+  expect(modelPriceSummary(saved, { resolution: "720p", has_reference_video: false })).toBe("720p · 不含参考视频 ¥29/1M tokens");
+  expect(modelPriceSummary(saved, { resolution: "720p", has_reference_video: true })).toBe("720p · 含参考视频 ¥18.2/1M tokens");
+  expect(modelPriceSummary(saved, { duration: 15 })).toBe("720p · 输出 ¥18.2–29/1M tokens（参考视频条件未确认）");
+  expect(modelPriceSummary(saved, { resolution: "1080p", has_reference_video: false })).toBe("当前分辨率/参考视频组合未报价（按 token 计费）");
+  expect(modelPriceSummary({ ...saved, parameters: [] }, {})).toBe("输出 ¥18.2–29/1M tokens（分辨率未确认，参考视频条件未确认）");
+  for (const parameters of [{ duration: 15, n: 3 }, { duration: 15, resolution: "720p", has_reference_video: true, token_kind: "output" }]) {
+    expect(modelEstimatedCost(saved, parameters)).toBeUndefined();
+  }
+  expect(applySupplierCatalogPrices([secureVideo], "doubao-full", secureCatalog())[0]?.pricing).toBeUndefined();
+  expect(applySupplierCatalogPrices([{ ...secureVideo, id: "doubao-seedance-2-0-260128-preview" }], "seedance-官方token版", secureCatalog())[0]?.pricing).toBeUndefined();
+});
+
+it("refreshes imported conditional token rates without overwriting a user's explicit price", () => {
+  const old = applySupplierCatalogPrices([secureVideo], "seedance-官方token版", secureCatalog())[0]!;
+  const refreshed = applySupplierCatalogPrices([old], "seedance-官方token版", secureCatalog(.5))[0]!;
+  expect(refreshed.pricing?.tiers?.map(tier => tier.price)).toEqual([14.95,14.5,9.1]);
+  expect(modelPriceSummary(refreshed, { has_reference_video: true })).toBe("720p · 含参考视频 ¥9.1/1M tokens");
+  const manual = { ...old, metadata: { ...old.metadata, priceSource: "manual" } };
+  expect(applySupplierCatalogPrices([manual], "seedance-官方token版", secureCatalog(.5))[0]?.pricing).toBe(manual.pricing);
+  const removed = secureCatalog();
+  removed.groups[0]!.models[0]!.priceLabel = undefined;
+  removed.groups[0]!.models[0]!.metadata = {};
+  const cleared = applySupplierCatalogPrices([old], "seedance-官方token版", removed)[0]!;
+  expect(cleared.pricing).toBeUndefined();
+  expect(cleared.metadata?.priceLabel).toBe("价格未公布");
+  const partial = applySupplierCatalogPrices([old], "seedance-官方token版", { ...removed, complete: false })[0]!;
+  expect(partial.pricing).toBe(old.pricing);
+  expect(partial.metadata?.priceLabel).toContain("上次价格");
+  expect(modelPriceSummary(partial, { has_reference_video: true })).toBe("上次 720p · 含参考视频 ¥18.2/1M tokens");
+});
+
+it("clears conflicting imported prices before conditional fallback and recovers on fresh agreement", () => {
+  const old = applySupplierCatalogPrices([secureVideo], "seedance-官方token版", secureCatalog())[0]!;
+  const lookup = secureCatalog();
+  const current = lookup.groups[0]!.models[0]!;
+  current.priceLabel = "价格存在冲突，待确认";
+  current.metadata = { supplierPriceConflict: true, supplierPriceAlternatives: [{ label: "720p ¥29/1M tokens", channel: "A" }, { label: "720p ¥30/1M tokens", channel: "B" }] };
+  const conflicted = applySupplierCatalogPrices([old], "seedance-官方token版", lookup)[0]!;
+  expect(conflicted.pricing).toBeUndefined();
+  expect(conflicted.metadata).toMatchObject({ supplierPriceConflict: true, priceStatus: "conflict", priceLabel: "价格存在冲突，待确认" });
+  expect(modelPriceSummary(conflicted, {})).toBe("价格存在冲突，待确认");
+  expect(modelEstimatedCost(conflicted, { duration: 10 })).toBeUndefined();
+  const resolved = applySupplierCatalogPrices([conflicted], "seedance-官方token版", secureCatalog())[0]!;
+  expect(resolved.metadata?.supplierPriceConflict).toBeUndefined();
+  expect(resolved.metadata?.supplierPriceAlternatives).toBeUndefined();
+  expect(resolved.pricing?.tiers?.map(tier => tier.price)).toEqual([29.9,29,18.2]);
+});
 
 it("retains Chuangxiang's structured resolution prices through saved-model enrichment and video binding", () => {
   const parsed = parseSupplierCatalog({ data: { groups: [{ name: "视频", models: [{ name: "sd10-seedance-2.0", effective_rate_multiplier: .1,
@@ -55,6 +121,51 @@ it("retains Chuangxiang's structured resolution prices through saved-model enric
   expect(modelPriceSummary(bound, { resolution: "720p", duration: 15 })).toBe("5.2 CNY / 次（参考）");
   expect(bound.parameters?.find(p => p.key === "resolution")?.options).toEqual([{ label: "720p", value: "720p" }]);
   expect(bound.parameters?.find(p => p.key === "duration")?.options?.map(o => o.value)).toEqual([5, 10, 15]);
+});
+it("imports explicit video seconds from the exact group's already multiplied catalog price", () => {
+  const parsed = parseSupplierCatalog({ currency: "CNY", group_ratio: { default: .5, vip: 2 }, data: [
+    { model_name: "future-video", quota_type: 1, model_price: .24, request_unit: "second", enable_groups: ["default", "vip"] },
+  ] });
+  const lookup: SupplierCatalogDiscovery = { ...parsed, status: "live", complete: true, checkedAt: "2026-10-08" };
+  const video: ModelDescriptor = { id: "future-video", name: "Future video", operations: ["video.generate"] };
+  const current = applySupplierCatalogPrices([video], "default", lookup, "https://supplier.invalid")[0]!;
+  expect(current.pricing).toEqual({ kind: "per-second", currency: "CNY", unitAmount: .12, billingUnit: "second", checkedAt: "2026-10-08", sourceUrl: "https://supplier.invalid", confidence: "exact" });
+  expect(modelPriceSummary(current, { duration: 10 })).toBe("0.12 CNY / 秒");
+  expect(modelEstimatedCost(current, { duration: 10, n: 2 })).toBe("2.4 CNY");
+  expect(modelEstimatedCost(current, {})).toBeUndefined();
+  expect(modelEstimatedCost(current, { duration: 0 })).toBeUndefined();
+  expect(modelEstimatedCost({ ...current, metadata: { ...current.metadata, billingIncludesInputDuration: true } }, { duration: 10 })).toBeUndefined();
+  expect(applySupplierCatalogPrices([video], "vip", lookup)[0]?.pricing?.unitAmount).toBe(.48);
+  expect(applySupplierCatalogPrices([video], "missing", lookup)[0]?.pricing).toBeUndefined();
+  expect(applySupplierCatalogPrices([{ ...video, id: "future-video-fast" }], "default", lookup)[0]?.pricing).toBeUndefined();
+});
+it("does not flatten conditional, tiered, token or unpriced video labels into a second rate", () => {
+  const video: ModelDescriptor = { id: "future-video", name: "Future video", operations: ["video.generate"] };
+  for (const priceLabel of ["720p ¥0.12/秒", "¥0.12/秒起", "¥0.12/秒 · 1080p ¥0.24/秒", "¥0.12/秒（无参考视频）", "¥0.12/1M token", "0.12/秒（币种未注明）", "¥0.12/秒/张", "¥0.12/秒；¥0.24/秒", "价格未公布"]) {
+    const lookup: SupplierCatalogDiscovery = { kind: "sub2api", status: "live", checkedAt: "now", groups: [
+      { id: "video", label: "Video", source: "catalog", models: [{ id: video.id, capability: "video", priceLabel }] },
+    ] };
+    const result = applySupplierCatalogPrices([video], "video", lookup)[0]!;
+    expect(result.pricing, priceLabel).toBeUndefined();
+    expect(result.metadata?.priceLabel).toBe(priceLabel);
+    expect(modelEstimatedCost(result, { duration: 10 })).toBeUndefined();
+    const conditional: ModelDescriptor = { ...video, pricing: { kind: "tiered", currency: "CNY", billingUnit: "second", confidence: "exact", checkedAt: "old", tiers: [
+      { id: "720p", label: "720p", price: .2, conditions: [{ parameter: "resolution", operator: "equals", value: "720p" }] },
+      { id: "fallback", label: "Fallback", price: .3, otherwise: true },
+    ] } };
+    expect(applySupplierCatalogPrices([conditional], "video", lookup)[0]?.pricing).toBe(conditional.pricing);
+  }
+});
+it("keeps explicit second-rate currencies and preserves the meaning of a declared zero rate", () => {
+  const video: ModelDescriptor = { id: "future-video", name: "Future video", operations: ["video.generate"] };
+  for (const [priceLabel, currency, amount] of [["$0.25/秒", "USD", .25], ["0.25 USD/秒", "USD", .25], ["0.25 RMB/秒", "CNY", .25], ["¥0/秒", "CNY", 0]] as const) {
+    const lookup: SupplierCatalogDiscovery = { kind: "sub2api", status: "live", checkedAt: "now", groups: [
+      { id: "video", label: "Video", source: "catalog", models: [{ id: video.id, capability: "video", priceLabel }] },
+    ] };
+    const result = applySupplierCatalogPrices([video], "video", lookup)[0]!;
+    expect(result.pricing).toMatchObject({ kind: "per-second", billingUnit: "second", currency, unitAmount: amount });
+    expect(modelEstimatedCost(result, { duration: 4 })).toBe(`${amount * 4} ${currency}`);
+  }
 });
 const catalog: SupplierCatalogDiscovery = {
   kind: "newapi",

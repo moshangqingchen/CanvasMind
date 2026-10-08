@@ -1165,7 +1165,9 @@ async function readModelResponse(
         ]) : null;
         const ownerSiteScope = siteScope(owner);
         const refreshId = context.supplierRefreshId ?? String(requestId);
-        const pricedModels = await enrichSupplierModelPrices(latest, bound.models, true, true, { refreshId });
+        const supplierPricedModels = await enrichSupplierModelPrices(latest, bound.models, true, true, { refreshId });
+        const pricedModels = latest.config.modelGroup === "VIDEO-Seedance官转"
+          ? await refreshSavedCangyuanPrices(latest, supplierPricedModels, { force: true }) : supplierPricedModels;
         const discoveryConnection = owner ? { ...latest, config: { ...latest.config, supplierWebsiteUrl: owner.siteUrl } } : latest;
         const discovered = await discoverSupplierModelInterfaces(discoveryConnection, pricedModels, original, undefined, {
           force: true, refreshId,

@@ -277,6 +277,22 @@ export function applySupplierCatalogPrices(
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   return models.map((model) => {
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
+    if (catalogModel?.metadata?.supplierPriceConflict === true && !hasOwnPrice(model)) {
+      const metadata = { ...model.metadata };
+      delete metadata.secureSkillCatalogPricing; delete metadata.chuangxiangCatalogPricing;
+      return {
+        ...model,
+        pricing: undefined,
+        metadata: { ...metadata, priceLabel: "价格存在冲突，待确认", priceSource: "supplier-catalog", priceStatus: "conflict",
+          supplierPriceConflict: true, supplierPriceAlternatives: catalogModel.metadata.supplierPriceAlternatives,
+          priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt },
+      };
+    }
+    if (model.metadata?.supplierPriceConflict && catalogModel && !incomplete && catalogModel.metadata?.supplierPriceConflict !== true) {
+      const metadata = { ...model.metadata };
+      delete metadata.supplierPriceConflict; delete metadata.supplierPriceAlternatives;
+      model = { ...model, metadata };
+    }
     if (catalogModel?.metadata?.tk1688Catalog === true) {
       model = applyTk1688CatalogModel(model, catalogModel, catalog.checkedAt);
       // Retail marketplace prices already contain the platform markup. Keep
@@ -319,7 +335,9 @@ export function applySupplierCatalogPrices(
       model = { ...model, metadata };
     }
     // A text-only catalog cannot replace parameter-dependent billing rules.
-    if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise)) return model;
+    const importedSecureTokenPrice = model.pricing?.kind === "token" && model.pricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" &&
+      model.metadata?.priceSource === "supplier-catalog";
+    if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise) && !catalogModel?.metadata?.secureSkillCatalogPricing && !importedSecureTokenPrice) return model;
     if (hasOwnPrice(model)) return model;
     const modelPrice = prices.get(model.id);
     const priceDetails = image ? supplierGroupModelPriceDetails(details, model.id, groupModelIds) : undefined;
@@ -352,7 +370,7 @@ export function applySupplierCatalogPrices(
     return {
       ...model,
       name,
-      pricing: (catalogModel?.metadata?.chuangxiangCatalogPricing as ModelDescriptor["pricing"] | undefined) ?? pricingFromSupplierEvidence(modelPrice, priceDetails, catalog.checkedAt, sourceUrl) ?? (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined),
+      pricing: (catalogModel?.metadata?.secureSkillCatalogPricing as ModelDescriptor["pricing"] | undefined) ?? (catalogModel?.metadata?.chuangxiangCatalogPricing as ModelDescriptor["pricing"] | undefined) ?? pricingFromSupplierEvidence(modelPrice, priceDetails, catalog.checkedAt, sourceUrl) ?? (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined),
       metadata: {
         ...model.metadata,
         priceLabel,

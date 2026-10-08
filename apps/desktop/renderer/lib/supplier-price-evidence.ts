@@ -10,15 +10,19 @@ export function pricingFromSupplierEvidence(
 ): StructuredModelPricing | undefined {
   if (label) {
     const fixed =
-      /(?:([¥￥$])\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(元|USD|CNY|RMB|美元))\s*[/／]\s*(张|次|请求)/iu.exec(
+      /(?:([¥￥$])\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(元|USD|CNY|RMB|美元))\s*[/／]\s*(张|次|请求|秒)/iu.exec(
         label,
       );
-    if (fixed && !/起|最低|量大|优惠|折|条件|充值|·/u.test(label)) {
+    const amount = fixed ? Number(fixed[2] ?? fixed[3]) : undefined;
+    // A second-based quote must be the entire label: resolution/input conditions cannot become a flat rate.
+    if (fixed && Number.isFinite(amount) && !/起|最低|量大|优惠|折|条件|充值|·/u.test(label) &&
+      (fixed[5] !== "秒" || fixed[0].trim() === label.trim())) {
       return {
-        kind: fixed[5] === "张" ? "per-image" : "per-request",
+        kind: fixed[5] === "张" ? "per-image" : fixed[5] === "秒" ? "per-second" : "per-request",
         currency:
           fixed[1] === "$" || /USD|美元/iu.test(fixed[4] ?? "") ? "USD" : "CNY",
-        unitAmount: Number(fixed[2] ?? fixed[3]),
+        unitAmount: amount,
+        ...(fixed[5] === "秒" ? { billingUnit: "second" as const } : {}),
         checkedAt,
         sourceUrl,
         confidence: "exact",

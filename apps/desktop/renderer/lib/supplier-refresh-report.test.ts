@@ -19,6 +19,20 @@ const connection = (items: ModelDescriptor[], patch: Record<string, unknown> = {
   config: { supplierId: "supplier", modelGroup: "vip", modelCatalogModels: items as never, modelScanStatus: "live", modelScanCheckedAt: "before", ...patch } as ProviderConnectionView["config"],
 });
 describe("supplier refresh evidence", () => {
+  it("reports newly imported conditional token rates without claiming an unknown price or task total", () => {
+    const old: ModelDescriptor = { id: "doubao-seedance-2-0-260128", name: "Seedance", operations: ["video.generate"], metadata: { priceLabel: "价格未公布" } };
+    const current: ModelDescriptor = { ...old, pricing: { kind: "token", currency: "CNY", confidence: "exact", checkedAt: "after",
+      sourceUrl: "https://token.secure-skill.com/api/v1/pricing/channels", tiers: [
+        { id: "output_price", label: "720p · 不含参考视频", price: 29, conditions: [
+          { parameter: "token_kind", operator: "equals", value: "output" }, { parameter: "resolution", operator: "equals", value: "720p" }, { parameter: "has_reference_video", operator: "equals", value: "false" }] },
+        { id: "reference_video_output_price", label: "720p · 含参考视频", price: 18.2, conditions: [
+          { parameter: "token_kind", operator: "equals", value: "output" }, { parameter: "resolution", operator: "equals", value: "720p" }, { parameter: "has_reference_video", operator: "equals", value: "true" }] },
+      ] }, parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "720p" }] };
+    const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [connection([old])], [connection([current], { modelScanCheckedAt: "after" })]);
+    expect(report.connections![0]!.priceChanges[0]!.after).toBe("720p · 输出 ¥18.2–29/1M tokens（参考视频条件未确认）");
+    expect(report.connections![0]!.priceChanges[0]!.after).not.toContain("待确认");
+    expect(report.connections![0]!.priceChanges[0]!.before).toBe("价格未公布");
+  });
   it("reports this attempt's removals without counting cumulative removed history", () => {
     const before = connection([model("keep"), model("just-removed")]);
     const after = connection([model("keep"), model("new")], { modelScanCheckedAt: "after", modelRemovedModels: [{ id: "ancient", name: "旧历史" }, { id: "just-removed", name: "just-removed" }] });

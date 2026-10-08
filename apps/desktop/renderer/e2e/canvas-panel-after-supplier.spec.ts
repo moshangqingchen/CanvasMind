@@ -5,6 +5,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import type { ModelDescriptor } from "@super-canvas/providers";
 
 const models = ["甲", "乙"].map((suffix, index) => ({
   id: `gpt-image-panel-${index}`,
@@ -224,6 +225,119 @@ test("新增供应商并关闭设置后，两个参数面板的下拉、模型�
     ui.releaseScans();
   }
   ui.assertNoRuns();
+});
+
+test("视频供应商比较与切换选择完整型号所在分组，不借用相似型号或图片价格", async ({ page, request }, info) => {
+  const exactId = "doubao-seedance-cross-group-fast-fixture";
+  const alternateId = exactId + "-preview";
+  const video = (id: string, amount: number): ModelDescriptor => ({
+    id, name: id, operations: ["video.generate"], inputKinds: ["text"], outputKinds: ["video"],
+    metadata: { canvasRunnable: true }, pricing: { kind: "per-request", currency: "CNY", billingUnit: "request", unitAmount: amount, confidence: "exact", checkedAt: "2026-10-08T00:00:00Z" },
+    parameters: [
+      { key: "duration", label: "时长（秒）", control: "number", valueType: "number", default: 5, min: 1, max: 10 },
+      { key: "ratio", label: "画面比例", control: "select", valueType: "string", default: "1280:720", options: [{ value: "1280:720", label: "16:9" }] },
+      { key: "n", label: "数量", control: "number", valueType: "number", default: 1, min: 1, max: 1 },
+    ],
+  });
+  const catalogs = new Map<string, ReturnType<typeof video>[]>();
+  let submissions = 0;
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.route("**/api/runs**", route => {
+    if (route.request().method() === "POST") { submissions++; return route.abort(); }
+    return route.continue();
+  });
+  await page.route("**/api/providers/*/models*", route => {
+    const id = new URL(route.request().url()).pathname.split("/")[3]!;
+    return route.fulfill({ json: catalogs.get(id) ?? [], headers: { "X-Model-Scan-Status": "live" } });
+  });
+  await page.route(/\/api\/providers(?:\?.*)?$/u, async route => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const rows = await response.json();
+    // Catalog facts are server-owned; POST correctly rejects client scan flags.
+    // Model an already completed free scan in each fixture group's GET view.
+    await route.fulfill({ response, json: rows.map((row: { id: string; config: Record<string, unknown> }) => {
+      const catalog = catalogs.get(row.id);
+      return catalog ? { ...row, config: { ...row.config, modelCatalogModels: catalog, scannedModelIds: catalog.map(model => model.id),
+        modelScanStatus: "live", modelScanAttemptStatus: "live", modelScanComplete: true, modelCatalogSource: "live",
+        modelScanCheckedAt: "2026-10-08T00:00:00Z", modelScanLastSuccessAt: "2026-10-08T00:00:00Z" } } : row;
+    }) });
+  });
+  async function supplier(name: string) {
+    const response = await request.post("/api/suppliers", { data: { name, siteUrl: "https://cross-group-fixture.invalid", apiUrl: "https://cross-group-fixture.invalid" } });
+    expect(response.ok()).toBeTruthy(); return response.json();
+  }
+  async function connection(owner: { id: string; name: string; supplierKey: string }, group: string, catalog: ReturnType<typeof video>[]) {
+    const response = await request.post("/api/providers", { data: {
+      name: `${owner.name} · ${group}`, provider: "rest", apiKey: "isolated-cross-group-fixture-key",
+      config: { supplierId: owner.id, supplierKey: owner.supplierKey, baseUrl: "https://cross-group-fixture.invalid", usage: "canvas",
+        customGroup: true, modelGroup: group, defaultModel: catalog[0]!.id },
+    } });
+    expect(response.ok()).toBeTruthy(); const result = await response.json(); catalogs.set(result.id, catalog); return result;
+  }
+  const original = await supplier("跨组原视频供应商");
+  const originalConnection = await connection(original, "当前视频", [video(exactId, 1)]);
+  const target = await supplier("跨组目标视频供应商");
+  await connection(target, "flow", [video(alternateId, 0.01)]);
+  // The same ID with image output must not outrank a video-compatible group.
+  await connection(target, "同名图片与其他视频", [
+    { ...video(exactId, 0.02), operations: ["image.generate"], outputKinds: ["image"] }, video(alternateId, 0.01),
+  ]);
+  const targetConnection = await connection(target, "seedance-官方token版", [video(exactId, 2)]);
+  const missing = await supplier("跨组无完整型号供应商");
+  await connection(missing, "同名图片与相似视频", [
+    { ...video(exactId, 0.02), operations: ["image.generate"], outputKinds: ["image"] }, video(alternateId, 0.03),
+  ]);
+  const label = "跨组视频回归";
+  const created = await request.post("/api/canvas", { data: { title: label, graph: {
+    schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [],
+    nodes: [{ id: "cross-group-video", type: "workflow", position: { x: 60, y: 60 }, style: { width: 420, height: 180 },
+      data: { nodeType: "video-generation", label, provider: "rest", connectionId: originalConnection.id, model: exactId, parts: [],
+        inputs: [{ id: "prompt", kind: "text", label: "提示词" }], outputs: [{ id: "video", kind: "video", label: "视频" }], parameters: {} } }],
+  } } });
+  expect(created.ok()).toBeTruthy(); const canvas = await created.json();
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.goto(`/canvas/${canvas.id}`);
+  await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
+  const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
+  const suppliers = panel.getByRole("combobox", { name: `${label} 供应商`, exact: true });
+  const group = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
+  await expect(group).toHaveValue("当前视频");
+  await expect(suppliers.locator(`option[value="${target.supplierKey}"]`)).toContainText("同型号 2 CNY / 次");
+  await expect(suppliers.locator(`option[value="${missing.supplierKey}"]`)).toContainText("当前分组无此型号");
+  await chooseNativeWithMouse(page, suppliers, target.supplierKey);
+  await expect(group).toHaveValue("seedance-官方token版");
+  await expect(panel.getByRole("combobox", { name: `${label} 模型`, exact: true })).toContainText(exactId);
+  await expect(panel.getByLabel("当前供应商报价", { exact: true })).toContainText("2 CNY / 次");
+  await expect.poll(async () => {
+    const saved = await (await request.get(`/api/canvas/${canvas.id}`)).json();
+    return saved.graph.nodes.find((node: { id: string }) => node.id === "cross-group-video").data;
+  }).toMatchObject({ connectionId: targetConnection.id, model: exactId });
+  await page.screenshot({ path: info.outputPath("supplier-exact-video-group.png") });
+  // The same selected group can publish token billing instead of a flat task
+  // price. Preserve the reference-video condition in the compact canvas UI.
+  const tokenModel = video(exactId, 2);
+  tokenModel.parameters = [...(tokenModel.parameters ?? []), { key: "resolution", label: "分辨率", control: "select", valueType: "string", default: "720p",
+    options: [{ value: "720p", label: "720p" }] }];
+  tokenModel.pricing = { kind: "token", currency: "CNY", confidence: "exact", checkedAt: "2026-10-08T00:00:00Z",
+    sourceUrl: "https://token.secure-skill.com/api/v1/pricing/channels",
+    tiers: [false, true].map(reference => ({ id: String(reference), label: reference ? "含参考视频" : "不含参考视频",
+      price: reference ? 18.2 : 29, conditionMode: "all", conditions: [
+        { parameter: "token_kind", operator: "equals", value: "output" },
+        { parameter: "resolution", operator: "equals", value: "720p" },
+        { parameter: "has_reference_video", operator: "equals", value: String(reference) },
+      ] })) };
+  catalogs.set(targetConnection.id, [tokenModel]);
+  await page.reload();
+  await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
+  await expect(group).toHaveValue("seedance-官方token版");
+  const tokenQuote = panel.getByLabel("当前供应商报价", { exact: true });
+  await expect(tokenQuote).toContainText("输出 ¥18.2–29/1M tokens（参考视频条件未确认）");
+  await expect(tokenQuote).not.toContainText("2 CNY / 次");
+  expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 2)).toBe(true);
+  await page.screenshot({ path: info.outputPath("supplier-token-conditional-price.png") });
+  expect(submissions).toBe(0); expect(errors).toEqual([]);
 });
 
 for (const interruption of ["pointercancel", "blur", "capture-lost-blur"] as const)

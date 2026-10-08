@@ -46,7 +46,27 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
     const amount = modelPriceAmount(pricing, { ...defaults, ...parameters, resolution: parameters.resolution ?? (tier || defaults.resolution), quality });
     const unit = pricing.billingUnit === "second" || pricing.kind === "per-second" ? "秒" : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
     if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}`;
-    if (pricing.kind === "token") return "按实际用量计费，详见价格说明";
+    if (pricing.kind === "token") {
+      if (pricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" && pricing.tiers?.length) {
+        const resolution = String(parameters.resolution ?? defaults.resolution ?? "").toLowerCase();
+        const reference = parameters.has_reference_video;
+        // Connected media is not always present in parameter values. Only an
+        // explicit reference-video fact can choose the cheaper/different tier.
+        const hasReference = reference === true || reference === "true" ? "true" : reference === false || reference === "false" ? "false" : undefined;
+        const output = pricing.tiers.filter(tier => Number.isFinite(tier.price) && tier.price >= 0 &&
+          tier.conditions?.some(condition => condition.parameter === "token_kind" && condition.value === "output") &&
+          (!resolution || tier.conditions?.some(condition => condition.parameter === "resolution" && condition.value.toLowerCase() === resolution)) &&
+          (hasReference === undefined || tier.conditions?.some(condition => condition.parameter === "has_reference_video" && condition.value === hasReference)));
+        if (!output.length) return "当前分辨率/参考视频组合未报价（按 token 计费）";
+        const prices = output.map(tier => tier.price), minimum = Math.min(...prices), maximum = Math.max(...prices);
+        const symbol = pricing.currency === "CNY" || pricing.currency === "RMB" ? "¥" : pricing.currency === "USD" ? "$" : `${pricing.currency} `;
+        const rate = `${symbol}${minimum}${maximum === minimum ? "" : `–${maximum}`}/1M tokens`;
+        const conditions = [!resolution ? "分辨率未确认" : "", hasReference === undefined ? "参考视频条件未确认" : ""].filter(Boolean);
+        const previous = typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）");
+        return `${previous ? "上次 " : ""}${resolution ? `${resolution === "4k" ? "4K" : resolution} · ` : ""}${hasReference === undefined ? "输出 " : hasReference === "true" ? "含参考视频 " : "不含参考视频 "}${rate}${conditions.length ? `（${conditions.join("，")}）` : ""}`;
+      }
+      return "按实际用量计费，详见价格说明";
+    }
   }
   return typeof model.metadata?.priceLabel === "string" ? model.metadata.priceLabel : "价格未知";
 }

@@ -9,6 +9,7 @@ import {
   cangyuanMusicModel,
   cangyuanVideoModel,
   cangyuanVideoTransport,
+  isCangyuanNativeSeedanceRequest,
   isCangyuanMusicModel,
   type ModelDescriptor,
   type ModelParameterDescriptor,
@@ -1473,7 +1474,9 @@ export async function loadCangyuanCatalog(options?: {
       const snapshot = cangyuanCatalogFromPricing(
         (await pricingResponse.json()) as PricingPayload,
       );
-      if (Object.values(snapshot.groups).every((models) => models.length === 0))
+      if (Object.values(snapshot.groups).every((models) => models.length === 0) &&
+          !snapshot.marketplaceGroups.some(group => group.id === "VIDEO-Seedance官转" &&
+            group.models.some(model => model.capability === "video" && isCangyuanNativeSeedanceRequest(model.id, CANGYUAN_IMAGE_BASE_URL))))
         throw new Error("沧元模型广场未返回图片模型");
       cache.snapshot = snapshot;
       cache.expiresAt = Date.now() + CATALOG_TTL_MS;
@@ -1502,12 +1505,28 @@ export async function refreshSavedCangyuanPrices(
   options: { force?: boolean } = {},
 ): Promise<ModelDescriptor[]> {
   const group = normalizeCangyuanImageGroup(connection.config.modelGroup);
-  if (!group || !matchesSupplierTemplate(connection) ||
+  const nativeSeedanceGroup = connection.config.modelGroup === "VIDEO-Seedance官转";
+  if ((!group && !nativeSeedanceGroup) || !matchesSupplierTemplate(connection) ||
       !/cangyuansuanli\.cn/iu.test(String(connection.config.baseUrl)) ||
       (!options.force && models.every(model => model.metadata?.cangyuanBillingVersion === 3))) return [...models];
   const catalog = await loadCangyuanCatalog({ force: options.force });
   if (catalog.source !== "live") return [...models];
-  const current = new Map(catalog.groups[group].map(model => [model.id, model]));
+  if (nativeSeedanceGroup) {
+    // This named group has its own multiplier. Never substitute VIDEO/all-model quotes.
+    const current = new Map(catalog.marketplaceGroups.find(entry => entry.id === "VIDEO-Seedance官转")?.models.map(model => [model.id, model]) ?? []);
+    return models.map(model => {
+      const fresh = current.get(model.id);
+      if (!fresh || fresh.capability !== "video" || !isCangyuanNativeSeedanceRequest(model.id, String(connection.config.baseUrl))) return model;
+      const existingPrice = model.pricing || typeof model.metadata?.priceLabel === "string" &&
+        !/价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询/u.test(model.metadata.priceLabel);
+      if (existingPrice && !["supplier-catalog", "supplier-group", "supplier-document", "billing-expression"].includes(String(model.metadata?.priceSource))) return model;
+      return { ...model, name: fresh.name, pricing: undefined, metadata: { ...model.metadata,
+        priceLabel: fresh.priceLabel, priceSource: "billing-expression", priceSourceUrl: `${CANGYUAN_IMAGE_BASE_URL}/api/pricing`, priceCheckedAt: catalog.checkedAt,
+        cangyuanBillingVersion: 3,
+        priceContractWarning: "按视频 token 用量计费，有参考视频与无参考视频费率不同；实际 token 未返回前无法按所选秒数推算总额。" } };
+    });
+  }
+  const current = new Map(catalog.groups[group!].map(model => [model.id, model]));
   return models.map(model => {
     const fresh = current.get(model.id);
     if (!fresh) return model;

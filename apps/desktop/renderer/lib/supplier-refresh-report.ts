@@ -78,6 +78,7 @@ function priceIdentity(model: ModelDescriptor): string {
 }
 function priceChangeLabel(model: ModelDescriptor): string {
   const pricing = model.pricing;
+  if (pricing?.kind === "token" && pricing.tiers?.some(tier => tier.conditions?.length)) return modelPriceSummary(model, {});
   if (pricing?.kind === "token") return [
     pricing.inputPerMillion !== undefined ? `输入 ${pricing.inputPerMillion} ${pricing.currency}/百万 Token` : "",
     pricing.outputPerMillion !== undefined ? `输出 ${pricing.outputPerMillion} ${pricing.currency}/百万 Token` : "",

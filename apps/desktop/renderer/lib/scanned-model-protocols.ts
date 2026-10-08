@@ -7,6 +7,8 @@ import {
   canApplyCangyuanCurrentContract,
   cangyuanMusicModel,
   isCangyuanMusicRequest,
+  cangyuanVideoModel,
+  isCangyuanNativeSeedanceRequest,
   modelGenerationMediaKinds,
   remainingVideoModel,
   remainingVideoSupplier,
@@ -14,7 +16,7 @@ import {
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
-import { applyChuangxiangCurrentVideoCapabilities } from "@super-canvas/providers/chuangxiang-video-contract";
+import { applyChuangxiangCurrentVideoCapabilities, chuangxiangVideoModel, isChuangxiangVideoConnection } from "@super-canvas/providers/chuangxiang-video-contract";
 import { mikotoGroup } from "./mikoto-presets";
 import { chentuFallbackImageDescriptor } from "./chentu-catalog";
 import { supplierKeyForConnection } from "./supplier-identity";
@@ -25,6 +27,7 @@ import { applyChuangxiangImageCapabilities } from "@super-canvas/providers/chuan
 import { withHighestModelQualityDefault } from "./model-quality";
 import { applyGenimageImageCapabilities } from "@super-canvas/providers/genimage-image-capabilities";
 import { applySavedModelInterfaces } from "./supplier-interface-discovery";
+import { guardNativeVideoRunnableContract } from "./native-video-runnable-contract";
 
 type Connection = { provider: string; config: Record<string, unknown> };
 
@@ -271,7 +274,7 @@ function bindExistingModelProtocols(
       if (!savedWeAiSeedanceContract(connection, connector, model.id)) return unresolved(model);
       if (!knownChentuVideoContract(connection, model) && !knownChentuVideoContract(connection, existing)) return {
         ...unresolved(model), parameters: [], metadata: { ...unresolved(model).metadata, parameterControlsUnavailable: true,
-          canvasUnavailableReason: "该型号的视频参数和调用合同待供应商文档确认" },
+          canvasUnavailableReason: "该型号的视频参数与调用协议待供应商文档确认" },
       };
       const metadata = { ...existing.metadata, ...model.metadata, canvasRunnable: true };
       delete (metadata as Record<string, unknown>).canvasUnavailableReason;
@@ -290,7 +293,7 @@ function bindExistingModelProtocols(
     if (!kind) return model;
     if (kind.split("+").includes("music")) return unresolved(model);
     if (!knownChentuVideoContract(connection, model)) return { ...unresolved(model), parameters: [], metadata: {
-      ...unresolved(model).metadata, parameterControlsUnavailable: true, canvasUnavailableReason: "该型号的视频参数和调用合同待供应商文档确认" } };
+      ...unresolved(model).metadata, parameterControlsUnavailable: true, canvasUnavailableReason: "该型号的视频参数与调用协议待供应商文档确认" } };
     if (remainingVideoSupplier(connection.config.baseUrl) === "weai" && /^seedance-2\.0(?:-|$)/iu.test(model.id)) return unresolved(model);
     let candidates = existing
       ? [existing]
@@ -416,6 +419,30 @@ export function bindScannedModelProtocols(
     }
     const original = originalById.get(model.id);
     if (original && hasDeclaredOutput(original) && capability(original) !== capability(model)) return unresolved(original);
+    const nativeCangyuan = connection.provider === "openai" && isCangyuanNativeSeedanceRequest(model.id, String(connection.config.baseUrl));
+    const nativeChuangxiang = connection.provider === "openai" && isChuangxiangVideoConnection(connection.config, model.id);
+    if (nativeCangyuan || nativeChuangxiang) {
+      if (connection.config.supplierArchived === true || ["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) ||
+          Array.isArray(connection.config.scannedModelIds) && !connection.config.scannedModelIds.includes(model.id) ||
+          /401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|unavailable|disabled/iu.test(String(model.metadata?.canvasUnavailableReason ?? ""))) {
+        return { ...model, metadata: { ...model.metadata, canvasRunnable: false,
+          canvasUnavailableReason: model.metadata?.canvasUnavailableReason ?? "当前 Key 或分组没有此媒体型号的可用权限" } };
+      }
+    }
+    if ((nativeCangyuan || nativeChuangxiang) && canInherit(model) && (!hasDeclaredOutput(model) || capability(model) === "video")) {
+      const documented = nativeCangyuan ? cangyuanVideoModel(model) : chuangxiangVideoModel(model.id, model);
+      const metadata: Record<string, unknown> = { ...documented.metadata, canvasRunnable: true };
+      delete (metadata as Record<string, unknown>).canvasUnavailableReason;
+      delete (metadata as Record<string, unknown>).parameterControlsUnavailable;
+      if (metadata.autoInterfaceStatus === "incomplete") delete (metadata as Record<string, unknown>).autoInterfaceStatus;
+      return { ...documented, metadata };
+    }
+    // Native OpenAI-compatible connections also need an exact video contract;
+    // an inferred directory operation alone does not establish request parameters.
+    if (canInherit(model) && !knownChentuVideoContract(connection, model)) return {
+      ...unresolved(model), parameters: [], metadata: { ...unresolved(model).metadata,
+        parameterControlsUnavailable: true, canvasUnavailableReason: "该型号的视频参数与调用协议待供应商文档确认" },
+    };
     const documented = remainingSupplier && canInherit(model) && (!hasDeclaredOutput(model) || capability(model) === "video")
       ? remainingVideoModel(remainingSupplier, model.id, model, {
           group: String(connection.config.modelGroup ?? connection.config.group ?? ""),
@@ -426,6 +453,7 @@ export function bindScannedModelProtocols(
     delete (metadata as Record<string, unknown>).canvasUnavailableReason;
     return { ...documented, metadata };
   });
+  models = models.map(model => guardNativeVideoRunnableContract(connection, model));
   return {
     ...bound,
     models,

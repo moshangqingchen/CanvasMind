@@ -2,6 +2,7 @@ import {
   compileDocumentedInterface, savedModelInterfaces,
   type ModelDescriptor, type DocumentedModelInterface,
   cangyuanMusicModel, isCangyuanMusicRequest,
+  cangyuanVideoModel, isCangyuanNativeSeedanceRequest, modelGenerationMediaKinds,
   chuangxiangVideoModel, isChuangxiangVideoConnection,
 } from "@super-canvas/providers";
 import { bananaImageRoute, applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
@@ -12,18 +13,25 @@ type Connection = { provider: string; config: Record<string, unknown> };
 
 function mayBind(model: ModelDescriptor) {
   const reason = String(model.metadata?.canvasUnavailableReason ?? "");
-  if (/401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|disabled/iu.test(reason)) return false;
+  if (/401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|unavailable|disabled/iu.test(reason)) return false;
   return model.metadata?.canvasRunnable !== false || model.metadata?.autoInterfaceStatus === "incomplete" || /协议|接口|尚未内置|protocol|adapter/iu.test(reason);
 }
 
 function nativeContract(connection: Connection, model: ModelDescriptor): ModelDescriptor | undefined {
   if (!mayBind(model)) return undefined;
   if (connection.provider === "rest" && isCangyuanMusicRequest(model.id, String(connection.config.baseUrl ?? ""))) return cangyuanMusicModel(model);
-  if (connection.provider === "rest" && isChuangxiangVideoConnection(connection.config, model.id)) {
+  const nativeCangyuan = connection.provider === "openai" && isCangyuanNativeSeedanceRequest(model.id, String(connection.config.baseUrl ?? ""));
+  const nativeChuangxiang = ["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(connection.config, model.id);
+  const declaredOutput = model.metadata?.outputKindsSource === "declared" || model.metadata?.operationsSource === "declared" ||
+    ["chat", "text", "audio", "other"].includes(String(model.metadata?.catalogCapability ?? ""));
+  if ((nativeCangyuan || nativeChuangxiang) && (!declaredOutput || modelGenerationMediaKinds(model).join("+") === "video") &&
+      connection.config.supplierArchived !== true && !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
+      (!Array.isArray(connection.config.scannedModelIds) || connection.config.scannedModelIds.includes(model.id))) {
     const metadata: Record<string, unknown> = { ...model.metadata, canvasRunnable: true };
     delete metadata.canvasUnavailableReason;
     if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
-    return chuangxiangVideoModel(model.id, { ...model, metadata });
+    delete metadata.parameterControlsUnavailable;
+    return nativeCangyuan ? cangyuanVideoModel({ ...model, metadata }) : chuangxiangVideoModel(model.id, { ...model, metadata });
   }
   if (model.id === "gemini-nano-banana-2.1" && bananaImageRoute(connection, model.id)) {
     const metadata: Record<string, unknown> = { ...model.metadata, canvasRunnable: true };

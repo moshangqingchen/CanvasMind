@@ -71,6 +71,76 @@ describe("supplier discovery", () => {
     });
     expect(result.groups.find(group=>group.id==="gpt-image-2.5")?.models[0]?.priceLabel).toBe("¥0.16/张");
   });
+  it("keeps identically named public groups separate by official ID in either channel order", () => {
+    const channels = [
+      { name: "sd2.5 second", platforms: [{ groups: [{ id: 54, name: "视频生成" }],
+        supported_models: [{ name: "seedance-2.5", pricing: { billing_mode: "per_second", per_request_price: .62 } }] }] },
+      { name: "sd first", platforms: [{ groups: [{ id: "53", name: "视频生成" }],
+        supported_models: [{ name: "seedance-2.5", pricing: { billing_mode: "per_second", per_request_price: .55 } }] }] },
+    ];
+    const project = (data: typeof channels) => parseSupplierPricingChannels({ code: 0, data }, "CNY")
+      .map(group => ({ id: group.id, supplierGroupId: group.supplierGroupId, price: group.models[0]?.priceLabel }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(project(channels)).toEqual([
+      { id: "视频生成 [分组ID 53]", supplierGroupId: "53", price: "¥0.55/秒" },
+      { id: "视频生成 [分组ID 54]", supplierGroupId: "54", price: "¥0.62/秒" },
+    ]);
+    expect(project([...channels].reverse())).toEqual(project(channels));
+    const plaza = parseSupplierCatalog({ data: { groups: [
+      { id: 53, name: "视频生成", models: ["seedance-2.5"] },
+      { id: 54, name: "视频生成", models: ["seedance-2.5"] },
+    ] } });
+    expect(plaza.groups.map(group => group.supplierGroupId)).toEqual(["53", "54"]);
+    expect(new Set(plaza.groups.map(group => group.id)).size).toBe(2);
+  });
+  it.each(["plaza", "fallback"])("joins %s public pricing to only the same official account ID without losing public-only groups", async mode => {
+    const groups = [{ id: 36, name: "MiniMax H3" }, { id: 54, name: "视频生成" },
+      { id: 53, name: "视频生成" }, { id: 16, name: "video-企业版" }, { id: 999, name: "minimax-h3-优化版" }];
+    const channels = groups.map(group => ({ name: `channel ${group.id}`, platforms: [{ groups: [group],
+      supported_models: [{ name: group.id === 36 || group.id === 999 ? "minimax-h3" : "seedance-2.5",
+        pricing: { billing_mode: "per_second", per_request_price: group.id === 53 ? .55 : group.id === 54 ? .62 : group.id === 36 ? .08 : 9 } }] }] }));
+    const result = await discoverSupplierCatalog({ siteUrl: "https://token.secure-skill.com", apiUrl: "", kind: "sub2api" }, async url => {
+      if (String(url).endsWith("/model-plaza")) return mode === "plaza"
+        ? Response.json({ data: { groups: groups.map(group => ({ ...group, models: [] })) } })
+        : Response.json({}, { status: 404 });
+      if (String(url).endsWith("/pricing/channels")) return Response.json({ code: 0, data: channels });
+      expect(String(url)).toBe("https://token.secure-skill.com/api/v1/groups/available");
+      return Response.json({ data: [{ id: "036", name: "minimax-h3-优化版" },
+        { id: 53, name: "sd特价分组1" }, { id: 54, name: "sd2.5特价分组-2" }] });
+    });
+    expect(result.status).toBe("live");
+    expect(result.groups).toHaveLength(5);
+    expect(result.groups.find(group => group.id === "minimax-h3-优化版")).toMatchObject({ supplierGroupId: "36", models: [{ id: "minimax-h3", priceLabel: "¥0.08/秒" }] });
+    expect(result.groups.find(group => group.id === "sd特价分组1")).toMatchObject({ supplierGroupId: "53", models: [{ id: "seedance-2.5", priceLabel: "¥0.55/秒" }] });
+    expect(result.groups.find(group => group.id === "sd2.5特价分组-2")).toMatchObject({ supplierGroupId: "54", models: [{ id: "seedance-2.5", priceLabel: "¥0.62/秒" }] });
+    expect(result.groups.find(group => group.supplierGroupId === "16")).toMatchObject({ id: "public-group:16", label: "video-企业版 [公开分组ID 16]", models: [{ id: "seedance-2.5", priceLabel: "¥9/秒" }] });
+    expect(result.groups.find(group => group.supplierGroupId === "999")).toMatchObject({ id: "public-group:999", models: [{ id: "minimax-h3", priceLabel: "¥9/秒" }] });
+    expect(new Set(result.groups.map(group => group.id)).size).toBe(5);
+  });
+  it("reports cross-channel price conflicts for the same official group/model instead of taking the first channel", () => {
+    const channels = [1, 2, 1].map((price, index) => ({ name: `channel ${index}`, platforms: [{ groups: [{ id: 53, name: "视频生成" }],
+      supported_models: [{ name: "seedance-2.5", pricing: { billing_mode: "per_second", per_request_price: price } }] }] }));
+    for (const data of [channels, [...channels].reverse()]) {
+      const groups = parseSupplierPricingChannels({ code: 0, data }, "CNY");
+      expect(groups).toHaveLength(1);
+      expect(groups[0]?.models).toHaveLength(1);
+      expect(groups[0]?.models[0]).toMatchObject({ priceLabel: "价格存在冲突，待确认", metadata: { supplierPriceConflict: true,
+        supplierPriceAlternatives: expect.arrayContaining([{ label: "¥1/秒", channel: "channel 0" }, { label: "¥2/秒", channel: "channel 1" }]) } });
+    }
+    const repeated = parseSupplierPricingChannels({ code: 0, data: [channels[0], channels[0]] }, "CNY");
+    expect(repeated[0]?.models[0]?.priceLabel).toBe("¥1/秒");
+    expect(repeated[0]?.models[0]?.metadata?.supplierPriceConflict).toBeUndefined();
+    const tokenChannels = [1e-5, 2e-5].map(output_price => ({ name: "official token", platforms: [{ groups: [{ id: 37, name: "seedance-官方token版" }],
+      supported_models: [{ name: "doubao-seedance-2-0-fast-260128", pricing: { billing_mode: "token", output_price } }] }] }));
+    const token = parseSupplierPricingChannels({ code: 0, data: tokenChannels }, "CNY", { supplierSiteUrl: "https://token.secure-skill.com", checkedAt: "2026-10-08T00:00:00Z" })[0]?.models[0];
+    expect(token?.metadata?.supplierPriceConflict).toBe(true);
+    expect(token?.priceLabel).toBe("价格存在冲突，待确认");
+    expect(token?.metadata?.secureSkillCatalogPricing).toBeUndefined();
+    expect(token?.metadata?.supplierPriceAlternatives).toEqual([
+      { label: "720p · 不含参考视频 ¥10/1M tokens", channel: "official token" },
+      { label: "720p · 不含参考视频 ¥20/1M tokens", channel: "official token" },
+    ]);
+  });
   it("preserves model plaza modalities, documented input limits and reasoning without changing group membership", () => {
     const result = parseSupplierCatalog({ data: { groups: [
       { name: "vision", models: [{ id: "image-understanding-pro", input_modalities: ["text", "image", "video"], output_modalities: ["text"],

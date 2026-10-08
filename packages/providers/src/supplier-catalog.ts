@@ -6,6 +6,7 @@ import { parseProviderModelFacts, scanProviderModelCatalog } from "./model-catal
 import { modelGenerationMediaKinds } from "./model-media.js";
 import { parseSupplierGroupDetails, type SupplierGroupDetails } from "./supplier-group-details.js";
 import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketplace, TK1688_MARKETPLACE_URL } from "./tk1688-catalog.js";
+import { secureSkillCatalogPricing } from "./secure-skill-catalog-pricing.js";
 
 export type SupplierSiteKind =
   "auto" | "newapi" | "sub2api" | "openai-compatible";
@@ -32,6 +33,8 @@ export interface DiscoveredSupplierGroup {
   label: string;
   source: "catalog";
   models: DiscoveredSupplierModel[];
+  /** Official site identity, separate from the name saved by connections. */
+  supplierGroupId?: string;
   details?: SupplierGroupDetails;
 }
 export interface SupplierCatalogDiscovery {
@@ -56,6 +59,82 @@ const values = (value: unknown): string[] =>
     : text(value)
       ? [text(value)]
       : [];
+
+const supplierGroupId = (value: unknown): string | undefined => {
+  const number = typeof value === "number" ? value : /^\d+$/u.test(text(value)) ? Number(value) : NaN;
+  return Number.isSafeInteger(number) && number >= 0 ? String(number) : undefined;
+};
+const groupIdentity = (group: Pick<DiscoveredSupplierGroup, "id" | "supplierGroupId">): string =>
+  group.supplierGroupId ? `site-id:${group.supplierGroupId}` : `name:${group.id}`;
+
+/** A repeated public name never identifies two different official groups. */
+function distinctGroupNames(groups: DiscoveredSupplierGroup[]): DiscoveredSupplierGroup[] {
+  const counts = new Map<string, number>();
+  for (const group of groups) counts.set(group.id, (counts.get(group.id) ?? 0) + 1);
+  return groups.map(group => {
+    if ((counts.get(group.id) ?? 0) < 2 || !group.supplierGroupId) return group;
+    const suffix = ` [分组ID ${group.supplierGroupId}]`;
+    return { ...group, id: `${group.id.slice(0, 256 - suffix.length)}${suffix}`,
+      label: `${group.label.slice(0, 256 - suffix.length)}${suffix}` };
+  });
+}
+
+function mergeCatalogModel(previous: DiscoveredSupplierModel, incoming: DiscoveredSupplierModel): DiscoveredSupplierModel {
+  const merged = { ...incoming, ...previous, metadata: { ...incoming.metadata, ...previous.metadata },
+    ...((previous.priceLabel || incoming.priceLabel) ? { priceLabel: previous.priceLabel || incoming.priceLabel } : {}) };
+  const conflict = previous.metadata?.supplierPriceConflict === true || incoming.metadata?.supplierPriceConflict === true ||
+    Boolean(previous.priceLabel && incoming.priceLabel && (previous.priceLabel !== incoming.priceLabel ||
+      (previous.metadata?.secureSkillCatalogPricing && incoming.metadata?.secureSkillCatalogPricing &&
+        JSON.stringify(previous.metadata.secureSkillCatalogPricing) !== JSON.stringify(incoming.metadata.secureSkillCatalogPricing))));
+  if (!conflict) return merged;
+  const alternatives = [previous, incoming].flatMap(model =>
+    Array.isArray(model.metadata?.supplierPriceAlternatives) ? model.metadata.supplierPriceAlternatives :
+      model.priceLabel ? [{ label: model.priceLabel, channel: text(model.metadata?.supplierPriceChannel) }] : []);
+  const safe = alternatives.flatMap(value => {
+    const alternative = record(value), label = text(alternative?.label), channel = text(alternative?.channel);
+    return label ? [{ label, channel }] : [];
+  });
+  const unique = [...new Map(safe.map(value => [JSON.stringify(value), value])).values()].slice(0, 10);
+  delete merged.metadata.secureSkillCatalogPricing;
+  delete merged.metadata.chuangxiangCatalogPricing;
+  delete merged.metadata.tk1688Pricing;
+  return { ...merged, priceLabel: "价格存在冲突，待确认", metadata: { ...merged.metadata,
+    supplierPriceConflict: true, supplierPriceAlternatives: unique } };
+}
+
+function mergeCatalogGroups(previous: DiscoveredSupplierGroup, incoming: DiscoveredSupplierGroup): DiscoveredSupplierGroup {
+  const models = new Map(previous.models.map(model => [model.id, model]));
+  for (const model of incoming.models) {
+    const old = models.get(model.id);
+    models.set(model.id, old ? mergeCatalogModel(old, model) : model);
+  }
+  return { ...incoming, ...previous,
+    ...((previous.details || incoming.details) ? { details: previous.details ?? incoming.details } : {}), models: [...models.values()] };
+}
+
+/** Only the same site's numeric account ID can rename a numeric public group. */
+function accountGroupNames(groups: DiscoveredSupplierGroup[], available: DiscoveredSupplierGroup[]): DiscoveredSupplierGroup[] {
+  const accountIds = new Set(available.map(group => group.supplierGroupId).filter(Boolean));
+  const merged = new Map(groups.map(group => [groupIdentity(group), group.supplierGroupId && !accountIds.has(group.supplierGroupId)
+    ? { ...group, id: `public-group:${group.supplierGroupId}`,
+      label: `${group.label.replace(/ \[分组ID \d+\]$/u, "")} [公开分组ID ${group.supplierGroupId}]`.slice(0, 256) } : group]));
+  for (const account of available) {
+    const key = groupIdentity(account);
+    const named = [...merged.values()].find(group => !group.supplierGroupId && group.id === account.id);
+    const identified = merged.get(key);
+    const previous = identified && named && identified !== named ? mergeCatalogGroups(identified, named) : identified ?? named;
+    if (!previous) { if (merged.size < 500) merged.set(key, account); continue; }
+    if (named && groupIdentity(named) !== key) merged.delete(groupIdentity(named));
+    if (groupIdentity(previous) !== key) merged.delete(groupIdentity(previous));
+    merged.set(key, { ...previous, ...account, models: previous.models,
+      ...((previous.details || account.details) ? { details: { ...previous.details, ...account.details,
+        ...(account.details?.description ? { referencePrice: account.details.referencePrice,
+          supportedResolutions: account.details.supportedResolutions, unsupportedResolutions: account.details.unsupportedResolutions,
+          exclusiveResolutions: account.details.exclusiveResolutions } : {}),
+      } as SupplierGroupDetails } : {}) });
+  }
+  return distinctGroupNames([...merged.values()]);
+}
 
 /** Credentials and query strings are never retained in supplier URLs. */
 export function normalizeSupplierUrl(value: string): string {
@@ -99,8 +178,11 @@ export function parseSupplierKeyGroups(
   const groups = new Map<string, DiscoveredSupplierGroup>();
   const add = (id: string, label: string, raw: Record<string, unknown>) => {
     const details = parseSupplierGroupDetails(raw, "key-groups");
-    if (id && groups.size < 500 && !groups.has(id))
-      groups.set(id, { id, label: label || id, source: "catalog", models: [], ...(details ? { details } : {}) });
+    const officialId = kind === "sub2api" ? supplierGroupId(raw.id) : undefined;
+    const key = officialId ? `site-id:${officialId}` : `name:${id}`;
+    if (id && groups.size < 500 && !groups.has(key))
+      groups.set(key, { id, label: label || id, source: "catalog", models: [],
+        ...(officialId ? { supplierGroupId: officialId } : {}), ...(details ? { details } : {}) });
   };
   if (kind === "sub2api") {
     const entries = Array.isArray(data) ? data : record(data)?.groups;
@@ -124,7 +206,7 @@ export function parseSupplierKeyGroups(
     }
     if (Object.keys(entries).length && !groups.size) return null;
   }
-  return [...groups.values()];
+  return distinctGroupNames([...groups.values()]);
 }
 
 function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
@@ -201,13 +283,15 @@ export function parseSupplierCatalog(
   const data = record(root?.data);
   const nestedGroups = root?.groups ?? data?.groups;
   const byGroup = new Map<string, DiscoveredSupplierGroup>();
-  const add = (id: string, label: string, model?: DiscoveredSupplierModel) => {
-    if (!id || (byGroup.size >= 500 && !byGroup.has(id))) return;
-    const group = byGroup.get(id) ?? {
+  const add = (id: string, label: string, model?: DiscoveredSupplierModel, officialId?: string) => {
+    const key = officialId ? `site-id:${officialId}` : `name:${id}`;
+    if (!id || (byGroup.size >= 500 && !byGroup.has(key))) return;
+    const group = byGroup.get(key) ?? {
       id,
       label: label || id,
       source: "catalog",
       models: [],
+      ...(officialId ? { supplierGroupId: officialId } : {}),
     };
     if (
       model &&
@@ -215,7 +299,7 @@ export function parseSupplierCatalog(
       !group.models.some((item) => item.id === model.id)
     )
       group.models.push(model);
-    byGroup.set(id, group);
+    byGroup.set(key, group);
   };
   if (Array.isArray(nestedGroups)) {
     for (const raw of nestedGroups) {
@@ -223,8 +307,9 @@ export function parseSupplierCatalog(
       if (!group) continue;
       const id = text(group.name ?? group.id);
       const label = text(group.label ?? group.description ?? group.name) || id;
-      add(id, label);
-      const saved = byGroup.get(id);
+      const officialId = supplierGroupId(group.id);
+      add(id, label, undefined, officialId);
+      const saved = byGroup.get(officialId ? `site-id:${officialId}` : `name:${id}`);
       const details = parseSupplierGroupDetails(group, "model-plaza");
       if (saved && details) saved.details = details;
       for (const rawModel of Array.isArray(group.models) ? group.models : []) {
@@ -234,10 +319,10 @@ export function parseSupplierCatalog(
         add(id, label, current ? { ...model, priceLabel: current.priceLabel,
           metadata: { ...model.metadata, chuangxiangCatalogPricing: current.pricing,
             chuangxiangEffectiveRateMultiplier: record(rawModel)?.effective_rate_multiplier,
-            ...(current.resolutions ? { videoSupportedResolutions: current.resolutions } : {}) } } : model);
+            ...(current.resolutions ? { videoSupportedResolutions: current.resolutions } : {}) } } : model, officialId);
       }
     }
-    return { groups: [...byGroup.values()], kind: "sub2api", recognized: true };
+    return { groups: distinctGroupNames([...byGroup.values()]), kind: "sub2api", recognized: true };
   }
   const ratios = record(root?.group_ratio ?? data?.group_ratio);
   const usable = record(root?.usable_group ?? data?.usable_group);
@@ -344,7 +429,8 @@ export function supplierModelUrls(apiUrl: string): string[] {
 }
 
 /** The separate model-price page groups models under channels and platforms. */
-export function parseSupplierPricingChannels(payload: unknown, currency?: string): DiscoveredSupplierGroup[] {
+export function parseSupplierPricingChannels(payload: unknown, currency?: string,
+  source: { supplierSiteUrl?: string; checkedAt?: string } = {}): DiscoveredSupplierGroup[] {
   const root = record(payload);
   if (root?.success === false || (typeof root?.code === "number" && ![0, 200].includes(root.code))) return [];
   const channels = Array.isArray(root?.data) ? root.data : record(root?.data)?.channels;
@@ -360,29 +446,39 @@ export function parseSupplierPricingChannels(payload: unknown, currency?: string
         const rawGroup = record(value);
         const id = text(rawGroup?.name);
         if (!rawGroup || !id) continue;
-        const group = groups.get(id) ?? { id, label: id, source: "catalog" as const, models: [] };
+        const officialId = supplierGroupId(rawGroup.id);
+        const key = officialId ? `site-id:${officialId}` : `name:${id}`;
+        const group = groups.get(key) ?? { id, label: id, source: "catalog" as const, models: [],
+          ...(officialId ? { supplierGroupId: officialId } : {}) };
         const details = parseSupplierGroupDetails(rawGroup, "model-plaza");
         if (details) group.details = details;
         const multiplier = typeof rawGroup.rate_multiplier === "number" ? rawGroup.rate_multiplier : 1;
         for (const raw of platform.supported_models.slice(0, 3000)) {
           const row = record(raw);
           const model = modelFrom(row);
-          if (!row || !model || group.models.some(item => item.id === model.id)) continue;
+          if (!row || !model) continue;
           const pricing = record(row.pricing);
           const intervals = Array.isArray(pricing?.intervals) ? pricing.intervals.map(record).filter(item => item && typeof item.per_request_price === "number") : [];
-          const priceLabel = intervals.length
+          const secure = secureSkillCatalogPricing(row, { supplierSiteUrl: source.supplierSiteUrl ?? "", multiplier,
+            ...(source.checkedAt ? { checkedAt: source.checkedAt } : {}) });
+          const priceLabel = secure?.priceLabel ?? (intervals.length
             ? intervals.map(tier => `${text(tier!.tier_label)} ${catalogPriceLabel({ pricing: { ...pricing, per_request_price: tier!.per_request_price } }, { ...(currency ? { currency } : {}), multiplier }) ?? ""}`).join(" · ")
-            : catalogPriceLabel(row, { ...(currency ? { currency } : {}), multiplier });
-          group.models.push({ ...model, ...(priceLabel ? { priceLabel } : {}), metadata: { ...model.metadata,
+            : catalogPriceLabel(row, { ...(currency ? { currency } : {}), multiplier }));
+          const incoming = { ...model, ...(priceLabel ? { priceLabel } : {}), metadata: { ...model.metadata,
             supplierChannelDescription: typeof channel.description === "string" ? channel.description.slice(0, 8000) : "",
             priceSource: "supplier-price-page",
-          } });
+            supplierPriceChannel: text(channel.name),
+            ...(secure ? { secureSkillCatalogPricing: secure.pricing } : {}),
+          } };
+          const index = group.models.findIndex(item => item.id === model.id);
+          if (index < 0) group.models.push(incoming);
+          else group.models[index] = mergeCatalogModel(group.models[index]!, incoming);
         }
-        groups.set(id, group);
+        groups.set(key, group);
       }
     }
   }
-  return [...groups.values()];
+  return distinctGroupNames([...groups.values()]);
 }
 
 export async function discoverSupplierCatalog(
@@ -499,46 +595,32 @@ export async function discoverSupplierCatalog(
     // Secure Skill's current price page explicitly displays CNY (see the
     // 2026-09-23 price/usage audit); this is a currency convention, not a price.
     const currency = new URL(siteUrl).hostname === "token.secure-skill.com" ? "CNY" : undefined;
-    const prices = parseSupplierPricingChannels(response.payload, currency);
-    const merged = new Map(groups.map(group => [group.id, group]));
+    const prices = parseSupplierPricingChannels(response.payload, currency, { supplierSiteUrl: siteUrl, checkedAt });
+    const merged = new Map(groups.map(group => [groupIdentity(group), group]));
     for (const price of prices) {
-      const previous = merged.get(price.id);
-      if (!previous) { merged.set(price.id, price); continue; }
-      const models = new Map(previous.models.map(model => [model.id, model]));
-      for (const model of price.models) {
-        const old = models.get(model.id);
-        models.set(model.id, old ? { ...model, ...old, ...((old.priceLabel || model.priceLabel) ? { priceLabel: old.priceLabel || model.priceLabel! } : {}),
-          metadata: { ...model.metadata, ...old.metadata } } : model);
-      }
-      merged.set(price.id, { ...price, ...previous, ...((previous.details || price.details) ? { details: previous.details ?? price.details! } : {}), models: [...models.values()] });
+      const key = groupIdentity(price);
+      const previous = merged.get(key);
+      if (!previous) { merged.set(key, price); continue; }
+      merged.set(key, mergeCatalogGroups(previous, price));
     }
-    return [...merged.values()];
+    return distinctGroupNames([...merged.values()]);
   };
   const fallbackGroups = async (
     platform: "newapi" | "sub2api",
     fallback: SupplierCatalogDiscovery,
   ) => {
-    const result = (await keyGroups(platform)) ?? fallback;
+    const available = await keyGroups(platform);
+    const result = available ?? fallback;
     if (platform !== "sub2api") return result;
-    const groups = await pricePage(result.groups);
+    const priced = await pricePage(result.groups);
+    const groups = available?.status === "live" || available?.status === "empty" ? accountGroupNames(priced, available.groups) : priced;
     return groups.length ? { ...result, groups, status: "live" as const, complete: result.status !== "failed" && result.status !== "unauthorized" } : result;
   };
   const supplementGroups = async (parsed: ReturnType<typeof parseSupplierCatalog>, platform: "newapi" | "sub2api") => {
     if (platform === "sub2api") parsed = { ...parsed, groups: await pricePage(parsed.groups) };
     const available = await keyGroups(platform);
     if (available?.status === "live" || available?.status === "empty") {
-      const groups = new Map(parsed.groups.map(group => [group.id, group]));
-      for (const group of available.groups) {
-        const previous = groups.get(group.id);
-        if (previous) groups.set(group.id, { ...previous,
-          ...((previous.details || group.details) ? { details: { ...previous.details, ...group.details,
-            ...(group.details?.description ? { referencePrice: group.details.referencePrice,
-              supportedResolutions: group.details.supportedResolutions, unsupportedResolutions: group.details.unsupportedResolutions,
-              exclusiveResolutions: group.details.exclusiveResolutions } : {}),
-          } as SupplierGroupDetails } : {}) });
-        else if (groups.size < 500) groups.set(group.id, group);
-      }
-      return success({ ...parsed, groups: [...groups.values()] }, platform);
+      return success({ ...parsed, groups: accountGroupNames(parsed.groups, available.groups) }, platform);
     }
     return { ...success(parsed, platform), complete: false,
       error: "模型目录已读取；账号分组说明暂不可用，保留历史分组，请稍后重试或检查站点登录" };

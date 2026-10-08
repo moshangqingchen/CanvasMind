@@ -8,6 +8,12 @@ export function isCangyuanVideoRequest(model: string | undefined, baseUrl?: stri
   try { return new URL(baseUrl ?? "").origin === "https://ai.cangyuansuanli.cn"; } catch { return false; }
 }
 
+/** Exact native catalog IDs whose current official contracts were rechecked. */
+export function isCangyuanNativeSeedanceRequest(model: string | undefined, baseUrl?: string): boolean {
+  return ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-5-260628"].includes(model ?? "") &&
+    isCangyuanVideoRequest(model, baseUrl);
+}
+
 const labels: Record<string, string> = { duration: "视频时长", aspect_ratio: "画面比例", resolution: "输出分辨率", generate_audio: "生成声音", seed: "随机种子", face_mode: "人脸代审核", camera_movement: "镜头运动" };
 /** Per-model field contracts supplement a live inventory; they never add model IDs or grant access. */
 export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {

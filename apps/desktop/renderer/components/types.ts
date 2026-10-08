@@ -160,6 +160,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
     supplierLabel: string;
     supplierId?: string;
     modelQuote?: string;
+    modelMatch?: boolean;
     group: string;
     available?: boolean;
     unavailableReason?: string;

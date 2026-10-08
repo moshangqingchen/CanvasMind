@@ -7410,21 +7410,28 @@ function CanvasShell({
                   },
                 ]
               : []),
-            ...nodeConnectionCandidates.map((connection) => ({
-              id: connection.id,
-              name: connection.name,
-              provider: connection.provider,
-              supplier: providerConnectionSupplierKey(connection),
-              supplierLabel: providerSupplierLabel(
-                providerConnectionSupplierKey(connection),
-                connections,
-              ),
-              group: providerConnectionGroup(connection),
-              available: connectionIsConfigured(connection) && Boolean(generationType && connectionSupportsNodeType(connection, generationType, modelDescriptorsForConnection(connection))),
-              supplierId: typeof connection.config.supplierId === "string" ? connection.config.supplierId : undefined,
-              modelQuote: comparableModelPrice(modelDescriptorsForConnection(connection), node.data.model, node.data.parameters ?? {}),
-              unavailableReason: connection.provider === "cli" && !cliConnectionReady(connection) ? `${cliStatusLabel(connection)}，请在个人 AI 网站设置中接入` : generationType && !connectionSupportsNodeType(connection, generationType, modelDescriptorsForConnection(connection)) ? `当前分组未声明${generationType === "image-generation" ? "图片" : "视频"}型号` : undefined,
-            })),
+            ...nodeConnectionCandidates.map((connection) => {
+              const models = modelDescriptorsForConnection(connection);
+              const compatibleModels = generationType
+                ? models.filter(model => modelSupportsNodeType(model, generationType))
+                : [];
+              return {
+                id: connection.id,
+                name: connection.name,
+                provider: connection.provider,
+                supplier: providerConnectionSupplierKey(connection),
+                supplierLabel: providerSupplierLabel(
+                  providerConnectionSupplierKey(connection),
+                  connections,
+                ),
+                group: providerConnectionGroup(connection),
+                available: connectionIsConfigured(connection) && Boolean(generationType && connectionSupportsNodeType(connection, generationType, models)),
+                supplierId: typeof connection.config.supplierId === "string" ? connection.config.supplierId : undefined,
+                modelQuote: comparableModelPrice(compatibleModels, node.data.model, node.data.parameters ?? {}),
+                modelMatch: compatibleModels.some(model => model.id === node.data.model && !modelCanvasUnavailableReason(model)),
+                unavailableReason: connection.provider === "cli" && !cliConnectionReady(connection) ? `${cliStatusLabel(connection)}，请在个人 AI 网站设置中接入` : generationType && !connectionSupportsNodeType(connection, generationType, models) ? `当前分组未声明${generationType === "image-generation" ? "图片" : "视频"}型号` : undefined,
+              };
+            }),
           ],
           modelOptions,
           modelOptionsAuthoritative: Boolean(

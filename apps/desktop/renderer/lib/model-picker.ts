@@ -50,6 +50,7 @@ export function rememberModel(recent: RecentModels, connectionId: string, modelI
 export interface PickerConnection {
   id: string; name: string; supplier: string; supplierLabel: string; group: string;
   available?: boolean; unavailableReason?: string;
+  modelMatch?: boolean;
 }
 
 /** Show readable names; a short ID disambiguates only genuinely identical names. */
@@ -75,10 +76,11 @@ export function pickerConnectionGroups<T extends PickerConnection>(connections: 
   return [...groups.values()];
 }
 
-/** Only called for an explicit supplier/group change. Never used during catalog refresh. */
+/** Preview and select the same connection, preserving a saved selection before exact-model preferences. */
 export function choosePickerConnection<T extends PickerConnection>(connections: readonly T[], currentId: string,
   supplier: string, group?: string): T | undefined {
   const candidates = connections.filter(connection => connection.supplier === supplier && (group === undefined || connection.group === group));
   return candidates.find(connection => connection.id === currentId) ??
+    candidates.find(connection => connection.available !== false && connection.modelMatch === true) ??
     candidates.find(connection => connection.available !== false) ?? candidates[0];
 }

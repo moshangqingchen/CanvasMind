@@ -8,6 +8,8 @@ import { imageEditingConnection, imageEditingRequestIssues, usesDeclaredImagesEd
 import { assertValidResult } from "./contracts.js";
 import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import { isCangyuanMusicRequest } from "./cangyuan-music.js";
+import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanNativeSeedanceRequest } from "./cangyuan-video-contract.js";
+import { chuangxiangVideoModel, chuangxiangVideoTransport, isChuangxiangVideoConnection } from "./chuangxiang-video-contract.js";
 import { remainingVideoSupplier, remainingVideoModel, remainingVideoTransport, type RemainingVideoContext } from "./remaining-video-contracts.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
 
@@ -56,8 +58,15 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
         // cannot grant another Key's Flow/SD transport when group is absent.
         const context: RemainingVideoContext = { group: typeof group === "string" ? group : "",
           groupDescription: typeof description === "string" ? description : "", ...(current ? { model: current } : {}) };
-        const descriptor = supplier ? remainingVideoModel(supplier, request.model, current, context) : undefined;
-        const transport = supplier && descriptor ? remainingVideoTransport(supplier, request.model, context) : undefined;
+        const nativeCangyuan = connection.provider === "openai" && isCangyuanNativeSeedanceRequest(request.model, connection.baseUrl);
+        const nativeChuangxiang = connection.provider === "openai" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
+        const descriptor = nativeCangyuan ? cangyuanVideoModel(current ?? {
+          id: request.model, name: request.model, operations: ["video.generate"],
+        }) : nativeChuangxiang ? chuangxiangVideoModel(request.model, current)
+          : supplier ? remainingVideoModel(supplier, request.model, current, context) : undefined;
+        const transport = nativeCangyuan ? cangyuanVideoTransport(request.model)
+          : nativeChuangxiang ? chuangxiangVideoTransport()
+            : supplier && descriptor ? remainingVideoTransport(supplier, request.model, context) : undefined;
         if (descriptor && transport?.submit && transport.output) {
           // Supplying the connector through the resolver keeps REST's native
           // validation and parameter normalization active; options.config would

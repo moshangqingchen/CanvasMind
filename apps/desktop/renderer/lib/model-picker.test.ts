@@ -36,6 +36,28 @@ describe("connection identity in the canvas picker", () => {
     expect(choosePickerConnection(connections, "a", "other", "标准")?.id).toBe("c");
     expect(choosePickerConnection(connections, "a", "missing")).toBeUndefined();
   });
+  it("compares another supplier using a usable exact-model group instead of its first unrelated group", () => {
+    const groups = [
+      { ...connections[0], id: "flow", group: "flow", modelMatch: false },
+      { ...connections[0], id: "locked-token", group: "官方 token", available: false, modelMatch: true },
+      { ...connections[0], id: "official-token", group: "官方 token", modelMatch: true },
+      connections[2],
+    ];
+    expect(choosePickerConnection(groups, "c", "supplier")?.id).toBe("official-token");
+    expect(choosePickerConnection(groups, "c", "supplier", "flow")?.id).toBe("flow");
+    expect(choosePickerConnection(groups, "flow", "supplier")?.id).toBe("flow");
+    expect(choosePickerConnection(groups, "locked-token", "supplier")?.id).toBe("locked-token");
+  });
+  it("falls back to a usable group when the exact model is absent or unknown, without crossing suppliers", () => {
+    const groups = [
+      { ...connections[1], id: "inactive-match", modelMatch: true },
+      { ...connections[0], id: "other-model", modelMatch: false },
+      { ...connections[2], modelMatch: true },
+    ];
+    expect(choosePickerConnection(groups, "c", "supplier")?.id).toBe("other-model");
+    expect(choosePickerConnection(connections, "c", "supplier")?.id).toBe("a");
+    expect(choosePickerConnection(groups.filter(item => item.available === false), "c", "supplier")?.id).toBe("inactive-match");
+  });
 });
 
 describe("model search and history", () => {

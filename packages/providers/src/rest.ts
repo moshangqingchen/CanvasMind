@@ -1101,7 +1101,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     if (!this.fixedConfig && isCangyuanVideoRequest(model, connection.baseUrl))
       return { ...applyOverride(selected, cangyuanVideoTransport(model!)), assetsRequirePublicUrls: true };
-    if (connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, model))
+    if (["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(imageEditingConnection(connection).config, model))
       return { ...applyOverride(selected, chuangxiangVideoTransport()), assetsRequirePublicUrls: true };
     const remainingSupplier = remainingVideoSupplier(connection.baseUrl);
     const videoContext = remainingVideoContext(connection.settings, base.models?.find(m => m.id === model));
@@ -1326,7 +1326,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       };
     }
     const frozenModel = isRecord(task?.result) && typeof task.result.model === "string" ? task.result.model : undefined;
-    const chuangxiangVideo = connection.provider === "rest" && config.output.kind === "video" &&
+    const chuangxiangVideo = ["rest", "openai"].includes(connection.provider) && config.output.kind === "video" &&
       isChuangxiangVideoConnection(imageEditingConnection(connection).config, request?.model ?? frozenModel);
     return fetchProviderJson<unknown>(
       this.fetchImpl,
@@ -1412,7 +1412,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         if (cangyuanVideo) issues.push(...validateCangyuanVideoRequest(prepared));
         if (remainingVideo) issues.push(...remainingVideoRequestIssues(remainingSupplier!, prepared, videoContext));
       }
-      const videoRequest = connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
+      const videoRequest = ["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
       if (videoRequest) {
         // Temporary hosting is authorized by this saved connection. Only image
         // bytes use that channel; video/audio still require existing public URLs.
@@ -1720,7 +1720,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         throw new Error("该模型需要参考图 HTTPS 链接。请在供应商分组中启用参考图临时链接，再重新运行；当前生成尚未提交。");
       if (needsHosting) outboundRequest = { ...outboundRequest, assets: await uploadTemporaryReferenceImages(request.assets, this.fetchImpl) };
     }
-    const videoRequest = connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
+    const videoRequest = ["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
     if (videoRequest) outboundRequest = { ...outboundRequest, parameters: normalizeChuangxiangVideoParameters(outboundRequest) };
     if (!this.fixedConfig && isCangyuanVideoRequest(request.model, connection.baseUrl)) outboundRequest = { ...outboundRequest, parameters: normalizeCangyuanVideoParameters(outboundRequest) };
     const remainingSupplier = !this.fixedConfig ? remainingVideoSupplier(connection.baseUrl) : undefined;
@@ -1796,7 +1796,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       throw new Error("REST connector does not define polling");
     const connection = await this.connections.resolve(envelope.connectionId);
     // Resuming an old task repairs only its GET route and continues the same ID.
-    if (connection.provider === "rest" && envelope.config.output.kind === "video" &&
+    if (["rest", "openai"].includes(connection.provider) && envelope.config.output.kind === "video" &&
         isChuangxiangVideoConnection(imageEditingConnection(connection).config, envelope.model)) {
       const current = chuangxiangVideoTransport();
       envelope.config = { ...envelope.config, poll: current.poll!, output: current.output!, statusMap: current.statusMap!,
