@@ -111,6 +111,7 @@ const PROTOCOL_LABELS: Record<SupplierModelProtocol, string> = {
 const CAPABILITY_LABELS = {
   image: "图片",
   video: "视频",
+  music: "音乐",
   chat: "对话",
   other: "其他",
 };
@@ -2029,7 +2030,7 @@ function GroupConnectionEditor({
   const [expanded, setExpanded] = useState(true);
   const [addingModel, setAddingModel] = useState(false);
   const [modelId, setModelId] = useState("");
-  const [capability, setCapability] = useState<"image" | "video" | "chat">(
+  const [capability, setCapability] = useState<"image" | "video" | "music" | "chat">(
     usage === "agent" ? "chat" : "image",
   );
   const [protocol, setProtocol] = useState<SupplierModelProtocol>(
@@ -2464,7 +2465,7 @@ function GroupConnectionEditor({
                     value={effectiveCapability}
                     onChange={(event) =>
                       setCapability(
-                        event.target.value as "image" | "video" | "chat",
+                        event.target.value as "image" | "video" | "music" | "chat",
                       )
                     }
                     disabled={busy}
@@ -2532,7 +2533,7 @@ function GroupConnectionEditor({
           </p>
           <div className="sm-model-filters">
             <label>模型来源 <select aria-label={`${group.id} 模型来源`} value={modelSource} onChange={event => setModelSource(event.target.value)}><option value="actual">Key 模型（{supplierModelCount(actualModels)}）</option><option value="catalog">目录参考（{supplierModelCount(visibleCatalog)}）</option><option value="missing">未再返回（{supplierModelCount(inventoryModels(connection?.config.modelRemovedModels))}）</option><option value="manual">手动添加（{manualModels.length}）</option></select></label>
-            <label>类型 <select aria-label={`${group.id} 模型类型`} value={kindFilter} onChange={event => setKindFilter(event.target.value as "all" | ModelKind)}><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="chat">对话</option></select></label>
+            <label>类型 <select aria-label={`${group.id} 模型类型`} value={kindFilter} onChange={event => setKindFilter(event.target.value as "all" | ModelKind)}><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="music">音乐</option><option value="chat">对话</option></select></label>
             <label>状态 <select aria-label={`${group.id} 模型状态`} value={stateFilter} onChange={event => setStateFilter(event.target.value)}><option value="all">全部状态</option><option value="runnable">目录与协议已确认</option><option value="verified">已实测</option></select></label>
             {(kindFilter !== "all" || stateFilter !== "all") && <button type="button" className="sm-text-button" onClick={() => { setKindFilter("all"); setStateFilter("all"); }}>清除类型与状态筛选</button>}
           </div>

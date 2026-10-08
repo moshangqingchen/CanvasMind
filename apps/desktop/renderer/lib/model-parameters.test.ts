@@ -572,4 +572,16 @@ describe("model parameter helpers", () => {
       }),
     ).toMatchObject({ duration: 15, resolution: "480p" });
   });
+  it("resolves supplier visibility and discrete duration constraints outside CLI", () => {
+    const model: ModelDescriptor = { id: "video", name: "Video", operations: ["video.generate"], parameters: [
+      { key: "resolution", label: "分辨率", control: "select", default: "720p", options: ["720p", "1080p"].map(value => ({label: value, value})) },
+      { key: "duration", label: "时长", control: "select", default: 5, valueType: "integer", options: [5,10].map(value => ({label: String(value),value})), constraints: [{when:[{parameter:"resolution",values:["1080p"]}],options:[{label:"8 秒",value:8}]}] },
+      { key: "lyrics", label: "歌词", control: "text", visibleWhen:[{parameter:"instrumental",values:[false]}] },
+      { key: "instrumental", label: "纯音乐", control: "toggle", default: false },
+    ] };
+    const fields = parameterDescriptorsForValues("video-generation", "rest", model, { resolution: "1080p", instrumental: true });
+    expect(fields.find(d => d.key === "duration")).toMatchObject({default:8,options:[{label:"8 秒",value:8}]});
+    expect(fields.some(d => d.key === "lyrics")).toBe(false);
+    expect(normalizedParametersForModel("video-generation", "rest", model, {resolution:"1080p",duration:5,instrumental:true,lyrics:"old"})).toEqual({resolution:"1080p",duration:8,instrumental:true});
+  });
 });

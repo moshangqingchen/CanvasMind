@@ -1,5 +1,6 @@
 import type { SupplierState, SupplierRecord as StoredSupplierRecord } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { modelSupportsGenerationMedia } from "@super-canvas/providers/model-media";
 import { PROVIDER_SUPPLIER_PROFILES } from "@super-canvas/providers/suppliers";
 import {
   invalidateModelCache,
@@ -40,7 +41,7 @@ export type SupplierModelProtocol =
 export interface SupplierCatalogModel {
   id: string;
   name?: string;
-  capability: "image" | "video" | "chat" | "other";
+  capability: "image" | "video" | "music" | "chat" | "other";
   protocol?: SupplierModelProtocol;
   priceLabel?: string;
   inputKinds?: ModelDescriptor["inputKinds"];
@@ -84,7 +85,7 @@ export interface SupplierInput {
   kind?: SupplierKind;
 }
 export interface ManualSupplierModel extends SupplierCatalogModel {
-  capability: "image" | "video" | "chat";
+  capability: "image" | "video" | "music" | "chat";
   protocol: SupplierModelProtocol;
 }
 
@@ -298,7 +299,7 @@ export function manualModelProtocols(
   provider: string,
   usage: "canvas" | "agent" | "disabled",
   config?: Record<string, unknown>,
-  capability?: "image" | "video" | "chat",
+  capability?: "image" | "video" | "music" | "chat",
 ): SupplierModelProtocol[] {
   const capabilities = manualModelCapabilities(provider, usage, config);
   if (capability && !capabilities.includes(capability)) return [];
@@ -322,19 +323,15 @@ export function manualModelCapabilities(
   provider: string,
   usage: "canvas" | "agent" | "disabled",
   config?: Record<string, unknown>,
-): Array<"image" | "video" | "chat"> {
+): Array<"image" | "video" | "music" | "chat"> {
   if (usage === "disabled") return [];
   if (provider === "openai" || provider === "weai") return ["image", "chat"];
   if (provider !== "rest") return [];
   const connector = config?.connector as
     { models?: ModelDescriptor[] } | undefined;
   const models = Array.isArray(connector?.models) ? connector.models : [];
-  return [...(["image", "video"] as const).filter((capability) =>
-    models.some((model) =>
-      model.operations?.includes(
-        capability === "image" ? "image.generate" : "video.generate",
-      ),
-    ),
+  return [...(["image", "video", "music"] as const).filter((capability) =>
+    models.some((model) => modelSupportsGenerationMedia(model, capability)),
   ), "chat"];
 }
 

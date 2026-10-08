@@ -2,8 +2,20 @@ import { describe, expect, it } from "vitest";
 import { chuangxiangCatalogPricing } from "./chuangxiang-catalog-pricing.js";
 import { parseSupplierCatalog, discoverSupplierCatalog } from "./supplier-catalog.js";
 import { modelPriceAmount } from "./media-billing.js";
+import { chuangxiangVideoModel } from "./chuangxiang-video-contract.js";
 
 describe("Chuangxiang plaza prices", () => {
+  it("prices SD8's fixed thirty-second task at 5.2 CNY without inventing a resolution", () => {
+    const row = { name: "sd8-seedance-2.5", effective_rate_multiplier: .1, video_pricing: { billing_mode: "per_request", prices: { per_request: 52 } } };
+    const priced = chuangxiangCatalogPricing(row)!;
+    expect(priced).toMatchObject({ priceLabel: "¥5.2/次", pricing: { kind: "per-request", billingUnit: "request", currency: "CNY", unitAmount: 5.2 } });
+    expect(priced.resolutions).toBeUndefined();
+    expect(priced.pricing.tiers).toBeUndefined();
+    const model = chuangxiangVideoModel(row.name, { id: row.name, name: row.name, operations: [], pricing: priced.pricing });
+    expect(model.parameters?.some(p => p.key === "resolution")).toBe(false);
+    expect(modelPriceAmount(model.pricing!, { duration: 30, n: 1 })).toBe(5.2);
+    expect(parseSupplierCatalog({ data: { groups: [{ name: "视频", models: [row] }] } }, { supplierSiteUrl: "https://vapi.chuangxiangai.asia" }).groups[0]?.models[0]?.priceLabel).toBe("¥5.2/次");
+  });
   it("multiplies raw prices once by the model's effective rate and preserves video units", () => {
     const result = chuangxiangCatalogPricing({ effective_rate_multiplier: .1, pricing: { billing_mode: "video" }, video_pricing: { billing_mode: "per_request", prices: { "720p": 52, "1080p": 252 } } })!;
     expect(result.priceLabel).toBe("720p ¥5.2/次 · 1080p ¥25.2/次");

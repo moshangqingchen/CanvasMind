@@ -1,5 +1,4 @@
 import {
-  scanProviderModelCatalog,
   catalogPriceLabel,
   type ModelDescriptor,
   type RestConnectorConfig,
@@ -8,6 +7,9 @@ import {
   canApplyCangyuanCurrentContract,
   cangyuanMusicModel,
   isCangyuanMusicRequest,
+  modelGenerationMediaKinds,
+  remainingVideoModel,
+  remainingVideoSupplier,
 } from "@super-canvas/providers";
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
@@ -47,15 +49,13 @@ function family(id: string): string {
 }
 
 function capability(model: ModelDescriptor): string | undefined {
-  const operations = model.operations.length
-    ? model.operations
-    : (scanProviderModelCatalog({ data: [{ id: model.id }] }).models[0]
-        ?.operations ?? []);
-  return operations.some((op) => op.startsWith("video."))
-    ? "video"
-    : operations.some((op) => op.startsWith("image."))
-      ? "image"
-      : undefined;
+  const kinds = modelGenerationMediaKinds(model);
+  return kinds.length ? [...kinds].sort().join("+") : undefined;
+}
+
+function hasDeclaredOutput(model: ModelDescriptor): boolean {
+  return model.metadata?.outputKindsSource === "declared" || model.metadata?.operationsSource === "declared" ||
+    ["chat", "text", "audio", "other"].includes(String(model.metadata?.catalogCapability ?? ""));
 }
 
 function hasFixedResolution(id: string): boolean {
@@ -86,6 +86,32 @@ function canInherit(model: ModelDescriptor): boolean {
     /协议|尚未内置/u.test(reason) &&
     !/403|权限|未开通|拒绝|下架|停用/u.test(reason)
   );
+}
+
+function savedMusicContract(connector: RestConnectorConfig, id: string): boolean {
+  const override = connector.modelOverrides?.[id];
+  const operation = override?.operationOverrides?.["music.generate"] ?? connector.operationOverrides?.["music.generate"];
+  const submit = operation?.submit ?? override?.submit ?? connector.submit;
+  const output = operation?.output ?? override?.output ?? connector.output;
+  return output?.kind === "audio" && Boolean(submit.path) && !/\/images(?:\/|$)/iu.test(submit.path);
+}
+
+function savedWeAiSeedanceContract(connection: Connection, connector: RestConnectorConfig, id: string): boolean {
+  if (remainingVideoSupplier(connection.config.baseUrl) !== "weai" || !/^seedance-2\.0(?:-|$)/iu.test(id)) return true;
+  const override = connector.modelOverrides?.[id];
+  const submit = override?.submit ?? connector.submit;
+  // Preserve an exact user-configured SD2 contract, including its chosen path.
+  // An Omni-shaped body is not the standardised SD2 request in the official guide.
+  return Boolean(submit.mappings?.some(mapping => mapping.target === "/duration_seconds") &&
+    submit.mappings?.some(mapping => /^\/reference_(?:images|videos|audios)/u.test(mapping.target)));
+}
+
+function knownChentuVideoContract(connection: Connection, model: ModelDescriptor): boolean {
+  if (remainingVideoSupplier(connection.config.baseUrl) !== "chentu" || capability(model) !== "video") return true;
+  if (remainingVideoModel("chentu", model.id)) return true;
+  const metadata = model.metadata ?? {};
+  return Boolean(model.parameters?.length && (metadata.source === "manual" || metadata.operationsSource === "declared" ||
+    metadata.autoInterfaceStatus === "connected" || metadata.protocolEvidence === "paid-test"));
 }
 
 function unresolved(model: ModelDescriptor): ModelDescriptor {
@@ -141,7 +167,7 @@ function bindExistingModelProtocols(
           String(connection.config.modelGroup ?? ""),
         );
         const nativeGemini = model.id === "gemini-nano-banana-2.1" && descriptor?.metadata?.protocol === "gemini-generate-content";
-        if (!descriptor || descriptor.metadata?.protocol !== "openai-images" && !nativeGemini) return model;
+        if (!descriptor || capability(model) !== "image" || descriptor.metadata?.protocol !== "openai-images" && !nativeGemini) return model;
         const metadata: Record<string, unknown> = {
           ...descriptor.metadata,
           ...model.metadata,
@@ -175,7 +201,7 @@ function bindExistingModelProtocols(
     const template = geminiGroup.models[0]!;
     return {
       models: scanned.map((model) => {
-        if (!canInherit(model) || !/^gemini-.*image/iu.test(model.id))
+        if (!canInherit(model) || capability(model) !== "image" || !/^gemini-.*image/iu.test(model.id))
           return model;
         if (geminiGroup.models.some((m) => m.id === model.id)) return model;
         const metadata = { ...model.metadata };
@@ -220,7 +246,7 @@ function bindExistingModelProtocols(
     ).values(),
   ].filter((m) => {
     const inheritedFrom = m.metadata?.protocolSourceModel;
-    return m.metadata?.canvasRunnable !== false && m.operations.length &&
+    return m.metadata?.canvasRunnable !== false && m.operations.length && Boolean(capability(m)) &&
       (typeof inheritedFrom !== "string" ||
         (Boolean(family(m.id)) && family(m.id) === family(inheritedFrom)));
   });
@@ -230,6 +256,7 @@ function bindExistingModelProtocols(
   };
   const models = scanned.map((model): ModelDescriptor => {
     if (!canInherit(model)) return model;
+    if (hasDeclaredOutput(model) && !capability(model)) return model;
     if (supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection) &&
       isCangyuanMusicRequest(model.id, String(connection.config.baseUrl ?? ""))) return cangyuanMusicModel(model);
     // Dedicated contracts execute dynamically for their exact IDs. Do not
@@ -239,13 +266,21 @@ function bindExistingModelProtocols(
       return cangyuanCurrentModel(model);
     const existing = templates.find((m) => m.id === model.id);
     if (existing) {
+      if ((hasDeclaredOutput(model) || capability(model) === "music") && capability(existing) !== capability(model)) return unresolved(model);
+      if (capability(model) === "music" && !savedMusicContract(connector, model.id)) return unresolved(model);
+      if (!savedWeAiSeedanceContract(connection, connector, model.id)) return unresolved(model);
+      if (!knownChentuVideoContract(connection, model) && !knownChentuVideoContract(connection, existing)) return {
+        ...unresolved(model), parameters: [], metadata: { ...unresolved(model).metadata, parameterControlsUnavailable: true,
+          canvasUnavailableReason: "该型号的视频参数和调用合同待供应商文档确认" },
+      };
       const metadata = { ...existing.metadata, ...model.metadata, canvasRunnable: true };
       delete (metadata as Record<string, unknown>).canvasUnavailableReason;
+      if (remainingVideoSupplier(connection.config.baseUrl) === "chentu" && knownChentuVideoContract(connection, existing) && existing.parameters?.length) delete (metadata as Record<string, unknown>).parameterControlsUnavailable;
       return {
         ...existing, ...model,
         operations: existing.operations,
-        inputKinds: existing.inputKinds ?? model.inputKinds,
-        outputKinds: existing.outputKinds ?? model.outputKinds,
+        inputKinds: model.metadata?.inputKindsSource === "declared" ? model.inputKinds : existing.inputKinds ?? model.inputKinds,
+        outputKinds: model.metadata?.outputKindsSource === "declared" ? model.outputKinds : existing.outputKinds ?? model.outputKinds,
         parameters: model.parameters ?? existing.parameters,
         limits: model.limits ?? existing.limits,
         metadata,
@@ -253,6 +288,10 @@ function bindExistingModelProtocols(
     }
     const kind = capability(model);
     if (!kind) return model;
+    if (kind.split("+").includes("music")) return unresolved(model);
+    if (!knownChentuVideoContract(connection, model)) return { ...unresolved(model), parameters: [], metadata: {
+      ...unresolved(model).metadata, parameterControlsUnavailable: true, canvasUnavailableReason: "该型号的视频参数和调用合同待供应商文档确认" } };
+    if (remainingVideoSupplier(connection.config.baseUrl) === "weai" && /^seedance-2\.0(?:-|$)/iu.test(model.id)) return unresolved(model);
     let candidates = existing
       ? [existing]
       : templates.filter((m) => capability(m) === kind);
@@ -356,7 +395,7 @@ export function bindScannedModelProtocols(
     ),
   );
   const currentCangyuan = connection.provider === "rest" && supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection);
-  const models = applySavedModelInterfaces(connection, compatibleModels)
+  let models = applySavedModelInterfaces(connection, compatibleModels)
     .map(model => applyBananaImageCapabilities(connection, model))
     .map(model => applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, model)))
     .map(model => applyChuangxiangCurrentVideoCapabilities(connection, model)).map(withHighestModelQualityDefault);
@@ -365,6 +404,28 @@ export function bindScannedModelProtocols(
       canApplyCangyuanCurrentContract(connection.config, String(connection.config.baseUrl ?? ""), models[i]!.id))
       models[i] = cangyuanCurrentModel(models[i]!);
   }
+  // Cached transport and native-contract enrichment cannot rewrite an explicit
+  // live output declaration into a different node type for the same ID.
+  const originalById = new Map(scanned.map(model => [model.id, model]));
+  const remainingSupplier = remainingVideoSupplier(connection.config.baseUrl);
+  models = models.map(model => {
+    if (model.metadata?.autoInterfaceStatus === "connected" && model.parameters?.length && model.metadata.parameterControlsUnavailable) {
+      const metadata = { ...model.metadata };
+      delete metadata.parameterControlsUnavailable;
+      model = { ...model, metadata };
+    }
+    const original = originalById.get(model.id);
+    if (original && hasDeclaredOutput(original) && capability(original) !== capability(model)) return unresolved(original);
+    const documented = remainingSupplier && canInherit(model) && (!hasDeclaredOutput(model) || capability(model) === "video")
+      ? remainingVideoModel(remainingSupplier, model.id, model, {
+          group: String(connection.config.modelGroup ?? connection.config.group ?? ""),
+          groupDescription: String(connection.config.modelGroupDescription ?? connection.config.groupDescription ?? ""),
+        }) : undefined;
+    if (!documented) return model;
+    const metadata = { ...documented.metadata, canvasRunnable: true };
+    delete (metadata as Record<string, unknown>).canvasUnavailableReason;
+    return { ...documented, metadata };
+  });
   return {
     ...bound,
     models,

@@ -30,6 +30,15 @@ afterEach(() => vi.unstubAllEnvs());
 const request = () => new Request("http://localhost/api/runs", { method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ canvasId: "canvas", clientRequestId: "request", nodeId: "image", scope: "node" }) });
 describe("saved model inventory before paid canvas runs", () => {
+  it("rejects a video model kept in a saved image node before any paid submission", async () => {
+    mocks.repository.getConnection.mockResolvedValue({ id: "genimage-gemini", provider: "rest", config: {
+      customGroup: true, modelScanStatus: "live", modelCatalogModels: [{ id: "gpt-image-2.5-sunburst", name: "Misleading ID", operations: ["video.image-to-video"], outputKinds: ["video"] }],
+    } });
+    const response = await POST(request());
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("不支持图片输出") });
+    expect(mocks.createRun).not.toHaveBeenCalled();
+  });
   it("blocks an old canvas model removed from its exact group before creating a run", async () => {
     const response = await POST(request());
     expect(response.status).toBe(422);

@@ -1,6 +1,8 @@
 import type { ModelDescriptor, ProviderOperation } from "./contracts.js";
 import { catalogPriceLabel } from "./catalog-pricing.js";
 import { modelInterfaceEvidence } from "./documented-interface.js";
+import { inferredMediaOperations, modelGenerationMediaKinds } from "./model-media.js";
+import { remainingVideoModel, remainingVideoSupplier } from "./remaining-video-contracts.js";
 
 export interface ProviderCatalogGroup {
   id: string;
@@ -34,9 +36,10 @@ function number(value: unknown): number | undefined {
 function operationsForModel(
   id: string,
   value: Record<string, unknown>,
+  facts: ReturnType<typeof parseProviderModelFacts>,
 ): ProviderOperation[] {
   const declared = value.operations ?? value.capabilities;
-  if (Array.isArray(declared)) {
+  if (Array.isArray(declared) && (!isRecord(value.metadata) || value.metadata.operationsSource !== "inferred")) {
     const operations = declared.filter(
       (item): item is ProviderOperation =>
         item === "image.generate" ||
@@ -45,30 +48,11 @@ function operationsForModel(
         item === "video.image-to-video" ||
         item === "music.generate",
     );
-    if (operations.length > 0) return operations;
+    return operations;
   }
-  // Explicit output modalities beat a suggestive ID (e.g. image-understanding).
   const metadata = isRecord(value.metadata) ? value.metadata : {};
-  const architecture = isRecord(value.architecture) ? value.architecture : {};
-  const output = value.output_modalities ?? value.outputKinds ?? metadata.output_modalities ?? architecture.output_modalities;
-  if (Array.isArray(output)) {
-    const kinds = output.filter((item): item is string => typeof item === "string").map(item => item.toLowerCase());
-    if (kinds.some(kind => kind === "video" || kind === "video[]")) return ["video.generate", "video.image-to-video"];
-    if (kinds.some(kind => kind === "image" || kind === "image[]")) return ["image.generate", "image.edit"];
-    if (kinds.some(kind => kind === "audio" || kind === "audio[]")) return ["music.generate"];
-    if (kinds.includes("text")) return [];
-  }
-  const kind = `${id} ${text(value.type) ?? ""} ${text(value.kind) ?? ""}`;
-  if (/^lyria-(?:3-pro|3\.5)$/iu.test(id)) return ["music.generate"];
-  if (/video|kling|runway|seedance|sora|hailuo|luma|veo|happyhorse|minimax-h\d|(?:^|[\s/_-])wan\d|视频/iu.test(kind))
-    return ["video.generate", "video.image-to-video"];
-  if (
-    /image|midjourney|nano[-_ ]?banana|dall[-_ ]?e|flux|stable[-_ ]?diffusion|sdxl|imagen|seedream|画图|绘图/iu.test(
-      kind,
-    )
-  )
-    return ["image.generate", "image.edit"];
-  return [];
+  return inferredMediaOperations(modelGenerationMediaKinds({ id, operations: [], ...(facts.outputKinds ? { outputKinds: facts.outputKinds } : {}),
+    metadata: { ...metadata, ...facts.metadata, operationsSource: "inferred" } }));
 }
 
 type ModelFactsSource = "model-api" | "supplier-catalog";
@@ -231,6 +215,7 @@ export function parseProviderModelFacts(entry: Record<string, unknown>, source: 
     ...(Array.isArray(record.officialModelCandidates) ? record.officialModelCandidates : []),
   ]).flatMap(value => typeof value === "string" && value.trim() ? [value.trim().slice(0, 256)] : []))];
   const kind = text(entry.type ?? entry.kind ?? metadata.modelKind);
+  const catalogCapability = text(entry.capability ?? metadata.catalogCapability ?? metadata.modality);
   return {
     ...(input ? { inputKinds: input.filter((v): v is NonNullable<ModelDescriptor["inputKinds"]>[number] => ["text", "image", "image[]", "video", "video[]", "audio", "audio[]"].includes(v)) } : {}),
     ...(output ? { outputKinds: output.filter((v): v is NonNullable<ModelDescriptor["outputKinds"]>[number] => ["text", "image", "image[]", "video", "video[]", "audio", "audio[]"].includes(v)) } : {}),
@@ -246,6 +231,8 @@ export function parseProviderModelFacts(entry: Record<string, unknown>, source: 
       ...(protocol ? { agentProtocol: protocol } : {}),
       ...(officialModelCandidates.length ? { officialModelCandidates } : {}),
       ...(kind ? { modelKind: kind } : {}),
+      ...(catalogCapability && ["image", "video", "music", "chat", "text", "audio", "other"].includes(catalogCapability)
+        ? { catalogCapability } : {}),
     },
   };
 }
@@ -320,7 +307,7 @@ function entriesFromPayload(payload: unknown): Record<string, unknown>[] {
  */
 export function scanProviderModelCatalog(
   payload: unknown,
-  options: { defaultModel?: string; checkedAt?: string } = {},
+  options: { defaultModel?: string; checkedAt?: string; baseUrl?: string; modelGroup?: string; groupDescription?: string } = {},
 ): ProviderCatalogScan {
   const byId = new Map<string, ModelDescriptor>();
   const groupIds = new Map<string, string[]>();
@@ -331,9 +318,13 @@ export function scanProviderModelCatalog(
     const id = rawId;
     if (!id) continue;
     const name = text(entry.display_name ?? entry.name) ?? id;
-    const operations = operationsForModel(id, entry);
-    const canvasRunnable = operations.length > 0 && !/^midjourney(?:[-_]|$)/iu.test(id);
     const facts = parseProviderModelFacts(entry);
+    const operations = operationsForModel(id, entry, facts);
+    // A music name/output identifies its node type, but never proves a music
+    // HTTP transport. Dedicated supplier and explicitly saved contracts bind later.
+    const unboundMusic = operations.includes("music.generate");
+    const unboundWeAiSeedance = remainingVideoSupplier(options.baseUrl) === "weai" && /^seedance-2\.0(?:-|$)/iu.test(id);
+    const canvasRunnable = operations.length > 0 && !/^midjourney(?:[-_]|$)/iu.test(id) && !unboundMusic && !unboundWeAiSeedance;
     const prices = pricing(entry);
     const group =
       text(
@@ -358,27 +349,32 @@ export function scanProviderModelCatalog(
           ? (["image"] as const)
           : []),
       ],
-      outputKinds: facts.outputKinds ?? [
-        operations.some((op) => op.startsWith("video."))
-          ? "video"
-          : operations.some((op) => op.startsWith("image."))
-            ? "image"
-            : operations.includes("music.generate") ? "audio" : "text",
-      ],
+      outputKinds: facts.outputKinds ?? (operations.length ? [...new Set(operations.map(operation =>
+        operation.startsWith("video.") ? "video" as const : operation.startsWith("image.") ? "image" as const : "audio" as const))] : ["text"]),
       isDefault: id === options.defaultModel,
       ...(facts.limits ? { limits: facts.limits } : {}),
       metadata: {
         ...facts.metadata,
+        operationsSource: Array.isArray(entry.operations ?? entry.capabilities) &&
+          (isRecord(entry.metadata) ? entry.metadata.operationsSource !== "inferred" : true) ? "declared" : "inferred",
         canvasRunnable,
         ...(canvasRunnable
           ? {}
-          : { canvasUnavailableReason: "尚未验证该模型的画布调用协议" }),
+          : { canvasUnavailableReason: unboundMusic ? "尚未验证该模型的音乐生成调用协议" : unboundWeAiSeedance ? "We-AI SD2 调用协议的请求路径尚未确认" : "尚未验证该模型的画布调用协议" }),
         ...(prices.priceLabel ? { priceLabel: prices.priceLabel } : {}),
         ...(prices.billingLabel ? { billingLabel: prices.billingLabel } : {}),
         catalogGroup: group,
       },
     };
-    if (!byId.has(id)) byId.set(id, descriptor);
+    const videoSupplier = remainingVideoSupplier(options.baseUrl);
+    const hasDeclaredNonVideoOutput = facts.metadata.outputKindsSource === "declared" && !modelGenerationMediaKinds(descriptor).includes("video");
+    const documentedVideo = videoSupplier && !hasDeclaredNonVideoOutput ? remainingVideoModel(videoSupplier, id, descriptor, {
+      group: options.modelGroup ?? (group === "默认群组" ? undefined : group), groupDescription: options.groupDescription,
+    }) : undefined;
+    const videoMetadata = documentedVideo ? { ...documentedVideo.metadata, canvasRunnable: true } : undefined;
+    if (videoMetadata) delete (videoMetadata as Record<string, unknown>).canvasUnavailableReason;
+    const current = documentedVideo && videoMetadata ? { ...documentedVideo, metadata: videoMetadata } : descriptor;
+    if (!byId.has(id)) byId.set(id, current);
     const memberships = Array.isArray(entry.enable_groups)
       ? entry.enable_groups.flatMap((value) =>
           text(value) ? [text(value)!] : [],

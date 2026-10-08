@@ -1,6 +1,6 @@
 import type { ModelDescriptor, NormalizedRequest, ProviderAdapter, ProviderConnectionResolver, ProviderTask } from "./contracts.js";
 import type { DocumentedModelInterface } from "./documented-interface.js";
-import { GenericRestAdapter, type GenericRestAdapterOptions } from "./rest.js";
+import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
 import { BananaImageAdapter, bananaImageRoute, applyBananaImageCapabilities, bananaNativeOutputs } from "./banana-image.js";
 import { isPdogImageConnection, PdogImageAdapter } from "./pdog-image.js";
 import { isChuangxiangImageConnection, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
@@ -8,6 +8,8 @@ import { imageEditingConnection, imageEditingRequestIssues, usesDeclaredImagesEd
 import { assertValidResult } from "./contracts.js";
 import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import { isCangyuanMusicRequest } from "./cangyuan-music.js";
+import { remainingVideoSupplier, remainingVideoModel, remainingVideoTransport, type RemainingVideoContext } from "./remaining-video-contracts.js";
+import { modelSupportsGenerationMedia } from "./model-media.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -35,6 +37,46 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     assertValidResult({ valid: !editingIssues.length, issues: editingIssues });
     const catalog = connection.settings?.modelCatalogModels;
     const current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
+    const binding = savedModelInterfaces(connection.settings)[request.model];
+    if (["openai", "weai"].includes(connection.provider) && (request.operation.startsWith("video.") || request.operation === "music.generate")) {
+      const ids = connection.settings?.scannedModelIds;
+      const unavailableReason = String(current?.metadata?.canvasUnavailableReason ?? "");
+      if (connection.settings?.supplierArchived === true || ["empty", "unauthorized"].includes(String(connection.settings?.modelScanStatus)) ||
+          current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)) ||
+          /401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|unavailable|disabled/iu.test(unavailableReason))
+        throw new Error("当前 Key 或分组没有此媒体型号的可用权限或完整接口");
+      const media = request.operation === "music.generate" ? "music" : "video";
+      if (current && !modelSupportsGenerationMedia(current, media))
+        throw new Error(media === "video" ? "当前型号未声明视频输出，不能用于视频节点" : "当前型号未声明音乐输出，不能用于音乐节点");
+      if (media === "video") {
+        const supplier = remainingVideoSupplier(connection.baseUrl);
+        const group = connection.settings?.accountKeyGroup ?? connection.settings?.modelGroup ?? connection.settings?.group ?? connection.settings?.supplierGroupId;
+        const description = connection.settings?.supplierGroupDescription ?? connection.settings?.groupDescription;
+        // Account settings are authoritative: cached catalog group metadata
+        // cannot grant another Key's Flow/SD transport when group is absent.
+        const context: RemainingVideoContext = { group: typeof group === "string" ? group : "",
+          groupDescription: typeof description === "string" ? description : "", ...(current ? { model: current } : {}) };
+        const descriptor = supplier ? remainingVideoModel(supplier, request.model, current, context) : undefined;
+        const transport = supplier && descriptor ? remainingVideoTransport(supplier, request.model, context) : undefined;
+        if (descriptor && transport?.submit && transport.output) {
+          // Supplying the connector through the resolver keeps REST's native
+          // validation and parameter normalization active; options.config would
+          // freeze them out. Saved credentials, provider and settings stay intact.
+          const connector: RestConnectorConfig = { ...transport, submit: transport.submit, output: transport.output,
+            auth: { type: "bearer" }, allowedHosts: [new URL(connection.baseUrl!).hostname],
+            assetsRequirePublicUrls: true, models: [descriptor], restrictModels: true };
+          const resolver: ProviderConnectionResolver = { resolve: async id => id === connection.id
+            ? { ...connection, settings: { ...connection.settings, connector } } : this.connections.resolve(id) };
+          const { config: _fixedConfig, ...nativeOptions } = this.options;
+          return new GenericRestAdapter(resolver, nativeOptions);
+        }
+      }
+      // An explicitly saved media contract can still handle custom routes. An
+      // unknown music/video name must never reach an Images fallback adapter.
+      if (!binding?.connector || binding.model?.id !== request.model || !binding.model.operations.includes(request.operation) ||
+          binding.connector.output.kind !== (media === "video" ? "video" : "audio"))
+        throw new Error("此媒体型号的供应商接口说明待补充，暂不能生成");
+    }
     if (connection.provider === "rest" && isCangyuanMusicRequest(request.model, connection.baseUrl)) {
       const ids = connection.settings?.scannedModelIds;
       if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
@@ -85,7 +127,6 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       return this.fallback;
     }
     if (current?.metadata?.autoInterfaceStatus === "incomplete") throw new Error(String(current.metadata.canvasUnavailableReason ?? "供应商接口说明待补充"));
-    const binding = savedModelInterfaces(connection.settings)[request.model];
     if (!binding?.connector || binding.model?.id !== request.model || !binding.model.operations.includes(request.operation)) return this.fallback;
     return new GenericRestAdapter(this.connections, { ...this.options,
       config: { ...binding.connector, models: [current ?? binding.model], restrictModels: true } });

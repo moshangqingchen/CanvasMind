@@ -6,6 +6,16 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./remaining-video-contracts": {
+      "types": "./src/remaining-video-contracts.ts",
+      "import": "./dist/remaining-video-contracts.js",
+      "default": "./dist/remaining-video-contracts.js"
+    },
+    "./model-media": {
+      "types": "./src/model-media.ts",
+      "import": "./dist/model-media.js",
+      "default": "./dist/model-media.js"
+    },
     "./chuangxiang-video-contract": {
       "types": "./src/chuangxiang-video-contract.ts",
       "import": "./dist/chuangxiang-video-contract.js",

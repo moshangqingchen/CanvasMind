@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import type { MemoryRepository, ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
 
-export const SUPPLIER_CATALOG_REVISION = "2026-10-07";
+export const SUPPLIER_CATALOG_REVISION = "2026-10-07-media";
 const RETRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const UPGRADED_HOSTS = new Set([
   "ai.cangyuansuanli.cn", "tu.988236.xyz", "api.frimodel.com", "api.mikoto.vip",
   "api.miaowuai.store", "vapi.chuangxiangai.asia", "api.tk1688.com", "tk1688.com", "ai.tk1688.com",
+  "pool.chaozhiyuanai.com", "asian-acc.we-token.cc", "video.we-token.cc", "api.3365api.cn",
+  "api.eaheng.com", "token.secure-skill.com", "genimage.pro", "api.hangzhale.com", "synoralink.com", "ai.whyshy.cn",
 ]);
 type Repository = Pick<MemoryRepository, "listConnections" | "listSuppliers" | "getConnection" | "saveConnection">;
 export interface CatalogUpgradeStatus {

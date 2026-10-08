@@ -5,6 +5,7 @@ import type {
   RestConnectorConfig,
   RestRequestMapping,
 } from "@super-canvas/providers";
+import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
 import { chentuAzImageDescriptor, isChentuAzImageModel } from "@super-canvas/providers/chentu-az";
 import {
   CHENTU_BASE_URL,
@@ -231,15 +232,6 @@ function priceFor(
   }
   return { label: "价格以平台为准", billing: "以平台为准" };
 }
-
-const RATIO_OPTIONS: readonly ModelParameterOption[] = [
-  { label: "16:9 横屏", value: "16:9" },
-  { label: "9:16 竖屏", value: "9:16" },
-  { label: "1:1 方形", value: "1:1" },
-  { label: "4:3 横屏", value: "4:3" },
-  { label: "3:4 竖屏", value: "3:4" },
-  { label: "21:9 超宽屏", value: "21:9" },
-];
 
 /**
  * 辰途 GPT Image 2 的文档尺寸表。
@@ -604,47 +596,6 @@ function chentuImageParameters(
   ];
 }
 
-function videoParameters(): readonly ModelParameterDescriptor[] {
-  return [
-    {
-      key: "duration",
-      label: "时长（秒）",
-      control: "number",
-      valueType: "integer",
-      default: 5,
-      min: 1,
-      max: 30,
-      step: 1,
-      description: "辰途 OpenAI Videos API 的 seconds 字段；必须为正整数。",
-      operations: VIDEO_OPERATIONS,
-    },
-    {
-      key: "aspect_ratio",
-      label: "画面比例",
-      control: "select",
-      valueType: "string",
-      default: "16:9",
-      options: RATIO_OPTIONS,
-      description: "按 API 的 ratio 字段发送。",
-      operations: VIDEO_OPERATIONS,
-    },
-    {
-      key: "resolution",
-      label: "输出分辨率",
-      control: "select",
-      valueType: "string",
-      default: "720p",
-      options: ["480p", "720p", "1080p", "2k"].map((value) => ({
-        label: value,
-        value,
-      })),
-      description:
-        "按 API 的 resolution 字段发送；具体可用档位以模型权限为准。",
-      operations: VIDEO_OPERATIONS,
-    },
-  ];
-}
-
 function recordDescription(record: PricingRecord): string | undefined {
   return typeof record.description === "string" && record.description.trim()
     ? record.description.trim()
@@ -708,7 +659,7 @@ export function chentuFallbackImageDescriptor(
 }
 
 function videoDescriptor(record: PricingRecord, id: string): ModelDescriptor {
-  return {
+  const current: ModelDescriptor = {
     id,
     name: id,
     description:
@@ -717,7 +668,6 @@ function videoDescriptor(record: PricingRecord, id: string): ModelDescriptor {
     operations: VIDEO_OPERATIONS,
     inputKinds: VIDEO_INPUT_KINDS,
     outputKinds: ["video"],
-    parameters: videoParameters(),
     metadata: {
       supplier: CHENTU_SUPPLIER_KEY,
       modality: "video",
@@ -725,6 +675,7 @@ function videoDescriptor(record: PricingRecord, id: string): ModelDescriptor {
       remoteMediaUrlsOnly: true,
     },
   };
+  return remainingVideoModel("chentu", id, current) ?? current;
 }
 
 /**
@@ -745,7 +696,7 @@ function descriptorFor(record: PricingRecord, group?: string): ModelDescriptor |
   // disabled scan-only entry.
   if (endpoints.includes("image-generation") || isKnownChentuImageModel(id))
     return imageDescriptor(record, id);
-  if (endpoints.includes("openai-video")) return videoDescriptor(record, id);
+  if (remainingVideoModel("chentu", id)) return videoDescriptor(record, id);
   return null;
 }
 
@@ -811,7 +762,7 @@ function marketplaceModel(
   const runnable = isChentuAzImageModel(id) ? Boolean(chentuAzImageDescriptor(id, group)) :
     isChentuNativeGeminiModel(id) ||
     endpoints.includes("image-generation") ||
-    endpoints.includes("openai-video") ||
+    Boolean(remainingVideoModel("chentu", id)) ||
     isKnownChentuImageModel(id);
   return {
     id,
@@ -830,7 +781,9 @@ function marketplaceModel(
         ? {
             canvasRunnable: false,
             canvasUnavailableReason:
-              capability === "video" && endpoints.includes("openai")
+              capability === "video" && endpoints.includes("openai-video")
+                ? "该型号的视频参数和调用合同待供应商文档确认"
+                : capability === "video" && endpoints.includes("openai")
                 ? CHAT_ONLY_VIDEO_REASON
                 : NO_PROTOCOL_REASON,
           }
@@ -1040,6 +993,7 @@ export function resolveChentuScannedGroup(
     ),
   ];
   const descriptors = new Map<string, ModelDescriptor>();
+  const pricedDescriptors = new Map((catalog.groups[group] ?? []).map(model => [model.id, model]));
   const models = ids.map((id): ChentuMarketplaceModelLive => {
     const priced = publicModels.get(id);
     const model: ChentuMarketplaceModelLive = priced
@@ -1064,7 +1018,7 @@ export function resolveChentuScannedGroup(
             ? CHAT_MODEL_REASON
             : (model.canvasUnavailableReason ?? NO_PROTOCOL_REASON),
       };
-    descriptors.set(model.id, descriptor);
+    descriptors.set(model.id, pricedDescriptors.get(model.id) ?? descriptor);
     return { ...model, canvasRunnable: true };
   });
   const canvasModels: ModelDescriptor[] = [];
@@ -1085,7 +1039,7 @@ export function resolveChentuScannedGroup(
     if (descriptor) {
       const runnableDescriptor: ModelDescriptor = {
         ...descriptor,
-        name: `${descriptor.name} · ${model.priceLabel}`,
+        name: `${model.name} · ${model.priceLabel}`,
         ...(descriptor.operations.some((operation) =>
           operation.startsWith("image."),
         )
@@ -1109,6 +1063,7 @@ export function resolveChentuScannedGroup(
         model.capability === "image" ? IMAGE_OPERATIONS : VIDEO_OPERATIONS,
       metadata: {
         ...sharedMetadata,
+        ...(model.capability === "video" ? { parameterControlsUnavailable: true } : {}),
         canvasRunnable: false,
         canvasUnavailableReason:
           model.canvasUnavailableReason ?? NO_PROTOCOL_REASON,
@@ -1133,11 +1088,11 @@ const videoSubmitMappings: readonly RestRequestMapping[] = [
   { target: "/model", source: { kind: "request", path: "$.model" } },
   { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
   {
-    target: "/seconds",
+    target: "/duration",
     source: { kind: "request", path: "$.parameters.duration" },
   },
   {
-    target: "/ratio",
+    target: "/aspect_ratio",
     source: { kind: "request", path: "$.parameters.aspect_ratio" },
     omitIfUndefined: true,
   },
@@ -1147,17 +1102,17 @@ const videoSubmitMappings: readonly RestRequestMapping[] = [
     omitIfUndefined: true,
   },
   {
-    target: "/image_urls",
+    target: "/reference_images",
     source: { kind: "assets", assetKind: "image" },
     omitIfEmpty: true,
   },
   {
-    target: "/video_urls",
+    target: "/reference_videos",
     source: { kind: "assets", assetKind: "video" },
     omitIfEmpty: true,
   },
   {
-    target: "/audio_urls",
+    target: "/reference_audios",
     source: { kind: "assets", assetKind: "audio" },
     omitIfEmpty: true,
   },
@@ -1176,6 +1131,10 @@ export function chentuVideoConnectorForModels(
     assetsRequirePublicUrls: true,
     restrictModels: true,
     models: structuredClone(models),
+    modelOverrides: Object.fromEntries(models.flatMap(model => {
+      const transport = remainingVideoTransport("chentu", model.id);
+      return transport ? [[model.id, transport]] : [];
+    })),
     pollIntervalMs: 4_000,
     submit: {
       path: "/v1/videos",
@@ -1183,7 +1142,8 @@ export function chentuVideoConnectorForModels(
       bodyMode: "json",
       mappings: videoSubmitMappings,
       response: {
-        taskIdPath: "$.id",
+        taskIdPath: "$.task_id",
+        taskIdFallbackPaths: ["$.id", "$.data.task_id", "$.data.id"],
         statusPath: "$.status",
         progressPath: "$.progress",
         errorPath: "$.error.message",
@@ -1194,7 +1154,8 @@ export function chentuVideoConnectorForModels(
       method: "GET",
       bodyMode: "none",
       response: {
-        taskIdPath: "$.id",
+        taskIdPath: "$.task_id",
+        taskIdFallbackPaths: ["$.id", "$.data.task_id", "$.data.id"],
         statusPath: "$.status",
         progressPath: "$.progress",
         errorPath: "$.error.message",
@@ -1213,8 +1174,8 @@ export function chentuVideoConnectorForModels(
       canceled: "cancelled",
     },
     output: {
-      path: "$.url",
-      fallbackPaths: ["$.data.url", "$.video_url", "$.result_url"],
+      path: "$.download_url",
+      fallbackPaths: ["$.data.download_url", "$.metadata.url", "$.url", "$.data.url", "$.video_url", "$.result_url"],
       kind: "video",
       defaultMimeType: "video/mp4",
     },

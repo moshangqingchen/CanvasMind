@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { StaticConnectionResolver } from "./credentials.js";
 import { GenericRestAdapter, type RestConnectorConfig } from "./rest.js";
 import { AutoInterfaceAdapter } from "./auto-interface-adapter.js";
-import { cangyuanMusicModel, cangyuanMusicRequestIssues } from "./cangyuan-music.js";
+import { cangyuanMusicModel, cangyuanMusicRequestIssues, withCangyuanMusicRequestParameters } from "./cangyuan-music.js";
 import { scanProviderModelCatalog } from "./model-catalog.js";
 import type { NormalizedRequest } from "./contracts.js";
 
@@ -16,6 +16,12 @@ function fixture(payloads: unknown[], extra: Record<string, unknown> = {}) {
   return { fetcher, resolver, adapter: new GenericRestAdapter(resolver, { fetch: fetcher }) };
 }
 describe("沧元官方 Lyria 音乐合同", () => {
+  it("keeps explicit music values and the original lyric draft while filling only absent defaults", () => {
+    const input = request({ instrumental: true, lyrics: "保存这段歌词", audio_format: "wav", duration: 90, bpm: 144, seed: 23 });
+    expect(withCangyuanMusicRequestParameters(input).parameters).toEqual({ instrumental: true, audio_format: "wav", duration: 90, bpm: 144, seed: 23, n: 1 });
+    expect(input.parameters?.lyrics).toBe("保存这段歌词");
+    expect(withCangyuanMusicRequestParameters(request({ instrumental: false, lyrics: "[Verse]晨光", audio_format: "m4a" })).parameters).toEqual({ instrumental: false, lyrics: "[Verse]晨光", audio_format: "m4a", n: 1 });
+  });
   it.each(["403 权限拒绝", "401 unauthorized", "当前 Key 未返回此模型", "模型下架", "账号未开通"])("preserves explicit inventory denial: %s", reason => {
     const blocked = cangyuanMusicModel({ ...descriptor, metadata: { canvasRunnable: false, canvasUnavailableReason: reason, autoInterfaceStatus: "incomplete" } });
     expect(blocked.metadata).toMatchObject({ canvasRunnable: false, canvasUnavailableReason: reason });

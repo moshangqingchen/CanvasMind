@@ -2,6 +2,46 @@ import { describe, expect, it } from "vitest";
 import { scanProviderModelCatalog } from "./model-catalog.js";
 
 describe("provider model catalog scanner", () => {
+  it("classifies unknown music for display without declaring an HTTP music transport", () => {
+    const scan = scanProviderModelCatalog([{ id: "suno-v5", price_label: "¥1/次" }, { id: "opaque-music", operations: ["music.generate"], output_modalities: ["audio"] }]);
+    for (const model of scan.models) {
+      expect(model.operations).toEqual(["music.generate"]);
+      expect(model.outputKinds).toEqual(["audio"]);
+      expect(model.metadata?.canvasRunnable).toBe(false);
+    }
+    expect(scan.models[0]?.metadata?.priceLabel).toBe("¥1/次");
+  });
+  it("does not declare We-AI SD2 callable using Omni's path", () => {
+    const model = scanProviderModelCatalog([{ id: "seedance-2.0-1080p" }], { baseUrl: "https://video.we-token.cc/v1" }).models[0]!;
+    expect(model.operations).toContain("video.generate");
+    expect(model.metadata?.canvasRunnable).toBe(false);
+    expect(model.metadata?.canvasUnavailableReason).toContain("路径");
+  });
+  it("applies a supplier's exact video contract only to returned IDs on its own source", () => {
+    const scan = scanProviderModelCatalog([{ id: "videos-mini", price_label: "当前Key报价" }, { id: "opaque" }], { baseUrl: "https://api.frimodel.com/v1" });
+    expect(scan.models.map(model => model.id)).toEqual(["videos-mini", "opaque"]);
+    expect(scan.models[0]).toMatchObject({ outputKinds: ["video"], metadata: { canvasRunnable: true, priceLabel: "当前Key报价" } });
+    expect(scan.models[0]?.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 4, max: 15 });
+    expect(scanProviderModelCatalog([{ id: "videos-mini", output_modalities: ["text"] }], { baseUrl: "https://api.frimodel.com/v1" }).models[0]?.operations).toEqual([]);
+    expect(scanProviderModelCatalog([{ id: "videos-mini" }], { baseUrl: "https://unrelated.example" }).models[0]?.parameters).toBeUndefined();
+  });
+  it("keeps declared multi-output models in every supported media and never turns speech into music", () => {
+    const models = scanProviderModelCatalog([
+      { id: "dual-media", output_modalities: ["images", "videos"] },
+      { id: "tts-1", output_modalities: ["audio"] },
+      { id: "suno-lyrics", output_modalities: ["text"] },
+      { id: "music-pro", type: "music", output_modalities: ["audio"] },
+      { id: "video-image-to-video" },
+      { id: "image-understanding-pro" },
+    ]).models;
+    expect(models[0]?.operations).toEqual(["image.generate", "image.edit", "video.generate", "video.image-to-video"]);
+    expect(models[0]?.outputKinds).toEqual(["image", "video"]);
+    expect(models[1]?.operations).toEqual([]);
+    expect(models[2]?.operations).toEqual([]);
+    expect(models[3]?.operations).toEqual(["music.generate"]);
+    expect(models[4]?.operations).toEqual(["video.generate", "video.image-to-video"]);
+    expect(models[5]?.operations).toEqual([]);
+  });
   it("classifies bare Midjourney SKUs as image models while respecting explicit text output", () => {
     const models = scanProviderModelCatalog([{ id: "midjourney-1k" }, { id: "midjourney-2k" },
       { id: "midjourney-helper", output_modalities: ["text"] }]).models;

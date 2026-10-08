@@ -1,0 +1,153 @@
+{
+  "packaged": true,
+  "checks": [
+    "single instance lock",
+    "first-run setup",
+    "renderer has no Node.js require access",
+    "packaged homepage stylesheet matches its markup, keeps text readable and fills resized windows",
+    "loopback token rejects unauthenticated access",
+    "standalone web login, updater, cloud upload and public callback routes are absent",
+    "packaged lifecycle hook and durability barrier",
+    "reference channel IPC defaults off and never returns credentials",
+    "Fake Provider generation, archival, download and idempotent resubmission",
+    "packaged fake music generation, local audio playback and completed Electron WAV download",
+    "image design review persists through the authenticated desktop API",
+    "native sharp dependency and image upload",
+    "EXIF thumbnail JPEG imports without data loss and both desktop thumbnail sizes decode",
+    "project files opens from the top toolbar, loads the scoped API and decodes an archived finished thumbnail",
+    "selected connections alone show continuous feathered light and clear with selection",
+    "project JSON export and re-import through the desktop UI",
+    "customer source stays verbatim with the requested 203:282 safe area in the packaged app",
+    "poster design studio creates a configured image workflow in the packaged app",
+    "custom supplier names, rename propagation, group/model selection and saved connection identity",
+    "close hides to tray and backend remains available",
+    "explicit quit saves canvas, flushes database and stops backend",
+    "no renderer exceptions",
+    "existing profile restarts into a visible homepage with nonempty Electron paint",
+    "image review status and notes survive a desktop restart",
+    "structured poster design requirements survive a desktop restart",
+    "restart reuses DPAPI key, database and archived media",
+    "no renderer exceptions after restart"
+  ],
+  "profileRoot": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\supercanvas-desktop-smoke-EDAakj",
+  "homeLayouts": [
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "brandDisplay": "grid",
+      "actionsDisplay": "flex",
+      "eyebrowWidth": 103.671875,
+      "eyebrowOverflow": 0,
+      "eyebrowHeight": 16.5,
+      "eyebrowLineHeight": 16.5,
+      "homeWidth": 1280,
+      "homeOverflow": 0,
+      "documentOverflow": 0,
+      "mainWidth": 1280,
+      "mainContentWidth": 1182.7199999999998,
+      "projectsWidth": 1182.75
+    },
+    {
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "brandDisplay": "grid",
+      "actionsDisplay": "flex",
+      "eyebrowWidth": 103.671875,
+      "eyebrowOverflow": 0,
+      "eyebrowHeight": 16.5,
+      "eyebrowLineHeight": 16.5,
+      "homeWidth": 1920,
+      "homeOverflow": 0,
+      "documentOverflow": 0,
+      "mainWidth": 1920,
+      "mainContentWidth": 1774.08,
+      "projectsWidth": 1774.09375
+    }
+  ],
+  "musicPlayback": {
+    "duration": 1,
+    "controls": true
+  },
+  "musicDownload": {
+    "state": "completed",
+    "filename": "音频 2026-10-7 20-13-50.wav",
+    "bytes": 8044
+  },
+  "restartRendering": {
+    "size": {
+      "width": 1440,
+      "height": 960
+    },
+    "empty": false,
+    "bitmapBytes": 5529600,
+    "samples": 81318,
+    "brightFraction": 0.0721980373349074,
+    "lightRange": 236,
+    "sampledColors": 256,
+    "visible": false,
+    "offscreen": true,
+    "gpuDisabledBySwitch": true,
+    "gpuFeatures": {
+      "2d_canvas": "unavailable_software",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "disabled_software",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "disabled_off",
+      "rasterization": "disabled_software",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "disabled_software",
+      "video_encode": "disabled_software",
+      "webgl": "unavailable_software",
+      "webgpu": "unavailable_software",
+      "webnn": "unavailable_software"
+    },
+    "rendererPid": 152564,
+    "projects": {
+      "api": [
+        {
+          "id": "269c08aa-4c2e-45ec-b77c-a46c14d4be97",
+          "title": "我的第一个工作流"
+        },
+        {
+          "id": "27c4dc7e-c69f-4a3d-a4a8-e21203afcb8e",
+          "title": "自定义供应商选择验收"
+        },
+        {
+          "id": "60de94b4-b4e8-40a6-96fb-962feecf5758",
+          "title": "桌面音乐离线验收"
+        },
+        {
+          "id": "aa6b4974-0d83-47c5-af6e-8d5febfd8248",
+          "title": "桌面导入验收"
+        }
+      ],
+      "rendered": [
+        {
+          "id": "269c08aa-4c2e-45ec-b77c-a46c14d4be97",
+          "title": "我的第一个工作流"
+        },
+        {
+          "id": "27c4dc7e-c69f-4a3d-a4a8-e21203afcb8e",
+          "title": "自定义供应商选择验收"
+        },
+        {
+          "id": "60de94b4-b4e8-40a6-96fb-962feecf5758",
+          "title": "桌面音乐离线验收"
+        },
+        {
+          "id": "aa6b4974-0d83-47c5-af6e-8d5febfd8248",
+          "title": "桌面导入验收"
+        }
+      ],
+      "articleCount": 4,
+      "loading": false,
+      "alerts": 0
+    }
+  }
+}

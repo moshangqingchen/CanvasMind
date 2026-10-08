@@ -7,6 +7,8 @@ import {
   cangyuanCurrentPricing,
   isCangyuanCurrentModel,
   cangyuanMusicModel,
+  cangyuanVideoModel,
+  cangyuanVideoTransport,
   isCangyuanMusicModel,
   type ModelDescriptor,
   type ModelParameterDescriptor,
@@ -197,6 +199,12 @@ function marketplaceCapability(
   return "other";
 }
 
+function nativeSeedanceTokenPriceLabel(record: PricingRecord, ratio: number): string | undefined {
+  if (!/^doubao-seedance-(?:2-0(?:-fast)?-260128|2-5-260628)$/u.test(String(record.model_name)) || typeof record.billing_expr !== "string") return undefined;
+  const rates = [...record.billing_expr.matchAll(/tier\("(含参考视频|无参考视频)",\s*tok\s*\/\s*1e6\s*\*\s*(\d+(?:\.\d+)?)\)/gu)];
+  return rates.length === 2 ? rates.map(match => `${match[1]} ¥${formatPrice(Number(match[2]) * ratio)}/1M 视频 tokens`).join(" · ") : undefined;
+}
+
 function marketplacePriceLabel(
   record: PricingRecord,
   groupRatio: number,
@@ -206,7 +214,7 @@ function marketplacePriceLabel(
       currency: "CNY", multiplier: groupRatio, checkedAt: "",
       unit: priceUnit(record, marketplaceCapability(record) === "video") === "张" ? "image" : "request",
     });
-    return { priceLabel: pricing ? mediaPricingLabel(pricing) : "按条件/用量计费，详见供应商规则", billingLabel: "分档计费" };
+    return { priceLabel: pricing ? mediaPricingLabel(pricing) : nativeSeedanceTokenPriceLabel(record, groupRatio) ?? "按条件/用量计费，详见供应商规则", billingLabel: "分档计费" };
   }
   const modelRatio =
     typeof record.model_ratio === "number" &&
@@ -823,7 +831,7 @@ function videoDescriptorForRecord(
       : null,
     refs.maxInputAudios ? `文档支持 ${refs.maxInputAudios} 个参考音频` : null,
   ].filter((part): part is string => Boolean(part));
-  return {
+  return cangyuanVideoModel({
     id,
     name: `${id}${price ? `（¥${price}/${priceUnit(record, true)}）` : ""}`,
     ...(descriptionParts.length > 0
@@ -878,7 +886,7 @@ function videoDescriptorForRecord(
         : {}),
       ...(refs.requiresInputVideo ? { requiresInputVideo: true } : {}),
     },
-  };
+  });
 }
 
 function imageDescriptorForRecord(
@@ -984,6 +992,7 @@ export function cangyuanCatalogFromPricing(
         const ratios = numberRecord(payload.group_ratio);
         const ratio = ratios[group] ?? ratios[rawGroup] ?? 1;
         const perSecond = providerPriceUnit(record) === "second";
+        const tokenLabel = nativeSeedanceTokenPriceLabel(record, ratio);
         const expressionPricing = record.billing_mode === "tiered_expr"
           ? cangyuanCurrentPricing(descriptor.id, record.billing_expr, ratio, checkedAt) ?? mediaExpressionPricing(record.billing_expr, {
               currency: "CNY", multiplier: ratio, checkedAt,
@@ -994,8 +1003,9 @@ export function cangyuanCatalogFromPricing(
           ...descriptor,
           ...(record.billing_mode === "tiered_expr"
             ? { name: descriptor.name.replace(/[（(]¥[^）)]+\/(?:张|次|秒|请求|条)[）)]$/u, ""), pricing: expressionPricing, metadata: { ...descriptor.metadata,
-                priceLabel: expressionPricing ? mediaPricingLabel(expressionPricing) : "按条件/用量计费，详见供应商规则",
+                priceLabel: expressionPricing ? mediaPricingLabel(expressionPricing) : tokenLabel ?? "按条件/用量计费，详见供应商规则",
                 priceSource: "billing-expression", priceCheckedAt: checkedAt, cangyuanBillingVersion: 3,
+                ...(tokenLabel ? { billingIncludesInputDuration: true, priceContractWarning: "按视频 token 用量计费，有参考视频与无参考视频的费率不同；实际 token 未返回前无法按所选秒数推算总额。" } : {}),
                 ...(descriptor.id === "gpt-image-2-x" ? { priceContractWarning: "整合型号按其独立分档表达式计费；不可套用 gpt-image-2 / -2k / -4k 的独立型号报价。" } : {}) } }
             : rawPrice === undefined
             ? {}
@@ -1681,6 +1691,8 @@ const videoParameterMappings: readonly RestRequestMapping[] = [
     "audio",
     "seed",
     "negative_prompt",
+    "camera_movement",
+    "face_mode",
   ].map((key): RestRequestMapping => ({
     target: `/${key}`,
     source: { kind: "request", path: `$.parameters.${key}` },
@@ -1719,6 +1731,8 @@ function assetMapping(
 function videoTransportForModel(
   model: ModelDescriptor,
 ): RestModelConnectorOverride {
+  const current = cangyuanVideoTransport(model.id);
+  if (current) return current;
   const metadata = isRecord(model.metadata) ? model.metadata : {};
   const payloadBuilder =
     typeof metadata.payloadBuilder === "string"

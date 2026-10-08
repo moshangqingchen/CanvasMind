@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-08T03:24:03.946Z",
+  "displayDate": "2026-10-07",
+  "timezone": "America/Los_Angeles",
+  "version": "0.2.64",
+  "scope": {
+    "supplierCount": 16,
+    "activeConnections": 126,
+    "storedConnectionsIncludingHistory": 131
+  },
+  "mediaContracts": {
+    "total": 187,
+    "video": 184,
+    "music": 2,
+    "image": 1,
+    "primaryMatrix": 85,
+    "remainingMatrix": 102,
+    "describesPublicContractsRatherThanCurrentKeyPermissions": true
+  },
+  "validation": {
+    "projectTestsPassed": 3826,
+    "typecheck": "passed",
+    "lint": "passed",
+    "mediaUiCasesPassed": 6,
+    "packagedSmokeChecksPassed": 27,
+    "nativeVideoIntegrationCasesPassed": 35,
+    "paidGenerationRequests": 0,
+    "keyCreations": 0,
+    "keyDeletions": 0
+  },
+  "catalog": {
+    "revision": "2026-10-07-media",
+    "completedRefresh": {
+      "total": 126,
+      "refreshed": 108,
+      "unavailable": 16,
+      "failed": 2,
+      "refreshedIncludesEmptyDirectories": true
+    },
+    "failedReadsMayRetainPreviousSavedScanStatus": true,
+    "persistedStatusCounts": {
+      "live": 103,
+      "unauthorized": 17,
+      "empty": 5,
+      "failed": 1
+    },
+    "groupCatalogEntries": 2430,
+    "groupCatalogEntriesWithPrice": 2040,
+    "latestStartup": {
+      "revision": "2026-10-07-media",
+      "phase": "complete",
+      "total": 0,
+      "refreshed": 0,
+      "unavailable": 0,
+      "failed": 0,
+      "updatedConnectionIds": []
+    },
+    "startupRepeatedRefreshes": 0
+  },
+  "installation": {
+    "status": "passed",
+    "installerExitCode": 0,
+    "installedVersion": "0.2.64.0",
+    "verifiedAt": "2026-10-08T03:21:30.802Z",
+    "version": "0.2.64",
+    "fileCount": 11289,
+    "totalBytes": 458313284,
+    "allInstalledRuntimeFilesMatch": true,
+    "allInstalledShellFilesMatch": true,
+    "shellHashes": {
+      "SuperCanvas.exe": "9cc87199e78b61125bc9caeb99f8622506fb6d294a2248aeaf49c3b44aeb8344",
+      "resources/app.asar": "dc267de3f91b42307e8fd4cbda752b61cfbdb8e82bfee4c6b06eb047b563b3e1"
+    },
+    "protectedDataVerified": true,
+    "protectedCollections": {
+      "canvases": {
+        "count": 1,
+        "preserved": true
+      },
+      "revisions": {
+        "count": 20,
+        "preserved": true
+      },
+      "assets": {
+        "count": 411,
+        "preserved": true
+      },
+      "runs": {
+        "count": 325,
+        "preserved": true
+      },
+      "nodeRuns": {
+        "count": 325,
+        "preserved": true
+      },
+      "directorProfiles": {
+        "count": 0,
+        "preserved": true
+      },
+      "directorSessions": {
+        "count": 1,
+        "preserved": true
+      },
+      "directorMessages": {
+        "count": 3,
+        "preserved": true
+      },
+      "directorProposals": {
+        "count": 2,
+        "preserved": true
+      },
+      "webhookKeys": {
+        "count": 0,
+        "preserved": true
+      }
+    },
+    "connectionIdentitiesPreserved": true,
+    "credentialStorePreserved": true,
+    "referenceChannelStorePreserved": true,
+    "allExistingAssetBytesPreserved": true,
+    "currentLifecycle": {
+      "draining": false,
+      "activeRuns": 0,
+      "resumableCloudRuns": 0,
+      "activeVerifications": 0,
+      "activeWrites": 0
+    }
+  },
+  "dailyCheck": {
+    "status": "ACTIVE",
+    "localTime": "20:00",
+    "timezone": "America/Los_Angeles",
+    "notifyOnMeaningfulChange": true,
+    "requiresLocalCodexExecution": true
+  },
+  "limitations": [
+    "Private schemas, unavailable Key groups and unpublished parameter ranges remain explicitly unconfirmed.",
+    "We-AI SD2 request path is unconfirmed; its Omni transport is not reused.",
+    "Live generation quality and paid billing were not exercised; transport regressions use simulated requests.",
+    "Pricing entries count group-specific directory rows, including text models, rather than unique media models."
+  ]
+}

@@ -10,6 +10,24 @@ import {
   type ChentuPricingPayload,
 } from "./chentu-catalog";
 
+it("preserves the keyed video's adjusted CNY per-second price and exact contract", () => {
+  const catalog = chentuCatalogFromPricing({ group_ratio: { video: .5 }, data: [{ model_name: "seedance-2.0-480p", quota_type: 1,
+    model_price: 2, billing_mode: "per_second", enable_groups: ["video"], supported_endpoint_types: ["openai-video"] }] });
+  const resolved = resolveChentuScannedGroup(catalog, "video", ["seedance-2.0-480p"]);
+  expect(resolved.canvasModels[0]?.pricing).toMatchObject({ kind: "per-second", currency: "CNY", unitAmount: 1 });
+  expect(resolved.canvasModels[0]?.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 4, max: 15 });
+  expect(resolved.canvasModels[0]?.name.match(/请求|秒/gu)).toHaveLength(1);
+});
+
+it("displays a priced unknown video alias without inventing duration or resolution controls", () => {
+  const catalog = chentuCatalogFromPricing({ data: [{ model_name: "veo-new-alias", model_price: .75, enable_groups: ["video"], supported_endpoint_types: ["openai-video"] }] });
+  const resolved = resolveChentuScannedGroup(catalog, "video", ["veo-new-alias"]);
+  expect(resolved.canvasModels).toEqual([]);
+  expect(resolved.canvasDisplayModels[0]?.parameters).toBeUndefined();
+  expect(resolved.canvasDisplayModels[0]?.metadata).toMatchObject({ canvasRunnable: false, parameterControlsUnavailable: true, priceLabel: "￥ 0.75 / 请求" });
+  expect(resolved.canvasDisplayModels[0]?.metadata?.canvasUnavailableReason).toContain("待供应商文档确认");
+});
+
 it("keeps October group quote precision and Gemini 3.6 token reference units", () => {
   const catalog = chentuCatalogFromPricing({ group_ratio: { "1k福利生图": .25, "低价gemni生图": .7143, "gemini大语言模型": .2 }, data: [
     { model_name: "gpt-image2", model_price: .04, enable_groups: ["1k福利生图"] },
@@ -314,13 +332,13 @@ describe("chentu catalog", () => {
       queueGroup?.models.find((model) => model.id === "seedance-2.0-480p"),
     ).toMatchObject({
       capability: "video",
-      canvasRunnable: false,
-      canvasUnavailableReason: "仅支持对话式接口调用，画布协议未验证",
+      canvasRunnable: true,
     });
 
-    // Only openai-video models publish a runnable canvas descriptor.
+    // Exact official contracts also permit a current Key's openai-labelled ID.
     expect(catalog.groups["排klingsd视频"]?.map((model) => model.id)).toEqual([
       "happyhorse-720p",
+      "seedance-2.0-480p",
     ]);
     const happyhorse = catalog.groups["排klingsd视频"]?.[0];
     expect(happyhorse).toMatchObject({
@@ -343,10 +361,6 @@ describe("chentu catalog", () => {
       "text",
       "image",
       "image[]",
-      "video",
-      "video[]",
-      "audio",
-      "audio[]",
     ]);
     expect(happyhorse?.parameters?.map((parameter) => parameter.key)).toEqual([
       "duration",
@@ -355,7 +369,7 @@ describe("chentu catalog", () => {
     ]);
     expect(
       happyhorse?.parameters?.find((parameter) => parameter.key === "duration"),
-    ).toMatchObject({ default: 5, min: 1, max: 30 });
+    ).toMatchObject({ default: 5, min: 4, max: 15 });
     expect(
       happyhorse?.parameters?.find(
         (parameter) => parameter.key === "resolution",
@@ -363,10 +377,7 @@ describe("chentu catalog", () => {
     ).toMatchObject({
       default: "720p",
       options: [
-        { label: "480p", value: "480p" },
         { label: "720p", value: "720p" },
-        { label: "1080p", value: "1080p" },
-        { label: "2k", value: "2k" },
       ],
     });
 
@@ -646,7 +657,7 @@ describe("chentu catalog", () => {
     });
   });
 
-  it("keeps scanned openai-only video models visible but not runnable", () => {
+  it("binds exact documented openai-labelled video IDs from the current Key", () => {
     const catalog = chentuCatalogFromPricing(payload);
     const resolved = resolveChentuScannedGroup(catalog, "排klingsd视频", [
       "happyhorse-720p",
@@ -654,6 +665,7 @@ describe("chentu catalog", () => {
     ]);
     expect(resolved.canvasModels.map((model) => model.id)).toEqual([
       "happyhorse-720p",
+      "seedance-2.0-480p",
     ]);
     expect(resolved.canvasDisplayModels.map((model) => model.id)).toEqual([
       "happyhorse-720p",
@@ -665,13 +677,12 @@ describe("chentu catalog", () => {
       ),
     ).toMatchObject({
       metadata: {
-        canvasRunnable: false,
-        canvasUnavailableReason: "仅支持对话式接口调用，画布协议未验证",
+        canvasRunnable: true,
       },
     });
     expect(resolved.marketplaceGroup).toMatchObject({
       canvasSupported: true,
-      canvasModelCount: 1,
+      canvasModelCount: 2,
     });
   });
 
@@ -734,6 +745,7 @@ describe("chentu catalog", () => {
     ).toBe(true);
     expect(stale.groups["排klingsd视频"]?.map((model) => model.id)).toEqual([
       "happyhorse-720p",
+      "seedance-2.0-480p",
     ]);
     resetCatalogCache();
   });
@@ -756,16 +768,17 @@ describe("chentu catalog", () => {
       [
         "/model",
         "/prompt",
-        "/seconds",
-        "/ratio",
+        "/duration",
+        "/aspect_ratio",
         "/resolution",
-        "/image_urls",
-        "/video_urls",
-        "/audio_urls",
+        "/reference_images",
+        "/reference_videos",
+        "/reference_audios",
       ],
     );
     expect(connector.models?.map((model) => model.id)).toEqual([
       "happyhorse-720p",
+      "seedance-2.0-480p",
     ]);
     expect(connector.models).not.toBe(models);
   });

@@ -5,6 +5,7 @@ import type {
   RestModelConnectorOverride,
   RestRequestMapping,
 } from "@super-canvas/providers";
+import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
 import { providerPriceUnit } from "./provider-pricing-unit";
 
 export const CYBERAFEI_SUPPLIER_KEY = "cyberafei";
@@ -354,6 +355,7 @@ function descriptorWithPricing(
 ): ModelDescriptor {
   const price = priceFor(record, groupRatio);
   const numericPrice =
+    record.quota_type !== 0 &&
     typeof record.model_price === "number" &&
     Number.isFinite(record.model_price) &&
     record.model_price >= 0
@@ -369,6 +371,7 @@ function descriptorWithPricing(
             kind: perSecond ? "per-second" : "per-request",
             currency: "USD",
             unitAmount: numericPrice,
+            billingUnit: perSecond ? "second" : "request",
             sourceUrl: CYBERAFEI_CATALOG_SOURCE,
             checkedAt,
             confidence: "exact",
@@ -769,6 +772,8 @@ function descriptorFor(record: PricingRecord): ModelDescriptor | null {
   if (typeof record.model_name !== "string" || !record.model_name.trim())
     return null;
   const id = record.model_name.trim();
+  const documentedVideo = remainingVideoModel("cyberafei", id);
+  if (documentedVideo) return documentedVideo;
   if (!isSupportedCanvasModel(id)) return null;
   if (isImage2Model(id)) {
     const defaultOutputSize = image2DefaultOutputSize(id);
@@ -1182,7 +1187,9 @@ export function cyberAfeiConnectorForModels(
 ): RestConnectorConfig {
   const modelOverrides: Record<string, RestModelConnectorOverride> = {};
   for (const model of models) {
-    if (supportsImage2Reference(model.id))
+    const documentedVideo = remainingVideoTransport("cyberafei", model.id);
+    if (documentedVideo) modelOverrides[model.id] = documentedVideo;
+    else if (supportsImage2Reference(model.id))
       modelOverrides[model.id] = image2ReferenceOverride();
     else if (isGeminiImageModel(model.id))
       modelOverrides[model.id] = geminiOverride(model.id);
@@ -1320,6 +1327,7 @@ export function resolveCyberAfeiScannedGroup(
     capabilityBlocks.map((block) => [block.capability, block] as const),
   );
   const descriptors = new Map<string, ModelDescriptor>();
+  const pricedDescriptors = new Map((catalog.groups[group] ?? []).map(model => [model.id, model]));
   const models = ids.map((id): CyberAfeiMarketplaceModel => {
     const priced = publicModels.get(id);
     const model: CyberAfeiMarketplaceModel = priced
@@ -1355,7 +1363,7 @@ export function resolveCyberAfeiScannedGroup(
             ? "当前分组未开通图片生成（已确认上游 403）"
             : "当前分组未开通视频生成（已确认上游 403）",
       };
-    descriptors.set(model.id, descriptor);
+    descriptors.set(model.id, pricedDescriptors.get(model.id) ?? descriptor);
     return { ...model, canvasRunnable: true };
   });
   const canvasModels: ModelDescriptor[] = [];
@@ -1376,7 +1384,7 @@ export function resolveCyberAfeiScannedGroup(
     if (descriptor) {
       const runnableDescriptor: ModelDescriptor = {
         ...descriptor,
-        name: `${descriptor.name} · ${model.priceLabel}`,
+        name: `${model.name} · ${model.priceLabel}`,
         metadata: {
           ...(descriptor.metadata ?? {}),
           ...sharedMetadata,

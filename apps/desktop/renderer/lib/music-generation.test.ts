@@ -29,7 +29,9 @@ describe("music canvas integration", () => {
     expect(configured?.data).toMatchObject({ provider: "rest", connectionId: "music-fixture", model: "lyria-3-pro", parameters: { instrumental: false, audio_format: "mp3" } });
     expect(configured?.data.inputs).toEqual([{ id: "prompt", kind: "text", label: "音乐描述", required: false, multiple: false }]);
     const original = { ...configured!, data: { ...configured!.data, parameters: { instrumental: true, title: "晨光", lyrics: "保留在节点中的歌词", duration: 90, bpm: 72, seed: 0, audio_format: "wav" } } };
-    expect(canvas.normalizeGenerationNodeForRun(original, [connection()], { connectionId: "music-fixture", items: [model] }).data.parameters).toEqual(original.data.parameters);
+    expect(canvas.normalizeGenerationNodeForRun(original, [connection()], { connectionId: "music-fixture", items: [model] }).data.parameters).toEqual({
+      instrumental: true, title: "晨光", duration: 90, bpm: 72, seed: 0, audio_format: "wav", n: 1,
+    });
     expect(node().data.provider).toBe("fake");
   });
 
@@ -37,7 +39,8 @@ describe("music canvas integration", () => {
     expect(modelSupportsNodeType(model, "music-generation")).toBe(true);
     expect(modelSupportsNodeType(model, "image-generation")).toBe(false);
     expect(modelSupportsNodeType(model, "video-generation")).toBe(false);
-    expect(modelSupportsNodeType({ operations: [], outputKinds: ["audio[]"] }, "music-generation")).toBe(true);
+    expect(modelSupportsNodeType({ operations: [], outputKinds: ["audio[]"] }, "music-generation")).toBe(false);
+    expect(modelSupportsNodeType({ operations: ["music.generate"], outputKinds: ["audio[]"] }, "music-generation")).toBe(true);
     expect(getAutoConnectionOptions("text").some(option => option.nodeType === "music-generation")).toBe(true);
     expect(getAutoConnectionOptions("audio")).toEqual(expect.arrayContaining([expect.objectContaining({ nodeType: "preview", targetHandle: "audio" })]));
   });

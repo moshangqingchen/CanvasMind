@@ -39,6 +39,17 @@ describe("connection identity in the canvas picker", () => {
 });
 
 describe("model search and history", () => {
+  it("uses output facts for node type filters including music, irrespective of stale operations", () => {
+    const mixed: ModelDescriptor[] = [
+      { id: "video-image-to-video", name: "视频", operations: ["image.generate"], outputKinds: ["video"], metadata: { operationsSource: "inferred" } },
+      { id: "vision", name: "图片理解", operations: [], inputKinds: ["image"], outputKinds: ["text"] },
+      { id: "tts-1", name: "语音", operations: [], outputKinds: ["audio"] },
+      { id: "lyria-3-pro", name: "音乐", operations: ["music.generate"], outputKinds: ["audio"] },
+    ];
+    expect(filterPickerModels(mixed, "", "image", "all", [])).toEqual([]);
+    expect(filterPickerModels(mixed, "", "video", "all", []).map(model => model.id)).toEqual(["video-image-to-video"]);
+    expect(filterPickerModels(mixed, "", "music", "all", []).map(model => model.id)).toEqual(["lyria-3-pro"]);
+  });
   it("searches display names and exact ID fragments with normalization and multiple terms", () => {
     expect(filterPickerModels(models, "ＧＰＴ 图像 2", "all", "all", []).map(model => model.id)).toEqual(["gpt-2"]);
     expect(filterPickerModels(models, "图像", "all", "all", [])).toHaveLength(2);

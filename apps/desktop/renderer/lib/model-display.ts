@@ -1,5 +1,7 @@
 import { modelPriceAmount } from "@super-canvas/providers/media-billing";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
+import { getModelParameterDescriptor, validateModelParameters } from "@super-canvas/providers/cli-contracts";
+import type { ModelDescriptor } from "@super-canvas/providers";
 /** Keeps catalog names readable when they already contain their price label. */
 export function appendPriceLabelOnce(
   name: string,
@@ -49,12 +51,35 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   return typeof model.metadata?.priceLabel === "string" ? model.metadata.priceLabel : "价格未知";
 }
 
+/** A preview of the selected request, separate from the supplier's unit price. */
+export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
+  if (!model || model.metadata?.priceSource === "generated-result") return undefined;
+  model = normalizeTk1688CnyModel(model);
+  const pricing = model.pricing;
+  if (!pricing || !["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return undefined;
+  const values = { ...Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default])), ...parameters };
+  const declaredValues = Object.fromEntries(Object.entries(values).filter(([key]) => getModelParameterDescriptor(model, key, values)));
+  if (model.parameters?.length && !validateModelParameters(model, declaredValues).valid) return undefined;
+  const resolution = values.size_tier ?? values.resolution ?? values.image_size;
+  const amount = modelPriceAmount(pricing, { ...values, ...(resolution ? { resolution } : {}) });
+  if (amount === undefined || !Number.isFinite(amount) || amount < 0) return undefined;
+  const count = Number(values.n ?? model.metadata?.fixedOutputCount ?? 1);
+  if (!Number.isInteger(count) || count < 1) return undefined;
+  const perSecond = pricing.billingUnit === "second" || pricing.kind === "per-second";
+  const duration = Number(values.duration ?? values.duration_seconds ?? values.seconds);
+  if (perSecond && (!Number.isFinite(duration) || duration <= 0 || model.metadata?.approximateVideoDurationSeconds || model.metadata?.billingIncludesInputDuration === true)) return undefined;
+  const total = Number((amount * count * (perSecond ? duration : 1)).toPrecision(12));
+  return `${total} ${pricing.currency === "credits" ? "额度" : pricing.currency}${pricing.confidence === "exact" ? "" : "（参考）"}`;
+}
+
 /** Compare only the exact model and supported parameter combination in this connection. */
 export function comparableModelPrice(models: readonly import("@super-canvas/providers").ModelDescriptor[], id: string | undefined, parameters: Readonly<Record<string, unknown>>): string {
   const model = models.find(item => item.id === id);
   if (!model) return id ? "当前分组无此型号" : "未选择型号";
-  if (model.parameters?.some(parameter => parameter.options?.length && parameters[parameter.key] !== undefined &&
-    !parameter.options.some(option => String(option.value) === String(parameters[parameter.key])))) return "当前参数不支持";
+  if (model.parameters?.some(parameter => {
+    const resolved = getModelParameterDescriptor(model, parameter.key, parameters);
+    return parameters[parameter.key] !== undefined && (!resolved || resolved.options?.length && !resolved.options.some(option => String(option.value) === String(parameters[parameter.key])));
+  })) return "当前参数不支持";
   const price = modelPriceSummary(model, parameters);
   return price === "价格未知" ? "同型号未报价" : `同型号 ${price}`;
 }

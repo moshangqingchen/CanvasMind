@@ -148,7 +148,7 @@ async function listCustomGroupModels(connection: {
     typeof connection.config.defaultModel === "string"
       ? connection.config.defaultModel.trim()
       : "";
-  return scanProviderModelCatalog(payload, { defaultModel });
+  return scanProviderModelCatalog(payload, { defaultModel, baseUrl });
 }
 
 async function persistCustomGroupModelScan(

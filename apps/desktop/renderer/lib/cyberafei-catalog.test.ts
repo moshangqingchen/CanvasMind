@@ -10,6 +10,22 @@ import {
   type PricingPayload,
 } from "./cyberafei-catalog";
 
+it("preserves scanned Afei video structured prices and authenticated SD2 downloads", () => {
+  const catalog = cyberAfeiCatalogFromPricing({ group_ratio: { video: .5 }, data: [{ model_name: "video-v1-10s", quota_type: 1, model_price: 1.5, enable_groups: ["video"] }] });
+  const resolved = resolveCyberAfeiScannedGroup(catalog, "video", ["video-v1-10s"]);
+  expect(resolved.canvasModels[0]?.pricing).toMatchObject({ kind: "per-request", currency: "USD", billingUnit: "request", unitAmount: .75 });
+  expect(resolved.canvasModels[0]?.parameters?.find(parameter => parameter.key === "duration")?.options?.map(option => option.value)).toEqual([10]);
+  const override = cyberAfeiConnectorForModels(resolved.canvasModels).modelOverrides?.["video-v1-10s"];
+  expect(override?.poll?.path).toBe("/v1/video/generations/{taskId}");
+  expect(override?.output?.contentFallback?.path).toBe("/v1/videos/{taskId}/content");
+  expect(resolved.canvasModels[0]?.name.match(/请求/gu)).toHaveLength(1);
+});
+
+it("does not promote a token placeholder price to a free per-request price", () => {
+  const catalog = cyberAfeiCatalogFromPricing({ data: [{ model_name: "video-v1-5s", quota_type: 0, model_price: 0, model_ratio: 1, completion_ratio: 2, enable_groups: ["video"] }] });
+  expect(catalog.groups.video?.[0]?.pricing?.kind).not.toBe("per-request");
+});
+
 describe("cyberafei catalog", () => {
   it.each(["gpt-image-4K", "gpt-image-2-4K"])("offers documented 2K requests on %s as well as 4K", (id) => {
     const catalog = cyberAfeiCatalogFromPricing({ data: [{ model_name: id, model_price: 0.35, quota_type: 1, enable_groups: ["image-2稳定生图"], supported_endpoint_types: ["openai"] }] });

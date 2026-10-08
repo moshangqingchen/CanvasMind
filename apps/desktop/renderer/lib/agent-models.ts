@@ -29,7 +29,7 @@ function descriptors(values: unknown): ModelDescriptor[] {
     return [normalizeTk1688CnyModel({ ...fallback, ...value, id: value.id.trim(), name: typeof value.name === "string" ? value.name : value.id,
       metadata: { ...fallback.metadata, ...agentRecord(value.metadata) },
       operations: Array.isArray(value.operations) ? value.operations.filter(operation =>
-        ["image.generate", "image.edit", "video.generate", "video.image-to-video"].includes(String(operation))) : fallback.operations } as ModelDescriptor)];
+        ["image.generate", "image.edit", "video.generate", "video.image-to-video", "music.generate"].includes(String(operation))) : fallback.operations } as ModelDescriptor)];
   });
 }
 
@@ -126,8 +126,8 @@ export async function loadAgentModels(): Promise<AgentModelOption[]> {
     for (const model of group?.models ?? []) {
       const facts = agentRecord(model);
       const catalog = descriptors([{ ...facts, id: model.id, name: model.name || model.id,
-        operations: model.capability === "image" ? ["image.generate"] : model.capability === "video" ? ["video.generate"] : [],
-        metadata: { agentProtocol: model.protocol, ...agentRecord(facts.metadata) },
+        operations: model.capability === "image" ? ["image.generate"] : model.capability === "video" ? ["video.generate"] : model.capability === "music" ? ["music.generate"] : [],
+        metadata: { agentProtocol: model.protocol, catalogCapability: model.capability, ...agentRecord(facts.metadata) },
       }])[0];
       const existing = models.get(model.id);
       if (existing) existing.model = supplementModel(existing.model, catalog);

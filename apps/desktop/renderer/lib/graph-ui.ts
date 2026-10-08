@@ -1,5 +1,5 @@
 import { arePortKindsCompatible, type PortKind } from "@super-canvas/core";
-import { scanProviderModelCatalog } from "@super-canvas/providers/model-catalog";
+import { modelSupportsGenerationMedia } from "@super-canvas/providers/model-media";
 import type {
   ModelDescriptor,
   ProviderOperation,
@@ -166,30 +166,7 @@ export function modelSupportsNodeType(
     Partial<Pick<ModelDescriptor, "id" | "metadata" | "outputKinds">>,
   nodeType: GenerationNodeType,
 ): boolean {
-  // Unknown transport is not a declaration that the model supports both media.
-  // Use output capability, never reference-image inputs, to classify a model.
-  const modality =
-    model.metadata?.catalogCapability ?? model.metadata?.modality;
-  if (modality === "music" || modality === "audio") return nodeType === "music-generation";
-  if (modality === "video" || modality === "image")
-    return nodeType === `${modality}-generation`;
-  if (modality === "chat" || modality === "text") return false;
-  const outputs =
-    model.outputKinds?.map(kind => kind.replace(/\[\]$/u, "")).filter((kind) => kind === "image" || kind === "video" || kind === "audio") ??
-    [];
-  if (outputs.length)
-    return outputs.includes(
-      nodeType === "image-generation" ? "image" : nodeType === "music-generation" ? "audio" : "video",
-    );
-  const required = operationsForNodeType(nodeType);
-  if (model.operations.length === 0) {
-    const inferred = model.id
-      ? (scanProviderModelCatalog({ data: [{ id: model.id }] }).models[0]
-          ?.operations ?? [])
-      : [];
-    return inferred.some((operation) => required.includes(operation));
-  }
-  return model.operations.some((operation) => required.includes(operation));
+  return modelSupportsGenerationMedia(model, nodeType === "music-generation" ? "music" : nodeType === "image-generation" ? "image" : "video");
 }
 
 /** Filter a connection by its declared output models, not the generic REST adapter. */
@@ -203,7 +180,7 @@ export function connectionSupportsNodeType(
   if (Array.isArray(connection.config.modelCatalogModels)) return false;
   const connector = connection.config.connector as { output?: { kind?: string } } | undefined;
   const output = connector?.output?.kind;
-  if (output === "audio") return nodeType === "music-generation";
+  if (output === "audio") return false;
   if (output === "image" || output === "video") return nodeType === `${output}-generation`;
   // An unread generic REST connection must not appear in both selectors.
   return connection.provider !== "rest" && connection.provider !== "cli" && providerSupportsNodeType(connection.provider, nodeType);

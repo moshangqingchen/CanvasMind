@@ -2,7 +2,8 @@ import { fetchProviderJson, providerFetch, ProviderHttpError } from "./http.js";
 import type { FetchImplementation, ModelDescriptor } from "./contracts.js";
 import { catalogPriceLabel } from "./catalog-pricing.js";
 import { chuangxiangCatalogPricing, isChuangxiangCatalogSource } from "./chuangxiang-catalog-pricing.js";
-import { parseProviderModelFacts } from "./model-catalog.js";
+import { parseProviderModelFacts, scanProviderModelCatalog } from "./model-catalog.js";
+import { modelGenerationMediaKinds } from "./model-media.js";
 import { parseSupplierGroupDetails, type SupplierGroupDetails } from "./supplier-group-details.js";
 import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketplace, TK1688_MARKETPLACE_URL } from "./tk1688-catalog.js";
 
@@ -11,7 +12,7 @@ export type SupplierSiteKind =
 export interface DiscoveredSupplierModel {
   id: string;
   name?: string;
-  capability: "image" | "video" | "chat" | "other";
+  capability: "image" | "video" | "music" | "chat" | "other";
   protocol?:
     | "openai-images"
     | "openai-videos"
@@ -138,14 +139,14 @@ function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
   ].join(" ");
   const hint = `${id} ${text(item.type)} ${text(item.capability)} ${endpoints}`;
   const facts = parseProviderModelFacts(item, "supplier-catalog");
+  const explicitCapability = text(item.capability);
+  const scanned = scanProviderModelCatalog([{ ...item, id, metadata: { ...record(item.metadata),
+    ...(["image", "video", "music", "chat", "text", "audio", "other"].includes(explicitCapability) ? { catalogCapability: explicitCapability } : {}) } }]).models[0]!;
+  const media = modelGenerationMediaKinds(scanned);
   const capability: DiscoveredSupplierModel["capability"] =
-    facts.outputKinds?.some(kind => kind === "video" || kind === "video[]") ? "video"
-      : facts.outputKinds?.some(kind => kind === "image" || kind === "image[]") ? "image"
-      : facts.outputKinds?.includes("text") ? "chat"
-      : /video|kling|sora|veo|seedance|hailuo|视频/iu.test(hint)
-      ? "video"
-      : /image|dall[-_ ]?e|flux|seedream|imagen|sdxl|图像|绘图/iu.test(hint)
-        ? "image"
+    media.includes("video") ? "video" : media.includes("image") ? "image" : media.includes("music") ? "music"
+      : facts.outputKinds?.includes("text") || explicitCapability === "chat" ? "chat"
+      : facts.outputKinds?.length || ["other", "audio"].includes(explicitCapability) ? "other"
         : /chat|responses|gpt|claude|gemini|grok|qwen|deepseek|llama|对话/iu.test(
               hint,
             )
@@ -178,6 +179,11 @@ function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
     capability,
     protocol,
     ...facts,
+    ...(media.length && !facts.outputKinds ? { outputKinds: scanned.outputKinds } : {}),
+    metadata: { ...facts.metadata,
+      ...(media.length && scanned.metadata?.operationsSource === "declared" ? { outputKindsSource: "declared" } : {}),
+      ...(["image", "video", "music", "chat", "text", "audio", "other"].includes(explicitCapability) ? { catalogCapability: explicitCapability } : {}),
+    },
     ...(priceLabel ? { priceLabel } : {}),
   };
 }
@@ -552,8 +558,8 @@ export async function discoverSupplierCatalog(
       return { groups: [], kind: "newapi", status: "failed", checkedAt, complete: false,
         error: "词元模型广场暂不可完整读取，保留历史目录，请稍后刷新" };
     const models: DiscoveredSupplierModel[] = parsed.models.map(model => ({
-      id: model.id, name: model.name, capability: model.operations.length ? "image" : "chat",
-      protocol: model.operations.length ? "openai-images" : "chat-completions",
+      id: model.id, name: model.name, capability: modelGenerationMediaKinds(model)[0] ?? (model.outputKinds?.includes("text") ? "chat" : "other"),
+      protocol: modelGenerationMediaKinds(model).includes("image") ? "openai-images" : modelGenerationMediaKinds(model).includes("video") ? "openai-videos" : modelGenerationMediaKinds(model).includes("music") ? "unknown" : "chat-completions",
       ...(model.inputKinds ? { inputKinds: model.inputKinds } : {}), ...(model.outputKinds ? { outputKinds: model.outputKinds } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(typeof model.metadata?.priceLabel === "string" ? { priceLabel: model.metadata.priceLabel } : {}),
@@ -596,8 +602,10 @@ export async function discoverSupplierCatalog(
         ) {
           const status = await probe(`${siteUrl}/api/status`);
           const settings = record(record(status.payload)?.data);
-          const currency = text(settings?.quota_display_type);
-          const exchange = Number(settings?.usd_exchange_rate);
+          const display = text(settings?.quota_display_type);
+          const customSymbol = text(settings?.custom_currency_symbol);
+          const currency = display === "CUSTOM" && ["￥", "¥", "CNY", "RMB"].includes(customSymbol ?? "") ? "CNY" : display;
+          const exchange = Number(display === "CUSTOM" ? settings?.custom_currency_exchange_rate : settings?.usd_exchange_rate);
           if (currency === "CNY" && Number.isFinite(exchange) && exchange > 0)
             return supplementGroups(
               parseSupplierCatalog(pricing.payload, {

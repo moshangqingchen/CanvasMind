@@ -15,13 +15,14 @@ export function cangyuanMusicModel(model: ModelDescriptor): ModelDescriptor {
   if (!isCangyuanMusicModel(model.id)) return model;
   const operations = ["music.generate"] as const;
   const parameters: ModelParameterDescriptor[] = [
-    { key: "title", label: "作品名", control: "text", valueType: "string", description: "最多160个字符；留空由平台命名。", operations },
+    { key: "title", label: "作品名", control: "text", valueType: "string", description: "最多160个字符；省略时为 Untitled。", operations },
     { key: "instrumental", label: "纯音乐", control: "toggle", valueType: "boolean", default: false, description: "打开后不使用歌词。", operations },
     { key: "lyrics", label: "歌词", control: "text", valueType: "string", visibleWhen: [{ parameter: "instrumental", values: [false] }], description: "最多20000个字符，可用 [Verse]、[Chorus] 分段。", operations },
     { key: "duration", label: "目标时长（秒）", control: "number", valueType: "integer", min: 5, max: 300, step: 1, description: model.id === "lyria-3-pro" ? "可留空。5–300秒只是提示，成品最长184秒，以实际音频为准。" : "可留空。5–300秒只是提示，成品大约数分钟，以实际音频为准。", operations },
     { key: "bpm", label: "节奏 BPM", control: "number", valueType: "integer", min: 30, max: 300, step: 1, description: "可留空；节奏是创作提示。", operations },
     { key: "seed", label: "随机种子", control: "number", valueType: "integer", min: 0, max: 2147483647, step: 1, description: "可留空；同一种子不保证音频完全相同。", operations },
     { key: "audio_format", label: "音频格式", control: "select", valueType: "string", default: "mp3", options: ["mp3", "wav", "m4a"].map(value => ({ label: value.toUpperCase(), value })), operations },
+    { key: "n", label: "生成任务数", control: "select", valueType: "integer", default: 1, options: [{ label: "1 个任务", value: 1 }], description: "每次只能请求一个任务；供应商结果仍可能包含多个音乐版本。", operations },
   ];
   const metadata = { ...model.metadata };
   const unavailableReason = String(metadata.canvasUnavailableReason ?? "");
@@ -34,6 +35,7 @@ export function cangyuanMusicModel(model: ModelDescriptor): ModelDescriptor {
   return { ...model, operations, parameters, inputKinds: ["text"], outputKinds: ["audio"],
     limits: { maxPromptCharacters: 10000, maxInputImages: 0, maxInputVideos: 0, maxInputAudios: 0 },
     metadata: { ...metadata, canvasRunnable: runnable, protocol: "cangyuan-music", supportVerification: "official-native-contract-and-live-inventory", catalogCapability: "music", fixedOutputCount: 1,
+      operationsSource: "declared", outputKindsSource: "declared", cangyuanMusicContractCheckedAt: "2026-10-07", durationIsCreativeHint: true,
       documentationUrl: `https://ai.cangyuansuanli.cn/docs-static/models/${model.id}.json` } };
 }
 
@@ -75,7 +77,10 @@ export function cangyuanMusicRequestIssues(request: NormalizedRequest): Validati
 }
 
 export function withCangyuanMusicRequestParameters(request: NormalizedRequest): NormalizedRequest {
-  const parameters = { instrumental: false, n: 1, audio_format: "mp3", ...request.parameters };
+  const parameters = { ...request.parameters };
+  parameters.instrumental ??= false;
+  parameters.n ??= 1;
+  parameters.audio_format ??= "mp3";
   if (parameters.instrumental) delete (parameters as Record<string, unknown>).lyrics;
   return { ...request, parameters };
 }

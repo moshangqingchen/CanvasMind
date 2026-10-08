@@ -2,6 +2,31 @@ import { describe, expect, it, vi } from "vitest";
 import { discoverSupplierCatalog, normalizeSupplierSiteBase, normalizeSupplierUrl, parseSupplierCatalog, parseSupplierKeyGroups, parseSupplierPricingChannels, supplierModelUrls } from "./supplier-catalog.js";
 
 describe("supplier discovery", () => {
+  it.each([
+    [{ quota_display_type: "CUSTOM", custom_currency_symbol: "￥", custom_currency_exchange_rate: 1, usd_exchange_rate: 7.3 }, "¥0.2/请求"],
+    [{ quota_display_type: "CNY", usd_exchange_rate: 7.3 }, "¥1.46/请求"],
+    [{ quota_display_type: "USD", usd_exchange_rate: 7.3 }, "$0.2/请求"],
+  ])("respects the supplier's accounting display without applying an unrelated exchange rate: %j", async (settings, priceLabel) => {
+    const result = await discoverSupplierCatalog({ kind: "newapi", siteUrl: "https://currency.example", apiUrl: "https://currency.example/v1" }, async url => {
+      if (String(url).endsWith("/api/status")) return Response.json({ success: true, data: settings });
+      if (String(url).endsWith("/api/pricing")) return Response.json({ success: true, group_ratio: { default: 1 }, data: [{ model_name: "grok-video-1.5", model_price: 0.2, quota_type: 1, enable_groups: ["default"] }] });
+      return Response.json({ success: true, data: [] });
+    });
+    expect(result.groups[0]?.models[0]?.priceLabel).toBe(priceLabel);
+  });
+  it("distinguishes music, speech, visual understanding and declared multi-output directories", () => {
+    const models = parseSupplierCatalog({ data: [
+      { id: "lyria-3-pro", output_modalities: ["audio"] },
+      { id: "opaque-music", capability: "music", output_modalities: ["audio"] },
+      { id: "tts-1", output_modalities: ["audio"] },
+      { id: "image-understanding-pro", output_modalities: ["text"] },
+      { id: "dual", operations: ["image.generate", "video.generate"] },
+      { id: "video-image-to-video" },
+    ] }).groups[0]!.models;
+    expect(models.map(model => model.capability)).toEqual(["music", "music", "other", "chat", "video", "video"]);
+    expect(models[4]?.outputKinds).toEqual(["image", "video"]);
+    expect(models[4]?.metadata?.outputKindsSource).toBe("declared");
+  });
   it("reads词元 official marketplace contracts with account groups instead of generic pricing", async () => {
     const calls: string[] = [];
     const alias = "gpt-image-2.5-sunburst@s47c261";

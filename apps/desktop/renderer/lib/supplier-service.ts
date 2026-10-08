@@ -50,7 +50,7 @@ export const SupplierModelSchema = z
   .object({
     id: z.string().trim().min(1).max(256),
     name: z.string().trim().max(256).optional(),
-    capability: z.enum(["image", "video", "chat", "other"]),
+    capability: z.enum(["image", "video", "music", "chat", "other"]),
     protocol: z
       .enum([
         "openai-images",
@@ -64,7 +64,7 @@ export const SupplierModelSchema = z
       .optional(),
     priceLabel: z.string().trim().max(256).optional(),
     inputKinds: z.array(z.enum(["text", "image", "image[]", "video", "video[]", "audio", "audio[]"])).max(7).optional(),
-    outputKinds: z.array(z.enum(["text", "image", "image[]", "video", "video[]"])).max(5).optional(),
+    outputKinds: z.array(z.enum(["text", "image", "image[]", "video", "video[]", "audio", "audio[]"])).max(7).optional(),
     limits: z.object({
       maxPromptCharacters: z.number().int().nonnegative().optional(),
       maxInputImages: z.number().int().nonnegative().optional(),
@@ -99,6 +99,7 @@ export const SupplierModelSchema = z
       reasoningOptionsSource: z.enum(["declared", "documentation"]).optional(),
       agentProtocol: z.string().max(256).optional(),
       modelKind: z.string().max(256).optional(),
+      catalogCapability: z.enum(["image", "video", "music", "chat", "text", "audio", "other"]).optional(),
     }).strict().optional(),
   })
   .strict();

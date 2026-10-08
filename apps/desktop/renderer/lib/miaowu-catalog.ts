@@ -62,6 +62,7 @@ interface VideoApiRecord {
   sizes?: unknown;
   ratios?: unknown;
   resolutions?: unknown;
+  supports_first_last_frames?: unknown;
   pricing?: unknown;
 }
 
@@ -396,14 +397,21 @@ function descriptorFor(
       billingLabel: pricing.billingLabel,
       pricingCheckedAt: checkedAt,
       remoteMediaUrlsOnly: true,
-      supportsFirstLastFrames: imagesMax >= 2,
+      // A reference image count is not evidence for a frame mode. Advertise
+      // explicit first/last roles only when this model's schema declares them.
+      supportsFirstLastFrames: videoApi.supports_first_last_frames === true || strings(videoApi.modes).some(mode => /first[-_]last|first[-_]and[-_]last|start[-_]end[-_]frame/iu.test(mode)),
+      videoSupportedModes: strings(videoApi.modes),
+      operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "video",
+      documentationUrl: "https://api.miaowuai.store/docs/openai-videos",
+      videoContractCheckedAt: checkedAt,
+      videoWireFields: ["model", "prompt", "seconds", "ratio", "resolution", ...(imagesMax ? ["image_urls"] : []), ...(videosMax ? ["video_urls"] : []), ...(audiosMax ? ["audio_urls"] : [])],
       parameterSource: "pricing.video_api",
       clampNumericParameters: true,
       ...(Object.keys(numberRecord(videoApi.size_seconds_max)).length
         ? { durationMaxByResolution: numberRecord(videoApi.size_seconds_max) } : {}),
       ...(id === "seedance-2.0-mini"
         ? {
-            durationMaxByResolution: { "720p": 12 },
+            durationMaxByResolution: { "720p": 12, ...numberRecord(videoApi.size_seconds_max) },
           }
         : {}),
     },

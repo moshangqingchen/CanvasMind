@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, comparableModelPrice } from "./model-display";
+import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, comparableModelPrice, modelEstimatedCost } from "./model-display";
 import { mediaExpressionPricing, type ModelDescriptor } from "@super-canvas/providers";
 
 describe("appendPriceLabelOnce", () => {
+  it("estimates request quantities and per-second video costs with selected tiers", () => {
+    const model: ModelDescriptor = { id: "video", name: "Video", operations: ["video.generate"],
+      parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", min: 4, max: 15, default: 5 },
+        { key: "resolution", label: "分辨率", control: "select", default: "720p", options: ["720p", "1080p"].map(value => ({ label: value, value })) }],
+      pricing: { kind: "tiered", billingUnit: "second", currency: "CNY", checkedAt: "now", confidence: "exact",
+        tiers: [{ id: "720", label: "720p", dimension: "resolution", value: "720p", price: .12 }, { id: "1080", label: "1080p", dimension: "resolution", value: "1080p", price: .24 }] } };
+    expect(modelEstimatedCost(model, { duration: 10 })).toBe("1.2 CNY");
+    expect(modelEstimatedCost(model, { duration: 10, resolution: "1080p" })).toBe("2.4 CNY");
+    expect(modelEstimatedCost(model, { duration: 99 })).toBeUndefined();
+    expect(modelEstimatedCost({ ...model, metadata: { billingIncludesInputDuration: true } }, {})).toBeUndefined();
+    expect(modelEstimatedCost({ ...model, pricing: { kind: "per-request", currency: "CNY", unitAmount: .25, confidence: "snapshot", checkedAt: "now" } }, { n: 2 })).toBe("0.5 CNY（参考）");
+    expect(modelEstimatedCost(undefined, {})).toBeUndefined();
+  });
   it("uses CNY for saved Tk1688 quotes while retaining other suppliers' currencies", () => {
     const model: ModelDescriptor = { id: "gpt-image-2@s1c1", name: "Image", operations: ["image.generate"],
       metadata: { tk1688Catalog: true, tk1688FxRate: 6.8896, priceLabel: "$0.03/次（¥0.206688/次）" },

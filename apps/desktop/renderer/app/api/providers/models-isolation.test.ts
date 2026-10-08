@@ -320,7 +320,7 @@ describe("model refresh source boundary", () => {
       if (String(url).endsWith("/api/status")) return Response.json({ data: { quota_display_type: "CNY", usd_exchange_rate: 1 } });
       if (String(url).endsWith("/api/user/self/groups")) return Response.json({ data: { "same-name": { desc: "Group", ratio: 1 } } });
       if (String(url).endsWith("/api/user/self")) return Response.json({ success: true, data: { id: 42, username: "fixture-user" } });
-      if (String(url).includes("/models")) return Response.json({ data: [{ id: "future-image", documentationUrl: docUrl }] });
+      if (String(url).includes("/models")) return Response.json({ data: [{ id: "future-image", output_modalities: ["image"], documentationUrl: docUrl }] });
       if (String(url) === docUrl) {
         if (mode === "site-login") await patchSupplierRecord(supplier.id, {
           siteLogin: { authMode: "access-token", accessToken: "fixture-new-site-token" },
@@ -412,7 +412,7 @@ describe("model refresh source boundary", () => {
         }
         return Response.json(spec);
       }
-      if (String(url).endsWith("/models")) return Response.json({ data: [{ id: "future-image", documentationUrl: docUrl }] });
+      if (String(url).endsWith("/models")) return Response.json({ data: [{ id: "future-image", output_modalities: ["image"], documentationUrl: docUrl }] });
       return Response.json({}, { status: 404 });
     });
     const response = await refresh(connection.id);

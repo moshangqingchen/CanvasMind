@@ -5,7 +5,7 @@ export const ManualProviderModelSchema = z
   .object({
     id: z.string().trim().min(1).max(256),
     name: z.string().trim().max(256).optional(),
-    capability: z.enum(["image", "video", "chat"]),
+    capability: z.enum(["image", "video", "music", "chat"]),
     protocol: z.enum([
       "openai-images",
       "openai-videos",
@@ -84,13 +84,13 @@ export function validateManualProviderModels(
         (entry) => entry.id === model.id,
       );
       const required =
-        model.capability === "video" ? "video.generate" : "image.generate";
+        model.capability === "video" ? "video.generate" : model.capability === "music" ? "music.generate" : "image.generate";
       if (
         model.protocol !== "rest" ||
         !descriptor?.operations?.includes(required)
       )
         throw new ManualModelValidationError(
-          "请先在 REST 连接器中为该模型配置图片或视频调用协议",
+          "请先在 REST 连接器中为该模型配置对应的图片、视频或音乐调用协议",
         );
     } else
       throw new ManualModelValidationError("此连接类型暂不支持添加手动模型");
@@ -126,11 +126,14 @@ export function manualProviderModelDescriptors(connection: {
         ? ["image.generate", "image.edit"]
         : model.capability === "video"
           ? ["video.generate", "video.image-to-video"]
-          : [],
+          : model.capability === "music" ? ["music.generate"] : [],
     inputKinds: model.capability === "image" ? ["text", "image"] : ["text"],
-    outputKinds: [model.capability === "chat" ? "text" : model.capability],
+    outputKinds: [model.capability === "chat" ? "text" : model.capability === "music" ? "audio" : model.capability],
     metadata: {
       source: "manual",
+      catalogCapability: model.capability,
+      operationsSource: "declared",
+      outputKindsSource: "declared",
       protocol: model.protocol,
       ...(model.capability === "chat" ? { agentProtocol: model.protocol } : {}),
       canvasRunnable: model.capability !== "chat",
@@ -161,17 +164,28 @@ export function mergeManualProviderModels(
       )
     )
       continue;
+    const keepDeclaredOutput = Boolean(previous?.outputKinds && previous.metadata?.outputKindsSource !== "inferred");
+    const keepDeclaredOperations = Boolean(previous && previous.metadata?.operationsSource === "declared");
+    const keepOutput = keepDeclaredOutput || keepDeclaredOperations;
     byId.set(model.id, {
       ...previous,
       ...model,
-      ...(previous?.operations.length
+      ...(previous && (previous.operations.length || keepDeclaredOperations)
         ? { operations: previous.operations }
         : {}),
+      ...(keepDeclaredOutput ? { outputKinds: previous!.outputKinds } : {}),
       ...(previous?.inputKinds && (
         previous.metadata?.inputKindsSource === "declared" ||
         previous.inputKinds.some(kind => kind !== "text")
       ) ? { inputKinds: previous.inputKinds } : {}),
-      metadata: { ...previous?.metadata, ...model.metadata },
+      metadata: { ...previous?.metadata, ...model.metadata,
+        ...(keepOutput ? {
+          catalogCapability: previous?.metadata?.catalogCapability,
+          operationsSource: previous?.metadata?.operationsSource,
+          outputKindsSource: previous?.metadata?.outputKindsSource,
+          canvasRunnable: previous?.metadata?.canvasRunnable ?? Boolean(previous?.operations.length),
+        } : {}),
+      },
     });
   }
   return [...byId.values()];

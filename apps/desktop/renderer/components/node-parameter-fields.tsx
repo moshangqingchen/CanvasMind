@@ -590,7 +590,7 @@ function ParameterControl({
 
   return (
     <div
-      className={`field parameter-field${disabledReason ? " is-disabled" : ""}`}
+      className={`field parameter-field${descriptor.key === "lyrics" ? " parameter-wide" : ""}${disabledReason ? " is-disabled" : ""}`}
     >
       <label htmlFor={id} title={disabledReason ?? descriptor.description}>
         {descriptor.label}
@@ -600,7 +600,8 @@ function ParameterControl({
           id={id}
           value={String(value)}
           disabled={Boolean(disabledReason)}
-          title={disabledReason}
+          title={disabledReason ?? descriptor.description}
+          aria-required={descriptor.required}
           onChange={(event) => update(event.target.value)}
         >
           <option value="">
@@ -631,7 +632,8 @@ function ParameterControl({
             max={descriptor.max}
             step={descriptor.step}
             disabled={Boolean(disabledReason)}
-            title={disabledReason}
+            title={disabledReason ?? descriptor.description}
+            aria-required={descriptor.required}
             list={descriptor.options?.length ? `${id}-options` : undefined}
             placeholder={descriptor.placeholder}
             onChange={(event) => update(event.target.value)}
@@ -647,6 +649,7 @@ function ParameterControl({
           ) : null}
         </>
       )}
+      {disabledReason && <small className="parameter-help">{disabledReason}</small>}
     </div>
   );
 }
@@ -673,21 +676,30 @@ export function NodeParameterFields({
   const clampNumericInput = provider !== "cli" && model?.metadata?.clampNumericParameters === true;
   const clearUnavailableParameters =
     provider !== "cli" && model?.metadata?.parameterControlsUnavailable === true;
-  const cliIssues = provider === "cli" && model ? validateModelParameters(model, parameters, operation).issues : [];
+  const contractValues = Object.fromEntries(Object.entries(parameters).filter(([key]) => descriptors.some(d => d.key === key)));
+  const parameterIssues = model && (provider === "cli" || nodeType !== "image-generation")
+    ? validateModelParameters(model, provider === "cli" ? parameters : {
+      ...Object.fromEntries(descriptors.filter(d => d.default !== undefined).map(d => [d.key, d.default])), ...contractValues,
+    }, operation).issues : [];
+  const hasLinkedControls = Boolean(model?.parameters?.some(d => d.visibleWhen?.length || d.constraints?.length));
   const parameterJson = JSON.stringify(parameters, null, 2);
   useEffect(() => {
-    if (!clampNumericInput && !clearUnavailableParameters) return;
+    if (!clampNumericInput && !clearUnavailableParameters && !hasLinkedControls) return;
     const normalized = normalizedParametersForModel(
       nodeType,
       provider,
       model,
       parameters,
     );
+    // Keep the editor's lyrics draft while hidden. Run normalization and the
+    // music adapter omit it from instrumental requests.
+    if (nodeType === "music-generation" && typeof parameters.lyrics === "string" && model?.parameters?.some(p => p.key === "lyrics")) normalized.lyrics = parameters.lyrics;
     if (JSON.stringify(normalized) !== JSON.stringify(parameters))
       onChange(normalized);
   }, [
     clampNumericInput,
     clearUnavailableParameters,
+    hasLinkedControls,
     model,
     nodeType,
     onChange,
@@ -714,7 +726,7 @@ export function NodeParameterFields({
   return (
     <>
       {provider === "cli" && !model && <p className="parameter-group-note">请先在“个人 AI 网站”中接入并同步模型与参数。</p>}
-      {cliIssues.length > 0 && <div role="alert" className="parameter-group-note">{cliIssues.map(issue => <p key={`${issue.path}:${issue.code}`}>{issue.message}</p>)}<p>已保留原参数，请修正后再生成。</p></div>}
+      {parameterIssues.length > 0 && <div role="alert" className="parameter-group-note">{parameterIssues.map(issue => <p key={`${issue.path}:${issue.code}`}>{issue.message}</p>)}{provider === "cli" && <p>已保留原参数，请修正后再生成。</p>}</div>}
       {typeof model?.metadata?.imageCapabilityNote === "string" && model.metadata.imageCapabilityNote && (
         <p className="parameter-group-note">实测说明：{model.metadata.imageCapabilityNote}</p>
       )}

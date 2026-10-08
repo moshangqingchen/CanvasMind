@@ -898,8 +898,9 @@ describe("Cangyuan live catalog", () => {
       ) ?? [];
 
     expect(targets("grok-video")).toEqual(
-      expect.arrayContaining(["/reference_image_urls", "/video_url"]),
+      expect.arrayContaining(["/reference_image_urls"]),
     );
+    expect(targets("grok-video")).not.toContain("/video_url");
     expect(targets("grok-video")).not.toContain("/image_urls");
     expect(targets("omni-fast")).toEqual(
       expect.arrayContaining([
@@ -1153,13 +1154,13 @@ describe("Cangyuan live catalog", () => {
     );
     expect(targets("seedance-2.0-1080p")).toEqual(
       expect.arrayContaining([
-        "/image_url",
         "/reference_image_urls",
         "/reference_videos",
         "/reference_audios",
       ]),
     );
-    expect(targets("seedance-2.0-1080p")).not.toContain("/resolution");
+    expect(targets("seedance-2.0-1080p")).not.toContain("/image_url");
+    expect(targets("seedance-2.0-1080p")).toContain("/resolution");
   });
 
   it("keeps Midjourney ratio-only even when a stale pixel-size field is present", () => {

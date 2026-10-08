@@ -1,5 +1,5 @@
 import { imageCapabilityRequestError } from "../../../lib/supplier-capabilities";
-import { savedModelAvailabilityError } from "../../../lib/model-availability";
+import { savedModelAvailabilityError, savedModelMediaError } from "../../../lib/model-availability";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { assertCurrentSupplierConnection } from "../../../lib/supplier-service";
 import { matchesSupplierTemplate } from "../../../lib/supplier-template-source";
@@ -117,6 +117,9 @@ async function cyberAfeiRunPreflight(input: {
     if (data.nodeType === "image-generation" || data.nodeType === "video-generation" || data.nodeType === "music-generation") {
       const unavailable = savedModelAvailabilityError(connection.config, typeof data.model === "string" ? data.model : undefined);
       if (unavailable) return { message: `${unavailable}；本次付费提交已停止`, status: 422 };
+      const mismatch = savedModelMediaError(connection.config, typeof data.model === "string" ? data.model : undefined,
+        data.nodeType === "image-generation" ? "image" : data.nodeType === "video-generation" ? "video" : "music");
+      if (mismatch) return { message: `${mismatch}；本次付费提交已停止`, status: 422 };
     }
     if (data.nodeType === "image-generation" && typeof connection.config.supplierId === "string") {
       const catalog = connection.config.modelCatalogModels;

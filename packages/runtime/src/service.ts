@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { consumeCliArtifact } from "./cli-artifact.js";
+import { readLocalMediaDuration } from "./media-duration.js";
 import { recordSubmissionPhase } from "./submission-timeline.js";
 import { repositoryScheduler, runtimeConcurrency, scheduleReadyNodes, type RuntimeConcurrency, type RuntimeScheduler } from "./scheduler.js";
 import { assertDesktopPublicAssets } from "./desktop-preflight.js";
@@ -39,6 +40,7 @@ import {
   GenericRestAdapter,
   cangyuanMusicTransport,
   isCangyuanMusicRequest,
+  modelSupportsGenerationMedia,
   AutoInterfaceAdapter,
   restRequestRequiresPublicAssets,
   secureSkillRequiresPublicAssets,
@@ -61,6 +63,7 @@ import {
   RunwayAdapter,
   RUNWAY_DEFAULT_VIDEO_MODEL,
   type NormalizedRequest,
+  type ModelDescriptor,
   type ProviderAdapter,
   type ProviderAssetInput,
   type ProviderErrorContext,
@@ -2999,6 +3002,14 @@ export class RunService {
       supplier,
       ...(supplierWebsiteUrl ? { supplierWebsiteUrl } : {}),
     };
+    const descriptor = configuredImageDescriptor(connectionConfig, model);
+    if (!resumingTask) {
+      if (isRecord(descriptor) && Array.isArray(descriptor.operations)) {
+        const media = operation.startsWith("image.") ? "image" : operation.startsWith("video.") ? "video" : "music";
+        if (!modelSupportsGenerationMedia(descriptor as unknown as ModelDescriptor, media))
+          throw new ProviderRequestValidationError([{ code: "wrong_media_type", message: "所选型号不支持当前节点的输出类型，请重新选择型号。" }], providerErrorContext);
+      }
+    }
     const editingCapabilities = getImageEditingCapabilities({ provider: providerName, config: connectionConfig ?? {} }, model ?? "", rawParameters);
     let imageMask;
     try {
@@ -3014,9 +3025,18 @@ export class RunService {
       assets.push(imageMask.asset);
       assetIds.push(imageMask.asset.id);
     }
+    if (!resumingTask && operation.startsWith("video.") && providerName !== "fake") {
+      for (const asset of assets) {
+        if ((asset.kind === "video" || asset.kind === "audio") && asset.data) {
+          const duration = await readLocalMediaDuration(asset.data);
+          if (duration !== undefined) asset.durationSeconds = duration;
+        }
+      }
+    }
     if (assets.length > 0 &&
         ((imageMask && editingCapabilities.mask === "url") ||
           (providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation, connectionConfig)) ||
+          (providerName !== "fake" && operation.startsWith("video.") && isRecord(descriptor) && isRecord(descriptor.metadata) && descriptor.metadata.remoteMediaUrlsOnly === true) ||
           secureSkillRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           chuangxiangRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           bananaRequiresPublicAssets(providerName, connectionConfig, model))) {
@@ -3033,7 +3053,7 @@ export class RunService {
         const urls = await localReferenceUrls(assets.map(asset => asset.id));
         assets.forEach((asset, index) => { asset.url = urls[index]!; });
       } else if (!referenceImageHostingEnabled(connectionConfig)) {
-        throw new Error("该模型需要参考图链接，请在设置的“素材通道”中连接本机通道，或选择支持直接上传素材的模型");
+        throw new Error("该模型需要参考素材的公网链接，请在设置的“素材通道”中连接本机通道，或选择支持直接上传素材的模型");
       }
     }
     let parameters =

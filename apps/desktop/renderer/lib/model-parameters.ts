@@ -198,14 +198,18 @@ export function parameterDescriptorsForValues(
   parameters: Readonly<Record<string, unknown>>,
   operation?: ProviderOperation,
 ): ModelParameterDescriptor[] {
-  if (provider === "cli") {
-    if (!model) return [];
-    return parameterDescriptorsFor(nodeType, provider, model).flatMap(descriptor => {
-      const resolved = getModelParameterDescriptor(model, descriptor.key, parameters, operation);
-      return resolved ? [resolved] : [];
-    });
-  }
-  const descriptors = parameterDescriptorsFor(nodeType, provider, model);
+  const declared = parameterDescriptorsFor(nodeType, provider, model);
+  // The same supplier contract drives controls and submission validation.
+  // Evaluate visibility and option/range constraints for every provider.
+  const effective = { ...Object.fromEntries(declared.filter(d => d.default !== undefined).map(d => [d.key, d.default])), ...parameters };
+  const descriptors = model?.parameters?.length ? declared.flatMap(descriptor => {
+    const resolved = getModelParameterDescriptor(model, descriptor.key, effective, operation);
+    if (!resolved) return [];
+    const result = { ...descriptor, ...resolved, default: descriptor.default };
+    if (result.default !== undefined && result.options?.length && !result.options.some(option => option.value === result.default)) result.default = result.options[0]?.value;
+    return [result];
+  }) : declared;
+  if (provider === "cli") return descriptors;
   const conditional = model?.metadata?.durationMaxByResolution;
   const resolution = parameters.resolution;
   if (

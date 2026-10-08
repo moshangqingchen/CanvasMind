@@ -1,16 +1,15 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { modelGenerationMediaKinds } from "@super-canvas/providers/model-media";
 import type { ProviderConnectionView } from "./client-api";
 import type { SupplierCatalogGroup } from "./client-suppliers";
 import { providerConnectionGroup } from "./provider-connection-options";
 import { tk1688ModelFamily, tk1688ModelSearchText, type Tk1688DisplayModel } from "./tk1688-model-display";
 
-export type ModelKind = "image" | "video" | "chat";
+export type ModelKind = "image" | "video" | "music" | "chat";
 
-export function descriptorKinds(model: Pick<ModelDescriptor, "operations" | "metadata">): ModelKind[] {
-  const kinds = new Set<ModelKind>();
+export function descriptorKinds(model: Pick<ModelDescriptor, "operations" | "metadata"> & Partial<Pick<ModelDescriptor, "id" | "outputKinds">>): ModelKind[] {
+  const kinds = new Set<ModelKind>(modelGenerationMediaKinds(model));
   for (const operation of model.operations ?? []) {
-    if (operation.startsWith("image.")) kinds.add("image");
-    if (operation.startsWith("video.")) kinds.add("video");
     if (operation.startsWith("chat.") || operation.startsWith("text.")) kinds.add("chat");
   }
   if (!kinds.size && model.metadata?.tk1688Catalog === true && model.metadata.protocol === "chat-completions") kinds.add("chat");

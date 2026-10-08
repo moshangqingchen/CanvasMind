@@ -1,6 +1,25 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { modelSupportsGenerationMedia, type GenerationMediaKind } from "@super-canvas/providers/model-media";
 
 export interface InventoryModel { id: string; name: string }
+
+/** Saved canvases and manual IDs must pass the same media gate as the current picker. */
+export function savedModelMediaError(config: Readonly<Record<string, unknown>>, requestedModel: string | undefined,
+  kind: GenerationMediaKind): string | null {
+  const connector = config.connector && typeof config.connector === "object" ? config.connector as Record<string, unknown> : {};
+  const catalogs = Array.isArray(config.modelCatalogModels) ? config.modelCatalogModels :
+    Array.isArray(connector.models) ? connector.models : Array.isArray(config.models) ? config.models : [];
+  const modelId = requestedModel?.trim() || (typeof config.defaultModel === "string" ? config.defaultModel.trim() : "");
+  const raw = catalogs.find(value => value && typeof value === "object" && value.id === modelId) as ModelDescriptor | undefined;
+  // Without a saved declaration the adapter still owns unknown legacy-model validation.
+  // A precise known family can already reject a mismatched stale/manual selection.
+  const model = raw ?? (modelId ? { id: modelId, operations: [] } : undefined);
+  if (!model) return null;
+  if (!raw && !["image", "video", "music"].some(media => modelSupportsGenerationMedia(model, media as GenerationMediaKind))) return null;
+  if (modelSupportsGenerationMedia(model, kind)) return null;
+  const label = { image: "图片", video: "视频", music: "音乐" }[kind];
+  return `模型 ${modelId} 不支持${label}输出，请选择当前节点对应的模型`;
+}
 
 /** Reject a removed selection using only this connection's saved Key inventory. */
 export function savedModelAvailabilityError(

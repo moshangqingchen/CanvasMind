@@ -29,14 +29,20 @@ export function chuangxiangCatalogPricing(value: unknown, checkedAt = ""): { pri
   }
   const videoMode = video.billing_mode;
   if (videoMode === "per_request" || videoMode === "per_second") {
-    const tiers: StructuredPriceTier[] = Object.entries(record(video.prices)).flatMap(([resolution, value]) => {
+    const prices = record(video.prices);
+    const fixed = videoMode === "per_request" ? scaled(prices.per_request) : undefined;
+    const tiers: StructuredPriceTier[] = Object.entries(prices).flatMap(([resolution, value]) => {
+      // SD8 has one flat per-task price. This reserved billing key is not a
+      // supported output resolution and must not become a resolution selector.
+      if (resolution === "per_request") return [];
       const price = scaled(value);
       return price === undefined || !resolution ? [] : [{ id: resolution, label: resolution, dimension: "resolution" as const, value: resolution, price }];
     });
-    if (!tiers.length) return undefined;
+    if (!tiers.length && fixed === undefined) return undefined;
     const perSecond = videoMode === "per_second";
-    return { pricing: { ...base, kind: perSecond ? "per-second" : "per-request", billingUnit: perSecond ? "second" : "request", tiers },
-      priceLabel: tiers.map(t => `${t.label} ¥${display(t.price)}/${perSecond ? "秒" : "次"}`).join(" · "), resolutions: tiers.map(t => t.id) };
+    return { pricing: { ...base, kind: perSecond ? "per-second" : "per-request", billingUnit: perSecond ? "second" : "request", ...(fixed === undefined ? {} : { unitAmount: fixed }), ...(tiers.length ? { tiers } : {}) },
+      priceLabel: tiers.length ? tiers.map(t => `${t.label} ¥${display(t.price)}/${perSecond ? "秒" : "次"}`).join(" · ") : `¥${display(fixed!)}/次`,
+      ...(tiers.length ? { resolutions: tiers.map(t => t.id) } : {}) };
   }
   if (raw.billing_mode !== "image" && raw.billing_mode !== "per_request") return undefined;
   const unitAmount = scaled(raw.per_request_price);

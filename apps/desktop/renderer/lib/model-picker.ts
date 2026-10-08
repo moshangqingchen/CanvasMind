@@ -1,11 +1,12 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { modelSupportsGenerationMedia } from "@super-canvas/providers/model-media";
 import { cleanModelDisplayName } from "./model-display";
 import { modelCanvasUnavailableReason } from "./graph-ui";
 import { tk1688ModelFamily, tk1688ModelSearchText } from "./tk1688-model-display";
 
 export const MODEL_PICKER_PAGE_SIZE = 40;
 export const RECENT_MODELS_KEY = "super-canvas.recent-models.v1";
-export type ModelKindFilter = "all" | "image" | "video";
+export type ModelKindFilter = "all" | "image" | "video" | "music";
 export type ModelStatusFilter = "all" | "runnable" | "verified" | "recent";
 export type RecentModels = Array<{ connectionId: string; modelIds: string[] }>;
 
@@ -21,7 +22,7 @@ export function filterPickerModels(models: readonly ModelDescriptor[], query: st
     const searchable = tk1688ModelFamily(model) ? tk1688ModelSearchText(model)
       : `${cleanModelDisplayName(model.name, model.metadata?.priceLabel)} ${model.id}`.normalize("NFKC").toLocaleLowerCase();
     return words.every(word => searchable.includes(word)) &&
-      (kind === "all" || model.operations.some(operation => operation.startsWith(`${kind}.`))) &&
+      (kind === "all" || modelSupportsGenerationMedia(model, kind)) &&
       (status !== "runnable" || (model.operations.length > 0 && modelCanvasUnavailableReason(model) === null)) &&
       (status !== "verified" || modelWasVerified(model)) &&
       (status !== "recent" || recent.has(model.id));

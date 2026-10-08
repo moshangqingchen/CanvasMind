@@ -127,6 +127,8 @@ export interface ProviderAssetInput {
   filename?: string;
   url?: string;
   data?: Uint8Array;
+  /** Actual local media duration, measured before submission; never a requested output length. */
+  durationSeconds?: number;
 }
 
 export interface NormalizedRequest {

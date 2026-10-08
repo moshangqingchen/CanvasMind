@@ -18,6 +18,16 @@ import type {
 import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
 import { cangyuanCurrentRequestIssues, cangyuanCurrentTransport, isCangyuanCurrentRequest, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
 import { cangyuanMusicModel, cangyuanMusicRequestIssues, cangyuanMusicTransport, isCangyuanMusicRequest, withCangyuanMusicRequestParameters } from "./cangyuan-music.js";
+import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanVideoRequest, normalizeCangyuanVideoParameters, validateCangyuanVideoRequest } from "./cangyuan-video-contract.js";
+import { remainingVideoSupplier, isRemainingVideoModel, remainingVideoModel, remainingVideoTransport, normalizeRemainingVideoParameters, remainingVideoRequestIssues, type RemainingVideoContext } from "./remaining-video-contracts.js";
+import { modelSupportsGenerationMedia } from "./model-media.js";
+import { getModelParameterDescriptor, validateModelParameters } from "./cli-contracts.js";
+
+function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor): RemainingVideoContext {
+  const group = settings?.accountKeyGroup ?? settings?.modelGroup ?? settings?.group ?? settings?.supplierGroupId;
+  const description = settings?.supplierGroupDescription ?? settings?.groupDescription;
+  return { ...(typeof group === "string" ? { group } : {}), ...(typeof description === "string" ? { groupDescription: description } : {}), ...(model ? { model } : {}) };
+}
 import { isChuangxiangVideoConnection, chuangxiangVideoModel, chuangxiangVideoTransport,
   validateChuangxiangVideoRequest, normalizeChuangxiangVideoParameters, CHUANGXIANG_VIDEO_POLL_INTERVAL_MS } from "./chuangxiang-video-contract.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
@@ -1089,8 +1099,14 @@ export class GenericRestAdapter implements ProviderAdapter {
     if (!this.fixedConfig && isCangyuanMusicRequest(model, connection.baseUrl)) {
       return { ...applyOverride(selected, cangyuanMusicTransport()), assetsRequirePublicUrls: false };
     }
+    if (!this.fixedConfig && isCangyuanVideoRequest(model, connection.baseUrl))
+      return { ...applyOverride(selected, cangyuanVideoTransport(model!)), assetsRequirePublicUrls: true };
     if (connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, model))
       return { ...applyOverride(selected, chuangxiangVideoTransport()), assetsRequirePublicUrls: true };
+    const remainingSupplier = remainingVideoSupplier(connection.baseUrl);
+    const videoContext = remainingVideoContext(connection.settings, base.models?.find(m => m.id === model));
+    if (!this.fixedConfig && remainingSupplier && isRemainingVideoModel(remainingSupplier, model, videoContext))
+      return { ...applyOverride(selected, remainingVideoTransport(remainingSupplier, model!, videoContext)), assetsRequirePublicUrls: true };
     // Repair stale family-inherited mappings for these exact public IDs only.
     // Model restrictions and credentials remain owned by the saved connection.
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, base, model)) {
@@ -1382,8 +1398,20 @@ export class GenericRestAdapter implements ProviderAdapter {
       const connection = await this.connections.resolve(request.connectionId);
       issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
       const baseConfig = this.configFrom(connection);
+      const cangyuanVideo = !this.fixedConfig && isCangyuanVideoRequest(request.model, connection.baseUrl);
+      const remainingSupplier = !this.fixedConfig ? remainingVideoSupplier(connection.baseUrl) : undefined;
+      const videoContext = remainingVideoContext(connection.settings, baseConfig.models?.find(m => m.id === request.model));
+      const remainingVideo = remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext);
       const musicRequest = !this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl);
       if (musicRequest) issues.push(...cangyuanMusicRequestIssues(request));
+      if (cangyuanVideo || remainingVideo) {
+        const hosting = referenceImageHostingEnabled(connection.settings);
+        const assets = request.assets?.map(asset => hosting && asset.kind === "image" && asset.data && !asset.url
+          ? { ...asset, url: `https://pending-reference.super-canvas.invalid/${encodeURIComponent(asset.id)}` } : asset);
+        const prepared = { ...request, ...(assets ? { assets } : {}) };
+        if (cangyuanVideo) issues.push(...validateCangyuanVideoRequest(prepared));
+        if (remainingVideo) issues.push(...remainingVideoRequestIssues(remainingSupplier!, prepared, videoContext));
+      }
       const videoRequest = connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
       if (videoRequest) {
         // Temporary hosting is authorized by this saved connection. Only image
@@ -1408,7 +1436,9 @@ export class GenericRestAdapter implements ProviderAdapter {
         (model) => model.id === request.model,
       );
       const configuredModel = musicRequest && savedModel ? cangyuanMusicModel(savedModel)
-        : videoRequest && savedModel ? chuangxiangVideoModel(savedModel.id, savedModel) : savedModel;
+        : videoRequest && savedModel ? chuangxiangVideoModel(savedModel.id, savedModel)
+        : cangyuanVideo && savedModel ? cangyuanVideoModel(savedModel)
+        : remainingVideo && savedModel ? remainingVideoModel(remainingSupplier!, savedModel.id, savedModel, videoContext) : savedModel;
       if (baseConfig.restrictModels && request.model && !configuredModel) {
         issues.push({
           path: "model",
@@ -1427,6 +1457,17 @@ export class GenericRestAdapter implements ProviderAdapter {
         });
       }
       if (configuredModel) {
+        const media = request.operation.startsWith("image.") ? "image" : request.operation.startsWith("video.") ? "video" : "music";
+        if (!modelSupportsGenerationMedia(configuredModel, media))
+          issues.push({ path: "model", code: "wrong_media_type", message: "当前型号不支持此节点的生成类型，请重新选择型号。" });
+        if (configuredModel.metadata?.canvasRunnable === false)
+          issues.push({ path: "model", code: "unavailable_contract", message: "该型号接口合同尚未确认，请刷新模型或选择已支持的型号。" });
+        if (configuredModel.parameters?.length && media !== "image" && (musicRequest || videoRequest || cangyuanVideo || remainingVideo)) {
+          const values = musicRequest ? withCangyuanMusicRequestParameters(request).parameters ?? {} : request.parameters ?? {};
+          const declared = Object.fromEntries(Object.entries(values).filter(([key]) => configuredModel.parameters?.some(p => p.key === key)));
+          const defaults = Object.fromEntries(configuredModel.parameters.filter(p => p.default !== undefined && getModelParameterDescriptor(configuredModel, p.key, values, request.operation)).map(p => [p.key, p.default]));
+          issues.push(...validateModelParameters(configuredModel, { ...defaults, ...declared }, request.operation).issues);
+        }
         const imageCount =
           imageReferenceAssets(request.assets).filter((asset) => asset.kind === "image").length;
         const videoCount =
@@ -1434,6 +1475,18 @@ export class GenericRestAdapter implements ProviderAdapter {
         const audioCount =
           request.assets?.filter((asset) => asset.kind === "audio").length ?? 0;
         const limits = configuredModel.limits;
+        for (const [kind, perItem, total] of [
+          ["video", limits?.maxInputVideoDurationSeconds, limits?.maxTotalInputVideoDurationSeconds],
+          ["audio", limits?.maxInputAudioDurationSeconds, configuredModel.metadata?.maxTotalInputAudioDurationSeconds],
+        ] as const) {
+          const assets = request.assets?.filter(asset => asset.kind === kind) ?? [];
+          if (!assets.length || perItem === undefined && typeof total !== "number") continue;
+          if (assets.some(asset => !Number.isFinite(asset.durationSeconds) || asset.durationSeconds! <= 0))
+            issues.push({ path: "assets", code: "unknown_media_duration", message: `无法读取参考${kind === "video" ? "视频" : "音频"}的实际时长，请使用可读取时长的素材后重试。` });
+          else if ((perItem !== undefined && assets.some(asset => asset.durationSeconds! > perItem)) ||
+            (typeof total === "number" && assets.reduce((sum, asset) => sum + asset.durationSeconds!, 0) > total))
+            issues.push({ path: "assets", code: "media_duration_exceeded", message: `参考${kind === "video" ? "视频" : "音频"}时长超过该型号限制。` });
+        }
         if (
           request.operation === "image.edit" &&
           configuredModel.operations.includes(request.operation) &&
@@ -1608,7 +1661,11 @@ export class GenericRestAdapter implements ProviderAdapter {
       }
       // Build the request during preflight so unsafe paths and missing mappings
       // fail before a paid endpoint is called.
-      const body = await this.buildBody(config.submit, request, undefined);
+      const preflightRequest = musicRequest ? withCangyuanMusicRequestParameters(request)
+        : videoRequest ? { ...request, parameters: normalizeChuangxiangVideoParameters(request) }
+        : cangyuanVideo ? { ...request, parameters: normalizeCangyuanVideoParameters(request) }
+        : remainingVideo ? { ...request, parameters: normalizeRemainingVideoParameters(remainingSupplier!, request, videoContext) } : request;
+      const body = await this.buildBody(config.submit, preflightRequest, undefined);
       const method = config.submit.method ?? (body === undefined ? "GET" : "POST");
       const bodyMode = config.submit.bodyMode ?? (method === "GET" || method === "DELETE" ? "none" : "json");
       this.transparentSubmitBody(connection, request, this.resolveUrl(connection.baseUrl, config.submit.path, config), method, bodyMode, body);
@@ -1665,6 +1722,10 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     const videoRequest = connection.provider === "rest" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
     if (videoRequest) outboundRequest = { ...outboundRequest, parameters: normalizeChuangxiangVideoParameters(outboundRequest) };
+    if (!this.fixedConfig && isCangyuanVideoRequest(request.model, connection.baseUrl)) outboundRequest = { ...outboundRequest, parameters: normalizeCangyuanVideoParameters(outboundRequest) };
+    const remainingSupplier = !this.fixedConfig ? remainingVideoSupplier(connection.baseUrl) : undefined;
+    const videoContext = remainingVideoContext(connection.settings, config.models?.find(m => m.id === request.model));
+    if (remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext)) outboundRequest = { ...outboundRequest, parameters: normalizeRemainingVideoParameters(remainingSupplier, outboundRequest, videoContext) };
     const received = await this.execute(
       connection,
       config,
@@ -1684,9 +1745,9 @@ export class GenericRestAdapter implements ProviderAdapter {
         kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
       }), { code: "music_submit_missing_id" });
     }
-    if (videoRequest && !cloudTask &&
+    if ((videoRequest || !this.fixedConfig && (isCangyuanVideoRequest(request.model, connection.baseUrl) || remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext))) && !cloudTask &&
         !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId)))
-      throw new ProviderHttpError("创想已响应但未返回视频任务 ID；请核对供应商记录，避免重复提交。", {
+      throw new ProviderHttpError("供应商已响应但未返回视频任务 ID；请核对供应商记录，避免重复提交。", {
         kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
       });
     const providerTaskId =

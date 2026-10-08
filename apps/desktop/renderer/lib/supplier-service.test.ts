@@ -184,6 +184,7 @@ describe("supplier service", () => {
     expect(parse({ limits: { maxInputVideos: 1.5 } })).toBe(false);
     expect(parse({ metadata: { apiKey: "must-not-store" } })).toBe(false);
     expect(parse({ limits: { maxInputImages: 0 }, metadata: { agentCapabilities: { imageInput: false } } })).toBe(true);
+    expect(parse({ capability: "music", outputKinds: ["audio"], metadata: { catalogCapability: "music" } })).toBe(true);
   });
 
   it.each([

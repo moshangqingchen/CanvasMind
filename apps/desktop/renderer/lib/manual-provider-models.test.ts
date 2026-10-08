@@ -3,6 +3,20 @@ import { manualProviderModelDescriptors, mergeManualProviderModels, validateManu
 
 const connection = { provider: "openai", config: { usage: "canvas", modelGroup: "手动组", manualModels: [{ id: "my-custom-model", capability: "image", protocol: "openai-images" }] } };
 describe("manual provider models", () => {
+  it("allows manual music only when its exact REST model already declares music generation", () => {
+    const music = { provider: "rest", config: { manualModels: [{ id: "custom-music", capability: "music", protocol: "rest" }],
+      connector: { models: [{ id: "custom-music", operations: ["music.generate"] }] } } };
+    expect(manualProviderModelDescriptors(music)[0]).toMatchObject({ operations: ["music.generate"], outputKinds: ["audio"], metadata: { catalogCapability: "music" } });
+    expect(() => validateManualProviderModels("rest", { ...music.config, connector: { models: [{ id: "custom-music", operations: ["video.generate"] }] } })).toThrow("对应");
+  });
+  it("does not let a manual image override a Key's declared text output", () => {
+    const previous = { id: "my-custom-model", name: "Text model", operations: [] as const, outputKinds: ["text"] as const,
+      metadata: { canvasRunnable: false, outputKindsSource: "declared", operationsSource: "declared" } };
+    const merged = mergeManualProviderModels(connection, [previous], true)[0];
+    expect(merged?.operations).toEqual([]);
+    expect(merged?.outputKinds).toEqual(["text"]);
+    expect(merged?.metadata?.canvasRunnable).toBe(false);
+  });
   it("retains a manually specified protocol when the model ID is unknown", () => {
     expect(manualProviderModelDescriptors(connection)[0]).toMatchObject({ id: "my-custom-model", operations: ["image.generate", "image.edit"] });
     expect(mergeManualProviderModels(connection, [{ id: "my-custom-model", name: "model", operations: [], metadata: { canvasRunnable: false, canvasUnavailableReason: "尚未验证该模型的画布调用协议" } }], true)[0]?.operations).toContain("image.generate");

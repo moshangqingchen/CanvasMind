@@ -24,6 +24,27 @@ function adapterFor(id: string, response: unknown = { data: [{ url: "https://ima
 }
 
 describe("Cangyuan current complete public IDs", () => {
+  it("uses Nano 2.1's independent Images protocol and exact quality prices", async () => {
+    const id = "gemini-nano-banana-2.1";
+    expect(descriptor(id).parameters?.map(p => p.key)).toEqual(["aspect_ratio", "quality", "n"]);
+    expect(descriptor(id).limits?.maxInputImages).toBe(14);
+    expect(descriptor(id).parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).not.toContain("9:21");
+    const expression = 'has(param("quality"), "4k") || has(param("quality"), "4K") ? tier("4k", n * 0.10) : has(param("quality"), "2k") || has(param("quality"), "2K") ? tier("2k", n * 0.08) : tier("1k", n * 0.06)';
+    const pricing = cangyuanCurrentPricing(id, expression, 1, "2026-10-07")!;
+    for (const [quality, price] of [["1k", 0.06], ["2k", 0.08], ["4k", 0.1]] as const) {
+      expect(modelPriceAmount(pricing, { quality })).toBe(price);
+      const { adapter, fetcher } = adapterFor(id);
+      await adapter.submit({ ...request(id, { quality, aspect_ratio: "21:9", n: 1 }), operation: "image.edit", assets: [{ id: "r", kind: "image", mimeType: "image/webp", url: "https://assets.example/a.webp" }] });
+      expect(String(fetcher.mock.calls[0]![0])).toBe(`${baseUrl}/v1/images/edits`);
+      expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ async: true, n: 1, response_format: "url", model: id, prompt: "offline contract test", quality, size: "21:9", images: ["https://assets.example/a.webp"] });
+    }
+    expect(cangyuanCurrentPricing(id, expression.replace("0.10", "0.11"), 1, "today")).toBeUndefined();
+    for (const input of [request(id, { aspect_ratio: "9:21" }), request(id, { size: "2048x2048" }), request(id, { tier: "4k" }), request(id, { n: 2 }), request(id, { mask: "https://assets.example/mask.png" })]) {
+      const { adapter, fetcher } = adapterFor(id);
+      await expect(adapter.submit(input)).rejects.toThrow(); expect(fetcher).not.toHaveBeenCalled();
+    }
+    expect(cangyuanCurrentModel({ id, name: id, operations: [], metadata: { canvasRunnable: false, canvasUnavailableReason: "403 权限不足" } }).metadata?.canvasRunnable).toBe(false);
+  });
   it("uses documented native controls rather than inherited family fields", () => {
     for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
       const model = descriptor(id);

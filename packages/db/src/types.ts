@@ -81,7 +81,7 @@ export interface ProviderConnectionRecord {
 export interface SupplierCatalogModel {
   id: string;
   name?: string;
-  capability: "image" | "video" | "chat" | "other";
+  capability: "image" | "video" | "music" | "chat" | "other";
   protocol?:
     | "openai-images"
     | "openai-videos"

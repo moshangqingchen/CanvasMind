@@ -220,7 +220,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
           aria-expanded="true" aria-controls={listId} aria-activedescendant={options.length ? `${listId}-${activeIndex}` : undefined}
           value={query} onChange={event => { setQuery(event.target.value); setActive(0); }} />
         <select aria-label="模型类型筛选" value={kind} onChange={event => { setKind(event.target.value as ModelKindFilter); setActive(0); }}>
-          <option value="all">全部类型</option><option value="image">图像</option><option value="video">视频</option>
+          <option value="all">全部类型</option><option value="image">图像</option><option value="video">视频</option><option value="music">音乐</option>
         </select>
         <select aria-label="模型状态筛选" value={status} onChange={event => { setStatus(event.target.value as ModelStatusFilter); setActive(0); }}>
           <option value="all">全部模型</option><option value="runnable">可运行</option><option value="verified">已实测</option><option value="recent">最近选择</option>

@@ -366,7 +366,7 @@ describe("miaowuCatalogFromPricing", () => {
     expect(model.metadata).toMatchObject({
       modality: "video",
       remoteMediaUrlsOnly: true,
-      supportsFirstLastFrames: true,
+      supportsFirstLastFrames: false,
       clampNumericParameters: true,
     });
   });

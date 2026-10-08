@@ -1997,6 +1997,11 @@ circle.canvas-drawing-selection-outline {
 .parameter-field {
   min-width: 0;
 }
+.parameter-wide { grid-column: 1 / -1; }
+.parameter-help { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.parameter-grid :is(input, select, textarea) { min-width: 0; max-width: 100%; }
+.parameter-toggle { min-width: 0; gap: 8px; }
+.parameter-toggle > span { overflow-wrap: anywhere; }
 .parameter-field.is-disabled label {
   color: #667085;
 }

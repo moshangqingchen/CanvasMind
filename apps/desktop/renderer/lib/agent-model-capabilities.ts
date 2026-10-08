@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ProviderConnectionRecord } from "@super-canvas/db";
 import type { DirectorModelCapabilities, DirectorProtocol } from "@super-canvas/director";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { modelGenerationMediaKinds } from "@super-canvas/providers/model-media";
 
 export type AgentCapabilitySource = "live" | "channel-verification" | "provider-catalog" | "model-family" | "official-model" | "manual" | "default" | "adapter" | "unknown";
 export type AgentInputStatus = "supported" | "unsupported" | "assumed" | "unknown";
@@ -102,7 +103,7 @@ const OFFICIAL_AUDIO_CHAT_MODELS = new Set([
 ]);
 
 export function isAgentTextModel(model: ModelDescriptor): boolean {
-  if (model.operations.some(operation => operation.startsWith("image.") || operation.startsWith("video."))) {
+  if (modelGenerationMediaKinds(model).length) {
     // A declared dual-output model may still support normal conversations.
     return model.outputKinds?.includes("text") === true && model.metadata?.outputKindsSource === "declared";
   }

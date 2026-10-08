@@ -33,6 +33,81 @@ const scanned = (
 });
 
 describe("scanned model protocol binding", () => {
+  it("removes a stale guessed Chentu alias schema while preserving a real exact saved contract", () => {
+    const live = scanned("veo-new-alias", ["video.generate"]);
+    const stale = { id: live.id, name: "Old guess", operations: ["video.generate"], outputKinds: ["video"],
+      parameters: [{ key: "duration", label: "Duration", control: "number", min: 1, max: 30 }], metadata: { canvasRunnable: true } };
+    const config = { baseUrl: "https://tu.988236.xyz/v1", connector: { submit: { path: "/v1/videos", mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }] },
+      output: { kind: "video", path: "$.video_url" }, models: [stale] } };
+    const pending = bindScannedModelProtocols({ provider: "rest", config }, [live]).models[0]!;
+    expect(pending.metadata).toMatchObject({ canvasRunnable: false, parameterControlsUnavailable: true });
+    expect(pending.parameters).toEqual([]);
+    const verified = { ...stale, parameters: [{ key: "duration", label: "Verified duration", control: "select", options: [{ value: 6, label: "6秒" }] }],
+      metadata: { canvasRunnable: true, operationsSource: "declared", source: "manual" } };
+    const exact = bindScannedModelProtocols({ provider: "rest", config: { ...config, connector: { ...config.connector, models: [verified] } } }, [live]).models[0]!;
+    expect(exact.metadata?.canvasRunnable).toBe(true);
+    expect(exact.metadata?.parameterControlsUnavailable).toBeUndefined();
+    expect(exact.parameters).toEqual(verified.parameters);
+  });
+  it("does not inherit an image endpoint for a cached music ID or borrow a sibling music route", () => {
+    const music = scanned("suno-v5", ["music.generate"]);
+    const config = { baseUrl: "https://supplier.example", connector: { submit: { path: "/v1/images/generations", mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }] }, output: { kind: "image", path: "$.data" },
+      models: [{ id: "suno-v5", name: "Old", operations: ["music.generate"], outputKinds: ["audio"], metadata: { canvasRunnable: true } }] } };
+    expect(bindScannedModelProtocols({ provider: "rest", config }, [music]).models[0]?.metadata?.canvasRunnable).toBe(false);
+    const sameMedia = { ...config, connector: { ...config.connector, submit: { path: "/v1/music", mappings: config.connector.submit.mappings }, output: { kind: "audio", path: "$.audio_url" },
+      models: [{ id: "suno-v4", name: "Old", operations: ["music.generate"], outputKinds: ["audio"], metadata: { canvasRunnable: true } }] } };
+    expect(bindScannedModelProtocols({ provider: "rest", config: sameMedia }, [music]).models[0]?.metadata?.canvasRunnable).toBe(false);
+  });
+  it("preserves an exact saved music transport with audio output", () => {
+    const music = scanned("suno-v5", ["music.generate"]);
+    const config = { baseUrl: "https://supplier.example", connector: { submit: { path: "/v1/music", mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }] }, output: { kind: "audio", path: "$.audio_url" },
+      models: [{ id: music.id, name: "Saved", operations: ["music.generate"], outputKinds: ["audio"], metadata: { canvasRunnable: true } }] } };
+    const bound = bindScannedModelProtocols({ provider: "rest", config }, [music]);
+    expect(bound.models[0]?.metadata?.canvasRunnable).toBe(true);
+    expect(bound.connector?.submit.path).toBe("/v1/music");
+    expect(bound.models[0]?.outputKinds).toEqual(["audio"]);
+  });
+  it("does not inherit an Omni or stale generic video body for We-AI SD2", () => {
+    const seedance = scanned("seedance-2.0-1080p", ["video.generate"]);
+    const config = { baseUrl: "https://video.we-token.cc", connector: { submit: { path: "/v1/videos", mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }, { target: "/seconds", source: { kind: "request", path: "$.parameters.duration" } }] },
+      output: { kind: "video", path: "$.video_url" }, models: [{ id: seedance.id, name: "Old", operations: ["video.generate"], outputKinds: ["video"], metadata: { canvasRunnable: true } }] } };
+    expect(bindScannedModelProtocols({ provider: "rest", config }, [seedance]).models[0]?.metadata?.canvasRunnable).toBe(false);
+    const withSavedContract = { ...config, connector: { ...config.connector, submit: { ...config.connector.submit, path: "/my-verified-sd2-path", mappings: [...config.connector.submit.mappings,
+      { target: "/duration_seconds", source: { kind: "request", path: "$.parameters.duration_seconds" } }, { target: "/reference_images", source: { kind: "request", path: "$.parameters.reference_images" } }] } } };
+    expect(bindScannedModelProtocols({ provider: "rest", config: withSavedContract }, [seedance]).models[0]?.metadata?.canvasRunnable).toBe(true);
+  });
+  it("applies Secure's distinct shared-ID contracts using the current connection group", () => {
+    const model = scanned("seedance-2.5", ["video.generate", "video.image-to-video"]);
+    const standard = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com/v1", modelGroup: "sd特价分组1" } }, [model]).models[0]!;
+    expect(standard.limits?.maxInputImages).toBe(30);
+    expect(standard.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 4, max: 30 });
+    const vivid = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com/v1", modelGroup: "vividai-video" } }, [model]).models[0]!;
+    expect(vivid.parameters?.find(parameter => parameter.key === "duration")?.options?.map(option => option.value)).toEqual([15]);
+    const unknown = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com/v1" } }, [model]).models[0]!;
+    expect(unknown.metadata?.canvasRunnable).toBe(false);
+  });
+  it("does not allow cached image transports to override a Key's declared text output", () => {
+    const connection = { provider: "rest", config: { baseUrl: "https://unrelated.example", connector: {
+      submit: { path: "/images", mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }] },
+      models: [{ id: "gpt-image-2", name: "Old image", operations: ["image.generate"], outputKinds: ["image"] }],
+    } } };
+    const live: ModelDescriptor = { id: "gpt-image-2", name: "Live text", operations: [], outputKinds: ["text"],
+      metadata: { canvasRunnable: false, canvasUnavailableReason: "尚未验证画布协议", outputKindsSource: "declared", operationsSource: "inferred" } };
+    const bound = bindScannedModelProtocols(connection, [live]);
+    expect(bound.models[0]?.operations).toEqual([]);
+    expect(bound.models[0]?.outputKinds).toEqual(["text"]);
+    expect(bound.connector?.models).toEqual([]);
+  });
+  it("adds documented video parameters for a returned FriModel ID but never repairs a permission denial", () => {
+    const connection = { provider: "openai", config: { baseUrl: "https://api.frimodel.com/v1", modelGroup: "veo" } };
+    const visible = scanned("videos-mini", ["video.generate"]);
+    const models = bindScannedModelProtocols(connection, [visible]).models;
+    expect(models).toHaveLength(1);
+    expect(models[0]?.metadata?.canvasRunnable).toBe(true);
+    expect(models[0]?.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 4, max: 15 });
+    const denied = { ...visible, metadata: { canvasRunnable: false, canvasUnavailableReason: "403 权限拒绝" } };
+    expect(bindScannedModelProtocols(connection, [denied]).models[0]?.metadata?.canvasRunnable).toBe(false);
+  });
   it("repairs the current Chuangxiang GPT SKU's single output and nine-reference JSON contract in saved caches", () => {
     const connection = { provider: "openai", config: { baseUrl: "https://vapi.chuangxiangai.asia", modelGroup: "生图", usage: "canvas" } };
     const model: ModelDescriptor = { id: "gpt-image-2.5-flare-4k", name: "创想4K", operations: ["image.generate"], metadata: { canvasRunnable: true } };
