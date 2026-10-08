@@ -41,6 +41,117 @@ import {
 import { parseSupplierCatalog, parseSupplierPricingChannels } from "@super-canvas/providers";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
 import { cyberAfeiCatalogFromPricing, resolveCyberAfeiScannedGroup } from "./cyberafei-catalog";
+import { applyWeAiLivePricing, type WeAiLiveModelPricing } from "./weai-catalog";
+
+const weaiSnapshotOrigin = "https://asian-acc.we-token.cc";
+async function discoverWeAiSnapshotFixture(): Promise<SupplierCatalogDiscovery> {
+  const fixture = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/__fixtures__/weai-legacy-price-20261008.json", import.meta.url), "utf8")) as {
+    initial: { data: { groups: { id: number; name: string }[] } }; groups: { groupId: number; payload: unknown }[];
+  };
+  const actual = await vi.importActual<typeof import("@super-canvas/providers")>("@super-canvas/providers");
+  return actual.discoverSupplierCatalog({ kind: "sub2api", siteUrl: weaiSnapshotOrigin, apiUrl: weaiSnapshotOrigin + "/v1" }, async input => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    expect(url.origin).toBe(weaiSnapshotOrigin);
+    if (url.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: fixture.initial.data.groups });
+    if (url.pathname === "/api/v1/model-plaza-legacy/models") {
+      const id = url.searchParams.get("group_id"), payload = id ? fixture.groups.find(g => String(g.groupId) === id)?.payload : fixture.initial;
+      return payload ? Response.json(payload) : Response.json({ code: 404 }, { status: 404 });
+    }
+    return Response.json({ code: 404 }, { status: 404 });
+  });
+}
+function automaticWeAiDocsSnapshot(id: string, pricing: WeAiLiveModelPricing): ModelDescriptor {
+  return applyWeAiLivePricing([{ id, name: id, operations: ["image.generate"], outputKinds: ["image"], metadata: { canvasRunnable: false } }], {
+    groupId: "fixture-group-1", source: "official-docs", sourceUrl: "https://docs.we-ai.cc/guides/image-generation-service.html",
+    checkedAt: "2026-10-08T23:23:19.298Z", complete: false, multiplier: 1, models: { [id]: pricing },
+  })[0]!;
+}
+
+it("replaces the five real automatic We-AI docs snapshots with exact account quotes through saved and cached readback", async () => {
+  const catalog = await discoverWeAiSnapshotFixture();
+  expect(catalog.complete).toBe(true);
+  const reads = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+  const cases: [number, string, WeAiLiveModelPricing][] = [
+    [101, "gpt-image-2", { kind: "token", multiplier: 1, input: 5, output: 10, imageOutput: 30, cacheRead: 1.25 }],
+    [105, "gpt-image-2", { kind: "token", multiplier: 3, input: 15, output: 30, imageOutput: 90, cacheRead: 3.75 }],
+    ...(["low", "medium", "high"] as const).map((quality, index): [number, string, WeAiLiveModelPricing] => [107, `gpt-image-2-${quality}`, {
+      kind: "per-request", multiplier: 1, tiers: [{ id: "request", label: "单次", price: [.04, .07, .15][index]! }],
+    }]),
+  ];
+  for (const [groupId, id, docsPricing] of cases) {
+    const group = catalog.groups.find(g => g.supplierGroupId === String(groupId))!;
+    const expected = group.models.find(m => m.id === id)!.metadata!.weaiLegacyPricing as NonNullable<ModelDescriptor["pricing"]>;
+    const old = automaticWeAiDocsSnapshot(id, docsPricing);
+    expect(old.metadata).toMatchObject({ pricingSource: "official-docs", pricingComplete: false });
+    expect(old.metadata?.priceSource).toBeUndefined();
+    const current = applySupplierCatalogPrices([old], group.id, catalog, weaiSnapshotOrigin)[0]!;
+    expect(current.pricing).toEqual(expected);
+    expect(current.metadata).toMatchObject({ priceSource: "supplier-catalog", priceStatus: "available", supplierPriceGroup: group.id, canvasRunnable: false });
+    if (groupId === 101) expect(current.pricing).toMatchObject({ inputPerMillion: 3.5, outputPerMillion: 7, imageOutputPerMillion: 21 });
+    if (groupId === 101 || groupId === 105) {
+      expect(current.pricing?.inputPerMillion).not.toBe(old.pricing?.inputPerMillion);
+      expect(current.pricing?.tiers?.some(t => t.conditions?.some(c => c.parameter === "token_kind" && c.value === "cache_read"))).toBe(true);
+      expect(modelEstimatedCost(current, { n: 2 })).toBeUndefined();
+    } else {
+      const amount = id.endsWith("low") ? .03 : id.endsWith("medium") ? .05 : .15;
+      expect(current.pricing).toMatchObject({ kind: "per-request", currency: "USD", billingUnit: "request", unitAmount: amount });
+      expect(current.pricing?.tiers?.map(t => t.value)).toEqual(["1K", "2K", "4K"]);
+      for (const resolution of ["1K", "2K", "4K"]) {
+        expect(modelPriceSummary(current, { resolution })).toBe(`${amount} USD / 次`);
+        expect(modelEstimatedCost(current, { resolution, n: 2 })).toBe(`${Number((amount * 2).toPrecision(12))} USD`);
+      }
+    }
+    const supplier = { id: `weai-docs-repair-${groupId}-${id}`, siteUrl: weaiSnapshotOrigin, apiUrl: weaiSnapshotOrigin + "/v1", kind: "sub2api",
+      state: { sourceId: "weai-docs-source" }, catalog: { groups: catalog.groups }, scanStatus: "live", scanComplete: true, scannedAt: catalog.checkedAt, updatedAt: catalog.checkedAt };
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    try {
+      const saved = JSON.parse(JSON.stringify(current)) as ModelDescriptor;
+      const cached = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: supplier.state.sourceId, baseUrl: supplier.apiUrl, modelGroup: group.id } }, [saved], false, false);
+      expect(cached[0]?.pricing).toEqual(expected);
+      const partial = applySupplierCatalogPrices(cached, group.id, { ...catalog, complete: false, groups: [], checkedAt: "2026-10-09T00:00:00Z" }, weaiSnapshotOrigin)[0]!;
+      expect(partial.pricing).toEqual(expected);
+      expect(partial.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: expected.checkedAt });
+    } finally { vi.mocked(getSupplierRecord).mockResolvedValue(null); }
+  }
+  expect(discoverSupplierCatalog).toHaveBeenCalledTimes(reads);
+});
+
+it("preserves explicit manual and measured We-AI prices instead of treating them as docs snapshots", async () => {
+  const catalog = await discoverWeAiSnapshotFixture(), group = catalog.groups.find(g => g.supplierGroupId === "101")!;
+  const old = automaticWeAiDocsSnapshot("gpt-image-2", { kind: "token", multiplier: 1, input: 5, output: 10, imageOutput: 30 });
+  for (const priceSource of ["manual", "generated-result"]) {
+    const own = { ...old, metadata: { ...old.metadata, priceSource }, pricing: { ...old.pricing!, inputPerMillion: 123 } };
+    const current = applySupplierCatalogPrices([own], group.id, catalog, weaiSnapshotOrigin)[0]!;
+    expect(current.pricing).toBe(own.pricing);
+    expect(current.metadata).toMatchObject({ priceSource, pricingSource: "official-docs", pricingComplete: false });
+    const unknown = structuredClone(catalog); const row = unknown.groups.find(g => g.id === group.id)!.models.find(m => m.id === old.id)!;
+    row.metadata = { weaiLegacyPricingIncomplete: true };
+    const unconfirmed = applySupplierCatalogPrices([own], group.id, unknown, weaiSnapshotOrigin)[0]!;
+    expect(unconfirmed.pricing).toBe(own.pricing);
+    expect(unconfirmed.metadata).toMatchObject({ priceSource, pricingSource: "official-docs", pricingComplete: false });
+  }
+});
+
+it("never borrows another group or supplier quote, or replaces a known We-AI snapshot with partial or undecoded pricing", async () => {
+  const catalog = await discoverWeAiSnapshotFixture(), group = catalog.groups.find(g => g.supplierGroupId === "101")!;
+  const old = automaticWeAiDocsSnapshot("gpt-image-2", { kind: "token", multiplier: 1, input: 5, output: 10, imageOutput: 30 });
+  for (const mutate of [
+    (c: SupplierCatalogDiscovery) => { c.complete = false; },
+    (c: SupplierCatalogDiscovery) => { c.status = "unauthorized"; },
+    (c: SupplierCatalogDiscovery) => { c.groups.find(g => g.id === group.id)!.details = { source: "model-plaza", stale: true }; },
+    (c: SupplierCatalogDiscovery) => { c.groups.find(g => g.id === group.id)!.supplierGroupId = "105"; },
+    (c: SupplierCatalogDiscovery) => { const row = c.groups.find(g => g.id === group.id)!.models.find(m => m.id === old.id)!; row.metadata = { weaiLegacyPricingIncomplete: true }; },
+    (c: SupplierCatalogDiscovery) => { const p = c.groups.find(g => g.id === group.id)!.models.find(m => m.id === old.id)!.metadata!.weaiLegacyPricing as NonNullable<ModelDescriptor["pricing"]>; p.currency = "EUR"; },
+    (c: SupplierCatalogDiscovery) => { const row = c.groups.find(g => g.id === group.id)!.models.find(m => m.id === old.id)!; row.metadata = { ...row.metadata, weaiLegacyPriceEvidence: { imageTierPricesComplete: false } }; },
+  ]) {
+    const incomplete = structuredClone(catalog); mutate(incomplete);
+    expect(applySupplierCatalogPrices([old], group.id, incomplete, weaiSnapshotOrigin)[0]?.pricing).toBe(old.pricing);
+  }
+  expect(applySupplierCatalogPrices([old], "unknown-group", catalog, weaiSnapshotOrigin)[0]?.pricing).toBe(old.pricing);
+  expect(applySupplierCatalogPrices([old], group.id, catalog, "https://other.invalid")[0]?.pricing).toBe(old.pricing);
+  const alias = { ...old, id: old.id + "-preview" };
+  expect(applySupplierCatalogPrices([alias], group.id, catalog, weaiSnapshotOrigin)[0]?.pricing).toBe(old.pricing);
+});
 
 it("keeps Afei's pending declared video unpriced through public parsing and an old serialized token catalog", () => {
   const origin = "https://api.3365api.cn", id = "ya-sd25-30s", group = "special", checkedAt = "2026-10-08T23:10:00Z";

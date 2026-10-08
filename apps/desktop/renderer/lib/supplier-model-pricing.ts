@@ -39,6 +39,38 @@ function structuredCatalogPrice(metadata: ModelDescriptor["metadata"]): ModelDes
     metadata?.weaiLegacyPricing ?? metadata?.sub2apiPlazaPricing ?? metadata?.miaowuCatalogPricing) as ModelDescriptor["pricing"];
 }
 
+function isWeAiCatalogSite(sourceUrl: string | undefined): boolean {
+  try {
+    const url = new URL(sourceUrl ?? "");
+    return url.origin === "https://asian-acc.we-token.cc" && !url.username && !url.password && !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname);
+  } catch { return false; }
+}
+
+/** The dedicated reader's incomplete docs fallback is automatic, not a user quote. */
+function isWeAiDocumentSnapshot(model: ModelDescriptor, sourceUrl: string | undefined): boolean {
+  if (!isWeAiCatalogSite(sourceUrl) || model.metadata?.pricingSource !== "official-docs" || model.metadata?.pricingComplete !== false || model.pricing?.confidence !== "snapshot") return false;
+  try {
+    const url = new URL(model.pricing.sourceUrl ?? "");
+    return url.origin === "https://docs.we-ai.cc" && url.pathname === "/guides/image-generation-service.html" && !url.username && !url.password && !url.search && !url.hash;
+  } catch { return false; }
+}
+
+function canReplaceWeAiDocumentSnapshot(model: ModelDescriptor, catalogModel: SupplierCatalogDiscovery["groups"][number]["models"][number] | undefined,
+  selected: SupplierCatalogDiscovery["groups"][number] | undefined, catalog: SupplierCatalogDiscovery, sourceUrl: string | undefined): boolean {
+  if (!isWeAiDocumentSnapshot(model, sourceUrl) || ["manual", "generated-result"].includes(String(model.metadata?.priceSource)) ||
+    catalog.status !== "live" || catalog.complete !== true || selected?.source !== "catalog" || selected.details?.stale === true ||
+    catalogModel?.metadata?.supplierCatalogModelStale === true || catalogModel?.metadata?.weaiLegacyPricingIncomplete === true || catalogModel?.metadata?.supplierPriceConflict === true) return false;
+  const pricing = catalogModel?.metadata?.weaiLegacyPricing as ModelDescriptor["pricing"];
+  const evidence = catalogModel?.metadata?.weaiLegacyPriceEvidence as Record<string, unknown> | undefined;
+  if (!pricing || pricing.currency !== "USD" || pricing.confidence !== "exact" || evidence?.imageTierPricesComplete === false) return false;
+  try {
+    const url = new URL(pricing.sourceUrl ?? ""), groupId = String(selected.supplierGroupId ?? "");
+    return url.origin === "https://asian-acc.we-token.cc" && url.pathname === "/api/v1/model-plaza-legacy/models" &&
+      !url.username && !url.password && !url.hash && /^\d+$/u.test(groupId) && url.searchParams.get("group_id") === groupId &&
+      [...url.searchParams.keys()].length === 1;
+  } catch { return false; }
+}
+
 function isImportedConditionalCatalogPrice(model: ModelDescriptor): boolean {
   if (model.metadata?.priceSource !== "supplier-catalog" || !model.pricing?.sourceUrl) return false;
   try {
@@ -297,6 +329,7 @@ export function applySupplierCatalogPrices(
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   return models.map((model) => {
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
+    if (isWeAiCatalogSite(sourceUrl) && model.metadata?.priceSource === "generated-result" && model.pricing) return model;
     const cyberPending = isCyberAfeiUnpricedCatalogVideo(sourceUrl, model.id) &&
       (catalogModel?.metadata?.cyberAfeiCatalogPricingIncomplete === true || model.metadata?.cyberAfeiCatalogPricingIncomplete === true ||
         model.metadata?.supplier === "cyberafei" && model.metadata?.canvasRunnable === false);
@@ -415,7 +448,7 @@ export function applySupplierCatalogPrices(
     // A text-only catalog cannot replace parameter-dependent billing rules.
     const catalogPricing = structuredCatalogPrice(catalogModel?.metadata);
     if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise) && !catalogPricing && !isImportedConditionalCatalogPrice(model)) return model;
-    if (hasOwnPrice(model)) return model;
+    if (hasOwnPrice(model) && !canReplaceWeAiDocumentSnapshot(model, catalogModel, selected, catalog, sourceUrl)) return model;
     const modelPrice = prices.get(model.id);
     const priceDetails = image ? supplierGroupModelPriceDetails(details, model.id, groupModelIds) : undefined;
     const groupPrice = !priceDetails?.stale ? supplierGroupPriceLabel(priceDetails) : "";
