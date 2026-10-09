@@ -57,8 +57,13 @@ function isWeAiDocumentSnapshot(model: ModelDescriptor, sourceUrl: string | unde
 
 function canReplaceWeAiDocumentSnapshot(model: ModelDescriptor, catalogModel: SupplierCatalogDiscovery["groups"][number]["models"][number] | undefined,
   selected: SupplierCatalogDiscovery["groups"][number] | undefined, catalog: SupplierCatalogDiscovery, sourceUrl: string | undefined): boolean {
-  if (!isWeAiDocumentSnapshot(model, sourceUrl) || ["manual", "generated-result"].includes(String(model.metadata?.priceSource)) ||
-    catalog.status !== "live" || catalog.complete !== true || selected?.source !== "catalog" || selected.details?.stale === true ||
+  return isWeAiDocumentSnapshot(model, sourceUrl) && !["manual", "generated-result"].includes(String(model.metadata?.priceSource)) &&
+    isCurrentWeAiAccountQuote(catalogModel, selected, catalog, sourceUrl);
+}
+
+function isCurrentWeAiAccountQuote(catalogModel: SupplierCatalogDiscovery["groups"][number]["models"][number] | undefined,
+  selected: SupplierCatalogDiscovery["groups"][number] | undefined, catalog: SupplierCatalogDiscovery, sourceUrl: string | undefined): boolean {
+  if (!isWeAiCatalogSite(sourceUrl) || catalog.status !== "live" || catalog.complete !== true || selected?.source !== "catalog" || selected.details?.stale === true ||
     catalogModel?.metadata?.supplierCatalogModelStale === true || catalogModel?.metadata?.weaiLegacyPricingIncomplete === true || catalogModel?.metadata?.supplierPriceConflict === true) return false;
   const pricing = catalogModel?.metadata?.weaiLegacyPricing as ModelDescriptor["pricing"];
   const evidence = catalogModel?.metadata?.weaiLegacyPriceEvidence as Record<string, unknown> | undefined;
@@ -69,6 +74,22 @@ function canReplaceWeAiDocumentSnapshot(model: ModelDescriptor, catalogModel: Su
       !url.username && !url.password && !url.hash && /^\d+$/u.test(groupId) && url.searchParams.get("group_id") === groupId &&
       [...url.searchParams.keys()].length === 1;
   } catch { return false; }
+}
+
+/** Older catalog imports retained the docs-generated title after updating the quote. */
+function importedWeAiDocsNameLabel(model: ModelDescriptor, catalogModel: SupplierCatalogDiscovery["groups"][number]["models"][number] | undefined,
+  selected: SupplierCatalogDiscovery["groups"][number] | undefined, catalog: SupplierCatalogDiscovery, sourceUrl: string | undefined): string | undefined {
+  if (model.metadata?.priceSource !== "supplier-catalog" || model.metadata.pricingSource !== "official-docs" || model.metadata.pricingComplete !== false ||
+    model.metadata.supplierPriceGroup !== selected?.id || model.pricing?.confidence !== "exact" || model.pricing.currency !== "USD" ||
+    typeof model.metadata.pricingLabel !== "string" || !isCurrentWeAiAccountQuote(catalogModel, selected, catalog, sourceUrl)) return undefined;
+  try {
+    const docsUrl = new URL(String(model.metadata.pricingSourceUrl ?? ""));
+    const quoteUrl = new URL(model.pricing.sourceUrl ?? "");
+    if (docsUrl.origin !== "https://docs.we-ai.cc" || docsUrl.pathname !== "/guides/image-generation-service.html" || docsUrl.username || docsUrl.password || docsUrl.search || docsUrl.hash ||
+      quoteUrl.origin !== "https://asian-acc.we-token.cc" || quoteUrl.pathname !== "/api/v1/model-plaza-legacy/models" || quoteUrl.username || quoteUrl.password || quoteUrl.hash ||
+      quoteUrl.searchParams.get("group_id") !== String(selected?.supplierGroupId) || [...quoteUrl.searchParams.keys()].length !== 1) return undefined;
+    return model.metadata.pricingLabel;
+  } catch { return undefined; }
 }
 
 function isImportedConditionalCatalogPrice(model: ModelDescriptor): boolean {
@@ -448,7 +469,8 @@ export function applySupplierCatalogPrices(
     // A text-only catalog cannot replace parameter-dependent billing rules.
     const catalogPricing = structuredCatalogPrice(catalogModel?.metadata);
     if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise) && !catalogPricing && !isImportedConditionalCatalogPrice(model)) return model;
-    if (hasOwnPrice(model) && !canReplaceWeAiDocumentSnapshot(model, catalogModel, selected, catalog, sourceUrl)) return model;
+    const replacingWeAiSnapshot = canReplaceWeAiDocumentSnapshot(model, catalogModel, selected, catalog, sourceUrl);
+    if (hasOwnPrice(model) && !replacingWeAiSnapshot) return model;
     const modelPrice = prices.get(model.id);
     const priceDetails = image ? supplierGroupModelPriceDetails(details, model.id, groupModelIds) : undefined;
     const groupPrice = !priceDetails?.stale ? supplierGroupPriceLabel(priceDetails) : "";
@@ -471,7 +493,13 @@ export function applySupplierCatalogPrices(
         ? model.metadata.priceLabel
         : "";
     let name = model.name;
-    if (previous && name.includes(`（${previous}）`))
+    // The dedicated We-AI reader appended both the old quote and this exact
+    // size suffix. Remove only that generated suffix after its quote is replaced.
+    const oldWeAiLabel = replacingWeAiSnapshot ? previous : importedWeAiDocsNameLabel(model, catalogModel, selected, catalog, sourceUrl);
+    const oldWeAiSuffix = `（${oldWeAiLabel}${/^gpt-image-2(?:-|$)/u.test(model.id) ? " · 1K/2K/4K" : ""}）`;
+    if (oldWeAiLabel && name.endsWith(oldWeAiSuffix))
+      name = name.slice(0, -oldWeAiSuffix.length);
+    else if (previous && name.includes(`（${previous}）`))
       name = name.replace(`（${previous}）`, "");
     name = name.replace(
       /[（(](?:价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询)(?:·快照)?[）)]/gu,

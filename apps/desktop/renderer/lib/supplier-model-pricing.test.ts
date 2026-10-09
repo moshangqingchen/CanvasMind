@@ -86,6 +86,21 @@ it("replaces the five real automatic We-AI docs snapshots with exact account quo
     expect(old.metadata?.priceSource).toBeUndefined();
     const current = applySupplierCatalogPrices([old], group.id, catalog, weaiSnapshotOrigin)[0]!;
     expect(current.pricing).toEqual(expected);
+    expect(current.name).toBe(id);
+    // The first source-priority repair imported the quote but left its old
+    // generated title. A subsequent cached refresh must repair that title too.
+    const previouslyImported = { ...current, name: old.name };
+    const rebound = applySupplierCatalogPrices([previouslyImported], group.id, catalog, weaiSnapshotOrigin)[0]!;
+    expect(rebound.name).toBe(id);
+    expect(rebound.pricing).toEqual(expected);
+    for (const unrelated of [
+      { ...previouslyImported, metadata: { ...previouslyImported.metadata, pricingSourceUrl: "https://unrelated.invalid/guides/image-generation-service.html" } },
+      { ...previouslyImported, metadata: { ...previouslyImported.metadata, supplierPriceGroup: "other-group" } },
+    ]) expect(applySupplierCatalogPrices([unrelated], group.id, catalog, weaiSnapshotOrigin)[0]?.name).toBe(old.name);
+    const titled = { ...old, name: `用户标题（保留）${old.name.slice(id.length)}` };
+    expect(applySupplierCatalogPrices([titled], group.id, catalog, weaiSnapshotOrigin)[0]?.name).toBe("用户标题（保留）");
+    const custom = { ...old, name: `用户标题（${String(old.metadata?.priceLabel)} · 1K/2K/4K · 自定义备注）` };
+    expect(applySupplierCatalogPrices([custom], group.id, catalog, weaiSnapshotOrigin)[0]?.name).toBe(custom.name);
     expect(current.metadata).toMatchObject({ priceSource: "supplier-catalog", priceStatus: "available", supplierPriceGroup: group.id, canvasRunnable: false });
     if (groupId === 101) expect(current.pricing).toMatchObject({ inputPerMillion: 3.5, outputPerMillion: 7, imageOutputPerMillion: 21 });
     if (groupId === 101 || groupId === 105) {
@@ -108,6 +123,7 @@ it("replaces the five real automatic We-AI docs snapshots with exact account quo
       const saved = JSON.parse(JSON.stringify(current)) as ModelDescriptor;
       const cached = await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: supplier.state.sourceId, baseUrl: supplier.apiUrl, modelGroup: group.id } }, [saved], false, false);
       expect(cached[0]?.pricing).toEqual(expected);
+      expect(cached[0]?.name).toBe(id);
       const partial = applySupplierCatalogPrices(cached, group.id, { ...catalog, complete: false, groups: [], checkedAt: "2026-10-09T00:00:00Z" }, weaiSnapshotOrigin)[0]!;
       expect(partial.pricing).toEqual(expected);
       expect(partial.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: expected.checkedAt });
@@ -123,11 +139,13 @@ it("preserves explicit manual and measured We-AI prices instead of treating them
     const own = { ...old, metadata: { ...old.metadata, priceSource }, pricing: { ...old.pricing!, inputPerMillion: 123 } };
     const current = applySupplierCatalogPrices([own], group.id, catalog, weaiSnapshotOrigin)[0]!;
     expect(current.pricing).toBe(own.pricing);
+    expect(current.name).toBe(own.name);
     expect(current.metadata).toMatchObject({ priceSource, pricingSource: "official-docs", pricingComplete: false });
     const unknown = structuredClone(catalog); const row = unknown.groups.find(g => g.id === group.id)!.models.find(m => m.id === old.id)!;
     row.metadata = { weaiLegacyPricingIncomplete: true };
     const unconfirmed = applySupplierCatalogPrices([own], group.id, unknown, weaiSnapshotOrigin)[0]!;
     expect(unconfirmed.pricing).toBe(own.pricing);
+    expect(unconfirmed.name).toBe(own.name);
     expect(unconfirmed.metadata).toMatchObject({ priceSource, pricingSource: "official-docs", pricingComplete: false });
   }
 });
@@ -145,7 +163,9 @@ it("never borrows another group or supplier quote, or replaces a known We-AI sna
     (c: SupplierCatalogDiscovery) => { const row = c.groups.find(g => g.id === group.id)!.models.find(m => m.id === old.id)!; row.metadata = { ...row.metadata, weaiLegacyPriceEvidence: { imageTierPricesComplete: false } }; },
   ]) {
     const incomplete = structuredClone(catalog); mutate(incomplete);
-    expect(applySupplierCatalogPrices([old], group.id, incomplete, weaiSnapshotOrigin)[0]?.pricing).toBe(old.pricing);
+    const preserved = applySupplierCatalogPrices([old], group.id, incomplete, weaiSnapshotOrigin)[0]!;
+    expect(preserved.pricing).toBe(old.pricing);
+    expect(preserved.name).toBe(old.name);
   }
   expect(applySupplierCatalogPrices([old], "unknown-group", catalog, weaiSnapshotOrigin)[0]?.pricing).toBe(old.pricing);
   expect(applySupplierCatalogPrices([old], group.id, catalog, "https://other.invalid")[0]?.pricing).toBe(old.pricing);

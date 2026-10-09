@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import type { ModelDescriptor } from "@super-canvas/providers";
+import { readFileSync } from "node:fs";
+import { parseWeAiLegacyGroup, type ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "../lib/client-api";
 import {
   applyWeAiLivePricing,
@@ -23,7 +24,12 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
       { id: "low", label: "LOW", price: .04 }, { id: "medium", label: "MEDIUM", price: .07 }, { id: "high", label: "HIGH", price: .15 },
     ] } },
   })[0]!;
-  const current: ModelDescriptor = { ...old, pricing: {
+  // This is the real automatic docs name shape that previously survived the
+  // price refresh. The mapper's exact conversion is covered by its unit tests;
+  // this browser fixture exercises consumption of the updated API descriptor.
+  expect(old.name).toContain("LOW $0.04/次");
+  expect(old.name).toContain(" · 1K/2K/4K）");
+  const current: ModelDescriptor = { ...old, name: "GPT Image 2", pricing: {
     kind: "per-request", currency: "USD", billingUnit: "request", confidence: "exact", checkedAt,
     sourceUrl: `${origin}/api/v1/model-plaza-legacy/models?group_id=42`,
     tiers: [
@@ -34,14 +40,17 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
   }, metadata: { ...old.metadata, priceLabel: "LOW $0.03/次 · MEDIUM $0.05/次 · HIGH $0.15/次",
     priceSource: "supplier-catalog", priceStatus: "available", supplierPriceGroup: group, priceCheckedAt: checkedAt } };
   const tokenBase = weAiCanvasModelDescriptors(WEAI_ADOBE_TOKEN_GROUP).find(model => model.id === modelId)!;
-  const token: ModelDescriptor = { ...tokenBase, pricing: {
-    kind: "token", currency: "USD", confidence: "exact", checkedAt,
-    sourceUrl: `${origin}/api/v1/model-plaza-legacy/models?group_id=43`, inputPerMillion: 5, outputPerMillion: 10, imageOutputPerMillion: 30,
-    tiers: [{ id: "image_output_price", label: "图像输出", price: 30, conditionMode: "all",
-      conditions: [{ parameter: "token_kind", operator: "equals", value: "image_output" }] }],
-  }, metadata: { ...tokenBase.metadata, priceLabel: "图像输出 $30/1M tokens", priceSource: "supplier-catalog",
+  const legacyFixture = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/__fixtures__/weai-legacy-price-20261008.json", import.meta.url), "utf8")) as {
+    groups: { groupId: number; payload: unknown }[];
+  };
+  const tokenQuote = parseWeAiLegacyGroup(legacyFixture.groups.find(row => row.groupId === 101)!.payload, checkedAt, 101)!
+    .selected!.models.find(model => model.id === modelId)!;
+  expect(tokenQuote.pricing).toMatchObject({ currency: "USD", inputPerMillion: 3.5, outputPerMillion: 7, imageOutputPerMillion: 21 });
+  const token: ModelDescriptor = { ...tokenBase, name: "GPT Image 2", pricing: tokenQuote.pricing,
+    metadata: { ...tokenBase.metadata, priceLabel: tokenQuote.priceLabel, priceSource: "supplier-catalog",
     priceStatus: "available", supplierPriceGroup: WEAI_ADOBE_TOKEN_GROUP, priceCheckedAt: checkedAt } };
-  const fixed = weAiCanvasModelDescriptors(WEAI_ADOBE_PER_REQUEST_GROUP).map(model => ({ ...model, pricing: {
+  const fixedNames: Record<string, string> = { "gpt-image-2-low": "GPT Image 2 LOW", "gpt-image-2-medium": "GPT Image 2 MEDIUM", "gpt-image-2-high": "GPT Image 2 HIGH" };
+  const fixed = weAiCanvasModelDescriptors(WEAI_ADOBE_PER_REQUEST_GROUP).map(model => ({ ...model, name: fixedNames[model.id] ?? model.name, pricing: {
     kind: "per-request" as const, currency: "USD", billingUnit: "request" as const, confidence: "exact" as const, checkedAt,
     sourceUrl: `${origin}/api/v1/model-plaza-legacy/models?group_id=44`,
     tiers: [{ id: "request", label: "单次", dimension: "fixed" as const, value: "request", price: model.id.endsWith("-low") ? .03 : model.id.endsWith("-medium") ? .05 : .15 }],
@@ -122,18 +131,24 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
   try {
     await page.setViewportSize({ width: 1440, height: 1080 });
     await page.goto(`/canvas/${canvas.id}`);
-    await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
+    const nodeModel = page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true });
+    await nodeModel.click();
     const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
     const quote = panel.getByLabel("当前供应商报价", { exact: true });
     const groups = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
     const quality = panel.getByLabel("质量（quality，可选）", { exact: true });
     await quality.selectOption("low");
     await expect(quote).toContainText("0.04 USD / 次（参考）");
+    await expect(nodeModel).toContainText("LOW $0.04/次");
     await expect.poll(() => reads.get(connections[0]!.id) ?? 0).toBeGreaterThan(0);
     const beforeReads = reads.get(connections[0]!.id) ?? 0;
     currentCatalog = true; releasePoll();
     await expect(quote).toContainText("0.03 USD / 次");
     await expect(quote).not.toContainText("（参考）");
+    await expect(nodeModel).toContainText("GPT Image 2");
+    await expect(nodeModel).not.toContainText("$0.04");
+    await expect(nodeModel).not.toContainText("$0.07");
+    await expect(nodeModel).not.toHaveAttribute("title", /\$0\.(?:04|07)/u);
     await expect(quality).toHaveValue("low");
     await expect.poll(() => reads.get(connections[0]!.id) ?? 0).toBeGreaterThan(beforeReads);
     await quality.selectOption("medium"); await expect(quote).toContainText("0.05 USD / 次");
@@ -148,12 +163,21 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     await expect(quote).toContainText("按实际用量计费，详见价格说明");
     await expect(quote).not.toContainText("0.15 USD / 次");
     await expect(details).not.toContainText("本次预计费用");
-    await expect(details).toContainText("图像输出 $30/1M tokens");
+    await expect(details).toContainText("文本输入 $3.5/1M tokens（USD 额度）");
+    await expect(details).toContainText("文本输出 $7/1M tokens（USD 额度）");
+    await expect(details).toContainText("图像输出 $21/1M tokens（USD 额度）");
+    await expect(details).not.toContainText("图像输出 $30/1M tokens");
+    await expect(details.getByRole("link", { name: "查看价格来源", exact: true })).toHaveAttribute("href", `${origin}/api/v1/model-plaza-legacy/models?group_id=101`);
+    await expect(nodeModel).not.toContainText("$0.04");
+    await expect(nodeModel).not.toContainText("$0.07");
     await groups.selectOption(WEAI_ADOBE_PER_REQUEST_GROUP);
     await expect(quote).toContainText("0.03 USD / 次");
     const modelPicker = panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
     await modelPicker.click(); await page.getByRole("option", { name: /GPT Image 2 MEDIUM/u }).click();
     await expect(quote).toContainText("0.05 USD / 次");
+    await expect(nodeModel).toContainText("GPT Image 2 MEDIUM");
+    await expect(nodeModel).not.toContainText("$0.07");
+    await expect(nodeModel).not.toHaveAttribute("title", /\$0\.07/u);
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data)
       .toMatchObject({ connectionId: connections[2]!.id, model: "gpt-image-2-medium" });
     expect(generations).toBe(0); expect(errors).toEqual([]);
