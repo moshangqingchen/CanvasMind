@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const offlineNetwork = vi.hoisted(() => ({
+  lookup: vi.fn<(hostname: string, options?: unknown) => Promise<{ address: string; family: number }[]>>(
+    async () => [{ address: "203.0.113.10", family: 4 }]),
+  fetch: vi.fn(),
+}));
+// Preserve the real supplier origin while isolating DNS before injected HTTP.
+vi.mock("node:dns/promises", () => ({ lookup: offlineNetwork.lookup }));
 import { readFileSync } from "node:fs";
 import {
   applyMonsterImageCapabilities,
@@ -22,6 +29,24 @@ const model: ModelDescriptor = {
   operations: ["image.generate"],
   metadata: { priceLabel: "1张0.015" },
 };
+
+beforeEach(() => {
+  offlineNetwork.lookup.mockClear();
+  offlineNetwork.fetch.mockReset().mockRejectedValue(new Error("Unexpected real HTTP in Monster image capability test"));
+  vi.stubGlobal("fetch", offlineNetwork.fetch);
+});
+afterEach(() => {
+  try {
+    expect(offlineNetwork.fetch).not.toHaveBeenCalled();
+    for (const [hostname, options] of offlineNetwork.lookup.mock.calls) {
+      expect(hostname).toBe("api.eaheng.com");
+      expect(options).toEqual({ all: true, verbatim: true });
+    }
+  } finally {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  }
+});
 
 describe("Monster image capabilities from paid generation evidence", () => {
   it("has a successful paid image witness for every exposed model, tier and quality value", () => {
@@ -302,5 +327,6 @@ describe("Monster image capabilities from paid generation evidence", () => {
       size: "3840x2160",
       quality: "max",
     });
+    expect(offlineNetwork.lookup).toHaveBeenCalled();
   });
 });
