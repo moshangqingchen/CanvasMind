@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import type { MemoryRepository, ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
 
-export const SUPPLIER_CATALOG_REVISION = "2026-10-08-complete-catalog-pricing-v5";
+export const SUPPLIER_CATALOG_REVISION = "2026-10-08-complete-media-pricing-v6";
 const RETRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const UPGRADED_HOSTS = new Set([
   "ai.cangyuansuanli.cn", "tu.988236.xyz", "api.frimodel.com", "api.mikoto.vip",
   "api.miaowuai.store", "vapi.chuangxiangai.asia", "api.tk1688.com", "tk1688.com", "ai.tk1688.com",
-  "pool.chaozhiyuanai.com", "asian-acc.we-token.cc", "video.we-token.cc", "api.3365api.cn",
+  "pool.chaozhiyuanai.com", "asian-acc.we-token.cc", "us-la.we-token.cc", "sub2api.we-token.cc", "video.we-token.cc", "api.3365api.cn",
   "api.eaheng.com", "token.secure-skill.com", "genimage.pro", "api.hangzhale.com", "synoralink.com", "ai.whyshy.cn",
 ]);
 type Repository = Pick<MemoryRepository, "listConnections" | "listSuppliers" | "getConnection" | "saveConnection">;

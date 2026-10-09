@@ -30,7 +30,7 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(url).toBe("https://token.secure-skill.com/v1/images/async/generations");
     expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-key");
-    expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: request.prompt, size: "3840x2160", quality, response_format: "url",
+    expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: request.prompt, size: "3840x2160", ...(model === "gpt-image-2" ? {} : { quality }), response_format: "url",
       image: ["https://assets.example.com/reference.png", "https://assets.example.com/second.jpg"], ...(model === "gpt-image-2" ? { background: "opaque" } : {}) });
   });
 
@@ -50,7 +50,7 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(fetcher).toHaveBeenCalledOnce();
     expect(fetcher.mock.calls[0]![0]).toBe("https://token.secure-skill.com/v1/images/async/generations");
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ response_format: "url", model: "gpt-image-2",
-      prompt: request.prompt, size: "1024x1024", quality: "high", background: "transparent", n: 1, output_format: "png" });
+      prompt: request.prompt, size: "1024x1024", background: "transparent", n: 1, output_format: "png" });
   });
 
   it.each(["image.generate", "image.edit"] as const)("keeps PNG transmission scoped away from ordinary or reference %s requests", async operation => {
@@ -62,7 +62,7 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(fetcher).toHaveBeenCalledOnce();
     expect(fetcher.mock.calls[0]![0]).toBe("https://token.secure-skill.com/v1/images/async/generations");
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ response_format: "url", model: "gpt-image-2",
-      prompt: request.prompt, size: "1024x1024", quality: "high", background, n: 1,
+      prompt: request.prompt, size: "1024x1024", background, n: 1,
       ...(operation === "image.edit" ? { image: ["https://assets.example.com/reference.png"] } : {}) });
   });
 
@@ -117,5 +117,14 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(fetcher.mock.calls[0]![1]?.body).toBeInstanceOf(FormData);
     expect(isSecureSkillImageConnection({ baseUrl: "https://token.secure-skill.com.evil.test/v1" }, request.model)).toBe(false);
     expect(isSecureSkillImageConnection({ baseUrl: "https://token.secure-skill.com/v1" }, "nano-banana-2")).toBe(false);
+  });
+
+  it("blocks saved 4K selections only in the documented Image 2.5 1K group before submitting", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const adapter = makeAdapter(fetcher, "https://token.secure-skill.com", { modelGroup: "gpt-image-2.5" });
+    await expect(adapter.submit(request)).rejects.toThrow("仅支持官方 1K");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(await adapter.validate({ ...request, parameters: { size: "1536x1024", quality: "max" } })).toMatchObject({ valid: true });
+    expect(await makeAdapter(fetcher, "https://token.secure-skill.com", { modelGroup: "image2.5特价" }).validate(request)).toMatchObject({ valid: true });
   });
 });

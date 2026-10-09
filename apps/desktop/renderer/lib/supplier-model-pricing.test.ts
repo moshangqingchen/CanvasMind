@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const isolatedPricingNetwork = vi.hoisted(() => ({ fetch: vi.fn(), lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]) }));
+vi.mock("node:dns/promises", () => ({ lookup: isolatedPricingNetwork.lookup }));
+beforeEach(() => {
+  isolatedPricingNetwork.fetch.mockReset().mockRejectedValue(new Error("Unexpected real HTTP in supplier price test"));
+  vi.stubGlobal("fetch", isolatedPricingNetwork.fetch);
+});
+afterEach(() => { try { expect(isolatedPricingNetwork.fetch).not.toHaveBeenCalled(); } finally { vi.unstubAllGlobals(); } });
 import { readFileSync } from "node:fs";
 import type {
   ModelDescriptor,
@@ -44,6 +51,90 @@ import { cyberAfeiCatalogFromPricing, resolveCyberAfeiScannedGroup } from "./cyb
 import { applyWeAiLivePricing, type WeAiLiveModelPricing } from "./weai-catalog";
 
 const weaiSnapshotOrigin = "https://asian-acc.we-token.cc";
+it("replaces only proven automatic Fri snapshots with current exact account group prices and titles", async () => {
+  const origin = "https://platform.frimodel.com", actual = await vi.importActual<typeof import("@super-canvas/providers")>("@super-canvas/providers");
+  const rows = [
+    { model_name: "gpt-image-2-adobe", quota_type: 1, model_price: .04, enable_groups: ["gpt_image_adobe"] },
+    { model_name: "gemini-3-pro-image-preview", quota_type: 1, model_price: .086, enable_groups: ["gemini_image", "gemini_pro"] },
+    { model_name: "gemini-3.1-flash-image-preview", quota_type: 1, model_price: .072, enable_groups: ["gemini_image", "gemini_pro"] },
+    { model_name: "gpt-image-2-w", quota_type: 1, model_price: 1, enable_groups: ["codex_image", "gpt_image_web"] },
+    { model_name: "gpt-image-2-wc", quota_type: 1, model_price: 1, enable_groups: ["gpt_image_wc"] },
+  ];
+  const groups = Object.fromEntries(rows.flatMap(row => row.enable_groups).map(group => [group, { ratio: /codex_image|gpt_image_web|gpt_image_wc/u.test(group) ? .02 : 1, desc: group }]));
+  const catalog = await actual.discoverSupplierCatalog({ kind: "newapi", siteUrl: origin, apiUrl: origin + "/v1", token: "synthetic-account-token:42" }, async input => {
+    const url = new URL(String(input)); expect(url.origin).toBe(origin);
+    if (url.pathname === "/api/pricing") return Response.json({ data: rows, group_ratio: {}, usable_group: Object.fromEntries(Object.keys(groups).map(group => [group, group])) });
+    if (url.pathname === "/api/status") return Response.json({ data: { quota_display_type: "USD", usd_exchange_rate: 7 } });
+    if (url.pathname === "/api/user/self/groups") return Response.json({ success: true, data: groups });
+    throw new Error("Unexpected mock Fri endpoint");
+  });
+  for (const group of catalog.groups) for (const row of group.models) {
+    const oldLabel = row.id === "gpt-image-2-adobe" ? "$0.05/张" : row.id.startsWith("gemini") ? "$0.1/次" : "$0.025/次";
+    const old: ModelDescriptor = { id: row.id, name: `${row.id}（${oldLabel}·快照）`, operations: ["image.generate"], outputKinds: ["image"],
+      metadata: { liveInventory: true, protocol: row.id.startsWith("gemini") ? "gemini-generate-content" : "frimodel-images", fixedOutputCount: 1,
+        priceLabel: oldLabel, billingLabel: "价格快照", canvasRunnable: false } };
+    const fresh = applySupplierCatalogPrices([old], group.id, catalog, origin)[0]!;
+    expect(fresh.pricing).toEqual(row.metadata!.officialCatalogPricing);
+    expect(fresh.name).toBe(row.id);
+    expect(fresh.metadata?.canvasRunnable).toBe(false);
+    expect(fresh.metadata?.priceSource).toBe("supplier-catalog");
+    expect(fresh.pricing?.currency).toBe("USD");
+    expect(fresh.pricing?.unitAmount).toBe(row.id.includes("gemini-3.1") ? .072 : row.id.includes("gemini-3-pro") ? .086 : row.id.includes("adobe") ? .04 : .02);
+    expect(applySupplierCatalogPrices([structuredClone(fresh)], group.id, catalog, origin)[0]?.pricing).toEqual(fresh.pricing);
+    for (const bad of [{ ...catalog, complete: false }, { ...catalog, status: "failed" as const }])
+      expect(applySupplierCatalogPrices([old], group.id, bad, origin)[0]?.name).toBe(old.name);
+    for (const priceSource of ["manual", "generated-result"]) {
+      const manual = { ...old, name: "用户标题", pricing: { kind: "per-request" as const, currency: "CNY", unitAmount: 99, confidence: "exact" as const, checkedAt: "then" }, metadata: { ...old.metadata, priceSource } };
+      expect(applySupplierCatalogPrices([manual], group.id, catalog, origin)[0]).toBe(manual);
+    }
+    expect(applySupplierCatalogPrices([old], "unrelated-group", catalog, origin)[0]?.name).toBe(old.name);
+    expect(applySupplierCatalogPrices([old], group.id, catalog, "https://other.example")[0]?.name).toBe(old.name);
+    expect(applySupplierCatalogPrices([{ ...old, metadata: { ...old.metadata, liveInventory: false } }], group.id, catalog, origin)[0]?.name).toBe(old.name);
+    const custom = { ...old, name: `自定义（${oldLabel}·快照·备注）` };
+    expect(applySupplierCatalogPrices([custom], group.id, catalog, origin)[0]?.name).toBe(custom.name);
+  }
+});
+
+it("imports and preserves secure/CX/Hang chat cache components without a fabricated media total", async () => {
+  const cases: SupplierCatalogDiscovery[] = [
+    { kind: "sub2api", status: "live", complete: true, checkedAt: "now", groups: parseSupplierPricingChannels({ data: [{ name: "channel", platforms: [{
+      name: "gpt", supported_models: [{ name: "gpt-5.4", pricing: { billing_mode: "token", input_price: 2.5e-6, output_price: 15e-6, cache_read_price: .25e-6, cache_write_price: 0 } }],
+      groups: [{ id: 2, name: "GPT", rate_multiplier: .3 }] }] }] }, "CNY", { supplierSiteUrl: "https://token.secure-skill.com", checkedAt: "now" }) },
+    { ...parseSupplierCatalog({ data: { groups: [{ name: "ccmax", rate_multiplier: 10, models: [{ name: "claude-fable-5-1", effective_rate_multiplier: .75,
+      pricing: { billing_mode: "token", input_price: .00001, output_price: .00005, cache_read_price: .000001, cache_write_price: .0000125, cache_write_1h_price: .00002 } }] }] } },
+    { supplierSiteUrl: "https://vapi.chuangxiangai.asia", checkedAt: "now" }), status: "live", complete: true, checkedAt: "now" },
+  ];
+  const actual = await vi.importActual<typeof import("@super-canvas/providers")>("@super-canvas/providers");
+  cases.push(await actual.discoverSupplierCatalog({ siteUrl: "https://api.hangzhale.com", apiUrl: "https://api.hangzhale.com/v1", kind: "sub2api" }, async input => {
+    const url = new URL(String(input));
+    if (url.origin === "https://price.hangzhale.com") return Response.json({ data: { currency: "CNY", price_unit: "per_1m_tokens", models: [
+      { group_name: "GPT 稳定", model_name: "gpt-5.5", enabled: true, input_price: 1.25, output_price: 7.5, cache_input_price: .125, group_multiplier: .25 } ] } });
+    if (url.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 77, name: "GPT 稳定" }] });
+    return Response.json({}, { status: 404 });
+  }));
+  for (const catalog of cases) {
+    const group = catalog.groups[0]!, row = group.models[0]!, model: ModelDescriptor = { id: row.id, name: row.id, operations: [], outputKinds: ["text"] };
+    const fresh = applySupplierCatalogPrices([model], group.id, catalog)[0]!;
+    expect(fresh.pricing?.kind).toBe("token");
+    expect(fresh.pricing?.inputPerMillion).toBeUndefined();
+    expect(fresh.pricing?.tiers?.some(t => t.conditions?.some(c => c.value === "cache_read"))).toBe(true);
+    expect(modelPriceSummary(fresh, {})).toContain("缓存条件");
+    expect(modelEstimatedCost(fresh, { duration: 30, n: 2 })).toBeUndefined();
+    const cached = applySupplierCatalogPrices([structuredClone(fresh)], group.id, catalog)[0]!;
+    expect(cached.pricing).toEqual(fresh.pricing);
+    expect(applySupplierCatalogPrices([model], "wrong-group", catalog)[0]?.pricing).toBeUndefined();
+    const old: ModelDescriptor = { ...model, pricing: { kind: "token", currency: "CNY", inputPerMillion: 99, outputPerMillion: 199, confidence: "snapshot", checkedAt: "then" },
+      metadata: { priceSource: "supplier-catalog", priceLabel: "输入 ¥99/1M", supplierPriceGroup: group.id } };
+    expect(applySupplierCatalogPrices([old], group.id, catalog)[0]?.pricing).toEqual(fresh.pricing);
+    if (catalog === cases[2]) {
+      const media: ModelDescriptor = { ...old, operations: ["image.generate"], outputKinds: ["image"],
+        pricing: { kind: "per-request", currency: "USD", unitAmount: .1, confidence: "exact", checkedAt: "then" } };
+      for (const origin of ["https://api.hangzhale.com", "https://api.hangzhale.com/v1"])
+        expect(applySupplierCatalogPrices([media], group.id, catalog, origin)[0]).toBe(media);
+      expect(applySupplierCatalogPrices([old], group.id, catalog, "https://api.hangzhale.com/v1")[0]?.pricing).toEqual(fresh.pricing);
+    }
+  }
+});
 async function discoverWeAiSnapshotFixture(): Promise<SupplierCatalogDiscovery> {
   const fixture = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/__fixtures__/weai-legacy-price-20261008.json", import.meta.url), "utf8")) as {
     initial: { data: { groups: { id: number; name: string }[] } }; groups: { groupId: number; payload: unknown }[];

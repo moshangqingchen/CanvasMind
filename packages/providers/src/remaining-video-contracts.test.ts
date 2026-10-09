@@ -11,6 +11,14 @@ const asset = (kind: "image" | "video" | "audio", n = 1, role?: ProviderAssetInp
 const targets = (supplier: Parameters<typeof remainingVideoTransport>[0], id: string, group?: string) => remainingVideoTransport(supplier, id, { group })?.submit?.mappings?.map(mapping => mapping.target);
 
 describe("supplier video contracts", () => {
+  it("keeps the secure SD2.5 per-request group distinct from per-second groups", () => {
+    const fixed = remainingVideoModel("secure", "seedance-2.5", undefined, { group: "sd-2.5-条" })!;
+    expect(fixed.metadata?.billingUnit).toBe("request");
+    expect(fixed.parameters?.find(p => p.key === "resolution")?.options?.map(o => o.value)).toEqual(["720p"]);
+    expect(fixed.parameters?.find(p => p.key === "duration")).toMatchObject({ min: 4, max: 30 });
+    expect(remainingVideoModel("secure", "seedance-2.5", undefined, { group: "sd2.5特价分组-2" })?.metadata?.billingUnit).toBe("second");
+    expect(remainingVideoRequestIssues("secure", request("seedance-2.5", { duration: 8, resolution: "1080p" }), { group: "sd-2.5-条" })).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.resolution" })]));
+  });
   it("scopes the contracts to exact supplier hosts and exact public IDs", () => {
     expect(remainingVideoSupplier("https://api.3365api.cn/v1")).toBe("cyberafei");
     expect(remainingVideoSupplier("https://token.secure-skill.com/v1")).toBe("secure");

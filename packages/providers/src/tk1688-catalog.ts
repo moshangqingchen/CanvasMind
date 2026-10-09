@@ -1,6 +1,7 @@
 import type { ModelDescriptor, ModelParameterDescriptor, StructuredModelPricing } from "./contracts.js";
 import { parseProviderModelFacts } from "./model-catalog.js";
 import { isTk1688ApiUrl } from "./tk1688-model-policy.js";
+import { tokenComponentPricing, tokenComponentRate } from "./media-billing.js";
 
 export const TK1688_MARKETPLACE_URL = "https://tk1688.com/api/marketplace/listings";
 export const TK1688_MARKET_URL = "https://tk1688.com/market";
@@ -132,12 +133,17 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
   const input = number(row.input_price_usd), output = number(row.output_price_usd);
   const fx = number(status?.payment_fx_rate_cny_per_usd);
   const markup = number(status?.platform_markup_percent);
-  const priceLabel = image && input !== undefined ? `$${money(input)}/次`
-    : [input === undefined ? "" : `输入 $${money(input)}/1M`, output === undefined ? "" : `输出 $${money(output)}/1M`].filter(Boolean).join(" · ");
+  const tokenFields = [
+    ["input_price_usd", "输入", "input"], ["output_price_usd", "输出", "output"],
+    ["cache_read_price_usd", "缓存读取", "cache_read"], ["cache_write_price_usd", "缓存写入", "cache_write"],
+  ] as const;
+  const tokenRates = image || tokenFields.some(([field]) => row[field] !== undefined && row[field] !== null && number(row[field]) === undefined) ? undefined : tokenComponentPricing(
+    tokenFields.flatMap(([field, label, tokenKind]) => { const price = number(row[field]); return price === undefined ? [] : [{ id: field, label, tokenKind, price }]; }),
+  { currency: "USD", checkedAt, confidence: "snapshot", sourceUrl: TK1688_MARKET_URL });
+  const priceLabel = image && input !== undefined ? `$${money(input)}/次` : tokenRates?.priceLabel ?? "价格条件待确认";
   const pricing: StructuredModelPricing | undefined = image && input !== undefined
     ? { kind: "per-request", currency: "USD", unitAmount: input, billingUnit: "request", sourceUrl: TK1688_MARKET_URL, checkedAt, confidence: "snapshot" }
-    : input !== undefined || output !== undefined ? { kind: "token", currency: "USD", ...(input !== undefined ? { inputPerMillion: input } : {}),
-      ...(output !== undefined ? { outputPerMillion: output } : {}), sourceUrl: TK1688_MARKET_URL, checkedAt, confidence: "snapshot" } : undefined;
+    : tokenRates?.pricing;
   const modalities = Array.isArray(row.modalities) ? row.modalities.filter(value => ["text", "image", "audio", "video"].includes(String(value))) : undefined;
   const declared = parseProviderModelFacts({ ...row, ...(modalities ? { input_modalities: modalities } : {}), output_modalities: [image ? "image" : "text"] }, "supplier-catalog");
   return normalizeTk1688CnyModel<ModelDescriptor>({
@@ -174,8 +180,8 @@ function smartModel(base: string, skus: ModelDescriptor[], checkedAt: string): M
   const context = skus.map(model => number(model.metadata?.tk1688ContextTokens));
   const maxOutput = skus.map(model => number(model.metadata?.tk1688MaxOutputTokens));
   const priceValues = skus.map(model => model.pricing?.unitAmount).filter((value): value is number => value !== undefined);
-  const tokenInputs = skus.map(model => model.pricing?.inputPerMillion).filter((value): value is number => value !== undefined);
-  const tokenOutputs = skus.map(model => model.pricing?.outputPerMillion).filter((value): value is number => value !== undefined);
+  const tokenInputs = skus.map(model => model.pricing && tokenComponentRate(model.pricing, "input")).filter((value): value is number => value !== undefined);
+  const tokenOutputs = skus.map(model => model.pricing && tokenComponentRate(model.pricing, "output")).filter((value): value is number => value !== undefined);
   const range = (values: number[]) => values.length ? `¥${money(Math.min(...values))}${Math.max(...values) === Math.min(...values) ? "" : `–¥${money(Math.max(...values))}`}` : "未公布";
   const unavailable = skus.some(model => model.metadata?.priceLabel === unavailableCnyPrice);
   const priceLabel = unavailable ? unavailableCnyPrice : image ? `${range(priceValues)}/次（自动路由，实际价格由商家决定）`

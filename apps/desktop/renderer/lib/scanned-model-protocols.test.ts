@@ -33,6 +33,18 @@ const scanned = (
 });
 
 describe("scanned model protocol binding", () => {
+  it("applies current exact-group size and quality limits to cached canvas models", () => {
+    const cached: ModelDescriptor = { id: "gpt-image-2.5-flare", name: "Cached", operations: ["image.generate", "image.edit"],
+      parameters: [{ key: "size", label: "尺寸", control: "dimensions", default: "3840x2160", options: [{ label: "4K", value: "3840x2160" }] }],
+      metadata: { canvasRunnable: true } };
+    const oneK = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com", modelGroup: "gpt-image-2.5" } }, [cached]).models[0]!;
+    expect(oneK.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(["1024x1024", "1536x1024", "1024x1536"]);
+    const extended = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com", modelGroup: "image2.5特价" } }, [cached]).models[0]!;
+    expect(extended.metadata?.imageSizeContract).toBeUndefined();
+    const fixedQuality = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://token.secure-skill.com", modelGroup: "image-2-1k" } },
+      [{ ...cached, id: "gpt-image-2", parameters: [{ key: "quality", label: "质量", control: "select", default: "high" }] }]).models[0]!;
+    expect(fixedQuality.parameters?.some(p => p.key === "quality")).toBe(false);
+  });
   it.each(["grok-video1.5-fast", "grok-imagine-video-1.5（按次）"])("requires an exact Chentu contract for inferred native video %s", id => {
     const model: ModelDescriptor = { id, name: id, operations: ["video.generate", "video.image-to-video"], outputKinds: ["video"],
       metadata: { canvasRunnable: true, operationsSource: "inferred", priceLabel: "¥0.59/请求" } };

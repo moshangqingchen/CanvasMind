@@ -3,6 +3,13 @@ import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, compara
 import { mediaExpressionPricing, type ModelDescriptor } from "@super-canvas/providers";
 
 describe("appendPriceLabelOnce", () => {
+  it("does not summarize media token billing with only the text input/output rates", () => {
+    const media: ModelDescriptor = { id: "gpt-image-2", name: "Image", operations: ["image.generate"],
+      pricing: { kind: "token", currency: "USD", inputPerMillion: 3.5, outputPerMillion: 7, imageOutputPerMillion: 21,
+        checkedAt: "now", confidence: "exact" } };
+    expect(modelPriceSummary(media, {})).toBe("按实际用量计费，详见价格说明");
+    expect(modelEstimatedCost(media, {})).toBeUndefined();
+  });
   it("distinguishes missing local quotes from failed, restricted and incomplete price reads", () => {
     expect(displayPriceLabel("价格未公布", "unpublished")).toBe("暂未取得报价");
     expect(displayPriceLabel(undefined, "unauthorized")).toBe("价格需登录查询");

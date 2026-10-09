@@ -1,10 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { catalogPriceLabel } from "./catalog-pricing.js";
+import { catalogPriceLabel, scopedCatalogMediaPricing } from "./catalog-pricing.js";
 import { parseSupplierCatalog } from "./supplier-catalog.js";
 import { discoverSupplierCatalog } from "./supplier-catalog.js";
 import { scanProviderModelCatalog } from "./model-catalog.js";
 
 describe("catalog prices for arbitrary new models", () => {
+  it("keeps the three exact official Afei seconds and all resolution quotes in the generic catalog", () => {
+    const descriptions = [
+      ["minimax-h3", "MiniMax H3 视频生成，按时长计费。768p 1.875额度/秒，2K 3额度/秒。", [1.875, 3]],
+      ["seedance2.0", "Seedance 2.0 视频生成，按时长计费。480p 2.025、720p 3.15、1080p 6.375、4K 15额度/秒。", [2.025, 3.15, 6.375, 15]],
+      ["seedance2.5", "Seedance 2.5 视频生成，按时长计费。480p 2.625额度/秒，720p 4.725额度/秒。", [2.625, 4.725]],
+    ] as const;
+    for (const [id, description, prices] of descriptions) {
+      const raw = { model_name: id, quota_type: 1, model_price: prices[0], description, tags: "视频生成,按秒计费", enable_groups: ["图片视频模型综合分组"] };
+      const parsed = parseSupplierCatalog({ group_ratio: { 图片视频模型综合分组: .5 }, data: [raw] },
+        { supplierSiteUrl: "https://api.3365api.cn", checkedAt: "now", currency: "USD" }).groups[0]!.models[0]!;
+      expect(parsed.priceLabel).toContain("/秒");
+      expect(parsed.metadata?.officialCatalogPricing).toMatchObject({ currency: "USD", kind: "tiered", billingUnit: "second", confidence: "exact" });
+      expect((parsed.metadata?.officialCatalogPricing as { tiers: { price: number }[] }).tiers.map(t => t.price)).toEqual(prices.map(n => n / 2));
+      for (const supplierSiteUrl of ["https://other.example", "https://user@api.3365api.cn", "https://api.3365api.cn/gateway"]) expect(scopedCatalogMediaPricing(raw,
+        { supplierSiteUrl, group: "图片视频模型综合分组", multiplier: 1 })).toBeUndefined();
+      expect(scopedCatalogMediaPricing({ ...raw, model_name: "ya-sd25-30s" }, { supplierSiteUrl: "https://api.3365api.cn", group: "图片视频模型综合分组", multiplier: 1 })).toBeUndefined();
+    }
+  });
   it("honors a New API site's declared display currency and exchange rate", async () => {
     const result = await discoverSupplierCatalog(
       { siteUrl: "https://new.example", apiUrl: "", kind: "newapi" },

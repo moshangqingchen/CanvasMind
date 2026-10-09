@@ -8,6 +8,20 @@ const row = { name: id, pricing: { billing_mode: "token", input_price: .0000299,
   reference_video_output_price: .0000182, output_price_1080p: null, intervals: [] } };
 
 describe("Secure Skill official video token prices", () => {
+  it("imports exact GPT/Grok chat components per million, with one group multiplier", () => {
+    const gpt = secureSkillCatalogPricing({ name: "gpt-5.4", pricing: { billing_mode: "token", input_price: 2.5e-6,
+      output_price: 15e-6, cache_read_price: 2.5e-7, cache_write_price: 0, intervals: [] } }, { ...options, multiplier: .3 })!;
+    expect(gpt.pricing.tiers?.map(t => t.price)).toEqual([.75, 4.5, .075, 0]);
+    expect(gpt.pricing.inputPerMillion).toBeUndefined();
+    expect(modelPriceAmount(gpt.pricing, {})).toBeUndefined();
+    expect(modelPriceAmount(gpt.pricing, { token_kind: "cache_read" })).toBe(.075);
+    const grok = secureSkillCatalogPricing({ name: "grok-4.7", pricing: { billing_mode: "token", input_price: 2e-6, output_price: 6e-6,
+      cache_read_price: .5e-6, cache_write_price: 0 } }, { ...options, multiplier: .2 })!;
+    expect(grok.pricing.tiers?.map(t => t.price)).toEqual([.4, 1.2, .1, 0]);
+    for (const name of ["gpt-image-2", "gpt-5.4-preview/extra", "grok-4.8"]) expect(secureSkillCatalogPricing({ name,
+      pricing: { billing_mode: "token", input_price: 2e-6 } }, options)).toBeUndefined();
+    expect(secureSkillCatalogPricing({ name: "gpt-5.4", pricing: { billing_mode: "token", input_price: 2e-6, cache_read_price: "0" } }, options)).toBeUndefined();
+  });
   it("preserves current input and separate 720p reference-video rates in CNY/1M tokens", () => {
     const decoded = secureSkillCatalogPricing(row, options)!;
     expect(decoded.pricing).toMatchObject({ kind: "token", currency: "CNY", confidence: "exact", checkedAt: options.checkedAt });

@@ -1,4 +1,5 @@
 import { mediaExpressionPricing, mediaPricingLabel } from "./media-billing.js";
+import type { StructuredModelPricing } from "./contracts.js";
 type Row = Record<string, unknown>;
 const record = (v: unknown): Row =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Row) : {};
@@ -11,6 +12,47 @@ const amount = (v: unknown): number | undefined => {
 const text = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim().slice(0, 256) : undefined;
 const display = (n: number) => String(Number(n.toPrecision(10)));
+
+/** Exact official catalog conventions which cannot be inferred from quota_type. */
+export function scopedCatalogMediaPricing(value: unknown, options: {
+  supplierSiteUrl?: string | undefined; group: string; multiplier: number; currency?: string | undefined; checkedAt?: string | undefined;
+}): { pricing: StructuredModelPricing; priceLabel: string } | undefined {
+  let origin: string;
+  try {
+    const url = new URL(options.supplierSiteUrl ?? "");
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || !/^(?:\/v1)?\/?$/u.test(url.pathname)) return undefined;
+    origin = url.origin;
+  } catch { return undefined; }
+  const row = record(value), id = text(row.model_name ?? row.id ?? row.name);
+  if (!id || !Number.isFinite(options.multiplier) || options.multiplier < 0) return undefined;
+  const currency = (text(row.currency ?? options.currency) ?? "USD").toUpperCase();
+  if (!["USD", "CNY", "RMB"].includes(currency)) return undefined;
+  const base = { currency, checkedAt: options.checkedAt ?? "", confidence: "exact" as const, sourceUrl: `${origin}/api/pricing` };
+  if (origin === "https://platform.frimodel.com" && (row.quota_type === 1 || row.quota_type === "1") && !row.billing_mode && !row.billing_expr) {
+    const raw = amount(row.model_price);
+    if (raw === undefined || !Number.isFinite(raw * options.multiplier)) return undefined;
+    const unit = text(row.request_unit);
+    if (unit && !["request", "image", "per_request", "per_image"].includes(unit)) return undefined;
+    const image = unit === "image" || unit === "per_image";
+    const pricing: StructuredModelPricing = { ...base, kind: image ? "per-image" : "per-request", billingUnit: image ? "image" : "request",
+      unitAmount: Number((raw * options.multiplier).toPrecision(12)) };
+    const symbol = currency === "USD" ? "$" : "¥";
+    return { pricing, priceLabel: `${symbol}${display(pricing.unitAmount!)}/${image ? "张" : "请求"}` };
+  }
+  if (origin !== "https://api.3365api.cn" || options.group !== "图片视频模型综合分组" ||
+    !["minimax-h3", "seedance2.0", "seedance2.5"].includes(id) || row.quota_type !== 1 ||
+    typeof row.tags !== "string" || !row.tags.split(",").includes("按秒计费") || typeof row.description !== "string" ||
+    !row.description.includes("按时长计费。") || !row.description.endsWith("额度/秒。")) return undefined;
+  const quote = row.description.split("按时长计费。")[1]!.slice(0, -1);
+  const entries = [...quote.matchAll(/(480p|720p|768p|1080p|2K|4K)\s+(\d+(?:\.\d+)?)(?:额度\/秒)?/gu)];
+  if (!entries.length || quote.replace(/(480p|720p|768p|1080p|2K|4K)\s+(\d+(?:\.\d+)?)(?:额度\/秒)?/gu, "").replace(/[、，,\s]/gu, "") ||
+    new Set(entries.map(entry => entry[1])).size !== entries.length) return undefined;
+  const tiers = entries.map(entry => ({ id: entry[1]!, label: entry[1]!, dimension: "resolution" as const, value: entry[1]!,
+    price: Number((Number(entry[2]) * options.multiplier).toPrecision(12)) }));
+  if (tiers.some(tier => !Number.isFinite(tier.price))) return undefined;
+  const pricing: StructuredModelPricing = { ...base, kind: "tiered", billingUnit: "second", tiers };
+  return { pricing, priceLabel: mediaPricingLabel(pricing) };
+}
 
 /** Preserve explicit labels; decode numeric prices only with their declared billing mode.
  * New API's documented units: ModelPrice is USD; token input is ModelRatio * $2/1M.

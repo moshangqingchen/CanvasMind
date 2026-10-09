@@ -1,4 +1,4 @@
-import { modelPriceAmount } from "@super-canvas/providers/media-billing";
+import { modelPriceAmount, tokenComponentRate } from "@super-canvas/providers/media-billing";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { getModelParameterDescriptor, validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import type { ModelDescriptor } from "@super-canvas/providers";
@@ -56,7 +56,8 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
     const unit = pricing.billingUnit === "second" || pricing.kind === "per-second" ? "秒" : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
     if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）") ? "上次 " : ""}${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}`;
     if (pricing.kind === "token") {
-      if (pricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" && pricing.tiers?.length) {
+      if (pricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" &&
+        pricing.tiers?.some(tier => tier.conditions?.some(condition => ["resolution", "has_reference_video"].includes(condition.parameter)))) {
         const resolution = String(parameters.resolution ?? defaults.resolution ?? "").toLowerCase();
         const reference = parameters.has_reference_video;
         // Connected media is not always present in parameter values. Only an
@@ -74,7 +75,18 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
         const previous = typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）");
         return `${previous ? "上次 " : ""}${resolution ? `${resolution === "4k" ? "4K" : resolution} · ` : ""}${hasReference === undefined ? "输出 " : hasReference === "true" ? "含参考视频 " : "不含参考视频 "}${rate}${conditions.length ? `（${conditions.join("，")}）` : ""}`;
       }
-      return "按实际用量计费，详见价格说明";
+      // Media generation can additionally charge image/video token components;
+      // a text input/output pair alone is not its complete quote.
+      if (pricing.imageOutputPerMillion !== undefined || model.operations.some(operation =>
+        operation.startsWith("image.") || operation.startsWith("video.") || operation === "music.generate"))
+        return "按实际用量计费，详见价格说明";
+      const input = tokenComponentRate(pricing, "input"), output = tokenComponentRate(pricing, "output");
+      const symbol = pricing.currency === "CNY" || pricing.currency === "RMB" ? "¥" : pricing.currency === "USD" ? "$" : `${pricing.currency} `;
+      const rates = [input === undefined ? "" : `输入 ${symbol}${input}/1M`, output === undefined ? "" : `输出 ${symbol}${output}/1M`].filter(Boolean);
+      const previous = typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）") ? "上次 " : "";
+      const conditions = pricing.tiers?.some(tier => tier.conditions?.some(condition => condition.parameter === "token_context_tier")) ? "上下文档位与用量" : "实际用量";
+      return previous + (rates.length ? `${rates.join(" · ")}${pricing.tiers?.some(tier => tier.conditions?.some(condition => condition.parameter === "token_kind" && condition.value.startsWith("cache_"))) ? "（含缓存条件）" : ""}`
+        : `按${conditions}计费，详见价格说明`);
     }
   }
   return typeof model.metadata?.priceLabel === "string" ? displayPriceLabel(model.metadata.priceLabel, model.metadata?.priceStatus) : "价格未知";

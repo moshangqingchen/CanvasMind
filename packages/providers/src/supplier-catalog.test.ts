@@ -469,6 +469,29 @@ it.each(["/dashboard", "/pricing/", "/api/v1/model-plaza", "/model-plaza", "/cha
 });
 
 describe("API-key page group fallback", () => {
+  it("reads Hang's exact official public chat board anonymously while retaining account group identity", async () => {
+    const requests: string[] = [];
+    const result = await discoverSupplierCatalog({ siteUrl: "https://api.hangzhale.com", apiUrl: "https://api.hangzhale.com/v1",
+      kind: "sub2api", token: "synthetic-account-token" }, async (input, init) => {
+      const url = new URL(String(input)); requests.push(url.origin + url.pathname);
+      if (url.origin === "https://price.hangzhale.com") {
+        expect(url.pathname).toBe("/api/provider/pricing");
+        expect(new Headers(init?.headers).has("authorization")).toBe(false);
+        expect(new Headers(init?.headers).has("cookie")).toBe(false);
+        return Response.json({ success: true, data: { currency: "CNY", price_unit: "per_1m_tokens", models: [
+          { model_name: "grok-build-0.1", group_name: "Grok Heavy", enabled: true, input_price: .2, output_price: .4, cache_input_price: 0, group_multiplier: .2 },
+          { model_name: "gpt-image-2", group_name: "Grok Heavy", enabled: true, input_price: 5, output_price: 10 },
+        ] } });
+      }
+      expect(url.origin).toBe("https://api.hangzhale.com");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-account-token");
+      if (url.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 74, name: "Grok Heavy", rate_multiplier: .2 }] });
+      return Response.json({}, { status: 404 });
+    });
+    expect(requests).toEqual(["https://api.hangzhale.com/api/v1/model-plaza", "https://api.hangzhale.com/api/v1/groups/available", "https://price.hangzhale.com/api/provider/pricing"]);
+    expect(result).toMatchObject({ complete: true, groups: [{ id: "Grok Heavy", supplierGroupId: "74", models: [{ id: "grok-build-0.1", capability: "chat",
+      metadata: { hangCatalogPricing: { kind: "token", currency: "CNY", tiers: [{ price: .2 }, { price: .4 }, { price: 0 }] } } }] }] });
+  });
   // Shapes from the four authenticated 2026-10-08 reads: the account group
   // endpoint succeeded while both model/price endpoints returned 404.
   it.each([
@@ -480,6 +503,9 @@ describe("API-key page group fallback", () => {
     const calls: string[] = [];
     const result = await discoverSupplierCatalog({ siteUrl, apiUrl: `${siteUrl}/v1`, kind: "sub2api" }, async url => {
       const request = new URL(String(url));
+      if (siteUrl === "https://api.hangzhale.com" && request.origin === "https://price.hangzhale.com") {
+        expect(request.pathname).toBe("/api/provider/pricing"); calls.push(request.pathname); return Response.json({}, { status: 404 });
+      }
       expect(request.origin).toBe(siteUrl);
       calls.push(request.pathname);
       if (request.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: [group] });
@@ -489,7 +515,7 @@ describe("API-key page group fallback", () => {
     expect(result).toMatchObject({ kind: "sub2api", status: "live", complete: false,
       groups: [{ id: group.name, supplierGroupId: String(group.id), models: [], details: { rateMultiplier: group.rate_multiplier } }] });
     expect(result.error).toContain("模型价格目录");
-    expect(calls).toEqual(["/api/v1/model-plaza", "/api/v1/groups/available", "/api/v1/pricing/channels",
+    expect(calls).toEqual(["/api/v1/model-plaza", "/api/v1/groups/available", siteUrl === "https://api.hangzhale.com" ? "/api/provider/pricing" : "/api/v1/pricing/channels",
       ...(siteUrl === WEAI_LEGACY_ORIGIN ? ["/api/v1/model-plaza-legacy/models"] : [])]);
   });
   it.each(["unauthorized", "timeout", "invalid-body", "rejected-body"] as const)(

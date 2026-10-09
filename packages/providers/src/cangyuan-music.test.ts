@@ -78,3 +78,89 @@ describe("沧元官方 Lyria 音乐合同", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
+
+describe("沧元官方 Suno 独立音乐合同", () => {
+  const suno = cangyuanMusicModel({ id: "suno", name: "Suno", operations: [] });
+  const sunoRequest = (parameters: Record<string, unknown> = {}): NormalizedRequest => ({ ...request(parameters), model: "suno" });
+  function sunoFixture(payloads: unknown[], settings: Record<string, unknown> = {}) {
+    const fetcher = vi.fn<typeof fetch>();
+    for (const payload of payloads) fetcher.mockResolvedValueOnce(Response.json(payload));
+    const resolver = new StaticConnectionResolver([{ id: "music-test", provider: "rest", apiKey: "isolated-suno-test-key",
+      baseUrl: "https://ai.cangyuansuanli.cn/v1", settings: { connector: { ...config, models: [suno] },
+        scannedModelIds: [suno.id], modelCatalogModels: [suno], ...settings } }]);
+    return { fetcher, resolver, adapter: new GenericRestAdapter(resolver, { fetch: fetcher }) };
+  }
+  it("declares one request with two audio results without borrowing Lyria controls or defaults", () => {
+    expect(suno).toMatchObject({ operations: ["music.generate"], outputKinds: ["audio"],
+      limits: { maxPromptCharacters: 2000, maxInputImages: 0, maxInputVideos: 0, maxInputAudios: 0 },
+      metadata: { fixedOutputCount: 2, canvasRunnable: true, durationIsCreativeHint: false } });
+    expect(suno.parameters?.map(p => p.key)).toEqual(["n"]);
+    expect(suno.parameters?.[0]).toMatchObject({ default: 1, options: [{ value: 1 }] });
+    expect(withCangyuanMusicRequestParameters(sunoRequest()).parameters).toEqual({ n: 1 });
+  });
+  it("submits only documented fields, persists the task and returns both public results without a content call", async () => {
+    const f = sunoFixture([{ task_id: "suno_42", status: "queued" }, { id: "suno_42", status: "in_progress" },
+      { id: "suno_42", status: "completed", music_url: ["https://cdn.example.test/suno-a", "https://cdn.example.test/suno-b"] }]);
+    const task = await f.adapter.submit(sunoRequest());
+    const [url, init] = f.fetcher.mock.calls[0]!;
+    expect(url).toBe("https://ai.cangyuansuanli.cn/v1/music");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer isolated-suno-test-key");
+    expect(new Headers(init?.headers).get("Idempotency-Key")).toBe("music-test-task");
+    expect(JSON.parse(String(init?.body))).toEqual({ model: "suno", prompt: request().prompt, n: 1 });
+    const recovered = JSON.parse(JSON.stringify(task));
+    const running = await f.adapter.poll(recovered);
+    expect(running.status).toBe("running");
+    const completed = await f.adapter.poll({ ...recovered, ...running });
+    expect(completed.status).toBe("succeeded");
+    expect(f.fetcher.mock.calls.slice(1).map(([u]) => u)).toEqual([
+      "https://ai.cangyuansuanli.cn/v1/music/suno_42", "https://ai.cangyuansuanli.cn/v1/music/suno_42" ]);
+    expect(await f.adapter.extractOutputs(completed.result)).toEqual([
+      { kind: "audio", url: "https://cdn.example.test/suno-a" }, { kind: "audio", url: "https://cdn.example.test/suno-b" } ]);
+    expect(f.fetcher).toHaveBeenCalledTimes(3);
+  });
+  it.each([{ lyrics: "独立歌词" }, { instrumental: true }, { duration: 30 }, { seed: 1 }, { title: "标题" },
+    { bpm: 120 }, { audio_format: "mp3" }, { n: 2 }])("rejects undocumented Suno fields before any request: %j", async parameters => {
+    const f = sunoFixture([]);
+    await expect(f.adapter.submit(sunoRequest(parameters))).rejects.toThrow();
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+  it("accepts the exact prompt boundary and rejects blank, oversized and reference input before submit", async () => {
+    const f = sunoFixture([{ id: "suno_prompt", status: "queued" }]);
+    await f.adapter.submit({ ...sunoRequest(), prompt: "音".repeat(2000) });
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    f.fetcher.mockClear();
+    for (const input of [ { ...sunoRequest(), prompt: "音".repeat(2001) }, { ...sunoRequest(), prompt: " \n " },
+      { ...sunoRequest(), assets: [{ id: "audio", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://cdn.example.test/ref" }] } ])
+      await expect(f.adapter.submit(input)).rejects.toThrow();
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+  it("preserves terminal failure, missing-ID uncertainty and missing Key inventory", async () => {
+    const f = sunoFixture([{ id: "suno_fail", status: "queued" }, { id: "suno_fail", status: "failed", error: { message: "fixture failure" } }]);
+    expect(await f.adapter.poll(await f.adapter.submit(sunoRequest()))).toMatchObject({ status: "failed", error: "fixture failure" });
+    const missing = sunoFixture([{ status: "queued" }]);
+    await expect(missing.adapter.submit(sunoRequest())).rejects.toMatchObject({ details: {
+      kind: "invalid_response", retryable: false, submissionMayHaveOccurred: true } });
+    expect(missing.fetcher).toHaveBeenCalledOnce();
+    const denied = sunoFixture([], { scannedModelIds: [] });
+    const wrapped = new AutoInterfaceAdapter(denied.resolver, denied.adapter, { fetch: denied.fetcher });
+    expect(await wrapped.validate(sunoRequest())).toMatchObject({ valid: false });
+    expect(denied.fetcher).not.toHaveBeenCalled();
+    expect(cangyuanMusicModel({ ...suno, metadata: { canvasRunnable: false, canvasUnavailableReason: "401 Key 未返回此型号" } }).metadata?.canvasRunnable).toBe(false);
+  });
+  it("uses a fresh same-Key Suno descriptor before the old connector model array is persisted without granting missing or denied inventory", async () => {
+    const oldConnector = { ...config, models: [descriptor] };
+    const f = sunoFixture([{ id: "suno_fresh", status: "queued" }], { connector: oldConnector, modelScanStatus: "live" });
+    expect(await f.adapter.validate(sunoRequest())).toMatchObject({ valid: true });
+    await f.adapter.submit(sunoRequest());
+    expect(f.fetcher.mock.calls[0]![0]).toBe("https://ai.cangyuansuanli.cn/v1/music");
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]![1]?.body))).toEqual({ model: "suno", prompt: request().prompt, n: 1 });
+    expect(oldConnector.models).toEqual([descriptor]);
+    for (const settings of [{ scannedModelIds: [] }, { modelScanStatus: "unauthorized" },
+      { modelCatalogModels: [{ ...suno, metadata: { canvasRunnable: false, canvasUnavailableReason: "401" } }] },
+      { usage: "disabled" }, { supplierArchived: true }]) {
+      const denied = sunoFixture([], { connector: oldConnector, ...settings });
+      await expect(denied.adapter.submit(sunoRequest())).rejects.toThrow();
+      expect(denied.fetcher).not.toHaveBeenCalled();
+    }
+  });
+});

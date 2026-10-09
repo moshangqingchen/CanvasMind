@@ -12,6 +12,7 @@ import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanNativeSeedanceReq
 import { chuangxiangVideoModel, chuangxiangVideoTransport, isChuangxiangVideoConnection } from "./chuangxiang-video-contract.js";
 import { remainingVideoSupplier, remainingVideoModel, remainingVideoTransport, type RemainingVideoContext } from "./remaining-video-contracts.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
+import { supplierImageParameterIssues } from "./supplier-image-constraints.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -35,7 +36,8 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
   private async selected(request: NormalizedRequest): Promise<ProviderAdapter> {
     if (!request.model) return this.fallback;
     const connection = await this.connections.resolve(request.connectionId);
-    const editingIssues = imageEditingRequestIssues(imageEditingConnection(connection), request);
+    const editingIssues = [...imageEditingRequestIssues(imageEditingConnection(connection), request),
+      ...supplierImageParameterIssues(imageEditingConnection(connection), { ...request, model: request.model })];
     assertValidResult({ valid: !editingIssues.length, issues: editingIssues });
     const catalog = connection.settings?.modelCatalogModels;
     const current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
@@ -97,11 +99,11 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     const bananaRoute = bananaImageRoute(source, request.model);
     if (bananaRoute && request.operation.startsWith("image.")) {
       const ids = connection.settings?.scannedModelIds;
-      if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
-        throw new Error("当前分组没有此香蕉模型的可用权限或接口");
       const descriptor = applyBananaImageCapabilities(source, current ?? {
         id: request.model, name: request.model, operations: ["image.generate", "image.edit"],
       });
+      if (descriptor.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
+        throw new Error("当前分组没有此香蕉模型的可用权限或接口");
       const submitRoute = bananaRoute.asyncTextGeneration && !request.assets?.length
         ? { ...bananaRoute, kind: "secure-async" as const } : bananaRoute;
       return new BananaImageAdapter(this.connections, submitRoute, descriptor, this.options);

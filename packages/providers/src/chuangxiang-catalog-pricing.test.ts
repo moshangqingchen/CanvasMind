@@ -1,10 +1,34 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const isolatedNetwork = vi.hoisted(() => ({ fetch: vi.fn(), lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]) }));
+vi.mock("node:dns/promises", () => ({ lookup: isolatedNetwork.lookup }));
+beforeEach(() => { isolatedNetwork.fetch.mockReset().mockRejectedValue(new Error("Unexpected real HTTP in plaza price test")); vi.stubGlobal("fetch", isolatedNetwork.fetch); });
+afterEach(() => { try { expect(isolatedNetwork.fetch).not.toHaveBeenCalled(); } finally { vi.unstubAllGlobals(); } });
 import { chuangxiangCatalogPricing } from "./chuangxiang-catalog-pricing.js";
 import { parseSupplierCatalog, discoverSupplierCatalog } from "./supplier-catalog.js";
 import { modelPriceAmount } from "./media-billing.js";
 import { chuangxiangVideoModel } from "./chuangxiang-video-contract.js";
 
 describe("Chuangxiang plaza prices", () => {
+  it("preserves published cache components with only the model's effective multiplier", () => {
+    const decoded = chuangxiangCatalogPricing({ effective_rate_multiplier: .75, pricing: { billing_mode: "token", input_price: 1e-5,
+      output_price: 5e-5, cache_write_price: .0000125, cache_write_1h_price: .00002, cache_read_price: .000001, intervals: [] } })!;
+    expect(decoded.pricing.tiers?.map(t => t.price)).toEqual([7.5, 37.5, .75, 9.375, 15]);
+    expect(decoded.priceLabel).toContain("缓存写入 5m ¥9.375/1M");
+    expect(decoded.priceLabel).toContain("缓存写入 1h ¥15/1M");
+    expect(decoded.pricing.inputPerMillion).toBeUndefined();
+    expect(modelPriceAmount(decoded.pricing, {})).toBeUndefined();
+  });
+  it("preserves context tiers without flattening overlapping official boundaries", () => {
+    const decoded = chuangxiangCatalogPricing({ effective_rate_multiplier: .2, pricing: { billing_mode: "token", input_price: 2e-6,
+      intervals: [{ tier_label: "<200K", min_tokens: 0, max_tokens: 199999, input_price: 2e-6, output_price: 6e-6, cache_read_price: 3e-7 },
+        { tier_label: "≥200K", min_tokens: 199999, max_tokens: null, input_price: 4e-6, output_price: 12e-6, cache_read_price: 6e-7 }] } })!;
+    expect(decoded.pricing.tiers?.map(t => t.price)).toEqual([.4, 1.2, .06, .8, 2.4, .12]);
+    expect(decoded.pricing.inputPerMillion).toBeUndefined();
+    expect(modelPriceAmount(decoded.pricing, { token_kind: "input" })).toBeUndefined();
+    expect(modelPriceAmount(decoded.pricing, { token_kind: "input", token_context_tier: "≥200K" })).toBe(.8);
+    expect(chuangxiangCatalogPricing({ effective_rate_multiplier: 1, pricing: { billing_mode: "token", input_price: 2e-6,
+      intervals: [{ min_tokens: 0, max_tokens: null, input_price: 2e-6 }] } })).toBeUndefined();
+  });
   it("prices SD8's fixed thirty-second task at 5.2 CNY without inventing a resolution", () => {
     const row = { name: "sd8-seedance-2.5", effective_rate_multiplier: .1, video_pricing: { billing_mode: "per_request", prices: { per_request: 52 } } };
     const priced = chuangxiangCatalogPricing(row)!;

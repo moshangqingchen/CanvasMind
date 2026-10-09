@@ -19,6 +19,7 @@ import {
 } from "@super-canvas/providers";
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
+import { applySupplierImageConstraints } from "@super-canvas/providers/supplier-image-constraints";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
 import { applyChuangxiangCurrentVideoCapabilities, chuangxiangVideoModel, isChuangxiangVideoConnection } from "@super-canvas/providers/chuangxiang-video-contract";
 import { mikotoGroup } from "./mikoto-presets";
@@ -431,7 +432,8 @@ export function bindScannedModelProtocols(
   let models = applySavedModelInterfaces(connection, compatibleModels)
     .map(model => applyBananaImageCapabilities(connection, model))
     .map(model => applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, model)))
-    .map(model => applyChuangxiangCurrentVideoCapabilities(connection, model)).map(withHighestModelQualityDefault);
+    .map(model => applyChuangxiangCurrentVideoCapabilities(connection, model)).map(withHighestModelQualityDefault)
+    .map(model => applySupplierImageConstraints(connection, model));
   if (currentCangyuan) {
     for (let i = 0; i < models.length; i++) if (canInherit(models[i]!) &&
       canApplyCangyuanCurrentContract(connection.config, String(connection.config.baseUrl ?? ""), models[i]!.id))

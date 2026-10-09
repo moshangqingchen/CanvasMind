@@ -25,6 +25,7 @@ export * from "./cangyuan-video-contract.js";
 export * from "./cangyuan-music.js";
 export * from "./image-size-presets.js";
 export * from "./image-quality-presets.js";
+export * from "./supplier-image-constraints.js";
 export * from "./image-editing-capabilities.js";
 export * from "./tk1688-model-policy.js";
 export * from "./tk1688-catalog.js";

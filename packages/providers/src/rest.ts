@@ -1098,7 +1098,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     const selected = applyOverride(operationConfig, modelOperationOverride);
     assertConfig(selected);
     if (!this.fixedConfig && isCangyuanMusicRequest(model, connection.baseUrl)) {
-      return { ...applyOverride(selected, cangyuanMusicTransport()), assetsRequirePublicUrls: false };
+      return { ...applyOverride(selected, cangyuanMusicTransport(undefined, model)), assetsRequirePublicUrls: false };
     }
     if (!this.fixedConfig && isCangyuanVideoRequest(model, connection.baseUrl))
       return { ...applyOverride(selected, cangyuanVideoTransport(model!)), assetsRequirePublicUrls: true };
@@ -1438,9 +1438,16 @@ export class GenericRestAdapter implements ProviderAdapter {
         if (capabilities.mask && (capabilities.mask !== "url" || config.submit.bodyMode !== "json"))
           issues.push({ path: "assets", code: "unsupported_mask_transport", message: "当前已配置的接口传输方式不支持此蒙版；请使用供应商的图片编辑接口。" });
       }
-      const savedModel = baseConfig.models?.find(
+      const connectorModel = baseConfig.models?.find(
         (model) => model.id === request.model,
       );
+      // A fresh exact Suno inventory can precede persistence of the connector's
+      // model array. It only repairs this native contract for the same visible Key.
+      const freshSuno = musicRequest && request.model === "suno" && selectedModel?.metadata?.canvasRunnable === true &&
+        Array.isArray(connection.settings?.scannedModelIds) && connection.settings.scannedModelIds.includes("suno") &&
+        !["empty", "unauthorized"].includes(String(connection.settings?.modelScanStatus)) &&
+        connection.settings?.usage !== "disabled" && connection.settings?.supplierArchived !== true;
+      const savedModel = connectorModel ?? (freshSuno ? selectedModel : undefined);
       const configuredModel = musicRequest && savedModel ? cangyuanMusicModel(savedModel)
         : videoRequest && savedModel ? chuangxiangVideoModel(savedModel.id, savedModel)
         : cangyuanVideo && savedModel ? cangyuanVideoModel(savedModel)
@@ -1716,7 +1723,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       parameters: normalizeImageEditingParameters(editingConnection, request.model ?? "", request.parameters) }, config);
     if (!this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl)) {
       outboundRequest = withCangyuanMusicRequestParameters(request);
-      config = { ...config, ...cangyuanMusicTransport(outboundRequest.parameters?.audio_format) };
+      config = { ...config, ...cangyuanMusicTransport(outboundRequest.parameters?.audio_format, request.model) };
     }
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, this.configFrom(connection), request.model))
       outboundRequest = withCangyuanCurrentRequestParameters(outboundRequest, connection.baseUrl);

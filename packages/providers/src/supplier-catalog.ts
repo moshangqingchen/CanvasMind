@@ -1,6 +1,6 @@
 import { fetchProviderJson, providerFetch, ProviderHttpError } from "./http.js";
 import type { FetchImplementation, ModelDescriptor } from "./contracts.js";
-import { catalogPriceLabel } from "./catalog-pricing.js";
+import { catalogPriceLabel, scopedCatalogMediaPricing } from "./catalog-pricing.js";
 import { chuangxiangCatalogPricing, isChuangxiangCatalogSource } from "./chuangxiang-catalog-pricing.js";
 import { parseProviderModelFacts, scanProviderModelCatalog } from "./model-catalog.js";
 import { modelGenerationMediaKinds } from "./model-media.js";
@@ -11,6 +11,7 @@ import { isWeAiLegacyCatalogSource, readWeAiLegacyCatalog, WEAI_LEGACY_PRICE_UNI
 import { isSub2apiPlazaPricingSource, sub2apiPlazaPricing } from "./sub2api-plaza-pricing.js";
 import { isMiaowuCatalogSource, miaowuCatalogMediaKind, miaowuCatalogMediaPricing } from "./miaowu-catalog-pricing.js";
 import { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
+import { HANG_PRICE_URL, isHangCatalogSource, parseHangChatPrices } from "./hang-catalog-pricing.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
@@ -331,10 +332,12 @@ export function parseSupplierCatalog(
             ...(plaza ? { sub2apiPlazaPricing: plaza.pricing } : { sub2apiPlazaPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" }) } }, officialId);
           continue;
         }
+        const unresolvedChuangxiangToken = isChuangxiangCatalogSource(priceDisplay.supplierSiteUrl) && record(record(rawModel)?.pricing)?.billing_mode === "token" && !current;
         add(id, label, current ? { ...model, priceLabel: current.priceLabel,
           metadata: { ...model.metadata, chuangxiangCatalogPricing: current.pricing,
             chuangxiangEffectiveRateMultiplier: record(rawModel)?.effective_rate_multiplier,
-            ...(current.resolutions ? { videoSupportedResolutions: current.resolutions } : {}) } } : model, officialId);
+            ...(current.resolutions ? { videoSupportedResolutions: current.resolutions } : {}) } } : unresolvedChuangxiangToken ? { ...model,
+              priceLabel: "价格条件待确认", metadata: { ...model.metadata, chuangxiangCatalogPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" } } : model, officialId);
       }
     }
     return { groups: distinctGroupNames([...byGroup.values()]), kind: "sub2api", recognized: true };
@@ -406,6 +409,10 @@ export function parseSupplierCatalog(
         metadata: { ...model.metadata, ...(miaowuKind ? { catalogCapability: miaowuKind, outputKindsSource: "declared" } : {}),
           ...(native ? { miaowuCatalogPricing: native.pricing } : { miaowuCatalogPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" }) } };
     }
+    const scoped = scopedCatalogMediaPricing(raw, { supplierSiteUrl: priceDisplay.supplierSiteUrl, group: id, multiplier,
+      currency: explicitCurrency || currency, checkedAt: priceDisplay.checkedAt });
+    if (scoped) return { ...model, priceLabel: scoped.priceLabel, metadata: { ...model.metadata, officialCatalogPricing: scoped.pricing,
+      officialCatalogPriceGroupVerified: typeof ratios?.[id] === "number" && Number.isFinite(ratios[id]) && Number(ratios[id]) >= 0 } };
     const priceLabel = catalogPriceLabel(raw, {
       newApi: isNewApi,
       multiplier,
@@ -633,6 +640,24 @@ export async function discoverSupplierCatalog(
     return undefined;
   };
   const pricePage = async (groups: DiscoveredSupplierGroup[]) => {
+    if (isHangCatalogSource(siteUrl)) {
+      // This host is linked by the supplier's own pricing page. Never pass
+      // account headers/cookies to the independent public price service.
+      const response = await probe(HANG_PRICE_URL);
+      const parsed = parseHangChatPrices(response.payload, siteUrl, checkedAt);
+      const merged = new Map(groups.map(group => [group.id, { ...group, models: [...group.models] }]));
+      for (const row of parsed.rows) {
+        const model = modelFrom({ name: row.modelId, capability: "chat", output_modalities: ["text"] });
+        if (!model || model.capability !== "chat") continue;
+        const group = merged.get(row.group) ?? { id: row.group, label: row.group, source: "catalog" as const, models: [] };
+        const priced = { ...model, priceLabel: row.priceLabel, metadata: { ...model.metadata,
+          hangCatalogPricing: row.pricing, supplierPriceGroup: row.group, priceSource: "supplier-hang-price-page" } };
+        const index = group.models.findIndex(model => model.id === row.modelId);
+        if (index < 0) group.models.push(priced); else group.models[index] = { ...group.models[index]!, ...priced };
+        merged.set(row.group, group);
+      }
+      return { groups: distinctGroupNames([...merged.values()]), complete: response.status === 200 && parsed.complete };
+    }
     const response = await probe(`${siteUrl}/api/v1/pricing/channels`, siteHeaders("sub2api"));
     const payload = record(response.payload);
     const channels = Array.isArray(payload?.data) ? payload.data : record(payload?.data)?.channels;
@@ -725,10 +750,22 @@ export async function discoverSupplierCatalog(
         error: "账号分组已读取，但模型价格目录暂不可完整读取；保留历史报价，请稍后重试",
       } : {}) };
   };
-  const supplementGroups = async (parsed: ReturnType<typeof parseSupplierCatalog>, platform: "newapi" | "sub2api") => {
+  const supplementGroups = async (parsed: ReturnType<typeof parseSupplierCatalog>, platform: "newapi" | "sub2api",
+    currentPrice?: { payload: unknown; options: Parameters<typeof parseSupplierCatalog>[1] }) => {
     if (platform === "sub2api") parsed = { ...parsed, groups: (await pricePage(parsed.groups)).groups };
     const available = await keyGroups(platform);
     if (available?.status === "live" || available?.status === "empty") {
+      if (platform === "newapi" && siteUrl === "https://platform.frimodel.com" && currentPrice) {
+        const payload = record(currentPrice.payload);
+        const ratios = { ...record(payload?.group_ratio) };
+        for (const group of available.groups) {
+          const rate = group.details?.rateMultiplier;
+          if (typeof rate === "number" && Number.isFinite(rate) && rate >= 0) ratios[group.id] = rate;
+        }
+        // Fri's authenticated key-group rates are the current account price
+        // factors when /api/pricing omits group_ratio. Join only exact groups.
+        parsed = parseSupplierCatalog({ ...payload, group_ratio: ratios }, currentPrice.options);
+      }
       return success({ ...parsed, groups: accountGroupNames(parsed.groups, available.groups) }, platform);
     }
     return { ...success(parsed, platform), complete: false,
@@ -808,9 +845,10 @@ export async function discoverSupplierCatalog(
                 checkedAt,
               }),
               "newapi",
+              { payload: pricing.payload, options: { currency, multiplier: exchange, supplierSiteUrl: siteUrl, checkedAt } },
             );
         }
-        return supplementGroups(parsed, "newapi");
+        return supplementGroups(parsed, "newapi", { payload: pricing.payload, options: { supplierSiteUrl: siteUrl, checkedAt } });
       }
       return fallbackGroups("newapi", success(parsed, "newapi"));
     }

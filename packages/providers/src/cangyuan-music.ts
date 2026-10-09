@@ -1,20 +1,30 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride } from "./rest.js";
 
-const ids = new Set(["lyria-3-pro", "lyria-3.5"]);
+const ids = new Set(["lyria-3-pro", "lyria-3.5", "suno"]);
 const fields = ["title", "instrumental", "lyrics", "duration", "bpm", "seed", "n", "audio_format"] as const;
 export const isCangyuanMusicModel = (id: string | undefined): boolean => ids.has(id ?? "");
 
 export function isCangyuanMusicRequest(model: string | undefined, baseUrl?: string): boolean {
   if (!isCangyuanMusicModel(model)) return false;
-  try { return /(^|\.)cangyuansuanli\.cn$/u.test(new URL(baseUrl ?? "").hostname); } catch { return false; }
+  try {
+    const url = new URL(baseUrl ?? "");
+    if (model === "suno") return url.origin === "https://ai.cangyuansuanli.cn" && !url.username && !url.password &&
+      !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname);
+    return /(^|\.)cangyuansuanli\.cn$/u.test(url.hostname);
+  } catch { return false; }
 }
 
-/** Exact public music contracts freshly reviewed on 2026-10-07; prices remain supplier-owned. */
+/** Exact public Lyria and Suno contracts; prices remain supplier-owned. */
 export function cangyuanMusicModel(model: ModelDescriptor): ModelDescriptor {
   if (!isCangyuanMusicModel(model.id)) return model;
   const operations = ["music.generate"] as const;
-  const parameters: ModelParameterDescriptor[] = [
+  const suno = model.id === "suno";
+  const parameters: ModelParameterDescriptor[] = suno ? [
+    { key: "n", label: "生成任务数", control: "select", valueType: "integer", default: 1,
+      options: [{ label: "1 个任务（2 个音乐结果）", value: 1 }],
+      description: "每次固定一个任务，完成后返回两个音乐结果，同一次计费。", operations },
+  ] : [
     { key: "title", label: "作品名", control: "text", valueType: "string", description: "最多160个字符；省略时为 Untitled。", operations },
     { key: "instrumental", label: "纯音乐", control: "toggle", valueType: "boolean", default: false, description: "打开后不使用歌词。", operations },
     { key: "lyrics", label: "歌词", control: "text", valueType: "string", visibleWhen: [{ parameter: "instrumental", values: [false] }], description: "最多20000个字符，可用 [Verse]、[Chorus] 分段。", operations },
@@ -33,33 +43,43 @@ export function cangyuanMusicModel(model: ModelDescriptor): ModelDescriptor {
   if (runnable) delete metadata.pendingLiveScan;
   if (runnable && metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
   return { ...model, operations, parameters, inputKinds: ["text"], outputKinds: ["audio"],
-    limits: { maxPromptCharacters: 10000, maxInputImages: 0, maxInputVideos: 0, maxInputAudios: 0 },
-    metadata: { ...metadata, canvasRunnable: runnable, protocol: "cangyuan-music", supportVerification: "official-native-contract-and-live-inventory", catalogCapability: "music", fixedOutputCount: 1,
-      operationsSource: "declared", outputKindsSource: "declared", cangyuanMusicContractCheckedAt: "2026-10-07", durationIsCreativeHint: true,
+    limits: { maxPromptCharacters: suno ? 2000 : 10000, maxInputImages: 0, maxInputVideos: 0, maxInputAudios: 0 },
+    metadata: { ...metadata, canvasRunnable: runnable, protocol: "cangyuan-music", supportVerification: "official-native-contract-and-live-inventory", catalogCapability: "music", fixedOutputCount: suno ? 2 : 1,
+      operationsSource: "declared", outputKindsSource: "declared", cangyuanMusicContractCheckedAt: suno ? "2026-10-09" : "2026-10-07", durationIsCreativeHint: !suno,
       documentationUrl: `https://ai.cangyuansuanli.cn/docs-static/models/${model.id}.json` } };
 }
 
 export const cangyuanMusicMimeType = (format: unknown): string => format === "wav" ? "audio/wav" : format === "m4a" ? "audio/mp4" : "audio/mpeg";
 
-export function cangyuanMusicTransport(format?: unknown): RestModelConnectorOverride {
+export function cangyuanMusicTransport(format?: unknown, model?: string): RestModelConnectorOverride {
+  const suno = model === "suno";
   const response = { taskIdPath: "$.id", taskIdFallbackPaths: ["$.task_id"], statusPath: "$.status", errorPath: "$.error.message", errorFallbackPaths: ["$.error"], progressPath: "$.progress" };
   return {
     submit: { path: "/v1/music", method: "POST", bodyMode: "json", idempotent: true,
       mappings: [
         { target: "/model", source: { kind: "request", path: "$.model" } },
         { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
-        ...fields.map(key => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitIfEmpty: true })),
+        ...(suno ? ["n"] : fields).map(key => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitIfEmpty: true })),
       ], response },
     poll: { path: "/v1/music/{taskId}", method: "GET", bodyMode: "none", response },
     pollIntervalMs: 5000,
     statusMap: { queued: "queued", pending: "queued", processing: "running", running: "running", completed: "succeeded", succeeded: "succeeded", failed: "failed", cancelled: "cancelled" },
-    output: { path: "$.music_url", fallbackPaths: ["$.data.music_url", "$.result.music_url", "$.data", "$.result"], kind: "audio", urlPath: "music_url", urlFallbackPaths: ["url"], defaultMimeType: cangyuanMusicMimeType(format) },
+    output: suno ? { path: "$.music_url", kind: "audio" }
+      : { path: "$.music_url", fallbackPaths: ["$.data.music_url", "$.result.music_url", "$.data", "$.result"], kind: "audio", urlPath: "music_url", urlFallbackPaths: ["url"], defaultMimeType: cangyuanMusicMimeType(format) },
   };
 }
 
 export function cangyuanMusicRequestIssues(request: NormalizedRequest): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
+  if (request.model === "suno") {
+    if (request.operation !== "music.generate") add("operation", "Suno 仅支持音乐生成。");
+    if (!request.prompt.trim() || request.prompt.length > 2000) add("prompt", "Suno 音乐描述需要1–2000个字符，不能全为空白。");
+    if (request.assets?.length) add("assets", "Suno 不接受参考图片、视频或音频。");
+    for (const key of Object.keys(request.parameters ?? {})) if (key !== "n") add(`parameters.${key}`, `Suno 音乐接口未声明参数 ${key}。`);
+    if (request.parameters?.n !== undefined && request.parameters.n !== 1) add("parameters.n", "Suno 每次请求只能 n=1，完成后返回两个音乐结果。");
+    return issues;
+  }
   if (request.operation !== "music.generate") add("operation", "Lyria 仅支持音乐生成。");
   if (!request.prompt.trim() || request.prompt.length > 10000) add("prompt", "音乐描述需要1–10000个字符，不能全为空白。");
   if (request.assets?.length) add("assets", "这两款 Lyria 不接受参考图片、视频或音频。");
@@ -78,6 +98,7 @@ export function cangyuanMusicRequestIssues(request: NormalizedRequest): Validati
 
 export function withCangyuanMusicRequestParameters(request: NormalizedRequest): NormalizedRequest {
   const parameters = { ...request.parameters };
+  if (request.model === "suno") return { ...request, parameters: { ...parameters, n: parameters.n ?? 1 } };
   parameters.instrumental ??= false;
   parameters.n ??= 1;
   parameters.audio_format ??= "mp3";

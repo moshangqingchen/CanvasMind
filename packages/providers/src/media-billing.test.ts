@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { mediaExpressionPricing, modelPriceAmount, mediaPricingLabel } from "./media-billing.js";
+import { mediaExpressionPricing, modelPriceAmount, mediaPricingLabel, tokenComponentPricing, tokenComponentRate } from "./media-billing.js";
 import { catalogPriceLabel } from "./catalog-pricing.js";
 const quality = '(param("quality") == "xhigh" || param("quality") == "max") ? tier("xhigh", n * 0.40) : tier("std", n * 0.20)';
 const options = { currency: "CNY", checkedAt: "2026-09-21", unit: "image" as const };
 describe("documented media billing expressions", () => {
+  it("keeps measured token components separate from flat token estimates and preserves zero cache rates", () => {
+    const rates = [{ id: "input", label: "输入", price: 1, tokenKind: "input" }, { id: "output", label: "输出", price: 5, tokenKind: "output" }];
+    const flat = tokenComponentPricing(rates, { currency: "CNY", checkedAt: "now", confidence: "exact" })!.pricing;
+    expect(flat).toMatchObject({ inputPerMillion: 1, outputPerMillion: 5 });
+    const conditional = tokenComponentPricing([...rates, { id: "read", label: "缓存读取", price: 0, tokenKind: "cache_read" }],
+      { currency: "CNY", checkedAt: "now", confidence: "exact" })!.pricing;
+    expect(conditional.inputPerMillion).toBeUndefined();
+    expect(conditional.outputPerMillion).toBeUndefined();
+    expect(modelPriceAmount(conditional, {})).toBeUndefined();
+    expect(modelPriceAmount(conditional, { token_kind: "cache_read" })).toBe(0);
+    expect(tokenComponentRate(conditional, "input")).toBe(1);
+    expect(tokenComponentRate({ ...conditional, tiers: conditional.tiers?.map(t => ({ ...t, conditions: [...t.conditions!, { parameter: "token_context_tier", operator: "equals", value: "<200K" }] })) }, "input")).toBeUndefined();
+    expect(tokenComponentPricing([...rates, rates[0]!], { currency: "USD", checkedAt: "now", confidence: "exact" })).toBeUndefined();
+  });
   it("prices both premium qualities and the ordinary/default branch with group multipliers", () => {
     const pricing = mediaExpressionPricing(quality, { ...options, multiplier: 1.5 })!;
     for (const value of ["xhigh", "max"]) expect(modelPriceAmount(pricing, { quality: value })).toBe(0.6);

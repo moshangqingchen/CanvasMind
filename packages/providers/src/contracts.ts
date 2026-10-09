@@ -30,6 +30,9 @@ export interface StructuredModelPricing {
   outputPerMillion?: number;
   imageOutputPerMillion?: number;
   tiers?: readonly StructuredPriceTier[];
+  // Token tiers use token_kind (input/output/cache_read/cache_write/etc.).
+  // With a conditional usage split, omit flat rates: unknown cache counts
+  // cannot safely produce a fixed per-request or ordinary-token estimate.
   billingUnit?: "image" | "request" | "second";
   sourceUrl?: string;
   checkedAt: string;

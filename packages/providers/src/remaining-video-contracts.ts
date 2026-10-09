@@ -187,6 +187,8 @@ function contractFor(supplier: RemainingVideoSupplier, id: string, context: Rema
     note: "VividAI Seedance 固定 15 秒，忽略画幅；参考图 9、视频 3、音频 3。清晰度权限及价格以当前分组为准。" };
   if (id === "seedance-2.5" || id === "seedance2.0") {
     if (!/(?:seedance|sd|xs|newtoken)/iu.test(`${group} ${description}`)) return undefined;
+    if (id === "seedance-2.5" && group === "sd-2.5-条") return { ...c, billingUnit: "request", resolutions: ["720p"], defaultResolution: "720p",
+      note: "当前分组按条计费，支持 4–30 秒、720p；参考图 30、视频 10、音频 10，合计最多 50 项。价格取当前分组报价，不随请求秒数相乘。" };
     return { ...c, defaultResolution: /(?:^|[\s_-])xs(?:$|[\s_-])/iu.test(group) ? "480p" : "720p" };
   }
   if (id.startsWith("doubao-seedance-") && !id.includes("fast")) {

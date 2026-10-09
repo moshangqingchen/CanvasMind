@@ -66,7 +66,11 @@ export class SecureSkillImageAdapter extends GenericRestAdapter {
   }
 
   override async submit(request: Parameters<GenericRestAdapter["submit"]>[0]): Promise<ProviderTask> {
-    const task = await super.submit(request);
+    // GPT Image 2 quality is selected by the upstream Key group. Image 2.5
+    // still uses quality; preserve its field and the measured transparent PNG path.
+    const parameters = { ...request.parameters };
+    if (request.model === "gpt-image-2") delete parameters.quality;
+    const task = await super.submit({ ...request, parameters });
     if (!task.providerTaskId.trim() || task.providerTaskId.startsWith("rest:sync:")) {
       throw new ProviderHttpError("Secure Skill did not return an image task id", {
         kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true,

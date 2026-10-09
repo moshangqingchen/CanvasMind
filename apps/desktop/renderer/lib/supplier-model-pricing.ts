@@ -10,6 +10,7 @@ import {
   parseProviderModelFacts,
 } from "@super-canvas/providers";
 import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
+import { modelGenerationMediaKinds } from "@super-canvas/providers/model-media";
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "@super-canvas/providers/supplier-group-details";
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
@@ -36,7 +37,33 @@ const hasOwnPrice = (model: ModelDescriptor) =>
 /** These catalog parsers already resolved currency, units, conditions and group multipliers. */
 function structuredCatalogPrice(metadata: ModelDescriptor["metadata"]): ModelDescriptor["pricing"] {
   return (metadata?.secureSkillCatalogPricing ?? metadata?.chuangxiangCatalogPricing ?? metadata?.tk1688Pricing ??
-    metadata?.weaiLegacyPricing ?? metadata?.sub2apiPlazaPricing ?? metadata?.miaowuCatalogPricing) as ModelDescriptor["pricing"];
+    metadata?.weaiLegacyPricing ?? metadata?.sub2apiPlazaPricing ?? metadata?.miaowuCatalogPricing ?? metadata?.hangCatalogPricing ?? metadata?.officialCatalogPricing) as ModelDescriptor["pricing"];
+}
+
+function friSnapshotPriceLabel(model: ModelDescriptor, group: string, catalog: SupplierCatalogDiscovery, sourceUrl: string | undefined): string | undefined {
+  if (["manual", "generated-result"].includes(String(model.metadata?.priceSource)) || catalog.status !== "live" || catalog.complete === false) return undefined;
+  try {
+    const url = new URL(sourceUrl ?? "");
+    if (url.origin !== "https://platform.frimodel.com" || url.username || url.password || url.search || url.hash || !/^(?:\/v1)?\/?$/u.test(url.pathname)) return undefined;
+  } catch { return undefined; }
+  const selected = catalog.groups.find(item => item.id === group), current = selected?.models.find(item => item.id === model.id);
+  const next = current?.metadata?.officialCatalogPricing as ModelDescriptor["pricing"];
+  if (!selected || selected.source !== "catalog" || selected.details?.stale === true || current?.metadata?.supplierCatalogModelStale === true ||
+    current?.metadata?.supplierPriceConflict === true || current?.metadata?.officialCatalogPriceGroupVerified !== true || next?.sourceUrl !== "https://platform.frimodel.com/api/pricing" || next.confidence !== "exact" ||
+    !["USD", "CNY", "RMB"].includes(next.currency) || !Number.isFinite(next.unitAmount)) return undefined;
+  const expected = model.id === "gpt-image-2-adobe" && group === "gpt_image_adobe" ? "$0.05/张" :
+    ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"].includes(model.id) && ["gemini_image", "gemini_pro"].includes(group) ? "$0.1/次" :
+    model.id === "gpt-image-2-w" && ["codex_image", "gpt_image_web"].includes(group) || model.id === "gpt-image-2-wc" && group === "gpt_image_wc" ? "$0.025/次" : undefined;
+  if (!expected || model.metadata?.liveInventory !== true || !["frimodel-images", "gemini-generate-content"].includes(String(model.metadata?.protocol))) return undefined;
+  const label = String(model.metadata?.priceLabel ?? "");
+  const equivalent = label.replace("/图片", "/张").replace("/请求", "/次");
+  if (model.pricing) {
+    if (model.pricing.confidence !== "snapshot" || model.metadata?.billingLabel !== "价格快照" || model.metadata?.priceSource !== undefined) return undefined;
+    try { const old = new URL(model.pricing.sourceUrl ?? "");
+      if (old.origin !== "https://platform.frimodel.com" || !/^(?:\/v1)?\/?$/u.test(old.pathname) || old.username || old.password || old.search || old.hash) return undefined;
+    } catch { return undefined; }
+  } else if (model.metadata?.priceSource !== undefined) return undefined;
+  return equivalent === expected ? label : undefined;
 }
 
 function isWeAiCatalogSite(sourceUrl: string | undefined): boolean {
@@ -44,6 +71,11 @@ function isWeAiCatalogSite(sourceUrl: string | undefined): boolean {
     const url = new URL(sourceUrl ?? "");
     return url.origin === "https://asian-acc.we-token.cc" && !url.username && !url.password && !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname);
   } catch { return false; }
+}
+
+function isHangCatalogSite(sourceUrl: string | undefined): boolean {
+  try { const url = new URL(sourceUrl ?? ""); return url.origin === "https://api.hangzhale.com" && !url.username && !url.password &&
+    !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname); } catch { return false; }
 }
 
 /** The dedicated reader's incomplete docs fallback is automatic, not a user quote. */
@@ -100,7 +132,9 @@ function isImportedConditionalCatalogPrice(model: ModelDescriptor): boolean {
     return source.origin === "https://token.secure-skill.com" && source.pathname === "/api/v1/pricing/channels" ||
       source.origin === "https://asian-acc.we-token.cc" && source.pathname === "/api/v1/model-plaza-legacy/models" ||
       ["https://api.eaheng.com", "https://ai.whyshy.cn"].includes(source.origin) && source.pathname === "/api/v1/model-plaza" ||
-      source.origin === "https://api.miaowuai.store" && source.pathname === "/api/pricing";
+      source.origin === "https://api.miaowuai.store" && source.pathname === "/api/pricing" ||
+      source.origin === "https://price.hangzhale.com" && source.pathname === "/api/provider/pricing" ||
+      source.origin === "https://vapi.chuangxiangai.asia" && source.pathname === "/model-plaza";
   } catch { return false; }
 }
 
@@ -350,6 +384,10 @@ export function applySupplierCatalogPrices(
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   return models.map((model) => {
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
+    if (["manual", "generated-result"].includes(String(model.metadata?.priceSource)) && model.pricing) return model;
+    // Hang's separate board has ambiguous image/token currency declarations.
+    // Its new chat feed must not overwrite an existing media quote.
+    if (isHangCatalogSite(sourceUrl) && model.pricing && modelGenerationMediaKinds(model).length) return model;
     if (isWeAiCatalogSite(sourceUrl) && model.metadata?.priceSource === "generated-result" && model.pricing) return model;
     const cyberPending = isCyberAfeiUnpricedCatalogVideo(sourceUrl, model.id) &&
       (catalogModel?.metadata?.cyberAfeiCatalogPricingIncomplete === true || model.metadata?.cyberAfeiCatalogPricingIncomplete === true ||
@@ -374,7 +412,7 @@ export function applySupplierCatalogPrices(
       ["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) &&
       (model.pricing || typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel)) &&
       Number.isFinite(priceAt) && Number.isFinite(catalogAt) && priceAt > catalogAt) return model;
-    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete", "miaowuCatalogPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
+    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete", "miaowuCatalogPricingIncomplete", "chuangxiangCatalogPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
     if (incompletePricingFields.length && !hasOwnPrice(model)) {
       const metadata = { ...model.metadata };
       delete metadata.weaiLegacyPricing; delete metadata.sub2apiPlazaPricing; delete metadata.miaowuCatalogPricing;
@@ -401,7 +439,7 @@ export function applySupplierCatalogPrices(
     }
     if (catalogModel?.metadata?.supplierPriceConflict === true && !hasOwnPrice(model)) {
       const metadata = { ...model.metadata };
-      for (const field of ["secureSkillCatalogPricing", "chuangxiangCatalogPricing", "tk1688Pricing", "weaiLegacyPricing", "sub2apiPlazaPricing", "miaowuCatalogPricing"]) delete metadata[field];
+      for (const field of ["secureSkillCatalogPricing", "chuangxiangCatalogPricing", "tk1688Pricing", "weaiLegacyPricing", "sub2apiPlazaPricing", "miaowuCatalogPricing", "hangCatalogPricing", "officialCatalogPricing"]) delete metadata[field];
       return {
         ...model,
         pricing: undefined,
@@ -412,11 +450,13 @@ export function applySupplierCatalogPrices(
     }
     if (catalogModel?.metadata?.sub2apiPlazaPricing && model.metadata?.sub2apiPlazaPricingIncomplete === true ||
       catalogModel?.metadata?.weaiLegacyPricing && model.metadata?.weaiLegacyPricingIncomplete === true ||
-      catalogModel?.metadata?.miaowuCatalogPricing && model.metadata?.miaowuCatalogPricingIncomplete === true) {
+      catalogModel?.metadata?.miaowuCatalogPricing && model.metadata?.miaowuCatalogPricingIncomplete === true ||
+      catalogModel?.metadata?.chuangxiangCatalogPricing && model.metadata?.chuangxiangCatalogPricingIncomplete === true) {
       const metadata = { ...model.metadata };
       if (catalogModel?.metadata?.sub2apiPlazaPricing) delete metadata.sub2apiPlazaPricingIncomplete;
       if (catalogModel?.metadata?.weaiLegacyPricing) delete metadata.weaiLegacyPricingIncomplete;
       if (catalogModel?.metadata?.miaowuCatalogPricing) delete metadata.miaowuCatalogPricingIncomplete;
+      if (catalogModel?.metadata?.chuangxiangCatalogPricing) delete metadata.chuangxiangCatalogPricingIncomplete;
       if (metadata.priceUnavailableReason === "官方价格条件待确认") delete metadata.priceUnavailableReason;
       model = { ...model, metadata };
     }
@@ -470,7 +510,8 @@ export function applySupplierCatalogPrices(
     const catalogPricing = structuredCatalogPrice(catalogModel?.metadata);
     if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise) && !catalogPricing && !isImportedConditionalCatalogPrice(model)) return model;
     const replacingWeAiSnapshot = canReplaceWeAiDocumentSnapshot(model, catalogModel, selected, catalog, sourceUrl);
-    if (hasOwnPrice(model) && !replacingWeAiSnapshot) return model;
+    const friSnapshotLabel = friSnapshotPriceLabel(model, group, catalog, sourceUrl);
+    if (hasOwnPrice(model) && !replacingWeAiSnapshot && !friSnapshotLabel) return model;
     const modelPrice = prices.get(model.id);
     const priceDetails = image ? supplierGroupModelPriceDetails(details, model.id, groupModelIds) : undefined;
     const groupPrice = !priceDetails?.stale ? supplierGroupPriceLabel(priceDetails) : "";
@@ -493,6 +534,7 @@ export function applySupplierCatalogPrices(
         ? model.metadata.priceLabel
         : "";
     let name = model.name;
+    if (friSnapshotLabel && name.endsWith(`（${friSnapshotLabel}·快照）`)) name = name.slice(0, -(`（${friSnapshotLabel}·快照）`).length);
     // The dedicated We-AI reader appended both the old quote and this exact
     // size suffix. Remove only that generated suffix after its quote is replaced.
     const oldWeAiLabel = replacingWeAiSnapshot ? previous : importedWeAiDocsNameLabel(model, catalogModel, selected, catalog, sourceUrl);

@@ -8,6 +8,19 @@ const market = (...items: unknown[]) => ({ success: true, data: { items, total: 
 const status = { success: true, data: { platform_markup_percent: 20, payment_fx_rate_cny_per_usd: 6.8896 } };
 
 describe("词元模型广场 contracts", () => {
+  it("preserves exact SKU cache rates through one retail FX conversion and never estimates an unknown usage split", () => {
+    const parsed = parseTk1688Marketplace(market({ ...sku("s1c23", "文本渠道"), base_model: "gpt-5.4", alias: "gpt-5.4@s1c23",
+      charge_type: "per_token", input_price_usd: 2.5, output_price_usd: 15, cache_read_price_usd: .25, cache_write_price_usd: 0 }), status);
+    const exact = parsed.models.find(m => m.id.includes("@"))!;
+    expect(exact.pricing?.tiers?.map(t => t.price)).toEqual([17.224, 103.344, 1.7224, 0]);
+    expect(exact.pricing?.inputPerMillion).toBeUndefined();
+    expect(exact.metadata?.tk1688OriginalPricing).toMatchObject({ currency: "USD", tiers: [{ price: 2.5 }, { price: 15 }, { price: .25 }, { price: 0 }] });
+    expect(normalizeTk1688CnyModel(exact)).toEqual(exact);
+    expect(parsed.models.find(m => m.id === "gpt-5.4")?.metadata?.priceLabel).toContain("输入 ¥17.224/1M");
+    const malformed = parseTk1688Marketplace(market({ ...sku("s1c23", "文本渠道"), base_model: "gpt-5.4", alias: "gpt-5.4@s1c23",
+      charge_type: "per_token", cache_read_price_usd: "0.25" }), status).models.find(m => m.id.includes("@"))!;
+    expect(malformed.pricing).toBeUndefined();
+  });
   it("parses only explicit merchant resolution claims, including compact 124K and denials", () => {
     expect(tk1688DescriptionFacts("原生支持124K").resolutions).toEqual(["1K", "2K", "4K"]);
     expect(tk1688DescriptionFacts("原生/1K /2K").resolutions).toEqual(["1K", "2K"]);

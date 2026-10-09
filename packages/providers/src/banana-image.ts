@@ -3,7 +3,7 @@ import { assetToBlob, providerFetch, ProviderHttpError } from "./http.js";
 import { assertValidResult } from "./contracts.js";
 import { imageEditingConnection, imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
-import { GEMINI_NANO_BANANA_21_MODEL, normalizeBananaParameters, type BananaRoute } from "./banana-image-contract.js";
+import { GEMINI_NANO_BANANA_21_MODEL, normalizeBananaParameters, weAiBananaModelUnavailable, type BananaRoute } from "./banana-image-contract.js";
 export * from "./banana-image-contract.js";
 function connector(route: BananaRoute, descriptor: ModelDescriptor): RestConnectorConfig {
   const parameter = (target: string, key: string) => ({ target, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitValues: ["auto"] });
@@ -40,6 +40,7 @@ function connector(route: BananaRoute, descriptor: ModelDescriptor): RestConnect
         }, omitIfUndefined: true })),
         parameter("/generationConfig/imageConfig/aspectRatio", "aspect_ratio"),
         ...(/^gemini-2\.5-flash-image/iu.test(route.model) ? [] : [parameter("/generationConfig/imageConfig/imageSize", "image_size")]),
+        ...(route.thinking ? [parameter("/generationConfig/thinkingConfig/thinkingLevel", "thinking_level")] : []),
       ], response: { errorPath: "$.error.message" } },
     output: { path: "$.candidates[*].content.parts[*]", kind: "image", base64Path: "$.inlineData.data", base64FallbackPaths: ["$.inline_data.data"], mimeTypePath: "$.inlineData.mimeType" },
   };
@@ -58,7 +59,15 @@ export class BananaImageAdapter extends GenericRestAdapter {
     const normalized = this.normalized(request);
     const result = await super.validate(normalized);
     const issues = [...result.issues];
+    if (this.route.thinking && request.parameters &&
+      (Object.hasOwn(request.parameters, "thinking_level") || Object.hasOwn(request.parameters, "thinkingLevel"))) {
+      const selected = request.parameters.thinking_level ?? request.parameters.thinkingLevel;
+      if (typeof selected !== "string" || !this.route.thinking.values.includes(selected.toLowerCase()))
+        issues.push({ path: "parameters.thinking_level", code: "invalid_thinking_level", message: `此香蕉模型支持的思考档位为 ${this.route.thinking.values.join("、")}` });
+    }
     const connection = await this.bananaConnections.resolve(request.connectionId);
+    if (weAiBananaModelUnavailable(imageEditingConnection(connection), request.model ?? this.route.model))
+      issues.push({ path: "model", code: "model_unavailable", message: "当前 We-AI 分组已记录此型号不可用，请重新核对 Key 权限" });
     issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
     if (this.route.unavailableReason) issues.push({ path: "model", code: "unsupported_model", message: this.route.unavailableReason });
     if (!this.route.sizes.includes(String(normalized.parameters?.image_size))) issues.push({ path: "parameters.image_size", code: "invalid_image_size", message: `此香蕉模型支持的分辨率为 ${this.route.sizes.join("、")}` });

@@ -7,12 +7,13 @@ import type { FetchImplementation, NormalizedRequest } from "./contracts.js";
 const model = "gemini-3-pro-image-preview";
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKcAAAAASUVORK5CYII=";
 const request: NormalizedRequest = { connectionId: "test", model, operation: "image.generate", prompt: "a blue vase", idempotencyKey: "one-paid-request", parameters: { image_size: "4K", aspect_ratio: "16:9" } };
-function fixture(baseUrl: string, options: { model?: string; group?: string; reply?: unknown; fetch?: FetchImplementation; settings?: Record<string, unknown> } = {}) {
+function fixture(baseUrl: string, options: { model?: string; group?: string; provider?: "openai" | "weai"; reply?: unknown; fetch?: FetchImplementation; settings?: Record<string, unknown> } = {}) {
   const selected = options.model ?? model;
   const config = { baseUrl, modelGroup: options.group, scannedModelIds: [selected], ...options.settings };
   const fetch = vi.fn<FetchImplementation>(options.fetch ?? (async () => Response.json(options.reply ?? { candidates: [{ content: { parts: [{ text: "done" }, { inlineData: { mimeType: "image/png", data: png } }] } }] })));
-  const resolver = new StaticConnectionResolver([{ id: "test", provider: "openai", baseUrl, apiKey: "fixture-key", settings: config }]);
-  return { adapter: createDefaultProviderRegistry(resolver, { fetch }).get("openai"), fetch, config };
+  const provider = options.provider ?? "openai";
+  const resolver = new StaticConnectionResolver([{ id: "test", provider, baseUrl, apiKey: "fixture-key", settings: config }]);
+  return { adapter: createDefaultProviderRegistry(resolver, { fetch }).get(provider), fetch, config };
 }
 
 describe("supplier banana image protocols", () => {
@@ -123,13 +124,13 @@ describe("supplier banana image protocols", () => {
 
   it("keeps documented wide ratios and rejects unsupported Lite resolution before paying", async () => {
     const weai = fixture("https://asian-acc.we-token.cc/v1", { group: "adobe香蕉" });
-    await weai.adapter.submit({ ...request, parameters: { aspect_ratio: "8:1", image_size: "512" } });
-    expect(JSON.parse(String(weai.fetch.mock.calls[0]![1]?.body)).generationConfig.imageConfig).toEqual({ aspectRatio: "8:1", imageSize: "512" });
+    await weai.adapter.submit({ ...request, parameters: { aspect_ratio: "8:1", image_size: "2K" } });
+    expect(JSON.parse(String(weai.fetch.mock.calls[0]![1]?.body)).generationConfig.imageConfig).toEqual({ aspectRatio: "8:1", imageSize: "2K" });
     const lite = fixture("https://token.secure-skill.com/v1", { model: "gemini-3.1-flash-lite-image" });
     expect((await lite.adapter.validate({ ...request, model: "gemini-3.1-flash-lite-image" })).valid).toBe(false);
     expect(lite.fetch).not.toHaveBeenCalled();
-    const unsupported = fixture("https://asian-acc.we-token.cc/v1", { group: "adobe香蕉", model: "gemini-3.0-pro-image" });
-    await expect(unsupported.adapter.submit({ ...request, model: "gemini-3.0-pro-image" })).rejects.toThrow(/已支持的型号/);
+    const unsupported = fixture("https://asian-acc.we-token.cc/v1", { group: "adobe香蕉", model: "gemini-3.1-flash-lite-image" });
+    await expect(unsupported.adapter.submit({ ...request, model: "gemini-3.1-flash-lite-image" })).rejects.toThrow(/当前分组/);
     expect(unsupported.fetch).not.toHaveBeenCalled();
     const route = bananaImageRoute({ provider: "openai", config: { baseUrl: "https://genimage.pro/v1" } }, model)!;
     expect(normalizeBananaParameters(route, { aspect_ratio: "1000:1501", image_size: "2K" }).aspect_ratio).toBe("2:3");
@@ -184,5 +185,115 @@ describe("supplier banana image protocols", () => {
       expect(bananaImageRoute({ provider: provider!, config: { baseUrl } }, selected!)).toBeUndefined();
     const route = bananaImageRoute({ provider: "openai", config: { baseUrl: "https://api.frimodel.com/v1" } }, model)!;
     expect(normalizeBananaParameters(route, { size: "3840x2160", quality: "max" })).toEqual({ image_size: "4K", aspect_ratio: "16:9", n: 1 });
+  });
+});
+
+describe("We-AI current group-scoped Gemini contracts", () => {
+  it.each(["us-la.we-token.cc", "asian-acc.we-token.cc", "sub2api.we-token.cc"].flatMap(host =>
+    ["gemini-3.0-pro-image", "gemini-3.0-pro-image-preview"].map(alias => [host, alias])))
+  ("routes %s Adobe alias %s to the documented base model with the correct default", async (host, alias) => {
+    const f = fixture(`https://${host}/v1`, { model: alias, group: "adobe香蕉" });
+    const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: alias!, name: alias!, operations: ["image.generate"] });
+    expect(descriptor.parameters?.find(p => p.key === "image_size")).toMatchObject({ default: "2K" });
+    expect(descriptor.parameters?.find(p => p.key === "image_size")?.options?.map(o => o.value)).toEqual(["1K", "2K", "4K"]);
+    expect(descriptor.parameters?.find(p => p.key === "thinking_level")).toBeUndefined();
+    const task = await f.adapter.submit({ ...request, model: alias, parameters: {} });
+    expect(f.fetch.mock.calls[0]![0]).toBe(`https://${host}/v1beta/models/gemini-3-pro-image:generateContent`);
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).generationConfig).toEqual({ responseModalities: ["IMAGE"], imageConfig: { imageSize: "2K" } });
+    expect(await f.adapter.extractOutputs(task.result)).toHaveLength(1);
+  });
+  it.each([
+    ["gemini-3-pro-image", ["high"], "high", "high"],
+    ["gemini-3.1-flash-image", ["minimal", "high"], "minimal", "high"],
+    ["gemini-nano-banana-2.1", ["minimal", "medium", "high"], "medium", "medium"],
+  ] as const)("declares aistudio %s thinking levels and sends only a supported selection", async (selected, values, defaultValue, thinking) => {
+    const f = fixture("https://asian-acc.we-token.cc/v1", { model: selected, group: "aistudio香蕉",
+      reply: { candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/jpeg", data: png } }] } }] } });
+    const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected, name: selected, operations: ["image.generate"] });
+    expect(descriptor.parameters?.find(p => p.key === "thinking_level")).toMatchObject({ default: defaultValue });
+    expect(descriptor.parameters?.find(p => p.key === "thinking_level")?.options?.map(o => o.value)).toEqual(values);
+    expect(descriptor.parameters?.find(p => p.key === "image_size")?.default).toBe("1K");
+    expect(descriptor.limits?.maxInputImages).toBe(14);
+    const task = await f.adapter.submit({ ...request, model: selected, parameters: { thinkingLevel: thinking.toUpperCase() } });
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).generationConfig).toEqual({ responseModalities: ["IMAGE"],
+      imageConfig: { imageSize: "1K" }, thinkingConfig: { thinkingLevel: thinking } });
+    expect((await f.adapter.extractOutputs(task.result))[0]).toMatchObject({ kind: "image", mimeType: "image/jpeg" });
+  });
+  it("preserves exact size/ratio precedence and never invents nearest ratios", async () => {
+    const f = fixture("https://asian-acc.we-token.cc/v1", { model: "gemini-3.1-flash-image", group: "aistudio香蕉" });
+    await f.adapter.submit({ ...request, model: "gemini-3.1-flash-image", parameters: {
+      resolution: "2k", size: "4K", aspect_ratio: "9:16", aspectRatio: "16:9", thinking_level: "high" } });
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).generationConfig).toEqual({ responseModalities: ["IMAGE"], imageConfig: { imageSize: "2K", aspectRatio: "9:16" }, thinkingConfig: { thinkingLevel: "high" } });
+    const adobe = bananaImageRoute({ provider: "openai", config: { baseUrl: "https://asian-acc.we-token.cc", modelGroup: "adobe香蕉" } }, "gemini-3-pro-image")!;
+    const aistudio = bananaImageRoute({ provider: "openai", config: f.config }, "gemini-3.1-flash-image")!;
+    expect(normalizeBananaParameters(adobe, { aspect_ratio: "1000:1501", size: "1024x1024" })).toEqual({ aspect_ratio: "1000:1501", image_size: "2K", n: 1 });
+    expect(normalizeBananaParameters(aistudio, { aspect_ratio: "8:1", size: "auto" })).toEqual({ aspect_ratio: "8:1", image_size: "1K", n: 1 });
+    f.fetch.mockClear();
+    await expect(f.adapter.submit({ ...request, model: "gemini-3.1-flash-image", parameters: { aspect_ratio: "8:1" } })).rejects.toThrow(/画面比例/);
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+  it("rejects explicit invalid aistudio thinking before reference download or submission while Adobe ignores it", async () => {
+    const selected = "gemini-3.1-flash-image";
+    const f = fixture("https://asian-acc.we-token.cc/v1", { model: selected, group: "aistudio香蕉" });
+    const assets = [{ id: "weai-ref", kind: "image" as const, mimeType: "image/png", url: "https://assets.example/ref.png" }];
+    for (const parameters of [{ thinking_level: "medium" }, { thinkingLevel: "unknown" }, { thinking_level: 0 }, { thinkingLevel: null }, { thinking_level: "" }]) {
+      const invalid = { ...request, model: selected, operation: "image.edit" as const, assets, parameters };
+      expect(await f.adapter.validate(invalid)).toMatchObject({ valid: false, issues: expect.arrayContaining([
+        expect.objectContaining({ path: "parameters.thinking_level", code: "invalid_thinking_level" }),
+      ]) });
+      await expect(f.adapter.submit(invalid)).rejects.toThrow(/思考档位/);
+    }
+    expect(f.fetch).not.toHaveBeenCalled();
+    const adobe = fixture("https://asian-acc.we-token.cc/v1", { model: selected, group: "adobe香蕉" });
+    await adobe.adapter.submit({ ...request, model: selected, parameters: { thinking_level: "unknown" } });
+    expect(adobe.fetch).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(adobe.fetch.mock.calls[0]![1]?.body)).generationConfig).not.toHaveProperty("thinkingConfig");
+  });
+  it("sends all fourteen inline references and rejects fifteen, unavailable groups, tiers and case variants without submission", async () => {
+    const selected = "gemini-nano-banana-2.1";
+    const f = fixture("https://asian-acc.we-token.cc/v1", { model: selected, group: "aistudio香蕉" });
+    const assets = Array.from({ length: 14 }, (_, i) => ({ id: `weai-ref-${i}`, kind: "image" as const, mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }));
+    await f.adapter.submit({ ...request, model: selected, operation: "image.edit", assets, parameters: { image_size: "4K", aspect_ratio: "8:1", thinking_level: "high" } });
+    const body = JSON.parse(String(f.fetch.mock.calls[0]![1]?.body));
+    expect(body.contents[0].parts).toHaveLength(15);
+    expect(body.generationConfig).toEqual({ responseModalities: ["IMAGE"], imageConfig: { imageSize: "4K", aspectRatio: "8:1" }, thinkingConfig: { thinkingLevel: "high" } });
+    f.fetch.mockClear();
+    await expect(f.adapter.submit({ ...request, model: selected, operation: "image.edit", assets: [...assets, assets[0]!] })).rejects.toThrow();
+    await expect(f.adapter.submit({ ...request, model: selected, parameters: { image_size: "512" } })).rejects.toThrow();
+    expect(f.fetch).not.toHaveBeenCalled();
+    for (const [group, id] of [["adobe香蕉", selected], ["aistudio香蕉", "gemini-3.0-pro-image"], ["adobe香蕉", "Gemini-3-pro-image"]]) {
+      const denied = fixture("https://asian-acc.we-token.cc/v1", { model: id, group });
+      await expect(denied.adapter.submit({ ...request, model: id, parameters: { image_size: "1K" } })).rejects.toThrow();
+      expect(denied.fetch).not.toHaveBeenCalled();
+    }
+  });
+  it("repairs only its exact obsolete alias blocker and preserves permissions and unrelated supplier routes", () => {
+    const config = { baseUrl: "https://asian-acc.we-token.cc/v1", modelGroup: "unrelated", accountKeyGroup: "adobe香蕉" };
+    const original = { id: "gemini-3.0-pro-image", name: "Alias", operations: [], metadata: { canvasRunnable: false, autoInterfaceStatus: "incomplete", pendingLiveScan: true,
+      canvasUnavailableReason: "此模型虽在分组列表中，但供应商香蕉接口仅声明支持 gemini-3-pro-image 和 gemini-3.1-flash-image；请选已支持的型号" } };
+    const repaired = applyBananaImageCapabilities({ provider: "openai", config }, original);
+    expect(repaired.metadata).toMatchObject({ canvasRunnable: true, pendingLiveScan: true });
+    expect(repaired.metadata?.autoInterfaceStatus).toBeUndefined();
+    expect(repaired.metadata?.canvasUnavailableReason).toBeUndefined();
+    const denied = { ...original, metadata: { ...original.metadata, canvasUnavailableReason: "401 Key 未授权" } };
+    expect(applyBananaImageCapabilities({ provider: "openai", config }, denied)).toBe(denied);
+    expect(bananaImageRoute({ provider: "openai", config: { baseUrl: "https://unrelated.we-token.cc/v1", modelGroup: "aistudio香蕉" } }, "gemini-nano-banana-2.1")).toBeUndefined();
+    expect(bananaImageRoute({ provider: "openai", config: { baseUrl: "https://sub2api.aitu.art/v1", modelGroup: "aistudio香蕉" } }, "gemini-nano-banana-2.1")).toBeUndefined();
+    expect(bananaImageRoute({ provider: "weai", config: { baseUrl: "https://asian-acc.we-token.cc/v1", modelGroup: "gemini香蕉" } }, "gemini-3-pro-image")).toBeUndefined();
+    expect(bananaImageRoute({ provider: "weai", config: { baseUrl: "https://genimage.pro/v1", modelGroup: "adobe香蕉" } }, "gemini-3-pro-image")).toBeUndefined();
+  });
+  it("uses the same exact official contracts through the WeAI provider without expanding its unrelated routes", async () => {
+    for (const [selected, group, canonical, size] of [
+      ["gemini-3.0-pro-image-preview", "adobe香蕉", "gemini-3-pro-image", "2K"],
+      ["gemini-3.1-flash-image", "aistudio香蕉", "gemini-3.1-flash-image", "1K"],
+      ["gemini-nano-banana-2.1", "aistudio香蕉", "gemini-nano-banana-2.1", "1K"],
+    ]) {
+      const f = fixture("https://sub2api.we-token.cc/v1", { model: selected, group, provider: "weai" });
+      await f.adapter.submit({ ...request, model: selected, parameters: {} });
+      expect(f.fetch).toHaveBeenCalledOnce();
+      expect(f.fetch.mock.calls[0]![0]).toBe(`https://sub2api.we-token.cc/v1beta/models/${canonical}:generateContent`);
+      expect(new Headers(f.fetch.mock.calls[0]![1]?.headers).get("Authorization")).toBe("Bearer fixture-key");
+      expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).generationConfig).toEqual({ responseModalities: ["IMAGE"], imageConfig: { imageSize: size } });
+    }
   });
 });

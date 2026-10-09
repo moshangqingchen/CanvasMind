@@ -6,6 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./supplier-image-constraints": {
+      "types": "./src/supplier-image-constraints.ts",
+      "import": "./dist/supplier-image-constraints.js",
+      "default": "./dist/supplier-image-constraints.js"
+    },
     "./cyberafei-catalog-evidence": {
       "types": "./src/cyberafei-catalog-evidence.ts",
       "import": "./dist/cyberafei-catalog-evidence.js",

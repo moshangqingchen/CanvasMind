@@ -90,7 +90,7 @@ describe("supplier catalog upgrade", () => {
     expect(current.config.modelCatalogModels).toEqual([{ id: "gpt-5.5", operations: [] }, { id: "gpt-5.4", operations: [] }]);
     expect(current.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
   });
-  it.each(["2026-10-07-media", "2026-10-08-complete-catalog-pricing-v2", "2026-10-08-complete-catalog-pricing-v3"])("refreshes a recently completed %s catalog once for the current revision", async previousRevision => {
+  it.each(["2026-10-07-media", "2026-10-08-complete-catalog-pricing-v2", "2026-10-08-complete-catalog-pricing-v3", "2026-10-08-complete-catalog-pricing-v5"])("refreshes a recently completed %s catalog once for the current revision", async previousRevision => {
     const f = await fixture();
     await f.save("active");
     f.service.start(); await f.service.settle();

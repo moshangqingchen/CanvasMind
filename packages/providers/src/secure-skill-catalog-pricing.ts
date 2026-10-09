@@ -1,5 +1,5 @@
 import type { StructuredModelPricing, StructuredPriceTier } from "./contracts.js";
-import { mediaPricingLabel } from "./media-billing.js";
+import { mediaPricingLabel, tokenComponentPricing } from "./media-billing.js";
 
 const site = "https://token.secure-skill.com";
 const models = new Set([
@@ -44,7 +44,7 @@ export function secureSkillCatalogPricing(value: unknown, options: {
   if (["image", "per_request", "per_second"].includes(String(raw.billing_mode))) {
     return mediaPricing(raw, options, multiplier);
   }
-  if (!models.has(id) || raw.billing_mode !== "token") return undefined;
+  if (raw.billing_mode !== "token") return undefined;
   // A new token-volume tier schema needs its own contract; flat rates cannot
   // override an additional interval that this decoder cannot yet represent.
   if (raw.intervals !== undefined && raw.intervals !== null && (!Array.isArray(raw.intervals) || raw.intervals.length)) return undefined;
@@ -54,6 +54,21 @@ export function secureSkillCatalogPricing(value: unknown, options: {
     const result = Number((price * 1_000_000 * multiplier).toPrecision(12));
     return Number.isFinite(result) ? result : undefined;
   };
+  if (!models.has(id)) {
+    // Current official chat IDs, not image/video token rows or approximate
+    // aliases. Unknown modes and volume tiers above remain fail closed.
+    if (!/^(?:gpt-(?:5|6)(?:[.-]|$)[\w.-]*|grok-4\.[567])$/u.test(id)) return undefined;
+    const rates = [];
+    for (const [field, label, tokenKind] of [["input_price", "输入", "input"], ["output_price", "输出", "output"],
+      ["cache_read_price", "缓存读取", "cache_read"], ["cache_write_price", "缓存写入", "cache_write"]] as const) {
+      if (raw[field] === undefined || raw[field] === null) continue;
+      const price = scaled(raw[field]);
+      if (price === undefined) return undefined;
+      rates.push({ id: field, label, price, tokenKind });
+    }
+    return tokenComponentPricing(rates, { currency: "CNY", checkedAt: options.checkedAt ?? "", confidence: "exact",
+      sourceUrl: `${site}/api/v1/pricing/channels` });
+  }
   const tiers: StructuredPriceTier[] = [];
   const add = (field: string, label: string, resolution?: string, referenceVideo?: boolean) => {
     const price = scaled(raw[field]);

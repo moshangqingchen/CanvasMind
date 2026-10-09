@@ -20,11 +20,12 @@ import { isSecureSkillImageConnection, isSecureSkillImageResult, SecureSkillImag
 import { applyPdogImageCapabilities, isPdogImageConnection, isPdogImageResult, pdogImageOrigin, PdogImageAdapter } from "./pdog-image.js";
 import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
+import { applySupplierImageConstraints, isMikotoDocumentedImageSize, supplierImageParameterIssues } from "./supplier-image-constraints.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
   imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
 import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
-import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
+import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, weAiBananaModelUnavailable, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
   assetToBlob,
@@ -2629,12 +2630,12 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
   }
 
-  /** This alias declares Gemini/Chat endpoints, never an OpenAI Images route. */
-  private nanoBanana21Adapter(connection: ResolvedProviderConnection, model: string): BananaImageAdapter | undefined {
-    if (this.profile !== "openai" || model !== GEMINI_NANO_BANANA_21_MODEL) return;
+  /** Exact documented aliases must reach their own native image protocol. */
+  private documentedBananaAdapter(connection: ResolvedProviderConnection, model: string): BananaImageAdapter | undefined {
     const source = imageEditingConnection(connection);
     const route = bananaImageRoute(source, model);
     if (!route) return;
+    if (!route.weaiGroup && (this.profile !== "openai" || model !== GEMINI_NANO_BANANA_21_MODEL)) return;
     const descriptor = applyBananaImageCapabilities(source, { id: model, name: model,
       operations: ["image.generate", "image.edit"], metadata: { liveInventory: true } });
     return new BananaImageAdapter(this.connections, route, descriptor, { fetch: this.fetchImpl,
@@ -2769,7 +2770,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
             ? isFriModelImageCandidate(id)
             : this.profile === "openai" && supplierKey === "chentu"
               ? isChentuImageCandidate(id)
-              : id.includes("image"),
+              : id.includes("image") || id === GEMINI_NANO_BANANA_21_MODEL && !!bananaImageRoute(imageEditingConnection(connection), id),
         ),
     );
     const allowed =
@@ -2779,12 +2780,12 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         ? unavailableWeAIModels(connection)
         : new Set<string>();
     const modelGroup =
-      this.profile === "weai" || supplierKey === "chentu"
+      this.profile === "weai" || supplierKey === "chentu" || supplierKey === "frimodel"
         ? configuredModelGroup(connection)
         : undefined;
     const ids = new Set(
       [...availableIds].filter(
-        (id) => (!allowed || allowed.includes(id)) && !unavailable.has(id),
+        (id) => (!allowed || allowed.includes(id)) && !unavailable.has(id) && !weAiBananaModelUnavailable(imageEditingConnection(connection), id),
       ),
     );
     // Other OpenAI-compatible services have historically needed the entered
@@ -2861,7 +2862,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     return listed.map(model => {
       const source = imageEditingConnection(connection);
       const described = applyChuangxiangCurrentImageCapabilities(source, model);
-      return model.id === GEMINI_NANO_BANANA_21_MODEL ? applyBananaImageCapabilities(source, described) : described;
+      return applySupplierImageConstraints(source, applyBananaImageCapabilities(source, described));
     });
   }
 
@@ -2919,15 +2920,18 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           )
         : this.defaultModel);
     if (resolvedConnection) issues.push(...imageEditingRequestIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
+    if (resolvedConnection) issues.push(...supplierImageParameterIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
     if (resolvedConnection) {
-      const native = this.nanoBanana21Adapter(resolvedConnection, requestedModel);
+      const native = this.documentedBananaAdapter(resolvedConnection, requestedModel);
       if (native) {
         const result = await native.validate({ ...request, model: requestedModel });
         const ids = resolvedConnection.settings?.scannedModelIds;
         const models = resolvedConnection.settings?.modelCatalogModels;
         const current = Array.isArray(models) ? models.find(model => isRecord(model) && model.id === requestedModel) : undefined;
+        const currentBlocked = isRecord(current) && isRecord(current.metadata) && current.metadata.canvasRunnable === false &&
+          (!Array.isArray(current.operations) || applyBananaImageCapabilities(imageEditingConnection(resolvedConnection), current as unknown as ModelDescriptor).metadata?.canvasRunnable === false);
         if ((Array.isArray(ids) && !ids.includes(requestedModel)) ||
-            (isRecord(current) && isRecord(current.metadata) && current.metadata.canvasRunnable === false))
+            currentBlocked)
           issues.push({ path: "model", code: "model_group_mismatch", message: "当前分组没有此 Gemini 型号的可用权限" });
         return { valid: !issues.length && result.valid, issues: [...issues, ...result.issues] };
       }
@@ -3402,7 +3406,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     if (/^gpt-image-2(?:-|$)/u.test(policyModel)) {
       const size = request.parameters?.["size"];
       if (typeof size === "string") {
-        const reason = gptImage2SizeIssue(size.trim());
+        const reason = resolvedConnection && isMikotoDocumentedImageSize(imageEditingConnection(resolvedConnection), requestedModel, size.trim())
+          ? undefined : gptImage2SizeIssue(size.trim());
         if (reason)
           issues.push({
             path: "parameters.size",
@@ -3520,7 +3525,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const selectedModel =
       request.model ??
       configuredImageModel(connection, this.defaultModel, this.profile);
-    const native = this.nanoBanana21Adapter(connection, selectedModel);
+    const native = this.documentedBananaAdapter(connection, selectedModel);
     if (native) return native.submit({ ...request, model: selectedModel });
     const transparentEvidence = request.operation === "image.generate" && request.parameters?.background === "transparent"
       ? verifiedTransparentImageEvidence(imageEditingConnection(connection), selectedModel, request.parameters) : undefined;

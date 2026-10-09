@@ -1,5 +1,32 @@
 import type { StructuredModelPricing, StructuredPriceTier } from "./contracts.js";
 
+/** Rates are already in the supplier's accounting currency per million tokens.
+ * A cache quote requires measured usage by component; it must not become a
+ * flat input/output estimate when that breakdown is unknown.
+ */
+export function tokenComponentPricing(rates: readonly { id: string; label: string; price: number; tokenKind: string }[],
+  options: Pick<StructuredModelPricing, "currency" | "checkedAt" | "confidence" | "sourceUrl">): { pricing: StructuredModelPricing; priceLabel: string } | undefined {
+  if (!rates.length || rates.some(rate => !Number.isFinite(rate.price) || rate.price < 0) || new Set(rates.map(rate => rate.tokenKind)).size !== rates.length) return undefined;
+  const conditional = rates.some(rate => rate.tokenKind !== "input" && rate.tokenKind !== "output");
+  const input = rates.find(rate => rate.tokenKind === "input"), output = rates.find(rate => rate.tokenKind === "output");
+  const symbol = options.currency === "CNY" || options.currency === "RMB" ? "¥" : options.currency === "USD" ? "$" : `${options.currency} `;
+  return { pricing: { ...options, kind: "token", ...(conditional ? { tiers: rates.map(rate => ({
+    id: rate.id, label: rate.label, price: rate.price, conditionMode: "all" as const,
+    conditions: [{ parameter: "token_kind", operator: "equals" as const, value: rate.tokenKind }],
+  })) } : { ...(input ? { inputPerMillion: input.price } : {}), ...(output ? { outputPerMillion: output.price } : {}) }) },
+  priceLabel: rates.map(rate => `${rate.label} ${symbol}${Number(rate.price.toPrecision(12))}/1M`).join(" · ") };
+}
+
+/** Only unconditional component rates can be summarized or aggregated. */
+export function tokenComponentRate(pricing: StructuredModelPricing, tokenKind: string): number | undefined {
+  if (pricing.kind !== "token") return undefined;
+  const direct = tokenKind === "input" ? pricing.inputPerMillion : tokenKind === "output" ? pricing.outputPerMillion : undefined;
+  if (direct !== undefined) return Number.isFinite(direct) && direct >= 0 ? direct : undefined;
+  const rates = pricing.tiers?.filter(tier => tier.conditionMode === "all" && tier.conditions?.length === 1 &&
+    tier.conditions[0]?.parameter === "token_kind" && tier.conditions[0].operator === "equals" && tier.conditions[0].value === tokenKind);
+  return rates?.length === 1 && Number.isFinite(rates[0]!.price) && rates[0]!.price >= 0 ? rates[0]!.price : undefined;
+}
+
 // Parse the documented media subset as data. Never evaluate supplier code.
 const branch = /^tier\("([^"\\]{1,80})",\s*(n|\(vs\s*==\s*0\s*\?\s*\d+(?:\.\d+)?\s*:\s*vs\))\s*\*\s*(\d+(?:\.\d+)?)\s*\)/u;
 const predicate = /param\("(quality|resolution|speed|prompt)"\)\s*==\s*"([^"\\]{1,80})"|has\(param\("(quality|resolution|speed|prompt)"\),\s*"([^"\\]{1,80})"\)/gu;
