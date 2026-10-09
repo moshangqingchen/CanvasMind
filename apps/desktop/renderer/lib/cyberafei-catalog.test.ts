@@ -40,7 +40,8 @@ describe("current Cyber Afei conditional ledger prices", () => {
   it.each(quotes)("uses every exact published resolution rate and the group ratio once for $id", quote => {
     const catalog = cyberAfeiCatalogFromPricing({ group_ratio: { [group]: .5 }, data: [{ model_name: quote.id, description: quote.description,
       quota_type: 1, model_price: Object.values(quote.amounts)[0], enable_groups: [group], supported_endpoint_types: ["openai", "openai-video"] }] });
-    const model = catalog.groups[group]?.find(model => model.id === quote.id)!;
+    const model = catalog.groups[group]?.find(model => model.id === quote.id);
+    if (!model) throw new Error(`Expected catalog model ${quote.id}`);
     const pricing = model.pricing!;
     expect(pricing).toMatchObject({ kind: "tiered", currency: "USD", billingUnit: quote.unit, confidence: "exact" });
     expect(pricing.unitAmount).toBeUndefined();
@@ -57,7 +58,8 @@ describe("current Cyber Afei conditional ledger prices", () => {
     const quote = quotes[0];
     const catalog = cyberAfeiCatalogFromPricing({ data: [{ model_name: quote.id, description: quote.description, quota_type: 1, model_price: 1.125,
       enable_groups: [group], supported_endpoint_types: ["image-generation", "openai"] }] });
-    const model = catalog.groups[group]?.[0]!;
+    const model = catalog.groups[group]?.[0];
+    if (!model) throw new Error(`Expected catalog model ${quote.id}`);
     expect(modelEstimatedCost(model, {})).toBeUndefined();
     expect(modelEstimatedCost(model, { image_size: "4K" })).toBe("1.65 USD");
     expect(model.parameters).toEqual([]);
@@ -198,7 +200,8 @@ describe("current Cyber Afei video endpoint declarations", () => {
     expect(resolveCyberAfeiScannedGroup(catalog, group, []).canvasModels).toEqual([]);
     const resolved = resolveCyberAfeiScannedGroup(catalog, group, [row.id]);
     expect(resolved.canvasModels[0]).toMatchObject({ id: row.id, outputKinds: ["video"] });
-    const transport = cyberAfeiConnectorForModels(resolved.canvasModels).modelOverrides?.[row.id]!;
+    const transport = cyberAfeiConnectorForModels(resolved.canvasModels).modelOverrides?.[row.id];
+    if (!transport) throw new Error(`Expected connector transport for ${row.id}`);
     expect(transport.submit).toMatchObject({ path: row.path, bodyMode: row.bodyMode });
     expect(transport.submit?.mappings).toContainEqual(expect.objectContaining({ target: "/model", source: { kind: "request", path: "$.model" } }));
     expect(resolveCyberAfeiScannedGroup(catalog, group, [row.id], { capabilityBlocks: [{ capability: "video", reason: "group_permission_denied", detectedAt: "2026-10-09" }] }).canvasModels).toEqual([]);
