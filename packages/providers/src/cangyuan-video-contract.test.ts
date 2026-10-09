@@ -58,6 +58,46 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(validateCangyuanVideoRequest(request("niulai-pro", { duration: 6, reference_audios: ["https://assets.example/a.mp3"] }))).not.toEqual([]);
     expect(validateCangyuanVideoRequest(request("sd15-seedance-2.5", { reference_videos: ["https://assets.example/a.mp4"] }))).not.toEqual([]);
   });
+  it.each(["minimax-h3-2k", "minimax-h3-768p"])("checks %s measured reference duration, individual bounds and audio totals", id => {
+    const video = { id: "v", kind: "video" as const, mimeType: "video/mp4", url: "https://assets.example/v.mp4", durationSeconds: 2 };
+    const audio = { id: "a", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://assets.example/a.mp3", durationSeconds: 15 };
+    expect(validateCangyuanVideoRequest({ ...request(id, { duration: 5 }), assets: [video, audio] })).toEqual([]);
+    for (const seconds of [undefined, 1.9, 15.1]) for (const kind of ["video", "audio"] as const) {
+      expect(validateCangyuanVideoRequest({ ...request(id, { duration: 5 }), assets: kind === "video" ? [{ ...video, durationSeconds: seconds }] : [video, { ...audio, durationSeconds: seconds }] })).not.toEqual([]);
+    }
+    expect(validateCangyuanVideoRequest({ ...request(id, { duration: 5 }), assets: [video, { ...audio, durationSeconds: 8 }, { ...audio, id: "a2", url: "https://assets.example/a2.mp3", durationSeconds: 8 }] })).not.toEqual([]);
+    expect(model(id).metadata).toMatchObject({ referenceNeedsDuration: true, maxTotalInputAudioDurationSeconds: 15 });
+  });
+  it("checks exact Wan, HappyHouse and SD4 480p reference limits without substituting output duration", () => {
+    const video = (durationSeconds: number) => ({ id: "v", kind: "video" as const, mimeType: "video/mp4", url: "https://assets.example/v.mp4", durationSeconds });
+    const audio = (durationSeconds: number) => ({ id: "a", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://assets.example/a.mp3", durationSeconds });
+    expect(validateCangyuanVideoRequest({ ...request("wan3.0-video", { duration: 30 }), assets: [video(15), audio(15)] })).toEqual([]);
+    expect(validateCangyuanVideoRequest({ ...request("wan3.0-video", { duration: 5 }), assets: [audio(15.1)] })).not.toEqual([]);
+    for (const seconds of [3, 10]) expect(validateCangyuanVideoRequest({ ...request("happyhouse-1.0"), assets: [video(seconds)] })).toEqual([]);
+    for (const seconds of [2.9, 10.1]) expect(validateCangyuanVideoRequest({ ...request("happyhouse-1.0"), assets: [video(seconds)] })).not.toEqual([]);
+    expect(validateCangyuanVideoRequest({ ...request("sd4-seedance-2.5-480p", { duration: 30 }), assets: [video(30.2), audio(30.2)] })).toEqual([]);
+    for (const reference of [video(30.3), audio(30.3)]) expect(validateCangyuanVideoRequest({ ...request("sd4-seedance-2.5-480p", { duration: 4 }), assets: [reference] })).not.toEqual([]);
+  });
+  it.each(["omni-v2v", "omni-v2v-no-water"])("checks %s source video's documented eight MB maximum conservatively", id => {
+    const video = { id: "v", kind: "video" as const, mimeType: "video/mp4", url: "https://assets.example/v.mp4", width: 1920, height: 1080, data: new Uint8Array(8_000_000) };
+    expect(validateCangyuanVideoRequest({ ...request(id), assets: [video] })).toEqual([]);
+    expect(validateCangyuanVideoRequest({ ...request(id), assets: [{ ...video, data: new Uint8Array(8_000_000 + 1) }] })).not.toEqual([]);
+    const image = { id: "i", kind: "image" as const, mimeType: "image/png", url: "https://assets.example/i.png", data: new Uint8Array(8_000_000 + 1) };
+    expect(validateCangyuanVideoRequest({ ...request(id), assets: [video, image] })).not.toEqual([]);
+  });
+  it.each(["omni-v2v", "omni-v2v-no-water"])("requires %s measured source dimensions and rejects oversized references before transport", async id => {
+    const video = { id: "v", kind: "video" as const, mimeType: "video/mp4", url: "https://assets.example/v.mp4", width: 1920, height: 1080 };
+    expect(validateCangyuanVideoRequest({ ...request(id), assets: [video] })).toEqual([]);
+    const f = sd8Fixture([{ id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: { canvasRunnable: true } }]);
+    for (const dimensions of [{ width: 1921, height: 1080 }, { width: 1920, height: 1081 }, { width: undefined, height: undefined }, { width: 1920.5, height: 1080 }]) {
+      const input = { ...request(id), assets: [{ ...video, ...dimensions }] };
+      expect((await f.adapter.validate(input)).valid).toBe(false);
+      await expect(f.adapter.submit(input)).rejects.toThrow();
+    }
+    expect(validateCangyuanVideoRequest(request(id, { reference_videos: [video.url] }))).not.toEqual([]);
+    expect(f.fetcher).not.toHaveBeenCalled();
+    expect(model(id).metadata).toMatchObject({ maxInputDimensions: { video: { width: 1920, height: 1080 } } });
+  });
   it("uses measured MM3 video durations and rejects absent/overlong reference metadata before generation", () => {
     const asset = { id: "v", kind: "video" as const, mimeType: "video/mp4", url: "https://assets.example/a.mp4", durationSeconds: 9.2 };
     const r = { ...request("mm3-minimax-h3-2k", { duration: 15 }), assets: [asset] };

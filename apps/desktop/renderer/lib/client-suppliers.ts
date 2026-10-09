@@ -52,6 +52,7 @@ export interface SupplierCatalogModel {
 export interface SupplierCatalogGroup {
   id: string;
   label: string;
+  supplierGroupId?: string;
   source?: "manual" | "catalog";
   status?: "available" | "missing";
   models: SupplierCatalogModel[];

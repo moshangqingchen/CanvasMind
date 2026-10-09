@@ -1482,7 +1482,7 @@ describe("WeAIImageAdapter", () => {
     });
   });
 
-  it("uses only Adobe per-request suffix models and sends only compatible fields", async () => {
+  it("keeps Adobe per-request suffix models on their fixed-quality compatible fields", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
         data: [
@@ -1581,17 +1581,10 @@ describe("WeAIImageAdapter", () => {
       connectionId: "weai-adobe-per-request",
       operation: "image.generate",
       model: "gpt-image-2",
-      prompt: "An invalid Adobe request",
+      prompt: "A current Adobe base request",
       idempotencyKey: "weai-adobe-plain-model",
     });
-    expect(plainModel.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "model_group_mismatch",
-          path: "model",
-        }),
-      ]),
-    );
+    expect(plainModel.valid).toBe(true);
   });
 
   it("forces URL output for the marketplace Image2.5 Adobe group", async () => {
@@ -1951,6 +1944,7 @@ describe("WeAIImageAdapter", () => {
     expect(codexModels.map((model) => model.id)).toEqual(["gpt-image-2"]);
     expect(adobeTokenModels.map((model) => model.id)).toEqual(["gpt-image-2"]);
     expect(adobeModels.map((model) => model.id)).toEqual([
+      "gpt-image-2",
       "gpt-image-2-low",
       "gpt-image-2-medium",
       "gpt-image-2-high",
@@ -2090,6 +2084,39 @@ describe("WeAIImageAdapter", () => {
       n: 1,
       size: "1024x1024",
     });
+  });
+
+  it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("uses the verified Codex Images contract for %s without borrowing another group", async (model) => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith("/models")
+      ? jsonResponse({ data: [{ id: "gpt-image-2" }, { id: model }, { id: "gpt-image-2-high" }] })
+      : jsonResponse({ model, data: [{ b64_json: "aW1hZ2U=" }] })) as unknown as typeof fetch;
+    const adapter = new WeAIImageAdapter(new StaticConnectionResolver([
+      { id: "codex-current", provider: "weai", apiKey: "sk-weai", baseUrl: "https://asian-acc.we-token.cc/v1", settings: { modelGroup: "生图-openai-codex-token计费", scannedModelIds: ["gpt-image-2", model], modelScanStatus: "live" } },
+      { id: "adobe-token", provider: "weai", apiKey: "sk-other", settings: { modelGroup: "生图-openai-adobe-token计费" } },
+    ]), { fetch: fetchMock });
+    expect((await adapter.listModels("codex-current")).map(m => m.id)).toEqual(["gpt-image-2", model]);
+    await adapter.submit({ connectionId: "codex-current", operation: "image.generate", model, prompt: "Minimal image check", idempotencyKey: model, parameters: { n: 1, size: "1024x1024", quality: "max", output_format: "jpeg" } });
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toBe("https://asian-acc.we-token.cc/v1/images/generations");
+    expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))).toEqual({ model, prompt: "Minimal image check", n: 1, size: "1024x1024" });
+    expect((await adapter.validate({ connectionId: "adobe-token", operation: "image.generate", model, prompt: "Wrong group", idempotencyKey: "wrong" })).issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "model_group_mismatch" })]));
+  });
+
+  it("accepts the verified Adobe per-request base ID alongside its fixed quality IDs", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith("/models")
+      ? jsonResponse({ data: [{ id: "gpt-image-2" }, { id: "gpt-image-2-low" }] })
+      : jsonResponse({ model: "gpt-image-2", data: [{ b64_json: "aW1hZ2U=" }] })) as unknown as typeof fetch;
+    const adapter = new WeAIImageAdapter(new StaticConnectionResolver([{ id: "adobe-current", provider: "weai", apiKey: "sk-weai", baseUrl: "https://asian-acc.we-token.cc/v1", settings: { modelGroup: "生图-openai-adobe-按次", scannedModelIds: ["gpt-image-2", "gpt-image-2-low"], modelScanStatus: "live" } }]), { fetch: fetchMock });
+    expect((await adapter.listModels("adobe-current")).map(m => m.id)).toEqual(["gpt-image-2", "gpt-image-2-low"]);
+    await adapter.submit({ connectionId: "adobe-current", operation: "image.generate", model: "gpt-image-2", prompt: "Minimal image check", idempotencyKey: "adobe-base", parameters: { n: 1, size: "1024x1024" } });
+    expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))).toEqual({ model: "gpt-image-2", prompt: "Minimal image check", n: 1, size: "1024x1024" });
+  });
+
+  it.each(["gemini-3.0-pro-image", "gemini-3.0-pro-image-preview"])("canonicalizes the documented legacy Adobe Banana alias %s for native Gemini", async (model) => {
+    const fetchMock = vi.fn(async () => jsonResponse({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "aW1hZ2U=" } }] } }] })) as unknown as typeof fetch;
+    const adapter = new WeAIImageAdapter(new StaticConnectionResolver([{ id: "legacy-adobe-banana", provider: "weai", apiKey: "sk-weai", baseUrl: "https://asian-acc.we-token.cc/v1", settings: { modelGroup: "gemini香蕉", scannedModelIds: ["gemini-3-pro-image", model], modelScanStatus: "live" } }]), { fetch: fetchMock });
+    await adapter.submit({ connectionId: "legacy-adobe-banana", operation: "image.generate", model, prompt: "Minimal image check", idempotencyKey: model, parameters: { n: 1, image_size: "1K", aspect_ratio: "1:1" } });
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toBe("https://asian-acc.we-token.cc/v1beta/models/gemini-3-pro-image:generateContent");
+    expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))).toMatchObject({ generationConfig: { imageConfig: { imageSize: "1K", aspectRatio: "1:1" } } });
   });
 
   it("keeps the selected We-AI group from accepting another group model", async () => {
@@ -2944,7 +2971,7 @@ describe("WeAIImageAdapter", () => {
       ]),
     );
 
-    for (const model of ["gemini-3.0-pro-image"]) {
+    for (const model of ["gemini-3.0-pro-image-unknown"]) {
       const marketplaceOnlyModel = await adapter.validate({
         connectionId: "weai-gemini",
         operation: "image.generate",
@@ -2965,6 +2992,8 @@ describe("WeAIImageAdapter", () => {
 
     for (const alias of [
       "gemini-3-pro-image-preview",
+      "gemini-3.0-pro-image",
+      "gemini-3.0-pro-image-preview",
       "gemini-3.1-flash-image-preview",
     ]) {
       const normalizedAlias = await adapter.validate({

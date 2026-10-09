@@ -19,7 +19,7 @@ describe("current Chuangxiang video contract", () => {
   });
   it("maps all reference types and frame roles without multiplying a per-request price", () => {
     const r = { ...request("sd11-seedance-2.5", { duration: 15 }), assets: [image("reference"), image("firstFrame"), image("lastFrame"), { id: "audio", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://assets.example/a.mp3" }] };
-    expect(normalizeChuangxiangVideoParameters(r)).toEqual({ seconds: 15, n: 1, reference_image_urls: ["https://assets.example/reference.jpg"], reference_audios: ["https://assets.example/a.mp3"], first_image_url: "https://assets.example/firstFrame.jpg", last_image_url: "https://assets.example/lastFrame.jpg" });
+    expect(normalizeChuangxiangVideoParameters(r)).toEqual({ duration: 15, n: 1, reference_image_urls: ["https://assets.example/reference.jpg"], reference_audios: ["https://assets.example/a.mp3"], first_image_url: "https://assets.example/firstFrame.jpg", last_image_url: "https://assets.example/lastFrame.jpg" });
     const pricing = { kind: "per-request" as const, currency: "CNY", unitAmount: 5.2, checkedAt: "today", confidence: "snapshot" as const };
     expect(chuangxiangVideoModel("sd10-seedance-2.0", { id: "sd10-seedance-2.0", name: "sd10", operations: ["video.generate"], pricing }).pricing).toEqual(pricing);
     expect(CHUANGXIANG_VIDEO_TIMEOUT_MS).toBe(1_800_000);

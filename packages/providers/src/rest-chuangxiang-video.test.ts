@@ -20,6 +20,14 @@ function fixture(model = request.model!, fetch?: FetchImplementation, changed: R
 }
 
 describe("current Chuangxiang video REST integration", () => {
+  it("sends the documented duration field when loading a saved seconds alias and rejects conflicting aliases", async () => {
+    const f = fixture();
+    await f.adapter.submit({ ...request, parameters: { seconds: 10 } });
+    expect(JSON.parse(String(f.fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ model: request.model, prompt: request.prompt, duration: 10, n: 1 });
+    await expect(f.adapter.submit({ ...request, parameters: { seconds: 5, duration: 10 } })).rejects.toThrow(/必须一致/);
+    expect(f.fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("repairs stale wire fields and submits all ordered reference images only once", async () => {
     const f = fixture();
     const task = await f.adapter.submit({ ...request, operation: "video.image-to-video", assets: [1, 2].map(index => ({ id: String(index), kind: "image", mimeType: "image/png", url: `https://assets.example/${index}.png` })) });
@@ -27,7 +35,7 @@ describe("current Chuangxiang video REST integration", () => {
     const [url, init] = f.fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("https://vapi.chuangxiangai.asia/v1/videos/generations");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fixture-key");
-    expect(JSON.parse(String(init?.body))).toEqual({ model: request.model, prompt: request.prompt, seconds: 10, aspect_ratio: "16:9", resolution: "720p", n: 1,
+    expect(JSON.parse(String(init?.body))).toEqual({ model: request.model, prompt: request.prompt, duration: 10, aspect_ratio: "16:9", resolution: "720p", n: 1,
       reference_image_urls: ["https://assets.example/1.png", "https://assets.example/2.png"] });
     expect(task).toMatchObject({ providerTaskId: "task-123", status: "running", pollAfterMs: 10000 });
     expect((task.result as Record<string, unknown>).model).toBe(request.model);
@@ -55,7 +63,7 @@ describe("current Chuangxiang video REST integration", () => {
         { id: "last", kind: "image", mimeType: "image/png", role: "lastFrame", url: "https://assets.example/last.png" },
       ] });
       const body = JSON.parse(String(f.fetchMock.mock.calls.at(-1)![1]?.body));
-      expect(body).toMatchObject({ seconds: duration, first_image_url: "https://assets.example/first.png", last_image_url: "https://assets.example/last.png" });
+      expect(body).toMatchObject({ duration, first_image_url: "https://assets.example/first.png", last_image_url: "https://assets.example/last.png" });
       expect(body).not.toHaveProperty("reference_image_urls");
     }
     await expect(f.adapter.submit({ ...request, model: "ve1-veo-3.1-fast", parameters: { duration: 5 } })).rejects.toThrow(/4 \/ 6 \/ 8/);

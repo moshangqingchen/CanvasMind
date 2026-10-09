@@ -4,6 +4,8 @@ export interface TransparentImageEvidence {
   readonly provider: string;
   readonly hostname: string;
   readonly group: string;
+  /** Official group identity, when verified independently of its editable name. */
+  readonly supplierGroupId?: string;
   readonly model: string;
   /** Only route selectors belong here; tested size/quality are recorded below. */
   readonly selectors?: Readonly<Partial<Record<"series" | "tier", string>>>;
@@ -24,7 +26,7 @@ export interface TransparentImageEvidence {
   };
 }
 
-type ImageEvidenceIdentity = Pick<TransparentImageEvidence, "provider" | "hostname" | "group" | "model" | "selectors">;
+type ImageEvidenceIdentity = Pick<TransparentImageEvidence, "provider" | "hostname" | "group" | "supplierGroupId" | "model" | "selectors">;
 
 /** A measured failure of this exact route, not a permanent supplier capability claim.
  * Connection, quota and timeout errors are deliberately not eligible outcomes.
@@ -285,7 +287,7 @@ export const VERIFIED_TRANSPARENT_IMAGES: readonly TransparentImageEvidence[] = 
     output: { width: 3840, height: 2160, format: "png", fullyTransparentPixelRatio: 0.6571404803240741 },
   },
   {
-    provider: "openai", hostname: "synoralink.com", group: "高质量生图专线", model: "gpt-image-2.5-sunburst",
+    provider: "openai", hostname: "synoralink.com", group: "高质量生图专线", supplierGroupId: "115", model: "gpt-image-2.5-sunburst",
     transport: { kind: "openai-images", path: "/v1/images/generations", method: "POST", bodyMode: "json" },
     checkedAt: "2026-10-05",
     request: { size: "3840x2160", quality: "max", n: 1, background: "transparent", output_format: "png" },
@@ -320,7 +322,7 @@ export const VERIFIED_TRANSPARENT_IMAGES: readonly TransparentImageEvidence[] = 
     output: { width: 3840, height: 2160, format: "png", fullyTransparentPixelRatio: 0.017242356288580247 },
   },
   {
-    provider: "openai", hostname: "synoralink.com", group: "高质量生图专线", model: "gpt-image-2.5-flare",
+    provider: "openai", hostname: "synoralink.com", group: "高质量生图专线", supplierGroupId: "115", model: "gpt-image-2.5-flare",
     transport: { kind: "openai-images", path: "/v1/images/generations", method: "POST", bodyMode: "json" },
     checkedAt: "2026-10-05",
     request: { size: "3840x2160", quality: "max", n: 1, background: "transparent", output_format: "png" },
@@ -341,8 +343,12 @@ function matchesTransparentImageEvidence(connection: ImageEditingConnection, mod
   // A key tied to a different group cannot inherit the displayed group's proof.
   if (config.accountKeyGroup !== undefined && config.modelGroup !== undefined && config.accountKeyGroup !== config.modelGroup)
     return false;
+  // A verified official ID survives a group rename. An explicit different ID
+  // must never fall back to the former name's measured capability.
+  const matchesGroup = evidence.supplierGroupId !== undefined && config.accountKeyGroupId !== undefined
+    ? String(config.accountKeyGroupId) === evidence.supplierGroupId : evidence.group === group;
   return evidence.provider === connection.provider &&
-    evidence.hostname === url.hostname && evidence.group === group && evidence.model === model &&
+    evidence.hostname === url.hostname && matchesGroup && evidence.model === model &&
     Object.entries(evidence.selectors ?? {}).every(([key, value]) => parameters[key] === value);
 }
 

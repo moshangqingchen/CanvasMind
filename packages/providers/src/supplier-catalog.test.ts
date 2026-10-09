@@ -34,6 +34,29 @@ it("keeps the exact official Afei declared video pending without borrowing its t
 });
 
 describe("supplier discovery", () => {
+  it("keeps Synora billed evidence on the stable group even when its public model catalog is unavailable", async () => {
+    const requests: string[] = [];
+    const fetcher: typeof fetch = async url => {
+      const path = new URL(String(url)).pathname; requests.push(path);
+      if (path === "/api/v1/groups/available") return Response.json({ code: 0, data: [
+        { id: 115, name: "全参生图专线", description: "原生4k，image2和2.5均支持所有参数，0.07/张" },
+        { id: 99, name: "adobe中质量生图", description: "0.06/张" },
+      ] });
+      if (path === "/api/v1/usage") return Response.json({ code: 0, data: { items: [
+        { group_id: 115, model: "gpt-image-2.5-sunburst", billing_mode: "image", image_count: 1, image_size: "4K", actual_cost: .08, created_at: "2026-10-09T08:00:00Z" },
+      ] } });
+      if (path === "/api/v1/announcements") return Response.json({ code: 0, data: [] });
+      return Response.json({}, { status: 404 });
+    };
+    const discovery = await discoverSupplierCatalog({ siteUrl: "https://synoralink.com", apiUrl: "https://synoralink.com/v1", kind: "sub2api" }, fetcher);
+    expect(discovery).toMatchObject({ status: "live", complete: false });
+    expect(discovery.groups[0]).toMatchObject({ supplierGroupId: "115", models: [], details: {
+      referencePrice: "0.07/张", ledgerPrices: [{ amount: .08, supplierGroupId: "115", modelId: "gpt-image-2.5-sunburst", parameters: { n: 1, resolution: "4K" }, sample: true }],
+    } });
+    expect(discovery.groups[1]!.details?.ledgerPrices).toBeUndefined();
+    expect(requests.filter(path => path === "/api/v1/usage")).toHaveLength(1);
+    expect(requests.filter(path => path === "/api/v1/announcements")).toHaveLength(1);
+  });
   const weaiFetch = (failureId?: string, failure = 404): typeof fetch => async url => {
     const parsed = new URL(String(url));
     expect(parsed.origin).toBe(WEAI_LEGACY_ORIGIN);
@@ -516,7 +539,8 @@ describe("API-key page group fallback", () => {
       groups: [{ id: group.name, supplierGroupId: String(group.id), models: [], details: { rateMultiplier: group.rate_multiplier } }] });
     expect(result.error).toContain("模型价格目录");
     expect(calls).toEqual(["/api/v1/model-plaza", "/api/v1/groups/available", siteUrl === "https://api.hangzhale.com" ? "/api/provider/pricing" : "/api/v1/pricing/channels",
-      ...(siteUrl === WEAI_LEGACY_ORIGIN ? ["/api/v1/model-plaza-legacy/models"] : [])]);
+      ...(siteUrl === WEAI_LEGACY_ORIGIN ? ["/api/v1/model-plaza-legacy/models"] : []),
+      ...(siteUrl === "https://synoralink.com" ? ["/api/v1/usage", "/api/v1/announcements"] : [])]);
   });
   it.each(["unauthorized", "timeout", "invalid-body", "rejected-body"] as const)(
     "preserves successful Sub2API account groups when the separate price page is %s",

@@ -38,7 +38,7 @@ describe("current media contracts repair saved REST transports", () => {
     await expect(adapter.submit(request(id, { duration: 15 }, [unknownDuration]))).rejects.toThrow();
     expect(fetcher).toHaveBeenCalledOnce();
   });
-  it("uses Chuangxiang seconds and the task's separate authenticated content path", async () => {
+  it("uses Chuangxiang duration and the task's separate authenticated content path", async () => {
     const id = "sd10-seedance-2.0";
     const { adapter, fetcher } = fixture("https://vapi.chuangxiangai.asia/v1", chuangxiangVideoModel(id), [
       Response.json({ request_id: "video_3", status: "queued" }), Response.json({ status: "completed" }),
@@ -46,7 +46,7 @@ describe("current media contracts repair saved REST transports", () => {
     ]);
     const task = await adapter.submit(request(id, { duration: 10 }));
     expect(fetcher.mock.calls[0]?.[0]).toBe("https://vapi.chuangxiangai.asia/v1/videos/generations");
-    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: "Ocean sunrise", seconds: 10, n: 1 });
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: "Ocean sunrise", duration: 10, n: 1 });
     const state = await adapter.poll(JSON.parse(JSON.stringify(task)));
     expect(state.status).toBe("succeeded");
     expect(await adapter.extractOutputs(state.result)).toEqual([{ kind: "video", data: new Uint8Array([1, 2, 3]), mimeType: "video/mp4" }]);

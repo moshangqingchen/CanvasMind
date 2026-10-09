@@ -11,6 +11,7 @@ import type {
   ModelDescriptor,
   SupplierCatalogDiscovery,
 } from "@super-canvas/providers";
+import { remainingVideoModel } from "@super-canvas/providers/remaining-video-contracts";
 vi.mock("./supplier-service", () => ({
   getSupplierRecord: vi.fn(async () => null),
 }));
@@ -51,6 +52,82 @@ import { cyberAfeiCatalogFromPricing, resolveCyberAfeiScannedGroup } from "./cyb
 import { applyWeAiLivePricing, type WeAiLiveModelPricing } from "./weai-catalog";
 
 const weaiSnapshotOrigin = "https://asian-acc.we-token.cc";
+it("uses the latest exact Synora ledger sample instead of an obsolete common group rate", () => {
+  const id = "gpt-image-2.5-sunburst";
+  // Synthetic timestamps preserve ordering without retaining account billing times.
+  const ledger = { modelId: id, supplierGroupId: "115", amount: .08, currency: "USD", unit: "image" as const,
+    resolution: "4K", parameters: { n: 1, resolution: "4K" }, sample: true as const, billingMode: "image",
+    checkedAt: "2001-01-03T13:00:00Z", observedAt: "2001-01-03T08:00:00Z", sourceUrl: "https://synoralink.com/api/v1/usage?page=1&page_size=100" };
+  const catalog: SupplierCatalogDiscovery = { kind: "sub2api", status: "live", complete: false, checkedAt: ledger.checkedAt,
+    groups: [{ id: "全参生图专线", label: "全参生图专线", source: "catalog", supplierGroupId: "115", models: [],
+      details: { source: "key-groups", description: "原生4K，0.07/张", ledgerPrices: [ledger] } }] };
+  const image: ModelDescriptor = { id, name: id, operations: ["image.generate"], outputKinds: ["image"], metadata: { priceLabel: "价格目录未完整读取" } };
+  const priced = applySupplierCatalogPrices([image], "旧组名称", catalog, "https://synoralink.com", { supplierGroupId: "115" })[0]!;
+  expect(priced.metadata).toMatchObject({ priceLabel: "$0.08/张（账单实测） · 4K", priceSource: "generated-result", priceStatus: "measured", supplierPriceGroupId: "115" });
+  expect(modelPriceSummary(priced, { size_tier: "4K", n: 1 })).toBe("$0.08/张（账单实测） · 4K");
+  expect(modelPriceSummary(priced, { size_tier: "2K", n: 1 })).toContain("当前组合未测价");
+  expect(modelPriceSummary(priced, { size_tier: "4K", n: 2 })).toContain("当前组合未测价");
+  expect(modelEstimatedCost(priced, { size_tier: "4K", n: 1 })).toBeUndefined();
+  const unavailableLedger = structuredClone(catalog); delete unavailableLedger.groups[0]!.details!.ledgerPrices;
+  const retained = applySupplierCatalogPrices([priced], "全参生图专线", unavailableLedger, "https://synoralink.com", { supplierGroupId: "115" })[0]!;
+  expect(retained.metadata?.priceLabel).toBe("$0.08/张（上次账单实测） · 4K");
+  expect(retained.metadata?.priceStatus).toBe("partial");
+  const retainedInCatalog = { ...catalog, checkedAt: "2001-01-03T13:20:00Z" };
+  expect(applySupplierCatalogPrices([priced], "全参生图专线", retainedInCatalog, "https://synoralink.com", { supplierGroupId: "115" })[0]?.metadata?.priceLabel).toContain("上次账单实测");
+  const newerNotice = structuredClone(catalog); newerNotice.groups[0]!.details!.ledgerPrices![0]!.notificationAt = "2001-01-03T12:00:00Z";
+  const adjusted = applySupplierCatalogPrices([image], "全参生图专线", newerNotice, "https://synoralink.com", { supplierGroupId: "115" })[0]!;
+  expect(adjusted.metadata?.priceLabel).toBe("价格已调整；$0.08/张（上次账单实测） · 4K");
+  expect(adjusted.metadata?.priceStatus).toBe("partial");
+  expect(applySupplierCatalogPrices([{ ...image, id: "gpt-image-2.5-flare" }], "全参生图专线", catalog, "https://synoralink.com", { supplierGroupId: "115" })[0]?.metadata?.priceLabel).toBe("0.07/张（分组说明参考）");
+  for (const changed of [{ supplierGroupId: "116" }, { modelId: id + "-preview" }, { currency: "credits" }, { parameters: { n: 2, resolution: "4K" } },
+    { sourceUrl: "https://other.example/api/v1/usage" }, { sourceUrl: "https://synoralink.com/api/v1/usage?token=private" }, { amount: NaN }]) {
+    const invalid = structuredClone(catalog); invalid.groups[0]!.details!.ledgerPrices = [{ ...ledger, ...changed }];
+    expect(applySupplierCatalogPrices([image], "全参生图专线", invalid, "https://synoralink.com", { supplierGroupId: "115" })[0]?.metadata?.priceSource).toBe("supplier-group");
+  }
+  expect(applySupplierCatalogPrices([image], "全参生图专线", catalog, "https://unrelated.example", { supplierGroupId: "115" })[0]?.metadata?.priceSource).toBe("supplier-group");
+  const manual = { ...image, pricing: { kind: "per-image" as const, currency: "USD", unitAmount: 99, confidence: "exact" as const, checkedAt: ledger.checkedAt }, metadata: { priceSource: "manual" } };
+  expect(applySupplierCatalogPrices([manual], "全参生图专线", catalog, "https://synoralink.com", { supplierGroupId: "115" })[0]).toBe(manual);
+});
+it("uses a stable group identity after rename while retaining the exact group's description quote", () => {
+  const oldName = "高质量生图专线", newName = "全参生图专线";
+  const image: ModelDescriptor = { id: "gpt-image-2", name: "GPT Image 2", operations: ["image.generate"], outputKinds: ["image"],
+    metadata: { priceLabel: "价格目录未完整读取", priceStatus: "partial" } };
+  const catalog: SupplierCatalogDiscovery = { kind: "sub2api", status: "live", complete: false, checkedAt: "2026-10-09T08:00:00Z", groups: [{
+    id: newName, label: newName, supplierGroupId: "115", source: "catalog", models: [],
+    details: { source: "key-groups", description: "原生4k，image2和2.5均支持所有参数，0.07/张", rateMultiplier: 1 },
+  }] };
+  const priced = applySupplierCatalogPrices([image], oldName, catalog, "https://synoralink.com", { supplierGroupId: "115" })[0]!;
+  expect(priced.metadata).toMatchObject({ priceLabel: "0.07/张（分组说明参考）", priceSource: "supplier-group", priceStatus: "available" });
+  expect(modelPriceSummary(priced, { size_tier: "4K" })).toBe("0.07/张（分组说明参考）");
+  // The description has no currency: it is still a useful displayed quote, but cannot become a made-up total.
+  expect(priced.pricing).toBeUndefined();
+  expect(modelEstimatedCost(priced, { n: 1 })).toBeUndefined();
+  expect(applySupplierCatalogPrices([image], oldName, catalog, "https://synoralink.com")[0]?.metadata?.priceStatus).toBe("partial");
+  const reusedName = { ...catalog, groups: [{ ...catalog.groups[0]!, id: oldName, supplierGroupId: "116" }] };
+  expect(applySupplierCatalogPrices([image], oldName, reusedName, undefined, { supplierGroupId: "115" })[0]?.metadata?.priceStatus).toBe("partial");
+  const history = { ...catalog, groups: [{ ...catalog.groups[0]!, id: oldName, details: { ...catalog.groups[0]!.details!, stale: true } }, ...catalog.groups] };
+  expect(applySupplierCatalogPrices([image], oldName, history, undefined, { supplierGroupId: "115" })[0]?.metadata?.priceLabel).toBe(priced.metadata?.priceLabel);
+  const ambiguous = { ...catalog, groups: [...catalog.groups, { ...catalog.groups[0]!, id: "another-name" }] };
+  expect(applySupplierCatalogPrices([image], oldName, ambiguous, undefined, { supplierGroupId: "115" })[0]?.metadata?.priceStatus).toBe("partial");
+  const oldQuote: ModelDescriptor = { ...image, pricing: { kind: "per-image", currency: "USD", unitAmount: .99, checkedAt: "2026-10-09T09:00:00Z", confidence: "exact" },
+    metadata: { priceSource: "supplier-group", priceLabel: "$0.99/张", supplierPriceGroup: oldName, supplierPriceGroupId: "116", priceCheckedAt: "2026-10-09T09:00:00Z" } };
+  expect(applySupplierCatalogPrices([oldQuote], oldName, catalog, undefined, { supplierGroupId: "115", savedCatalog: true })[0]?.metadata?.priceLabel).toBe(priced.metadata?.priceLabel);
+  const missing = { ...catalog, groups: [] };
+  expect(applySupplierCatalogPrices([oldQuote], oldName, missing, undefined, { supplierGroupId: "115", savedCatalog: true })[0]?.pricing).toBeUndefined();
+  expect(applySupplierCatalogPrices([oldQuote], oldName, missing, undefined, { supplierGroupId: "115", savedCatalog: true })[0]?.metadata?.priceLabel).toBe("价格未公布");
+});
+
+it("passes the saved official identity to offline price reads without joining a changed source", async () => {
+  const supplier = { id: "stable-group-prices", apiUrl: "https://stable-price.example/v1", siteUrl: "https://stable-price.example", state: { sourceId: "stable-source" },
+    catalog: { groups: [{ id: "renamed-images", label: "Renamed", supplierGroupId: "115", models: [], details: { source: "key-groups", description: "$0.07/张" } }] },
+    kind: "sub2api", scanStatus: "live", scanComplete: false, scannedAt: "2026-10-09T08:00:00Z", updatedAt: "2026-10-09T08:00:00Z" };
+  vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+  const config = { supplierId: supplier.id, supplierSourceId: "stable-source", baseUrl: supplier.apiUrl, accountKeyGroup: "old-images", accountKeyGroupId: "115" };
+  const image: ModelDescriptor = { id: "gpt-image-2", name: "GPT Image 2", operations: ["image.generate"], outputKinds: ["image"] };
+  expect((await enrichSupplierModelPrices({ config }, [image], false, false))[0]?.metadata?.priceLabel).toBe("$0.07/张（分组说明参考）");
+  expect((await enrichSupplierModelPrices({ config: { ...config, supplierSourceId: "different-source" } }, [image], false, false))[0]?.metadata?.priceLabel).toBeUndefined();
+  vi.mocked(getSupplierRecord).mockResolvedValue(null);
+});
 it("replaces only proven automatic Fri snapshots with current exact account group prices and titles", async () => {
   const origin = "https://platform.frimodel.com", actual = await vi.importActual<typeof import("@super-canvas/providers")>("@super-canvas/providers");
   const rows = [
@@ -337,6 +414,50 @@ const secureCatalog = (multiplier = 1): SupplierCatalogDiscovery => ({
 const secureVideo: ModelDescriptor = { id: "doubao-seedance-2-0-260128", name: "Seedance 2.0", operations: ["video.generate"],
   parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "720p", options: [{ label: "720p", value: "720p" }] }],
 };
+describe("Secure group-specific optional video resolutions", () => {
+  const origin = "https://token.secure-skill.com", group = "海外sd2.0/2.5-7.5折", checkedAt = "2026-10-09T14:03:13.004Z";
+  const ids = ["doubao-seedance-2-0-260128", "doubao-seedance-2-5-260628"];
+  const catalog = (): SupplierCatalogDiscovery => ({ kind: "sub2api", status: "live", complete: true, checkedAt,
+    groups: [{ id: group, label: group, supplierGroupId: "56", source: "catalog", details: { source: "key-groups" }, models: ids.map((id, index) => ({ id, capability: "video" as const,
+      priceLabel: index ? "480p · 不含参考视频 ¥53.4375/1M tokens" : "480p ¥35/1M tokens · 4K ¥9.8/1M tokens",
+      metadata: { secureSkillCatalogPricing: { kind: "token", currency: "CNY", confidence: "exact", checkedAt,
+        sourceUrl: origin + "/api/v1/pricing/channels", tiers: (index ? ["480p"] : ["480p", "4K"]).map(resolution => ({
+          id: resolution, label: resolution, price: 35, conditionMode: "all", conditions: [
+            { parameter: "token_kind", operator: "equals", value: "output" }, { parameter: "resolution", operator: "equals", value: resolution },
+          ],
+        })) } },
+    })) }],
+  });
+  const model = (id = ids[0]!) => remainingVideoModel("secure", id, undefined, { group })!;
+  const resolutions = (m: ModelDescriptor) => m.parameters?.find(p => p.key === "resolution")?.options?.map(o => o.value);
+  it("applies only each exact group's model-specific tiers and withdraws old optional resolution evidence", () => {
+    const lookup = catalog();
+    const output = applySupplierCatalogPrices(ids.map(id => model(id)), group, lookup, origin, { supplierGroupId: "56" });
+    expect(resolutions(output[0]!)).toEqual(["720p", "1080p", "480p", "4K"]);
+    expect(resolutions(output[1]!)).toEqual(["720p", "1080p", "480p"]);
+    expect(output[0]?.pricing).toBe(lookup.groups[0]?.models[0]?.metadata?.secureSkillCatalogPricing);
+    expect(output[0]?.metadata?.protocol).toBe("openai-videos");
+    const no4K = catalog();
+    const pricing = no4K.groups[0]!.models[0]!.metadata!.secureSkillCatalogPricing as NonNullable<ModelDescriptor["pricing"]>;
+    pricing.tiers = pricing.tiers!.filter(tier => tier.id !== "4K");
+    expect(resolutions(applySupplierCatalogPrices([output[0]!], group, no4K, origin, { supplierGroupId: "56" })[0]!)).toEqual(["720p", "1080p", "480p"]);
+    expect(resolutions(applySupplierCatalogPrices([model()], "doubao-full", lookup, origin, { supplierGroupId: "42" })[0]!)).toEqual(["720p", "1080p"]);
+  });
+  it.each(["stale-group", "stale-model", "estimate", "wrong-price-origin", "manual", "paid-test", "custom-protocol"])(
+    "does not let %s evidence modify automatic video controls", kind => {
+      const lookup = catalog(), original = model();
+      if (kind === "stale-group") lookup.groups[0]!.details!.stale = true;
+      if (kind === "stale-model") lookup.groups[0]!.models[0]!.metadata = { ...lookup.groups[0]!.models[0]!.metadata, supplierCatalogModelStale: true };
+      const pricing = lookup.groups[0]!.models[0]!.metadata!.secureSkillCatalogPricing as NonNullable<ModelDescriptor["pricing"]>;
+      if (kind === "estimate") pricing.confidence = "estimate";
+      if (kind === "wrong-price-origin") pricing.sourceUrl = "https://other.example/pricing";
+      if (kind === "manual") original.metadata = { ...original.metadata, source: "manual" };
+      if (kind === "paid-test") original.metadata = { ...original.metadata, protocolEvidence: "paid-test" };
+      if (kind === "custom-protocol") original.metadata = { ...original.metadata, protocol: "user-saved-native" };
+      const output = applySupplierCatalogPrices([original], group, lookup, origin, { supplierGroupId: "56" })[0]!;
+      expect(output.parameters).toBe(original.parameters);
+    });
+});
 it.each(["https://token.secure-skill.com", "https://token.secure-skill.com/api/v1/pricing/channels"])(
   "explains an unquoted exact Secure Wan ID without borrowing or overwriting Prime's price (%s)", origin => {
     const checkedAt = "2026-10-09T11:59:00Z", group = "Wan", sourceUrl = "https://token.secure-skill.com/api/v1/pricing/channels";
@@ -812,6 +933,21 @@ const withLegacyMikotoGroupPrice = (item: ModelDescriptor): ModelDescriptor => (
 });
 
 describe("universal supplier price lookup", () => {
+  it("uses explicit yuan in a group quote before shared backend credit amounts", () => {
+    const catalog: SupplierCatalogDiscovery = { kind: "sub2api", status: "live", complete: false, checkedAt: "2026-10-09T13:00:00Z", groups: [{
+      id: "banana-pro", label: "banana-pro", supplierGroupId: "43", source: "catalog", models: [], details: {
+        source: "key-groups", description: "0.05元/张分组", imagePrices: ["1K", "2K", "4K"].map(resolution => ({ resolution, amount: .05 })),
+      },
+    }] };
+    const model = withLegacyMikotoGroupPrice(mikotoImageModel("N nano-banana-pro"));
+    const priced = applySupplierCatalogPrices([model], "banana-pro", catalog, "https://token.secure-skill.com", { supplierGroupId: "43" })[0]!;
+    expect(priced.pricing).toMatchObject({ kind: "per-image", currency: "CNY", unitAmount: .05 });
+    expect(modelPriceSummary(priced, { size_tier: "4K" })).toBe("0.05 CNY / 张");
+    expect(modelEstimatedCost(priced, { n: 1, size_tier: "4K" })).toBe("0.05 CNY");
+    const conditional = structuredClone(catalog); conditional.groups[0]!.details!.description = "4K 0.05元/张分组";
+    const condition = applySupplierCatalogPrices([mikotoImageModel("N nano-banana-pro")], "banana-pro", conditional, "https://token.secure-skill.com", { supplierGroupId: "43" })[0]!;
+    expect(condition.pricing?.kind).not.toBe("per-image");
+  });
   it.each([true, false])("scopes Gemini prices to complete model IDs and repairs shared cached prices when completeness is %s", complete => {
     const ids = ["gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"];
     const quotes = ["gemini-3.1-flash-image-preview 0.065/张", "gemini-3-pro-image-preview 0.085/张"];
@@ -1148,6 +1284,25 @@ describe("universal supplier price lookup", () => {
     vi.mocked(repository.getSupplierVerification).mockResolvedValue(null);
   });
 
+  it("fills partial-directory placeholders from an exact successful test charge", async () => {
+    const supplier = { id: "partial-price", apiUrl: "https://partial-evidence.example/v1", siteUrl: "https://partial-evidence.example", state: { sourceId: "source" },
+      catalog: { groups: [] }, kind: "sub2api", scanStatus: "live", scanComplete: false, scannedAt: "2026-10-09T08:00:00Z", updatedAt: "2026-10-09T08:00:00Z" };
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    vi.mocked(repository.getSupplierVerification).mockResolvedValue({ sourceId: "source", cases: [{ sourceId: "source", status: "succeeded", requestId: "request", group: "images", modelId: "gpt-image-2", resolution: "4K", quality: "high",
+      actualCharge: { amount: "0.07", currency: "USD", unit: "request", requestId: "request", checkedAt: "2026-10-09T08:00:00Z" } }] } as unknown as Awaited<ReturnType<typeof repository.getSupplierVerification>>);
+    const config = { supplierId: supplier.id, supplierSourceId: "source", baseUrl: supplier.apiUrl, modelGroup: "images" };
+    for (const priceLabel of ["价格目录未完整读取", "暂未取得报价", "价格未知", "价格未确定"]) {
+      const image: ModelDescriptor = { id: "gpt-image-2", name: "GPT Image 2", operations: ["image.generate"], outputKinds: ["image"], metadata: { priceLabel } };
+      const priced = (await enrichSupplierModelPrices({ config }, [image], false, false))[0]!;
+      expect(priced.metadata?.priceSource).toBe("generated-result");
+      expect(modelPriceSummary(priced, { size_tier: "4K", quality: "high" })).toBe("$0.07/次（生成实测） · 4K / high");
+      expect(modelPriceSummary(priced, { size_tier: "1K", quality: "high" })).toBe("当前组合未测价；上次 $0.07/次（生成实测） · 4K / high");
+      expect(modelEstimatedCost(priced, { n: 3 })).toBeUndefined();
+    }
+    vi.mocked(getSupplierRecord).mockResolvedValue(null);
+    vi.mocked(repository.getSupplierVerification).mockResolvedValue(null);
+  });
+
   it("uses the latest exact generation charge as the final pricing evidence", () => {
     const prices = measuredPricesFromVerification({
       cases: [
@@ -1209,6 +1364,16 @@ describe("universal supplier price lookup", () => {
     expect(measuredPricesFromVerification({ cases: [{ group: "cheap", modelId: "bad", actualCharge: { amount: -1, currency: "USD", unit: "image" } }] })).toEqual(new Map());
     expect(measuredPricesFromVerification({ sourceId: "new", cases: [{ sourceId: "old", status: "succeeded", requestId: "request", group: "cheap", modelId: "old-image", actualCharge: { requestId: "request", amount: 0.12, currency: "USD", unit: "image" } }] })).toEqual(new Map());
     expect(measuredPricesFromVerification({ cases: [{ status: "succeeded", requestId: "request", group: "cheap", modelId: "unmatched", actualCharge: { requestId: "other", amount: 0.12, currency: "USD", unit: "image" } }] })).toEqual(new Map());
+  });
+
+  it("never fills a known official group's price with a same-name test from another group", () => {
+    const test = { sourceId: "source", status: "succeeded", requestId: "request", group: "images", modelId: "gpt-image-2",
+      actualCharge: { amount: .07, currency: "USD", unit: "request", requestId: "request" } };
+    for (const supplierGroupId of [undefined, "116"]) {
+      expect(measuredPricesFromVerification({ sourceId: "source", cases: [{ ...test, supplierGroupId }] }, { supplierGroupId: "115" }).size).toBe(0);
+    }
+    expect(measuredPricesFromVerification({ sourceId: "source", cases: [{ ...test, supplierGroupId: "115" }] }, { supplierGroupId: "115" }).get("images\u0000gpt-image-2")?.amount).toBe(.07);
+    expect(measuredPricesFromVerification({ sourceId: "source", cases: [{ ...test, supplierGroupId: "115" }] }, { supplierGroupId: "115", group: "renamed-images" }).get("renamed-images\u0000gpt-image-2")?.amount).toBe(.07);
   });
 
   it("uses group prices only as image references and keeps explicit model prices first", () => {

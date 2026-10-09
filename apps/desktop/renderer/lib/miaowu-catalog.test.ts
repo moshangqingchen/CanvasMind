@@ -14,6 +14,39 @@ import { modelPriceAmount } from "@super-canvas/providers";
 // Public /api/pricing captured at 2026-10-08T14:33:14Z. Its generic
 // `openai` endpoint label is not the declared image/video output contract.
 const CURRENT_PUBLIC_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
+const CURRENT_VIDEO_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-video-20261009.fixture.json", import.meta.url), "utf8"));
+
+it("integrates all eleven current default video models using each model's free schema instead of another alias", () => {
+  const catalog = miaowuCatalogFromPricing(CURRENT_VIDEO_FIXTURE.pricing);
+  const models = miaowuModelsForGroup(catalog, "default"), connector = miaowuConnectorForModels(models);
+  expect(models.map(model => model.id).sort()).toEqual(Object.keys(CURRENT_VIDEO_FIXTURE.schemas).sort());
+  for (const model of models) {
+    const schema = CURRENT_VIDEO_FIXTURE.schemas[model.id].request_schema.properties.params.properties;
+    const duration = model.parameters?.find(parameter => parameter.key === "duration");
+    if (schema.seconds.enum) expect(duration?.options?.map(option => option.value)).toEqual(schema.seconds.enum.map(Number));
+    else expect(duration).toMatchObject({ min: schema.seconds["x-dream-integer-string-min"], max: schema.seconds["x-dream-integer-string-max"], step: 1 });
+    for (const [parameter, field] of [["resolution", "size"], ["aspect_ratio", "ratio"]] as const)
+      expect(model.parameters?.find(row => row.key === parameter)?.options?.map(option => option.value)).toEqual(schema[field].enum);
+    expect(model.limits).toMatchObject({ maxInputImages: schema.image_urls.maxItems, maxInputVideos: schema.video_urls.maxItems, maxInputAudios: schema.audio_urls.maxItems });
+    expect(model.metadata).toMatchObject({ parameterSource: "pricing.video_api", remoteMediaUrlsOnly: true, supportsFirstLastFrames: false });
+    expect(model.operations).toEqual(["video.generate", "video.image-to-video"]);
+    expect(connector.modelOverrides?.[model.id]?.submit?.path ?? connector.submit.path).toBe("/v1/videos");
+    expect(connector.poll?.path).toBe("/v1/videos/{taskId}");
+    expect(connector.output.contentFallback?.path).toBe("/v1/dream/tasks/{taskId}/content");
+    const quote = CURRENT_VIDEO_FIXTURE.schemas[model.id].pricing_display?.groups?.default;
+    for (const rule of quote?.rules ?? []) expect(modelPriceAmount(model.pricing!, { resolution: rule.size, duration: rule.seconds_max ?? 8 })).toBeCloseTo(rule.price, 10);
+  }
+  const mini = models.find(model => model.id === "doubao-seedance-2.0-mini")!;
+  const pro = models.find(model => model.id === "seedance-2.5-pro")!;
+  expect(mini.pricing).toMatchObject({ kind: "per-request", currency: "CNY", billingUnit: "request" });
+  expect(modelPriceAmount(mini.pricing!, { resolution: "720p", duration: 5 })).toBe(1);
+  expect(modelPriceAmount(mini.pricing!, { resolution: "720p", duration: 15 })).toBe(1);
+  expect(pro.limits).toMatchObject({ maxInputImages: 30, maxInputVideos: 0, maxInputAudios: 10 });
+  expect(pro.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 4, max: 29 });
+  expect(modelPriceAmount(pro.pricing!, { resolution: "720p", duration: 4 })).toBe(10);
+  expect(modelPriceAmount(pro.pricing!, { resolution: "720p", duration: 29 })).toBe(10);
+  expect(models.some(model => ["dola-seedance-2.5", "dreamina-seedance-2.0-mini"].includes(model.id))).toBe(false);
+});
 
 it("retains all eighteen exact public media models and their native contracts despite a generic chat endpoint label", () => {
   const catalog = miaowuCatalogFromPricing(CURRENT_PUBLIC_FIXTURE);

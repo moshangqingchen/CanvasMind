@@ -1,3 +1,5 @@
+import type { SupplierLedgerPrice } from "./supplier-ledger-pricing.js";
+
 /** Display evidence from the supplier's group record, never executable configuration. */
 export interface SupplierGroupDetails {
   source: "model-plaza" | "key-groups";
@@ -14,10 +16,13 @@ export interface SupplierGroupDetails {
   concurrencyLimit?: number;
   rpmLimit?: number;
   stale?: boolean;
+  /** Actual billed samples scoped to exact official group, model and parameters. */
+  ledgerPrices?: SupplierLedgerPrice[];
 }
 const tiers = ["1K", "2K", "4K"];
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const referencePricePattern = /(?:[¥￥$]?\s*\d+(?:\.\d+)?\s*(?:元|分|毛|刀)?\s*(?:[/／]|一|每|1)\s*(?:张|次|请求|秒|s(?:ec(?:ond)?s?)?)(?![a-zA-Z])|(?:\d+|一|每)\s*张\s*[¥￥$]?\s*\d|量大\s*\d+(?:\.\d+)?\s*(?:分|毛|元))/iu;
+const leadingReferencePricePattern = new RegExp(`^(?:${referencePricePattern.source})`, "iu");
 const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
 /** A base model ID must never match a different model with an added suffix. */
@@ -137,7 +142,14 @@ export function supplierGroupModelPriceDetails(details: SupplierGroupDetails | u
   }
   for (const clause of clauses) {
     if (/充值|实付|汇率|兑换/iu.test(clause) || !referencePricePattern.test(clause)) continue;
+    // An incomplete Key inventory may omit another explicitly quoted ID. A
+    // complete ID directly followed by a price still scopes that quote; it
+    // must not become a shared price for the one model currently being read.
+    const declaredIds = [...clause.matchAll(/(?<![\w./-])[a-z][a-z0-9]*(?:[./_-][a-z0-9]+)+(?![\w./-])/giu)]
+      .filter(mention => leadingReferencePricePattern.test(clause.slice(mention.index + mention[0].length)
+        .replace(/^\s*(?:\*\*)?\s*[:：]?\s*/u, "")));
     const candidates = [...clause.matchAll(exactPattern),
+      ...declaredIds,
       ...clause.matchAll(/\b(?:gpt[- ]?)?image[- ]?2(?:\.5|\.0)?(?:-[a-z0-9]+(?:-[a-z0-9]+)*| +[a-z][a-z0-9]*(?:-[a-z0-9]+)*)?(?![\w.-])/giu)]
       .sort((a, b) => a.index - b.index || b[0].length - a[0].length);
     const mentions = candidates.filter((mention, index) => !candidates.slice(0, index).some(previous =>

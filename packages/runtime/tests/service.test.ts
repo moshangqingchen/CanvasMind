@@ -16,6 +16,7 @@ import {
 import type { ObjectStorage, StoredObject } from "@super-canvas/storage";
 import { RunService, type RuntimeOptions } from "../src/service.js";
 import * as remoteDownloads from "../src/remote-download.js";
+import * as localMedia from "../src/media-duration.js";
 
 async function testRepository() {
   const repository = new MemoryRepository();
@@ -1073,6 +1074,26 @@ async function waitForRun(service: RunService, runId: string) {
 }
 
 describe("RunService", () => {
+  it("passes measured source-video dimensions and duration to validation and submission instead of requested output values", async () => {
+    const repository = await testRepository(), storage = new MemoryStorage();
+    const canvas = await repository.ensureDefaultCanvas(), bytes = new Uint8Array([9, 8, 7]);
+    await storage.put("reference-video", bytes, "video/mp4");
+    await repository.saveAsset({ id: "reference-video", name: "Reference", kind: "video", mimeType: "video/mp4", size: bytes.length, storageKey: "reference-video", metadata: { width: 4000, height: 3000, durationSeconds: 100 } });
+    await repository.saveCanvas({ id: canvas.id, graph: { schemaVersion: 1, nodes: [
+      { id: "source", type: "workflow", data: { nodeType: "asset-input", assetId: "reference-video", assetKind: "video", outputs: [port("asset", "video")] } },
+      { id: "generation", type: "workflow", data: { nodeType: "video-generation", provider: "runway", connectionId: "runway-test", model: "gen4.5", parts: [{ type: "text", text: "Animate" }], parameters: { duration: 30 }, inputs: [port("reference", "video")], outputs: [port("video", "video")] } },
+    ], edges: [{ id: "reference", source: "source", sourceHandle: "asset", target: "generation", targetHandle: "reference" }] } });
+    const probe = vi.spyOn(localMedia, "readLocalMediaMetadata").mockResolvedValue({ width: 1920, height: 1080, durationSeconds: 8.5 });
+    const adapter = synchronousAdapter(), validate = vi.spyOn(adapter, "validate"), submit = vi.spyOn(adapter, "submit");
+    try {
+      const service = new AdapterRunService(adapter, repository, storage);
+      const run = await service.createRun({ canvasId: canvas.id, scope: "all", clientRequestId: "measured-video-metadata" });
+      expect((await waitForRun(service, run.id)).run.status).toBe("succeeded");
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(probe).toHaveBeenCalledWith(bytes);
+      for (const fn of [validate, submit]) expect(fn.mock.calls[0]?.[0]).toMatchObject({ parameters: { duration: 30 }, assets: [{ id: "reference-video", width: 1920, height: 1080, durationSeconds: 8.5 }] });
+    } finally { probe.mockRestore(); }
+  });
   it.each(["running", "succeeded"] as const)("recovers an existing %s image task without its lost reference/mask bytes or upload channel", async status => {
     const repository = await testRepository();
     const canvas = await repository.ensureDefaultCanvas();

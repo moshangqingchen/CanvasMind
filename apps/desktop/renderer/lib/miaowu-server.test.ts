@@ -10,6 +10,7 @@ const REPOSITORY_KEY = "__superCanvasRepository";
 const CATALOG_CACHE_KEY = "__superCanvasMiaowuCatalog";
 const PUBLIC_PRICING = JSON.parse(readFileSync(new URL("./miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
 const AUTHENTICATED_DIRECTORIES = JSON.parse(readFileSync(new URL("./miaowu-server-20261008.fixture.json", import.meta.url), "utf8"));
+const CURRENT_VIDEO_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-video-20261009.fixture.json", import.meta.url), "utf8"));
 const MASTER = "miaowu-test-master-key";
 const KEY = "miaowu-test-api-key";
 type NativeConnector = RestConnectorConfig & { models: ModelDescriptor[] };
@@ -88,6 +89,7 @@ function directoryFetch(dream: "live" | "network" | number = "live", openaiStatu
     expect(init?.redirect).toBe("error");
     expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${KEY}`);
     if (request.pathname === "/v1/models") return Response.json({ data: AUTHENTICATED_DIRECTORIES.openaiModels }, { status: openaiStatus });
+    if (request.pathname === "/v1/dream/model_schema") return Response.json({ error: { message: "model not found" } }, { status: 404 });
     if (request.pathname !== "/v1/dream/model_list") throw new Error("Unexpected endpoint");
     if (dream === "network") throw new Error("offline");
     return Response.json({ data: AUTHENTICATED_DIRECTORIES.dreamModels }, { status: dream === "live" ? 200 : dream });
@@ -95,6 +97,87 @@ function directoryFetch(dream: "live" | "network" | number = "live", openaiStatu
 }
 
 describe("authenticated native Miaowu media directory", () => {
+  const schemaFetch = (schemaStatus = 200, visible = Object.keys(CURRENT_VIDEO_FIXTURE.schemas)) => vi.fn<typeof fetch>(async (url, init) => {
+    const endpoint = new URL(String(url));
+    expect(endpoint.origin).toBe(MIAOWU_BASE_URL);
+    expect(init?.method).toBe("GET");
+    if (endpoint.pathname === "/api/pricing") return Response.json(CURRENT_VIDEO_FIXTURE.pricing);
+    expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${KEY}`);
+    expect(init?.redirect).toBe("error");
+    if (endpoint.pathname === "/v1/models") return Response.json({ data: visible.map(id => ({ id, supported_endpoint_types: ["openai"] })) });
+    if (endpoint.pathname === "/v1/dream/model_list") return Response.json({ data: visible.map(id => ({ id, type: "video" })) });
+    if (endpoint.pathname === "/v1/dream/model_schema") {
+      const id = endpoint.searchParams.get("model")!;
+      expect(visible).toContain(id);
+      return Response.json({ id, type: "video", ...CURRENT_VIDEO_FIXTURE.schemas[id] }, { status: schemaStatus });
+    }
+    throw new Error("Unexpected endpoint");
+  });
+
+  it("reads only same-Key visible exact video schemas and persists the new models' own limits", async () => {
+    makeRepository(authenticatedConnection());
+    const transport = schemaFetch();
+    const scan = await scanMiaowuConnection("miaowu-default", { fetch: transport, forcePricing: true });
+    expect(transport).toHaveBeenCalledTimes(14);
+    expect(Object.keys(scan.videoSchemas!)).toHaveLength(11);
+    expect(Object.values(scan.videoSchemas!).every(receipt => receipt.status === "live")).toBe(true);
+    const connector = scan.connection!.config.connector as unknown as NativeConnector;
+    expect(connector.models).toHaveLength(11);
+    expect(connector.models.find(model => model.id === "seedance-2.5-pro")).toMatchObject({ limits: { maxPromptCharacters: 5000, maxInputImages: 30, maxInputVideos: 0, maxInputAudios: 10 }, metadata: { parameterSource: "dream.video_schema" } });
+    expect(connector.models.find(model => model.id === "doubao-seedance-2.0-mini")?.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 5, max: 15 });
+    const synced = await syncMiaowuConnection("miaowu-default");
+    expect((synced!.config.connector as unknown as NativeConnector).models.find(model => model.id === "seedance-2.5-pro")?.limits?.maxPromptCharacters).toBe(5000);
+  });
+
+  it("does not read publicly quoted models missing from the authenticated media directory", async () => {
+    makeRepository(authenticatedConnection());
+    const transport = schemaFetch(200, ["doubao-seedance-2.0-mini"]);
+    const scan = await scanMiaowuConnection("miaowu-default", { fetch: transport, forcePricing: true });
+    expect(transport.mock.calls.filter(([url]) => String(url).includes("model_schema"))).toHaveLength(1);
+    expect(scan.modelIds).toEqual(["doubao-seedance-2.0-mini"]);
+    expect((scan.connection!.config.connector as unknown as NativeConnector).models.map(model => model.id)).toEqual(["doubao-seedance-2.0-mini"]);
+  });
+
+  it("retains an explicit manual native video's parameters and endpoint during schema refresh", async () => {
+    const initial = authenticatedConnection(), id = "seedance-2.5-pro";
+    const saved: ModelDescriptor = { id, name: "Saved custom Pro", operations: ["video.generate"], outputKinds: ["video"],
+      parameters: [{ key: "custom-duration", label: "Custom", control: "number", valueType: "integer", min: 4, max: 29 }],
+      metadata: { source: "manual", marketplaceGroup: "default" } };
+    const override = { submit: { path: "/custom-video", method: "POST" as const, bodyMode: "json" as const }, output: { path: "$.custom_video", kind: "video" as const } };
+    initial.config.modelCatalogModels = [saved] as unknown as ProviderConnectionRecord["config"][];
+    initial.config.connector = { ...MIAOWU_CONNECTOR, models: [saved], modelOverrides: { [id]: override } } as unknown as ProviderConnectionRecord["config"];
+    makeRepository(initial);
+    const scan = await scanMiaowuConnection("miaowu-default", { fetch: schemaFetch(), forcePricing: true });
+    const connector = scan.connection!.config.connector as unknown as NativeConnector;
+    expect(connector.models.find(model => model.id === id)?.parameters).toEqual(saved.parameters);
+    expect(connector.modelOverrides?.[id]).toEqual(override);
+  });
+
+  it("retains a same-identity successful schema after a partial failure with its original successful time", async () => {
+    makeRepository(authenticatedConnection());
+    const first = await scanMiaowuConnection("miaowu-default", { fetch: schemaFetch(), forcePricing: true });
+    const next = await scanMiaowuConnection("miaowu-default", { fetch: schemaFetch(503), forcePricing: true });
+    const id = "seedance-2.5-pro";
+    expect(next.videoSchemas?.[id]).toMatchObject({ status: "failed", httpStatus: 503, stale: true, lastSuccessfulCheckedAt: first.videoSchemas![id]!.checkedAt });
+    expect((next.connection!.config.connector as unknown as NativeConnector).models.find(model => model.id === id)).toMatchObject({ limits: { maxPromptCharacters: 5000 }, metadata: { videoSchemaStatus: "failed", videoSchemaStale: true, videoSchemaError: expect.stringContaining("HTTP 503") } });
+  });
+
+  it.each(["credential", "source", "official-group"] as const)("does not reuse a successful schema after changing its %s", async field => {
+    const initial = authenticatedConnection();
+    initial.config.accountKeyGroupId = "1";
+    makeRepository(initial);
+    const first = await scanMiaowuConnection("miaowu-default", { fetch: schemaFetch(), forcePricing: true });
+    const changed = structuredClone(first.connection!);
+    changed.updatedAt = "changed";
+    if (field === "credential") changed.encryptedSecret = encryptSecret(KEY, MASTER);
+    if (field === "source") changed.config.supplierSourceId = "other-source";
+    if (field === "official-group") changed.config.accountKeyGroupId = "2";
+    makeRepository(changed);
+    const next = await scanMiaowuConnection("miaowu-default", { fetch: schemaFetch(503), forcePricing: true });
+    expect(next.videoSchemas?.["seedance-2.5-pro"]?.stale).not.toBe(true);
+    expect((next.connection!.config.connector as unknown as NativeConnector).models.find(model => model.id === "seedance-2.5-pro")?.limits?.maxPromptCharacters).toBeUndefined();
+  });
+
   it("unions the real fifteen chat-directory IDs and eighteen media IDs into twenty-three without duplicates", async () => {
     const transport = directoryFetch();
     const scan = await scanMiaowuKeyModels(KEY, { fetch: transport });
@@ -102,7 +185,7 @@ describe("authenticated native Miaowu media directory", () => {
       mediaDirectory: { status: "live", sourceUrl: `${MIAOWU_BASE_URL}/v1/dream/model_list`, models: AUTHENTICATED_DIRECTORIES.dreamModels.map((model: { id: string; type: string }) => ({ id: model.id, kind: model.type })) } });
     expect(scan.modelIds).toHaveLength(23);
     expect(new Set(scan.modelIds).size).toBe(23);
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(2 + AUTHENTICATED_DIRECTORIES.dreamModels.filter((model: { type: string }) => model.type === "video").length);
   });
 
   it("persists eighteen priced native media contracts, five declared Chat IDs, and each authenticated source", async () => {

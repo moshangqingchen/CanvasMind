@@ -16,6 +16,7 @@ import {
   supplierDirectoryBase,
   PROVIDER_SUPPLIER_PROFILES,
   encryptSecret,
+  decryptSecret,
   SupplierLoginError,
   readSupplierAccountKeys,
   isTk1688CatalogSource,
@@ -107,6 +108,7 @@ const SupplierGroupSchema = z
   .object({
     id: z.string().trim().min(1).max(256),
     label: z.string().trim().min(1).max(256),
+    supplierGroupId: z.string().regex(/^\d+$/u).max(20).optional(),
     source: z.enum(["manual", "catalog"]).optional(),
     models: z.array(SupplierModelSchema).max(3000),
     status: z.enum(["available", "missing"]).optional(),
@@ -118,6 +120,13 @@ const SupplierGroupSchema = z
       unsupportedResolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3).optional(),
       exclusiveResolutions: z.boolean().optional(),
       imagePrices: z.array(z.object({ resolution: z.enum(["1K", "2K", "4K"]), amount: z.number().finite().nonnegative() }).strict()).max(3).optional(),
+      ledgerPrices: z.array(z.object({
+        amount: z.number().finite().nonnegative(), currency: z.string().max(20), unit: z.enum(["image", "request"]),
+        checkedAt: z.string().max(64), observedAt: z.string().max(64), sourceUrl: url,
+        supplierGroupId: z.string().regex(/^\d+$/u).max(20), modelId: z.string().min(1).max(256),
+        resolution: z.string().max(32), parameters: z.object({ n: z.number().int().positive(), resolution: z.string().max(32) }).strict(),
+        sample: z.literal(true), billingMode: z.string().max(32), notificationAt: z.string().max(64).optional(), notificationSourceUrl: url.optional(),
+      }).strict()).max(100).optional(),
       rateMultiplier: z.number().finite().nonnegative().optional(),
       imageRateMultiplier: z.number().finite().nonnegative().optional(),
       concurrencyLimit: z.number().int().positive().optional(),
@@ -316,7 +325,13 @@ export function mergeSupplierCatalog(
   for (const group of incoming.groups) {
     // Returned public entries are display data; PATCH cannot rewrite them as trusted scans.
     if (!scanning && group.source === "catalog") continue;
-    const previous = groups.get(group.id);
+    const named = groups.get(group.id);
+    const identified = group.supplierGroupId ? current.groups.filter(item => item.supplierGroupId === group.supplierGroupId && item.status !== "missing") : [];
+    const previous = named && !(group.supplierGroupId && named.supplierGroupId && group.supplierGroupId !== named.supplierGroupId)
+      ? named : identified.length === 1 ? identified[0] : undefined;
+    const previousLedger = previous?.details?.ledgerPrices;
+    const retainLedger = scanning && previousLedger?.length && !group.details?.ledgerPrices?.length &&
+      group.supplierGroupId !== undefined && group.supplierGroupId === previous?.supplierGroupId;
     const retainedModels = scanning && (!complete || group.details?.stale === true) && previous
       ? retainModels(previous.models.filter(model => !group.models.some(incoming => incoming.id === model.id))) : [];
     groups.set(group.id, {
@@ -324,6 +339,7 @@ export function mergeSupplierCatalog(
       ...(retainedModels.length ? { models: [...group.models, ...retainedModels] } : {}),
       ...(scanning && (!complete || group.details?.stale === true) && ((!group.details && previous?.details) || retainedModels.length)
         ? { details: { source: "model-plaza", ...previous?.details, ...group.details, stale: true } } : {}),
+      ...(retainLedger ? { details: { source: "model-plaza", ...previous?.details, ...group.details, ledgerPrices: previousLedger } } : {}),
       source: scanning ? "catalog" : "manual",
       status: "available",
     });
@@ -764,7 +780,15 @@ export async function scanSupplierRecord(
       },
       session?.fetch,
     );
-    if (session && !options.catalogOnly) {
+    const missingLegacyGroup = options.catalogOnly && session?.kind === "sub2api" &&
+      !["failed", "unauthorized"].includes(result.status) && initialConnections.some(connection =>
+        connection.encryptedSecret && connection.config.usage !== "disabled" &&
+        /^\d+$/u.test(String(connection.config.accountKeyId ?? "")) && !connection.config.accountKeyGroupId &&
+        !result.groups.some(group => group.details?.stale !== true &&
+          group.id === (connection.config.accountKeyGroup ?? connection.config.modelGroup)));
+    // Recover only the identity of already saved Keys after a group rename.
+    // The preserve-only import below cannot fill/create credentials or submit verification.
+    if (session && (!options.catalogOnly || missingLegacyGroup)) {
       try {
         accountKeys = await readSupplierAccountKeys(
           { siteUrl: supplier.siteUrl, kind: session.kind }, session.fetch,
@@ -836,7 +860,13 @@ export async function scanSupplierRecord(
     );
     const plan = planSupplierAccountImport(
       { ...current.supplier, catalog }, current.connections, accountKeys,
-      secret => encryptSecret(secret, requireServerMasterKey()), initialConnections, options,
+      secret => encryptSecret(secret, requireServerMasterKey()), initialConnections, {
+        ...options, preserveOnly: options.catalogOnly, previousCatalog: current.supplier.catalog,
+        matchesKey: (connection, apiKey) => {
+          try { return Boolean(connection.encryptedSecret) && decryptSecret(connection.encryptedSecret!, requireServerMasterKey()) === apiKey; }
+          catch { return false; }
+        },
+      },
     );
     // Account-owned groups may not be published in the public model plaza.
     const known = new Set(result.groups.map(group => group.id));

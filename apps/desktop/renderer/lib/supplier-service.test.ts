@@ -40,7 +40,7 @@ import {
   SupplierPatchSchema,
   publicSupplierRecord,
 } from "./supplier-service";
-import { decryptSecret, parseSupplierCatalog, SupplierLoginError } from "@super-canvas/providers";
+import { decryptSecret, encryptSecret, parseSupplierCatalog, SupplierLoginError } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
 
 beforeEach(() => {
@@ -51,6 +51,30 @@ beforeEach(() => {
   mocks.accountKeys.mockReset().mockResolvedValue({ keys: [], skipped: 0, complete: true, checkedAt: new Date().toISOString() });
 });
 describe("supplier service", () => {
+  it("repairs a renamed legacy Key group on catalog upgrade without importing Keys or submitting tests", async () => {
+    const created = await createSupplierRecord({ name: "Synora", siteUrl: "https://synoralink.com", apiUrl: "https://synoralink.com/v1", kind: "sub2api" });
+    const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "fixture-user", password: "fixture-password" } });
+    const key = "fixture-existing-synora-key";
+    const connection = await mocks.repository.saveConnection({ id: "legacy-image", name: "Existing image", provider: "openai", encryptedSecret: encryptSecret(key, requireServerMasterKey()),
+      config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId, modelGroup: "高质量生图专线", accountKeyGroup: "高质量生图专线", accountKeyId: "1548", usage: "canvas",
+        modelCatalogModels: [{ id: "gpt-image-2", name: "GPT Image 2", operations: ["image.generate"] }], supplierVerificationRequestId: "existing-request" } });
+    mocks.login.mockResolvedValue({ kind: "sub2api", fetch: vi.fn() });
+    mocks.discover.mockResolvedValue({ kind: "sub2api", status: "live", complete: false, checkedAt: "2026-10-09T08:00:00Z", groups: [{
+      id: "全参生图专线", label: "全参生图专线", supplierGroupId: "115", source: "catalog", models: [],
+      details: { source: "key-groups", description: "原生4k，image2和2.5均支持所有参数，0.07/张" },
+    }] });
+    mocks.accountKeys.mockResolvedValue({ keys: [{ id: "1548", group: "全参生图专线", supplierGroupId: "115", apiKey: key },
+      { id: "other", group: "unrelated", supplierGroupId: "99", apiKey: "unrelated-key" }], complete: true, skipped: 0, checkedAt: "2026-10-09T08:00:00Z" });
+    const refreshed = await scanSupplierRecord(supplier.id, undefined, supplier.state!.revision, { catalogOnly: true, verifyCapabilities: false });
+    const saved = (await mocks.repository.getConnection(connection.id))!;
+    expect(saved.config).toEqual({ ...connection.config, accountKeyGroupId: "115", modelGroup: "全参生图专线", accountKeyGroup: "全参生图专线" });
+    expect(saved.encryptedSecret).toBe(connection.encryptedSecret);
+    expect(await mocks.repository.listConnections()).toHaveLength(1);
+    expect(refreshed.catalog.groups.find(group => group.id === "全参生图专线")?.details?.description).toContain("0.07/张");
+    expect(refreshed.catalog.groups.some(group => group.id === "unrelated")).toBe(false);
+    expect(refreshed.state?.keySync?.imported).toBe(0);
+    expect(mocks.models).not.toHaveBeenCalled();
+  });
   it("refreshes only the supplier directory without reading Keys, changing connections or scanning models", async () => {
     const created = await createSupplierRecord({ name: "Catalog refresh", siteUrl: "https://catalog-only.example.test", kind: "sub2api" });
     const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "fixture-user", password: "fixture-password" } });
@@ -162,6 +186,20 @@ describe("supplier service", () => {
     expect(complete.groups[0]?.models.map(model => model.id)).toEqual(["updated", "new"]);
     expect(complete.groups.find(group => group.id === "unreturned")?.status).toBe("missing");
     expect(complete.groups.find(group => group.id === "manual")).toEqual(catalog.groups[2]);
+  });
+  it("retains ledger evidence through a stable-ID rename but never a different same-name group", () => {
+    const ledger = { amount: .08, currency: "USD", unit: "image" as const, checkedAt: "2026-10-09T13:00:00Z", observedAt: "2026-10-09T08:00:00Z",
+      sourceUrl: "https://synoralink.com/api/v1/usage", supplierGroupId: "115", modelId: "gpt-image-2.5-sunburst", resolution: "4K",
+      parameters: { n: 1, resolution: "4K" }, sample: true as const, billingMode: "image" };
+    const old = { id: "旧组", label: "旧组", supplierGroupId: "115", source: "catalog" as const,
+      models: [{ id: ledger.modelId, capability: "image" as const }], details: { source: "key-groups" as const, description: "0.07/张", ledgerPrices: [ledger] } };
+    const renamed = { ...old, id: "新组", label: "新组", models: [], details: { source: "key-groups" as const, description: "0.07/张" } };
+    const saved = mergeSupplierCatalog({ groups: [old] }, { groups: [renamed] }, true, false).groups.find(group => group.id === "新组")!;
+    expect(saved.details?.ledgerPrices).toEqual([ledger]);
+    expect(saved.models.map(model => model.id)).toEqual([ledger.modelId]);
+    const replacement = mergeSupplierCatalog({ groups: [old] }, { groups: [{ ...renamed, id: old.id, supplierGroupId: "116" }] }, true, false).groups[0]!;
+    expect(replacement.details?.ledgerPrices).toBeUndefined();
+    expect(replacement.models).toEqual([]);
   });
   it.each(["partial", "throw", "complete"])("preserves account-only model evidence with a %s account directory", async mode => {
     const created = await createSupplierRecord({ name: "Account groups", siteUrl: "https://account-groups.example.test", kind: "sub2api" });

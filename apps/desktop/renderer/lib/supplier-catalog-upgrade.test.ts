@@ -26,6 +26,21 @@ async function fixture() {
 }
 
 describe("supplier catalog upgrade", () => {
+  it("notifies the picker when a verified legacy group migration preserves the Key and model cache", async () => {
+    const f = await fixture();
+    const supplier = await f.repository.saveSupplier({ id: "supplier", name: "Synora", supplierKey: "synora", siteUrl: "https://synoralink.com", apiUrl: "https://synoralink.com/v1", kind: "sub2api", catalog: { groups: [] }, scanStatus: "live",
+      state: { version: 1, revision: 1, visibility: "visible", sourceId: "source", fingerprint: "fp", history: [] } });
+    await f.save("legacy", { baseUrl: supplier.apiUrl, supplierId: supplier.id, supplierSourceId: "source", modelGroup: "old-group", accountKeyGroup: "old-group" });
+    const service = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels, refreshSupplierCatalog: async () => {
+      const current = (await f.repository.getConnection("legacy"))!;
+      await f.repository.saveConnection({ ...current, config: { ...current.config, modelGroup: "new-group", accountKeyGroup: "new-group", accountKeyGroupId: "115" } }, { expected: current });
+      return false;
+    } });
+    service.start(); await service.settle();
+    expect(f.readModels).not.toHaveBeenCalled();
+    expect(service.status().updatedConnectionIds).toEqual(["legacy"]);
+    expect((await f.repository.getConnection("legacy"))?.config.catalogUpgradeRevision).toBeUndefined();
+  });
   it("refreshes each supplier directory once before its connection models and includes both stages in completion", async () => {
     const f = await fixture();
     const supplier = await f.repository.saveSupplier({ id: "supplier", name: "test", supplierKey: "tk1688", siteUrl: "https://tk1688.com", apiUrl: "https://api.tk1688.com/v1", kind: "newapi", catalog: { groups: [] }, scanStatus: "unscanned",

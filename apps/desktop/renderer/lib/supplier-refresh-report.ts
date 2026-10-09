@@ -63,6 +63,23 @@ function interfaceLabel(model: ModelDescriptor): string {
     ...(model.operations ?? [])].filter((value): value is string => typeof value === "string" && Boolean(value));
   return [...new Set(parts)].sort().join(" · ") || "接口待确认";
 }
+function interfaceIdentity(model: ModelDescriptor, connection: ProviderConnectionView | undefined): string {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
+      .filter(([key]) => !["checkedAt", "sourceUrl", "description", "label", "name"].includes(key))
+      .sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]));
+    return value;
+  };
+  const bindings = connection?.config.autoModelInterfaces;
+  const binding = bindings && typeof bindings === "object" && !Array.isArray(bindings)
+    ? (bindings as Record<string, unknown>)[model.id] : undefined;
+  const rawConnector = binding && typeof binding === "object" && !Array.isArray(binding) ? (binding as Record<string, unknown>).connector : undefined;
+  const connector = rawConnector && typeof rawConnector === "object" && !Array.isArray(rawConnector)
+    ? Object.fromEntries(Object.entries(rawConnector).filter(([key]) => key !== "models")) : rawConnector;
+  return JSON.stringify(canonical({ route: interfaceLabel(model), parameters: model.parameters,
+    operations: model.operations, inputKinds: model.inputKinds, outputKinds: model.outputKinds, limits: model.limits, connector }));
+}
 function priceIdentity(model: ModelDescriptor): string {
   // A later evidence timestamp alone is not a price change.
   const canonical = (value: unknown): unknown => {
@@ -74,7 +91,11 @@ function priceIdentity(model: ModelDescriptor): string {
   };
   const fallback = typeof model.metadata?.priceLabel === "string"
     ? model.metadata.priceLabel.replace(/（上次价格）/gu, "") : null;
-  return JSON.stringify(canonical(model.pricing ?? fallback));
+  const measured = model.metadata?.measuredPrice as Record<string, unknown> | undefined;
+  const observed = model.metadata?.priceSource === "generated-result" && measured
+    ? { amount: measured.amount, currency: measured.currency, unit: measured.unit, resolution: measured.resolution,
+      quality: measured.quality, parameters: measured.parameters, group: model.metadata?.supplierPriceGroupId } : undefined;
+  return JSON.stringify(canonical(model.pricing ?? observed ?? fallback));
 }
 function priceChangeLabel(model: ModelDescriptor): string {
   const pricing = model.pricing;
@@ -104,25 +125,40 @@ export function buildSupplierRefreshResult(
   // scanId changes at request start, so it cannot prove a superseding scan completed.
   const directoryFresh = options.snapshotOnly || Boolean(after.scannedAt && after.scannedAt !== before.scannedAt);
   const directoryOk = sameSource && directoryFresh && ["live", "empty"].includes(after.scanStatus);
-  const oldGroups = new Map(before.catalog.groups.filter(group => group.source !== "manual" && group.status !== "missing").map(group => [group.id, group]));
+  const groupIdentity = (group: SupplierRecord["catalog"]["groups"][number]) => /^\d+$/u.test(group.supplierGroupId ?? "")
+    ? `official:${group.supplierGroupId}` : `name:${group.id}`;
+  const oldGroups = new Map(before.catalog.groups.filter(group => group.source !== "manual" && group.status !== "missing").map(group => [groupIdentity(group), group]));
   const newGroups = after.catalog.groups.filter(group => group.source !== "manual" && group.status !== "missing");
-  const currentIds = new Set(newGroups.map(group => group.id));
+  const previousGroup = (group: typeof newGroups[number]) => oldGroups.get(groupIdentity(group)) ??
+    (group.supplierGroupId && newGroups.filter(item => item.id === group.id).length === 1
+      ? oldGroups.get(`name:${group.id}`) : undefined);
+  const retainedIdentities = new Set(newGroups.flatMap(group => {
+    const previous = previousGroup(group); return previous ? [groupIdentity(previous)] : [];
+  }));
   const groupChanges: NonNullable<SupplierRefreshResult["groupChanges"]> = {
     added: [], missing: [], renamed: [],
   };
   if (directoryOk && !options.snapshotOnly) {
-    groupChanges.added = newGroups.filter(group => !oldGroups.has(group.id)).map(({ id, label }) => ({ id, label }));
+    groupChanges.added = newGroups.filter(group => !previousGroup(group)).map(({ id, label }) => ({ id, label }));
     if (after.scanComplete === true) groupChanges.missing = [...oldGroups.values()]
-      .filter(group => !currentIds.has(group.id)).map(({ id, label }) => ({ id, label }));
-    groupChanges.renamed = newGroups.filter(group => oldGroups.has(group.id) && oldGroups.get(group.id)!.label !== group.label)
-      .map(group => ({ id: group.id, before: oldGroups.get(group.id)!.label, after: group.label }));
+      .filter(group => !retainedIdentities.has(groupIdentity(group))).map(({ id, label }) => ({ id, label }));
+    groupChanges.renamed = newGroups.filter(group => previousGroup(group) &&
+      (previousGroup(group)!.label !== group.label || previousGroup(group)!.id !== group.id))
+      .map(group => ({ id: group.id, before: previousGroup(group)!.label, after: group.label }));
   }
   const prior = new Map(priorConnections.filter(connection => supplierOwnsConnection(before, connection)).map(connection => [connection.id, connection]));
   const owned = finalConnections.filter(connection => supplierOwnsConnection(after, connection));
+  const connectedGroupIdentities = new Set<string>();
   const connections: SupplierConnectionRefreshResult[] = owned.map(connection => {
     const old = prior.get(connection.id);
-    const groupId = String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "default");
-    const group = after.catalog.groups.find(item => item.id === groupId)?.label ?? groupId;
+    const savedGroupId = String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "default");
+    const officialGroupId = String(connection.config.accountKeyGroupId ?? "");
+    const matches = after.catalog.groups.filter(item => officialGroupId ? item.supplierGroupId === officialGroupId : item.id === savedGroupId);
+    const freshMatches = matches.filter(item => item.status !== "missing" && item.details?.stale !== true);
+    const selectedGroup = freshMatches.length === 1 ? freshMatches[0] : matches.length === 1 ? matches[0] : undefined;
+    connectedGroupIdentities.add(officialGroupId ? `official:${officialGroupId}` : selectedGroup ? groupIdentity(selectedGroup) : `name:${savedGroupId}`);
+    const groupId = selectedGroup?.id ?? savedGroupId;
+    const group = selectedGroup?.label ?? savedGroupId;
     const scanStatus = modelInventoryScanStatus(connection.config);
     const fresh = sameSource && (options.snapshotOnly || Boolean(connection.config.modelScanCheckedAt &&
       connection.config.modelScanCheckedAt !== old?.config.modelScanCheckedAt));
@@ -155,7 +191,9 @@ export function buildSupplierRefreshResult(
         const old = oldModels.get(model.id);
         const previous = old ? interfaceLabel(old) : "尚未发现";
         const next = interfaceLabel(model);
-        return previous !== next ? [{ id: model.id, name: model.name ?? model.id, before: previous, after: next }] : [];
+        const changed = !old || interfaceIdentity(old, prior.get(connection.id)) !== interfaceIdentity(model, connection);
+        return changed ? [{ id: model.id, name: model.name ?? model.id, before: previous,
+          after: previous === next ? `${next}（参数、查询或结果定义已更新）` : next }] : [];
       }) : [],
       modelIssues: actualModels.flatMap(model => model.metadata?.canvasRunnable === false || model.metadata?.autoInterfaceStatus === "incomplete"
         ? [{ id: model.id, name: model.name ?? model.id, message: safeRefreshMessage(model.metadata?.canvasUnavailableReason, "此模型的调用接口尚未确认，请查看模型说明。") }] : []),
@@ -175,7 +213,7 @@ export function buildSupplierRefreshResult(
   });
   // Directory-only groups also need an actionable row instead of disappearing from the report.
   for (const group of after.catalog.groups.filter(group => group.status !== "missing")) {
-    if (!connections.some(connection => connection.groupId === group.id)) connections.push({
+    if (!connectedGroupIdentities.has(groupIdentity(group))) connections.push({
       id: `group:${group.id}`, name: group.label, group: group.label, groupId: group.id, status: "unconfigured",
       message: "已发现分组，尚未配置对应 API Key。", modelCount: 0, modelAddedIds: [], modelRemovedModels: [], interfaceChanges: [], priceChanges: [],
     });

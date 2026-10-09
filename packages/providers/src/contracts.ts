@@ -132,6 +132,9 @@ export interface ProviderAssetInput {
   data?: Uint8Array;
   /** Actual local media duration, measured before submission; never a requested output length. */
   durationSeconds?: number;
+  /** Actual source-video pixel dimensions, measured before submission. */
+  width?: number;
+  height?: number;
 }
 
 export interface NormalizedRequest {

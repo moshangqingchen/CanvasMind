@@ -11,6 +11,7 @@ import {
 } from "@super-canvas/providers";
 import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
 import { modelGenerationMediaKinds } from "@super-canvas/providers/model-media";
+import { remainingVideoModel } from "@super-canvas/providers/remaining-video-contracts";
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupMediaPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "@super-canvas/providers/supplier-group-details";
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
@@ -20,7 +21,7 @@ import { applyTk1688CatalogModel } from "./tk1688-catalog";
 
 type Connection = { config: Readonly<Record<string, unknown>> };
 const unknownPrice =
-  /价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询/u;
+  /价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询|价格目录未完整读取|暂未取得报价|价格未知|价格未确定/u;
 type CatalogCacheEntry = { until: number; result: Promise<SupplierCatalogDiscovery> };
 const cache = new Map<
   string,
@@ -183,6 +184,7 @@ export function measuredPricesFromVerification(
     sourceId?: unknown;
     cases?: ReadonlyArray<{
       sourceId?: unknown;
+      supplierGroupId?: unknown;
       requestId?: unknown;
       task?: Record<string, unknown>;
       group?: unknown;
@@ -204,12 +206,14 @@ export function measuredPricesFromVerification(
       };
     }>;
   } | null | undefined,
+  scope: { supplierGroupId?: string; group?: string } = {},
 ): ReadonlyMap<string, MeasuredPrice> {
   const latest = new Map<string, { at: number; value: MeasuredPrice }>();
   for (const test of record?.cases ?? []) {
     if (test.status !== "succeeded" || (record?.sourceId && test.sourceId !== record.sourceId)) continue;
+    if (scope.supplierGroupId && test.supplierGroupId !== scope.supplierGroupId) continue;
     const modelId = typeof test.modelId === "string" ? test.modelId.trim() : "";
-    const group = typeof test.group === "string" ? test.group.trim() : "";
+    const group = scope.supplierGroupId && scope.group ? scope.group : typeof test.group === "string" ? test.group.trim() : "";
     const charge = test.actualCharge;
     const requestMatches = typeof test.requestId === "string" && Boolean(test.requestId) && charge?.requestId === test.requestId;
     const taskMatches = typeof test.task?.providerTaskId === "string" && Boolean(test.task.providerTaskId) && charge?.taskId === test.task.providerTaskId;
@@ -266,6 +270,7 @@ async function applyMeasuredSupplierPrices(
   models: readonly ModelDescriptor[],
   group: string,
   sourceId: string,
+  supplierGroupId?: string,
 ): Promise<ModelDescriptor[]> {
   if (!supplierId || !models.length) return [...models];
   let record: Awaited<ReturnType<typeof repository.getSupplierVerification>>;
@@ -276,7 +281,7 @@ async function applyMeasuredSupplierPrices(
     return [...models];
   }
   if (!record || record.sourceId !== sourceId) return [...models];
-  const measured = measuredPricesFromVerification(record);
+  const measured = measuredPricesFromVerification(record, { supplierGroupId, group });
   if (!measured.size) return [...models];
   return models.map((model) => {
     if (model.metadata?.priceSource !== "generated-result" &&
@@ -285,6 +290,9 @@ async function applyMeasuredSupplierPrices(
     if (!image) return model;
     const evidence = measured.get(`${group}\u0000${model.id}`);
     if (!evidence) return model;
+    const existing = model.metadata?.measuredPrice as Record<string, unknown> | undefined;
+    const existingAt = Date.parse(String(existing?.observedAt ?? existing?.checkedAt ?? ""));
+    if (Number.isFinite(existingAt) && existingAt > Date.parse(evidence.checkedAt)) return model;
     const previous =
       typeof model.metadata?.priceLabel === "string"
         ? model.metadata.priceLabel
@@ -307,6 +315,7 @@ async function applyMeasuredSupplierPrices(
         priceStatus: "measured",
         priceCheckedAt: evidence.checkedAt,
         measuredPrice: evidence,
+        ...(supplierGroupId ? { supplierPriceGroupId: supplierGroupId } : {}),
       },
     };
   });
@@ -355,17 +364,57 @@ function catalogInterfaceMetadata(model: ModelDescriptor, catalogModel: { metada
   return metadata;
 }
 
+function currentLedgerSample(model: ModelDescriptor, evidence: unknown, supplierGroupId: string | undefined,
+  group: string, sourceUrl: string | undefined, historical = false): ModelDescriptor | undefined {
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence) || !supplierGroupId) return undefined;
+  const sample = evidence as Record<string, unknown>;
+  try {
+    const site = new URL(sourceUrl ?? ""), source = new URL(String(sample.sourceUrl ?? ""));
+    if (site.origin !== "https://synoralink.com" || !["", "/"].includes(site.pathname) || site.username || site.password || site.search || site.hash ||
+      source.origin !== site.origin || source.pathname !== "/api/v1/usage" || source.username || source.password || source.hash ||
+      [...source.searchParams.keys()].some(key => !["page", "page_size"].includes(key))) return undefined;
+  } catch { return undefined; }
+  const parameters = sample.parameters && typeof sample.parameters === "object" && !Array.isArray(sample.parameters)
+    ? sample.parameters as Record<string, unknown> : {};
+  const observedAt = Date.parse(String(sample.observedAt ?? "")), checkedAt = Date.parse(String(sample.checkedAt ?? ""));
+  if (sample.supplierGroupId !== supplierGroupId || sample.modelId !== model.id || sample.currency !== "USD" ||
+    sample.unit !== "image" || sample.sample !== true || sample.billingMode !== "image" ||
+    typeof sample.amount !== "number" || !Number.isFinite(sample.amount) || sample.amount < 0 ||
+    !Number.isFinite(observedAt) || !Number.isFinite(checkedAt) || observedAt > checkedAt + 300000 ||
+    !/^(?:[124]K|[1-9]\d{1,4}X[1-9]\d{1,4})$/u.test(String(sample.resolution)) || parameters.n !== 1 || parameters.resolution !== sample.resolution) return undefined;
+  if (model.metadata?.priceSource === "generated-result") {
+    const previous = model.metadata.measuredPrice as Record<string, unknown> | undefined;
+    const previousAt = Date.parse(String(previous?.observedAt ?? previous?.checkedAt ?? model.metadata.priceCheckedAt ?? ""));
+    if (Number.isFinite(previousAt) && previousAt > observedAt) return undefined;
+  }
+  const noticeAfterCharge = Date.parse(String(sample.notificationAt ?? "")) > observedAt;
+  historical ||= noticeAfterCharge;
+  const label = `${noticeAfterCharge ? "价格已调整；" : ""}${measuredPriceLabel(sample.amount, "USD", "image").replace("（生成实测）", historical ? "（上次账单实测）" : "（账单实测）")} · ${sample.resolution}`;
+  const previousLabel = typeof model.metadata?.priceLabel === "string" ? model.metadata.priceLabel : "";
+  return { ...model, name: previousLabel ? model.name.replace(`（${previousLabel}）`, "") : model.name, pricing: undefined,
+    metadata: { ...model.metadata, priceLabel: label, priceSource: "generated-result", priceStatus: historical ? "partial" : "measured",
+      priceCheckedAt: sample.checkedAt, supplierPriceGroup: group, supplierPriceGroupId: supplierGroupId,
+      priceSourceUrl: sample.sourceUrl, measuredPrice: { ...sample, label } } };
+}
+
 /** Join by exact group and exact model ID; a public plaza never grants availability. */
 export function applySupplierCatalogPrices(
   models: readonly ModelDescriptor[],
   group: string,
   catalog: SupplierCatalogDiscovery,
   sourceUrl?: string,
-  options: { savedCatalog?: boolean } = {},
+  options: { savedCatalog?: boolean; supplierGroupId?: string } = {},
 ): ModelDescriptor[] {
-  const selected = catalog.groups.find((g) => g.id === group);
+  const officialId = /^\d+$/u.test(options.supplierGroupId ?? "") ? options.supplierGroupId : undefined;
+  const matches = officialId ? catalog.groups.filter(g => g.supplierGroupId === officialId) : catalog.groups.filter(g => g.id === group);
+  const freshMatches = matches.filter(g => g.details?.stale !== true && (g as { status?: string }).status !== "missing");
+  // A name may be reused for another group. A known official ID is authoritative;
+  // ambiguous duplicate identities cannot borrow another group's quote.
+  const selected = freshMatches.length === 1 ? freshMatches[0] : matches.length === 1 ? matches[0] : undefined;
+  const resolvedGroupId = selected?.supplierGroupId ?? officialId;
+  const groupIdentityMetadata = resolvedGroupId ? { supplierPriceGroupId: resolvedGroupId } : {};
   const generic =
-    !selected &&
+    !selected && !officialId &&
     catalog.kind === "openai-compatible" &&
     catalog.groups.length === 1 &&
     catalog.groups[0]?.id === "默认群组"
@@ -392,6 +441,15 @@ export function applySupplierCatalogPrices(
     // Its new chat feed must not overwrite an existing media quote.
     if (isHangCatalogSite(sourceUrl) && model.pricing && modelGenerationMediaKinds(model).length) return model;
     if (isWeAiCatalogSite(sourceUrl) && model.metadata?.priceSource === "generated-result" && model.pricing) return model;
+    if (resolvedGroupId && (["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) ||
+      model.metadata?.priceSource === "generated-result" && !model.pricing) &&
+      model.metadata?.supplierPriceGroupId !== resolvedGroupId) {
+      // A retained quote belongs to its official group, even when names are reused.
+      // Legacy name-only prices must be established again by the current evidence.
+      const metadata: Record<string, unknown> = { ...model.metadata, priceLabel: "价格未公布" };
+      for (const field of ["secureSkillCatalogPricing", "chuangxiangCatalogPricing", "tk1688Pricing", "weaiLegacyPricing", "sub2apiPlazaPricing", "miaowuCatalogPricing", "hangCatalogPricing", "officialCatalogPricing"]) delete metadata[field];
+      model = { ...model, pricing: undefined, metadata };
+    }
     const cyberPending = isCyberAfeiUnpricedCatalogVideo(sourceUrl, model.id) &&
       (catalogModel?.metadata?.cyberAfeiCatalogPricingIncomplete === true || model.metadata?.cyberAfeiCatalogPricingIncomplete === true ||
         model.metadata?.supplier === "cyberafei" && model.metadata?.canvasRunnable === false);
@@ -437,7 +495,7 @@ export function applySupplierCatalogPrices(
       return { ...model, pricing: priced ? previousPricing ?? pricingFromSupplierEvidence(label, undefined, String(checkedAt ?? ""), sourceUrl) : undefined,
         metadata: { ...catalogInterfaceMetadata(model, catalogModel, catalog, true),
           priceLabel: priced ? `${label.replace(/（上次价格）$/u, "")}（上次价格）` : reason,
-          priceSource: "supplier-catalog", supplierPriceGroup: group, priceStatus: "partial",
+          priceSource: "supplier-catalog", supplierPriceGroup: group, ...groupIdentityMetadata, priceStatus: "partial",
           priceCheckedAt: checkedAt ?? "", priceLastAttemptAt: catalog.checkedAt } };
     }
     if (catalogModel?.metadata?.supplierPriceConflict === true && !hasOwnPrice(model)) {
@@ -512,6 +570,20 @@ export function applySupplierCatalogPrices(
     }
     // A text-only catalog cannot replace parameter-dependent billing rules.
     const catalogPricing = structuredCatalogPrice(catalogModel?.metadata);
+    const ledgerPrices = selected?.details?.ledgerPrices ?? [];
+    const freshLedger = catalogModel?.metadata?.supplierLedgerPrice ?? ledgerPrices.filter(item => item.modelId === model.id)
+      .sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))[0];
+    const ledgerEvidence = freshLedger ?? (model.metadata?.priceSource === "generated-result" && model.metadata.measuredPrice);
+    // A newer exact-model charge takes precedence over a generic group reference.
+    // Keep it as a parameter-scoped observation rather than an advertised flat rate.
+    if (image && !catalogPricing && (!catalogModel?.priceLabel || unknownPrice.test(catalogModel.priceLabel)) && !hasOwnPrice(model)) {
+      const checked = freshLedger && typeof freshLedger === "object" && !Array.isArray(freshLedger)
+        ? Date.parse(String((freshLedger as Record<string, unknown>).checkedAt ?? "")) : NaN;
+      const retained = !freshLedger || selected?.details?.stale === true || ["failed", "unauthorized"].includes(catalog.status) ||
+        Number.isFinite(checked) && checked < Date.parse(catalog.checkedAt) - 1000;
+      const sampled = currentLedgerSample(model, ledgerEvidence, resolvedGroupId, group, sourceUrl, retained);
+      if (sampled) return sampled;
+    }
     if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise) && !catalogPricing && !isImportedConditionalCatalogPrice(model)) return model;
     const replacingWeAiSnapshot = canReplaceWeAiDocumentSnapshot(model, catalogModel, selected, catalog, sourceUrl);
     const friSnapshotLabel = friSnapshotPriceLabel(model, group, catalog, sourceUrl);
@@ -519,7 +591,7 @@ export function applySupplierCatalogPrices(
     const modelPrice = prices.get(model.id);
     const priceDetails = image || video ? supplierGroupMediaPriceDetails(supplierGroupModelPriceDetails(details, model.id, groupModelIds), image ? "image" : "video", model.id) : undefined;
     const groupPrice = !priceDetails?.stale ? supplierGroupPriceLabel(priceDetails) : "";
-    const groupFixedLabel = groupPrice.replace(/（分组说明参考）$/u, "").trim();
+    const groupFixedLabel = groupPrice.replace(/（分组说明参考）$/u, "").trim().replace(/\s*(?:分组|通道|专线)$/u, "").trim();
     // Group wording may contain several resolution or quality rates. Only an
     // entire explicit currency/unit quote can become a flat estimate.
     const groupFixedPrice = /^(?:[¥￥$]\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:元|USD|CNY|RMB|美元))\s*[/／]\s*(?:张|次|请求|秒)$/iu.test(groupFixedLabel)
@@ -564,7 +636,7 @@ export function applySupplierCatalogPrices(
       /[（(](?:价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询)(?:·快照)?[）)]/gu,
       "",
     );
-    return {
+    const pricedModel: ModelDescriptor = {
       ...model,
       name,
       pricing,
@@ -582,11 +654,33 @@ export function applySupplierCatalogPrices(
         priceCheckedAt: old && !fresh && incomplete ? model.metadata?.priceCheckedAt : catalogPricing?.checkedAt || catalog.checkedAt,
         priceLastAttemptAt: catalog.checkedAt,
         supplierPriceGroup: group,
+        ...groupIdentityMetadata,
         ...(missingCurrentVideoQuote ? { priceSourceUrl: priceEvidenceSource,
           priceUnavailableReason: `${catalog.checkedAt} 已查询 ${priceEvidenceSource}：当前分组 ${group} ${fresh
             ? `未提供完整型号 ${model.id} 可解析的计价规则` : `未列出完整型号 ${model.id} 的报价`}` } : {}),
       },
     };
+    // These optional Doubao resolutions are opened per official group. Only
+    // this freshly selected, exact-model quote can add its conditional tiers;
+    // older metadata and another group's prices cannot grant the extra modes.
+    if (isSecureCatalogSite(sourceUrl) && catalog.status === "live" && selected?.source === "catalog" &&
+      selected.details?.stale !== true && catalogModel?.metadata?.supplierCatalogModelStale !== true &&
+      catalogModel?.metadata?.supplierPriceConflict !== true && catalogPricing?.confidence === "exact" &&
+      catalogPricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" &&
+      (!catalogPricing.validUntil || Date.parse(catalogPricing.validUntil) >= Date.parse(catalog.checkedAt)) &&
+      model.metadata?.supplier === "secure" && model.metadata?.protocol === "openai-videos" &&
+      model.metadata?.source !== "manual" && model.metadata?.protocolEvidence !== "paid-test" &&
+      video && ["doubao-seedance-2-0-260128", "doubao-seedance-2-5-260628"].includes(model.id)) {
+      const resolutions = [...new Set((catalogPricing.tiers ?? []).filter(tier =>
+        Number.isFinite(tier.price) && tier.price >= 0 && tier.otherwise !== true &&
+        tier.conditionMode !== "any" && tier.conditionMode !== "none" &&
+        tier.conditions?.some(condition => condition.parameter === "token_kind" && condition.operator === "equals" && condition.value === "output"))
+        .flatMap(tier => (tier.conditions ?? []).filter(condition => condition.parameter === "resolution" && condition.operator === "equals" &&
+          ["480p", "4K"].includes(condition.value)).map(condition => condition.value)))];
+      return remainingVideoModel("secure", model.id, { ...pricedModel,
+        metadata: { ...pricedModel.metadata, videoSupportedResolutions: resolutions } }, { group }) ?? pricedModel;
+    }
+    return pricedModel;
   });
 }
 
@@ -638,14 +732,16 @@ export async function enrichSupplierModelPrices(
   const group = String(
     connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "默认群组",
   );
+  const supplierGroupId = sameSource ? String(connection.config.accountKeyGroupId ??
+    supplier.catalog.groups.find(item => item.id === group)?.supplierGroupId ?? "") : undefined;
   if (!allowNetwork || (!force && models.every(hasOwnPrice))) {
     const catalogModels = sameSource ? applySupplierCatalogPrices(models,
       group,
       { groups: supplier.catalog.groups.map(group => ({ ...group, source: "catalog", models: group.models.map(model => ({ ...model, protocol: model.protocol === "rest" ? "unknown" : model.protocol })) })),
         kind: supplier.kind, status: supplier.scanStatus === "unscanned" ? "failed" : supplier.scanStatus,
         complete: supplier.scanComplete === true,
-        checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl, { savedCatalog: true }) : [...models];
-    return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, supplier?.siteUrl || apiUrl, false), group, supplier?.state?.sourceId ?? "legacy");
+        checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl, { savedCatalog: true, supplierGroupId }) : [...models];
+    return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, supplier?.siteUrl || apiUrl, false), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined);
   }
   const siteUrl = sameSource
     ? supplier.siteUrl
@@ -719,6 +815,7 @@ export async function enrichSupplierModelPrices(
     group,
     discovered,
     siteUrl,
+    { supplierGroupId },
   );
-  return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, siteUrl, allowNetwork), group, supplier?.state?.sourceId ?? "legacy");
+  return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, siteUrl, allowNetwork), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined);
 }

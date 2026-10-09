@@ -13,7 +13,7 @@ export function chuangxiangVideoTransport(): RestModelConnectorOverride {
       mappings: [
         { target: "/model", source: { kind: "request", path: "$.model" } },
         { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
-        ...["seconds", "resolution", "aspect_ratio", "n", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url"].map(key => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitIfEmpty: true })),
+        ...["duration", "resolution", "aspect_ratio", "n", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url"].map(key => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitIfEmpty: true })),
       ], response },
     poll: { path: "/v1/videos/generations/{taskId}", method: "GET", bodyMode: "none", response },
     pollIntervalMs: CHUANGXIANG_VIDEO_POLL_INTERVAL_MS,
@@ -121,8 +121,8 @@ const publicHttps = (value: unknown): boolean => {
 /** Normalize canvas assets into the documented wire fields; no network or generation. */
 export function normalizeChuangxiangVideoParameters(request: NormalizedRequest): Record<string, unknown> {
   const p = { ...request.parameters };
-  if (p.seconds === undefined && p.duration !== undefined) p.seconds = p.duration;
-  delete p.duration;
+  if (p.duration === undefined && p.seconds !== undefined) p.duration = p.seconds;
+  delete p.seconds;
   p.n ??= 1;
   const fields = { image: "reference_image_urls", video: "reference_videos", audio: "reference_audios" } as const;
   for (const kind of ["image", "video", "audio"] as const) {
@@ -146,9 +146,9 @@ export function validateChuangxiangVideoRequest(request: NormalizedRequest): Val
   if (p.n !== 1) add("parameters.n", "创想视频每次请求只能生成一个任务（n=1）。");
   if (request.parameters?.seconds !== undefined && request.parameters.duration !== undefined && request.parameters.seconds !== request.parameters.duration) add("parameters.duration", "duration 与 seconds 必须一致，避免发送歧义时长。");
   const durations = secondsOptions(id);
-  if (p.seconds !== undefined && (typeof p.seconds !== "number" || !Number.isInteger(p.seconds) || p.seconds < 1 || (durations && !durations.includes(p.seconds)))) add("parameters.duration", durations ? `该型号只支持 ${durations.join(" / ")} 秒。` : "视频时长必须是正整数秒，不支持 -1。");
-  if (durations && p.seconds === undefined) add("parameters.duration", `请选择 ${durations.join(" / ")} 秒。`);
-  for (const key of Object.keys(p)) if (!["seconds", "resolution", "aspect_ratio", "n", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url"].includes(key)) add(`parameters.${key}`, `创想公开视频合同未声明参数 ${key}。`);
+  if (p.duration !== undefined && (typeof p.duration !== "number" || !Number.isInteger(p.duration) || p.duration < 1 || (durations && !durations.includes(p.duration)))) add("parameters.duration", durations ? `该型号只支持 ${durations.join(" / ")} 秒。` : "视频时长必须是正整数秒，不支持 -1。");
+  if (durations && p.duration === undefined) add("parameters.duration", `请选择 ${durations.join(" / ")} 秒。`);
+  for (const key of Object.keys(p)) if (!["duration", "resolution", "aspect_ratio", "n", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url"].includes(key)) add(`parameters.${key}`, `创想公开视频合同未声明参数 ${key}。`);
   if (id === "sd8-seedance-2.5" && p.resolution !== undefined) add("parameters.resolution", "SD8 2.5 不接受 resolution 字段。");
   const counts: Record<string, number> = {};
   for (const [field, limit] of [["reference_image_urls", refs?.images], ["reference_videos", refs?.videos], ["reference_audios", refs?.audios]] as const) {

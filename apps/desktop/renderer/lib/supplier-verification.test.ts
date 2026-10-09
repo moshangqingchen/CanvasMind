@@ -383,6 +383,13 @@ describe("supplier capability decisions", () => {
 });
 
 describe("automatic connection onboarding", () => {
+  it("fingerprints the official group identity and preserves the absent-ID legacy scope", () => {
+    const withId = { ...connection, config: { ...connection.config, accountKeyGroupId: "115" } };
+    expect(verificationFingerprint(withId, "key")).not.toBe(verificationFingerprint({ ...withId, config: { ...withId.config, accountKeyGroupId: "116" } }, "key"));
+    expect(verificationFingerprint(withId, "key")).toBe(verificationFingerprint({ ...withId, config: { ...withId.config, accountKeyGroupId: 115 } }, "key"));
+    expect(verificationFingerprint(connection, "key")).toBe(verificationFingerprint({ ...connection, config: { ...connection.config, accountKeyGroupId: undefined } }, "key"));
+  });
+
   it("starts for new keys, routing changes, enabled connections and added models", () => {
     expect(shouldAutomaticallyVerifyConnection(null, connection)).toBe(true);
     for (const changed of [
@@ -440,6 +447,16 @@ async function fixture(overrides: Partial<VerificationDependencies> = {}) {
 }
 
 describe("durable paid verification", () => {
+  it("captures the official group identity on newly planned cases", async () => {
+    const f = await fixture();
+    await f.repository.saveConnection({ ...connection, config: { ...connection.config, accountKeyGroupId: "115" } });
+    await f.service.plan(supplier.id, true);
+    const record = (await f.repository.getSupplierVerification(supplier.id))!;
+    expect(record.cases.length).toBeGreaterThan(0);
+    expect(record.cases.every(test => test.supplierGroupId === "115")).toBe(true);
+    expect(f.submit).not.toHaveBeenCalled();
+  });
+
   it("pauses image verification on non-retryable query authentication errors", async () => {
     const poll = vi.fn<VerificationDependencies["poll"]>(async () => {
       throw new ProviderHttpError("credential expired", { kind: "authentication", phase: "poll", status: 401, retryable: false, submissionMayHaveOccurred: false });
@@ -1026,7 +1043,7 @@ describe("durable paid verification", () => {
       verificationFingerprint(connection, "b"),
     );
   });
-  it("pauses remaining paid cases when an exact request charge differs", async () => {
+  it.each(["image", "request"] as const)("pauses remaining paid cases when an exact %s charge differs", async unit => {
     const priced = {
       ...model,
       pricing: {
@@ -1042,7 +1059,7 @@ describe("durable paid verification", () => {
       charge: async (_, test) => ({
         amount: 0.5,
         currency: "credits",
-        unit: "image",
+        unit,
         checkedAt: "now",
         requestId: test.requestId,
       }),
@@ -1053,5 +1070,6 @@ describe("durable paid verification", () => {
     expect(
       (await f.repository.getSupplierVerification(supplier.id))?.reason,
     ).toContain("扣费");
+    expect((await f.repository.getSupplierVerification(supplier.id))?.cases[0]?.actualCharge?.unit).toBe(unit);
   });
 });

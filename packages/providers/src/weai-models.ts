@@ -25,7 +25,10 @@ export const WEAI_ADOBE_PER_REQUEST_PRICES: Readonly<Record<string, string>> = {
   "gpt-image-2-high": "$0.15",
 };
 
-const GEMINI_MODELS = new Set(["gemini-3.1-flash-image", "gemini-3-pro-image"]);
+const GEMINI_MODELS = new Set([
+  "gemini-3.1-flash-image", "gemini-3-pro-image",
+  "gemini-3-pro-image-preview", "gemini-3.0-pro-image", "gemini-3.0-pro-image-preview", "gemini-3.1-flash-image-preview",
+]);
 
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
   {
@@ -282,7 +285,7 @@ function parametersForModel(
     group === WEAI_ADOBE_TOKEN_MODEL_GROUP ||
     group === WEAI_AZURE_MODEL_GROUP ||
     group === WEAI_ADOBE_URL_MODEL_GROUP;
-  const supportsUrlResponse = group === WEAI_ADOBE_PER_REQUEST_MODEL_GROUP;
+  const supportsUrlResponse = group === WEAI_ADOBE_PER_REQUEST_MODEL_GROUP && model !== "gpt-image-2";
   // Adobe per-request supports response_format: url, but We-AI only documents
   // output_format/output_compression for the other compatible image routes.
   const supportsOutput = supportsQuality;

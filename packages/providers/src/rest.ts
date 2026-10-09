@@ -33,7 +33,7 @@ function remainingVideoContext(settings: Readonly<Record<string, unknown>> | und
 /** Current Miaowu core routes replace only automatic directory mappings. */
 export function preservesMiaowuExplicitVideoContract(config: Readonly<Record<string, unknown>>, model: ModelDescriptor | undefined, operation?: ProviderOperation): boolean {
   if (remainingVideoSupplier(config.baseUrl) !== "miaowu" || !model || !["dreamina-seedance-2.0-fast", "dreamina-seedance-2.0-mini", "seedance-2.0-fast-deal", "seedance-2.5-deal", "video-editing"].includes(model.id)) return false;
-  if (model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" || model.metadata?.parameterSource === "pricing.video_api") return true;
+  if (model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" || ["pricing.video_api", "dream.video_schema"].includes(String(model.metadata?.parameterSource))) return true;
   const bindings = config.autoModelInterfaces as Record<string, { model?: ModelDescriptor }> | undefined;
   if (bindings?.[model.id]?.model?.id === model.id) return true;
   const connector = config.connector as RestConnectorConfig | undefined;
@@ -1526,6 +1526,17 @@ export class GenericRestAdapter implements ProviderAdapter {
           issues.push({ path: "model", code: "wrong_media_type", message: "当前型号不支持此节点的生成类型，请重新选择型号。" });
         if (configuredModel.metadata?.canvasRunnable === false)
           issues.push({ path: "model", code: "unavailable_contract", message: "该型号接口合同尚未确认，请刷新模型或选择已支持的型号。" });
+        if (media === "video" && remainingVideoSupplier(connection.baseUrl) === "miaowu" && configuredModel.metadata?.parameterSource === "dream.video_schema" &&
+            configuredModel.metadata.source !== "manual" && configuredModel.metadata.protocolEvidence !== "paid-test") {
+          const defaults = Object.fromEntries((configuredModel.parameters ?? []).filter(parameter => parameter.default !== undefined).map(parameter => [parameter.key, parameter.default]));
+          const values = request.parameters ?? {};
+          issues.push(...validateModelParameters(configuredModel, { ...defaults, ...values }, request.operation).issues);
+          for (const key of Object.keys(values)) if (!configuredModel.parameters?.some(parameter => parameter.key === key))
+            issues.push({ path: `parameters.${key}`, code: "unsupported_parameter", message: `当前型号认证 schema 未声明参数 ${key}，本次生成尚未提交。` });
+          const maximum = configuredModel.limits?.maxPromptCharacters;
+          if (maximum !== undefined && [...request.prompt].length > maximum)
+            issues.push({ path: "prompt", code: "prompt_too_long", message: `当前型号提示词最多 ${maximum} 个字符，本次生成尚未提交。` });
+        }
         if (configuredModel.parameters?.length && media !== "image" && (musicRequest || videoRequest || cangyuanVideo || remainingVideo)) {
           const values = musicRequest ? withCangyuanMusicRequestParameters(request).parameters ?? {} : request.parameters ?? {};
           const declared = Object.fromEntries(Object.entries(values).filter(([key]) => configuredModel.parameters?.some(p => p.key === key)));

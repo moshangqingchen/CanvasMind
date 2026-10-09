@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const network = vi.hoisted(() => ({
   lookup: vi.fn(async (hostname: string, _options?: unknown) => {
     // Preserve the real-host scope test without sending a DNS request.
-    if (!["tk1688.com", "asian-acc.we-token.cc"].includes(hostname)) throw new Error("Unexpected DNS in supplier login test");
+    if (!["tk1688.com", "asian-acc.we-token.cc", "synoralink.com"].includes(hostname)) throw new Error("Unexpected DNS in supplier login test");
     return [{ address: "203.0.113.10", family: 4 }];
   }),
   fetch: vi.fn(),
@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => {
   try {
     expect(network.fetch).not.toHaveBeenCalled();
-    expect(network.lookup.mock.calls.every(([hostname]) => ["tk1688.com", "asian-acc.we-token.cc"].includes(hostname))).toBe(true);
+    expect(network.lookup.mock.calls.every(([hostname]) => ["tk1688.com", "asian-acc.we-token.cc", "synoralink.com"].includes(hostname))).toBe(true);
   } finally {
     vi.unstubAllGlobals();
   }
@@ -318,6 +318,20 @@ describe("supplier website login", () => {
       const headers = new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers);
       expect(headers.get("authorization")).toBeNull();
       expect(headers.get("cookie")).toBeNull();
+    }
+  });
+  it("confines Synora authenticated announcement reads to its exact GET endpoint without query or redirects", async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => Response.json({ code: 0, data: { access_token: "session-secret" } }));
+    const session = await loginSupplierSite({ siteUrl: "https://synoralink.com", kind: "sub2api", credentials }, fetcher);
+    await session.fetch("https://synoralink.com/api/v1/announcements");
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer session-secret");
+    for (const [url, method] of [
+      ["https://synoralink.com/api/v1/announcements?redirect=leak", "GET"], ["https://synoralink.com/api/v1/announcements#fragment", "GET"],
+      ["https://synoralink.com/api/v1/announcements", "POST"], ["https://other.test/api/v1/announcements", "GET"],
+      ["https://synoralink.com.evil.test/api/v1/announcements", "GET"],
+    ]) {
+      await session.fetch(url!, { method });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
     }
   });
   it("logs into Sub2API and falls back to key groups with a session confined to that site", async () => {

@@ -111,6 +111,23 @@ export interface SupplierCatalogModel {
   };
 }
 
+/** A scoped observed charge, never a universal advertised model tariff. */
+export interface SupplierLedgerPriceRecord {
+  amount: number;
+  currency: string;
+  unit: "image" | "request";
+  checkedAt: string;
+  observedAt: string;
+  sourceUrl: string;
+  supplierGroupId: string;
+  modelId: string;
+  resolution: string;
+  parameters: { n: number; resolution: string };
+  sample: true;
+  billingMode: string;
+  notificationAt?: string;
+  notificationSourceUrl?: string;
+}
 export interface SupplierRecord {
   id: string;
   name: string;
@@ -123,6 +140,8 @@ export interface SupplierRecord {
     groups: Array<{
       id: string;
       label: string;
+      /** Stable official identity survives a supplier renaming the group. */
+      supplierGroupId?: string;
       source?: "manual" | "catalog";
       status?: "available" | "missing";
       models: SupplierCatalogModel[];
@@ -136,6 +155,7 @@ export interface SupplierRecord {
         upscaledResolutions?: string[];
         exclusiveResolutions?: boolean;
         imagePrices?: Array<{ resolution: string; amount: number }>;
+        ledgerPrices?: SupplierLedgerPriceRecord[];
         rateMultiplier?: number;
         imageRateMultiplier?: number;
         concurrencyLimit?: number;

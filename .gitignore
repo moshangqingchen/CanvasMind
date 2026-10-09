@@ -50,3 +50,8 @@ _to_delete/
 # Local diagnostic snapshot contains personal task and billing records.
 /docs/supplier-update-verification-2026-10-01.json
 /docs/private-evidence/
+# Local supplier audit contains account, connection and billing evidence.
+/docs/supplier-full-recheck-2026-10-09.json
+/docs/supplier-full-recheck-2026-10-09.md
+/docs/supplier-video-interface-recheck-2026-10-09.md
+/docs/synora-group-price-repair-2026-10-09.md

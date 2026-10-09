@@ -76,10 +76,17 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   if (measured && typeof model.metadata?.priceLabel === "string") {
     const previousParameters = measured.parameters && typeof measured.parameters === "object" && !Array.isArray(measured.parameters)
       ? measured.parameters as Record<string, unknown> : {};
-    const dimensionChanged = Boolean(tier && measured.resolution && tier !== String(measured.resolution).toUpperCase()) ||
-      Boolean(parameters.size !== undefined && previousParameters.size !== undefined && parameters.size !== previousParameters.size);
-    const qualityChanged = quality !== undefined && measured.quality !== undefined && String(quality) !== String(measured.quality);
-    return `${dimensionChanged || qualityChanged ? "当前组合未测价；上次 " : ""}${model.metadata.priceLabel}`;
+    const sampledResolution = String(measured.resolution ?? previousParameters.resolution ?? "").toUpperCase().replace("×", "X");
+    const sampledSize = previousParameters.size ?? (/^\d+X\d+$/u.test(sampledResolution) ? sampledResolution : undefined);
+    const dimensionChanged = Boolean(tier && tier !== sampledResolution) ||
+      Boolean(parameters.size !== undefined && (sampledSize !== undefined
+        ? String(parameters.size).toUpperCase().replace("×", "X") !== String(sampledSize).toUpperCase().replace("×", "X") : !tier));
+    const qualityChanged = quality !== undefined && String(quality) !== String(measured.quality ?? previousParameters.quality);
+    const billingParameterChanged = ["n", "duration", "seconds", "generate_audio", "mode", "has_reference_video"].some(key => {
+      const current = parameters[key] ?? model.parameters?.find(parameter => parameter.key === key)?.default;
+      return current !== undefined && String(current) !== String(previousParameters[key]);
+    });
+    return `${dimensionChanged || qualityChanged || billingParameterChanged ? "当前组合未测价；上次 " : ""}${model.metadata.priceLabel}`;
   }
   if (pricing) {
     const defaults = Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default]));

@@ -70,6 +70,26 @@ describe("supplier refresh evidence", () => {
     const after = supplier({ scannedAt: "after", scanComplete: undefined, catalog: { groups: [] } });
     expect(buildSupplierRefreshResult(before, after, [], []).groupChanges!.missing).toEqual([]);
   });
+  it("reports an official group rename once and keeps a same-name replacement distinct", () => {
+    const old = { ...group("高质量生图专线"), supplierGroupId: "115" };
+    const renamed = { ...group("全参生图专线"), supplierGroupId: "115" };
+    const before = supplier({ catalog: { groups: [old] } });
+    const after = supplier({ scannedAt: "after", scanComplete: true, catalog: { groups: [renamed] } });
+    const saved = connection([model("image")], { accountKeyGroup: old.id, accountKeyGroupId: "115" });
+    const report = buildSupplierRefreshResult(before, after, [saved], [{ ...saved, config: { ...saved.config, modelScanCheckedAt: "after" } }]);
+    expect(report.groupChanges).toEqual({ added: [], missing: [], renamed: [{ id: renamed.id, before: old.label, after: renamed.label }] });
+    expect(report.connections).toHaveLength(1);
+    expect(report.connections![0]).toMatchObject({ groupId: renamed.id, group: renamed.label });
+    const replacement = buildSupplierRefreshResult(before, { ...after, catalog: { groups: [{ ...old, supplierGroupId: "116" }] } }, [], []);
+    expect(replacement.groupChanges).toEqual({ added: [{ id: old.id, label: old.label }], missing: [{ id: old.id, label: old.label }], renamed: [] });
+    const replacementWithOldKey = buildSupplierRefreshResult(before, { ...after, catalog: { groups: [{ ...old, supplierGroupId: "116" }] } }, [saved], [saved]);
+    expect(replacementWithOldKey.connections!.filter(item => item.status === "unconfigured")).toHaveLength(1);
+    const withHistory = buildSupplierRefreshResult(before, { ...after, catalog: { groups: [{ ...old, status: "missing" }, renamed] } }, [saved], [saved]);
+    expect(withHistory.connections).toHaveLength(1);
+    expect(withHistory.connections![0]!.group).toBe(renamed.label);
+    const legacy = supplier({ catalog: { groups: [group(renamed.id)] } });
+    expect(buildSupplierRefreshResult(legacy, after, [], []).groupChanges).toEqual({ added: [], missing: [], renamed: [] });
+  });
   it("keeps exact empty models distinct from failed reads and identifies an unconfigured new group", () => {
     const before = connection([model("old")]);
     const after = connection([], { modelScanCheckedAt: "after", modelScanStatus: "empty", modelScanAttemptStatus: "empty" });
@@ -104,6 +124,25 @@ describe("supplier refresh evidence", () => {
     const units = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [connection([old])], [connection([perSecond], { modelScanCheckedAt: "after" })]);
     expect(units.connections![0]!.priceChanges[0]!.before).toContain("CNY/张");
     expect(units.connections![0]!.priceChanges[0]!.after).toContain("CNY/秒");
+  });
+  it("detects parameter and polling changes even when the submit path is unchanged", () => {
+    const old = { ...model("video"), parameters: [{ key: "duration", label: "时长", control: "number" as const, min: 4, max: 15 }] };
+    const updated = { ...old, parameters: [{ ...old.parameters[0]!, max: 30 }] };
+    const prior = connection([old]);
+    const current = connection([updated], { modelScanCheckedAt: "after" });
+    const report = buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [prior], [current]);
+    expect(report.connections![0]!.interfaceChanges[0]!.after).toContain("参数、查询或结果定义已更新");
+    const relabelled = { ...old, parameters: [{ ...old.parameters[0]!, label: "视频时长", description: "新的说明" }] };
+    expect(buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [prior], [connection([relabelled], { modelScanCheckedAt: "after" })]).connections![0]!.interfaceChanges).toEqual([]);
+    const binding = { model: old, connector: { submit: { path: "/v1/videos" }, poll: { path: "/v1/videos/{id}" } }, checkedAt: "before" };
+    const boundBefore = connection([old], { autoModelInterfaces: { video: binding } });
+    const boundAfter = connection([old], { modelScanCheckedAt: "after", autoModelInterfaces: { video: { ...binding, connector: { ...binding.connector, poll: { path: "/v1/tasks/{id}" } } } } });
+    expect(buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [boundBefore], [boundAfter]).connections![0]!.interfaceChanges).toHaveLength(1);
+    const repricedBinding = connection([old], { modelScanCheckedAt: "after", autoModelInterfaces: { video: { ...binding, checkedAt: "after", model: { ...old, pricing: { ...old.pricing!, unitAmount: 99 } } } } });
+    expect(buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [boundBefore], [repricedBinding]).connections![0]!.interfaceChanges).toEqual([]);
+    const connectorModelsBefore = connection([old], { autoModelInterfaces: { video: { ...binding, connector: { ...binding.connector, models: [old] } } } });
+    const connectorModelsAfter = connection([old], { modelScanCheckedAt: "after", autoModelInterfaces: { video: { ...binding, connector: { ...binding.connector, models: [{ ...old, pricing: { ...old.pricing!, unitAmount: 99 } }] } } } });
+    expect(buildSupplierRefreshResult(supplier(), supplier({ scannedAt: "after" }), [connectorModelsBefore], [connectorModelsAfter]).connections![0]!.interfaceChanges).toEqual([]);
   });
   it("separates a successful model list from a failed price lookup without reporting the cached price as changed", () => {
     const old = { ...model("keep"), pricing: undefined, metadata: { priceLabel: "$0.2/张", priceStatus: "available" } } as ModelDescriptor;

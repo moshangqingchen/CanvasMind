@@ -55,6 +55,13 @@ interface NativeCase {
   operation?: NormalizedRequest["operation"]; path: string; body: Record<string, unknown>;
 }
 const cases: NativeCase[] = [
+  { label: "Secure Flow Omni documented nested video configuration", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "omni", group: "Flow",
+    parameters: { duration: 10, aspect_ratio: "9:16", resolution: "1080p" }, path: "/v1/jobs",
+    body: { messages: [{ role: "user", content: prompt }], generationConfig: { videoConfig: { duration: 10, aspectRatio: "9:16", resolution: "1080p" } } } },
+  { label: "Secure Flow Omni source video determines output duration", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "omni_video_edit", group: "Flow",
+    parameters: { duration: 10, aspect_ratio: "9:16", resolution: "1080p" }, assets: [image, video], path: "/v1/jobs",
+    body: { messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: image.url } }] }], video_url: video.url,
+      generationConfig: { videoConfig: { aspectRatio: "9:16", resolution: "1080p" } } } },
   { label: "Secure Flow quality", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "veo_quan", group: "Flow",
     parameters: { duration: 8, aspect_ratio: "16:9", resolution: "1080p" }, path: "/v1/jobs",
     body: { aspect_ratio: "16:9", resolution: "1080p", messages: [{ role: "user", content: prompt }] } },
@@ -100,6 +107,48 @@ const cases: NativeCase[] = [
 ];
 
 describe("native video routing without a saved REST connector", () => {
+  it.each([
+    { id: "doubao-seedance-2-0-260128", resolution: "480p", permitted: ["480p", "4K"] },
+    { id: "doubao-seedance-2-0-260128", resolution: "4K", permitted: ["480p", "4K"] },
+    { id: "doubao-seedance-2-5-260628", resolution: "480p", permitted: ["480p"] },
+  ])("submits Secure group 56 exact $id at its opened $resolution through the documented compatible protocol", async ({ id, resolution, permitted }) => {
+    const group = "海外sd2.0/2.5-7.5折", selected = remainingVideoModel("secure", id, {
+      id, name: id, operations: ["video.generate"], metadata: { videoSupportedResolutions: permitted },
+    }, { group })!;
+    const f = fixture("secure", "https://token.secure-skill.com/v1", id, group, [
+      Response.json({ id: "group56-task", status: "queued" }),
+      Response.json({ status: "completed", video_url: "https://media.example/group56.mp4", usage: { completion_tokens: 83505, total_tokens: 83505 } }),
+    ], { accountKeyGroupId: 56 }, "openai", selected);
+    const task = await f.adapter.submit(request(id, { duration: 4, aspect_ratio: "9:16", resolution, generate_audio: true }));
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://token.secure-skill.com/v1/videos");
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt, duration: 4, aspect_ratio: "9:16", resolution, generate_audio: true });
+    const state = await f.adapter.poll(JSON.parse(JSON.stringify(task)) as ProviderTask);
+    expect(state.status).toBe("succeeded");
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://token.secure-skill.com/v1/videos/group56-task");
+    expect(await f.adapter.extractOutputs(state.result)).toEqual([{ kind: "video", url: "https://media.example/group56.mp4", mimeType: "video/mp4" }]);
+    for (const [, init] of f.fetcher.mock.calls) expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${apiKey}`);
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+  it("rejects Secure group 56 SD2.5's unquoted 4K mode before submission", async () => {
+    const id = "doubao-seedance-2-5-260628", group = "海外sd2.0/2.5-7.5折";
+    const model = remainingVideoModel("secure", id, { id, name: id, operations: [], metadata: { videoSupportedResolutions: ["480p"] } }, { group })!;
+    const f = fixture("secure", "https://token.secure-skill.com/v1", id, group, [], { accountKeyGroupId: 56 }, "openai", model);
+    await expect(f.adapter.submit(request(id, { duration: 4, resolution: "4K" }))).rejects.toThrow();
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+  it.each(["source_url", "media_url"])("extracts Secure Flow's documented %s result without another generation", async field => {
+    const f = fixture("secure", "https://token.secure-skill.com/v1", "omni", "Flow", [
+      Response.json({ id: "same-omni-task", status: "queued" }),
+      Response.json({ status: "completed", [field]: "https://media.example/omni.mp4" }),
+    ]);
+    const task = await f.adapter.submit(request("omni", { duration: 4, aspect_ratio: "16:9", resolution: "720p" }));
+    const state = await f.adapter.poll(JSON.parse(JSON.stringify(task)));
+    expect(state.status).toBe("succeeded");
+    expect(await f.adapter.extractOutputs(state.result)).toMatchObject([{ kind: "video", url: "https://media.example/omni.mp4" }]);
+    expect(f.fetcher).toHaveBeenCalledTimes(2);
+    expect(f.fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  });
+
   it("uses Omni's Video endpoint for generation without forwarding its price mode", async () => {
     const localImage: ProviderAssetInput = { id: "local", kind: "image", mimeType: "image/png", data: new Uint8Array([3, 2, 1]) };
     const f = fixture("cyberafei", "https://api.3365api.cn/v1", "omni-flash", "图片视频模型综合分组", [

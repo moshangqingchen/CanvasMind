@@ -12,6 +12,7 @@ import { isSub2apiPlazaPricingSource, sub2apiPlazaPricing } from "./sub2api-plaz
 import { isMiaowuCatalogSource, miaowuCatalogMediaKind, miaowuCatalogMediaPricing } from "./miaowu-catalog-pricing.js";
 import { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 import { HANG_PRICE_URL, isHangCatalogSource, parseHangChatPrices } from "./hang-catalog-pricing.js";
+import { isSynoraLedgerSource, readSynoraLedgerPrices, type SupplierLedgerPrice } from "./supplier-ledger-pricing.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
@@ -639,6 +640,24 @@ export async function discoverSupplierCatalog(
       };
     return undefined;
   };
+  let synoraLedger: Promise<SupplierLedgerPrice[]> | undefined;
+  const ledgerGroups = async (groups: DiscoveredSupplierGroup[]): Promise<DiscoveredSupplierGroup[]> => {
+    if (!isSynoraLedgerSource(siteUrl)) return groups;
+    const headers = siteHeaders("sub2api");
+    synoraLedger ??= readSynoraLedgerPrices(siteUrl, fetchImpl, { checkedAt, ...(headers ? { headers } : {}),
+      ...(input.signal ? { signal: input.signal } : {}) });
+    const samples = await synoraLedger;
+    return groups.map(group => {
+      const ledgerPrices = samples.filter(sample => sample.supplierGroupId === group.supplierGroupId);
+      if (!ledgerPrices.length) return group;
+      return { ...group, details: { ...(group.details ?? { source: "key-groups" as const }), ledgerPrices },
+        models: group.models.map(model => {
+          const sample = ledgerPrices.filter(value => value.modelId === model.id)
+            .sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))[0];
+          return sample ? { ...model, metadata: { ...model.metadata, supplierLedgerPrice: sample } } : model;
+        }) };
+    });
+  };
   const pricePage = async (groups: DiscoveredSupplierGroup[]) => {
     if (isHangCatalogSource(siteUrl)) {
       // This host is linked by the supplier's own pricing page. Never pass
@@ -743,7 +762,7 @@ export async function discoverSupplierCatalog(
     }
     const priceComplete = priced.complete ||
       ((fallback.status === "live" || fallback.status === "empty") && fallback.complete !== false);
-    const groups = accountComplete ? accountGroupNames(priced.groups, available.groups) : priced.groups;
+    const groups = await ledgerGroups(accountComplete ? accountGroupNames(priced.groups, available.groups) : priced.groups);
     return { ...result, groups, ...(groups.length ? { status: "live" as const } : {}),
       complete: priceComplete && accountComplete,
       ...(!priceComplete && accountComplete ? {
@@ -766,9 +785,9 @@ export async function discoverSupplierCatalog(
         // factors when /api/pricing omits group_ratio. Join only exact groups.
         parsed = parseSupplierCatalog({ ...payload, group_ratio: ratios }, currentPrice.options);
       }
-      return success({ ...parsed, groups: accountGroupNames(parsed.groups, available.groups) }, platform);
+      return success({ ...parsed, groups: await ledgerGroups(accountGroupNames(parsed.groups, available.groups)) }, platform);
     }
-    return { ...success(parsed, platform), complete: false,
+    return { ...success({ ...parsed, groups: await ledgerGroups(parsed.groups) }, platform), complete: false,
       error: "模型目录已读取；账号分组说明暂不可用，保留历史分组，请稍后重试或检查站点登录" };
   };
 

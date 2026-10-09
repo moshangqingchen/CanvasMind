@@ -18,6 +18,128 @@ function connection(patch: Partial<ProviderConnectionRecord> = {}): ProviderConn
     createdAt: "before", updatedAt: "before", ...patch };
 }
 describe("account key import plan", () => {
+  it("reconciles only proven saved Keys during a catalog refresh without filling or importing credentials", () => {
+    const currentSupplier = { ...supplier, catalog: { groups: [{ id: "New", label: "New", source: "catalog" as const, supplierGroupId: "115", models: [{ id: "gpt-image-2", capability: "image" as const, priceLabel: "0.07/张" }] }] } };
+    const saved = connection({ encryptedSecret: encrypt("same-secret"), config: {
+      supplierId: "s", supplierSourceId: "source", accountKeyId: "1548", accountKeyGroup: "Old", modelGroup: "Old", usage: "canvas",
+      modelScanStatus: "live", modelScanComplete: true, scannedModelIds: ["gpt-image-2"], supplierVerificationRequestId: "accepted",
+    } });
+    const cleared = connection({ id: "cleared", config: { supplierId: "s", supplierSourceId: "source", modelGroup: "Empty", usage: "canvas" } });
+    const currentKeys = { ...inventory, keys: [
+      { id: "1548", group: "New", supplierGroupId: "115", apiKey: "same-secret", name: "saved" },
+      { id: "2", group: "Unrelated", supplierGroupId: "116", apiKey: "new-secret", name: "new" },
+      { id: "3", group: "Empty", supplierGroupId: "117", apiKey: "cleared-secret", name: "cleared" },
+    ] };
+    const before = [saved, cleared];
+    const plan = planSupplierAccountImport(currentSupplier, before, currentKeys, () => { throw new Error("Unexpected import"); }, before, {
+      preserveOnly: true, previousCatalog: { groups: [{ id: "Old", label: "Old", models: [] }] },
+      matchesKey: (existing, apiKey) => existing.encryptedSecret === encrypt(apiKey),
+    });
+    expect(plan.connections).toHaveLength(2);
+    expect(plan.connections[0]).toEqual({ ...saved, config: { ...saved.config, modelGroup: "New", accountKeyGroup: "New", accountKeyGroupId: "115" } });
+    expect(plan.connections[1]).toEqual(cleared);
+    expect(plan.catalog.groups).toEqual([{ ...currentSupplier.catalog.groups[0]!, status: "available" }]);
+    expect(plan.summary).toMatchObject({ imported: 0, preserved: 1, skipped: 2 });
+  });
+  it("keeps the same connection and model evidence when an official group is renamed", () => {
+    const oldCatalog = { groups: [{ id: "Old", label: "Old", source: "catalog" as const, supplierGroupId: "115", models: [] }] };
+    const currentSupplier = { ...supplier, catalog: { groups: [{ ...oldCatalog.groups[0]!, id: "New", label: "New" }] } };
+    const saved = connection({ encryptedSecret: "keep-existing-ciphertext", config: {
+      supplierId: "s", supplierSourceId: "source", accountKeyId: "1", accountKeyGroup: "Old", modelGroup: "Old", usage: "canvas",
+      modelScanStatus: "live", modelScanComplete: true, modelCatalogModels: [{ id: "gpt-image-2" }], scannedModelIds: ["gpt-image-2"],
+      supplierVerificationRequestId: "accepted-request", manualModels: [{ id: "manual" }],
+    } });
+    const currentKeys = { ...inventory, keys: [{ id: "1", group: "New", supplierGroupId: "115", apiKey: "new-secret", name: "one" }] };
+    const plan = planSupplierAccountImport(currentSupplier, [saved], currentKeys, encrypt, [saved], { previousCatalog: oldCatalog });
+    expect(plan.connections).toHaveLength(1);
+    expect(plan.connections[0]).toEqual({ ...saved, config: { ...saved.config, accountKeyGroupId: "115", accountKeyGroup: "New", modelGroup: "New" } });
+    expect(plan.summary).toMatchObject({ imported: 0, preserved: 1 });
+  });
+
+  it("prefers the current official group name and models over its merged former record", () => {
+    const oldGroup = { id: "Old", label: "Old", source: "catalog" as const, supplierGroupId: "115", models: [{ id: "old", capability: "image" as const }] };
+    const newGroup = { id: "New", label: "New", source: "catalog" as const, supplierGroupId: "115", models: [{ id: "new", capability: "image" as const }] };
+    const currentSupplier = { ...supplier, catalog: { groups: [oldGroup, newGroup] } };
+    const saved = connection({ encryptedSecret: "keep-key", config: { supplierId: "s", supplierSourceId: "source", accountKeyGroupId: "115", accountKeyGroup: "Old", modelGroup: "Old", usage: "canvas" } });
+    const currentKeys = { ...inventory, keys: [{ id: "1", group: "New", supplierGroupId: "115", apiKey: "secret", name: "one" }] };
+    const plan = planSupplierAccountImport(currentSupplier, [saved], currentKeys, encrypt);
+    expect(plan.connections).toHaveLength(1);
+    expect(plan.connections[0]?.config).toMatchObject({ accountKeyGroup: "New", modelGroup: "New", accountKeyGroupId: "115" });
+    expect(plan.catalog.groups.find(group => group.id === "New")?.models).toEqual(newGroup.models);
+    const ambiguous = { ...currentSupplier, catalog: { groups: [oldGroup, { ...newGroup, id: "Other" }] } };
+    const refused = planSupplierAccountImport(ambiguous, [saved], currentKeys, encrypt);
+    expect(refused.connections).toEqual([saved]);
+    expect(refused.summary.skipped).toBe(1);
+  });
+
+  it("recovers legacy renamed groups only with the exact imported Key ID and encrypted-secret proof", () => {
+    const currentSupplier = { ...supplier, catalog: { groups: [{ id: "New", label: "New", source: "catalog" as const, supplierGroupId: "115", models: [] }] } };
+    const saved = connection({ encryptedSecret: encrypt("same-secret"), config: {
+      supplierId: "s", supplierSourceId: "source", accountKeyId: "1548", accountKeyGroup: "Old", modelGroup: "Old", usage: "canvas",
+      scannedModelIds: ["gpt-image-2"], modelScanStatus: "live", modelScanComplete: true,
+    } });
+    const currentKeys = { ...inventory, keys: [{ id: "1548", group: "New", supplierGroupId: "115", apiKey: "same-secret", name: "one" }] };
+    const options = { previousCatalog: { groups: [{ id: "Old", label: "Old", models: [] }] },
+      matchesKey: (existing: ProviderConnectionRecord, apiKey: string) => existing.encryptedSecret === encrypt(apiKey) };
+    const plan = planSupplierAccountImport(currentSupplier, [saved], currentKeys, encrypt, [saved], options);
+    expect(plan.connections).toHaveLength(1);
+    expect(plan.connections[0]?.config).toMatchObject({ accountKeyGroupId: "115", accountKeyGroup: "New", modelGroup: "New", scannedModelIds: ["gpt-image-2"], modelScanStatus: "live" });
+    const wrongSecret = { ...saved, encryptedSecret: encrypt("different-secret") };
+    const refused = planSupplierAccountImport(currentSupplier, [wrongSecret], currentKeys, encrypt, [wrongSecret], options);
+    expect(refused.connections).toHaveLength(2);
+    expect(refused.connections[0]).toEqual(wrongSecret);
+    const wrongKeyId = { ...saved, config: { ...saved.config, accountKeyId: "1549" } };
+    const refusedId = planSupplierAccountImport(currentSupplier, [wrongKeyId], currentKeys, encrypt, [wrongKeyId], options);
+    expect(refusedId.connections).toHaveLength(2);
+    expect(refusedId.connections[0]).toEqual(wrongKeyId);
+  });
+
+  it.each([true, false])("does not rename a reassigned Key whose prior official group ID is known: stored %s", stored => {
+    const oldCatalog = { groups: [{ id: "Old", label: "Old", source: "catalog" as const, supplierGroupId: "115", models: [] }] };
+    const currentSupplier = { ...supplier, catalog: { groups: [{ id: "New", label: "New", source: "catalog" as const, supplierGroupId: "116", models: [] }] } };
+    const saved = connection({ encryptedSecret: encrypt("same-secret"), config: {
+      supplierId: "s", supplierSourceId: "source", accountKeyId: "1", accountKeyGroup: "Old", modelGroup: "Old", usage: "canvas",
+      ...(stored ? { accountKeyGroupId: "115" } : {}),
+    } });
+    const currentKeys = { ...inventory, keys: [{ id: "1", group: "New", supplierGroupId: "116", apiKey: "same-secret", name: "one" }] };
+    const plan = planSupplierAccountImport(currentSupplier, [saved], currentKeys, encrypt, [saved], {
+      previousCatalog: oldCatalog, matchesKey: () => true,
+    });
+    expect(plan.connections).toHaveLength(2);
+    expect(plan.connections[0]).toEqual(saved);
+    expect(plan.connections[1]?.config).toMatchObject({ accountKeyGroupId: "116", accountKeyGroup: "New" });
+  });
+
+  it("stamps newly imported group IDs and proven same-name imports while preserving manual Keys", () => {
+    const currentSupplier = { ...supplier, catalog: { groups: [{ id: "B1", label: "B1", source: "catalog" as const, supplierGroupId: "115", models: [] }] } };
+    const currentKeys = { ...inventory, keys: [{ id: "1", group: "B1", supplierGroupId: "115", apiKey: "same-secret", name: "one" }] };
+    const fresh = planSupplierAccountImport(currentSupplier, [], currentKeys, encrypt);
+    expect(fresh.connections[0]?.config).toMatchObject({ accountKeyId: "1", accountKeyGroupId: "115", modelGroup: "B1" });
+    const saved = connection({ encryptedSecret: encrypt("same-secret"), config: { supplierId: "s", supplierSourceId: "source", modelGroup: "B1", accountKeyGroup: "B1", accountKeyId: "1", usage: "canvas" } });
+    const options = { previousCatalog: supplier.catalog, matchesKey: (existing: ProviderConnectionRecord, apiKey: string) => existing.encryptedSecret === encrypt(apiKey) };
+    const stamped = planSupplierAccountImport(currentSupplier, [saved], currentKeys, encrypt, [saved], options);
+    expect(stamped.connections[0]?.config.accountKeyGroupId).toBe("115");
+    const manual = connection({ encryptedSecret: encrypt("manual-secret") });
+    const preserved = planSupplierAccountImport(currentSupplier, [manual], currentKeys, encrypt, [manual], options);
+    expect(preserved.connections).toEqual([manual]);
+  });
+
+  it("preserves edits made during a rename scan and separates identically named official groups", () => {
+    const saved = connection({ encryptedSecret: encrypt("same-secret"), config: {
+      supplierId: "s", supplierSourceId: "source", accountKeyId: "1", accountKeyGroupId: "115", accountKeyGroup: "Old", modelGroup: "Old", usage: "canvas",
+    } });
+    const edited = { ...saved, name: "User edited", updatedAt: "after" };
+    const currentKeys = { ...inventory, keys: [{ id: "1", group: "New", supplierGroupId: "115", apiKey: "same-secret", name: "one" }] };
+    const renamed = planSupplierAccountImport(supplier, [edited], currentKeys, encrypt, [saved]);
+    expect(renamed.connections).toEqual([edited]);
+    const two = { ...inventory, keys: [{ id: "1", group: "Shared", supplierGroupId: "115", apiKey: "first", name: "one" },
+      { id: "2", group: "Shared", supplierGroupId: "116", apiKey: "second", name: "two" }] };
+    const distinct = planSupplierAccountImport({ ...supplier, catalog: { groups: [] } }, [], two, encrypt);
+    expect(distinct.connections.map(item => item.config.accountKeyGroupId)).toEqual(["115", "116"]);
+    expect(new Set(distinct.connections.map(item => item.config.modelGroup)).size).toBe(2);
+    expect(distinct.catalog.groups.map(group => group.supplierGroupId)).toEqual(["115", "116"]);
+  });
+
   it.each([undefined, true, false])("controls verification markers only on newly imported Keys: %s", verifyCapabilities => {
     const cleared = connection({ config: { supplierId: "s", supplierSourceId: "source", modelGroup: "B1", usage: "canvas",
       supplierVerificationRequestId: "cleared-key-old-request" } });

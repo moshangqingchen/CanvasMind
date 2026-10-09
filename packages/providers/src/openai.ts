@@ -169,6 +169,8 @@ const ALL_GEMINI_IMAGE_MODELS = new Set([
 
 const WEAI_GEMINI_MODEL_ALIASES: Readonly<Record<string, string>> = {
   "gemini-3-pro-image-preview": "gemini-3-pro-image",
+  "gemini-3.0-pro-image": "gemini-3-pro-image",
+  "gemini-3.0-pro-image-preview": "gemini-3-pro-image",
   "gemini-3.1-flash-image-preview": "gemini-3.1-flash-image",
 };
 
@@ -177,11 +179,14 @@ const WEAI_GROUP_MODELS: Readonly<Record<string, readonly string[]>> = {
   [WEAI_GEMINI_GROUP]: [...WEAI_GEMINI_IMAGE_MODELS],
   [WEAI_AZURE_GROUP]: ["gpt-image-2"],
   [WEAI_ADOBE_PER_REQUEST_GROUP]: [
+    "gpt-image-2",
     "gpt-image-2-low",
     "gpt-image-2-medium",
     "gpt-image-2-high",
   ],
-  [WEAI_CODEX_TOKEN_GROUP]: ["gpt-image-2"],
+  // Same official group and existing Key returned real PNGs and scoped bills
+  // for these complete IDs on 2026-10-09. Other groups remain independent.
+  [WEAI_CODEX_TOKEN_GROUP]: ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"],
   [WEAI_ADOBE_PER_REQUEST_URL_GROUP]: ["gpt-image-2"],
   [MIKOTO_GEMINI_GROUP]: [
     "gemini-3.1-flash-image-preview",
@@ -1187,7 +1192,7 @@ function isWeAIAdobeUrlOutputGroup(
   model?: string,
 ): boolean {
   if (
-    group === WEAI_ADOBE_PER_REQUEST_GROUP ||
+    group === WEAI_ADOBE_PER_REQUEST_GROUP && model !== "gpt-image-2" ||
     group === WEAI_ADOBE_PER_REQUEST_URL_GROUP
   )
     return true;

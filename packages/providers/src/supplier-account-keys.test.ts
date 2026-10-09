@@ -20,7 +20,27 @@ describe("account key discovery", () => {
     const result = await readSupplierAccountKeys({ siteUrl, kind: "sub2api" }, fetcher);
     expect(result).toMatchObject({ complete: true, skipped: 2 });
     expect(result.keys.map(k => k.group)).toEqual(["B1", "B4"]);
+    expect(result.keys.map(k => k.supplierGroupId)).toEqual([undefined, "4"]);
     expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("retains numeric Sub2API identity across renamed group labels and rejects conflicting IDs", async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => String(url).includes("groups/available")
+      ? Response.json({ code: 0, data: [{ id: 115, name: "全参生图专线" }, { id: 116, name: "Second" }] })
+      : Response.json({ code: 0, data: { total: 4, items: [
+        { id: 1, key, status: "active", group_id: "0115", group: { id: 115, name: "高质量生图专线" } },
+        { id: 2, key, status: "active", group: { id: "116", name: "Old second" } },
+        { id: 3, key, status: "active", group_id: 115, group: { id: 116, name: "Conflicting" } },
+        { id: 4, key, status: "active", group: { id: -1, name: "Legacy" } },
+      ] } }));
+    const result = await readSupplierAccountKeys({ siteUrl, kind: "sub2api" }, fetcher);
+    expect(result).toMatchObject({ complete: true, skipped: 1 });
+    expect(result.keys).toMatchObject([
+      { id: "1", group: "全参生图专线", supplierGroupId: "115" },
+      { id: "2", group: "Second", supplierGroupId: "116" },
+      { id: "4", group: "Legacy" },
+    ]);
+    expect(result.keys[2]).not.toHaveProperty("supplierGroupId");
   });
 
   it("reveals NewAPI masked keys through the read-only endpoint and accepts legacy full keys", async () => {
@@ -37,6 +57,7 @@ describe("account key discovery", () => {
     });
     const result = await readSupplierAccountKeys({ siteUrl, kind: "newapi" }, fetcher);
     expect(result.keys.map(k => k.apiKey)).toEqual([key, "sk-bare-legacy-account-secret"]);
+    expect(result.keys.every(k => k.supplierGroupId === undefined)).toBe(true);
     expect(result.skipped).toBe(1);
     expect(result.complete).toBe(true);
   });

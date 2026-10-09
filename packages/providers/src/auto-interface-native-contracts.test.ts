@@ -5,7 +5,7 @@ import { cangyuanVideoModel } from "./cangyuan-video-contract.js";
 import { chuangxiangVideoModel } from "./chuangxiang-video-contract.js";
 import type { ModelDescriptor, NormalizedRequest, ProviderAdapter, ProviderAssetInput, ProviderTask, ResolvedProviderConnection } from "./contracts.js";
 
-const nativeCangyuan = ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-5-260628"];
+const nativeCangyuan = ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-5-260628", "doubao-seedance-2-0-mini-260615"];
 const nativeChuangxiang = ["grok-imagine-video", "grok-imagine-video-1.5", "gv3-grok-video-1.5", "happyhorse-1.1", "kl1-kling-3.0", "kling-3.0", "kling-3.0-pro",
   "mm2-minimax-h3", "mm2-minimax-h3-max", "mm3-minimax-h3-2k", "sd10-seedance-2.0", "sd10-seedance-2.0-fast", "sd10-seedance-2.0-mini", "sd10-seedance-2.5",
   "sd11-seedance-2.0", "sd11-seedance-2.0-fast", "sd11-seedance-2.0-mini", "sd11-seedance-2.5", "sd13-seedance-2.0", "sd13-seedance-2.0-fast", "sd13-seedance-2.0-mini",
@@ -55,7 +55,7 @@ describe("documented native Cangyuan and Chuangxiang video contracts", () => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-native-group-key");
     expect(JSON.parse(String(init?.body))).toEqual(supplier === "cangyuan"
       ? { model: id, prompt: input.prompt, duration: f.duration, generate_audio: false, resolution: "720p", aspect_ratio: "9:16", face_mode: true, seed: 7, reference_image_urls: [image.url] }
-      : { model: id, prompt: input.prompt, seconds: f.duration, aspect_ratio: "9:16", n: 1,
+      : { model: id, prompt: input.prompt, duration: f.duration, aspect_ratio: "9:16", n: 1,
         ...(id.startsWith("omni-v2v") ? { reference_videos: [video.url] }
           : id === "kl1-kling-3.0" ? { first_image_url: image.url } : { reference_image_urls: [image.url] }) });
     const state = await f.adapter.poll(task);

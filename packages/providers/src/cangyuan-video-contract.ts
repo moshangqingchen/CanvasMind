@@ -10,7 +10,7 @@ export function isCangyuanVideoRequest(model: string | undefined, baseUrl?: stri
 
 /** Exact native catalog IDs whose current official contracts were rechecked. */
 export function isCangyuanNativeSeedanceRequest(model: string | undefined, baseUrl?: string): boolean {
-  return ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-5-260628"].includes(model ?? "") &&
+  return ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-5-260628", "doubao-seedance-2-0-mini-260615"].includes(model ?? "") &&
     isCangyuanVideoRequest(model, baseUrl);
 }
 
@@ -45,7 +45,7 @@ export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {
       supportsFirstLastFrames: c.frames, videoSupportsFirstLastFrames: c.frames, framePairRequired: c.framePairRequired, allowFrameMediaMix: c.allowFrameMediaMix,
       videoReferenceImageLimit: images, videoReferenceVideoLimit: videos, videoReferenceAudioLimit: audios,
       requiresImageWithAudio: c.requiresImageWithAudio ?? false, referenceVideoObjects: c.videoObjects ?? false,
-      referenceMimeTypes: c.inputMimeTypes, maxInputBytes: c.maxInputBytes,
+      referenceMimeTypes: c.inputMimeTypes, maxInputBytes: c.maxInputBytes, maxInputDimensions: c.maxInputDimensions,
       referenceNeedsDuration: !!(c.videoObjects || c.maxTotalInputVideoDurationSeconds || c.maxOutputAndInputVideoDurationSeconds || c.maxTotalInputAudioDurationSeconds || c.maxInputVideoDurationSeconds || c.maxInputAudioDurationSeconds),
       minInputVideoDurationSeconds: c.minInputVideoDurationSeconds, minTotalInputVideoDurationSeconds: c.minTotalInputVideoDurationSeconds,
       maxOutputAndInputVideoDurationSeconds: c.maxOutputAndInputVideoDurationSeconds,
@@ -162,13 +162,21 @@ export function validateCangyuanVideoRequest(request: NormalizedRequest): Valida
   for (const field of ["first_image_url", "last_image_url"] as const) if (p[field] !== undefined && !assetUrl(p[field])) add(`parameters.${field}`, "首尾帧必须使用该型号接受的公网素材链接。");
   if (c.requiresImageWithAudio && list(p.reference_audios).length && !list(p.reference_image_urls).length) add("assets", "牛来 Pro 参考音频必须搭配至少一张参考图。");
   if (request.model?.startsWith("omni-v2v") && !list(p.reference_videos).length) add("assets", "Omni v2v 必须提供参考视频。");
+  if (c.maxInputDimensions?.video) for (const url of list(p.reference_videos)) {
+    const asset = request.assets?.find(a => a.kind === "video" && a.url === url), limit = c.maxInputDimensions.video;
+    const width = asset?.width, height = asset?.height;
+    if (typeof width !== "number" || typeof height !== "number" || !Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0)
+      add("parameters.reference_videos", "此型号需核对参考视频真实像素尺寸；请提供可识别尺寸的本地素材，不能估算。");
+    else if (width > limit.width || height > limit.height)
+      add("parameters.reference_videos", `此型号参考视频不得超过 ${limit.width}×${limit.height} 像素。`);
+  }
   if (request.model?.startsWith("sd12-") && list(p.reference_audios).length && (!(list(p.reference_image_urls).length || list(p.reference_videos).length) || first)) add("assets", "SD12 音频须搭配参考图或视频，且不能与首帧混用。");
   if (request.model?.startsWith("minimax-h3-") && list(p.reference_audios).length && !list(p.reference_videos).length) add("assets", "该 MiniMax 型号参考音频必须搭配参考视频。");
   if (c.maxPromptCharacters && request.prompt.length > c.maxPromptCharacters) add("prompt", `该型号提示词最多 ${c.maxPromptCharacters} 个字符。`);
   for (const asset of request.assets ?? []) {
     const accepted = c.inputMimeTypes?.[asset.kind], bytes = c.maxInputBytes?.[asset.kind];
     if (accepted?.length && !accepted.includes(asset.mimeType)) add("assets", `该型号${asset.kind}参考素材仅接受 ${accepted.join(" / ")} 格式。`);
-    if (bytes && asset.data && asset.data.byteLength > bytes) add("assets", `该型号单个${asset.kind}参考素材不得超过 ${bytes / 1024 / 1024}MB。`);
+    if (bytes && asset.data && asset.data.byteLength > bytes) add("assets", `该型号单个${asset.kind}参考素材不得超过 ${bytes} 字节。`);
     if (asset.role === "mask" || asset.role && asset.role !== "reference" && asset.kind !== "image") add("assets", "视频参考素材需要该型号支持的素材角色；首尾帧必须为图片，蒙版不可用。");
   }
   for (const role of ["firstFrame", "lastFrame"] as const) if ((request.assets ?? []).filter(a => a.role === role).length > 1) add("assets", "首帧和尾帧分别只能提供一张图片。");

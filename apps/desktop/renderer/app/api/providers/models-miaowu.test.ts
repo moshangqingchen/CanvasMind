@@ -23,6 +23,7 @@ import { MIAOWU_BASE_URL, MIAOWU_PRESET_ID } from "../../../lib/miaowu-presets";
 
 const publicPricing = JSON.parse(readFileSync(new URL("../../../lib/miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
 const directories = JSON.parse(readFileSync(new URL("../../../lib/miaowu-server-20261008.fixture.json", import.meta.url), "utf8"));
+const nativeVideoIds: string[] = directories.dreamModels.filter((model: { type: string }) => model.type === "video").map((model: { id: string }) => model.id);
 const key = "miaowu-inventory-test-key";
 const connectionId = "miaowu-inventory";
 let dreamStatus = 200;
@@ -47,6 +48,12 @@ beforeEach(async () => {
     expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${key}`);
     if (request.pathname === "/v1/models") return Response.json({ data: directories.openaiModels }, { status: genericStatus });
     if (request.pathname === "/v1/dream/model_list") return Response.json({ data: directories.dreamModels }, { status: dreamStatus });
+    if (request.pathname === "/v1/dream/model_schema") {
+      expect([...request.searchParams.keys()]).toEqual(["model"]);
+      expect(nativeVideoIds).toContain(request.searchParams.get("model"));
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return Response.json({ error: { message: "This historical schema is not available in the isolated fixture" } }, { status: 404 });
+    }
     throw new Error("Unapproved test endpoint");
   });
   await mocks.repository.saveConnection({ id: connectionId, provider: "rest", name: "Miaowu isolated inventory",
@@ -81,7 +88,14 @@ describe("Miaowu authenticated union through the shared inventory entry", () => 
     expect(saved.config.scannedModelIds).toHaveLength(23);
     expect(saved.config.modelCatalogModels).toEqual(models);
     expect(saved.config.modelScanLastSuccessAt).toBe(response.headers.get("X-Model-Scan-Last-Success-At"));
-    expect(mocks.transport).toHaveBeenCalledTimes(3);
+    const scanCalls = mocks.transport.mock.calls.map(([url, init]) => ({ url: new URL(String(url)), init }));
+    expect(scanCalls.filter(call => call.url.pathname !== "/v1/dream/model_schema").map(call => call.url.pathname).sort()).toEqual([
+      "/api/pricing", "/v1/dream/model_list", "/v1/models",
+    ]);
+    const schemaCalls = scanCalls.filter(call => call.url.pathname === "/v1/dream/model_schema");
+    expect(schemaCalls.map(call => call.url.searchParams.get("model")).sort()).toEqual([...nativeVideoIds].sort());
+    expect(schemaCalls.every(call => call.init?.method === "GET")).toBe(true);
+    expect(Object.keys(saved.config.miaowuVideoSchemas as object).sort()).toEqual([...nativeVideoIds].sort());
     const submit = vi.fn<typeof fetch>(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       return Response.json({ choices: [{ message: { content: `[Video](https://media.example/${body.model}.mp4)` } }] });
@@ -102,7 +116,7 @@ describe("Miaowu authenticated union through the shared inventory entry", () => 
         content: id === "video-editing" ? "Ocean\n参考视频 1: https://media.example/source.mp4" : "Ocean" }] });
     }
     expect(submit).toHaveBeenCalledTimes(chatIds.length);
-    expect(mocks.transport).toHaveBeenCalledTimes(3);
+    expect(mocks.transport).toHaveBeenCalledTimes(scanCalls.length);
   });
 
   it.each([404, 401, 403])("preserves this attempt's generic 15 and partial status when Dream returns HTTP %s", async status => {

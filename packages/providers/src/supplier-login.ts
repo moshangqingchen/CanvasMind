@@ -326,6 +326,7 @@ function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", hea
       ...(base === "https://tk1688.com" && kind === "newapi" ? ["/api/user/models"] : []),
       "/api/v1/model-plaza",
       "/api/v1/groups/available",
+      ...(base === "https://synoralink.com" && kind === "sub2api" ? ["/api/v1/announcements"] : []),
     ].map((path) => `${base}${path}`),
   );
   return {

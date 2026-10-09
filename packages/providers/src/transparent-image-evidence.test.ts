@@ -283,6 +283,40 @@ describe("measured transparent image routes", () => {
     expect(getImageEditingCapabilities({ ...source, provider: "rest" }, model).transparent).toBe(false);
   });
 
+  it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("retains %s transparency across Synora group 115's verified rename", measuredModel => {
+    const renamed = { ...source, config: { ...source.config,
+      modelGroup: "全参生图专线", accountKeyGroup: "全参生图专线", accountKeyGroupId: "115" } };
+    const evidence = verifiedTransparentImageEvidence(renamed, measuredModel)!;
+    expect(evidence).toMatchObject({ group: "高质量生图专线", supplierGroupId: "115", model: measuredModel,
+      checkedAt: "2026-10-05", request: { size: "3840x2160", quality: "max", background: "transparent", output_format: "png" } });
+    expect(getImageEditingCapabilities(renamed, measuredModel)).toEqual({ transparent: true, mask: null });
+    expect(verifiedTransparentImageJsonEndpoint(renamed, measuredModel, evidence.request, evidence, "openai-images"))
+      .toBe("https://synoralink.com/v1/images/generations");
+    for (const config of [
+      { accountKeyGroupId: "119" }, { accountKeyGroupId: undefined },
+      { modelGroup: group, accountKeyGroup: group, accountKeyGroupId: "119" },
+      { modelGroup: "Different group" }, { baseUrl: "https://synoralink.com/custom" },
+      { baseUrl: "https://other.example/v1" }, { supplierArchived: true }, { usage: "agent" },
+    ]) {
+      const mismatched = { ...renamed, config: { ...renamed.config, ...config } };
+      expect(verifiedTransparentImageEvidence(mismatched, measuredModel)).toBeUndefined();
+      expect(getImageEditingCapabilities(mismatched, measuredModel).transparent).toBe(false);
+    }
+    expect(verifiedTransparentImageEvidence({ ...renamed, provider: "rest" }, measuredModel)).toBeUndefined();
+    expect(verifiedTransparentImageEvidence(renamed, `${measuredModel}-adobe`)).toBeUndefined();
+    expect(verifiedTransparentImageEvidence(renamed, "gpt-image-2")).toBeUndefined();
+    expect(verifiedTransparentImageEvidence(source, measuredModel)).toBe(evidence);
+  });
+
+  it("sends the same measured Images contract after the proven group rename", async () => {
+    const f = fixture({ ...saved, modelGroup: "全参生图专线", accountKeyGroup: "全参生图专线", accountKeyGroupId: "115" });
+    expect((await f.adapter.validate(request)).valid).toBe(true);
+    await f.adapter.submit(request);
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(String(f.fetch.mock.calls[0]![0])).toBe("https://synoralink.com/v1/images/generations");
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toEqual({ model, prompt: request.prompt, ...request.parameters });
+  });
+
   it("rejects unverified origins and paths without trusting supplier labels", () => {
     for (const baseUrl of ["http://synoralink.com/v1", "https://synoralink.com.example/v1", "https://user@synoralink.com/v1",
       "https://synoralink.com:8443/v1", "https://synoralink.com/custom", "https://synoralink.com/v1?route=other", "https://synoralink.com/v1#other"])

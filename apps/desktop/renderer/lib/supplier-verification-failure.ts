@@ -1,18 +1,71 @@
 import type { SupplierVerificationCase, VerificationCharge } from "@super-canvas/db";
 
+const object = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+const chargeAmount = (value: unknown): number | undefined => {
+  if (typeof value !== "number" && !(typeof value === "string" && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/iu.test(value.trim()))) return undefined;
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0 ? amount : undefined;
+};
+const chargeCurrency = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : undefined;
+// A usage total is a request sample. Only an explicit image billing unit makes it a per-image sample.
+const chargeUnit = (row: Record<string, unknown>): VerificationCharge["unit"] =>
+  ["image", "per-image", "per_image"].includes(String(row.billing_unit ?? row.billingUnit ?? row.unit ?? "").toLowerCase()) ? "image" : "request";
+
 /** Costs returned by this request are usable even without website login. */
 export function chargeFromVerificationResponse(test: SupplierVerificationCase): VerificationCharge | undefined {
-  const result = test.task?.result;
-  if (!result || typeof result !== "object" || Array.isArray(result)) return undefined;
-  const root = result as Record<string, unknown>;
-  const nested = root.usage ?? root.billing ?? root;
-  if (!nested || typeof nested !== "object" || Array.isArray(nested)) return undefined;
-  const row = nested as Record<string, unknown>;
-  const amount = row.actual_cost ?? row.cost;
-  const currency = row.currency ?? root.currency;
-  if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || typeof currency !== "string" || !currency.trim()) return undefined;
-  return { amount, currency, unit: "request", checkedAt: new Date().toISOString(), requestId: test.requestId,
-    ...(typeof test.task?.providerTaskId === "string" ? { taskId: test.task.providerTaskId } : {}) };
+  const root = object(test.task?.result);
+  if (!root) return undefined;
+  const data = object(root.data);
+  for (const row of [object(root.usage), object(root.billing), object(data?.usage), object(data?.billing), data, root]) {
+    if (!row) continue;
+    const amount = chargeAmount(row.actual_cost ?? row.actualCost ?? row.cost);
+    const currency = chargeCurrency(row.currency ?? data?.currency ?? root.currency);
+    if (amount === undefined || !currency) continue;
+    return { amount, currency, unit: chargeUnit(row), checkedAt: new Date().toISOString(), requestId: test.requestId,
+      ...(typeof test.task?.providerTaskId === "string" ? { taskId: test.task.providerTaskId } : {}) };
+  }
+  return undefined;
+}
+
+/** Read only a ledger row tied to this exact request/task; never use account totals or a nearby row. */
+export function chargeFromVerificationUsage(payload: unknown, test: SupplierVerificationCase,
+  kind: "newapi" | "sub2api", sourceUrl: string): VerificationCharge | undefined {
+  const root = object(payload);
+  if (!root || root.success === false) return undefined;
+  const data = object(root.data);
+  const rows = Array.isArray(root.data) ? root.data : data?.items ?? data?.logs ?? root.items;
+  if (!Array.isArray(rows)) return undefined;
+  const taskId = typeof test.task?.providerTaskId === "string" ? test.task.providerTaskId : undefined;
+  for (const value of rows) {
+    const row = object(value);
+    if (!row) continue;
+    let extra = object(row.other);
+    if (typeof row.other === "string") {
+      try { extra = object(JSON.parse(row.other)); } catch { /* No request evidence in malformed metadata. */ }
+    }
+    const request = row.request_id ?? row.requestId ?? extra?.request_id ?? extra?.requestId;
+    const task = row.task_id ?? row.taskId ?? extra?.task_id ?? extra?.taskId;
+    if (request !== test.requestId && !(taskId && task === taskId)) continue;
+    const cost = chargeAmount(row.actual_cost ?? row.actualCost ?? row.cost);
+    const quota = chargeAmount(row.quota);
+    const costCurrency = chargeCurrency(row.currency);
+    const declaredCost = cost !== undefined && costCurrency !== undefined;
+    const amount = declaredCost ? cost : quota ?? (kind === "sub2api" ? cost : undefined);
+    const currency = declaredCost ? costCurrency : quota !== undefined ? "quota"
+      : kind === "sub2api" && cost !== undefined ? "credits" : undefined;
+    if (amount === undefined || !currency) continue;
+    return { amount, currency, unit: chargeUnit(row), sourceUrl, checkedAt: new Date().toISOString(),
+      ...(request === test.requestId ? { requestId: test.requestId } : {}),
+      ...(taskId && task === taskId ? { taskId } : {}) };
+  }
+  return undefined;
+}
+
+/** Compare a single-image request total with its documented image rate without changing the stored sample unit. */
+export function verificationChargeForComparison(test: SupplierVerificationCase, charge: VerificationCharge | undefined): VerificationCharge | undefined {
+  return charge?.unit === "request" && test.expectedCharge?.unit === "image" && test.parameters?.n === 1
+    ? { ...charge, unit: "image" } : charge;
 }
 
 /** An absent/late bill is not proof of a free request. */

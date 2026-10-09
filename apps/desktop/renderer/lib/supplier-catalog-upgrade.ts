@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { MemoryRepository, ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
 
-export const SUPPLIER_CATALOG_REVISION = "2026-10-09-directory-media-contracts-v7";
+export const SUPPLIER_CATALOG_REVISION = "2026-10-09-full-supplier-contracts-prices-v9";
 const RETRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const UPGRADED_HOSTS = new Set([
   "ai.cangyuansuanli.cn", "tu.988236.xyz", "api.frimodel.com", "api.mikoto.vip",
@@ -31,7 +31,7 @@ interface Dependencies {
 function identity(connection: ProviderConnectionRecord): string {
   return createHash("sha256").update(JSON.stringify([
     connection.provider, connection.config.baseUrl, connection.config.modelGroup,
-    connection.config.accountKeyGroup, connection.config.usage,
+    connection.config.accountKeyGroup, connection.config.accountKeyGroupId, connection.config.usage,
     connection.config.supplierId, connection.config.supplierSourceId, connection.encryptedSecret,
   ])).digest("hex");
 }
@@ -114,8 +114,18 @@ export class SupplierCatalogUpgrade {
         if (this.dependencies.canContinue?.() === false) return;
         const afterCatalog = await repository.getConnection(connection.id);
         const afterCatalogSources = new Map((await repository.listSuppliers()).map(supplier => [supplier.id, supplier]));
-        if (!afterCatalog || !supported(afterCatalog) || identity(afterCatalog) !== fingerprint ||
-          !currentSupplierSource(afterCatalog, afterCatalogSources)) continue;
+        if (!afterCatalog || !supported(afterCatalog) || !currentSupplierSource(afterCatalog, afterCatalogSources)) continue;
+        if (identity(afterCatalog) !== fingerprint) {
+          // A verified legacy group migration changes routing identity. Let the
+          // picker reread its preserved models under the new group; never scan a
+          // concurrently edited Key or mark that new identity completed here.
+          const beforeMigration = { ...afterCatalog, config: { ...afterCatalog.config,
+            modelGroup: current.config.modelGroup, accountKeyGroup: current.config.accountKeyGroup,
+            accountKeyGroupId: current.config.accountKeyGroupId } };
+          if (!current.config.accountKeyGroupId && /^\d+$/u.test(String(afterCatalog.config.accountKeyGroupId ?? "")) &&
+            identity(beforeMigration) === fingerprint) this.state.updatedConnectionIds.push(connection.id);
+          continue;
+        }
         let complete = false;
         try {
           const response = await this.dependencies.readModels(new Request(

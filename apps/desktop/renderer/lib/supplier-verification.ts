@@ -21,7 +21,7 @@ import {
   shouldAutomaticallyVerifyConnection,
 } from "./supplier-verification-service";
 import { effectiveImageCapabilities } from "./supplier-capabilities";
-import { chargeFromVerificationResponse } from "./supplier-verification-failure";
+import { chargeFromVerificationResponse, chargeFromVerificationUsage } from "./supplier-verification-failure";
 import { openSupplierSiteSession } from "./supplier-site-session";
 
 const PROMPT =
@@ -40,10 +40,6 @@ async function readCharge(
   if (returned) return returned;
   const session = await openSupplierSiteSession(supplier);
   if (!session) return undefined;
-  const taskId =
-    typeof test.task?.providerTaskId === "string"
-      ? test.task.providerTaskId
-      : undefined;
   const path =
     session.kind === "newapi"
       ? `/api/log/self/?p=0&page_size=100&type=2&request_id=${encodeURIComponent(test.requestId)}`
@@ -60,47 +56,7 @@ async function readCharge(
     url = url.replace("/api/log/self/?", "/api/log/self?");
     return fetchUsage(url);
   });
-  const data = payload.data as Record<string, unknown> | undefined;
-  const rows = Array.isArray(data)
-    ? data
-    : (data?.items ?? data?.logs ?? payload.items);
-  if (!Array.isArray(rows)) return undefined;
-  for (const item of rows as Array<Record<string, unknown>>) {
-    let extra: Record<string, unknown> = {};
-    try {
-      extra = typeof item.other === "string" ? JSON.parse(item.other) : {};
-    } catch {
-      /* no request evidence */
-    }
-    const request = item.request_id ?? item.requestId ?? extra.request_id;
-    const task = item.task_id ?? extra.task_id;
-    if (request !== test.requestId && !(taskId && task === taskId)) continue;
-    const amount =
-      typeof item.actual_cost === "number"
-        ? item.actual_cost
-        : typeof item.cost === "number"
-          ? item.cost
-          : typeof item.quota === "number"
-            ? item.quota
-            : undefined;
-    const currency =
-      typeof item.currency === "string"
-        ? item.currency
-        : typeof item.quota === "number"
-          ? "quota"
-          : undefined;
-    if (amount === undefined || !Number.isFinite(amount) || !currency) continue;
-    return {
-      amount,
-      currency,
-      unit: "image",
-      sourceUrl: url,
-      checkedAt: new Date().toISOString(),
-      ...(request === test.requestId ? { requestId: test.requestId } : {}),
-      ...(taskId && task === taskId ? { taskId } : {}),
-    };
-  }
-  return undefined;
+  return chargeFromVerificationUsage(payload, test, session.kind, url);
 }
 
 const documentCache = new Map<string, Promise<string | undefined>>();

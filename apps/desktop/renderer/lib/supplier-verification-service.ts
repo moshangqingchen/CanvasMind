@@ -9,7 +9,7 @@ import {
   type VerificationCharge,
 } from "@super-canvas/db";
 import { qualityRank } from "./model-quality";
-import { confirmedFreeCharge, verificationFailure } from "./supplier-verification-failure";
+import { confirmedFreeCharge, verificationFailure, verificationChargeForComparison } from "./supplier-verification-failure";
 import { modelSupportsNodeType } from "./graph-ui";
 import type { ModelDescriptor, ProviderTask } from "@super-canvas/providers";
 import { savedModelInterfaces } from "@super-canvas/providers";
@@ -105,6 +105,11 @@ export class EmptyVerificationImageError extends Error {
   constructor() { super("供应商已返回，但没有提供图片；请核对供应商任务或账单。未重新生成，也未判定参数不支持。"); }
 }
 const groupName = (connection: ProviderConnectionRecord) => String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "默认群组");
+const officialGroupId = (connection: ProviderConnectionRecord): string | undefined => {
+  const raw = connection.config.accountKeyGroupId;
+  const id = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/u.test(raw.trim()) ? Number(raw) : NaN;
+  return Number.isSafeInteger(id) && id >= 0 ? String(id) : undefined;
+};
 const modelScope = (sourceId: string, group: string, modelId: string) => JSON.stringify([sourceId, group, modelId, "image.generate"]);
 
 function applyLowerResolutionInferences(record: SupplierVerificationRecord) {
@@ -161,6 +166,7 @@ export function verificationFingerprint(
         source: config.supplierSourceId,
         group: config.modelGroup,
         accountGroup: config.accountKeyGroup !== config.modelGroup ? config.accountKeyGroup : undefined,
+        accountGroupId: officialGroupId(connection),
         headers: config.headers && typeof config.headers === "object" && Object.keys(config.headers).length ? config.headers : undefined,
         connector,
         protocol: config.protocol,
@@ -430,6 +436,7 @@ export class SupplierVerificationService {
         );
       for (const { connection, model, documentation } of prepared) {
         const fingerprint = verificationFingerprint(connection, this.deps.fingerprintKey, model.id);
+        const supplierGroupId = officialGroupId(connection);
         if (fingerprint !== currentFingerprint(connection.id, model.id)) continue;
         const scope = modelScope(sourceId, groupName(connection), model.id);
         if (!record.coverage.some(item => modelScope(sourceId, item.group, item.modelId) === scope))
@@ -520,6 +527,7 @@ export class SupplierVerificationService {
             sourceId,
             connectionId: connection.id,
             group: groupName(connection),
+            ...(supplierGroupId !== undefined ? { supplierGroupId } : {}),
             modelId: model.id,
             provider: connection.provider,
             fingerprint,
@@ -616,7 +624,7 @@ export class SupplierVerificationService {
               actualCharge: charge,
               chargeStatus: reconcileVerificationCharge(
                 test.expectedCharge,
-                charge,
+                verificationChargeForComparison(test, charge),
                 test.requestId,
                 String(test.task?.providerTaskId ?? ""),
               ),
@@ -816,7 +824,7 @@ export class SupplierVerificationService {
     await this.patchCase(test, { status: failure.rejectedParameter ? "unsupported" : knownFailure ? "inconclusive" : "needs_attention",
       rejectedParameter: failure.rejectedParameter, legalQualities: failure.allowed,
       provisional: failure.unavailable || undefined, actualCharge,
-      chargeStatus: actualCharge?.amount ? reconcileVerificationCharge(test.expectedCharge, actualCharge, test.requestId, String(test.task?.providerTaskId ?? "")) : "unknown",
+      chargeStatus: actualCharge?.amount ? reconcileVerificationCharge(test.expectedCharge, verificationChargeForComparison(test, actualCharge), test.requestId, String(test.task?.providerTaskId ?? "")) : "unknown",
       reason: failure.unavailable ? "供应商暂无可用账号，保留最高请求档位，等待核验"
         : failure.rejectedParameter ? "供应商明确拒绝此参数组合"
         : noCharge && knownFailure ? "生成失败，已确认未扣费，继续测试"
@@ -1030,7 +1038,7 @@ export class SupplierVerificationService {
         .catch(() => undefined);
       const chargeStatus = reconcileVerificationCharge(
         test.expectedCharge,
-        actualCharge,
+        verificationChargeForComparison(test, actualCharge),
         test.requestId,
         task.providerTaskId,
       );

@@ -100,6 +100,22 @@ describe("appendPriceLabelOnce", () => {
     expect(modelPriceSummary(model, { size_tier: "2K" })).toBe(`当前组合未测价；上次 ${label}`);
   });
 
+  it("keeps unknown billing conditions outside an exact ledger sample", () => {
+    const label = "$0.08/张（账单实测） · 4K";
+    const model: ModelDescriptor = { id: "image", name: "Image", operations: ["image.generate"],
+      metadata: { priceSource: "generated-result", priceLabel: label,
+        measuredPrice: { resolution: "4K", parameters: { n: 1, resolution: "4K" } } } };
+    expect(modelPriceSummary(model, { size_tier: "4K", n: 1 })).toBe(label);
+    for (const parameters of [{ quality: "high" }, { quality: "low" }, { n: 2 }, { mode: "edit" }, { size: "2048x1024" }])
+      expect(modelPriceSummary(model, parameters)).toBe(`当前组合未测价；上次 ${label}`);
+    expect(modelPriceSummary({ ...model, parameters: [{ key: "quality", label: "质量", control: "select", default: "high" }] }, {}))
+      .toBe(`当前组合未测价；上次 ${label}`);
+    const pixelSample = { ...model, metadata: { ...model.metadata,
+      measuredPrice: { resolution: "1024X1024", parameters: { n: 1, resolution: "1024X1024" } } } };
+    expect(modelPriceSummary(pixelSample, { size: "1024x1024", n: 1 })).toBe(label);
+    expect(modelPriceSummary(pixelSample, { size: "2048x2048", n: 1 })).toBe(`当前组合未测价；上次 ${label}`);
+  });
+
   it("updates the displayed price when quality or video resolution changes", () => {
     const model: ModelDescriptor = { id: "flare-4k", name: "Flare", operations: ["image.generate"],
       parameters: [{ key: "quality", label: "质量", control: "select", default: "max" }],

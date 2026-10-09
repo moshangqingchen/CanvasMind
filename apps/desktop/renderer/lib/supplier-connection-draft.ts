@@ -31,6 +31,7 @@ export function supplierConnectionDraft(
     usage,
     customGroup: true,
     modelGroup: group.id,
+    ...(group.supplierGroupId ? { accountKeyGroupId: group.supplierGroupId } : {}),
     baseUrl: apiUrl,
   };
   if (usage !== "canvas" || group.source === "manual" || !matchesSupplierTemplate({ provider: "openai", config: base }))
@@ -86,6 +87,7 @@ export function supplierConnectionDraft(
           usage,
           baseUrl: apiUrl,
           customGroup: false,
+          ...(group.supplierGroupId ? { accountKeyGroupId: group.supplierGroupId } : {}),
         },
       }
     : { provider: "openai", config: base };

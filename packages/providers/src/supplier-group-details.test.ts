@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupMediaPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "./supplier-group-details.js";
 
 describe("supplier group evidence", () => {
+  it("preserves Synora's shared screenshot quote for Image 2 and both Image 2.5 variants", () => {
+    const details = parseSupplierGroupDetails({ name: "全参生图专线", description: "原生4k，image2和2.5均支持所有参数，0.07/张", rate_multiplier: 1 }, "key-groups")!;
+    expect(details).toMatchObject({ referencePrice: "0.07/张", nativeResolutions: ["4K"], supportedResolutions: ["4K"], rateMultiplier: 1 });
+    for (const id of ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
+      const scoped = supplierGroupMediaPriceDetails(supplierGroupModelPriceDetails(details, id), "image", id);
+      expect(supplierGroupPriceLabel(scoped)).toBe("0.07/张（分组说明参考）");
+      expect(scoped?.imagePrices).toBeUndefined();
+    }
+  });
   it("retains Mikoto's separate image and per-second video declarations without sharing their rates", () => {
     const details = parseSupplierGroupDetails({ name: "grok heavy", description: "图片 0.02一张\n视频 0.18/s", image_price_1k: .02 }, "key-groups")!;
     expect(details.referencePrice).toBe("图片 0.02一张；视频 0.18/s");
@@ -74,6 +83,32 @@ describe("supplier group evidence", () => {
     expect(supplierGroupModelPriceDetails(details, second, ids)?.imagePrices).toBeUndefined();
     expect(supplierTextMentionsModel(`${second}：¥0.085/张`, first)).toBe(false);
     expect(supplierTextMentionsModel(`**${first}**：¥0.065/张`, first)).toBe(true);
+  });
+  it("scopes Mikoto group 28's three exact quotes even when the current Key inventory contains only one model", () => {
+    const quotes = ["gemini-3.1-flash-image-preview 0.065/张", "gemini-3-pro-image-preview 0.085/张", "nano-banana-2.1 0.065/张"];
+    const details = parseSupplierGroupDetails({ name: "gemini生图", description: [...quotes, "1k2k4k一个价"].join("\n"),
+      image_price_1k: .065, image_price_2k: .065, image_price_4k: .065 }, "key-groups")!;
+    for (const [index, id] of ["gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview", "nano-banana-2.1"].entries()) {
+      const scoped = supplierGroupModelPriceDetails(details, id);
+      expect(scoped?.referencePrice).toBe(quotes[index]);
+      expect(scoped?.imagePrices).toBeUndefined();
+      expect(supplierGroupPriceLabel(scoped)).toBe(`${quotes[index]}（分组说明参考）`);
+    }
+    for (const id of ["gemini-3-pro-image", "nano-banana-2", "nano-banana-2.1-fast"]) {
+      expect(supplierGroupModelPriceDetails(details, id)?.referencePrice).toBeUndefined();
+      expect(supplierGroupModelPriceDetails(details, id)?.imagePrices).toBeUndefined();
+    }
+  });
+  it.each(["\n", " "])("does not share an explicitly priced full ID missing from the inventory with separator %j", separator => {
+    const details = parseSupplierGroupDetails({ description: ["vendor/image.v99：¥0.11/张", "vendor/image.v99-pro：¥0.22/张"].join(separator),
+      image_price_4k: .11 }, "key-groups")!;
+    expect(supplierGroupModelPriceDetails(details, "vendor/image.v99")?.referencePrice).toBe("vendor/image.v99：¥0.11/张");
+    expect(supplierGroupModelPriceDetails(details, "vendor/image.v99-pro")?.referencePrice).toBe("vendor/image.v99-pro：¥0.22/张");
+    expect(supplierGroupModelPriceDetails(details, "vendor/image.v99-pro-fast")?.referencePrice).toBeUndefined();
+  });
+  it("keeps generic wording with unrelated IDs shared when the ID does not directly label the quote", () => {
+    const details = parseSupplierGroupDetails({ description: "原生4K，参考文档 https://example.com/new-image-pro，0.07/张，支持所有图像型号", image_price_4k: .07 }, "key-groups");
+    expect(supplierGroupModelPriceDetails(details, "gpt-image-2")).toBe(details);
   });
   it("does not lend a numeric resolution suffix declaration to its base model", () => {
     const details = parseSupplierGroupDetails({ description: "gpt-image-2-4k 0.1一张", image_price_4k: 0.1 }, "key-groups");

@@ -56,6 +56,8 @@ export interface SupplierVerificationCase {
   sourceId: string;
   connectionId: string;
   group: string;
+  /** Official group identity at submission planning, independent of its editable name. */
+  supplierGroupId?: string;
   modelId: string;
   provider: string;
   fingerprint: string;

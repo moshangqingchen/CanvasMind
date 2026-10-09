@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { consumeCliArtifact } from "./cli-artifact.js";
-import { readLocalMediaDuration } from "./media-duration.js";
+import { readLocalMediaMetadata } from "./media-duration.js";
 import { recordSubmissionPhase } from "./submission-timeline.js";
 import { repositoryScheduler, runtimeConcurrency, scheduleReadyNodes, type RuntimeConcurrency, type RuntimeScheduler } from "./scheduler.js";
 import { assertDesktopPublicAssets } from "./desktop-preflight.js";
@@ -3029,8 +3029,12 @@ export class RunService {
     if (!resumingTask && operation.startsWith("video.") && providerName !== "fake") {
       for (const asset of assets) {
         if ((asset.kind === "video" || asset.kind === "audio") && asset.data) {
-          const duration = await readLocalMediaDuration(asset.data);
-          if (duration !== undefined) asset.durationSeconds = duration;
+          const metadata = await readLocalMediaMetadata(asset.data);
+          if (metadata.durationSeconds !== undefined) asset.durationSeconds = metadata.durationSeconds;
+          if (asset.kind === "video" && metadata.width !== undefined && metadata.height !== undefined) {
+            asset.width = metadata.width;
+            asset.height = metadata.height;
+          }
         }
       }
     }

@@ -6,6 +6,8 @@ import { supplierDirectoryBase } from "./supplier-catalog.js";
 export interface SupplierAccountKey {
   id: string;
   group: string;
+  /** The site's numeric group identity, independent of its editable name. */
+  supplierGroupId?: string;
   apiKey: string;
   name: string;
 }
@@ -19,6 +21,10 @@ export interface SupplierAccountKeys {
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
+const supplierGroupId = (value: unknown): string | undefined => {
+  const number = typeof value === "number" ? value : /^\d+$/u.test(text(value)) ? Number(value) : NaN;
+  return Number.isSafeInteger(number) && number >= 0 ? String(number) : undefined;
+};
 const fullKey = (value: unknown) => {
   const key = text(value);
   return key.length >= 16 && key.length <= 4096 && !/[\s*…]/u.test(key) && !key.includes("...") ? key : "";
@@ -60,7 +66,8 @@ export async function readSupplierAccountKeys(
       const groups = await read("/api/v1/groups/available").catch(() => []);
       for (const raw of Array.isArray(groups) ? groups : []) {
         const group = object(raw);
-        if (group && text(group.name)) groupNames.set(String(group.id), text(group.name));
+        const id = supplierGroupId(group?.id);
+        if (group && id !== undefined && text(group.name)) groupNames.set(id, text(group.name));
       }
     }
     for (let page = 1; page <= 50; page++) {
@@ -78,8 +85,16 @@ export async function readSupplierAccountKeys(
         if (seen.has(id)) continue;
         seen.add(id); added++; readCount++;
         if (!active(row, input.kind, Date.now())) { result.skipped++; continue; }
+        const embeddedGroup = object(row.group);
+        const assignedGroupId = input.kind === "sub2api" ? supplierGroupId(row.group_id) : undefined;
+        const embeddedGroupId = input.kind === "sub2api" ? supplierGroupId(embeddedGroup?.id) : undefined;
+        // Conflicting identities cannot safely bind a Key to either group.
+        if (assignedGroupId !== undefined && embeddedGroupId !== undefined && assignedGroupId !== embeddedGroupId) {
+          result.skipped++; continue;
+        }
+        const officialGroupId = assignedGroupId ?? embeddedGroupId;
         const group = input.kind === "newapi" ? text(row.group)
-          : text(object(row.group)?.name) || groupNames.get(String(row.group_id)) || "";
+          : (officialGroupId !== undefined ? groupNames.get(officialGroupId) : undefined) || text(embeddedGroup?.name) || "";
         if (!group || group.length > 256) { result.skipped++; continue; }
         let key = fullKey(row.key);
         if (!key) {
@@ -90,7 +105,8 @@ export async function readSupplierAccountKeys(
         }
         if (!key) { result.skipped++; continue; }
         if (input.kind === "newapi" && !key.startsWith("sk-")) key = `sk-${key}`;
-        result.keys.push({ id, group, apiKey: key, name: text(row.name).slice(0, 256) });
+        result.keys.push({ id, group, ...(officialGroupId !== undefined ? { supplierGroupId: officialGroupId } : {}),
+          apiKey: key, name: text(row.name).slice(0, 256) });
       }
       const total = typeof envelope?.total === "number" ? envelope.total : undefined;
       if (!rows.length || (total !== undefined ? readCount >= total : rows.length < 100)) {

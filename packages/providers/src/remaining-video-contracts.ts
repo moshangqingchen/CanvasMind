@@ -210,7 +210,7 @@ put("secure", ["grok-imagine-video-1.5", "grok-imagine-video-1.5-preview"], { ..
   note: `${secureGrok.note} 参考音频必须是 voice_id，不能直接发送本地音频或 URL。含音频最高 720p。` });
 const flowBase: VideoContract = { durations: [8], defaultDuration: 8, resolutions: ["720p"], ratios: portrait, images: 5, videos: 0, audios: 0,
   docs: secureDocs, flow: true, frames: "ordered-images", omitDuration: true, submitPath: "/v1/jobs", pollPath: "/v1/jobs/{taskId}",
-  outputPaths: ["$.url", "$.video_url", "$.data.url", "$.data.video_url", "$.data.source_url", "$.result.url"],
+  outputPaths: ["$.url", "$.source_url", "$.video_url", "$.media_url", "$.data.url", "$.data.video_url", "$.data.source_url", "$.result.url"],
   extraWireFields: ["messages", "mode"], billingUnit: "request",
   extraParameters: [{ key: "mode", label: "视频模式", control: "select", valueType: "string", default: "auto", options: ["auto", "text", "image", "reference"].map(value => ({ label: { auto: "自动", text: "文生视频", image: "首尾帧", reference: "参考图片" }[value]!, value })) }],
   note: "Flow VEO 固定 8 秒，不发送 duration。Fast/Lite 文生仅 720p 横屏；图生仅 720p。质量档高分辨率须分组开通。" };
@@ -220,7 +220,7 @@ put("secure", ["veo_quan"], { ...flowBase, resolutions: ["720p", "1080p", "4k"] 
 put("secure", ["veo3.1"], { ...flowBase, resolutions: ["720p", "1080p", "4k"], extraParameters: [...flowBase.extraParameters!,
   { key: "quality", label: "视频质量", control: "select", valueType: "string", default: "fast", options: [{ label: "快速", value: "fast" }, { label: "轻量", value: "lite" }, { label: "高质量", value: "quality" }] }] });
 put("secure", ["omni", "omni_video_edit"], { ...flowBase, durations: [4, 6, 8, 10, 20, 30, 40], omitDuration: false, videos: 1, imageField: "images", videoField: "video_url", resolutions: ["360p", "720p", "1080p"],
-  frames: undefined, extraParameters: [], extraWireFields: ["messages", "video_url"], videoSeconds: 30,
+  frames: undefined, extraParameters: [], extraWireFields: ["messages", "video_url", "generationConfig"], videoSeconds: 30,
   note: "Flow Omni 生成支持 4/6/8/10 秒；20/30/40 秒会自动续写。传源视频时输出时长跟随源视频，最长 30 秒，不发送 duration。" });
 for (const id of ["veo_3_1_t2v_fast", "veo_3_1_t2v_lite"]) put("secure", [id], { ...flowBase, images: 0, frames: undefined, ratios: ["16:9"], extraParameters: [] });
 for (const family of ["t2v", "r2v"]) for (const suffix of ["", "_portrait", "_landscape", "_8s", "_portrait_8s", "_1080p", "_portrait_1080p", "_landscape_1080p", "_4k", "_portrait_4k", "_landscape_4k"]) {
@@ -271,7 +271,7 @@ put("cyberafei", ["omni-flash"], { ...afeiOpenAiVideo, sourceVideoChat: true, vi
 function directoryContractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext): VideoContract | undefined {
   const model = context.model;
   if (!["cyberafei", "miaowu"].includes(supplier) || model?.id !== id || !modelSupportsGenerationMedia(model, "video") ||
-      model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" || model.metadata?.parameterSource === "pricing.video_api") return undefined;
+      model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" || ["pricing.video_api", "dream.video_schema"].includes(String(model.metadata?.parameterSource))) return undefined;
   const metadata = model.metadata ?? {};
   const endpoints = [metadata.endpointTypes, metadata.supported_endpoint_types].flatMap(value => Array.isArray(value) ? value : typeof value === "string" ? [value] : []).filter((value): value is string => typeof value === "string");
   if (endpoints.includes("openai-video")) {
@@ -287,7 +287,7 @@ function directoryContractFor(supplier: RemainingVideoSupplier, id: string, cont
 }
 
 function contractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext = {}): VideoContract | undefined {
-  if (supplier === "miaowu" && (context.model?.metadata?.source === "manual" || context.model?.metadata?.protocolEvidence === "paid-test" || context.model?.metadata?.parameterSource === "pricing.video_api")) return undefined;
+  if (supplier === "miaowu" && (context.model?.metadata?.source === "manual" || context.model?.metadata?.protocolEvidence === "paid-test" || ["pricing.video_api", "dream.video_schema"].includes(String(context.model?.metadata?.parameterSource)))) return undefined;
   const c = contracts[supplier][id] ?? directoryContractFor(supplier, id, context); if (!c) return undefined;
   if (c.directoryContract && (context.model?.metadata?.source === "manual" || context.model?.metadata?.protocolEvidence === "paid-test")) return undefined;
   if (c.sourceVideoChat && context.assets?.some(asset => asset.kind === "video")) return { ...directoryChatVideo, sourceVideoChat: true,
@@ -405,7 +405,7 @@ export function normalizeRemainingVideoParameters(supplier: RemainingVideoSuppli
     else if (supplier === "chentu" && field === "input_reference" && request.model !== "grok-imagine-video-1.5-fast") p[field] = original[field] ?? { image_url: values[0] };
     else if (field === "video_reference") p[field] = values.map(value => typeof value === "string" ? { url: value } : value);
     else if (supplier === "cyberafei" && field === "image") p[field] = typeof values[0] === "string" ? { url: values[0] } : values[0];
-    else if (["input_video", "reference_video", "image"].includes(field) || field === "audio_reference" && c.audios === 1) p[field] = values[0];
+    else if (["input_video", "reference_video", "video_url", "image"].includes(field) || field === "audio_reference" && c.audios === 1) p[field] = values[0];
     else p[field] = values;
   }
   const first = original.start_frame ?? original.first_frame ?? imageRoles(assets, "firstFrame")[0], last = original.end_frame ?? original.last_frame ?? imageRoles(assets, "lastFrame")[0];
@@ -452,6 +452,7 @@ export function normalizeRemainingVideoParameters(supplier: RemainingVideoSuppli
     delete p.images;
     if (request.model === "omni" || request.model === "omni_video_edit") {
       if (p.video_url) delete p.duration;
+      p.generationConfig = { videoConfig: { aspectRatio: p.aspect_ratio, resolution: p.resolution, ...(p.duration === undefined ? {} : { duration: p.duration }) } };
     }
   }
   if (c.multipartFrames) {
@@ -499,7 +500,8 @@ export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: st
   const fields = [...new Set([...(c.omitDuration ? [] : [c.secondsField ?? "duration"]), ...(c.omitRatio ? [] : [c.ratioField ?? "aspect_ratio"]), ...(supplier === "weai" || c.omitResolution ? [] : ["resolution"]), ...(c.flow ? [] : [c.imageField]), c.videoField, c.audioField,
     ...(c.frames === "native-pair" ? ["first_frame", "last_frame"] : c.frames === "doubao-content" ? ["content"] : c.frames === "wan-first" ? ["media"] : c.frames ? ["start_frame", "end_frame"] : []), ...(c.outputAudio ? [c.outputAudio] : []), ...(supplier === "frimodel" && id.startsWith("grok-") ? ["image", "images", "mode"] : []),
     ...(supplier === "weai" && id.startsWith("omni-flash-components") ? ["image"] : []), ...(c.extraParameters ?? []).map(parameter => parameter.key).filter(key => key !== "reference_voice_ids"), ...(c.extraWireFields ?? []),
-    ...(id.startsWith("sp-kling-") ? ["image_url"] : []), ...(id === "gemini-omni-flash" ? ["style_references", "element_references"] : [])].filter((s): s is string => Boolean(s)))];
+    ...(id.startsWith("sp-kling-") ? ["image_url"] : []), ...(id === "gemini-omni-flash" ? ["style_references", "element_references"] : [])].filter((s): s is string => Boolean(s)))]
+    .filter(field => !(c.flow && ["omni", "omni_video_edit"].includes(id) && ["duration", "aspect_ratio", "resolution"].includes(field)));
   const response = { taskIdPath: "$.task_id", taskIdFallbackPaths: ["$.id", "$.request_id", "$.data.task_id", "$.data.id"], statusPath: "$.status", statusFallbackPaths: ["$.data.status"], errorPath: "$.error.message", progressPath: "$.progress" };
   const paths = c.outputPaths ?? (supplier === "chentu" ? ["$.download_url", "$.data.download_url", "$.metadata.url"] : ["$.video_url", "$.url", "$.metadata.url", "$.data.video_url"]);
   return { submit: { path: c.submitPath ?? "/v1/videos", method: "POST", bodyMode: "json", idempotent: false,

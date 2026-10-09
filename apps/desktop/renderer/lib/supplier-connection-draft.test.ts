@@ -7,6 +7,18 @@ import {
 import { MIKOTO_GEMINI_GROUP, MIKOTO_PRESET_ID } from "./mikoto-presets";
 
 describe("new supplier group adapters", () => {
+  it("retains official group identity for custom, agent, and preset connections", () => {
+    for (const [supplierKey, groupId, usage] of [
+      ["custom-test", "Named group", "canvas"],
+      ["cangyuan", CANGYUAN_IMAGE_GROUP, "agent"],
+      ["cangyuan", CANGYUAN_IMAGE_GROUP, "canvas"],
+    ] as const) {
+      const result = supplierConnectionDraft(supplierKey,
+        { id: groupId, label: groupId, supplierGroupId: "115", source: "catalog", models: [] }, usage, "https://relay.example.com");
+      expect(result.config.accountKeyGroupId).toBe("115");
+      expect(result.config.modelGroup).toBe(groupId);
+    }
+  });
   it("retains the Cangyuan asynchronous REST adapter for known public groups", () => {
     const result = supplierConnectionDraft(
       "cangyuan",
