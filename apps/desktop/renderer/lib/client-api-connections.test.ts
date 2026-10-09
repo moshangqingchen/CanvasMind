@@ -4,6 +4,70 @@ beforeEach(() => vi.resetModules());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("connection reads and mutation invalidation", () => {
+  it("invalidates a recent model cache when the same server scan gains complete provenance", async () => {
+    let complete = false;
+    const models = [{ id: "native-video", name: "Native", operations: ["video.generate"] }];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).includes("/models?")
+      ? Response.json(models, { headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": String(complete) } })
+      : Response.json([{ id: "scan-provenance", provider: "rest", apiKeySet: true,
+        config: { modelScanRequestId: "synthetic-scan", modelScanCheckedAt: "2001-01-01T00:00:00Z", modelScanStatus: "live", modelScanComplete: complete } }]));
+    vi.stubGlobal("fetch", fetcher);
+    const { fetchConnections, fetchModels, getCachedModels, getCachedModelInventoryStatus } = await import("./client-api");
+    await fetchConnections();
+    await fetchModels("scan-provenance");
+    expect(getCachedModelInventoryStatus("scan-provenance")).toMatchObject({ complete: false });
+    complete = true;
+    await fetchConnections();
+    expect(getCachedModels("scan-provenance")).toBeUndefined();
+    await fetchModels("scan-provenance");
+    expect(getCachedModelInventoryStatus("scan-provenance")).toEqual({ scanStatus: "live", complete: true });
+    await fetchConnections();
+    await fetchModels("scan-provenance");
+    expect(fetcher.mock.calls.filter(([input]) => String(input).includes("/models?"))).toHaveLength(2);
+  });
+
+  it("rejects a late old model response after a newer server scan without clearing its pending request", async () => {
+    let version = "old";
+    let finishOld!: (response: Response) => void;
+    let finishFresh!: (response: Response) => void;
+    let reads = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (!String(input).includes("/models?")) return Promise.resolve(Response.json([{ id: "server-scan-race", provider: "rest", config: { modelScanRequestId: version } }]));
+      reads++;
+      return new Promise<Response>(resolve => { if (reads === 1) finishOld = resolve; else finishFresh = resolve; });
+    }));
+    const { fetchConnections, fetchModels, getCachedModels, getCachedModelInventoryStatus } = await import("./client-api");
+    await fetchConnections();
+    const old = fetchModels("server-scan-race");
+    const rejected = expect(old).rejects.toThrow("连接已改变");
+    version = "fresh";
+    await fetchConnections();
+    const fresh = fetchModels("server-scan-race");
+    finishOld(Response.json([{ id: "old-model", operations: [] }], { headers: { "X-Model-Scan-Status": "stale", "X-Model-Scan-Complete": "false" } }));
+    await rejected;
+    const shared = fetchModels("server-scan-race");
+    finishFresh(Response.json([{ id: "new-model", operations: [] }], { headers: { "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": "true" } }));
+    expect(await Promise.all([fresh, shared])).toEqual([[{ id: "new-model", operations: [] }], [{ id: "new-model", operations: [] }]]);
+    expect(reads).toBe(2);
+    expect(getCachedModels("server-scan-race")?.[0]?.id).toBe("new-model");
+    expect(getCachedModelInventoryStatus("server-scan-race")).toEqual({ scanStatus: "live", complete: true });
+  });
+
+  it.each([401, 403])("drops cached permissions after the server changes Key scope and returns HTTP %i", async status => {
+    let group = "default";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).includes("/models?")
+      ? group === "default" ? Response.json([{ id: "native-image", operations: [] }]) : Response.json({ error: "current Key rejected" }, { status })
+      : Response.json([{ id: "scope-change", provider: "rest", config: { baseUrl: "https://api.miaowuai.store", accountKeyGroup: group } }])));
+    const { fetchConnections, fetchModels, getCachedModels } = await import("./client-api");
+    await fetchConnections();
+    await fetchModels("scope-change");
+    group = "vip";
+    await fetchConnections();
+    expect(getCachedModels("scope-change")).toBeUndefined();
+    await expect(fetchModels("scope-change")).rejects.toThrow("current Key rejected");
+    expect(getCachedModels("scope-change")).toBeUndefined();
+  });
+
   it("shares simultaneous connection reads and refreshes on the next request", async () => {
     const fetcher = vi.fn().mockImplementation(async () => Response.json([{ id: "connection" }]));
     vi.stubGlobal("fetch", fetcher);

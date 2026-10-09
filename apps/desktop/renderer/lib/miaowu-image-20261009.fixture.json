@@ -1,0 +1,2650 @@
+{
+  "checkedAt": "2026-10-09T22:21:10.275Z",
+  "sources": {
+    "pricing": {
+      "url": "https://api.miaowuai.store/api/pricing",
+      "sha256": "018aa8fed894e83235928f91a7ecfe4a070d24078fae2169c07ed468423c6c3c"
+    },
+    "schemas": {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema",
+      "checkedAt": "2026-10-09T22:21:10.275Z",
+      "authenticatedGroup": "default"
+    }
+  },
+  "pricing": {
+    "group_ratio": {
+      "default": 1
+    },
+    "data": [
+      {
+        "model_name": "GPT-image-2",
+        "quota_type": 1,
+        "model_price": 0.0071428571428571435,
+        "enable_groups": [
+          "default",
+          "vip"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "image_api": {
+          "modes": [
+            "image-to-image",
+            "text-to-image"
+          ],
+          "images_max": 5,
+          "sizes": [
+            "1080p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4"
+          ],
+          "resolutions": [
+            {
+              "size": "1080p",
+              "ratio": "1:1",
+              "width": 1080,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "16:9",
+              "width": 1920,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "9:16",
+              "width": 1080,
+              "height": 1920
+            },
+            {
+              "size": "1080p",
+              "ratio": "4:3",
+              "width": 1440,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "3:4",
+              "width": 1080,
+              "height": 1440
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.0071428571428571435
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "minimax-h3-max",
+        "quota_type": 1,
+        "model_price": 0.2857142857142857,
+        "enable_groups": [
+          "特价分组",
+          "default",
+          "vip",
+          "内部"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 5,
+          "seconds_max": 15,
+          "sizes": [
+            "720p",
+            "480p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            },
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "480p",
+              "ratio": "4:3",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "3:4",
+              "width": 480,
+              "height": 640
+            },
+            {
+              "size": "480p",
+              "ratio": "21:9",
+              "width": 1120,
+              "height": 480
+            }
+          ],
+          "pricing": {
+            "unit": "per_call"
+          }
+        }
+      },
+      {
+        "model_name": "wan3.0-video",
+        "quota_type": 1,
+        "model_price": 0.02142857142857143,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 10,
+          "videos_max": 5,
+          "audios_max": 5,
+          "seconds_min": 5,
+          "seconds_max": 30,
+          "sizes": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "resolutions": [
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "1080p",
+              "ratio": "16:9",
+              "width": 1920,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "9:16",
+              "width": 1080,
+              "height": 1920
+            },
+            {
+              "size": "1080p",
+              "ratio": "1:1",
+              "width": 1080,
+              "height": 1080
+            }
+          ],
+          "pricing": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.055714285714285716
+              },
+              {
+                "size": "1080p",
+                "price": 0.09285714285714286
+              },
+              {
+                "size": "480p",
+                "price": 0.027857142857142858
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "dola-seedance-2.0-fast",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "default",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 4,
+          "seconds_max": 15,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.125
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "dola-seedance-2.5",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "default",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 30,
+          "audios_max": 10,
+          "seconds_min": 4,
+          "seconds_max": 30,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.125
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "Image-nano-banana-2",
+        "quota_type": 1,
+        "model_price": 0.0071428571428571435,
+        "enable_groups": [
+          "default",
+          "vip"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "image_api": {
+          "modes": [
+            "image-to-image",
+            "text-to-image"
+          ],
+          "images_max": 5,
+          "sizes": [
+            "1080p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4"
+          ],
+          "resolutions": [
+            {
+              "size": "1080p",
+              "ratio": "1:1",
+              "width": 1080,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "16:9",
+              "width": 1920,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "9:16",
+              "width": 1080,
+              "height": 1920
+            },
+            {
+              "size": "1080p",
+              "ratio": "4:3",
+              "width": 1440,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "3:4",
+              "width": 1080,
+              "height": 1440
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.0071428571428571435
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "jimeng-seedance-2.5",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "default",
+          "dreamina",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 30,
+          "audios_max": 10,
+          "seconds_min": 4,
+          "seconds_max": 30,
+          "sizes": [
+            "720p",
+            "480p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9",
+            "1:1"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "480p",
+              "ratio": "4:3",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "3:4",
+              "width": 480,
+              "height": 640
+            },
+            {
+              "size": "480p",
+              "ratio": "21:9",
+              "width": 1120,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            }
+          ],
+          "pricing": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 30,
+                "price": 0.10714285714285714
+              },
+              {
+                "size": "480p",
+                "seconds_max": 30,
+                "price": 0.08928571428571429
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "gpt-image-2.5-flare",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "deal",
+          "default",
+          "dreamina",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "image_api": {
+          "modes": [
+            "text-to-image",
+            "image-to-image"
+          ],
+          "images_max": 5,
+          "sizes": [
+            "1080p",
+            "2K",
+            "4K"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4"
+          ],
+          "resolutions": [
+            {
+              "size": "1080p",
+              "ratio": "1:1",
+              "width": 1080,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "16:9",
+              "width": 1920,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "9:16",
+              "width": 1080,
+              "height": 1920
+            },
+            {
+              "size": "1080p",
+              "ratio": "4:3",
+              "width": 1440,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "3:4",
+              "width": 1080,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "1:1",
+              "width": 1440,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "16:9",
+              "width": 2560,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "9:16",
+              "width": 1440,
+              "height": 2560
+            },
+            {
+              "size": "2K",
+              "ratio": "4:3",
+              "width": 1920,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "3:4",
+              "width": 1440,
+              "height": 1920
+            },
+            {
+              "size": "4K",
+              "ratio": "1:1",
+              "width": 2160,
+              "height": 2160
+            },
+            {
+              "size": "4K",
+              "ratio": "16:9",
+              "width": 3840,
+              "height": 2160
+            },
+            {
+              "size": "4K",
+              "ratio": "9:16",
+              "width": 2160,
+              "height": 3840
+            },
+            {
+              "size": "4K",
+              "ratio": "4:3",
+              "width": 2880,
+              "height": 2160
+            },
+            {
+              "size": "4K",
+              "ratio": "3:4",
+              "width": 2160,
+              "height": 2880
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.005714285714285714
+              },
+              {
+                "size": "2K",
+                "price": 0.011428571428571429
+              },
+              {
+                "size": "4K",
+                "price": 0.028571428571428574
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "Image-nano-banana",
+        "quota_type": 1,
+        "model_price": 0.0071428571428571435,
+        "enable_groups": [
+          "default",
+          "vip"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "image_api": {
+          "modes": [
+            "image-to-image",
+            "text-to-image"
+          ],
+          "images_max": 5,
+          "sizes": [
+            "1080p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "3:4",
+            "4:3"
+          ],
+          "resolutions": [
+            {
+              "size": "1080p",
+              "ratio": "1:1",
+              "width": 1080,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "16:9",
+              "width": 1920,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "9:16",
+              "width": 1080,
+              "height": 1920
+            },
+            {
+              "size": "1080p",
+              "ratio": "3:4",
+              "width": 1080,
+              "height": 1440
+            },
+            {
+              "size": "1080p",
+              "ratio": "4:3",
+              "width": 1440,
+              "height": 1080
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.0071428571428571435
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "sora-2",
+        "quota_type": 1,
+        "model_price": 0.14285714285714285,
+        "enable_groups": [
+          "vip",
+          "内部",
+          "特价分组",
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 1,
+          "seconds_options": [
+            "8"
+          ],
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            }
+          ],
+          "pricing": {
+            "unit": "per_call"
+          }
+        }
+      },
+      {
+        "model_name": "doubao-seedance-2.0-mini",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "deal",
+          "default",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "seconds_min": 5,
+          "seconds_max": 15,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "9:16",
+            "16:9"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.14285714285714285
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "gpt-image-2.5-sunburs",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "特价分组",
+          "default",
+          "vip",
+          "内部"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "image_api": {
+          "modes": [
+            "text-to-image",
+            "image-to-image"
+          ],
+          "images_max": 5,
+          "sizes": [
+            "1080p",
+            "2K",
+            "4K"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4"
+          ],
+          "resolutions": [
+            {
+              "size": "1080p",
+              "ratio": "1:1",
+              "width": 1080,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "16:9",
+              "width": 1920,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "9:16",
+              "width": 1080,
+              "height": 1920
+            },
+            {
+              "size": "1080p",
+              "ratio": "4:3",
+              "width": 1440,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "3:4",
+              "width": 1080,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "1:1",
+              "width": 1440,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "16:9",
+              "width": 2560,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "9:16",
+              "width": 1440,
+              "height": 2560
+            },
+            {
+              "size": "2K",
+              "ratio": "4:3",
+              "width": 1920,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "3:4",
+              "width": 1440,
+              "height": 1920
+            },
+            {
+              "size": "4K",
+              "ratio": "1:1",
+              "width": 2160,
+              "height": 2160
+            },
+            {
+              "size": "4K",
+              "ratio": "16:9",
+              "width": 3840,
+              "height": 2160
+            },
+            {
+              "size": "4K",
+              "ratio": "9:16",
+              "width": 2160,
+              "height": 3840
+            },
+            {
+              "size": "4K",
+              "ratio": "4:3",
+              "width": 2880,
+              "height": 2160
+            },
+            {
+              "size": "4K",
+              "ratio": "3:4",
+              "width": 2160,
+              "height": 2880
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.005714285714285714
+              },
+              {
+                "size": "2K",
+                "price": 0.011428571428571429
+              },
+              {
+                "size": "4K",
+                "price": 0.028571428571428574
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "Image-nano-banana-pro",
+        "quota_type": 1,
+        "model_price": 0.02142857142857143,
+        "enable_groups": [
+          "default",
+          "vip"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "image_api": {
+          "modes": [
+            "image-to-image",
+            "text-to-image"
+          ],
+          "images_max": 5,
+          "sizes": [
+            "1080p",
+            "2K"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4"
+          ],
+          "resolutions": [
+            {
+              "size": "1080p",
+              "ratio": "1:1",
+              "width": 1080,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "16:9",
+              "width": 1920,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "9:16",
+              "width": 1080,
+              "height": 1920
+            },
+            {
+              "size": "1080p",
+              "ratio": "4:3",
+              "width": 1440,
+              "height": 1080
+            },
+            {
+              "size": "1080p",
+              "ratio": "3:4",
+              "width": 1080,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "1:1",
+              "width": 1440,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "16:9",
+              "width": 2560,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "9:16",
+              "width": 1440,
+              "height": 2560
+            },
+            {
+              "size": "2K",
+              "ratio": "4:3",
+              "width": 1920,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "3:4",
+              "width": 1440,
+              "height": 1920
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.02142857142857143
+              },
+              {
+                "size": "2K",
+                "price": 0.02142857142857143
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "seedance-2.5-pro",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "deal",
+          "default",
+          "dreamina",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 30,
+          "audios_max": 10,
+          "seconds_min": 4,
+          "seconds_max": 29,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 1.4285714285714286
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "doubao-seedance-2.0-fast",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "default",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "seconds_min": 5,
+          "seconds_max": 15,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.35714285714285715
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "minimax-h3",
+        "quota_type": 1,
+        "model_price": 0.017142857142857144,
+        "enable_groups": [
+          "default",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 5,
+          "seconds_max": 15,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "9:16",
+            "16:9",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.008928571428571428
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "seedance-2.0-pro",
+        "quota_type": 1,
+        "model_price": 0.2857142857142857,
+        "enable_groups": [
+          "default",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 4,
+          "seconds_max": 15,
+          "sizes": [
+            "720p",
+            "480p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            },
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "480p",
+              "ratio": "4:3",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "3:4",
+              "width": 480,
+              "height": 640
+            },
+            {
+              "size": "480p",
+              "ratio": "21:9",
+              "width": 1120,
+              "height": 480
+            }
+          ],
+          "pricing": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 15,
+                "price": 0.04
+              },
+              {
+                "size": "480p",
+                "seconds_max": 15,
+                "price": 0.02142857142857143
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "seedream-5-0-pro",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "default",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "image_api": {
+          "modes": [
+            "text-to-image",
+            "image-to-image"
+          ],
+          "images_max": 5,
+          "sizes": [
+            "2K"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "2K",
+              "ratio": "1:1",
+              "width": 1440,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "16:9",
+              "width": 2560,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "9:16",
+              "width": 1440,
+              "height": 2560
+            },
+            {
+              "size": "2K",
+              "ratio": "4:3",
+              "width": 1920,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "3:4",
+              "width": 1440,
+              "height": 1920
+            },
+            {
+              "size": "2K",
+              "ratio": "21:9",
+              "width": 3360,
+              "height": 1440
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "2K",
+                "price": 0.028571428571428574
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "seedance-2.0-deal",
+        "quota_type": 1,
+        "model_price": 0.2857142857142857,
+        "enable_groups": [
+          "特价分组",
+          "deal",
+          "default",
+          "dreamina",
+          "vip",
+          "内部"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 4,
+          "seconds_max": 15,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9",
+            "1:1"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.44642857142857145
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "seedance-2.0-mini-deal",
+        "quota_type": 1,
+        "model_price": 0.04285714285714286,
+        "enable_groups": [
+          "dreamina",
+          "vip",
+          "内部",
+          "特价分组",
+          "deal",
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 5,
+          "seconds_max": 15,
+          "size_seconds_max": {
+            "480p": 10
+          },
+          "sizes": [
+            "480p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "resolutions": [
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "480p",
+              "ratio": "4:3",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "3:4",
+              "width": 480,
+              "height": 640
+            },
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "480p",
+                "seconds_max": 10,
+                "price": 0.05714285714285715
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "doubao-seedance-2.5",
+        "quota_type": 0,
+        "model_price": 0,
+        "enable_groups": [
+          "vip",
+          "内部",
+          "特价分组",
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "seconds_min": 5,
+          "seconds_max": 30,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 30,
+                "price": 0.8928571428571429
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "schemas": {
+    "GPT-image-2": {
+      "id": "GPT-image-2",
+      "name": "GPT-image-2",
+      "display_name": "GPT-image-2",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "image-to-image",
+                  "text-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.0071428571428571435,
+              "size": "1080p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.05
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Image-nano-banana-2": {
+      "id": "Image-nano-banana-2",
+      "name": "Image-nano-banana-2",
+      "display_name": "Image-nano-banana-2",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "image-to-image",
+                  "text-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.0071428571428571435,
+              "size": "1080p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.05
+              }
+            ]
+          }
+        }
+      }
+    },
+    "gpt-image-2.5-flare": {
+      "id": "gpt-image-2.5-flare",
+      "name": "gpt-image-2.5-flare",
+      "display_name": "gpt-image-2.5-flare",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "text-to-image",
+                  "image-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p",
+                  "2K",
+                  "4K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.005714285714285714,
+              "size": "1080p"
+            },
+            {
+              "price": 0.011428571428571429,
+              "size": "2K"
+            },
+            {
+              "price": 0.028571428571428574,
+              "size": "4K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.04
+              },
+              {
+                "size": "2K",
+                "price": 0.08
+              },
+              {
+                "size": "4K",
+                "price": 0.2
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Image-nano-banana": {
+      "id": "Image-nano-banana",
+      "name": "Image-nano-banana",
+      "display_name": "Image-nano-banana",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "image-to-image",
+                  "text-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "3:4",
+                  "4:3"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.0071428571428571435,
+              "size": "1080p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.05
+              }
+            ]
+          }
+        }
+      }
+    },
+    "gpt-image-2.5-sunburs": {
+      "id": "gpt-image-2.5-sunburs",
+      "name": "gpt-image-2.5-sunburs",
+      "display_name": "gpt-image-2.5-sunburs",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "text-to-image",
+                  "image-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p",
+                  "2K",
+                  "4K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.005714285714285714,
+              "size": "1080p"
+            },
+            {
+              "price": 0.011428571428571429,
+              "size": "2K"
+            },
+            {
+              "price": 0.028571428571428574,
+              "size": "4K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.04
+              },
+              {
+                "size": "2K",
+                "price": 0.08
+              },
+              {
+                "size": "4K",
+                "price": 0.2
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Image-nano-banana-pro": {
+      "id": "Image-nano-banana-pro",
+      "name": "Image-nano-banana-pro",
+      "display_name": "Image-nano-banana-pro",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "image-to-image",
+                  "text-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p",
+                  "2K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.02142857142857143,
+              "size": "1080p"
+            },
+            {
+              "price": 0.02142857142857143,
+              "size": "2K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.15
+              },
+              {
+                "size": "2K",
+                "price": 0.15
+              }
+            ]
+          }
+        }
+      }
+    },
+    "seedream-5-0-pro": {
+      "id": "seedream-5-0-pro",
+      "name": "seedream-5-0-pro",
+      "display_name": "seedream-5-0-pro",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "text-to-image",
+                  "image-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "2K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.028571428571428574,
+              "size": "2K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "2K",
+                "price": 0.2
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -43,6 +43,7 @@ class ProviderModelsRequestError extends Error {
 const modelEpochs = new Map<string, number>();
 const modelListCache = new Map<string, ModelListCacheEntry>();
 const pendingModelRequests = new Map<string, Promise<ModelDescriptor[]>>();
+const connectionModelVersions = new Map<string, string>();
 
 export function getCachedModels(id: string): ModelDescriptor[] | undefined {
   const cached = modelListCache.get(id);
@@ -931,7 +932,30 @@ export function invalidateConnections(): void {
 }
 
 export function fetchConnections(): Promise<ProviderConnectionView[]> {
-  return connectionRequests.read();
+  // Reconcile only the shared reader's accepted result. A late pre-mutation
+  // response must not invalidate a newer scan's model cache or pending request.
+  return connectionRequests.read().then((connections) => {
+    const present = new Set<string>();
+    for (const connection of connections) {
+      present.add(connection.id);
+      const config = connection.config ?? {};
+      const version = JSON.stringify([connection.provider, connection.apiKeySet, connection.apiKeyUsable,
+        ...["baseUrl", "protocol", "preset", "supplierId", "supplierSourceId", "supplierArchived",
+          "accountKeyId", "accountKeyGroupId", "accountKeyGroup", "modelGroup", "usage",
+          "modelScanRequestId", "modelScanCheckedAt", "modelScanLastSuccessAt", "modelScanStatus",
+          "modelScanAttemptStatus", "modelScanComplete", "scannedModelIds", "modelCatalogModels"].map(field => config[field])]);
+      if (connectionModelVersions.get(connection.id) !== version &&
+          (connectionModelVersions.has(connection.id) || modelListCache.has(connection.id) || pendingModelRequests.has(connection.id)))
+        invalidateModelCache(connection.id);
+      connectionModelVersions.set(connection.id, version);
+    }
+    for (const id of connectionModelVersions.keys()) {
+      if (present.has(id)) continue;
+      invalidateModelCache(id);
+      connectionModelVersions.delete(id);
+    }
+    return connections;
+  });
 }
 
 export async function saveConnection(input: {

@@ -270,7 +270,6 @@ import {
 import {
   modelDescriptorForSavedSelection,
   modelDescriptorForSavedSelectionOrDefault,
-  modelDescriptorListsEqual,
   modelDescriptorsFromConnectionConfig,
   normalizedParametersForModel,
   parameterDescriptorsFor,
@@ -278,7 +277,9 @@ import {
 } from "../lib/model-parameters";
 import {
   connectionModelItemsForDisplay,
+  connectionModelInventoryConfirmed,
   pendingConnectionModelScan,
+  settledConnectionModelScan,
   type ConnectionModelSnapshot,
 } from "../lib/connection-model-snapshot";
 import {
@@ -7354,12 +7355,10 @@ function CanvasShell({
         ) ?? null;
       const editingConnection = connections.find(connection => connection.id === node.data.connectionId);
       const directoryKey = `${node.data.connectionId ?? ""}:${generationType ?? ""}`;
-      const directoryStatus = getCachedModelInventoryStatus(node.data.connectionId ?? "");
       if (!catalogDirectories.has(directoryKey)) catalogDirectories.set(directoryKey,
         catalogPickerDirectory(editingConnection, supplierDirectories, modelOptions, generationType,
           connectionModels.connectionId === node.data.connectionId
-            ? Boolean(connectionModels.authoritative && !connectionModels.loading && !connectionModels.failed &&
-              ["live", "empty"].includes(directoryStatus?.scanStatus ?? "") && directoryStatus?.complete !== false)
+            ? connectionModelInventoryConfirmed(connectionModels)
             : ["live", "empty"].includes(String(editingConnection?.config.modelScanStatus)) &&
               editingConnection?.config.modelScanAttemptStatus !== "failed", supplierDirectoryReadFailed));
       const editingModel = effectiveModel ?? retainedImageModelForDisplay(editingConnection, node.data.model, connectionModels);
@@ -7874,22 +7873,9 @@ function CanvasShell({
     const applyModels = (received: readonly ModelDescriptor[]) => {
       if (cancelled) return;
       const items = withCurrentImageRequestParameters(selectedConnection, received);
-      setConnectionModels((current) => {
-        if (
-          current.connectionId === modelScanConnectionId &&
-          Boolean(current.authoritative) === requiresAuthoritativeScan &&
-          current.loading === false &&
-          modelDescriptorListsEqual(current.items, items)
-        ) {
-          return current;
-        }
-        return {
-          connectionId: modelScanConnectionId,
-          items: [...items],
-          authoritative: requiresAuthoritativeScan,
-          loading: false,
-        };
-      });
+      const inventoryStatus = getCachedModelInventoryStatus(modelScanConnectionId);
+      setConnectionModels((current) => settledConnectionModelScan(current,
+        modelScanConnectionId, items, requiresAuthoritativeScan, inventoryStatus));
       const currentNode = useCanvasStore
         .getState()
         .nodes.find((node) => node.id === modelScanNodeId);

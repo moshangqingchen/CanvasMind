@@ -11,6 +11,8 @@ const CATALOG_CACHE_KEY = "__superCanvasMiaowuCatalog";
 const PUBLIC_PRICING = JSON.parse(readFileSync(new URL("./miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
 const AUTHENTICATED_DIRECTORIES = JSON.parse(readFileSync(new URL("./miaowu-server-20261008.fixture.json", import.meta.url), "utf8"));
 const CURRENT_VIDEO_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-video-20261009.fixture.json", import.meta.url), "utf8"));
+const CURRENT_IMAGE_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-image-20261009.fixture.json", import.meta.url), "utf8"));
+const CURRENT_NATIVE_FIXTURE = JSON.parse(readFileSync(new URL("./miaowu-server-20261009.fixture.json", import.meta.url), "utf8"));
 const MASTER = "miaowu-test-master-key";
 const KEY = "miaowu-test-api-key";
 type NativeConnector = RestConnectorConfig & { models: ModelDescriptor[] };
@@ -97,6 +99,24 @@ function directoryFetch(dream: "live" | "network" | number = "live", openaiStatu
 }
 
 describe("authenticated native Miaowu media directory", () => {
+  const nativeSchemaFetch = (imageStatus = 200) => vi.fn<typeof fetch>(async (url, init) => {
+    const endpoint = new URL(String(url));
+    expect(endpoint.origin).toBe(MIAOWU_BASE_URL);
+    expect(init?.method).toBe("GET");
+    if (endpoint.pathname === "/api/pricing") return Response.json(CURRENT_IMAGE_FIXTURE.pricing);
+    expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${KEY}`);
+    expect(init?.redirect).toBe("error");
+    if (endpoint.pathname === "/v1/models") return Response.json({ data: CURRENT_NATIVE_FIXTURE.openaiModels });
+    if (endpoint.pathname === "/v1/dream/model_list") return Response.json({ data: CURRENT_NATIVE_FIXTURE.dreamModels });
+    if (endpoint.pathname === "/v1/dream/model_schema") {
+      const id = endpoint.searchParams.get("model")!;
+      const image = CURRENT_IMAGE_FIXTURE.schemas[id];
+      const schema = image ?? CURRENT_NATIVE_FIXTURE.videoSchemas[id];
+      expect(schema).toBeDefined();
+      return Response.json(schema, { status: image ? imageStatus : 200 });
+    }
+    throw new Error("Unexpected native fixture endpoint");
+  });
   const schemaFetch = (schemaStatus = 200, visible = Object.keys(CURRENT_VIDEO_FIXTURE.schemas)) => vi.fn<typeof fetch>(async (url, init) => {
     const endpoint = new URL(String(url));
     expect(endpoint.origin).toBe(MIAOWU_BASE_URL);
@@ -114,6 +134,63 @@ describe("authenticated native Miaowu media directory", () => {
     throw new Error("Unexpected endpoint");
   });
 
+  it("joins the current authenticated 21 media schemas with the 16 chat IDs and retains all seven native image contracts", async () => {
+    makeRepository(authenticatedConnection());
+    const transport = nativeSchemaFetch();
+    const scan = await scanMiaowuConnection("miaowu-default", { fetch: transport, forcePricing: true });
+    expect(scan).toMatchObject({ status: "live", complete: true });
+    expect(scan.modelIds).toHaveLength(26);
+    expect(scan.mediaDirectory?.models).toHaveLength(21);
+    expect(Object.keys(scan.imageSchemas!)).toHaveLength(7);
+    expect(Object.keys(scan.videoSchemas!)).toHaveLength(14);
+    expect([...Object.values(scan.imageSchemas!), ...Object.values(scan.videoSchemas!)].every(receipt => receipt.status === "live")).toBe(true);
+    expect(transport).toHaveBeenCalledTimes(24);
+    const synced = await syncMiaowuConnection("miaowu-default");
+    for (const current of [scan.connection!, synced!]) {
+      const connector = current.config.connector as unknown as NativeConnector;
+      expect(connector.models).toHaveLength(26);
+      expect(current.config.modelScanComplete).toBe(true);
+      for (const [id, schema] of Object.entries(CURRENT_IMAGE_FIXTURE.schemas) as [string, { request_schema: { properties: { params: { properties: { size: { enum: string[] } } } } }; pricing_display: { groups: { default: { rules: { price: number }[] } } } }][]) {
+        const model = connector.models.find(model => model.id === id)!;
+        expect(model.metadata).toMatchObject({ parameterSource: "dream.image_schema", imageSchemaStatus: "live", imageSchemaStale: false, canvasRunnable: true });
+        expect(model.operations).toEqual(["image.generate", "image.edit"]);
+        expect(model.limits).toMatchObject({ maxInputImages: 5, maxOutputImages: 1, maxInputVideos: 0, maxInputAudios: 0 });
+        expect(model.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(schema.request_schema.properties.params.properties.size.enum);
+        expect(model.pricing).toMatchObject({ kind: "per-request", currency: "CNY", unitAmount: Math.max(...schema.pricing_display.groups.default.rules.map(rule => rule.price)) });
+        expect(connector.modelOverrides?.[id]?.submit?.path).toBe("/v1/images");
+      }
+    }
+  });
+
+  it("preserves an exact image's successful schema after a temporary failure with its original timestamp", async () => {
+    makeRepository(authenticatedConnection());
+    const first = await scanMiaowuConnection("miaowu-default", { fetch: nativeSchemaFetch(), forcePricing: true });
+    const next = await scanMiaowuConnection("miaowu-default", { fetch: nativeSchemaFetch(503), forcePricing: true });
+    const id = Object.keys(CURRENT_IMAGE_FIXTURE.schemas)[0]!;
+    expect(next.imageSchemas?.[id]).toMatchObject({ status: "failed", httpStatus: 503, stale: true,
+      lastSuccessfulCheckedAt: first.imageSchemas![id]!.checkedAt });
+    const model = (next.connection!.config.connector as unknown as NativeConnector).models.find(model => model.id === id)!;
+    expect(model.metadata).toMatchObject({ parameterSource: "dream.image_schema", imageSchemaStatus: "failed", imageSchemaStale: true });
+    expect(model.parameters).toEqual((first.connection!.config.connector as unknown as NativeConnector).models.find(model => model.id === id)!.parameters);
+  });
+
+  it.each(["credential", "source", "official-group", "unauthorized-schema"] as const)("does not reuse an image schema after %s", async field => {
+    const initial = authenticatedConnection();
+    initial.config.accountKeyGroupId = "1";
+    makeRepository(initial);
+    const first = await scanMiaowuConnection("miaowu-default", { fetch: nativeSchemaFetch(), forcePricing: true });
+    const changed = structuredClone(first.connection!);
+    changed.updatedAt = "changed";
+    if (field === "credential") changed.encryptedSecret = encryptSecret(KEY, MASTER);
+    if (field === "source") changed.config.supplierSourceId = "other-source";
+    if (field === "official-group") changed.config.accountKeyGroupId = "2";
+    makeRepository(changed);
+    const next = await scanMiaowuConnection("miaowu-default", { fetch: nativeSchemaFetch(field === "unauthorized-schema" ? 403 : 503), forcePricing: true });
+    expect(Object.values(next.imageSchemas!).every(receipt => receipt.stale !== true && !receipt.contract)).toBe(true);
+    expect((next.connection!.config.connector as unknown as NativeConnector).models.filter(model => model.outputKinds?.includes("image"))
+      .every(model => model.metadata?.imageSchemaStale !== true)).toBe(true);
+  });
+
   it("reads only same-Key visible exact video schemas and persists the new models' own limits", async () => {
     makeRepository(authenticatedConnection());
     const transport = schemaFetch();
@@ -127,6 +204,19 @@ describe("authenticated native Miaowu media directory", () => {
     expect(connector.models.find(model => model.id === "doubao-seedance-2.0-mini")?.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 5, max: 15 });
     const synced = await syncMiaowuConnection("miaowu-default");
     expect((synced!.config.connector as unknown as NativeConnector).models.find(model => model.id === "seedance-2.5-pro")?.limits?.maxPromptCharacters).toBe(5000);
+  });
+
+  it("returns the current scan's contracts for a non-persisting read without modifying the saved connection", async () => {
+    const initial = authenticatedConnection();
+    const repository = makeRepository(initial);
+    const scan = await scanMiaowuConnection("miaowu-default", { fetch: schemaFetch(), forcePricing: true, persist: false });
+    const connector = scan.connection!.config.connector as unknown as NativeConnector;
+    expect(scan).toMatchObject({ status: "live", complete: true });
+    expect(connector.models).toHaveLength(11);
+    expect(connector.models.find(model => model.id === "seedance-2.5-pro")).toMatchObject({
+      parameters: expect.any(Array), limits: { maxPromptCharacters: 5000 }, metadata: { parameterSource: "dream.video_schema" } });
+    expect(repository.saveConnection).not.toHaveBeenCalled();
+    expect(await repository.getConnection()).toEqual(initial);
   });
 
   it("does not read publicly quoted models missing from the authenticated media directory", async () => {
@@ -185,7 +275,7 @@ describe("authenticated native Miaowu media directory", () => {
       mediaDirectory: { status: "live", sourceUrl: `${MIAOWU_BASE_URL}/v1/dream/model_list`, models: AUTHENTICATED_DIRECTORIES.dreamModels.map((model: { id: string; type: string }) => ({ id: model.id, kind: model.type })) } });
     expect(scan.modelIds).toHaveLength(23);
     expect(new Set(scan.modelIds).size).toBe(23);
-    expect(transport).toHaveBeenCalledTimes(2 + AUTHENTICATED_DIRECTORIES.dreamModels.filter((model: { type: string }) => model.type === "video").length);
+    expect(transport).toHaveBeenCalledTimes(2 + AUTHENTICATED_DIRECTORIES.dreamModels.length);
   });
 
   it("persists eighteen priced native media contracts, five declared Chat IDs, and each authenticated source", async () => {
@@ -369,6 +459,25 @@ describe("authenticated native Miaowu media directory", () => {
     expect(syncedConnector.models).toHaveLength(23);
     expect(syncedConnector.models.find(model => model.id === image.id)?.pricing).toBeUndefined();
     expect(syncedConnector.models.find(model => model.id === image.id)?.metadata?.canvasRunnable).toBe(false);
+  });
+
+  it("prices the assigned account group through scan and sync while preserving a different display group", async () => {
+    const pricing = structuredClone(PUBLIC_PRICING);
+    pricing.group_ratio.vip = .8;
+    for (const model of pricing.data) model.enable_groups = ["default", "vip"];
+    const connection = authenticatedConnection();
+    connection.config.modelGroup = "vip";
+    connection.config.accountKeyGroup = "default";
+    makeRepository(connection);
+    const scan = await scanMiaowuConnection("miaowu-default", { fetch: directoryFetch("live", 200, pricing), forcePricing: true });
+    const synced = await syncMiaowuConnection("miaowu-default");
+    for (const current of [scan.connection!, synced!]) {
+      expect(current.config.modelGroup).toBe("vip");
+      expect(current.config.accountKeyGroup).toBe("default");
+      const sora = (current.config.connector as unknown as NativeConnector).models.find(model => model.id === "sora-2")!;
+      expect(sora.pricing?.unitAmount).toBe(1);
+      expect(sora.metadata?.marketplaceGroup).toBe("default");
+    }
   });
 
   it.each([401, 403])("keeps the successful generic inventory, but removes Dream-only IDs after media authentication fails (%s)", async status => {

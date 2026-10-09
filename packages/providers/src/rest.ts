@@ -1526,12 +1526,17 @@ export class GenericRestAdapter implements ProviderAdapter {
           issues.push({ path: "model", code: "wrong_media_type", message: "当前型号不支持此节点的生成类型，请重新选择型号。" });
         if (configuredModel.metadata?.canvasRunnable === false)
           issues.push({ path: "model", code: "unavailable_contract", message: "该型号接口合同尚未确认，请刷新模型或选择已支持的型号。" });
-        if (media === "video" && remainingVideoSupplier(connection.baseUrl) === "miaowu" && configuredModel.metadata?.parameterSource === "dream.video_schema" &&
+        if ((media === "video" && configuredModel.metadata?.parameterSource === "dream.video_schema" ||
+            media === "image" && configuredModel.metadata?.parameterSource === "dream.image_schema") &&
+            remainingVideoSupplier(connection.baseUrl) === "miaowu" &&
             configuredModel.metadata.source !== "manual" && configuredModel.metadata.protocolEvidence !== "paid-test") {
           const defaults = Object.fromEntries((configuredModel.parameters ?? []).filter(parameter => parameter.default !== undefined).map(parameter => [parameter.key, parameter.default]));
           const values = request.parameters ?? {};
-          issues.push(...validateModelParameters(configuredModel, { ...defaults, ...values }, request.operation).issues);
-          for (const key of Object.keys(values)) if (!configuredModel.parameters?.some(parameter => parameter.key === key))
+          // Canvas image requests may carry the internal one-image count. The
+          // documented Miaowu mapping omits n; larger counts are unsupported.
+          const declared = media === "image" && values.n === 1 ? Object.fromEntries(Object.entries(values).filter(([key]) => key !== "n")) : values;
+          issues.push(...validateModelParameters(configuredModel, { ...defaults, ...declared }, request.operation).issues);
+          for (const key of Object.keys(declared)) if (!configuredModel.parameters?.some(parameter => parameter.key === key))
             issues.push({ path: `parameters.${key}`, code: "unsupported_parameter", message: `当前型号认证 schema 未声明参数 ${key}，本次生成尚未提交。` });
           const maximum = configuredModel.limits?.maxPromptCharacters;
           if (maximum !== undefined && [...request.prompt].length > maximum)

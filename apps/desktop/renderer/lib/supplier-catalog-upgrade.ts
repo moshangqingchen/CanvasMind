@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { MemoryRepository, ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
 
-export const SUPPLIER_CATALOG_REVISION = "2026-10-09-full-supplier-contracts-prices-v9";
+export const SUPPLIER_CATALOG_REVISION = "2026-10-09-miaowu-media-catalog-confirmation-v10";
 const RETRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const UPGRADED_HOSTS = new Set([
   "ai.cangyuansuanli.cn", "tu.988236.xyz", "api.frimodel.com", "api.mikoto.vip",

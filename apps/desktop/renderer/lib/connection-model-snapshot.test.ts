@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import {
   connectionModelItemsForDisplay,
+  connectionModelInventoryConfirmed,
   pendingConnectionModelScan,
+  settledConnectionModelScan,
   type ConnectionModelSnapshot,
 } from "./connection-model-snapshot";
 import { parameterDescriptorsFor } from "./model-parameters";
@@ -27,6 +29,42 @@ const ready: ConnectionModelSnapshot = {
 };
 
 describe("connection model presentation during scans", () => {
+  it("settles the Key comparison when the same model rows gain complete live provenance", () => {
+    const partial = settledConnectionModelScan(ready, ready.connectionId, [model], true, { scanStatus: "live", complete: false });
+    expect(connectionModelInventoryConfirmed(partial)).toBe(false);
+    const confirmed = settledConnectionModelScan(partial, ready.connectionId, structuredClone([model]), true, { scanStatus: "live", complete: true });
+    expect(confirmed).not.toBe(partial);
+    expect(connectionModelInventoryConfirmed(confirmed)).toBe(true);
+    expect(settledConnectionModelScan(confirmed, ready.connectionId, [model], true, { scanStatus: "live", complete: true })).toBe(confirmed);
+  });
+
+  it("returns to confirmed after repeated focus or timed refreshes with unchanged rows", () => {
+    let snapshot = settledConnectionModelScan(ready, ready.connectionId, [model], true, { scanStatus: "live", complete: true });
+    for (let refresh = 0; refresh < 3; refresh++) {
+      const pending = pendingConnectionModelScan(snapshot, ready.connectionId);
+      expect(connectionModelInventoryConfirmed(pending)).toBe(false);
+      expect(connectionModelItemsForDisplay(pending)).toEqual([model]);
+      snapshot = settledConnectionModelScan(pending, ready.connectionId, structuredClone([model]), true, { scanStatus: "live", complete: true });
+      expect(connectionModelInventoryConfirmed(snapshot)).toBe(true);
+      expect(snapshot.items).toEqual([model]);
+    }
+  });
+
+  it.each(["stale", "failed", "unauthorized", "unscanned", "partial"])("does not confirm a retained model list whose provenance is %s", scanStatus => {
+    const snapshot = settledConnectionModelScan(ready, ready.connectionId, [model], true, { scanStatus, complete: true });
+    expect(connectionModelInventoryConfirmed(snapshot)).toBe(false);
+  });
+
+  it("clears a prior failure only after a new response and accepts a confirmed empty directory", () => {
+    const failed = { ...ready, failed: true, scanStatus: "live", complete: true };
+    expect(connectionModelInventoryConfirmed(failed)).toBe(false);
+    const restored = settledConnectionModelScan(failed, ready.connectionId, [model], true, { scanStatus: "live", complete: true });
+    expect(restored).not.toBe(failed);
+    expect(connectionModelInventoryConfirmed(restored)).toBe(true);
+    expect(connectionModelInventoryConfirmed(settledConnectionModelScan(restored, ready.connectionId, [], true, { scanStatus: "empty", complete: true }))).toBe(true);
+    expect(connectionModelInventoryConfirmed({ ...restored, authoritative: false })).toBe(false);
+  });
+
   it("keeps the declared parameter schema while the live inventory is pending", () => {
     const pending = pendingConnectionModelScan(ready, ready.connectionId);
     const displayed = connectionModelItemsForDisplay(pending);

@@ -1,0 +1,3954 @@
+{
+  "capturedAt": "2026-10-09T22:21:11.091Z",
+  "sources": [
+    {
+      "url": "https://api.miaowuai.store/v1/models",
+      "checkedAt": "2026-10-09T22:21:08.392Z",
+      "httpStatus": 200,
+      "sha256": "e44cd9838b533f74dcc73c51f92a248a497c61a645790e6d87fcfb306037e146"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_list",
+      "checkedAt": "2026-10-09T22:21:08.598Z",
+      "httpStatus": 200,
+      "sha256": "444619ac5e82f21e2e58da864e7dde731024eae724999d55b050c5a6a7a2ad7c"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=minimax-h3-max",
+      "checkedAt": "2026-10-09T22:21:09.237Z",
+      "httpStatus": 200,
+      "sha256": "12f3258c56e05cd18283125505e432cc17be7cbd2d512b11d3a22f5f8cc40ba2"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=wan3.0-video",
+      "checkedAt": "2026-10-09T22:21:09.238Z",
+      "httpStatus": 200,
+      "sha256": "383c893f768a55338892652ad018a9bfa08ef0a47301f241696af296c74e836e"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=dola-seedance-2.0-fast",
+      "checkedAt": "2026-10-09T22:21:09.440Z",
+      "httpStatus": 200,
+      "sha256": "bce641de109a6090114754b35e3d678895dc048e1088a447e39893aca95db974"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=dola-seedance-2.5",
+      "checkedAt": "2026-10-09T22:21:09.443Z",
+      "httpStatus": 200,
+      "sha256": "c42596453525f169a4244b258d4d6a20562f0ab552686b52bc3f476959280d54"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=jimeng-seedance-2.5",
+      "checkedAt": "2026-10-09T22:21:09.645Z",
+      "httpStatus": 200,
+      "sha256": "5ddad626c0fa50c4301d6b0a5167a1439a691b80995a123cc9feb7cfddbf3ded"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=sora-2",
+      "checkedAt": "2026-10-09T22:21:09.848Z",
+      "httpStatus": 200,
+      "sha256": "6c0fe4c6637b62e5379f582949f8ab8ea3f2c24dbbd5f21daeb8cf58dfadd722"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=doubao-seedance-2.0-mini",
+      "checkedAt": "2026-10-09T22:21:09.856Z",
+      "httpStatus": 200,
+      "sha256": "c9d6c1b7e29c2f2f6da2c5c24e6917c803ccd17c2aec347cca3db0bcef5b6c67"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=seedance-2.5-pro",
+      "checkedAt": "2026-10-09T22:21:10.056Z",
+      "httpStatus": 200,
+      "sha256": "13952410b48e1a6509974c4dd75b853e896f86bbaffc726dda16937ce83fae8d"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=doubao-seedance-2.0-fast",
+      "checkedAt": "2026-10-09T22:21:10.069Z",
+      "httpStatus": 200,
+      "sha256": "6d2c346b358c1e47fa02e4990db411c793c4162e555483366bf68740530f6ec6"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=minimax-h3",
+      "checkedAt": "2026-10-09T22:21:10.250Z",
+      "httpStatus": 200,
+      "sha256": "46d602aa3a7b1d53ebde65121016f632ae1fb9226a687d70e83ef9db9c704517"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=seedance-2.0-pro",
+      "checkedAt": "2026-10-09T22:21:10.260Z",
+      "httpStatus": 200,
+      "sha256": "6ab235a4bc6658f3543ac6f20ea4824b2f858ecb84132b787f8efcc1909e9ec5"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=seedance-2.0-deal",
+      "checkedAt": "2026-10-09T22:21:10.451Z",
+      "httpStatus": 200,
+      "sha256": "6b75a2ef05fb48b2f4b822926c5d36c817edd83ff12fd84505b07cee28954ff9"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=seedance-2.0-mini-deal",
+      "checkedAt": "2026-10-09T22:21:10.462Z",
+      "httpStatus": 200,
+      "sha256": "0d783ec69d5142655c9b1b1cadedf6e5fdcccd9762cec76da7ddd943e3e2beec"
+    },
+    {
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=doubao-seedance-2.5",
+      "checkedAt": "2026-10-09T22:21:10.480Z",
+      "httpStatus": 200,
+      "sha256": "1780349cfb6798f69b5d0370c4c2fba249bd111d4df75245bafdbfd5a02436ef"
+    }
+  ],
+  "openaiModels": [
+    {
+      "id": "dreamina-seedance-2.0-fast",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "dreamina-seedance-2.0-mini",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "GPT-image-2",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "Image-nano-banana",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "Image-nano-banana-2",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "Image-nano-banana-pro",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "minimax-h3",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "minimax-h3-max",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "seedance-2.0-deal",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "seedance-2.0-fast-deal",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "seedance-2.0-mini-deal",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "seedance-2.0-pro",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "seedance-2.5-deal",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "sora-2",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "video-editing",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    },
+    {
+      "id": "wan3.0-video",
+      "object": "model",
+      "created": 1626777600,
+      "owned_by": "openai",
+      "supported_endpoint_types": [
+        "openai"
+      ]
+    }
+  ],
+  "dreamModels": [
+    {
+      "id": "seedance-2.0-pro",
+      "name": "seedance-2.0-pro",
+      "display_name": "seedance-2.0-pro",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p",
+                  "480p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.04,
+              "seconds_max": 15,
+              "size": "720p"
+            },
+            {
+              "price": 0.02142857142857143,
+              "seconds_max": 15,
+              "size": "480p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 15,
+                "price": 0.28
+              },
+              {
+                "size": "480p",
+                "seconds_max": 15,
+                "price": 0.15
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "minimax-h3",
+      "name": "minimax-h3",
+      "display_name": "minimax-h3",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "9:16",
+                  "16:9",
+                  "4:3",
+                  "3:4",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.008928571428571428,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.0625
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "seedance-2.5-pro",
+      "name": "seedance-2.5-pro",
+      "display_name": "seedance-2.5-pro",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 29,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 1.4285714285714286,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 10
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "doubao-seedance-2.0-mini",
+      "name": "doubao-seedance-2.0-mini",
+      "display_name": "doubao-seedance-2.0-mini",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "9:16",
+                  "16:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.14285714285714285,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "seedance-2.0-mini-deal",
+      "name": "seedance-2.0-mini-deal",
+      "display_name": "seedance-2.0-mini-deal",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5,
+                "x-dream-seconds-by-size": {
+                  "480p": {
+                    "max": 10,
+                    "min": 5
+                  }
+                }
+              },
+              "size": {
+                "enum": [
+                  "480p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.05714285714285715,
+              "seconds_max": 10,
+              "size": "480p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "480p",
+                "seconds_max": 10,
+                "price": 0.4
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "dola-seedance-2.0-fast",
+      "name": "dola-seedance-2.0-fast",
+      "display_name": "dola-seedance-2.0-fast",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.125,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.875
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "jimeng-seedance-2.5",
+      "name": "jimeng-seedance-2.5",
+      "display_name": "jimeng-seedance-2.5",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p",
+                  "480p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.10714285714285714,
+              "seconds_max": 30,
+              "size": "720p"
+            },
+            {
+              "price": 0.08928571428571429,
+              "seconds_max": 30,
+              "size": "480p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 30,
+                "price": 0.75
+              },
+              {
+                "size": "480p",
+                "seconds_max": 30,
+                "price": 0.625
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "seedance-2.0-deal",
+      "name": "seedance-2.0-deal",
+      "display_name": "seedance-2.0-deal",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.44642857142857145,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 3.125
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "sora-2",
+      "name": "sora-2",
+      "display_name": "sora-2",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 1,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "enum": [
+                  "8"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-schema-version": 1
+      }
+    },
+    {
+      "id": "dola-seedance-2.5",
+      "name": "dola-seedance-2.5",
+      "display_name": "dola-seedance-2.5",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.125,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.875
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "seedream-5-0-pro",
+      "name": "seedream-5-0-pro",
+      "display_name": "seedream-5-0-pro",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "text-to-image",
+                  "image-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "2K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.028571428571428574,
+              "size": "2K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "2K",
+                "price": 0.2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "doubao-seedance-2.5",
+      "name": "doubao-seedance-2.5",
+      "display_name": "doubao-seedance-2.5",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.8928571428571429,
+              "seconds_max": 30,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 30,
+                "price": 6.25
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "doubao-seedance-2.0-fast",
+      "name": "doubao-seedance-2.0-fast",
+      "display_name": "doubao-seedance-2.0-fast",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.35714285714285715,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 2.5
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "minimax-h3-max",
+      "name": "minimax-h3-max",
+      "display_name": "minimax-h3-max",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p",
+                  "480p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-schema-version": 1
+      }
+    },
+    {
+      "id": "wan3.0-video",
+      "name": "wan3.0-video",
+      "display_name": "wan3.0-video",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.055714285714285716,
+              "size": "720p"
+            },
+            {
+              "price": 0.09285714285714286,
+              "size": "1080p"
+            },
+            {
+              "price": 0.027857142857142858,
+              "size": "480p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.39
+              },
+              {
+                "size": "1080p",
+                "price": 0.65
+              },
+              {
+                "size": "480p",
+                "price": 0.195
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-sunburs",
+      "name": "gpt-image-2.5-sunburs",
+      "display_name": "gpt-image-2.5-sunburs",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "text-to-image",
+                  "image-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p",
+                  "2K",
+                  "4K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.005714285714285714,
+              "size": "1080p"
+            },
+            {
+              "price": 0.011428571428571429,
+              "size": "2K"
+            },
+            {
+              "price": 0.028571428571428574,
+              "size": "4K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.04
+              },
+              {
+                "size": "2K",
+                "price": 0.08
+              },
+              {
+                "size": "4K",
+                "price": 0.2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-flare",
+      "name": "gpt-image-2.5-flare",
+      "display_name": "gpt-image-2.5-flare",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "text-to-image",
+                  "image-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p",
+                  "2K",
+                  "4K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.005714285714285714,
+              "size": "1080p"
+            },
+            {
+              "price": 0.011428571428571429,
+              "size": "2K"
+            },
+            {
+              "price": 0.028571428571428574,
+              "size": "4K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.04
+              },
+              {
+                "size": "2K",
+                "price": 0.08
+              },
+              {
+                "size": "4K",
+                "price": 0.2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "GPT-image-2",
+      "name": "GPT-image-2",
+      "display_name": "GPT-image-2",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "image-to-image",
+                  "text-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.0071428571428571435,
+              "size": "1080p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.05
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "Image-nano-banana-2",
+      "name": "Image-nano-banana-2",
+      "display_name": "Image-nano-banana-2",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "image-to-image",
+                  "text-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.0071428571428571435,
+              "size": "1080p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.05
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "Image-nano-banana-pro",
+      "name": "Image-nano-banana-pro",
+      "display_name": "Image-nano-banana-pro",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "image-to-image",
+                  "text-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p",
+                  "2K"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.02142857142857143,
+              "size": "1080p"
+            },
+            {
+              "price": 0.02142857142857143,
+              "size": "2K"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.15
+              },
+              {
+                "size": "2K",
+                "price": 0.15
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "Image-nano-banana",
+      "name": "Image-nano-banana",
+      "display_name": "Image-nano-banana",
+      "type": "image",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "image-to-image",
+                  "text-to-image"
+                ],
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "3:4",
+                  "4:3"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "1080p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.0071428571428571435,
+              "size": "1080p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "1080p",
+                "price": 0.05
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "videoSchemas": {
+    "minimax-h3-max": {
+      "id": "minimax-h3-max",
+      "name": "minimax-h3-max",
+      "display_name": "minimax-h3-max",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p",
+                  "480p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      }
+    },
+    "wan3.0-video": {
+      "id": "wan3.0-video",
+      "name": "wan3.0-video",
+      "display_name": "wan3.0-video",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.055714285714285716,
+              "size": "720p"
+            },
+            {
+              "price": 0.09285714285714286,
+              "size": "1080p"
+            },
+            {
+              "price": 0.027857142857142858,
+              "size": "480p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.39
+              },
+              {
+                "size": "1080p",
+                "price": 0.65
+              },
+              {
+                "size": "480p",
+                "price": 0.195
+              }
+            ]
+          }
+        }
+      }
+    },
+    "dola-seedance-2.0-fast": {
+      "id": "dola-seedance-2.0-fast",
+      "name": "dola-seedance-2.0-fast",
+      "display_name": "dola-seedance-2.0-fast",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.125,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.875
+              }
+            ]
+          }
+        }
+      }
+    },
+    "dola-seedance-2.5": {
+      "id": "dola-seedance-2.5",
+      "name": "dola-seedance-2.5",
+      "display_name": "dola-seedance-2.5",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.125,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.875
+              }
+            ]
+          }
+        }
+      }
+    },
+    "jimeng-seedance-2.5": {
+      "id": "jimeng-seedance-2.5",
+      "name": "jimeng-seedance-2.5",
+      "display_name": "jimeng-seedance-2.5",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p",
+                  "480p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.10714285714285714,
+              "seconds_max": 30,
+              "size": "720p"
+            },
+            {
+              "price": 0.08928571428571429,
+              "seconds_max": 30,
+              "size": "480p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 30,
+                "price": 0.75
+              },
+              {
+                "size": "480p",
+                "seconds_max": 30,
+                "price": 0.625
+              }
+            ]
+          }
+        }
+      }
+    },
+    "sora-2": {
+      "id": "sora-2",
+      "name": "sora-2",
+      "display_name": "sora-2",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 1,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "enum": [
+                  "8"
+                ],
+                "type": "string"
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      }
+    },
+    "doubao-seedance-2.0-mini": {
+      "id": "doubao-seedance-2.0-mini",
+      "name": "doubao-seedance-2.0-mini",
+      "display_name": "doubao-seedance-2.0-mini",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "9:16",
+                  "16:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.14285714285714285,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    "seedance-2.5-pro": {
+      "id": "seedance-2.5-pro",
+      "name": "seedance-2.5-pro",
+      "display_name": "seedance-2.5-pro",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 29,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 1.4285714285714286,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 10
+              }
+            ]
+          }
+        }
+      }
+    },
+    "doubao-seedance-2.0-fast": {
+      "id": "doubao-seedance-2.0-fast",
+      "name": "doubao-seedance-2.0-fast",
+      "display_name": "doubao-seedance-2.0-fast",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.35714285714285715,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 2.5
+              }
+            ]
+          }
+        }
+      }
+    },
+    "minimax-h3": {
+      "id": "minimax-h3",
+      "name": "minimax-h3",
+      "display_name": "minimax-h3",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "9:16",
+                  "16:9",
+                  "4:3",
+                  "3:4",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.008928571428571428,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.0625
+              }
+            ]
+          }
+        }
+      }
+    },
+    "seedance-2.0-pro": {
+      "id": "seedance-2.0-pro",
+      "name": "seedance-2.0-pro",
+      "display_name": "seedance-2.0-pro",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p",
+                  "480p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.04,
+              "seconds_max": 15,
+              "size": "720p"
+            },
+            {
+              "price": 0.02142857142857143,
+              "seconds_max": 15,
+              "size": "480p"
+            }
+          ],
+          "unit": "per_second"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 15,
+                "price": 0.28
+              },
+              {
+                "size": "480p",
+                "seconds_max": 15,
+                "price": 0.15
+              }
+            ]
+          }
+        }
+      }
+    },
+    "seedance-2.0-deal": {
+      "id": "seedance-2.0-deal",
+      "name": "seedance-2.0-deal",
+      "display_name": "seedance-2.0-deal",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "21:9",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 4
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.44642857142857145,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 3.125
+              }
+            ]
+          }
+        }
+      }
+    },
+    "seedance-2.0-mini-deal": {
+      "id": "seedance-2.0-mini-deal",
+      "name": "seedance-2.0-mini-deal",
+      "display_name": "seedance-2.0-mini-deal",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 15,
+                "x-dream-integer-string-min": 5,
+                "x-dream-seconds-by-size": {
+                  "480p": {
+                    "max": 10,
+                    "min": 5
+                  }
+                }
+              },
+              "size": {
+                "enum": [
+                  "480p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.05714285714285715,
+              "seconds_max": 10,
+              "size": "480p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "480p",
+                "seconds_max": 10,
+                "price": 0.4
+              }
+            ]
+          }
+        }
+      }
+    },
+    "doubao-seedance-2.5": {
+      "id": "doubao-seedance-2.5",
+      "name": "doubao-seedance-2.5",
+      "display_name": "doubao-seedance-2.5",
+      "type": "video",
+      "request_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "properties": {
+              "audio_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 9,
+                "minItems": 0,
+                "type": "array"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "ratio": {
+                "enum": [
+                  "16:9",
+                  "9:16"
+                ],
+                "type": "string"
+              },
+              "seconds": {
+                "pattern": "^[1-9][0-9]*$",
+                "type": "string",
+                "x-dream-integer-string-max": 30,
+                "x-dream-integer-string-min": 5
+              },
+              "size": {
+                "enum": [
+                  "720p"
+                ],
+                "type": "string"
+              },
+              "video_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 0,
+                "minItems": 0,
+                "type": "array"
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "params"
+        ],
+        "type": "object",
+        "x-dream-pricing": {
+          "rules": [
+            {
+              "price": 0.8928571428571429,
+              "seconds_max": 30,
+              "size": "720p"
+            }
+          ],
+          "unit": "per_call"
+        },
+        "x-dream-schema-version": 1
+      },
+      "group_ratio": {
+        "default": 1
+      },
+      "pricing_display": {
+        "currency": "CNY",
+        "symbol": "¥",
+        "usd_exchange_rate": 7,
+        "groups": {
+          "default": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 30,
+                "price": 6.25
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

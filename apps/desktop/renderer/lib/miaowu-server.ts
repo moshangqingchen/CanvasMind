@@ -28,6 +28,7 @@ import {
   type MiaowuCatalogSnapshot,
 } from "./miaowu-catalog";
 import { applyMiaowuVideoSchema, parseMiaowuVideoSchema, type MiaowuVideoSchemaReceipt } from "./miaowu-video-schema";
+import { applyMiaowuImageSchema, parseMiaowuImageSchema, type MiaowuImageSchemaReceipt } from "./miaowu-image-schema";
 
 export type MiaowuModelScanStatus =
   "live" | "empty" | "unauthorized" | "unconfigured" | "failed";
@@ -41,6 +42,7 @@ export interface MiaowuKeyScan {
   openaiModelIds?: string[];
   mediaDirectory?: MiaowuMediaDirectory;
   videoSchemas?: Record<string, MiaowuVideoSchemaReceipt>;
+  imageSchemas?: Record<string, MiaowuImageSchemaReceipt>;
 }
 
 export interface MiaowuMediaDirectory {
@@ -97,19 +99,28 @@ async function scanMiaowuMediaDirectory(apiKey: string, fetchImpl: typeof fetch)
 }
 
 const credentialFingerprint = (connection: ProviderConnectionRecord) => createHash("sha256").update(connection.encryptedSecret ?? "").digest("hex");
+/** The display group may differ from the group actually assigned to the Key. */
+function accountModelGroup(connection: ProviderConnectionRecord): string | undefined {
+  const assigned = connection.config.accountKeyGroup;
+  if (typeof assigned === "string" && assigned.trim()) return assigned;
+  const display = connection.config.modelGroup;
+  return typeof display === "string" && display.trim() ? display : undefined;
+}
 function schemaGroupIdentity(connection: ProviderConnectionRecord): string {
   const id = String(connection.config.accountKeyGroupId ?? "");
   return /^[1-9][0-9]*$/u.test(id) ? `id:${id}` : `name:${String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "")}`;
 }
 
-async function scanMiaowuVideoSchemas(apiKey: string, directory: MiaowuMediaDirectory, fetchImpl: typeof fetch): Promise<Record<string, MiaowuVideoSchemaReceipt>> {
-  const ids = directory.status === "live" ? directory.models.filter(model => model.kind === "video").map(model => model.id) : [];
-  const receipts: Record<string, MiaowuVideoSchemaReceipt> = Object.create(null);
+async function scanMiaowuSchemas<T>(apiKey: string, directory: MiaowuMediaDirectory, fetchImpl: typeof fetch,
+  kind: "image" | "video", parse: (id: string, payload: unknown) => T): Promise<Record<string, Omit<MiaowuVideoSchemaReceipt, "contract"> & { contract?: T }>> {
+  const ids = directory.status === "live" ? directory.models.filter(model => model.kind === kind).map(model => model.id) : [];
+  const receipts: Record<string, Omit<MiaowuVideoSchemaReceipt, "contract"> & { contract?: T }> = Object.create(null);
   let next = 0;
-  await Promise.all(Array.from({ length: Math.min(4, ids.length) }, async () => {
+  // Image and video queues run together; two workers each bound the total to four.
+  await Promise.all(Array.from({ length: Math.min(2, ids.length) }, async () => {
     while (next < ids.length) {
       const id = ids[next++]!, sourceUrl = `${MIAOWU_BASE_URL}/v1/dream/model_schema?model=${encodeURIComponent(id)}`;
-      const receipt: MiaowuVideoSchemaReceipt = { id, sourceUrl, checkedAt: new Date().toISOString(), status: "failed" };
+      const receipt: Omit<MiaowuVideoSchemaReceipt, "contract"> & { contract?: T } = { id, sourceUrl, checkedAt: new Date().toISOString(), status: "failed" };
       try {
         const response = await fetchImpl(sourceUrl, { method: "GET", redirect: "error", headers: { Authorization: `Bearer ${apiKey}` }, cache: "no-store", signal: AbortSignal.timeout(20_000) });
         receipt.httpStatus = response.status;
@@ -119,7 +130,7 @@ async function scanMiaowuVideoSchemas(apiKey: string, directory: MiaowuMediaDire
           receipt.error = `喵呜 ${id} 免费参数 schema 返回 HTTP ${response.status}，保留同一身份已有参数`;
         } else {
           const payload = await readBoundedModelJson(response);
-          receipt.contract = parseMiaowuVideoSchema(id, payload);
+          receipt.contract = parse(id, payload);
           receipt.normalizedSchemaSha256 = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
           receipt.status = "live";
         }
@@ -132,15 +143,31 @@ async function scanMiaowuVideoSchemas(apiKey: string, directory: MiaowuMediaDire
 }
 
 /** Schema fallback never crosses a credential, supplier source or official group. */
-function cachedSchemasForConnection(connection: ProviderConnectionRecord): Record<string, MiaowuVideoSchemaReceipt> | undefined {
-  const sameScope = connection.config.miaowuSchemaCredentialFingerprint === credentialFingerprint(connection) &&
+function sameSchemaScope(connection: ProviderConnectionRecord): boolean {
+  return connection.config.miaowuSchemaCredentialFingerprint === credentialFingerprint(connection) &&
     connection.config.miaowuSchemaSupplierSourceId === (connection.config.supplierSourceId ?? null) &&
     connection.config.miaowuSchemaGroupIdentity === schemaGroupIdentity(connection);
-  return sameScope ? connection.config.miaowuVideoSchemas as unknown as Record<string, MiaowuVideoSchemaReceipt> | undefined : undefined;
+}
+function cachedSchemasForConnection(connection: ProviderConnectionRecord): Record<string, MiaowuVideoSchemaReceipt> | undefined {
+  return sameSchemaScope(connection) ? connection.config.miaowuVideoSchemas as unknown as Record<string, MiaowuVideoSchemaReceipt> | undefined : undefined;
+}
+function cachedImageSchemasForConnection(connection: ProviderConnectionRecord): Record<string, MiaowuImageSchemaReceipt> | undefined {
+  return sameSchemaScope(connection) ? connection.config.miaowuImageSchemas as unknown as Record<string, MiaowuImageSchemaReceipt> | undefined : undefined;
 }
 function schemasForConnection(scan: MiaowuKeyScan, connection: ProviderConnectionRecord): Record<string, MiaowuVideoSchemaReceipt> {
   const current = { ...scan.videoSchemas }, previous = cachedSchemasForConnection(connection);
   const visible = new Set(scan.mediaDirectory?.models.filter(model => model.kind === "video").map(model => model.id) ?? []);
+  for (const id of visible) {
+    const old = previous?.[id], fresh = current[id];
+    if (!old?.contract || old.id !== id || old.sourceUrl !== `${MIAOWU_BASE_URL}/v1/dream/model_schema?model=${encodeURIComponent(id)}` || fresh?.status === "live" || fresh?.status === "unauthorized") continue;
+    current[id] = { ...(fresh ?? { id, sourceUrl: old.sourceUrl, checkedAt: scan.checkedAt, status: "failed" as const, error: "本轮媒体目录未取得新 schema，保留同一身份的上次参数" }),
+      contract: old.contract, normalizedSchemaSha256: old.normalizedSchemaSha256, stale: true, lastSuccessfulCheckedAt: old.lastSuccessfulCheckedAt ?? old.checkedAt };
+  }
+  return current;
+}
+function imageSchemasForConnection(scan: MiaowuKeyScan, connection: ProviderConnectionRecord): Record<string, MiaowuImageSchemaReceipt> {
+  const current = { ...scan.imageSchemas }, previous = cachedImageSchemasForConnection(connection);
+  const visible = new Set(scan.mediaDirectory?.models.filter(model => model.kind === "image").map(model => model.id) ?? []);
   for (const id of visible) {
     const old = previous?.[id], fresh = current[id];
     if (!old?.contract || old.id !== id || old.sourceUrl !== `${MIAOWU_BASE_URL}/v1/dream/model_schema?model=${encodeURIComponent(id)}` || fresh?.status === "live" || fresh?.status === "unauthorized") continue;
@@ -180,11 +207,11 @@ function modelsFromScannedDirectories(catalogModels: ModelDescriptor[], scan: Mi
         catalogCapability: mediaKind, canvasRunnable: false,
         canvasUnavailableReason: "媒体目录列出此型号，但当前分组尚未提供其参数合同" } } : model;
   })];
-  return models.map(model => applyMiaowuVideoSchema({ ...model, metadata: { ...model.metadata,
+  return models.map(model => applyMiaowuImageSchema(applyMiaowuVideoSchema({ ...model, metadata: { ...model.metadata,
     modelDirectorySources: [...(openaiIds.has(model.id) ? ["openai-key-models"] : []), ...(mediaModels.has(model.id) ? ["authenticated-dream-media-directory"] : [])],
     ...(mediaModels.has(model.id) ? { mediaDirectoryStatus: scan.mediaDirectory!.status,
       mediaDirectoryCheckedAt: scan.mediaDirectory!.checkedAt, mediaDirectoryStale: scan.mediaDirectory!.stale === true } : {}),
-  } }, scan.videoSchemas?.[model.id]));
+  } }, scan.videoSchemas?.[model.id]), scan.imageSchemas?.[model.id]));
 }
 
 /** Refresh automatic contracts without discarding a saved exact alias contract. */
@@ -326,10 +353,13 @@ export async function scanMiaowuKeyModels(
     };
     if (!officialMiaowuBase(base)) return { ...baseScan, complete: true };
     const mediaDirectory = await scanMiaowuMediaDirectory(apiKey, fetchImpl);
-    const videoSchemas = await scanMiaowuVideoSchemas(apiKey, mediaDirectory, fetchImpl);
+    const [videoSchemas, imageSchemas] = await Promise.all([
+      scanMiaowuSchemas(apiKey, mediaDirectory, fetchImpl, "video", parseMiaowuVideoSchema),
+      scanMiaowuSchemas(apiKey, mediaDirectory, fetchImpl, "image", parseMiaowuImageSchema),
+    ]);
     const combined = [...new Set([...modelIds, ...mediaDirectory.models.map(model => model.id)])];
     return { ...baseScan, checkedAt: mediaDirectory.checkedAt, status: combined.length ? "live" : "empty", modelIds: combined,
-      complete: mediaDirectory.status === "live" || mediaDirectory.status === "empty", mediaDirectory, videoSchemas,
+      complete: mediaDirectory.status === "live" || mediaDirectory.status === "empty", mediaDirectory, videoSchemas, imageSchemas,
       ...(mediaDirectory.error ? { error: mediaDirectory.error } : {}) };
   } catch {
     return miaowuScanFailure(
@@ -402,19 +432,14 @@ export async function scanMiaowuConnection(
     }),
   ]);
   const directoryScan = preserveFailedMediaDirectory(freshScan, connection);
-  const scan = { ...directoryScan, videoSchemas: schemasForConnection(directoryScan, connection) };
+  const scan = { ...directoryScan, videoSchemas: schemasForConnection(directoryScan, connection),
+    imageSchemas: imageSchemasForConnection(directoryScan, connection) };
   const baseResult: MiaowuConnectionScan = { ...scan, connection };
-  if (
-    (scan.status !== "live" && scan.status !== "empty") ||
-    options?.persist === false
-  )
+  if (scan.status !== "live" && scan.status !== "empty")
     return baseResult;
 
   const scannedSet = new Set(scan.modelIds);
-  const configuredGroup =
-    typeof connection.config.modelGroup === "string"
-      ? connection.config.modelGroup
-      : undefined;
+  const configuredGroup = accountModelGroup(connection);
   const catalogModels = miaowuModelsForGroup(catalog, configuredGroup);
   const pricedIds = new Set(catalog.models.map((model) => model.id));
   const callable = modelsFromScannedDirectories(catalogModels, scan, configuredGroup);
@@ -452,6 +477,7 @@ export async function scanMiaowuConnection(
     modelScanComplete: scan.complete ?? true,
     modelScanError: scan.error ?? null,
     miaowuVideoSchemas: scan.videoSchemas as unknown as JsonObject,
+    miaowuImageSchemas: scan.imageSchemas as unknown as JsonObject,
     miaowuSchemaCredentialFingerprint: credentialFingerprint(latest),
     miaowuSchemaSupplierSourceId: latest.config.supplierSourceId ?? null,
     miaowuSchemaGroupIdentity: schemaGroupIdentity(latest),
@@ -468,6 +494,10 @@ export async function scanMiaowuConnection(
   clearEmptyScanConfirmation(config);
   if (JSON.stringify(latest.config) === JSON.stringify(config))
     return { ...baseResult, connection: latest };
+  // A non-persisting read still returns this scan's contracts and prices. The
+  // API must not label an old connector with the fresh directory's provenance.
+  if (options?.persist === false)
+    return { ...baseResult, connection: { ...latest, config } };
   const saved = await repository.saveConnection(
     {
       id: latest.id,
@@ -491,10 +521,11 @@ async function syncMiaowuConnectionFromCatalog(
     connection.config.preset !== MIAOWU_PRESET_ID
   )
     return connection;
-  const groupId =
+  const displayGroupId =
     typeof connection.config.modelGroup === "string"
       ? connection.config.modelGroup
       : undefined;
+  const groupId = accountModelGroup(connection);
   const catalogModels = miaowuModelsForGroup(catalog, groupId);
   const scanStatus = connection.config.modelScanStatus;
   const authoritativeScan = scanStatus === "live" || scanStatus === "empty";
@@ -515,7 +546,7 @@ async function syncMiaowuConnectionFromCatalog(
         ? modelsFromScannedDirectories(catalogModels, { status: "live", checkedAt: String(connection.config.modelScanCheckedAt ?? ""), modelIds: scannedModelIds,
             ...(Array.isArray(connection.config.miaowuOpenaiModelIds) ? { openaiModelIds: configuredModelIds(connection.config.miaowuOpenaiModelIds) } : {}),
             ...(connection.config.miaowuMediaDirectory ? { mediaDirectory: connection.config.miaowuMediaDirectory as unknown as MiaowuMediaDirectory } : {}),
-            videoSchemas: cachedSchemasForConnection(connection) }, groupId)
+            videoSchemas: cachedSchemasForConnection(connection), imageSchemas: cachedImageSchemasForConnection(connection) }, groupId)
         : catalogModels;
   if (models.length === 0 && !authoritativeScan) return connection;
   const configuredDefault =
@@ -528,7 +559,7 @@ async function syncMiaowuConnectionFromCatalog(
   const config: JsonObject = {
     ...connection.config,
     ...(miaowuConnectionConfig(
-      groupId,
+      displayGroupId,
       defaultModel,
       connectedModels,
     ) as unknown as JsonObject),

@@ -16,11 +16,14 @@ const publicVideo = (id: string): SupplierCatalogModel => ({ id, name: id, capab
 
 type DirectoryReadFailure = "stale" | "failed" | "partial" | "http503";
 async function fixture(page: Page, request: APIRequestContext, nodeType: "video-generation" | "image-generation",
-  keyModels: ModelDescriptor[], publicModels: SupplierCatalogModel[], failed: DirectoryReadFailure | false = false) {
+  keyModels: ModelDescriptor[], publicModels: SupplierCatalogModel[], failed: DirectoryReadFailure | false = false,
+  reactiveScanUpdates = false) {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   let submissions = 0;
   let directoryReads = 0;
+  let directoryMode = failed;
+  let scanRevision = 0;
   await page.route("**/api/runs**", async route => {
     if (route.request().method() === "POST") { submissions++; await route.abort(); }
     else await route.continue();
@@ -38,12 +41,15 @@ async function fixture(page: Page, request: APIRequestContext, nodeType: "video-
   } });
   expect(providerResponse.ok()).toBeTruthy();
   const connection = await providerResponse.json();
+  if (reactiveScanUpdates) await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET"
+    ? route.fulfill({ json: [{ ...connection, config: { ...connection.config,
+      modelScanRequestId: `isolated-scan-${scanRevision}`, modelScanStatus: "live", modelScanComplete: !directoryMode } }] })
+    : route.continue());
   await page.route("**/api/suppliers", route => {
     directoryReads++;
     return route.fulfill({ json: [{ ...supplier, scanStatus: "live", scanComplete: true,
       catalog: { groups: [{ id: "exact-group", label: "同一分组", source: "catalog", models: publicModels }] } }] });
   });
-  let directoryMode = failed;
   let returnedModels = keyModels;
   await page.route(`**/api/providers/${connection.id}/models*`, route => route.fulfill({
     status: directoryMode === "http503" ? 503 : 200,
@@ -72,19 +78,64 @@ async function fixture(page: Page, request: APIRequestContext, nodeType: "video-
   };
   await page.goto(`/canvas/${canvas.id}`);
   await openPicker();
-  let pageLoads = 1;
+  let directoryCycles = 1;
   return { panel, picker, list: panel.getByRole("listbox"), menu: panel.locator(".node-model-select-options"),
     summary: panel.getByRole("status", { name: "官网与 Key 目录对照" }), search: panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }),
     readNode: async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data,
     confirmDirectoryWithPendingProtocol: async () => {
       directoryMode = false;
       returnedModels = keyModels.map(model => ({ ...model, metadata: { ...model.metadata, canvasRunnable: false, canvasUnavailableReason: "调用协议待确认" } }));
-      pageLoads++;
+      directoryCycles++;
       await page.reload();
       await openPicker();
     },
-    assertSafe: () => { expect(submissions).toBe(0); expect(errors).toEqual([]); expect(directoryReads).toBeLessThanOrEqual(2 * pageLoads); } };
+    refreshDirectoryWithSameModels: async () => {
+      expect(reactiveScanUpdates).toBe(true);
+      directoryMode = false;
+      scanRevision++;
+      directoryCycles++;
+      const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === `/api/providers/${connection.id}/models` &&
+        response.headers()["x-model-scan-complete"] === "true");
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded")));
+      const response = await refreshed;
+      expect(response.ok()).toBe(true);
+      expect(await response.json()).toEqual(keyModels);
+    },
+    assertSafe: () => { expect(submissions).toBe(0); expect(errors).toEqual([]); expect(directoryReads).toBeLessThanOrEqual(2 * directoryCycles); } };
 }
+
+test("相同型号与报价的 Key 扫描从局部完成变成完整完成后，菜单原地更新确认状态并允许选择", async ({ page, request }) => {
+  expect(process.env.PLAYWRIGHT_BASE_URL, "此回归必须启动独立临时数据库，不能复用正式服务").toBeUndefined();
+  const key = [video("video-confirmed-a"), video("video-confirmed-b")];
+  const ui = await fixture(page, request, "video-generation", key, key.map(model => publicVideo(model.id)), "partial", true);
+  const canvasUrl = page.url();
+  const before = await ui.readNode();
+  await expect(ui.summary).toContainText("官网目录 2");
+  await expect(ui.summary).toContainText("Key 目录待确认");
+  const choice = ui.list.getByRole("option", { name: "video-confirmed-b", exact: true });
+  await expect(choice).toContainText("0.62");
+
+  // Refresh the same open menu repeatedly; neither reloading nor new model rows
+  // may be needed to make the newly confirmed inventory visible to React.
+  for (let scan = 0; scan < 3; scan++) {
+    await ui.refreshDirectoryWithSameModels();
+    await expect(ui.summary).toContainText("Key 2");
+    await expect(ui.summary).toContainText("双方 2");
+    await expect(ui.summary).toContainText("官网额外 0");
+    await expect(ui.summary).not.toContainText("待确认");
+    await expect(ui.picker).toHaveAttribute("aria-expanded", "true");
+    await expect(choice).toHaveAttribute("aria-disabled", "false");
+    await expect(choice).toContainText("0.62");
+    expect(page.url()).toBe(canvasUrl);
+    expect((await ui.readNode()).model).toBe(before.model);
+    expect((await ui.readNode()).parameters).toEqual(before.parameters);
+  }
+
+  await choice.click();
+  await expect.poll(async () => (await ui.readNode()).model).toBe("video-confirmed-b");
+  expect((await ui.readNode()).parameters).toEqual(before.parameters);
+  ui.assertSafe();
+});
 
 test("官网18、Key15、交集10：八个目录型号显示官方价，键鼠拒选并保留当前模型与参数", async ({ page, request }, testInfo) => {
   const key = Array.from({ length: 15 }, (_, i) => video(`video-key-${i}`));

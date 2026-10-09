@@ -24,6 +24,8 @@ import { MIAOWU_BASE_URL, MIAOWU_PRESET_ID } from "../../../lib/miaowu-presets";
 const publicPricing = JSON.parse(readFileSync(new URL("../../../lib/miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
 const directories = JSON.parse(readFileSync(new URL("../../../lib/miaowu-server-20261008.fixture.json", import.meta.url), "utf8"));
 const nativeVideoIds: string[] = directories.dreamModels.filter((model: { type: string }) => model.type === "video").map((model: { id: string }) => model.id);
+const nativeImageIds: string[] = directories.dreamModels.filter((model: { type: string }) => model.type === "image").map((model: { id: string }) => model.id);
+const nativeMediaIds = [...nativeVideoIds, ...nativeImageIds];
 const key = "miaowu-inventory-test-key";
 const connectionId = "miaowu-inventory";
 let dreamStatus = 200;
@@ -50,7 +52,7 @@ beforeEach(async () => {
     if (request.pathname === "/v1/dream/model_list") return Response.json({ data: directories.dreamModels }, { status: dreamStatus });
     if (request.pathname === "/v1/dream/model_schema") {
       expect([...request.searchParams.keys()]).toEqual(["model"]);
-      expect(nativeVideoIds).toContain(request.searchParams.get("model"));
+      expect(nativeMediaIds).toContain(request.searchParams.get("model"));
       expect(init?.signal).toBeInstanceOf(AbortSignal);
       return Response.json({ error: { message: "This historical schema is not available in the isolated fixture" } }, { status: 404 });
     }
@@ -67,6 +69,28 @@ afterEach(() => {
 });
 
 describe("Miaowu authenticated union through the shared inventory entry", () => {
+  it("returns newly discovered native models on an ordinary read without persisting the preview", async () => {
+    const original = (await mocks.repository.getConnection(connectionId))!;
+    // A legacy connection has a prior Key scan but no saved model snapshot.
+    // A genuinely unscanned connection intentionally performs a persisted scan.
+    const before = await mocks.repository.saveConnection({ ...original, config: { ...original.config,
+      modelScanStatus: "live", scannedModelIds: directories.openaiModels.map((model: { id: string }) => model.id),
+    } });
+    const response = await readInventory("");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Model-Scan-Complete")).toBe("true");
+    const models: ModelDescriptor[] = await response.json();
+    expect(models).toHaveLength(23);
+    expect(models.find(model => model.id === "dola-seedance-2.5")).toMatchObject({
+      pricing: { currency: "CNY", unitAmount: .875 }, operations: ["video.generate", "video.image-to-video"],
+    });
+    expect(models.find(model => model.id === "dola-seedance-2.5")?.metadata?.canvasRunnable).not.toBe(false);
+    expect(models.find(model => model.id === "GPT-image-2")).toMatchObject({
+      operations: ["image.generate", "image.edit"], pricing: { currency: "CNY", unitAmount: .05 },
+    });
+    expect(await mocks.repository.getConnection(connectionId)).toEqual(before);
+  });
+
   it("persists the real 23-ID union and connects five exact Chat contracts without borrowing the 18 native prices", async () => {
     const response = await readInventory();
     expect(response.status).toBe(200);
@@ -93,9 +117,10 @@ describe("Miaowu authenticated union through the shared inventory entry", () => 
       "/api/pricing", "/v1/dream/model_list", "/v1/models",
     ]);
     const schemaCalls = scanCalls.filter(call => call.url.pathname === "/v1/dream/model_schema");
-    expect(schemaCalls.map(call => call.url.searchParams.get("model")).sort()).toEqual([...nativeVideoIds].sort());
+    expect(schemaCalls.map(call => call.url.searchParams.get("model")).sort()).toEqual([...nativeMediaIds].sort());
     expect(schemaCalls.every(call => call.init?.method === "GET")).toBe(true);
     expect(Object.keys(saved.config.miaowuVideoSchemas as object).sort()).toEqual([...nativeVideoIds].sort());
+    expect(Object.keys(saved.config.miaowuImageSchemas as object).sort()).toEqual([...nativeImageIds].sort());
     const submit = vi.fn<typeof fetch>(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       return Response.json({ choices: [{ message: { content: `[Video](https://media.example/${body.model}.mp4)` } }] });
