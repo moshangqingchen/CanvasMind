@@ -134,6 +134,16 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     const nodeModel = page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true });
     await nodeModel.click();
     const panel = page.getByRole("dialog", { name: `${label} 模型与参数`, exact: true });
+    await expect.poll(async () => {
+      const [popup, rail] = await Promise.all([panel.boundingBox(), page.getByRole("navigation", { name: "创作工具", exact: true }).boundingBox()]);
+      return !!popup && !!rail && popup.x >= rail.x + rail.width + 7;
+    }).toBe(true);
+    const supplierSelect = panel.getByRole("combobox", { name: `${label} 供应商`, exact: true });
+    const supplierBounds = await supplierSelect.boundingBox();
+    expect(supplierBounds).not.toBeNull();
+    await supplierSelect.click({ position: { x: 2, y: supplierBounds!.height / 2 } });
+    await expect(supplierSelect).toBeFocused();
+    await page.keyboard.press("Escape");
     const quote = panel.getByLabel("当前供应商报价", { exact: true });
     const groups = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
     const quality = panel.getByLabel("质量（quality，可选）", { exact: true });
@@ -155,7 +165,12 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     await quality.selectOption("high"); await expect(quote).toContainText("0.15 USD / 次");
     const details = panel.getByLabel("当前参数价格", { exact: true });
     await details.getByText("价格与参数依据", { exact: true }).click();
-    await expect(details.getByRole("link", { name: "查看价格来源", exact: true })).toHaveAttribute("href", current.pricing!.sourceUrl!);
+    const source = details.getByRole("link", { name: "查看价格来源", exact: true });
+    await expect(source).toHaveAttribute("href", current.pricing!.sourceUrl!);
+    const sourceBounds = await source.boundingBox();
+    expect(sourceBounds).not.toBeNull();
+    // Hit-test the left edge without navigating to the real supplier site.
+    await source.click({ trial: true, position: { x: 2, y: sourceBounds!.height / 2 } });
     await expect(details).toContainText("LOW $0.03/次");
     await page.screenshot({ path: info.outputPath("weai-current-exact-group-price.png") });
 
@@ -170,6 +185,8 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     await expect(details.getByRole("link", { name: "查看价格来源", exact: true })).toHaveAttribute("href", `${origin}/api/v1/model-plaza-legacy/models?group_id=101`);
     await expect(nodeModel).not.toContainText("$0.04");
     await expect(nodeModel).not.toContainText("$0.07");
+    await details.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath("weai-current-token-group-price.png") });
     await groups.selectOption(WEAI_ADOBE_PER_REQUEST_GROUP);
     await expect(quote).toContainText("0.03 USD / 次");
     const modelPicker = panel.getByRole("combobox", { name: `${label} 模型`, exact: true });

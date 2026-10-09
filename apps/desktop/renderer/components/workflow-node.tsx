@@ -372,10 +372,11 @@ function GenerationNodeBody({
   }, [nodeId, onConfigurationOpenChange, settingsOpen]);
   // Share the node's coordinate space so the panel pans, zooms and resizes with it.
   const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
+  const [settingsPlacement, setSettingsPlacement] = useState<{ left: number; width?: number }>({ left: 0 });
   const settingsTrigger = useRef<HTMLButtonElement | null>(null);
   const settingsBody = useRef<HTMLDivElement | null>(null);
   const settingsAnchor = useStore(state => {
-    if (!modelMenuOpen) return "";
+    if (!settingsOpen) return "";
     const node = state.nodeLookup.get(nodeId);
     return [state.transform.join(","), node?.internals.positionAbsolute.x,
       node?.internals.positionAbsolute.y, node?.measured.width, node?.measured.height].join(":");
@@ -384,6 +385,43 @@ function GenerationNodeBody({
     settingsTrigger.current = trigger;
     setSettingsHost(trigger?.closest<HTMLElement>(".react-flow__node") ?? null);
   }, []);
+  const settingsZoom = useStore(state => settingsOpen ? state.transform[2] : 1);
+  useLayoutEffect(() => {
+    if (!settingsOpen || !settingsHost) return;
+    const canvas = settingsHost.closest<HTMLElement>(".canvas-wrap");
+    const rail = settingsHost.closest(".canvas-editor")?.querySelector<HTMLElement>(".editor-rail");
+    if (!canvas) return;
+    let active = true;
+    const place = () => {
+      if (!active || !Number.isFinite(settingsZoom) || settingsZoom <= 0) return;
+      const hostBounds = settingsHost.getBoundingClientRect();
+      const canvasBounds = canvas.getBoundingClientRect();
+      const railBounds = rail?.getBoundingClientRect();
+      const leftBoundary = Math.max(canvasBounds.left + 8,
+        railBounds && railBounds.width > 0 && railBounds.height > 0 ? railBounds.right + 8 : 0);
+      const rightBoundary = Math.min(canvasBounds.right, window.innerWidth) - 8;
+      const available = rightBoundary - leftBoundary;
+      if (hostBounds.width <= 0 || available <= 0) return;
+      const width = Math.min(hostBounds.width, available);
+      const left = Math.min(Math.max(hostBounds.left, leftBoundary), rightBoundary - width);
+      // The portal remains inside the transformed node. Convert only its
+      // visual placement to local coordinates; never move or resize the node.
+      const next = { left: (left - hostBounds.left) / settingsZoom, width: width / settingsZoom };
+      setSettingsPlacement(previous => Math.abs(previous.left - next.left) < .01 &&
+        previous.width !== undefined && Math.abs(previous.width - next.width) < .01 ? previous : next);
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(settingsHost);
+    observer.observe(canvas);
+    if (rail) observer.observe(rail);
+    window.addEventListener("resize", place);
+    return () => {
+      active = false;
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  }, [settingsAnchor, settingsHost, settingsOpen, settingsZoom]);
   useLayoutEffect(() => {
     if (!settingsOpen) return;
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { if (event.target instanceof HTMLSelectElement || event.target instanceof Element && event.target.closest(".node-model-select[data-open]")) return; event.stopImmediatePropagation(); setSettingsOpen(false); setModelMenuOpen(false); settingsTrigger.current?.focus(); } };
@@ -592,6 +630,7 @@ function GenerationNodeBody({
       // Portals still participate in React Flow's capture handlers. `nokey`
       // keeps its Ctrl-selection handler from swallowing these form events.
       className="node-config-popover node-config-popover-portal nodrag nowheel nopan nokey"
+      style={settingsPlacement}
       role="dialog"
       aria-label={`${data.label} 模型与参数`}
       // A portal still bubbles through the owning React node. Native select
@@ -702,7 +741,7 @@ function GenerationNodeBody({
               capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
               parameters={{ ...parameters, prompt: renderPromptParts(data.parts ?? []) }}
               onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
-              anchorKey={settingsAnchor} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
+              anchorKey={`${settingsAnchor}:${settingsPlacement.left}:${settingsPlacement.width ?? ""}`} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
               catalogDirectory={data.catalogPickerDirectory}
               badge={cangyuanAvailabilityEnabled ? model => <CangyuanAvailabilityBadge

@@ -63,8 +63,22 @@ async function fixture(page: Page, request: APIRequestContext) {
     search: panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }),
     supplier: panel.getByRole("combobox", { name: "列表布局 供应商", exact: true }),
     readNode: async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data,
+    readPosition: async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].position,
     assertNoRuns: () => { expect(submissions).toBe(0); expect(errors).toEqual([]); },
   };
+}
+
+async function expectPanelClearOfTools(page: Page, panel: Locator) {
+  await expect.poll(async () => {
+    const [popup, rail, canvas] = await Promise.all([
+      panel.boundingBox(), page.getByRole("navigation", { name: "创作工具", exact: true }).boundingBox(),
+      page.locator(".canvas-wrap").boundingBox(),
+    ]);
+    return !!popup && !!rail && !!canvas && popup.x >= rail.x + rail.width + 7
+      && popup.x + popup.width <= canvas.x + canvas.width - 7;
+  }).toBe(true);
+  await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
+  await page.getByRole("button", { name: "打开节点与素材库", exact: true }).click({ trial: true });
 }
 
 async function expectMenuInViewport(menu: Locator) {
@@ -113,6 +127,7 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 1280, height: 72
   test(`${viewport.width}×${viewport.height} 完整展示八个型号，供应商仍能直接打开`, async ({ page, request }, testInfo) => {
     await page.setViewportSize(viewport);
     const ui = await fixture(page, request);
+    await expectPanelClearOfTools(page, ui.panel);
     await ui.picker.click();
     await expect(ui.list.getByRole("option").last()).toHaveAccessibleName(lastFamily);
     await expect(ui.list.getByRole("option").last()).toHaveAttribute("aria-selected", "true");
@@ -128,9 +143,33 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 1280, height: 72
 test("模型菜单打开后缩窄视口仍在屏幕内，键盘可访问末项并选择商家", async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1080 });
   const ui = await fixture(page, request);
+  const initialPosition = await ui.readPosition();
+  await expectPanelClearOfTools(page, ui.panel);
   await ui.picker.click();
   await expectAllOptionsVisible(ui.list);
+  const beforeZoom = await page.getByRole("button", { name: "缩放比例，点击适应画布", exact: true }).innerText();
+  await page.locator(".react-flow__controls-zoomout").click();
+  await expect(page.getByRole("button", { name: "缩放比例，点击适应画布", exact: true })).not.toHaveText(beforeZoom);
+  await expectPanelClearOfTools(page, ui.panel);
+  // Outside pointer actions intentionally close the model list. Reopen it to
+  // verify the new anchor after zooming and panning, then keep it open on resize.
+  await ui.picker.click();
+  await expectMenuInViewport(ui.menu);
+  const node = page.locator('.react-flow__node[data-id="layout-image"]');
+  const beforePan = await node.boundingBox();
+  const pane = await page.locator(".react-flow__pane").boundingBox();
+  expect(beforePan).not.toBeNull(); expect(pane).not.toBeNull();
+  const start = { x: pane!.x + pane!.width - 180, y: pane!.y + 110 };
+  await page.mouse.move(start.x, start.y); await page.mouse.down();
+  try { await page.mouse.move(start.x - 160, start.y, { steps: 12 }); }
+  finally { await page.mouse.up(); }
+  await expect.poll(async () => (await node.boundingBox())!.x).toBeLessThan(beforePan!.x - 100);
+  await expectPanelClearOfTools(page, ui.panel);
+  await ui.picker.click();
+  await expectMenuInViewport(ui.menu);
+  expect(await ui.readPosition()).toEqual(initialPosition);
   await page.setViewportSize({ width: 620, height: 620 });
+  await expectPanelClearOfTools(page, ui.panel);
   await expect(ui.picker).toHaveAttribute("aria-expanded", "true");
   await expectMenuInViewport(ui.menu);
   await expect.poll(() => ui.list.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
@@ -156,5 +195,6 @@ test("模型菜单打开后缩窄视口仍在屏幕内，键盘可访问末项�
   await expect(ui.picker).toHaveAttribute("aria-expanded", "false");
   await expect(ui.picker).toBeFocused();
   await expect.poll(async () => (await ui.readNode()).model).toBe(items[items.length - 1]!.alias);
+  expect(await ui.readPosition()).toEqual(initialPosition);
   ui.assertNoRuns();
 });
