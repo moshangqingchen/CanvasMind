@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { MemoryRepository } from "@super-canvas/db";
-import type { ModelDescriptor } from "@super-canvas/providers";
+import type { ModelDescriptor, NormalizedRequest } from "@super-canvas/providers";
 
 const mocks = vi.hoisted(() => ({ repository: undefined as unknown as MemoryRepository,
-  transport: vi.fn(), documents: vi.fn(), unexpectedNetwork: vi.fn() }));
+  transport: vi.fn(), documents: vi.fn(), unexpectedNetwork: vi.fn(), lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]) }));
+vi.mock("node:dns/promises", () => ({ lookup: mocks.lookup }));
 vi.mock("@super-canvas/db", async original => ({ ...await original<typeof import("@super-canvas/db")>(), getRepository: () => mocks.repository }));
 vi.mock("../../../lib/server", () => ({ get repository() { return mocks.repository; },
   jsonError: (error: string, status: number) => Response.json({ error }, { status }) }));
@@ -16,7 +17,7 @@ vi.mock("../../../lib/supplier-interface-documents", () => ({ readSupplierInterf
 // that boundary; the actual Miaowu parser has already produced these quotes.
 vi.mock("../../../lib/supplier-model-pricing", async original => ({ ...await original<typeof import("../../../lib/supplier-model-pricing")>(),
   enrichSupplierModelPrices: async (_connection: unknown, models: readonly ModelDescriptor[]) => [...models] }));
-import { encryptSecret } from "@super-canvas/providers";
+import { createDefaultProviderRegistry, encryptSecret, StaticConnectionResolver } from "@super-canvas/providers";
 import { readProviderModelInventory } from "../../../lib/provider-model-inventory";
 import { MIAOWU_BASE_URL, MIAOWU_PRESET_ID } from "../../../lib/miaowu-presets";
 
@@ -59,7 +60,7 @@ afterEach(() => {
 });
 
 describe("Miaowu authenticated union through the shared inventory entry", () => {
-  it("persists the complete real 23-ID union with 18 priced native contracts and 5 pending contracts", async () => {
+  it("persists the real 23-ID union and connects five exact Chat contracts without borrowing the 18 native prices", async () => {
     const response = await readInventory();
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Model-Scan-Complete")).toBe("true");
@@ -68,12 +69,39 @@ describe("Miaowu authenticated union through the shared inventory entry", () => 
     expect(models.filter(model => model.pricing)).toHaveLength(18);
     expect(models.find(model => model.id === "dola-seedance-2.5")).toMatchObject({ outputKinds: ["video"],
       pricing: { currency: "CNY", unitAmount: .875 }, metadata: { canvasRunnable: true } });
-    expect(models.filter(model => model.metadata?.miaowuVideoContractPending)).toHaveLength(5);
+    expect(models.filter(model => model.metadata?.miaowuVideoContractPending)).toHaveLength(0);
+    const chatIds = ["dreamina-seedance-2.0-fast", "dreamina-seedance-2.0-mini", "seedance-2.0-fast-deal", "seedance-2.5-deal", "video-editing"];
+    for (const id of chatIds) {
+      const model = models.find(model => model.id === id)!;
+      expect(model).toMatchObject({ id, parameters: [], outputKinds: ["video"], metadata: { canvasRunnable: true, protocol: "openai-chat", generationVerified: false } });
+      expect(model.pricing).toBeUndefined();
+    }
     const saved = (await mocks.repository.getConnection(connectionId))!;
     expect(saved.config).toMatchObject({ modelScanComplete: true, modelScanAttemptStatus: "live", modelScanError: null });
     expect(saved.config.scannedModelIds).toHaveLength(23);
     expect(saved.config.modelCatalogModels).toEqual(models);
     expect(saved.config.modelScanLastSuccessAt).toBe(response.headers.get("X-Model-Scan-Last-Success-At"));
+    expect(mocks.transport).toHaveBeenCalledTimes(3);
+    const submit = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return Response.json({ choices: [{ message: { content: `[Video](https://media.example/${body.model}.mp4)` } }] });
+    });
+    const registry = createDefaultProviderRegistry(new StaticConnectionResolver([{ id: connectionId, provider: "rest", baseUrl: MIAOWU_BASE_URL,
+      apiKey: key, settings: saved.config }]), { fetch: submit });
+    const adapter = await registry.forConnection(connectionId);
+    for (const id of chatIds) {
+      const input: NormalizedRequest = { connectionId, model: id, operation: "video.generate", prompt: "Ocean", idempotencyKey: `scanned-${id}`,
+        parameters: { duration: 8, resolution: "4K" }, assets: id === "video-editing"
+          ? [{ id: "source", kind: "video", mimeType: "video/mp4", url: "https://media.example/source.mp4" }] : [] };
+      expect((await adapter.validate(input)).valid).toBe(true);
+      const task = await adapter.submit(input);
+      expect(await adapter.extractOutputs(task.result)).toEqual([{ kind: "video", url: `https://media.example/${id}.mp4` }]);
+      const [url, init] = submit.mock.calls.at(-1)!;
+      expect(String(url)).toBe(`${MIAOWU_BASE_URL}/v1/chat/completions`);
+      expect(JSON.parse(String(init?.body))).toEqual({ model: id, stream: false, messages: [{ role: "user",
+        content: id === "video-editing" ? "Ocean\n参考视频 1: https://media.example/source.mp4" : "Ocean" }] });
+    }
+    expect(submit).toHaveBeenCalledTimes(chatIds.length);
     expect(mocks.transport).toHaveBeenCalledTimes(3);
   });
 

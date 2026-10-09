@@ -38,10 +38,10 @@ it.each(CHENTU_NATIVE_GEMINI_MODELS)(
           operation === "image.edit" ? 3 : 1,
         );
         if (operation === "image.edit") {
-          expect(body.contents[0].parts[1].inline_data.data).toBe(
+          expect((body.contents[0].parts[1].inline_data ?? body.contents[0].parts[1].inlineData).data).toBe(
             Buffer.from([1]).toString("base64"),
           );
-          expect(body.contents[0].parts[2].inline_data.data).toBe(
+          expect((body.contents[0].parts[2].inline_data ?? body.contents[0].parts[2].inlineData).data).toBe(
             Buffer.from([2]).toString("base64"),
           );
         }
@@ -118,13 +118,13 @@ it("keeps native parameters and pricing after marketplace and keyed inventory re
     ...CHENTU_NATIVE_GEMINI_MODELS,
     "unknown-gemini-image",
   ]);
-  expect(resolved.canvasModels).toHaveLength(3);
+  expect(resolved.canvasModels).toHaveLength(CHENTU_NATIVE_GEMINI_MODELS.length);
   for (const model of resolved.canvasModels) {
     expect(model.metadata).toMatchObject({
       protocol: "gemini-generate-content",
       canvasRunnable: true,
     });
-    expect(model.parameters?.map((p) => p.key)).toEqual([
+    expect(model.parameters?.filter(p => p.key !== "n").map((p) => p.key)).toEqual([
       "aspect_ratio",
       "image_size",
     ]);

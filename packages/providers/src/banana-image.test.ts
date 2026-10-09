@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { StaticConnectionResolver } from "./credentials.js";
 import { createDefaultProviderRegistry } from "./registry.js";
-import { applyBananaImageCapabilities, bananaImageRoute, normalizeBananaParameters } from "./banana-image.js";
-import type { FetchImplementation, NormalizedRequest } from "./contracts.js";
+import { applyBananaImageCapabilities, bananaImageRoute, normalizeBananaParameters, CHENTU_GEMINI_PENDING_PROTOCOL_REASON } from "./banana-image.js";
+import type { FetchImplementation, ModelDescriptor, NormalizedRequest } from "./contracts.js";
 
 const model = "gemini-3-pro-image-preview";
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKcAAAAASUVORK5CYII=";
 const request: NormalizedRequest = { connectionId: "test", model, operation: "image.generate", prompt: "a blue vase", idempotencyKey: "one-paid-request", parameters: { image_size: "4K", aspect_ratio: "16:9" } };
-function fixture(baseUrl: string, options: { model?: string; group?: string; provider?: "openai" | "weai"; reply?: unknown; fetch?: FetchImplementation; settings?: Record<string, unknown> } = {}) {
+function fixture(baseUrl: string, options: { model?: string; group?: string; provider?: "openai" | "weai" | "rest"; reply?: unknown; fetch?: FetchImplementation; settings?: Record<string, unknown> } = {}) {
   const selected = options.model ?? model;
   const config = { baseUrl, modelGroup: options.group, scannedModelIds: [selected], ...options.settings };
   const fetch = vi.fn<FetchImplementation>(options.fetch ?? (async () => Response.json(options.reply ?? { candidates: [{ content: { parts: [{ text: "done" }, { inlineData: { mimeType: "image/png", data: png } }] } }] })));
@@ -185,6 +185,64 @@ describe("supplier banana image protocols", () => {
       expect(bananaImageRoute({ provider: provider!, config: { baseUrl } }, selected!)).toBeUndefined();
     const route = bananaImageRoute({ provider: "openai", config: { baseUrl: "https://api.frimodel.com/v1" } }, model)!;
     expect(normalizeBananaParameters(route, { size: "3840x2160", quality: "max" })).toEqual({ image_size: "4K", aspect_ratio: "16:9", n: 1 });
+  });
+});
+
+describe("Chentu keyed native Gemini image contract", () => {
+  const nativeModels = ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"];
+  const pending = (id: string): ModelDescriptor => ({ id, name: id, operations: [], metadata: {
+    canvasRunnable: false, canvasUnavailableReason: CHENTU_GEMINI_PENDING_PROTOCOL_REASON, autoInterfaceStatus: "incomplete", pendingLiveScan: true,
+  } });
+
+  it.each(nativeModels.flatMap(id => (["openai", "rest"] as const).map(provider => ({ id, provider }))))(
+    "restores $id through the $provider connection with the exact native endpoint and inline references", async ({ id, provider }) => {
+      const f = fixture("https://tu.988236.xyz/v1", { model: id, provider, settings: { supplierKey: "chentu", modelCatalogModels: [pending(id)] } });
+      const descriptor = applyBananaImageCapabilities({ provider, config: f.config }, pending(id));
+      expect(descriptor.operations).toEqual(["image.generate", "image.edit"]);
+      expect(descriptor.metadata?.canvasRunnable).toBe(true);
+      expect(descriptor.metadata?.canvasUnavailableReason).toBeUndefined();
+      expect(descriptor.metadata?.autoInterfaceStatus).toBeUndefined();
+      expect(descriptor.metadata?.pendingLiveScan).toBeUndefined();
+      expect(descriptor.limits?.maxInputImages).toBeUndefined();
+      await f.adapter.submit({ ...request, model: id, operation: "image.edit", parameters: { image_size: "2K", aspect_ratio: "16:9" },
+        assets: [{ id: "ref", kind: "image", mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }] });
+      expect(f.fetch).toHaveBeenCalledOnce();
+      const [url, init] = f.fetch.mock.calls[0]!;
+      expect(String(url)).toBe(`https://tu.988236.xyz/v1beta/models/${id}:generateContent`);
+      expect(new Headers(init?.headers).get("x-goog-api-key")).toBe("fixture-key");
+      expect(JSON.parse(String(init?.body))).toEqual({ contents: [{ role: "user", parts: [{ text: request.prompt }, { inlineData: { mimeType: "image/png", data: png } }] }],
+        generationConfig: { responseModalities: ["IMAGE"], imageConfig: { imageSize: "2K", aspectRatio: "16:9" } } });
+    },
+  );
+
+  it("keeps the keyed inventory and explicit output declarations authoritative", async () => {
+    const id = nativeModels[0]!;
+    for (const settings of [
+      { scannedModelIds: [] }, { modelScanStatus: "unauthorized" }, { unavailableModels: [id] },
+      { modelCatalogModels: [{ ...pending(id), metadata: { canvasRunnable: false, canvasUnavailableReason: "403 Key 未授权" } }] },
+      { modelCatalogModels: [{ ...pending(id), outputKinds: ["text"], metadata: { ...pending(id).metadata, outputKindsSource: "declared" } }] },
+      { modelCatalogModels: [{ id, name: id, operations: ["image.generate"], outputKinds: ["text"], metadata: { canvasRunnable: true, outputKindsSource: "declared" } }] },
+      { supplierKey: "chentu", supplierArchived: true }, { supplierKey: "chentu", usage: "disabled" },
+    ]) {
+      const f = fixture("https://tu.988236.xyz/v1", { model: id, settings });
+      await expect(f.adapter.submit({ ...request, model: id })).rejects.toThrow();
+      expect(f.fetch).not.toHaveBeenCalled();
+    }
+  });
+
+  it("preserves fixed-tier Images routes and other suppliers", () => {
+    const config = { baseUrl: "https://tu.988236.xyz/v1", scannedModelIds: ["gemini-3.1-flash-image-2k"] };
+    expect(bananaImageRoute({ provider: "openai", config }, "gemini-3.1-flash-image-2k")).toBeUndefined();
+    expect(bananaImageRoute({ provider: "rest", config: { ...config, baseUrl: "https://api.frimodel.com/v1" } }, nativeModels[0]!)).toBeUndefined();
+  });
+  it("repairs the saved REST group-mapping gap only with current native Key inventory", () => {
+    const id = nativeModels[0]!;
+    const old = { ...pending(id), metadata: { ...pending(id).metadata, catalogCapability: "image", canvasUnavailableReason: "当前分组没有匹配的调用协议，请选择对应的图片或视频分组" } };
+    const config = { baseUrl: "https://tu.988236.xyz/v1", scannedModelIds: [id] };
+    expect(applyBananaImageCapabilities({ provider: "rest", config }, old).metadata?.canvasRunnable).toBe(true);
+    expect(applyBananaImageCapabilities({ provider: "rest", config: { ...config, scannedModelIds: [] } }, old)).toBe(old);
+    const denied = { ...old, metadata: { ...old.metadata, canvasUnavailableReason: "403 当前分组没有匹配的调用协议，请选择对应的图片或视频分组" } };
+    expect(applyBananaImageCapabilities({ provider: "rest", config }, denied)).toBe(denied);
   });
 });
 

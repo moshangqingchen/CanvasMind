@@ -5,20 +5,26 @@ import type {
 } from "@super-canvas/providers";
 import { applyBananaImageCapabilities, GEMINI_NANO_BANANA_21_MODEL } from "@super-canvas/providers/banana-image-contract";
 
-// Exact IDs tested against the keyed Gemini endpoint on 2026-09-10.
-// Their OpenAI Images requests fail upstream with convert_request_failed.
+// The ad/leo aliases were tested on 2026-09-10. The unprefixed IDs use
+// the current documented Gemini protocol and the authenticated Key inventory.
 export const CHENTU_NATIVE_GEMINI_MODELS = [
   "ad-gemini-3-pro-image-preview",
   "ad-gemini-3.1-flash-image-preview",
   "leo-gemini-3.1-flash-image-preview",
+  "gemini-3-pro-image-preview",
+  "gemini-3.1-flash-image-preview",
 ] as const;
+const PREVIOUSLY_TESTED_NATIVE_MODELS = new Set([
+  "ad-gemini-3-pro-image-preview", "ad-gemini-3.1-flash-image-preview", "leo-gemini-3.1-flash-image-preview",
+]);
 export function isChentuNativeGeminiModel(id: string): boolean {
-  return id === GEMINI_NANO_BANANA_21_MODEL || (CHENTU_NATIVE_GEMINI_MODELS as readonly string[]).includes(id);
+  return id === GEMINI_NANO_BANANA_21_MODEL || /^gemini-[\d.]+-(?:pro|flash)-image(?:-preview)?$/u.test(id) ||
+    (CHENTU_NATIVE_GEMINI_MODELS as readonly string[]).includes(id);
 }
 
 export function chentuNativeGeminiDescriptor(id: string): ModelDescriptor {
-  if (id === GEMINI_NANO_BANANA_21_MODEL) {
-    const model = applyBananaImageCapabilities({ provider: "openai", config: { baseUrl: "https://tu.988236.xyz/v1" } }, {
+  if (!PREVIOUSLY_TESTED_NATIVE_MODELS.has(id) && isChentuNativeGeminiModel(id)) {
+    const model = applyBananaImageCapabilities({ provider: "openai", config: { baseUrl: "https://tu.988236.xyz/v1", scannedModelIds: [id] } }, {
       id, name: id, operations: ["image.generate", "image.edit"], metadata: { supplier: "chentu", canvasRunnable: true, liveInventory: true },
     });
     // This is the connector's upload limit, not a supplier claim for the new alias.
@@ -79,7 +85,7 @@ export function chentuNativeGeminiDescriptor(id: string): ModelDescriptor {
 }
 
 function nativeRequest(id: string): RestRequestDefinition {
-  const newAlias = id === GEMINI_NANO_BANANA_21_MODEL;
+  const newAlias = !PREVIOUSLY_TESTED_NATIVE_MODELS.has(id);
   return {
     path: `/v1beta/models/${encodeURIComponent(id)}:generateContent`,
     method: "POST",

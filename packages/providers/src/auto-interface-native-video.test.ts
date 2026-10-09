@@ -64,6 +64,9 @@ const cases: NativeCase[] = [
   { label: "Secure Wan3 native media", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "wan3.0-video", group: "Wan3",
     parameters: { duration: 6, aspect_ratio: "16:9", resolution: "720P", prompt_extend: false }, assets: [first], path: "/v1/videos/generations",
     body: { prompt, duration: 6, ratio: "16:9", resolution: "720P", prompt_extend: false, media: [{ type: "first_frame", url: first.url }] } },
+  { label: "Secure Wan3 current bare directory model", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "wan3.0", group: "Wan3",
+    parameters: { duration: 6, aspect_ratio: "16:9", resolution: "720P" }, assets: [image, video, audio], path: "/v1/videos/generations",
+    body: { prompt, duration: 6, ratio: "16:9", resolution: "720P", media: [{ type: "reference_image", url: image.url }, { type: "reference_video", url: video.url }, { type: "audio", url: audio.url }] } },
   { label: "Secure Grok voice IDs", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "grok-imagine-video-1.5", group: "grok视频",
     parameters: { duration: 6, aspect_ratio: "9:16", resolution: "720p", reference_voice_ids: "voice_a, voice_b" }, assets: [image], path: "/openai/v1/videos",
     body: { prompt, seconds: 6, aspect_ratio: "9:16", resolution: "720p", image: { url: image.url }, reference_audios: [{ voice_id: "voice_a" }, { voice_id: "voice_b" }] } },
@@ -97,6 +100,198 @@ const cases: NativeCase[] = [
 ];
 
 describe("native video routing without a saved REST connector", () => {
+  it("uses Omni's Video endpoint for generation without forwarding its price mode", async () => {
+    const localImage: ProviderAssetInput = { id: "local", kind: "image", mimeType: "image/png", data: new Uint8Array([3, 2, 1]) };
+    const f = fixture("cyberafei", "https://api.3365api.cn/v1", "omni-flash", "图片视频模型综合分组", [
+      Response.json({ id: "omni-generation", status: "queued" }), Response.json({ status: "completed", url: "https://media.example/omni.mp4" }),
+    ]);
+    const input = request("omni-flash", { mode: "generate", duration: 6, size: "1280x720" }, [localImage]);
+    expect((await f.adapter.validate(input)).valid).toBe(true);
+    const task = await f.adapter.submit(input);
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://api.3365api.cn/v1/videos");
+    const body = f.fetcher.mock.calls[0]?.[1]?.body as FormData;
+    expect(body.get("model")).toBe("omni-flash");
+    expect(body.get("seconds")).toBe("6");
+    expect(body.get("size")).toBe("1280x720");
+    expect(body.has("mode")).toBe(false);
+    expect(new Uint8Array(await (body.get("input_reference") as Blob).arrayBuffer())).toEqual(localImage.data);
+    const finished = await f.adapter.poll(task);
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://api.3365api.cn/v1/videos/omni-generation");
+    expect(await f.adapter.extractOutputs(finished.result)).toMatchObject([{ kind: "video", url: "https://media.example/omni.mp4" }]);
+  });
+
+  it("uses Omni's Chat endpoint for source-video editing and preserves URLs", async () => {
+    const f = fixture("cyberafei", "https://api.3365api.cn/v1", "omni-flash", "图片视频模型综合分组", [
+      Response.json({ id: "sync-omni", choices: [{ message: { content: "[视频](https://media.example/omni-edited.mp4)" } }] }),
+    ]);
+    const input = request("omni-flash", { mode: "edit", duration: 6, resolution: "720p", crop: "unimplemented" }, [image, video]);
+    expect((await f.adapter.validate(input)).valid).toBe(true);
+    const task = await f.adapter.submit(input);
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://api.3365api.cn/v1/chat/completions");
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: "omni-flash", stream: false, messages: [{ role: "user", content: [
+      { type: "text", text: `${prompt}\n参考视频 1: ${video.url}` },
+      { type: "image_url", image_url: { url: image.url, detail: "high" } },
+    ] }] });
+    expect(task.status).toBe("succeeded");
+    expect(await f.adapter.extractOutputs(task.result)).toMatchObject([{ kind: "video", url: "https://media.example/omni-edited.mp4" }]);
+    expect(f.fetcher).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { label: "edit without source video", parameters: { mode: "edit" }, assets: [image] },
+    { label: "generation price with source video", parameters: { mode: "generate" }, assets: [video] },
+    { label: "insecure source video", parameters: { mode: "edit" }, assets: [{ ...video, url: "http://media.example/video.mp4" }] },
+  ])("rejects Omni $label before transport", async entry => {
+    const f = fixture("cyberafei", "https://api.3365api.cn/v1", "omni-flash", "图片视频模型综合分组");
+    const input = request("omni-flash", entry.parameters, entry.assets);
+    expect((await f.adapter.validate(input)).valid).toBe(false);
+    await expect(f.adapter.submit(input)).rejects.toThrow();
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
+  it("does not resubmit Omni editing when Chat returns only text or an ID", async () => {
+    const f = fixture("cyberafei", "https://api.3365api.cn/v1", "omni-flash", "图片视频模型综合分组", [
+      Response.json({ id: "chat-only-id", choices: [{ message: { content: "accepted" } }] }),
+    ]);
+    await expect(f.adapter.submit(request("omni-flash", { mode: "auto" }, [video])))
+      .rejects.toMatchObject({ details: { kind: "invalid_response", retryable: false, submissionMayHaveOccurred: true } });
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { supplier: "cyberafei" as const, base: "https://api.3365api.cn", endpoint: "openai" },
+    { supplier: "miaowu" as const, base: "https://api.miaowuai.store", endpoint: "openai" },
+  ])("accepts a future $supplier video directory alias through its declared chat endpoint", async entry => {
+    const id = "future-video-directory-alias";
+    const current: ModelDescriptor = { id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: {
+      endpointTypes: [entry.endpoint], outputKindsSource: "declared", operationsSource: "declared", canvasRunnable: false,
+      canvasUnavailableReason: "该型号的视频参数与调用协议待供应商文档确认" } };
+    const f = fixture(entry.supplier, entry.base, id, "video-group", [Response.json({ choices: [{ message: { video_url: "https://media.example/future.mp4" } }] })], {}, "openai", current);
+    const task = await f.adapter.submit(request(id, { duration: 20, provider_unknown_field: true }));
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe(`${entry.base}/v1/chat/completions`);
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, stream: false, messages: [{ role: "user", content: prompt }] });
+    expect(task.status).toBe("succeeded");
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+  it("accepts a future Cyber video alias through its declared generic multipart endpoint", async () => {
+    const id = "future-openai-video-directory-alias";
+    const current: ModelDescriptor = { id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: {
+      endpointTypes: ["openai", "openai-video"], outputKindsSource: "declared", operationsSource: "declared" } };
+    const f = fixture("cyberafei", "https://api.3365api.cn", id, "video-group", [Response.json({ id: "future-native-task", status: "queued" })], {}, "openai", current);
+    await f.adapter.submit(request(id, { duration: 9, provider_unknown_field: true }));
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://api.3365api.cn/v1/videos");
+    const body = f.fetcher.mock.calls[0]?.[1]?.body as FormData;
+    expect(body.get("model")).toBe(id);
+    expect(body.get("seconds")).toBe("9");
+    expect(body.has("provider_unknown_field")).toBe(false);
+  });
+  it.each([
+    { label: "text output", output: "text" as const, endpoints: ["openai"] },
+    { label: "unsupported endpoint", output: "video" as const, endpoints: ["custom-video"] },
+    { label: "missing endpoint", output: "video" as const, endpoints: [] },
+  ])("does not infer a future directory contract with $label", async entry => {
+    const id = "future-directory-alias";
+    const current: ModelDescriptor = { id, name: id, operations: ["video.generate"], outputKinds: [entry.output], metadata: { endpointTypes: entry.endpoints, outputKindsSource: "declared" } };
+    const f = fixture("cyberafei", "https://api.3365api.cn", id, "video-group", [], {}, "openai", current);
+    await expect(f.adapter.submit(request(id))).rejects.toThrow();
+    expect(f.fetcher).not.toHaveBeenCalled();
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+  it.each(["kling-3.0", "grok-imagine-video", "grok-imagine-video-1.5"])("uses Cyber's declared OpenAI chat video protocol for %s", async id => {
+    const f = fixture("cyberafei", "https://api.3365api.cn/v1", id, "图片视频模型综合分组",
+      [Response.json({ id: "chat-not-a-task", choices: [{ message: { role: "assistant", content: "[视频](https://media.example/result.mp4)" } }] })]);
+    const task = await f.adapter.submit(request(id, { duration: 12, resolution: "invented" }, [image]));
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://api.3365api.cn/v1/chat/completions");
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, stream: false, messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: image.url, detail: "high" } }] }] });
+    expect(task.status).toBe("succeeded");
+    expect(await f.adapter.extractOutputs(task.result)).toMatchObject([{ kind: "video", url: "https://media.example/result.mp4" }]);
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+  it("does not retry or accept Cyber chat text without video output", async () => {
+    const f = fixture("cyberafei", "https://api.3365api.cn", "kling-3.0", "视频",
+      [Response.json({ id: "not-a-video", choices: [{ message: { content: "Task accepted but no video" } }] })]);
+    await expect(f.adapter.submit(request("kling-3.0"))).rejects.toMatchObject({ details: { kind: "invalid_response", retryable: false, submissionMayHaveOccurred: true } });
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+  it.each(["veo_3_1_i2v_lite", "veo_3_1_interpolation_lite"])("submits Flow's current bare ID %s using only the common Job message contract", async id => {
+    const f = fixture("secure", "https://token.secure-skill.com/v1", id, "Flow", [Response.json({ id: "flow-bare-task", status: "queued" }), Response.json({ status: "completed", url: "https://media.example/flow.mp4" })]);
+    const task = await f.adapter.submit(request(id, { duration: 8, aspect_ratio: "9:16", resolution: "4k", mode: "invented" }, [image, { ...image, id: "second-image" }], "video.image-to-video"));
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://token.secure-skill.com/v1/jobs");
+    const body = JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body));
+    expect(body).toEqual({ model: id, messages: [{ role: "user", content: [{ type: "text", text: prompt }, ...Array.from({ length: 2 }, () => ({ type: "image_url", image_url: { url: image.url } }))] }] });
+    expect((await f.adapter.poll(task)).status).toBe("succeeded");
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://token.secure-skill.com/v1/jobs/flow-bare-task");
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+  it.each(["grok-imagine-video", "grok-imagine-video-1.5"])("submits and recovers Hang's deployed Grok %s async contract", async id => {
+    const f = fixture("hangzhale", "https://api.hangzhale.com", id, "Grok Heavy",
+      [Response.json({ request_id: "hang-video-task", status: "pending" }), Response.json({ status: "done", video: { url: "https://media.example/hang.mp4" } })]);
+    const task = await f.adapter.submit(request(id, { duration: 8, aspect_ratio: "16:9", resolution: "720p", seconds_wrong: 42 }, [image], id.endsWith("1.5") ? "video.image-to-video" : "video.generate"));
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://api.hangzhale.com/v1/videos/generations");
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt, duration: 8, aspect_ratio: "16:9", resolution: "720p", reference_images: [{ url: image.url }] });
+    const state = await f.adapter.poll(JSON.parse(JSON.stringify(task)) as ProviderTask);
+    expect(state.status).toBe("succeeded");
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://api.hangzhale.com/v1/videos/hang-video-task");
+    expect(await f.adapter.extractOutputs(state.result)).toEqual([{ kind: "video", url: "https://media.example/hang.mp4", mimeType: "video/mp4" }]);
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+  it("repairs only an exact directory video's old missing-contract gate without mutating the connection", async () => {
+    const id = "grok-imagine-video-1.5（按次）";
+    const current: ModelDescriptor = { id, name: id, operations: [], outputKinds: ["text"], metadata: { canvasRunnable: false,
+      canvasUnavailableReason: "该型号的视频参数与调用协议待供应商文档确认", outputKindsSource: "inferred", operationsSource: "inferred", autoInterfaceStatus: "incomplete" } };
+    const f = fixture("chentu", "https://tu.988236.xyz", id, "grok纯享视频", [Response.json({ id: "restored-video-task", status: "queued" })], {}, "openai", current);
+    const before = structuredClone(f.connection);
+    expect((await f.adapter.validate(request(id, { duration: 8 }, [image]))).valid).toBe(true);
+    await f.adapter.submit(request(id, { duration: 8 }, [image]));
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://tu.988236.xyz/v1/videos");
+    expect(f.connection).toEqual(before);
+  });
+  it.each(["minimax-h3", "seedance2.0", "seedance2.5", "veo3.1", "veo3.1-fast", "veo3.1-lite"])("uses Afei's published openai-video endpoint for %s", async id => {
+    const f = fixture("cyberafei", "https://api.3365api.cn", id, "图片视频模型综合分组", [Response.json({ id: "afei-openai-task", status: "queued" })]);
+    const data = new Uint8Array([137, 80, 78, 71]);
+    const task = await f.adapter.submit(request(id, { duration: 8, aspect_ratio: "16:9", resolution: "720p" }, [{ id: "local-ref", kind: "image", mimeType: "image/png", data }], "video.image-to-video"));
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    const [url, init] = f.fetcher.mock.calls[0]!;
+    expect(url).toBe("https://api.3365api.cn/v1/videos");
+    const form = init?.body as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.get("model")).toBe(id);
+    expect(form.get("seconds")).toBe("8");
+    expect(form.get("size")).toBe("1280x720");
+    expect(new Uint8Array(await (form.get("input_reference") as Blob).arrayBuffer())).toEqual(data);
+    expect(form.has("resolution")).toBe(false);
+    f.fetcher.mockResolvedValueOnce(Response.json({ id: "afei-openai-task", status: "completed", video_url: "https://media.example/afei.mp4" }));
+    expect(await f.adapter.poll(JSON.parse(JSON.stringify(task)) as ProviderTask)).toMatchObject({ status: "succeeded" });
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://api.3365api.cn/v1/videos/afei-openai-task");
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+  it("uploads Mikoto's local frame bytes and preserves its multipart task for recovery", async () => {
+    const f = fixture("mikoto", "https://api.mikoto.vip/v1", "grok-imagine-video-1.5", "grok heavy", [Response.json({ id: "mikoto-task", status: "queued" })]);
+    const firstBytes = new Uint8Array([137, 80, 78, 71]), lastBytes = new Uint8Array([137, 80, 78, 72]);
+    const inputs: ProviderAssetInput[] = [{ id: "first-local", kind: "image", role: "firstFrame", mimeType: "image/png", data: firstBytes },
+      { id: "last-local", kind: "image", role: "lastFrame", mimeType: "image/png", data: lastBytes }];
+    const task = await f.adapter.submit(request("grok-imagine-video-1.5", { duration: 6, resolution: "720p", aspect_ratio: "16:9" }, inputs, "video.image-to-video"));
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    const [url, init] = f.fetcher.mock.calls[0]!;
+    expect(url).toBe("https://api.mikoto.vip/v1/videos");
+    const form = init?.body as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.get("model")).toBe("grok-imagine-video-1.5");
+    expect(form.get("seconds")).toBe("6");
+    expect(form.get("size")).toBe("1280x720");
+    expect(form.get("resolution_name")).toBe("720p");
+    expect(form.get("mode")).toBe("frames");
+    expect(new Uint8Array(await (form.get("first_frame") as Blob).arrayBuffer())).toEqual(firstBytes);
+    expect(new Uint8Array(await (form.get("last_frame") as Blob).arrayBuffer())).toEqual(lastBytes);
+    expect(form.has("image[]")).toBe(false);
+    f.fetcher.mockResolvedValueOnce(Response.json({ id: "mikoto-task", status: "completed", video_url: "https://media.example/mikoto.mp4" }));
+    expect(await f.adapter.poll(JSON.parse(JSON.stringify(task)) as ProviderTask)).toMatchObject({ status: "succeeded" });
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://api.mikoto.vip/v1/videos/mikoto-task");
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
   it.each(cases)("validates and submits $label through its exact supplier contract", async entry => {
     const f = fixture(entry.supplier, entry.baseUrl, entry.model, entry.group,
       [Response.json({ id: "native_task", status: "queued" })], {}, entry.provider);

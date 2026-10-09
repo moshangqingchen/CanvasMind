@@ -17,7 +17,7 @@ export interface SupplierGroupDetails {
 }
 const tiers = ["1K", "2K", "4K"];
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-const referencePricePattern = /(?:[¥￥$]?\s*\d+(?:\.\d+)?\s*(?:元|分|毛|刀)?\s*(?:[/／]|一|每|1)\s*(?:张|次)|(?:\d+|一|每)\s*张\s*[¥￥$]?\s*\d|量大\s*\d+(?:\.\d+)?\s*(?:分|毛|元))/u;
+const referencePricePattern = /(?:[¥￥$]?\s*\d+(?:\.\d+)?\s*(?:元|分|毛|刀)?\s*(?:[/／]|一|每|1)\s*(?:张|次|请求|秒|s(?:ec(?:ond)?s?)?)(?![a-zA-Z])|(?:\d+|一|每)\s*张\s*[¥￥$]?\s*\d|量大\s*\d+(?:\.\d+)?\s*(?:分|毛|元))/iu;
 const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
 /** A base model ID must never match a different model with an added suffix. */
@@ -161,6 +161,23 @@ export function supplierGroupModelPriceDetails(details: SupplierGroupDetails | u
   delete result.imagePrices;
   const referencePrice = labels.join("；").slice(0, 1000);
   if (referencePrice) result.referencePrice = referencePrice;
+  return result;
+}
+
+/** Mixed groups can publish an image quote and a separate video quote. Keep
+ * their original units and wording; a generic image rate never prices video. */
+export function supplierGroupMediaPriceDetails(details: SupplierGroupDetails | undefined, kind: "image" | "video", modelId: string): SupplierGroupDetails | undefined {
+  if (!details) return undefined;
+  const labels = (details.referencePrice ?? "").split("；").filter(label => {
+    const seconds = /(?:[/／]|每)\s*(?:秒|s(?:ec(?:ond)?s?)?)(?![a-zA-Z])/iu.test(label);
+    const video = /视频|\bvideo\b/iu.test(label);
+    return kind === "image" ? !seconds && !video : video || supplierTextMentionsModel(label, modelId);
+  });
+  if (labels.join("；") === (details.referencePrice ?? "") && (kind === "image" || !details.imagePrices)) return details;
+  const result = { ...details };
+  delete result.referencePrice;
+  if (kind === "video") delete result.imagePrices;
+  if (labels.length) result.referencePrice = labels.join("；");
   return result;
 }
 

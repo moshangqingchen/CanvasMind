@@ -1,4 +1,6 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+const offline = vi.hoisted(() => ({ lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]), fetch: vi.fn() }));
+vi.mock("node:dns/promises", () => ({ lookup: offline.lookup }));
 import {
   createDefaultProviderRegistry, StaticConnectionResolver, MIAOWU_VIDEO_CONTRACT_PENDING_REASON,
   type DocumentedModelInterface, type ModelDescriptor, type NormalizedRequest, type RestConnectorConfig,
@@ -9,6 +11,13 @@ import { miaowuCatalogFromPricing, miaowuConnectorForModels, miaowuUnparameteriz
 import { MIAOWU_CHAT_VIDEO_OVERRIDE, MIAOWU_CONNECTOR } from "./miaowu-presets";
 
 const ids = ["dreamina-seedance-2.0-fast", "dreamina-seedance-2.0-mini", "seedance-2.0-fast-deal", "seedance-2.5-deal", "video-editing"];
+const image = { id: "image", kind: "image" as const, mimeType: "image/png", url: "https://media.example/source.png" };
+const videos = [1, 2].map(index => ({ id: `video-${index}`, kind: "video" as const, mimeType: "video/mp4", url: `https://media.example/source-${index}.mp4` }));
+beforeEach(() => {
+  offline.fetch.mockReset().mockRejectedValue(new Error("Unexpected real network in Miaowu contract regression"));
+  vi.stubGlobal("fetch", offline.fetch);
+});
+afterEach(() => { try { expect(offline.fetch).not.toHaveBeenCalled(); } finally { vi.unstubAllGlobals(); } });
 const raw = (id: string): ModelDescriptor => ({
   ...miaowuUnparameterizedVideoDescriptor(id, { group: "default", parameterSource: "key-model-scan" }),
   pricing: { kind: "per-request", currency: "CNY", unitAmount: 1, confidence: "exact", checkedAt: "2026-10-08T00:00:00Z" },
@@ -32,45 +41,69 @@ function documented(model: ModelDescriptor): DocumentedModelInterface {
     ] }, output: { kind: "video", path: "$.video_url" } } };
 }
 
-it("keeps five unknown Miaowu IDs pending through repeated cache binding and refuses the real registry before fetch", async () => {
+it("repairs five old pending cache contracts repeatedly without changing exact IDs or prices and submits the real Chat transport", async () => {
   let connection = fixture();
   const original = structuredClone(connection);
-  let models = connection.config.modelCatalogModels as ModelDescriptor[];
+  let models: ModelDescriptor[] = (connection.config.modelCatalogModels as ModelDescriptor[]).map(model => ({ ...model, metadata: { ...model.metadata,
+    canvasRunnable: false, miaowuVideoContractPending: true, canvasUnavailableReason: MIAOWU_VIDEO_CONTRACT_PENDING_REASON } }));
   for (let pass = 0; pass < 3; pass++) {
     const bound = bindScannedModelProtocols(connection, models);
     expect(bound.models.map(model => model.id)).toEqual(ids);
     for (const model of bound.models) {
-      expect(model.metadata).toMatchObject({ canvasRunnable: false, parameterControlsUnavailable: true,
-        miaowuVideoContractPending: true, canvasUnavailableReason: MIAOWU_VIDEO_CONTRACT_PENDING_REASON });
+      expect(model.metadata).toMatchObject({ canvasRunnable: true, protocol: "openai-chat", generationVerified: false });
+      expect(model.metadata?.miaowuVideoContractPending).not.toBe(true);
+      expect(model.metadata?.canvasUnavailableReason).toBeUndefined();
       expect(model.parameters).toEqual([]);
       expect(model.pricing).toEqual(original.config.modelCatalogModels instanceof Array
         ? original.config.modelCatalogModels.find((row: ModelDescriptor) => row.id === model.id)?.pricing : undefined);
-      expect(bound.connector?.modelOverrides?.[model.id]).toBeUndefined();
-      expect(bound.templateConnector?.modelOverrides?.[model.id]).toBeUndefined();
+      expect(model.limits?.maxInputImages).toBeUndefined();
+      expect(model.operations).toEqual(model.id === "video-editing" ? ["video.generate"] : ["video.generate", "video.image-to-video"]);
     }
     const read = vi.fn(async () => []);
     const discovered = await discoverSupplierModelInterfaces(connection, bound.models, connection, read);
     expect(discovered.bindings).toEqual({});
-    expect(discovered.models.every(model => model.metadata?.canvasRunnable === false)).toBe(true);
+    expect(discovered.models.every(model => model.metadata?.canvasRunnable === true)).toBe(true);
+    expect(read).not.toHaveBeenCalled();
     models = discovered.models;
     connection = { ...connection, config: { ...connection.config, connector: bound.connector,
       modelProtocolTemplate: bound.templateConnector, modelCatalogModels: models, autoModelInterfaces: discovered.bindings } };
-    const fetcher = vi.fn<typeof fetch>(async () => { throw new Error("No submit expected"); });
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return Response.json({ choices: [{ message: { content: `[Video](https://media.example/${body.model}.mp4)` } }] });
+    });
     const registry = createDefaultProviderRegistry(new StaticConnectionResolver([{ id: "isolated-miaowu", provider: "rest",
       baseUrl: String(connection.config.baseUrl), apiKey: "synthetic-miaowu-key", settings: connection.config }]), { fetch: fetcher });
     const adapter = await registry.forConnection("isolated-miaowu");
     for (const id of ids) {
-      const request: NormalizedRequest = { connectionId: "isolated-miaowu", model: id, operation: "video.generate",
-        idempotencyKey: `isolated-${pass}-${id}`, prompt: "Ocean", parameters: {}, assets: [] };
+      const request: NormalizedRequest = { connectionId: "isolated-miaowu", model: id,
+        operation: id === "video-editing" ? "video.generate" : "video.image-to-video",
+        idempotencyKey: `isolated-${pass}-${id}`, prompt: "Ocean", parameters: { duration: 8, resolution: "4K", trim: true },
+        assets: id === "video-editing" ? videos : [image] };
+      expect((await adapter.validate(request)).valid).toBe(true);
+      const task = await adapter.submit(request);
+      expect(task.status).toBe("succeeded");
+      expect(await adapter.extractOutputs(task.result)).toEqual([{ kind: "video", url: `https://media.example/${id}.mp4` }]);
+      const [url, init] = fetcher.mock.calls.at(-1)!;
+      expect(String(url)).toBe("https://api.miaowuai.store/v1/chat/completions");
+      expect(init?.method).toBe("POST");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer synthetic-miaowu-key");
+      expect(JSON.parse(String(init?.body))).toEqual({ model: id, stream: false, messages: [{ role: "user", content: id === "video-editing"
+        ? `Ocean\n参考视频 1: ${videos[0]!.url}\n参考视频 2: ${videos[1]!.url}`
+        : [{ type: "text", text: "Ocean" }, { type: "image_url", image_url: { url: image.url, detail: "high" } }] }] });
+    }
+    expect(fetcher).toHaveBeenCalledTimes(ids.length);
+    for (const assets of [[], [{ ...videos[0]!, url: "http://media.example/source.mp4" }]]) {
+      const request: NormalizedRequest = { connectionId: "isolated-miaowu", model: "video-editing", operation: "video.generate",
+        idempotencyKey: `rejected-edit-${pass}`, prompt: "Ocean", assets };
       expect((await adapter.validate(request)).valid).toBe(false);
       await expect(adapter.submit(request)).rejects.toThrow();
     }
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(ids.length);
   }
   expect(original.config.connector).toMatchObject({ modelOverrides: { [ids[0]!]: MIAOWU_CHAT_VIDEO_OVERRIDE } });
 });
 
-it("creates no guessed chat override for these five key-only IDs while retaining six video_api contracts and other descriptors", () => {
+it("builds the declared five Chat overrides while retaining six native video_api contracts and other descriptors", () => {
   const knownIds = ["seedance-2.0-mini-deal", "sora-2", "minimax-h3", "wan3.0-video", "minimax-h3-max", "seedance-2.0-deal"];
   const known = miaowuCatalogFromPricing({ group_ratio: { default: 1 }, data: knownIds.map(model_name => ({
     model_name, model_price: 0.1, enable_groups: ["default"], video_api: { seconds_min: 5, seconds_max: 15,
@@ -82,8 +115,11 @@ it("creates no guessed chat override for these five key-only IDs while retaining
   const connector = miaowuConnectorForModels(models);
   expect(models).toEqual(before);
   for (const id of ids) {
-    expect(connector.modelOverrides?.[id]).toBeUndefined();
-    expect(connector.models?.find(model => model.id === id)?.metadata).toMatchObject({ canvasRunnable: false, miaowuVideoContractPending: true });
+    expect(connector.modelOverrides?.[id]?.submit?.path).toBe("/v1/chat/completions");
+    expect(connector.modelOverrides?.[id]?.output).toMatchObject({ kind: "video", format: "openai-chat-videos", requireOutput: true });
+    expect(connector.models?.find(model => model.id === id)?.metadata).toMatchObject({ canvasRunnable: true, protocol: "openai-chat", generationVerified: false });
+    expect(connector.models?.find(model => model.id === id)?.metadata?.miaowuVideoContractPending).not.toBe(true);
+    expect(connector.models?.find(model => model.id === id)?.pricing).toEqual(before.find(model => model.id === id)?.pricing);
   }
   for (const id of knownIds) {
     const model = connector.models!.find(model => model.id === id)!;
@@ -100,7 +136,8 @@ it("preserves custom routes, exact saved bindings, manual or paid evidence and r
   const initial = raw(id);
   const emptyOverride = fixture([initial]);
   (emptyOverride.config.connector as RestConnectorConfig).operationOverrides = {};
-  expect(bindScannedModelProtocols(emptyOverride, [initial]).models[0]?.metadata?.canvasRunnable).toBe(false);
+  expect(bindScannedModelProtocols(emptyOverride, [initial]).models[0]?.metadata?.canvasRunnable).toBe(true);
+  expect((emptyOverride.config.connector as RestConnectorConfig).operationOverrides).toEqual({});
   for (const proof of [{ source: "manual" }, { protocolEvidence: "paid-test" }, { parameterSource: "pricing.video_api" }]) {
     const model = { ...initial, metadata: { ...initial.metadata, ...proof } };
     expect(bindScannedModelProtocols(fixture([model]), [model]).models[0]?.metadata?.canvasRunnable).toBe(true);
@@ -122,7 +159,8 @@ it("preserves custom routes, exact saved bindings, manual or paid evidence and r
     expect(bound.connector?.modelOverrides?.[id]).toEqual(before);
   }
   const connection = fixture([initial]);
-  const pending = bindScannedModelProtocols(connection, [initial]).models[0]!;
+  const pending = { ...initial, metadata: { ...initial.metadata, canvasRunnable: false, miaowuVideoContractPending: true,
+    canvasUnavailableReason: MIAOWU_VIDEO_CONTRACT_PENDING_REASON } };
   const binding = documented(initial);
   connection.config.autoModelInterfaces = { [id]: binding };
   expect(bindScannedModelProtocols(connection, [pending]).models[0]?.metadata?.canvasRunnable).toBe(true);

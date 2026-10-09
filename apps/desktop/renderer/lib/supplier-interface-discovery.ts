@@ -4,12 +4,27 @@ import {
   cangyuanMusicModel, isCangyuanMusicRequest,
   cangyuanVideoModel, isCangyuanNativeSeedanceRequest, modelGenerationMediaKinds,
   chuangxiangVideoModel, isChuangxiangVideoConnection,
+  remainingVideoModel, remainingVideoSupplier,
+  preservesMiaowuExplicitVideoContract,
 } from "@super-canvas/providers";
 import { bananaImageRoute, applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
+import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnection } from "@super-canvas/providers/chuangxiang-midjourney-contract";
+import { cyberAfeiDocumentedModel } from "./cyberafei-catalog";
+import { supplierKeyForConnection } from "./supplier-identity";
+import { matchesSupplierTemplate } from "./supplier-template-source";
 
 import { readSupplierInterfaceDocuments, type InterfaceDocumentReadOptions } from "./supplier-interface-documents";
 export { readSupplierInterfaceDocuments, type InterfaceDocument } from "./supplier-interface-documents";
 type Connection = { provider: string; config: Record<string, unknown> };
+
+/** A saved exact video interface and a user's custom route precede catalog defaults. */
+export function hasMiaowuExplicitVideoInterface(connection: Connection, model: ModelDescriptor): boolean {
+  if (remainingVideoSupplier(connection.config.baseUrl) !== "miaowu") return false;
+  if (preservesMiaowuExplicitVideoContract(connection.config, model)) return true;
+  const binding = savedModelInterfaces(connection.config)[model.id];
+  return Boolean(binding?.model?.id === model.id && binding.model.operations?.some(operation => operation.startsWith("video.")) &&
+    binding.connector?.submit?.path && binding.connector.output?.kind === "video");
+}
 
 function mayBind(model: ModelDescriptor) {
   const reason = String(model.metadata?.canvasUnavailableReason ?? "");
@@ -18,12 +33,14 @@ function mayBind(model: ModelDescriptor) {
 }
 
 function nativeContract(connection: Connection, model: ModelDescriptor): ModelDescriptor | undefined {
+  if (hasMiaowuExplicitVideoInterface(connection, model)) return undefined;
   if (!mayBind(model)) return undefined;
   if (connection.provider === "rest" && isCangyuanMusicRequest(model.id, String(connection.config.baseUrl ?? ""))) return cangyuanMusicModel(model);
   const nativeCangyuan = connection.provider === "openai" && isCangyuanNativeSeedanceRequest(model.id, String(connection.config.baseUrl ?? ""));
   const nativeChuangxiang = ["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(connection.config, model.id);
   const declaredOutput = model.metadata?.outputKindsSource === "declared" || model.metadata?.operationsSource === "declared" ||
-    ["chat", "text", "audio", "other"].includes(String(model.metadata?.catalogCapability ?? ""));
+    model.metadata?.outputKindsSource !== "inferred" && model.metadata?.operationsSource !== "inferred" &&
+      ["chat", "text", "audio", "other"].includes(String(model.metadata?.catalogCapability ?? ""));
   if ((nativeCangyuan || nativeChuangxiang) && (!declaredOutput || modelGenerationMediaKinds(model).join("+") === "video") &&
       connection.config.supplierArchived !== true && !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
       (!Array.isArray(connection.config.scannedModelIds) || connection.config.scannedModelIds.includes(model.id))) {
@@ -33,7 +50,40 @@ function nativeContract(connection: Connection, model: ModelDescriptor): ModelDe
     delete metadata.parameterControlsUnavailable;
     return nativeCangyuan ? cangyuanVideoModel({ ...model, metadata }) : chuangxiangVideoModel(model.id, { ...model, metadata });
   }
-  if (model.id === "gemini-nano-banana-2.1" && bananaImageRoute(connection, model.id)) {
+  if (isChuangxiangMidjourneyConnection(connection.config, model.id)) return applyChuangxiangMidjourneyCapabilities(connection, model);
+  if (connection.provider === "rest" && supplierKeyForConnection(connection) === "cyberafei" && matchesSupplierTemplate(connection) &&
+      connection.config.supplierArchived !== true && !["agent", "disabled"].includes(String(connection.config.usage)) &&
+      !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
+      (!Array.isArray(connection.config.scannedModelIds) || connection.config.scannedModelIds.includes(model.id))) {
+    const endpoints = model.metadata?.endpointTypes;
+    const descriptor = cyberAfeiDocumentedModel(model.id, Array.isArray(endpoints) && endpoints.length ? {
+      endpointTypes: endpoints.filter((value): value is string => typeof value === "string"),
+    } : undefined);
+    if (descriptor && (!declaredOutput || modelGenerationMediaKinds(model).join("+") === modelGenerationMediaKinds(descriptor).join("+"))) {
+      const metadata: Record<string, unknown> = { ...model.metadata, ...descriptor.metadata, canvasRunnable: true };
+      delete metadata.canvasUnavailableReason;
+      if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
+      return { ...model, operations: descriptor.operations, inputKinds: descriptor.inputKinds,
+        outputKinds: descriptor.outputKinds, parameters: descriptor.parameters, limits: descriptor.limits, metadata };
+    }
+  }
+  const remainingSupplier = remainingVideoSupplier(connection.config.baseUrl);
+  if (remainingSupplier && (!declaredOutput || modelGenerationMediaKinds(model).join("+") === "video") &&
+      connection.config.supplierArchived !== true && !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
+      (!Array.isArray(connection.config.scannedModelIds) || connection.config.scannedModelIds.includes(model.id))) {
+    const descriptor = remainingVideoModel(remainingSupplier, model.id, model, {
+      group: String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? ""),
+      groupDescription: String(connection.config.supplierGroupDescription ?? connection.config.groupDescription ?? ""),
+    });
+    if (descriptor) {
+      const metadata: Record<string, unknown> = { ...descriptor.metadata, canvasRunnable: true };
+      delete metadata.canvasUnavailableReason;
+      if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
+      delete metadata.parameterControlsUnavailable;
+      return { ...descriptor, metadata };
+    }
+  }
+  if (bananaImageRoute(connection, model.id)) {
     const metadata: Record<string, unknown> = { ...model.metadata, canvasRunnable: true };
     delete (metadata as Record<string, unknown>).canvasUnavailableReason;
     if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
@@ -48,6 +98,8 @@ export function applySavedModelInterfaces(connection: Connection, models: readon
     const native = nativeContract(connection, model);
     if (native) return native;
     const binding = bindings[model.id];
+    if (binding && hasMiaowuExplicitVideoInterface(connection, model) && model.metadata?.autoInterfaceStatus === "incomplete")
+      return { ...model, metadata: { ...model.metadata, canvasRunnable: false } };
     if (!binding || !mayBind(model) || model.metadata?.autoInterfaceStatus === "incomplete") return model;
     const metadata = { ...model.metadata, canvasRunnable: true, autoInterfaceStatus: "connected", protocol: "documented-rest",
       documentationUrl: model.metadata?.documentationUrl ?? binding.sourceUrl, autoInterfacePath: binding.connector.submit.path,
@@ -72,7 +124,7 @@ export async function discoverSupplierModelInterfaces(connection: Connection, mo
   for (const id of native.keys()) delete bindings[id];
   if (["agent", "disabled"].includes(String(connection.config.usage)) || connection.config.supplierArchived === true
     || !["openai", "weai", "rest", "runway"].includes(connection.provider)) return { models: [...models], bindings };
-  const candidates = models.filter(model => !native.has(model.id) && mayBind(model) && model.operations.length);
+  const candidates = models.filter(model => !native.has(model.id) && !hasMiaowuExplicitVideoInterface(connection, model) && mayBind(model) && model.operations.length);
   if (!candidates.length) return { models: models.map(model => native.get(model.id) ?? model), bindings };
   const baseUrl = String(connection.config.baseUrl ?? "");
   const docs = await read(baseUrl, candidates, String(connection.config.supplierWebsiteUrl ?? baseUrl), options);

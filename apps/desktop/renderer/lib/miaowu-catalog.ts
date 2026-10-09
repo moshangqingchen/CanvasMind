@@ -1,6 +1,5 @@
 import {
   providerFetch,
-  isMiaowuUnverifiedKeyScanVideoModel,
   MIAOWU_VIDEO_CONTRACT_PENDING_REASON,
   type ModelDescriptor,
   type ModelParameterDescriptor,
@@ -8,6 +7,8 @@ import {
   type RestConnectorConfig,
   type StructuredPriceTier,
 } from "@super-canvas/providers";
+import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
+import { modelGenerationMediaKinds } from "@super-canvas/providers/model-media";
 import {
   MIAOWU_CONNECTOR,
   MIAOWU_CHAT_VIDEO_OVERRIDE,
@@ -888,13 +889,20 @@ export function miaowuConnectorForModels(
   models: readonly ModelDescriptor[],
 ): RestConnectorConfig {
   const connector = structuredClone(MIAOWU_CONNECTOR);
-  const connectedModels = models.map(model => {
+  const connectedModels: ModelDescriptor[] = models.map(model => {
     const copy = structuredClone(model);
-    return isMiaowuUnverifiedKeyScanVideoModel(model) && (model.metadata?.marketplaceGroup ?? "default") === "default"
-      ? { ...copy, metadata: { ...copy.metadata, canvasRunnable: false, miaowuVideoContractPending: true,
-        canvasUnavailableReason: model.metadata?.canvasRunnable === false && model.metadata.canvasUnavailableReason
-          ? model.metadata.canvasUnavailableReason : MIAOWU_VIDEO_CONTRACT_PENDING_REASON } }
-      : copy;
+    if ((model.metadata?.marketplaceGroup ?? "default") !== "default" || modelGenerationMediaKinds(model).join("+") !== "video" ||
+        model.metadata?.autoInterfaceStatus === "incomplete" || model.metadata?.canvasRunnable === false &&
+        ![MIAOWU_VIDEO_CONTRACT_PENDING_REASON, "当前分组列出此型号，但尚未提供其参数与调用合同"].includes(String(model.metadata.canvasUnavailableReason))) return copy;
+    const declared = remainingVideoModel("miaowu", model.id, copy);
+    if (!declared) return copy;
+    const operations = model.metadata?.operationsSource === "declared"
+      ? declared.operations.filter(operation => model.operations.includes(operation)) : declared.operations;
+    if (!operations.length) return copy;
+    const metadata: Record<string, unknown> = { ...declared.metadata, canvasRunnable: true };
+    delete metadata.canvasUnavailableReason;
+    delete metadata.miaowuVideoContractPending;
+    return { ...declared, operations, metadata };
   });
   const modelOverrides = Object.fromEntries(
     connectedModels.flatMap((model) =>
@@ -902,8 +910,9 @@ export function miaowuConnectorForModels(
         ? []
         : model.outputKinds?.includes("image")
         ? [[model.id, structuredClone(MIAOWU_IMAGE_OVERRIDE)]]
-        : model.metadata?.miaowuVideoContractPending === true && isMiaowuUnverifiedKeyScanVideoModel(model)
-        ? []
+        : (model.metadata?.marketplaceGroup ?? "default") === "default" && modelGenerationMediaKinds(model).join("+") === "video" &&
+          remainingVideoTransport("miaowu", model.id, { model })
+        ? [[model.id, remainingVideoTransport("miaowu", model.id, { model })!]]
         : model.metadata?.parameterControlsUnavailable === true
         ? [[model.id, structuredClone(MIAOWU_CHAT_VIDEO_OVERRIDE)]]
         : [],

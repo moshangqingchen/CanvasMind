@@ -45,12 +45,12 @@ describe("scanned model protocol binding", () => {
       [{ ...cached, id: "gpt-image-2", parameters: [{ key: "quality", label: "质量", control: "select", default: "high" }] }]).models[0]!;
     expect(fixedQuality.parameters?.some(p => p.key === "quality")).toBe(false);
   });
-  it.each(["grok-video1.5-fast", "grok-imagine-video-1.5（按次）"])("requires an exact Chentu contract for inferred native video %s", id => {
+  it.each(["grok-video1.5-fast", "grok-imagine-video-1.5（按次）"])("binds the current Chentu directory video contract for %s", id => {
     const model: ModelDescriptor = { id, name: id, operations: ["video.generate", "video.image-to-video"], outputKinds: ["video"],
       metadata: { canvasRunnable: true, operationsSource: "inferred", priceLabel: "¥0.59/请求" } };
     const result = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://tu.988236.xyz", modelGroup: "grok纯享视频" } }, [model]).models[0]!;
-    expect(result.metadata).toMatchObject({ canvasRunnable: false, parameterControlsUnavailable: true, priceLabel: "¥0.59/请求" });
-    expect(result.parameters).toEqual([]);
+    expect(result.metadata).toMatchObject({ canvasRunnable: true, parameterControlsUnavailable: false, priceLabel: "¥0.59/请求", protocol: "openai-videos" });
+    expect(result.parameters?.map(parameter => parameter.key)).toContain("duration");
     expect(result.outputKinds).toEqual(["video"]);
   });
   it("requires an endpoint for declared native Chentu controls and preserves exact models and upstream denials", () => {

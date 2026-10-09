@@ -6,6 +6,8 @@ import styles from "./model-picker.module.css";
 export function ModelPriceDetails({ model, parameters }: { model?: ModelDescriptor | null; parameters: Record<string, unknown> }) {
   if (model) model = normalizeTk1688CnyModel(model);
   const estimate = modelEstimatedCost(model, parameters);
+  const priceCheckedAt = model?.pricing?.checkedAt ?? (typeof model?.metadata?.priceCheckedAt === "string" ? model.metadata.priceCheckedAt : undefined);
+  const priceSourceUrl = model?.pricing?.sourceUrl ?? (typeof model?.metadata?.priceSourceUrl === "string" ? model.metadata.priceSourceUrl : undefined);
   const limits = model?.limits;
   const inputNotes = [
     limits?.maxInputImages !== undefined && `图片最多 ${limits.maxInputImages} 张`,
@@ -27,11 +29,12 @@ export function ModelPriceDetails({ model, parameters }: { model?: ModelDescript
     {inputNotes.length > 0 && <details><summary>参考素材与限制</summary><p>{inputNotes.join(" · ")}</p></details>}
     <details><summary>价格与参数依据</summary>
       <p>{String(model?.metadata?.priceLabel ?? "尚未取得价格")}</p>
+      {typeof model?.metadata?.priceUnavailableReason === "string" && <p>{model.metadata.priceUnavailableReason}</p>}
       {typeof model?.metadata?.priceContractWarning === "string" && <p>{model.metadata.priceContractWarning}</p>}
       {estimate && <p>按当前参数与数量估算，最终费用以供应商实际扣费为准。</p>}
       {model?.metadata?.priceSource === "generated-result" && <p>按已生成请求的实际扣费参考；其他尺寸或质量尚无扣费样本。</p>}
-      {model?.pricing?.checkedAt && <p>价格资料更新于 {model.pricing.checkedAt}{model.pricing.confidence === "exact" ? "" : "；当前金额为参考值"}</p>}
-      {model?.pricing?.sourceUrl && <a href={model.pricing.sourceUrl} target="_blank" rel="noreferrer">查看价格来源</a>}
+      {priceCheckedAt && <p>价格资料更新于 {priceCheckedAt}{model?.pricing && model.pricing.confidence !== "exact" ? "；当前金额为参考值" : ""}</p>}
+      {priceSourceUrl && <a href={priceSourceUrl} target="_blank" rel="noreferrer">查看价格来源</a>}
       {typeof model?.metadata?.supplierGroupResolutionLabel === "string" && <p>{model.metadata.supplierGroupResolutionLabel}</p>}
       {Array.isArray(model?.metadata?.imageCapabilityEvidence) && model.metadata.imageCapabilityEvidence.map((item: { id: string; resolution?: string; quality?: string; status: string; excerpt: string }) =>
         <p key={item.id}>{item.resolution ?? item.quality} · {({ declared: "说明支持", verified: "实测支持", inferred: "由 4K 推断", approximate: "近似档位", assumed: "暂定，待核验", unsupported: "不支持", conflict: "需要核对" } as Record<string, string>)[item.status]}：{item.excerpt}</p>)}

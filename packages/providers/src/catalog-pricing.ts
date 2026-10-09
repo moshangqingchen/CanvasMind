@@ -39,18 +39,22 @@ export function scopedCatalogMediaPricing(value: unknown, options: {
     const symbol = currency === "USD" ? "$" : "¥";
     return { pricing, priceLabel: `${symbol}${display(pricing.unitAmount!)}/${image ? "张" : "请求"}` };
   }
+  const cyberSeconds = ["minimax-h3", "seedance2.0", "seedance2.5"].includes(id);
+  const cyberRequests = ["nano-banana-pro", "nano-banana2", "veo3.1", "veo3.1-fast", "veo3.1-lite"].includes(id);
   if (origin !== "https://api.3365api.cn" || options.group !== "图片视频模型综合分组" ||
-    !["minimax-h3", "seedance2.0", "seedance2.5"].includes(id) || row.quota_type !== 1 ||
-    typeof row.tags !== "string" || !row.tags.split(",").includes("按秒计费") || typeof row.description !== "string" ||
-    !row.description.includes("按时长计费。") || !row.description.endsWith("额度/秒。")) return undefined;
-  const quote = row.description.split("按时长计费。")[1]!.slice(0, -1);
-  const entries = [...quote.matchAll(/(480p|720p|768p|1080p|2K|4K)\s+(\d+(?:\.\d+)?)(?:额度\/秒)?/gu)];
-  if (!entries.length || quote.replace(/(480p|720p|768p|1080p|2K|4K)\s+(\d+(?:\.\d+)?)(?:额度\/秒)?/gu, "").replace(/[、，,\s]/gu, "") ||
-    new Set(entries.map(entry => entry[1])).size !== entries.length) return undefined;
-  const tiers = entries.map(entry => ({ id: entry[1]!, label: entry[1]!, dimension: "resolution" as const, value: entry[1]!,
-    price: Number((Number(entry[2]) * options.multiplier).toPrecision(12)) }));
+    (!cyberSeconds && !cyberRequests) || row.quota_type !== 1 || typeof row.description !== "string") return undefined;
+  const quote = row.description.trim().split(/[。；;]/u).filter(Boolean).at(-1)?.trim();
+  const unit = /额度\/(秒|次)$/u.exec(quote ?? "")?.[1];
+  if (!quote || unit !== (cyberSeconds ? "秒" : "次")) return undefined;
+  const expression = /((?:480p|720p|768p|1080p|1K|2K|4K)(?:\/(?:480p|720p|768p|1080p|1K|2K|4K))*)\s+(\d+(?:\.\d+)?)(?:额度\/(秒|次))?/gu;
+  const entries = [...quote.matchAll(expression)];
+  if (!entries.length || quote.replace(expression, "").replace(/[、，,\s]/gu, "") ||
+    entries.some(entry => entry[3] && entry[3] !== unit)) return undefined;
+  const tiers = entries.flatMap(entry => entry[1]!.split("/").map(resolution => ({ id: resolution, label: resolution,
+    dimension: "resolution" as const, value: resolution, price: Number((Number(entry[2]) * options.multiplier).toPrecision(12)) })));
+  if (new Set(tiers.map(tier => tier.id)).size !== tiers.length) return undefined;
   if (tiers.some(tier => !Number.isFinite(tier.price))) return undefined;
-  const pricing: StructuredModelPricing = { ...base, kind: "tiered", billingUnit: "second", tiers };
+  const pricing: StructuredModelPricing = { ...base, kind: "tiered", billingUnit: cyberSeconds ? "second" : "request", tiers };
   return { pricing, priceLabel: mediaPricingLabel(pricing) };
 }
 

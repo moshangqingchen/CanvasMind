@@ -75,6 +75,21 @@ export function chuangxiangCatalogPricing(value: unknown, checkedAt = ""): { pri
       ...(tiers.length ? { resolutions: tiers.map(t => t.id) } : {}) };
   }
   if (raw.billing_mode !== "image" && raw.billing_mode !== "per_request") return undefined;
+  if (raw.billing_mode === "per_request" && ["midjourney-1k", "midjourney-2k"].includes(String(row.name ?? row.id ?? "")) &&
+    Array.isArray(raw.intervals) && raw.intervals.length) {
+    const tiers: StructuredPriceTier[] = [], seen = new Set<string>();
+    for (const value of raw.intervals) {
+      const interval = record(value), speed = typeof interval.tier_label === "string" ? interval.tier_label.trim() : "";
+      const price = scaled(interval.per_request_price);
+      if (!["relax", "fast"].includes(speed) || seen.has(speed) || price === undefined) return undefined;
+      seen.add(speed);
+      tiers.push({ id: speed, label: speed, price, conditionMode: "all",
+        conditions: [{ parameter: "speed", operator: "equals", value: speed }] });
+    }
+    if (!seen.has("relax") || !seen.has("fast")) return undefined;
+    return { pricing: { ...base, kind: "per-request", billingUnit: "request", tiers },
+      priceLabel: tiers.map(t => `${t.label} ¥${display(t.price)}/请求`).join(" · ") };
+  }
   const unitAmount = scaled(raw.per_request_price);
   const image = raw.billing_mode === "image";
   const tiers: StructuredPriceTier[] = (Array.isArray(raw.intervals) ? raw.intervals : []).flatMap(value => {

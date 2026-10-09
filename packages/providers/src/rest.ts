@@ -19,15 +19,32 @@ import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./
 import { cangyuanCurrentRequestIssues, cangyuanCurrentTransport, isCangyuanCurrentRequest, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
 import { cangyuanMusicModel, cangyuanMusicRequestIssues, cangyuanMusicTransport, isCangyuanMusicRequest, withCangyuanMusicRequestParameters } from "./cangyuan-music.js";
 import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanVideoRequest, normalizeCangyuanVideoParameters, validateCangyuanVideoRequest } from "./cangyuan-video-contract.js";
-import { remainingVideoSupplier, isRemainingVideoModel, remainingVideoModel, remainingVideoTransport, normalizeRemainingVideoParameters, remainingVideoRequestIssues, type RemainingVideoContext } from "./remaining-video-contracts.js";
+import { remainingVideoSupplier, isRemainingVideoModel, remainingVideoModel, remainingVideoTransport, remainingVideoRequiresPublicUrls, restoreRemainingVideoModel, isRemainingVideoPublicHttpsUrl, normalizeRemainingVideoParameters, remainingVideoRequestIssues, type RemainingVideoContext } from "./remaining-video-contracts.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
-import { isMiaowuUnverifiedAutoVideoContract, MIAOWU_VIDEO_CONTRACT_PENDING_REASON } from "./miaowu-video-contract-pending.js";
+import { isMiaowuLegacyVideoBaseConnector, isMiaowuUnverifiedAutoVideoContract, MIAOWU_VIDEO_CONTRACT_PENDING_REASON } from "./miaowu-video-contract-pending.js";
 import { getModelParameterDescriptor, validateModelParameters } from "./cli-contracts.js";
+import { chatMediaOutputs } from "./chat-image-output.js";
 
-function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor): RemainingVideoContext {
+function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor, assets?: readonly ProviderAssetInput[]): RemainingVideoContext {
   const group = settings?.accountKeyGroup ?? settings?.modelGroup ?? settings?.group ?? settings?.supplierGroupId;
   const description = settings?.supplierGroupDescription ?? settings?.groupDescription;
-  return { ...(typeof group === "string" ? { group } : {}), ...(typeof description === "string" ? { groupDescription: description } : {}), ...(model ? { model } : {}) };
+  return { ...(typeof group === "string" ? { group } : {}), ...(typeof description === "string" ? { groupDescription: description } : {}), ...(model ? { model } : {}), ...(assets ? { assets } : {}) };
+}
+/** Current Miaowu core routes replace only automatic directory mappings. */
+export function preservesMiaowuExplicitVideoContract(config: Readonly<Record<string, unknown>>, model: ModelDescriptor | undefined, operation?: ProviderOperation): boolean {
+  if (remainingVideoSupplier(config.baseUrl) !== "miaowu" || !model || !["dreamina-seedance-2.0-fast", "dreamina-seedance-2.0-mini", "seedance-2.0-fast-deal", "seedance-2.5-deal", "video-editing"].includes(model.id)) return false;
+  if (model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" || model.metadata?.parameterSource === "pricing.video_api") return true;
+  const bindings = config.autoModelInterfaces as Record<string, { model?: ModelDescriptor }> | undefined;
+  if (bindings?.[model.id]?.model?.id === model.id) return true;
+  const connector = config.connector as RestConnectorConfig | undefined;
+  const overrides = operation ? [connector?.operationOverrides?.[operation], connector?.modelOverrides?.[model.id]?.operationOverrides?.[operation]] : [];
+  if (overrides.some(override => override && Object.keys(override).length > 0)) return true;
+  if (connector && !connector.modelOverrides?.[model.id] && !isMiaowuLegacyVideoBaseConnector(connector)) {
+    const current = remainingVideoTransport("miaowu", model.id, { model });
+    if (JSON.stringify(connector.submit) !== JSON.stringify(current?.submit) || JSON.stringify(connector.output) !== JSON.stringify(current?.output)) return true;
+  }
+  return Boolean(connector?.modelOverrides?.[model.id] && model.metadata?.parameterSource === "key-model-scan" &&
+    !isMiaowuUnverifiedAutoVideoContract(config, model, connector, operation));
 }
 import { isChuangxiangVideoConnection, chuangxiangVideoModel, chuangxiangVideoTransport,
   validateChuangxiangVideoRequest, normalizeChuangxiangVideoParameters, CHUANGXIANG_VIDEO_POLL_INTERVAL_MS } from "./chuangxiang-video-contract.js";
@@ -75,6 +92,8 @@ export type RestSource =
       /** Build one OpenAI-style user message from the prompt and input images. */
       kind: "openaiMessages";
       detail?: "auto" | "low" | "high";
+      /** Include source-video links in the text prompt, without typed parts. */
+      videoReferenceEncoding?: "prompt-urls";
     }
   | {
       /** Derive the standard WxH string from video resolution and orientation. */
@@ -133,6 +152,10 @@ export interface RestOutputMapping {
   /** Alternative JSONPaths used when providers vary their completed payload shape. */
   fallbackPaths?: readonly string[];
   kind: ArtifactKind;
+  /** Media-bearing chat content: Markdown, typed parts, absolute URLs and data URIs. */
+  format?: "openai-chat-images" | "openai-chat-videos";
+  /** Reject terminal success without output instead of accepting an empty paid response. */
+  requireOutput?: boolean;
   /** Relative JSONPaths used when selected outputs are objects. */
   urlPath?: string;
   /** Alternative relative JSONPaths for URL-shaped provider variants. */
@@ -191,6 +214,7 @@ export interface RestConnectorConfig {
 }
 
 export interface RestModelConnectorOverride {
+  auth?: RestAuthConfig;
   submit?: RestRequestDefinition;
   poll?: RestRequestDefinition;
   cancel?: RestRequestDefinition;
@@ -488,6 +512,8 @@ function assertRequestDefinition(
       ) {
         throw new Error(`${label}.mappings[${index}].source.detail is invalid`);
       }
+      if (mapping.source.videoReferenceEncoding !== undefined && mapping.source.videoReferenceEncoding !== "prompt-urls")
+        throw new Error(`${label}.mappings[${index}].source.videoReferenceEncoding is invalid`);
     } else if (mapping.source.kind === "videoDimensions") {
       for (const key of ["resolutionPath", "aspectRatioPath"] as const) {
         if (
@@ -596,6 +622,11 @@ function assertConfig(value: unknown): asserts value is RestConnectorConfig {
   if (value.output.kind !== "image" && value.output.kind !== "video" && value.output.kind !== "audio") {
     throw new Error("REST connector output.kind must be image, video or audio");
   }
+  if (value.output.format !== undefined && !((value.output.format === "openai-chat-images" && value.output.kind === "image") ||
+      (value.output.format === "openai-chat-videos" && value.output.kind === "video")))
+    throw new Error("REST connector output.format must match the declared image or video kind");
+  if (value.output.requireOutput !== undefined && typeof value.output.requireOutput !== "boolean")
+    throw new Error("REST connector output.requireOutput must be boolean");
   if (value.output.contentFallback !== undefined) {
     const fallback = value.output.contentFallback;
     if (!isRecord(fallback) || typeof fallback.path !== "string" ||
@@ -854,7 +885,12 @@ function sourceValue(
     return source.referenceValue;
   }
   if (source.kind === "openaiMessages") {
-    const prompt = request?.prompt ?? "";
+    const videoUrls = source.videoReferenceEncoding === "prompt-urls"
+      ? (request?.assets ?? []).filter(asset => asset.kind === "video").map(asset => {
+          if (!isRemainingVideoPublicHttpsUrl(asset.url)) throw new Error(`Video asset ${asset.id} requires a public HTTPS URL`);
+          return asset.url;
+        }) : [];
+    const prompt = [request?.prompt ?? "", ...videoUrls.map((url, index) => `参考视频 ${index + 1}: ${url}`)].join("\n");
     const images = imageReferenceAssets(request?.assets).filter(
       (asset) => asset.kind === "image",
     );
@@ -1062,6 +1098,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>,
     model?: string,
     operation?: ProviderOperation,
+    assets?: readonly ProviderAssetInput[],
   ): RestConnectorConfig {
     const value = this.fixedConfig ?? connection.settings?.["connector"];
     assertConfig(value);
@@ -1073,6 +1110,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       override
         ? {
             ...config,
+            ...(override.auth ? { auth: override.auth } : {}),
             ...(override.submit ? { submit: override.submit } : {}),
             ...(override.poll ? { poll: override.poll } : {}),
             ...(override.cancel ? { cancel: override.cancel } : {}),
@@ -1105,9 +1143,10 @@ export class GenericRestAdapter implements ProviderAdapter {
     if (["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(imageEditingConnection(connection).config, model))
       return { ...applyOverride(selected, chuangxiangVideoTransport()), assetsRequirePublicUrls: true };
     const remainingSupplier = remainingVideoSupplier(connection.baseUrl);
-    const videoContext = remainingVideoContext(connection.settings, base.models?.find(m => m.id === model));
-    if (!this.fixedConfig && remainingSupplier && isRemainingVideoModel(remainingSupplier, model, videoContext))
-      return { ...applyOverride(selected, remainingVideoTransport(remainingSupplier, model!, videoContext)), assetsRequirePublicUrls: true };
+    const videoContext = remainingVideoContext(connection.settings, base.models?.find(m => m.id === model), assets);
+    if (!this.fixedConfig && remainingSupplier && isRemainingVideoModel(remainingSupplier, model, videoContext) &&
+        !preservesMiaowuExplicitVideoContract(imageEditingConnection(connection).config, videoContext.model, operation))
+      return { ...applyOverride(selected, remainingVideoTransport(remainingSupplier, model!, videoContext)), assetsRequirePublicUrls: remainingVideoRequiresPublicUrls(remainingSupplier, model!, videoContext) };
     // Repair stale family-inherited mappings for these exact public IDs only.
     // Model restrictions and credentials remain owned by the saved connection.
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, base, model)) {
@@ -1402,12 +1441,22 @@ export class GenericRestAdapter implements ProviderAdapter {
       const catalog = connection.settings?.modelCatalogModels;
       const selectedModel = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
       const miaowuModel = selectedModel ?? baseConfig.models?.find(model => model.id === request.model);
-      if (request.operation.startsWith("video.") && isMiaowuUnverifiedAutoVideoContract(imageEditingConnection(connection).config, miaowuModel, baseConfig, request.operation))
-        issues.push({ path: "model", code: "interface_unavailable", message: `${MIAOWU_VIDEO_CONTRACT_PENDING_REASON}，当前生成尚未提交` });
       const cangyuanVideo = !this.fixedConfig && isCangyuanVideoRequest(request.model, connection.baseUrl);
-      const remainingSupplier = !this.fixedConfig ? remainingVideoSupplier(connection.baseUrl) : undefined;
-      const videoContext = remainingVideoContext(connection.settings, baseConfig.models?.find(m => m.id === request.model));
+      const remainingSupplier = !this.fixedConfig && !preservesMiaowuExplicitVideoContract(imageEditingConnection(connection).config, miaowuModel, request.operation) ? remainingVideoSupplier(connection.baseUrl) : undefined;
+      const videoContext = remainingVideoContext(connection.settings, baseConfig.models?.find(m => m.id === request.model), request.assets);
       const remainingVideo = remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext);
+      if (request.operation.startsWith("video.") && !remainingVideo && isMiaowuUnverifiedAutoVideoContract(imageEditingConnection(connection).config, miaowuModel, baseConfig, request.operation))
+        issues.push({ path: "model", code: "interface_unavailable", message: `${MIAOWU_VIDEO_CONTRACT_PENDING_REASON}，当前生成尚未提交` });
+      if (remainingVideo && request.operation.startsWith("video.")) {
+        const ids = connection.settings?.scannedModelIds;
+        const reason = String(selectedModel?.metadata?.canvasUnavailableReason ?? "");
+        if (["empty", "unauthorized"].includes(String(connection.settings?.modelScanStatus)) ||
+            connection.settings?.supplierArchived === true || ["disabled", "agent"].includes(String(connection.settings?.usage)) ||
+            Array.isArray(ids) && !ids.includes(request.model) || /401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|unavailable|disabled/iu.test(reason))
+          issues.push({ path: "model", code: "unavailable_inventory", message: "当前 Key 或分组没有此视频型号的可用权限。" });
+        if (selectedModel && selectedModel.outputKinds?.length && selectedModel.metadata?.outputKindsSource !== "inferred" && !modelSupportsGenerationMedia(selectedModel, "video"))
+          issues.push({ path: "model", code: "wrong_media_type", message: "当前型号未声明视频输出，不能用于视频节点。" });
+      }
       const musicRequest = !this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl);
       if (musicRequest) issues.push(...cangyuanMusicRequestIssues(request));
       if (cangyuanVideo || remainingVideo) {
@@ -1432,6 +1481,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         connection,
         request.model,
         request.operation,
+        request.assets,
       );
       if (request.assets?.some(asset => asset.role === "mask") || request.parameters?.mask) {
         const capabilities = getImageEditingCapabilities(imageEditingConnection(connection), request.model ?? "", request.parameters);
@@ -1447,7 +1497,8 @@ export class GenericRestAdapter implements ProviderAdapter {
         Array.isArray(connection.settings?.scannedModelIds) && connection.settings.scannedModelIds.includes("suno") &&
         !["empty", "unauthorized"].includes(String(connection.settings?.modelScanStatus)) &&
         connection.settings?.usage !== "disabled" && connection.settings?.supplierArchived !== true;
-      const savedModel = connectorModel ?? (freshSuno ? selectedModel : undefined);
+      const restoredVideo = remainingVideo && request.model ? restoreRemainingVideoModel(remainingSupplier, request.model, connectorModel ?? selectedModel, connection.settings, videoContext) : undefined;
+      const savedModel = restoredVideo ?? connectorModel ?? (freshSuno ? selectedModel : undefined);
       const configuredModel = musicRequest && savedModel ? cangyuanMusicModel(savedModel)
         : videoRequest && savedModel ? chuangxiangVideoModel(savedModel.id, savedModel)
         : cangyuanVideo && savedModel ? cangyuanVideoModel(savedModel)
@@ -1702,6 +1753,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       connection,
       request.model,
       request.operation,
+      request.assets,
     );
     const editingConnection = imageEditingConnection(connection);
     const capabilities = getImageEditingCapabilities(editingConnection, request.model ?? "", request.parameters);
@@ -1736,8 +1788,8 @@ export class GenericRestAdapter implements ProviderAdapter {
     const videoRequest = ["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
     if (videoRequest) outboundRequest = { ...outboundRequest, parameters: normalizeChuangxiangVideoParameters(outboundRequest) };
     if (!this.fixedConfig && isCangyuanVideoRequest(request.model, connection.baseUrl)) outboundRequest = { ...outboundRequest, parameters: normalizeCangyuanVideoParameters(outboundRequest) };
-    const remainingSupplier = !this.fixedConfig ? remainingVideoSupplier(connection.baseUrl) : undefined;
-    const videoContext = remainingVideoContext(connection.settings, config.models?.find(m => m.id === request.model));
+    const remainingSupplier = !this.fixedConfig && !preservesMiaowuExplicitVideoContract(imageEditingConnection(connection).config, config.models?.find(model => model.id === request.model), request.operation) ? remainingVideoSupplier(connection.baseUrl) : undefined;
+    const videoContext = remainingVideoContext(connection.settings, config.models?.find(m => m.id === request.model), outboundRequest.assets);
     if (remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext)) outboundRequest = { ...outboundRequest, parameters: normalizeRemainingVideoParameters(remainingSupplier, outboundRequest, videoContext) };
     const received = await this.execute(
       connection,
@@ -1758,7 +1810,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
       }), { code: "music_submit_missing_id" });
     }
-    if ((videoRequest || !this.fixedConfig && (isCangyuanVideoRequest(request.model, connection.baseUrl) || remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext))) && !cloudTask &&
+    if (config.output.format !== "openai-chat-videos" && (videoRequest || !this.fixedConfig && (isCangyuanVideoRequest(request.model, connection.baseUrl) || remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext))) && !cloudTask &&
         !(typeof rawTaskId === "string" && rawTaskId.trim() || typeof rawTaskId === "number" && Number.isFinite(rawTaskId)))
       throw new ProviderHttpError("供应商已响应但未返回视频任务 ID；请核对供应商记录，避免重复提交。", {
         kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
@@ -1799,6 +1851,10 @@ export class GenericRestAdapter implements ProviderAdapter {
       );
       if (error !== undefined) result.error = String(error);
     }
+    if (status === "succeeded" && (config.output.format || config.output.requireOutput) && !(await this.extractOutputs(envelope)).length)
+      throw new ProviderHttpError(`供应商已返回响应但没有${config.output.kind === "video" ? "视频" : "图片"}；请核对供应商记录和响应，避免重复提交。`, {
+        kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
+      });
     return result;
   }
 
@@ -1959,13 +2015,22 @@ export class GenericRestAdapter implements ProviderAdapter {
       config.output.kind === "video"
         ? ["$.video_url", "$.metadata.video_url", "$.metadata.url"]
         : [];
-    const selected = [
+    const candidates = [
       config.output.path,
       ...(config.output.fallbackPaths ?? []),
       ...compatibilityFallbackPaths,
     ]
-      .map((path) => readJsonPath(remote, path))
-      .find((value) => value !== undefined && value !== null && value !== "");
+      .map((path) => readJsonPath(remote, path));
+    if (config.output.format) {
+      // An empty choices array or ordinary chat text must not hide a valid
+      // media field supplied by the same synchronous response.
+      for (const candidate of candidates) {
+        const outputs = chatMediaOutputs(candidate, config.output.kind === "video" ? "video" : "image", config.output.defaultMimeType);
+        if (outputs.length) return outputs;
+      }
+      return [];
+    }
+    const selected = candidates.find((value) => value !== undefined && value !== null && value !== "");
     const values = Array.isArray(selected)
       ? selected
       : selected === undefined

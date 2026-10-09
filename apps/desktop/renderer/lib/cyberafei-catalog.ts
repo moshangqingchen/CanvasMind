@@ -4,9 +4,12 @@ import type {
   RestConnectorConfig,
   RestModelConnectorOverride,
   RestRequestMapping,
+  StructuredModelPricing,
 } from "@super-canvas/providers";
+import { mediaPricingLabel } from "@super-canvas/providers/media-billing";
 import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
 import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
+import { inferGenerationMediaKinds } from "@super-canvas/providers/model-media";
 import { providerPriceUnit } from "./provider-pricing-unit";
 
 export const CYBERAFEI_SUPPLIER_KEY = "cyberafei";
@@ -25,6 +28,19 @@ const GEMINI_IMAGE_OPERATIONS = ["image.generate", "image.edit"] as const;
 const VIDEO_OPERATIONS = ["video.generate", "video.image-to-video"] as const;
 const IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 const IMAGE2_MAX_INPUT_IMAGES = 16;
+const CURRENT_IMAGE_REFERENCE_LIMIT = 16;
+type CurrentImageEndpoint = "gemini" | "image-generation" | "openai";
+// Exact rows read from the official 2026-10-09 pricing catalog. Live rows can add any image model using these protocols.
+const CURRENT_IMAGE_ENDPOINTS: Readonly<Record<string, readonly CurrentImageEndpoint[]>> = {
+  "gemini-3.1-flash-image": ["gemini", "openai"],
+  "gemini-3.1-flash-image-preview-2K": ["openai"],
+  "gemini-3.1-flash-image-preview-4K": ["openai"],
+  "nano-banana-pro": ["image-generation", "openai"],
+  "nano-banana2": ["image-generation", "openai"],
+  "gpt-image-2.5": ["openai"],
+  "gpt-image-2.5-flare": ["openai"],
+  "gpt-image-2.5-sunburst": ["openai"],
+};
 
 interface PricingRecord {
   model_name?: unknown;
@@ -301,6 +317,7 @@ function capabilityFor(
   const recordTags = tags(record.tags);
   const endpoints = strings(record.supported_endpoint_types);
   if (
+    endpoints.includes("openai-video") ||
     isSeedanceModel(id) ||
     isGrokModel(id) ||
     looksLikeVideoModel(id) ||
@@ -308,6 +325,7 @@ function capabilityFor(
   )
     return "video";
   if (
+    endpoints.includes("image-generation") ||
     isImageModel(id) ||
     looksLikeImageModel(id) ||
     recordTags.some((tag) => /图片|image/iu.test(tag))
@@ -317,12 +335,53 @@ function capabilityFor(
   return "other";
 }
 
+/** The public description quotes USD ledger amounts; group ratios apply once. */
+function conditionalPriceFor(record: PricingRecord, groupRatio: number, checkedAt: string): StructuredModelPricing | undefined {
+  if (record.quota_type !== 1 || typeof record.description !== "string" || !Number.isFinite(groupRatio) || groupRatio < 0) return;
+  const sentence = record.description.trim().split(/。/u).filter(Boolean).at(-1)?.trim();
+  if (!sentence) return;
+  const modeExpression = /(生成|编辑)[：:]\s*([^；;]+)/gu;
+  const modes = [...sentence.matchAll(modeExpression)];
+  // A generation/edit quote has two dimensions. Do not reduce it to the last
+  // branch or the minimum headline price when the input mode is unknown.
+  if (modes.length) {
+    if (sentence.replace(modeExpression, "").replace(/[；;\s]/gu, "") ||
+      new Set(modes.map(mode => mode[1])).size !== modes.length) return;
+    const prices = modes.map(mode => ({ mode: mode[1] === "生成" ? "generate" : "edit", label: mode[1]!,
+      pricing: conditionalPriceFor({ ...record, description: mode[2] }, groupRatio, checkedAt) }));
+    if (prices.some(price => !price.pricing) || new Set(prices.map(price => price.pricing?.billingUnit)).size !== 1) return;
+    return { ...prices[0]!.pricing!, tiers: prices.flatMap(({ mode, label, pricing }) => (pricing!.tiers ?? []).map(tier => ({
+      id: `${mode}-${tier.id}`, label: `${label} ${tier.label}`, price: tier.price, conditionMode: "all" as const,
+      conditions: [{ parameter: "mode", operator: "equals" as const, value: mode },
+        { parameter: "resolution", operator: "equals" as const, value: String(tier.value) }],
+    }))) };
+  }
+  const quote = sentence.split(/[；;]/u).filter(Boolean).at(-1)?.trim();
+  const unit = /额度\/(秒|次)$/u.exec(quote ?? "")?.[1];
+  if (!quote || !unit) return;
+  const expression = /((?:480p|720p|768p|1080p|1K|2K|4K)(?:\/(?:480p|720p|768p|1080p|1K|2K|4K))*)\s+(\d+(?:\.\d+)?)(?:额度\/(秒|次))?/gu;
+  const entries = [...quote.matchAll(expression)];
+  if (!entries.length || quote.replace(expression, "").replace(/[、，,\s]/gu, "") || entries.some(entry => entry[3] && entry[3] !== unit)) return;
+  const tiers = entries.flatMap(entry => entry[1]!.split("/").map(resolution => ({ id: resolution, label: resolution,
+    dimension: "resolution" as const, value: resolution, price: Number((Number(entry[2]) * groupRatio).toPrecision(12)) })));
+  if (new Set(tiers.map(tier => tier.id)).size !== tiers.length || tiers.some(tier => !Number.isFinite(tier.price) || tier.price < 0)) return;
+  return { kind: "tiered", currency: "USD", billingUnit: unit === "秒" ? "second" : "request", tiers,
+    sourceUrl: CYBERAFEI_CATALOG_SOURCE, checkedAt, confidence: "exact" };
+}
+
+function hasModePriceQuote(record: PricingRecord): boolean {
+  return typeof record.description === "string" && /(?:^|[。；;])\s*(?:生成|编辑)[：:]/u.test(record.description);
+}
+
 function priceFor(
   record: PricingRecord,
   groupRatio: number,
 ): { label: string; billing: string } {
   if (isCyberAfeiUnpricedCatalogVideo(CYBERAFEI_BASE_URL, String(record.model_name ?? "")))
     return { label: "价格条件待确认", billing: "计费条件待确认" };
+  const conditional = conditionalPriceFor(record, groupRatio, "");
+  if (conditional) return { label: mediaPricingLabel(conditional), billing: conditional.billingUnit === "second" ? "按秒计费（USD 账本）" : "按次计费（USD 账本）" };
+  if (hasModePriceQuote(record)) return { label: "生成/编辑计费条件待确认", billing: "以完整条件报价为准" };
   const quotaType = record.quota_type;
   const modelRatio =
     typeof record.model_ratio === "number" ? record.model_ratio : undefined;
@@ -357,7 +416,9 @@ function descriptorWithPricing(
   checkedAt: string,
 ): ModelDescriptor {
   const price = priceFor(record, groupRatio);
+  const conditional = conditionalPriceFor(record, groupRatio, checkedAt);
   const numericPrice =
+    !hasModePriceQuote(record) &&
     record.quota_type !== 0 &&
     typeof record.model_price === "number" &&
     Number.isFinite(record.model_price) &&
@@ -367,7 +428,9 @@ function descriptorWithPricing(
   const perSecond = providerPriceUnit(record) === "second";
   return {
     ...descriptor,
-    ...(numericPrice === undefined
+    ...(conditional
+      ? { pricing: conditional }
+      : numericPrice === undefined
       ? {}
       : {
           pricing: {
@@ -388,6 +451,7 @@ function descriptorWithPricing(
       groupRatio,
       priceLabel: price.label,
       billingLabel: price.billing,
+      ...(conditional ? { priceSource: "supplier-catalog", priceConditionsSource: "exact-model-description", priceLedgerCurrency: "USD", priceCheckedAt: checkedAt } : {}),
     },
   };
 }
@@ -775,9 +839,16 @@ function descriptorFor(record: PricingRecord): ModelDescriptor | null {
   if (typeof record.model_name !== "string" || !record.model_name.trim())
     return null;
   const id = record.model_name.trim();
-  const documentedVideo = remainingVideoModel("cyberafei", id);
+  const endpoints = strings(record.supported_endpoint_types);
+  const declaredVideo = endpoints.includes("openai-video") || /视频生成|文生视频|图生视频|video[ -]generation|text[ -]to[ -]video|image[ -]to[ -]video/iu.test(
+    `${typeof record.description === "string" ? record.description : ""} ${tags(record.tags).join(" ")}`);
+  const catalogModel: ModelDescriptor = { id, name: id, operations: [],
+    ...(declaredVideo ? { outputKinds: ["video"] } : {}),
+    metadata: { endpointTypes: endpoints, operationsSource: "inferred", outputKindsSource: declaredVideo ? "declared" : "inferred",
+      ...(declaredVideo || inferGenerationMediaKinds(id).includes("video") ? { catalogCapability: "video" } : {}) } };
+  const documentedVideo = remainingVideoModel("cyberafei", id, catalogModel);
   if (documentedVideo) return documentedVideo;
-  if (!isSupportedCanvasModel(id)) return null;
+  if (!isSupportedCanvasModel(id)) return currentImageDescriptor(record, id);
   if (isImage2Model(id)) {
     const defaultOutputSize = image2DefaultOutputSize(id);
     const testedInputSizes =
@@ -932,6 +1003,39 @@ function descriptorFor(record: PricingRecord): ModelDescriptor | null {
   };
 }
 
+function currentImageDescriptor(record: PricingRecord, id: string): ModelDescriptor | null {
+  const endpoints = strings(record.supported_endpoint_types);
+  const kinds = inferGenerationMediaKinds(id);
+  const explicitlyGeneratesImages = endpoints.includes("image-generation") || tags(record.tags).some(tag => /图片生成|图像生成|image[ -]?generation/iu.test(tag)) ||
+    typeof record.description === "string" && /图片生成|图像生成|文生图|image[ -]?generation/iu.test(record.description);
+  if (kinds.includes("video") || !kinds.includes("image") && !explicitlyGeneratesImages) return null;
+  const endpoint: CurrentImageEndpoint | undefined = endpoints.includes("gemini") ? "gemini"
+    : endpoints.includes("image-generation") ? "image-generation" : endpoints.includes("openai") ? "openai" : undefined;
+  if (!endpoint) return null;
+  const canEdit = endpoint !== "image-generation" || endpoints.includes("openai");
+  const parameters = endpoint === "gemini" ? geminiParameters(id).map(parameter => parameter.key === "imageSize"
+    ? { ...parameter, default: "auto", options: parameter.options?.map(option => option.value === "auto" ? { ...option, label: "模型默认（不指定档位）" } : option) }
+    : parameter) : [];
+  return { id, name: id, operations: canEdit ? IMAGE_EDIT_OPERATIONS : IMAGE_OPERATIONS,
+    inputKinds: canEdit ? ["text", "image", "image[]"] : ["text"], outputKinds: ["image"],
+    ...(typeof record.description === "string" ? { description: record.description } : {}), parameters,
+    limits: { maxInputImages: canEdit ? CURRENT_IMAGE_REFERENCE_LIMIT : 0, maxOutputImages: 1, supportedMimeTypes: IMAGE_MIME_TYPES },
+    metadata: { supplier: CYBERAFEI_SUPPLIER_KEY, protocol: endpoint === "gemini" ? "gemini-native" : endpoint === "openai" ? "openai-chat-images" : "openai-images",
+      cyberAfeiImageEndpoint: endpoint, cyberAfeiEndpointTypes: endpoints,
+      fixedOutputCount: 1, protocolEvidence: "official-endpoint-catalog-and-standard-protocol",
+      docsPath: endpoint === "gemini" ? "/docs/#/banana" : "/api/pricing", supportVerification: "not-generation-tested",
+      referenceImageLimitSource: "adapter", referenceImageLimit: CURRENT_IMAGE_REFERENCE_LIMIT,
+      ...(endpoint === "gemini" ? { resolutionVerification: "model-dependent-not-generation-tested" } : { sizeBehavior: "provider-decided" }) },
+  };
+}
+
+/** Only complete documented IDs are repaired; callers must retain current Key visibility and permission checks. */
+export function cyberAfeiDocumentedModel(id: string, evidence?: { endpointTypes?: readonly string[]; description?: string }): ModelDescriptor | null {
+  return descriptorFor({ model_name: id,
+    supported_endpoint_types: evidence?.endpointTypes ?? CURRENT_IMAGE_ENDPOINTS[id] ?? [],
+    ...(evidence?.description ? { description: evidence.description } : {}) });
+}
+
 function marketplaceModel(
   record: PricingRecord,
   ratio: number,
@@ -1065,6 +1169,39 @@ function geminiOverride(id: string): RestModelConnectorOverride {
   };
 }
 
+function chatImageOverride(): RestModelConnectorOverride {
+  return { submit: { path: "/v1/chat/completions", method: "POST", bodyMode: "json", idempotent: false,
+    template: { stream: false }, mappings: [
+      { target: "/model", source: { kind: "request", path: "$.model" } },
+      { target: "/messages", source: { kind: "openaiMessages", detail: "auto" } },
+    ], response: { errorPath: "$.error.message" } },
+    output: { path: "$.choices[*].message", kind: "image", format: "openai-chat-images", defaultMimeType: "image/png" } };
+}
+
+function currentImageOverride(model: ModelDescriptor): RestModelConnectorOverride | undefined {
+  const endpoint = model.metadata?.cyberAfeiImageEndpoint;
+  if (endpoint === "openai") return chatImageOverride();
+  if (endpoint === "image-generation") return {
+    submit: { path: "/v1/images/generations", method: "POST", bodyMode: "json", idempotent: false, mappings: [
+      { target: "/model", source: { kind: "request", path: "$.model" } }, { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
+    ], response: { errorPath: "$.error.message" } },
+    output: { path: "$.data", kind: "image", urlPath: "url", base64Path: "b64_json", defaultMimeType: "image/png", requireOutput: true },
+    ...(model.operations.includes("image.edit") ? { operationOverrides: { "image.edit": chatImageOverride() } } : {}),
+  };
+  if (endpoint !== "gemini") return;
+  return { auth: { type: "header", headerName: "x-goog-api-key" },
+    submit: { path: `/v1beta/models/${encodeURIComponent(model.id)}:generateContent`, method: "POST", bodyMode: "json", idempotent: false,
+      template: { contents: [{ role: "user", parts: [{ text: "" }] }], generationConfig: { responseModalities: ["IMAGE"] } }, mappings: [
+        { target: "/contents/0/parts/0/text", source: { kind: "request", path: "$.prompt" } },
+        ...Array.from({ length: CURRENT_IMAGE_REFERENCE_LIMIT }, (_, offset): RestRequestMapping => ({ target: `/contents/0/parts/${offset + 1}`,
+          source: { kind: "assets", assetKind: "image", select: "first", offset, encoding: "gemini-inline-part" }, omitIfUndefined: true })),
+        ...[["aspectRatio", "aspectRatio"], ["imageSize", "imageSize"]].map(([field, key]): RestRequestMapping => ({
+          target: `/generationConfig/imageConfig/${field}`, source: { kind: "request", path: `$.parameters.${key}` }, omitIfUndefined: true, omitValues: ["auto"] })),
+      ], response: { errorPath: "$.error.message" } },
+    output: { path: "$.candidates[*].content.parts[*]", kind: "image", format: "openai-chat-images", defaultMimeType: "image/png" },
+  };
+}
+
 function grokImageOverride(id: string): RestModelConnectorOverride {
   const mappings: RestRequestMapping[] = [
     { target: "/model", source: { kind: "request", path: "$.model" } },
@@ -1190,8 +1327,10 @@ export function cyberAfeiConnectorForModels(
 ): RestConnectorConfig {
   const modelOverrides: Record<string, RestModelConnectorOverride> = {};
   for (const model of models) {
-    const documentedVideo = remainingVideoTransport("cyberafei", model.id);
-    if (documentedVideo) modelOverrides[model.id] = documentedVideo;
+    const currentImage = currentImageOverride(model);
+    const documentedVideo = remainingVideoTransport("cyberafei", model.id, { model });
+    if (currentImage) modelOverrides[model.id] = currentImage;
+    else if (documentedVideo) modelOverrides[model.id] = documentedVideo;
     else if (supportsImage2Reference(model.id))
       modelOverrides[model.id] = image2ReferenceOverride();
     else if (isGeminiImageModel(model.id))

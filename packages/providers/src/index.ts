@@ -39,6 +39,7 @@ export * from "./rest.js";
 export * from "./reference-image-hosting.js";
 export * from "./secure-skill-image.js";
 export * from "./chuangxiang-images-contract.js";
+export * from "./chuangxiang-midjourney.js";
 export * from "./provider-asset-token.js";
 export * from "./registry.js";
 export * from "./runway.js";

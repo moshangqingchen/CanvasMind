@@ -48,6 +48,11 @@ const legacyVideoPoll = { path: "/v1/videos/{taskId}", method: "GET", bodyMode: 
 const legacyVideoOutput = { path: "$.url", fallbackPaths: ["$.data.url", "$.video_url", "$.result_url"], kind: "video", defaultMimeType: "video/mp4",
   contentFallback: { path: "/v1/dream/tasks/{taskId}/content" } };
 
+/** Recognize the built-in base template without exempting custom routes. */
+export function isMiaowuLegacyVideoBaseConnector(connector: RestConnectorConfig): boolean {
+  return matches(connector.submit, legacyVideoSubmit) && matches(connector.poll, legacyVideoPoll) && matches(connector.output, legacyVideoOutput);
+}
+
 function exactBinding(config: Readonly<Record<string, unknown>>, selected: ModelDescriptor, operation?: ProviderOperation): boolean {
   if (selected.metadata?.autoInterfaceStatus === "incomplete") return false;
   const bindings = object(config.autoModelInterfaces), binding = object(bindings?.[selected.id]);

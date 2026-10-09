@@ -295,6 +295,36 @@ const model: ModelDescriptor = {
   operations: [],
   metadata: { canvasRunnable: false },
 };
+it.each(["nano-banana-pro", "veo3.1-lite"])("generic enrichment preserves %s high-resolution quotes from the exact current Cyber group", id => {
+  const group = "图片视频模型综合分组", origin = "https://api.3365api.cn", description = id === "nano-banana-pro"
+    ? "高质量图片生成。1K/2K 1.125额度/次，4K 1.65额度/次。" : "轻量视频生成。720p 3、1080p 3.75、4K 15额度/次。";
+  const parsed = parseSupplierCatalog({ group_ratio: { [group]: 1 }, data: [{ model_name: id, quota_type: 1, model_price: 1.125, description, enable_groups: [group] }] },
+    { supplierSiteUrl: origin, checkedAt: "now" });
+  const quote = parsed.groups[0]!.models[0]!.metadata?.officialCatalogPricing as NonNullable<ModelDescriptor["pricing"]>;
+  const descriptor: ModelDescriptor = { id, name: id, operations: id.includes("banana") ? ["image.generate"] : ["video.generate"], pricing: quote,
+    metadata: { priceSource: "supplier-catalog", priceLabel: parsed.groups[0]!.models[0]!.priceLabel } };
+  const enriched = applySupplierCatalogPrices([descriptor], group, { ...parsed, status: "live", kind: "newapi", complete: true, checkedAt: "now" }, origin)[0]!;
+  expect(enriched.pricing).toEqual(quote);
+  expect(modelPriceSummary(enriched, { resolution: "4K" })).toBe(`${id.includes("banana") ? 1.65 : 15} USD / 次`);
+  expect(modelEstimatedCost(enriched, { resolution: "4K", n: 1 })).toBe(`${id.includes("banana") ? 1.65 : 15} USD`);
+  expect(modelEstimatedCost(enriched, {})).toBeUndefined();
+  expect(modelPriceSummary(enriched, { resolution: "{{resolution}}" })).toBe(enriched.metadata?.priceLabel);
+  expect(modelEstimatedCost(enriched, { resolution: "{{resolution}}", n: 1 })).toBeUndefined();
+});
+it("preserves Cyber Omni's generate/edit resolution prices through generic supplier enrichment", () => {
+  const origin = "https://api.3365api.cn", group = "图片视频模型综合分组", id = "omni-flash";
+  const payload = { group_ratio: { [group]: 1 }, data: [{ model_name: id, quota_type: 1, model_price: 8.25, enable_groups: [group],
+    supported_endpoint_types: ["openai"], description: "Omni 生成编辑视频。生成：720p 8.25、1080p 15、4K 21额度/次；编辑：720p 10.5、1080p 15、4K 21额度/次。" }] };
+  const descriptor = resolveCyberAfeiScannedGroup(cyberAfeiCatalogFromPricing(payload), group, [id]).canvasDisplayModels.find(model => model.id === id)!;
+  const parsed = parseSupplierCatalog(payload, { supplierSiteUrl: origin, checkedAt: "now" });
+  const enriched = applySupplierCatalogPrices([descriptor], group, { ...parsed, status: "live", kind: "newapi", complete: true, checkedAt: "now" }, origin)[0]!;
+  expect(enriched.pricing).toEqual(descriptor.pricing);
+  expect(enriched.pricing?.unitAmount).toBeUndefined();
+  expect(modelEstimatedCost(enriched, { mode: "generate", resolution: "720p" })).toBe("8.25 USD");
+  expect(modelEstimatedCost(enriched, { mode: "edit", resolution: "720p" })).toBe("10.5 USD");
+  expect(modelEstimatedCost(enriched, { mode: "{{mode}}", resolution: "720p" })).toBeUndefined();
+  expect(modelPriceSummary(enriched, { mode: "{{mode}}", resolution: "{{resolution}}" })).toBe(descriptor.metadata?.priceLabel);
+});
 
 const secureCatalog = (multiplier = 1): SupplierCatalogDiscovery => ({
   kind: "sub2api", status: "live", complete: true, checkedAt: "2026-10-08T11:21:08.582Z",
@@ -307,6 +337,26 @@ const secureCatalog = (multiplier = 1): SupplierCatalogDiscovery => ({
 const secureVideo: ModelDescriptor = { id: "doubao-seedance-2-0-260128", name: "Seedance 2.0", operations: ["video.generate"],
   parameters: [{ key: "resolution", label: "分辨率", control: "select", default: "720p", options: [{ label: "720p", value: "720p" }] }],
 };
+it.each(["https://token.secure-skill.com", "https://token.secure-skill.com/api/v1/pricing/channels"])(
+  "explains an unquoted exact Secure Wan ID without borrowing or overwriting Prime's price (%s)", origin => {
+    const checkedAt = "2026-10-09T11:59:00Z", group = "Wan", sourceUrl = "https://token.secure-skill.com/api/v1/pricing/channels";
+    const primePricing: NonNullable<ModelDescriptor["pricing"]> = { kind: "per-second", currency: "CNY", unitAmount: .5,
+      billingUnit: "second", confidence: "exact", checkedAt, sourceUrl };
+    const current: SupplierCatalogDiscovery = { kind: "sub2api", status: "live", complete: true, checkedAt,
+      groups: [{ id: group, label: group, source: "catalog", models: [{ id: "wan3.0-prime", capability: "video", priceLabel: "¥0.5/秒",
+        metadata: { secureSkillCatalogPricing: primePricing } }] }] };
+    const models: ModelDescriptor[] = ["wan3.0", "wan3.0-prime"].map(id => ({ id, name: id, operations: ["video.generate"], outputKinds: ["video"],
+      metadata: { canvasRunnable: true } }));
+    const [wan, prime] = applySupplierCatalogPrices(models, group, current, origin);
+    expect(wan?.pricing).toBeUndefined();
+    expect(wan?.metadata).toMatchObject({ canvasRunnable: true, priceStatus: "unpublished", priceLabel: "价格未公布", priceCheckedAt: checkedAt,
+      priceSourceUrl: sourceUrl, priceUnavailableReason: `${checkedAt} 已查询 ${sourceUrl}：当前分组 Wan 未列出完整型号 wan3.0 的报价` });
+    expect(modelEstimatedCost(wan!, { duration: 6 })).toBeUndefined();
+    expect(prime?.pricing).toEqual(primePricing);
+    expect(prime?.metadata?.priceUnavailableReason).toBeUndefined();
+    expect(prime?.metadata?.canvasRunnable).toBe(true);
+    expect(modelEstimatedCost(prime!, { duration: 6 })).toBe("3 CNY");
+  });
 
 it("replaces Miaowu's catalog-owned token placeholder with exact native video rules through saved and cached enrichment", async () => {
   const checkedAt = "2026-10-08T22:37:14.000Z", origin = "https://api.miaowuai.store";
@@ -983,6 +1033,75 @@ describe("universal supplier price lookup", () => {
     expect(result.metadata?.imageResolutionOrigins).toEqual({ "1K": "native", "2K": "upscaled", "4K": "upscaled" });
     expect(result.metadata?.supplierGroupResolutionLabel).toContain("说明超分 2K / 4K");
   });
+  it("repairs both explicitly priced pDog aliases while their old protocol cache is pending", () => {
+    const ids = ["gemini-3.1-flash-image-preview", "gemini-3-pro-image", "gemini-3.6-flash-image", "gemini-nano-banana-2.1"];
+    const images = ids.map(id => ({ id, name: id, operations: [], outputKinds: ["image" as const],
+      metadata: { canvasRunnable: false, protocol: "unknown", priceLabel: "价格未公布", priceSource: "supplier-catalog" } }));
+    const group = { id: "香蕉", label: "香蕉", source: "catalog" as const,
+      models: ids.map(id => ({ id, capability: "image" as const })), details: { source: "key-groups" as const,
+        description: `香蕉2：0.07/张, ID：${ids[0]}\n香蕉pro：0.08/张, ID：${ids[1]}\n香蕉2.1：0.07/张，ID：${ids[3]}(${ids[2]})` } };
+    const priced = applySupplierCatalogPrices(images, group.id, { ...catalog, groups: [group] });
+    expect(priced.slice(2).map(image => image.metadata?.priceLabel)).toEqual([
+      "香蕉2.1：0.07/张（分组说明参考）", "香蕉2.1：0.07/张（分组说明参考）",
+    ]);
+    for (const image of priced.slice(2)) {
+      expect(image.metadata).toMatchObject({ priceStatus: "available", priceSource: "supplier-group", canvasRunnable: false });
+      expect(image.pricing).toBeUndefined(); // Public group wording supplies no currency.
+    }
+  });
+  it("uses declared image output for Midjourney pricing and excludes declared text output from image group prices", () => {
+    const pending: ModelDescriptor = { id: "midjourney-1k", name: "midjourney-1k", operations: [], outputKinds: ["image"], metadata: {} };
+    const text: ModelDescriptor = { id: "gemini-3.6-flash-image", name: "text only", operations: [], outputKinds: ["text"], metadata: { outputKindsSource: "declared" } };
+    const group = { id: "images", label: "images", source: "catalog" as const,
+      models: [{ id: pending.id, capability: "image" as const }, { id: text.id, capability: "chat" as const }],
+      details: { source: "key-groups" as const, description: "¥0.4/次" } };
+    const priced = applySupplierCatalogPrices([pending, text], group.id, { ...catalog, groups: [group] });
+    expect(priced[0]?.pricing).toMatchObject({ kind: "per-request", currency: "CNY", unitAmount: .4 });
+    expect(priced[1]?.metadata?.priceLabel).toBe("价格未公布");
+    expect(priced[1]?.pricing).toBeUndefined();
+    const conditional = { ...group, details: { ...group.details, description: "1K ¥0.2/张；4K ¥0.4/张" } };
+    const quoted = applySupplierCatalogPrices([pending], group.id, { ...catalog, groups: [conditional] })[0]!;
+    expect(quoted.metadata?.priceLabel).toContain("1K ¥0.2/张");
+    expect(quoted.pricing).toBeUndefined();
+  });
+  it("displays the current mixed Grok group's video rate separately from its image quote", () => {
+    const ids = ["grok-imagine-image", "grok-imagine-video", "grok-imagine-video-1.5"];
+    const models: ModelDescriptor[] = ids.map((id, index) => ({ id, name: id, operations: [], outputKinds: [index ? "video" : "image"], metadata: {} }));
+    const group = { id: "grok heavy", label: "grok heavy", source: "catalog" as const,
+      models: ids.map((id, index) => ({ id, capability: index ? "video" as const : "image" as const })),
+      details: { source: "key-groups" as const, description: "图片 0.02一张\n视频 0.18/s", rateMultiplier: .1 } };
+    const priced = applySupplierCatalogPrices(models, group.id, { ...catalog, groups: [group] });
+    expect(priced.map(model => model.metadata?.priceLabel)).toEqual([
+      "图片 0.02一张（分组说明参考）", "视频 0.18/s（分组说明参考）", "视频 0.18/s（分组说明参考）",
+    ]);
+    expect(priced.every(model => model.pricing === undefined)).toBe(true); // No currency or further multiplier is implied.
+    const imageOnly = { ...group, details: { ...group.details, description: "生图5分一张" } };
+    const unquoted = applySupplierCatalogPrices([models[1]!], group.id, { ...catalog, groups: [imageOnly] })[0]!;
+    expect(unquoted.metadata?.priceLabel).toBe("价格未公布");
+    expect(unquoted.pricing).toBeUndefined();
+    const stale = { ...group, details: { ...group.details, stale: true } };
+    expect(applySupplierCatalogPrices(models, group.id, { ...catalog, groups: [stale] })[1]?.metadata?.priceStatus).toBe("unpublished");
+  });
+  it("records the current source and date for unquoted exact Miaowu aliases and Hang video while keeping their interfaces runnable", () => {
+    for (const [origin, groupId, ids] of [
+      ["https://api.miaowuai.store", "default", ["dreamina-seedance-2.0-fast", "dreamina-seedance-2.0-mini", "seedance-2.0-fast-deal", "seedance-2.5-deal", "video-editing"]],
+      ["https://api.hangzhale.com", "grok heavy", ["grok-imagine-video", "grok-imagine-video-1.5"]],
+    ] as const) {
+      const models: ModelDescriptor[] = ids.map(id => ({ id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: { canvasRunnable: true } }));
+      const current: SupplierCatalogDiscovery = { kind: "newapi", status: "live", complete: true, checkedAt: "2026-10-09T04:20:00Z",
+        groups: [{ id: groupId, label: groupId, source: "catalog", models: [{ id: "another-video", capability: "video", priceLabel: "¥9/次" }],
+          details: { source: "key-groups", description: "生图5分一张" } }] };
+      const priced = applySupplierCatalogPrices(models, groupId, current, origin);
+      for (const model of priced) {
+        expect(model.metadata).toMatchObject({ canvasRunnable: true, priceLabel: "价格未公布", priceStatus: "unpublished", priceCheckedAt: current.checkedAt });
+        expect(model.metadata?.priceUnavailableReason).toContain(current.checkedAt);
+        expect(model.metadata?.priceUnavailableReason).toContain(`完整型号 ${model.id}`);
+        expect(model.metadata?.priceUnavailableReason).toContain(String(model.metadata?.priceSourceUrl));
+        expect(model.pricing).toBeUndefined();
+        expect(modelEstimatedCost(model, {})).toBeUndefined();
+      }
+    }
+  });
   it("reads scoped documentation before measured fallback and retains conditional wording", () => {
     const missing = {...model, metadata:{priceLabel:"价格未公布"}};
     expect(applyDocumentedModelPrice(missing, "new-image：¥0.16/张", "https://example.com/docs").pricing?.unitAmount).toBe(0.16);
@@ -1095,7 +1214,8 @@ describe("universal supplier price lookup", () => {
   it("uses group prices only as image references and keeps explicit model prices first", () => {
     const image = { ...model, id: "gpt-image-2", operations: ["image.generate"] as const };
     const groups = [{id:"images", label:"Images", source:"catalog" as const, models:[], details:{source:"key-groups" as const, description:"1张0.015，仅支持1K2K，不支持4K", referencePrice:"1张0.015", supportedResolutions:["1K","2K"], unsupportedResolutions:["4K"],exclusiveResolutions:true}}];
-    const result = applySupplierCatalogPrices([image, model], "images", { ...catalog, groups });
+    const pendingImage = { ...model, id: "midjourney-1k" };
+    const result = applySupplierCatalogPrices([image, pendingImage], "images", { ...catalog, groups });
     expect(result[0]?.metadata).toMatchObject({ priceLabel:"1张0.015（分组说明参考）", priceSource:"supplier-group", supplierGroupResolutionLabel:"仅支持 1K / 2K；不支持 4K" });
     expect(result[0]?.parameters).toEqual(image.parameters);
     expect(result[1]?.metadata?.priceLabel).toBe("1张0.015（分组说明参考）"); // Image ID is sufficient even before protocol adaptation.

@@ -27,6 +27,8 @@ function declaredImageEditingCapabilities(connection: ImageEditingConnection, mo
   if (url.protocol !== "https:" || url.port || url.username || url.password || url.search || url.hash ||
       !/^(?:\/v1)?\/?$/u.test(url.pathname)) return none;
   const group = String(config.accountKeyGroup ?? config.modelGroup ?? "");
+  if (["openai", "rest"].includes(connection.provider) && url.hostname === "vapi.chuangxiangai.asia" && group === "生图" &&
+      /^midjourney-(?:1k|2k)$/u.test(modelId) && parameters.reference === "editor") return { transparent: false, mask: "url" };
   if (connection.provider === "openai") {
     if (url.hostname === "token.secure-skill.com") return { transparent: modelId === "gpt-image-2", mask: null };
     if (url.hostname === "tu.988236.xyz") return { transparent: group === "image2.5全参" && image25.has(modelId), mask: null };

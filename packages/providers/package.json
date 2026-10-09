@@ -140,6 +140,11 @@
       "types": "./src/chuangxiang-image-contract.ts",
       "import": "./dist/chuangxiang-image-contract.js",
       "default": "./dist/chuangxiang-image-contract.js"
+    },
+    "./chuangxiang-midjourney-contract": {
+      "types": "./src/chuangxiang-midjourney-contract.ts",
+      "import": "./dist/chuangxiang-midjourney-contract.js",
+      "default": "./dist/chuangxiang-midjourney-contract.js"
     }
   },
   "files": [

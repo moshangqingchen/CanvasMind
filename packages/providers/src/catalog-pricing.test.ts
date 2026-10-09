@@ -3,8 +3,28 @@ import { catalogPriceLabel, scopedCatalogMediaPricing } from "./catalog-pricing.
 import { parseSupplierCatalog } from "./supplier-catalog.js";
 import { discoverSupplierCatalog } from "./supplier-catalog.js";
 import { scanProviderModelCatalog } from "./model-catalog.js";
+import { modelPriceAmount } from "./media-billing.js";
 
 describe("catalog prices for arbitrary new models", () => {
+  it.each([
+    ["nano-banana-pro", "高质量图片生成。1K/2K 1.125额度/次，4K 1.65额度/次。", [1.125, 1.125, 1.65]],
+    ["nano-banana2", "图片生成。1K/2K 0.9额度/次，4K 1.5额度/次。", [.9, .9, 1.5]],
+    ["veo3.1", "视频生成，支持 720p、1080p、4K。720p 45、1080p 52.5、4K 67.5额度/次。", [45, 52.5, 67.5]],
+    ["veo3.1-fast", "快速视频生成。720p/1080p 5.625额度/次，4K 15.75额度/次。", [5.625, 5.625, 15.75]],
+    ["veo3.1-lite", "轻量视频生成。720p 3、1080p 3.75、4K 15额度/次。", [3, 3.75, 15]],
+  ] as const)("preserves all current %s resolution request prices in generic discovery", (id, description, prices) => {
+    const group = "图片视频模型综合分组", row = { model_name: id, quota_type: 1, model_price: prices[0], description, enable_groups: [group] };
+    const catalog = parseSupplierCatalog({ group_ratio: { [group]: .5 }, data: [row] }, { supplierSiteUrl: "https://api.3365api.cn", checkedAt: "now" });
+    const quote = catalog.groups[0]!.models[0]!.metadata?.officialCatalogPricing as NonNullable<import("./contracts.js").ModelDescriptor["pricing"]>;
+    expect(quote).toMatchObject({ kind: "tiered", billingUnit: "request", currency: "USD", checkedAt: "now" });
+    expect(quote.tiers?.map(tier => tier.price)).toEqual(prices.map(price => price / 2));
+    expect(quote.unitAmount).toBeUndefined();
+    expect(modelPriceAmount(quote, {})).toBeUndefined();
+    expect(modelPriceAmount(quote, { resolution: "4K" })).toBe(prices.at(-1)! / 2);
+    expect(scopedCatalogMediaPricing({ ...row, model_name: `${id}-unlisted` }, { supplierSiteUrl: "https://api.3365api.cn", group, multiplier: .5 })).toBeUndefined();
+    expect(scopedCatalogMediaPricing(row, { supplierSiteUrl: "https://api.3365api.cn", group: "other", multiplier: .5 })).toBeUndefined();
+    expect(scopedCatalogMediaPricing({ ...row, description: `${description}额外条件待确认` }, { supplierSiteUrl: "https://api.3365api.cn", group, multiplier: .5 })).toBeUndefined();
+  });
   it("keeps the three exact official Afei seconds and all resolution quotes in the generic catalog", () => {
     const descriptions = [
       ["minimax-h3", "MiniMax H3 视频生成，按时长计费。768p 1.875额度/秒，2K 3额度/秒。", [1.875, 3]],

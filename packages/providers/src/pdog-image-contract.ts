@@ -3,6 +3,7 @@ import { IMAGE_SIZE_RATIOS, imageSizeForTier, type ImageSizeTier } from "./image
 
 export const PDOG_IMAGE_DOCUMENTATION = "https://ai.whyshy.cn/docs/async-image-api.html";
 export const PDOG_GEMINI_DOCUMENTATION = "https://ai.whyshy.cn/docs/gemini-image-api.html";
+export const PDOG_GEMINI_LEGACY_UNAVAILABLE = "PDog 香蕉文档仅声明 gemini-3-pro-image 和 gemini-3.1-flash-image-preview；请使用当前分组确认的型号";
 const GPT_MODELS = new Set(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
 export const PDOG_IMAGE_QUALITIES = ["low", "medium", "high"] as const;
 export const PDOG_IMAGE_25_QUALITIES = ["auto", "low", "medium", "high", "xhigh", "max"] as const;

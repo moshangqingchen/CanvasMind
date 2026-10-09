@@ -45,6 +45,7 @@ import {
   restRequestRequiresPublicAssets,
   secureSkillRequiresPublicAssets,
   chuangxiangRequiresPublicAssets,
+  chuangxiangMidjourneyRequiresPublicAssets,
   bananaImageRoute,
   bananaRequiresPublicAssets,
   normalizeBananaParameters,
@@ -3039,6 +3040,7 @@ export class RunService {
           (providerName !== "fake" && operation.startsWith("video.") && isRecord(descriptor) && isRecord(descriptor.metadata) && descriptor.metadata.remoteMediaUrlsOnly === true) ||
           secureSkillRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           chuangxiangRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
+          chuangxiangMidjourneyRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           bananaRequiresPublicAssets(providerName, connectionConfig, model))) {
       if (frozenConnection?.cloudGeneration) {
         const savedUrls = nodeRun.inputJson.cloudReferenceUrls;

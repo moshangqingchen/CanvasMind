@@ -51,9 +51,21 @@ export function cleanModelDisplayName(name: string, priceLabel?: unknown): strin
   return result;
 }
 
+function mediaPriceParameters(model: ModelDescriptor, parameters: Readonly<Record<string, unknown>>) {
+  if (model.metadata?.sourceVideoPriceMode !== "edit") return { parameters, valid: true };
+  const mode = parameters.mode ?? model.parameters?.find(parameter => parameter.key === "mode")?.default;
+  const hasVideo = parameters.has_reference_video;
+  if ((mode === "generate" && hasVideo === true) || (mode === "edit" && hasVideo === false)) return { parameters, valid: false };
+  return { parameters: (mode === undefined || mode === "auto") && typeof hasVideo === "boolean"
+    ? { ...parameters, mode: hasVideo ? "edit" : "generate" } : parameters, valid: true };
+}
+
 export function modelPriceSummary(model: import("@super-canvas/providers").ModelDescriptor | undefined, parameters: Readonly<Record<string, unknown>>): string {
   if (!model) return "价格未知";
   model = normalizeTk1688CnyModel(model);
+  const media = mediaPriceParameters(model, parameters);
+  if (!media.valid) return "当前模式与参考视频不匹配";
+  parameters = media.parameters;
   const pricing = model.pricing;
   const tier = String(parameters.size_tier ?? parameters.resolution ?? parameters.image_size ?? "").toUpperCase()
     || model.parameters?.find(p => p.key === "size")?.options?.find(option => option.value === parameters.size)?.label.match(/\b[124]K\b/iu)?.[0]?.toUpperCase();
@@ -115,6 +127,9 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
 export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
   if (!model || model.metadata?.priceSource === "generated-result" || model.metadata?.priceStatus === "partial") return undefined;
   model = normalizeTk1688CnyModel(model);
+  const media = mediaPriceParameters(model, parameters);
+  if (!media.valid) return undefined;
+  parameters = media.parameters;
   const pricing = model.pricing;
   if (!pricing || !["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return undefined;
   const values = { ...Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default])), ...parameters };
@@ -123,7 +138,8 @@ export function modelEstimatedCost(model: ModelDescriptor | null | undefined, pa
   const resolution = values.size_tier ?? values.resolution ?? values.image_size;
   const amount = modelPriceAmount(pricing, { ...values, ...(resolution ? { resolution } : {}) });
   if (amount === undefined || !Number.isFinite(amount) || amount < 0) return undefined;
-  const count = Number(values.n ?? model.metadata?.fixedOutputCount ?? 1);
+  const perTask = pricing.billingUnit === "request" || pricing.kind === "per-request" || pricing.billingUnit === "second" || pricing.kind === "per-second";
+  const count = Number(values.n ?? (perTask ? model.metadata?.fixedRequestCount : model.metadata?.fixedOutputCount) ?? 1);
   if (!Number.isInteger(count) || count < 1) return undefined;
   const perSecond = pricing.billingUnit === "second" || pricing.kind === "per-second";
   const duration = Number(values.duration ?? values.duration_seconds ?? values.seconds);

@@ -1,16 +1,17 @@
 import type { ModelDescriptor, NormalizedRequest, ProviderAdapter, ProviderConnectionResolver, ProviderTask } from "./contracts.js";
 import type { DocumentedModelInterface } from "./documented-interface.js";
-import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
+import { GenericRestAdapter, preservesMiaowuExplicitVideoContract, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
 import { BananaImageAdapter, bananaImageRoute, applyBananaImageCapabilities, bananaNativeOutputs } from "./banana-image.js";
-import { isPdogImageConnection, PdogImageAdapter } from "./pdog-image.js";
+import { isPdogImageConnection, pdogImageOrigin, PdogImageAdapter } from "./pdog-image.js";
 import { isChuangxiangImageConnection, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
+import { isChuangxiangMidjourneyConnection, applyChuangxiangMidjourneyCapabilities, ChuangxiangMidjourneyAdapter } from "./chuangxiang-midjourney.js";
 import { imageEditingConnection, imageEditingRequestIssues, usesDeclaredImagesEditingRoute } from "./image-editing-capabilities.js";
 import { assertValidResult } from "./contracts.js";
 import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import { isCangyuanMusicRequest } from "./cangyuan-music.js";
 import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanNativeSeedanceRequest } from "./cangyuan-video-contract.js";
 import { chuangxiangVideoModel, chuangxiangVideoTransport, isChuangxiangVideoConnection } from "./chuangxiang-video-contract.js";
-import { remainingVideoSupplier, remainingVideoModel, remainingVideoTransport, type RemainingVideoContext } from "./remaining-video-contracts.js";
+import { remainingVideoSupplier, remainingVideoModel, remainingVideoTransport, remainingVideoRequiresPublicUrls, restoreRemainingVideoModel, type RemainingVideoContext } from "./remaining-video-contracts.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
 import { supplierImageParameterIssues } from "./supplier-image-constraints.js";
 
@@ -36,12 +37,22 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
   private async selected(request: NormalizedRequest): Promise<ProviderAdapter> {
     if (!request.model) return this.fallback;
     const connection = await this.connections.resolve(request.connectionId);
+    const config = imageEditingConnection(connection).config;
+    if ((pdogImageOrigin(connection.baseUrl) || config.supplierKey === "chentu") &&
+        (config.supplierArchived === true || ["agent", "disabled"].includes(String(config.usage))))
+      throw new Error("当前供应商连接已归档或未启用图片用途");
     const editingIssues = [...imageEditingRequestIssues(imageEditingConnection(connection), request),
       ...supplierImageParameterIssues(imageEditingConnection(connection), { ...request, model: request.model })];
     assertValidResult({ valid: !editingIssues.length, issues: editingIssues });
     const catalog = connection.settings?.modelCatalogModels;
-    const current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
+    let current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
     const binding = savedModelInterfaces(connection.settings)[request.model];
+    const supplier = remainingVideoSupplier(connection.baseUrl);
+    const group = connection.settings?.accountKeyGroup ?? connection.settings?.modelGroup ?? connection.settings?.group ?? connection.settings?.supplierGroupId;
+    const description = connection.settings?.supplierGroupDescription ?? connection.settings?.groupDescription;
+    const context: RemainingVideoContext = { group: typeof group === "string" ? group : "",
+      groupDescription: typeof description === "string" ? description : "", ...(current ? { model: current } : {}), assets: request.assets };
+    if (request.operation.startsWith("video.") && !preservesMiaowuExplicitVideoContract(config, current, request.operation)) current = restoreRemainingVideoModel(supplier, request.model, current, connection.settings, context) ?? current;
     if (["openai", "weai"].includes(connection.provider) && (request.operation.startsWith("video.") || request.operation === "music.generate")) {
       const ids = connection.settings?.scannedModelIds;
       const unavailableReason = String(current?.metadata?.canvasUnavailableReason ?? "");
@@ -52,14 +63,10 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       const media = request.operation === "music.generate" ? "music" : "video";
       if (current && !modelSupportsGenerationMedia(current, media))
         throw new Error(media === "video" ? "当前型号未声明视频输出，不能用于视频节点" : "当前型号未声明音乐输出，不能用于音乐节点");
-      if (media === "video") {
-        const supplier = remainingVideoSupplier(connection.baseUrl);
-        const group = connection.settings?.accountKeyGroup ?? connection.settings?.modelGroup ?? connection.settings?.group ?? connection.settings?.supplierGroupId;
-        const description = connection.settings?.supplierGroupDescription ?? connection.settings?.groupDescription;
+      const explicitBinding = binding?.model?.id === request.model && binding.model.operations.includes(request.operation) && binding.connector?.output.kind === (media === "video" ? "video" : "audio");
+      if (media === "video" && !explicitBinding && !preservesMiaowuExplicitVideoContract(config, current, request.operation)) {
         // Account settings are authoritative: cached catalog group metadata
         // cannot grant another Key's Flow/SD transport when group is absent.
-        const context: RemainingVideoContext = { group: typeof group === "string" ? group : "",
-          groupDescription: typeof description === "string" ? description : "", ...(current ? { model: current } : {}) };
         const nativeCangyuan = connection.provider === "openai" && isCangyuanNativeSeedanceRequest(request.model, connection.baseUrl);
         const nativeChuangxiang = connection.provider === "openai" && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
         const descriptor = nativeCangyuan ? cangyuanVideoModel(current ?? {
@@ -75,7 +82,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
           // freeze them out. Saved credentials, provider and settings stay intact.
           const connector: RestConnectorConfig = { ...transport, submit: transport.submit, output: transport.output,
             auth: { type: "bearer" }, allowedHosts: [new URL(connection.baseUrl!).hostname],
-            assetsRequirePublicUrls: true, models: [descriptor], restrictModels: true };
+            assetsRequirePublicUrls: supplier ? remainingVideoRequiresPublicUrls(supplier, request.model, context) : true, models: [descriptor], restrictModels: true };
           const resolver: ProviderConnectionResolver = { resolve: async id => id === connection.id
             ? { ...connection, settings: { ...connection.settings, connector } } : this.connections.resolve(id) };
           const { config: _fixedConfig, ...nativeOptions } = this.options;
@@ -102,6 +109,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       const descriptor = applyBananaImageCapabilities(source, current ?? {
         id: request.model, name: request.model, operations: ["image.generate", "image.edit"],
       });
+      if (!modelSupportsGenerationMedia(descriptor, "image")) throw new Error("当前型号未声明图片输出，不能用于图片节点");
       if (descriptor.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
         throw new Error("当前分组没有此香蕉模型的可用权限或接口");
       const submitRoute = bananaRoute.asyncTextGeneration && !request.assets?.length
@@ -115,6 +123,15 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       const mode = request.parameters?.background === "transparent" && transparentEvidence?.transport.kind === "pdog-async"
         ? "async" : connection.settings?.pdogImageMode === "sync" ? "sync" : "async";
       return new PdogImageAdapter(this.connections, this.options, mode);
+    }
+    if (["openai", "rest"].includes(connection.provider) && request.operation.startsWith("image.") && isChuangxiangMidjourneyConnection(source.config, request.model)) {
+      const ids = connection.settings?.scannedModelIds;
+      const descriptor = applyChuangxiangMidjourneyCapabilities(source, current ?? {
+        id: request.model, name: request.model, operations: ["image.generate", "image.edit"],
+      });
+      if (descriptor.metadata?.canvasRunnable === false || !modelSupportsGenerationMedia(descriptor, "image") ||
+          (Array.isArray(ids) && !ids.includes(request.model))) throw new Error("当前创想分组没有此 Midjourney 型号的可用权限或接口");
+      return new ChuangxiangMidjourneyAdapter(this.connections, this.options);
     }
     if (connection.provider === "openai" && request.operation.startsWith("image.") && isChuangxiangImageConnection(source.config, request.model)) {
       const ids = connection.settings?.scannedModelIds;

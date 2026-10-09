@@ -8,11 +8,12 @@ import {
   type JsonObject,
   type ProviderConnectionRecord,
 } from "@super-canvas/db";
-import { decryptSecret, providerFetch } from "@super-canvas/providers";
+import { decryptSecret, providerFetch, preservesMiaowuExplicitVideoContract, isMiaowuLegacyVideoBaseConnector } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
 import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
 import { createHash } from "node:crypto";
-import type { ModelDescriptor } from "@super-canvas/providers";
+import type { ModelDescriptor, RestConnectorConfig, RestModelConnectorOverride } from "@super-canvas/providers";
+import { remainingVideoModelIds } from "@super-canvas/providers/remaining-video-contracts";
 import {
   MIAOWU_BASE_URL,
   MIAOWU_PRESET_ID,
@@ -130,6 +131,43 @@ function modelsFromScannedDirectories(catalogModels: ModelDescriptor[], scan: Mi
     ...(mediaModels.has(model.id) ? { mediaDirectoryStatus: scan.mediaDirectory!.status,
       mediaDirectoryCheckedAt: scan.mediaDirectory!.checkedAt, mediaDirectoryStale: scan.mediaDirectory!.stale === true } : {}),
   } }));
+}
+
+/** Refresh automatic contracts without discarding a saved exact alias contract. */
+function refreshedMiaowuConnector(connection: ProviderConnectionRecord, models: readonly ModelDescriptor[]): RestConnectorConfig {
+  const aliases = new Set(remainingVideoModelIds("miaowu"));
+  const previous = connection.config.connector as unknown as RestConnectorConfig | undefined;
+  const previousModels = Array.isArray(connection.config.modelCatalogModels)
+    ? connection.config.modelCatalogModels as unknown as ModelDescriptor[] : previous?.models ?? [];
+  const protectedModels = new Map<string, ModelDescriptor>();
+  for (const model of models) {
+    if (!aliases.has(model.id)) continue;
+    const saved = previousModels.find(row => row && row.id === model.id && Array.isArray(row.operations));
+    if (!saved || saved.metadata?.marketplaceGroup && saved.metadata.marketplaceGroup !== model.metadata?.marketplaceGroup) continue;
+    const denied = saved.metadata?.canvasRunnable === false && /401|403|权限|未开通|拒绝|下架|停用|unauthorized|forbidden/iu.test(String(saved.metadata.canvasUnavailableReason ?? ""));
+    if (denied || preservesMiaowuExplicitVideoContract(connection.config, saved) ||
+        saved.operations.some(operation => preservesMiaowuExplicitVideoContract(connection.config, saved, operation)))
+      protectedModels.set(model.id, { ...structuredClone(saved), metadata: { ...model.metadata, ...saved.metadata,
+        modelDirectorySources: model.metadata?.modelDirectorySources } });
+  }
+  const connector = miaowuConnectorForModels(models.map(model => protectedModels.get(model.id) ?? model));
+  connector.models = connector.models?.map(model => protectedModels.get(model.id) ?? model);
+  const overrides = { ...connector.modelOverrides };
+  for (const [id, model] of protectedModels) {
+    const saved = previous?.modelOverrides?.[id];
+    if (saved) overrides[id] = structuredClone(saved);
+    else if (previous && !isMiaowuLegacyVideoBaseConnector(previous)) {
+      overrides[id] = structuredClone(Object.fromEntries(["auth", "submit", "poll", "cancel", "output", "statusMap", "pollIntervalMs"]
+        .flatMap(key => previous[key as keyof RestConnectorConfig] === undefined ? [] : [[key, previous[key as keyof RestConnectorConfig]]]))) as RestModelConnectorOverride;
+    } else delete overrides[id];
+    const operationOverrides = Object.fromEntries(model.operations.flatMap(operation => {
+      const route = previous?.operationOverrides?.[operation];
+      return route && operation.startsWith("video.") ? [[operation, structuredClone(route)]] : [];
+    }));
+    if (Object.keys(operationOverrides).length) overrides[id] = { ...overrides[id], operationOverrides: { ...operationOverrides, ...overrides[id]?.operationOverrides } };
+  }
+  connector.modelOverrides = overrides;
+  return connector;
 }
 
 export interface MiaowuConnectionScan extends MiaowuKeyScan {
@@ -338,15 +376,18 @@ export async function scanMiaowuConnection(
     typeof latest.config.defaultModel === "string"
       ? latest.config.defaultModel
       : undefined;
-  const defaultModel = miaowuDefaultModel(callable, configuredDefault);
+  const connector = refreshedMiaowuConnector(latest, callable);
+  const connectedModels = connector.models ?? [];
+  const defaultModel = miaowuDefaultModel(connectedModels, configuredDefault);
   const config: JsonObject = {
     ...latest.config,
     ...(miaowuConnectionConfig(
       scanScope,
       defaultModel,
-      callable,
+      connectedModels,
     ) as unknown as JsonObject),
-    connector: miaowuConnectorForModels(callable) as unknown as JsonObject,
+    connector: connector as unknown as JsonObject,
+    modelCatalogModels: connectedModels as unknown as JsonObject[],
     defaultModel,
     catalogSource: catalog.source,
     catalogCheckedAt: catalog.checkedAt,
@@ -420,15 +461,18 @@ async function syncMiaowuConnectionFromCatalog(
     typeof connection.config.defaultModel === "string"
       ? connection.config.defaultModel
       : undefined;
-  const defaultModel = miaowuDefaultModel(models, configuredDefault);
+  const connector = refreshedMiaowuConnector(connection, models);
+  const connectedModels = connector.models ?? [];
+  const defaultModel = miaowuDefaultModel(connectedModels, configuredDefault);
   const config: JsonObject = {
     ...connection.config,
     ...(miaowuConnectionConfig(
       groupId,
       defaultModel,
-      models,
+      connectedModels,
     ) as unknown as JsonObject),
-    connector: miaowuConnectorForModels(models) as unknown as JsonObject,
+    connector: connector as unknown as JsonObject,
+    modelCatalogModels: connectedModels as unknown as JsonObject[],
     defaultModel,
     catalogSource: catalog.source,
     catalogCheckedAt: catalog.checkedAt,

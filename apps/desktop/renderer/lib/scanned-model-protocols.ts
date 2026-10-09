@@ -21,9 +21,12 @@ import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-c
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
 import { applySupplierImageConstraints } from "@super-canvas/providers/supplier-image-constraints";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
+import { applyChuangxiangMidjourneyCapabilities } from "@super-canvas/providers/chuangxiang-midjourney-contract";
 import { applyChuangxiangCurrentVideoCapabilities, chuangxiangVideoModel, isChuangxiangVideoConnection } from "@super-canvas/providers/chuangxiang-video-contract";
 import { mikotoGroup } from "./mikoto-presets";
 import { chentuFallbackImageDescriptor } from "./chentu-catalog";
+import { isChentuNativeGeminiModel, chentuNativeGeminiDescriptor, chentuNativeGeminiConnector } from "./chentu-gemini";
+import { cyberAfeiDocumentedModel, cyberAfeiConnectorForModels } from "./cyberafei-catalog";
 import { supplierKeyForConnection } from "./supplier-identity";
 import { matchesSupplierTemplate } from "./supplier-template-source";
 import { applyVerifiedImage25Capabilities } from "./verified-image25-capabilities";
@@ -31,7 +34,7 @@ import { applyMonsterImageCapabilities } from "@super-canvas/providers/monster-i
 import { applyChuangxiangImageCapabilities } from "@super-canvas/providers/chuangxiang-image-capabilities";
 import { withHighestModelQualityDefault } from "./model-quality";
 import { applyGenimageImageCapabilities } from "@super-canvas/providers/genimage-image-capabilities";
-import { applySavedModelInterfaces } from "./supplier-interface-discovery";
+import { applySavedModelInterfaces, hasMiaowuExplicitVideoInterface } from "./supplier-interface-discovery";
 import { guardNativeVideoRunnableContract } from "./native-video-runnable-contract";
 
 type Connection = { provider: string; config: Record<string, unknown> };
@@ -72,7 +75,8 @@ function capability(model: ModelDescriptor): string | undefined {
 
 function hasDeclaredOutput(model: ModelDescriptor): boolean {
   return model.metadata?.outputKindsSource === "declared" || model.metadata?.operationsSource === "declared" ||
-    ["chat", "text", "audio", "other"].includes(String(model.metadata?.catalogCapability ?? ""));
+    model.metadata?.outputKindsSource !== "inferred" && model.metadata?.operationsSource !== "inferred" &&
+      ["chat", "text", "audio", "other"].includes(String(model.metadata?.catalogCapability ?? ""));
 }
 
 function hasFixedResolution(id: string): boolean {
@@ -186,7 +190,7 @@ function bindExistingModelProtocols(
           model.id,
           String(connection.config.modelGroup ?? ""),
         );
-        const nativeGemini = model.id === "gemini-nano-banana-2.1" && descriptor?.metadata?.protocol === "gemini-generate-content";
+        const nativeGemini = isChentuNativeGeminiModel(model.id) && descriptor?.metadata?.protocol === "gemini-generate-content";
         if (!descriptor || capability(model) !== "image" || descriptor.metadata?.protocol !== "openai-images" && !nativeGemini) return model;
         const metadata: Record<string, unknown> = {
           ...descriptor.metadata,
@@ -277,6 +281,39 @@ function bindExistingModelProtocols(
   const models = scanned.map((model): ModelDescriptor => {
     if (!canInherit(model)) return model;
     if (hasDeclaredOutput(model) && !capability(model)) return model;
+    if (supplierKeyForConnection(connection) === "chentu" && matchesSupplierTemplate(connection) && isChentuNativeGeminiModel(model.id) &&
+        (!hasDeclaredOutput(model) || capability(model) === "image") && connection.config.supplierArchived !== true &&
+        !["agent", "disabled"].includes(String(connection.config.usage)) && !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
+        (model.metadata?.canvasRunnable !== false || Array.isArray(connection.config.scannedModelIds) && connection.config.scannedModelIds.includes(model.id))) {
+      const descriptor = chentuNativeGeminiDescriptor(model.id), native = chentuNativeGeminiConnector([descriptor]);
+      connector.modelOverrides = { ...connector.modelOverrides, [model.id]: { ...native.modelOverrides?.[model.id], auth: native.auth, output: native.output } };
+      const metadata: Record<string, unknown> = { ...model.metadata, ...descriptor.metadata, canvasRunnable: true };
+      delete metadata.canvasUnavailableReason;
+      if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
+      return { ...model, operations: descriptor.operations, inputKinds: descriptor.inputKinds, outputKinds: descriptor.outputKinds,
+        parameters: descriptor.parameters, limits: descriptor.limits, metadata };
+    }
+    if (supplierKeyForConnection(connection) === "cyberafei" && matchesSupplierTemplate(connection) &&
+        connection.config.supplierArchived !== true && !["agent", "disabled"].includes(String(connection.config.usage)) &&
+        !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
+        (model.metadata?.canvasRunnable !== false || Array.isArray(connection.config.scannedModelIds) && connection.config.scannedModelIds.includes(model.id))) {
+      const endpoints = model.metadata?.endpointTypes;
+      const documented = cyberAfeiDocumentedModel(model.id, Array.isArray(endpoints) && endpoints.length ? {
+        endpointTypes: endpoints.filter((value): value is string => typeof value === "string"),
+        ...(model.description ? { description: model.description } : {}),
+      } : undefined);
+      if (documented && (!hasDeclaredOutput(model) || capability(model) === capability(documented))) {
+        const transport = cyberAfeiConnectorForModels([documented]).modelOverrides?.[model.id];
+        if (transport) connector.modelOverrides = { ...connector.modelOverrides, [model.id]: transport };
+        const metadata: Record<string, unknown> = { ...model.metadata, ...documented.metadata, canvasRunnable: true };
+        delete metadata.canvasUnavailableReason;
+        delete metadata.parameterControlsUnavailable;
+        if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
+        return { ...model, operations: documented.operations, inputKinds: documented.inputKinds,
+          outputKinds: documented.outputKinds, parameters: documented.parameters,
+          limits: { ...model.limits, ...documented.limits }, metadata };
+      }
+    }
     if (supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection) &&
       isCangyuanMusicRequest(model.id, String(connection.config.baseUrl ?? ""))) return cangyuanMusicModel(model);
     // Dedicated contracts execute dynamically for their exact IDs. Do not
@@ -403,9 +440,46 @@ export function bindScannedModelProtocols(
   scanned: readonly ModelDescriptor[],
   previous: Connection = connection,
 ): ReturnType<typeof bindExistingModelProtocols> {
+  // Older agent discovery stamped Chat text output onto this video directory
+  // entry. Its exact video endpoint and current Key inventory are stronger facts.
+  const currentScan = scanned.map(model => {
+    const endpoints = model.metadata?.endpointTypes;
+    if (model.id !== "omni-flash" || supplierKeyForConnection(connection) !== "cyberafei" || !matchesSupplierTemplate(connection) ||
+        connection.config.supplierArchived === true || ["agent", "disabled"].includes(String(connection.config.usage)) ||
+        ["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) ||
+        !Array.isArray(connection.config.scannedModelIds) || !connection.config.scannedModelIds.includes(model.id) ||
+        model.metadata?.canvasUnavailableReason !== "尚无已验证的画布生成协议" || model.metadata.catalogCapability !== "video" ||
+        model.metadata.modelFactsSource !== "model-api" || !Array.isArray(endpoints) || !endpoints.includes("openai-video") ||
+        !model.operations.some(operation => operation.startsWith("video."))) return model;
+    return { ...model, outputKinds: [...new Set([...(model.outputKinds ?? []), "video" as const])] };
+  });
   // Only undo a refusal that this guard produced, after its automatic transport
   // was replaced with a custom/verified contract. Existing Key denials stay put.
-  const prepared = scanned.map(model => {
+  const prepared = currentScan.map(model => {
+    const explicitMiaowu = hasMiaowuExplicitVideoInterface(connection, model);
+    if (explicitMiaowu && model.metadata?.autoInterfaceStatus === "incomplete") return model;
+    const supplier = remainingVideoSupplier(connection.config.baseUrl);
+    const documented = supplier && remainingVideoModel(supplier, model.id, model, {
+      group: String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? ""),
+      groupDescription: String(connection.config.supplierGroupDescription ?? connection.config.groupDescription ?? ""),
+    });
+    const contractPending = model.metadata?.canvasRunnable === false && (
+      model.metadata.canvasUnavailableReason === MIAOWU_VIDEO_CONTRACT_PENDING_REASON ||
+      model.metadata.canvasUnavailableReason === "当前分组列出此型号，但尚未提供其参数与调用合同" ||
+      canInherit(model)
+    );
+    if (documented && contractPending && (!hasDeclaredOutput(model) || capability(model) === "video") &&
+        connection.config.supplierArchived !== true && !["agent", "disabled"].includes(String(connection.config.usage)) &&
+        !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
+        Array.isArray(connection.config.scannedModelIds) && connection.config.scannedModelIds.includes(model.id)) {
+      const restored = explicitMiaowu ? model : documented;
+      const metadata: Record<string, unknown> = { ...restored.metadata, canvasRunnable: true };
+      delete metadata.canvasUnavailableReason;
+      delete metadata.parameterControlsUnavailable;
+      delete metadata.miaowuVideoContractPending;
+      if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus;
+      return { ...restored, metadata };
+    }
     if (model.metadata?.miaowuVideoContractPending !== true || model.metadata.canvasRunnable !== false ||
         model.metadata.canvasUnavailableReason !== MIAOWU_VIDEO_CONTRACT_PENDING_REASON ||
         !isDefaultMiaowuConnection(connection) ||
@@ -431,6 +505,7 @@ export function bindScannedModelProtocols(
   const currentCangyuan = connection.provider === "rest" && supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection);
   let models = applySavedModelInterfaces(connection, compatibleModels)
     .map(model => applyBananaImageCapabilities(connection, model))
+    .map(model => applyChuangxiangMidjourneyCapabilities(connection, model))
     .map(model => applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, model)))
     .map(model => applyChuangxiangCurrentVideoCapabilities(connection, model)).map(withHighestModelQualityDefault)
     .map(model => applySupplierImageConstraints(connection, model));
@@ -441,9 +516,10 @@ export function bindScannedModelProtocols(
   }
   // Cached transport and native-contract enrichment cannot rewrite an explicit
   // live output declaration into a different node type for the same ID.
-  const originalById = new Map(scanned.map(model => [model.id, model]));
+  const originalById = new Map(currentScan.map(model => [model.id, model]));
   const remainingSupplier = remainingVideoSupplier(connection.config.baseUrl);
   models = models.map(model => {
+    if (hasMiaowuExplicitVideoInterface(connection, model)) return model;
     if (model.metadata?.autoInterfaceStatus === "connected" && model.parameters?.length && model.metadata.parameterControlsUnavailable) {
       const metadata = { ...model.metadata };
       delete metadata.parameterControlsUnavailable;

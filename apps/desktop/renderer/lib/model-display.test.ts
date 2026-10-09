@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, comparableModelPrice, modelEstimatedCost, displayPriceLabel } from "./model-display";
 import { mediaExpressionPricing, type ModelDescriptor } from "@super-canvas/providers";
+import { chuangxiangCatalogPricing } from "../../../../packages/providers/src/chuangxiang-catalog-pricing";
+import { applyChuangxiangMidjourneyCapabilities } from "@super-canvas/providers/chuangxiang-midjourney-contract";
 
 describe("appendPriceLabelOnce", () => {
   it("formats raw image names from saved catalogs without rewriting IDs or custom names", () => {
@@ -48,6 +50,22 @@ describe("appendPriceLabelOnce", () => {
     expect(modelEstimatedCost({ ...model, pricing: { kind: "per-request", currency: "CNY", unitAmount: .25, confidence: "snapshot", checkedAt: "now" } }, { n: 2 })).toBe("0.5 CNY（参考）");
     expect(modelEstimatedCost(undefined, {})).toBeUndefined();
   });
+  it("quotes one Midjourney task with four returned images using the selected speed", () => {
+    const name = "midjourney-1k", quoted = chuangxiangCatalogPricing({ name, effective_rate_multiplier: .1,
+      pricing: { billing_mode: "per_request", per_request_price: 3.625,
+        intervals: [{ tier_label: "relax", per_request_price: 3.625 }, { tier_label: "fast", per_request_price: 4.875 }] } }, "now")!;
+    const model = applyChuangxiangMidjourneyCapabilities({ provider: "openai", config: {
+      baseUrl: "https://vapi.chuangxiangai.asia", modelGroup: "生图", scannedModelIds: [name], modelScanStatus: "live",
+    } }, { id: name, name, operations: [], pricing: quoted.pricing, metadata: { priceLabel: quoted.priceLabel } });
+    expect(model.metadata?.fixedOutputCount).toBe(4);
+    expect(modelPriceSummary(model, {})).toBe("0.3625 CNY / 次（参考）");
+    expect(modelEstimatedCost(model, {})).toBe("0.3625 CNY（参考）");
+    expect(modelEstimatedCost(model, { speed: "fast" })).toBe("0.4875 CNY（参考）");
+    expect(modelPriceSummary(model, { speed: "{{speed}}" })).toBe("relax ¥0.3625/请求 · fast ¥0.4875/请求");
+    expect(modelEstimatedCost(model, { speed: "{{speed}}" })).toBeUndefined();
+    expect(modelEstimatedCost({ ...model, pricing: { kind: "per-image", currency: "CNY", unitAmount: .1, checkedAt: "now", confidence: "exact" },
+      parameters: model.parameters?.filter(parameter => parameter.key !== "n") }, {})).toBe("0.4 CNY");
+  });
   it("uses CNY for saved Tk1688 quotes while retaining other suppliers' currencies", () => {
     const model: ModelDescriptor = { id: "gpt-image-2@s1c1", name: "Image", operations: ["image.generate"],
       metadata: { tk1688Catalog: true, tk1688FxRate: 6.8896, priceLabel: "$0.03/次（¥0.206688/次）" },
@@ -91,6 +109,21 @@ describe("appendPriceLabelOnce", () => {
     expect(modelPriceSummary(model, { quality: "high" })).toBe("0.2 CNY / 张");
     model.pricing = mediaExpressionPricing('has(param("resolution"), "720") ? tier("720p", n * 22.14) : tier("480p", n * 10.32)', { currency: "CNY", checkedAt: "now", unit: "request" })!;
     expect(modelPriceSummary(model, { resolution: "720p" })).toBe("22.14 CNY / 次");
+  });
+  it("uses connected source videos to select Omni's editing quote and rejects contradictory modes", () => {
+    const model: ModelDescriptor = { id: "omni-flash", name: "Omni Flash", operations: ["video.generate"],
+      metadata: { sourceVideoPriceMode: "edit", priceLabel: "生成 8.25 USD；编辑 10.5 USD" },
+      parameters: [{ key: "mode", label: "模式", control: "select", default: "auto", options: [
+        { label: "自动", value: "auto" }, { label: "生成", value: "generate" }, { label: "编辑", value: "edit" } ] }],
+      pricing: { kind: "tiered", currency: "USD", billingUnit: "request", confidence: "exact", checkedAt: "2026-10-09", tiers: [
+        { id: "generate", label: "生成", price: 8.25, conditions: [{ parameter: "mode", operator: "equals", value: "generate" }] },
+        { id: "edit", label: "编辑", price: 10.5, conditions: [{ parameter: "mode", operator: "equals", value: "edit" }] } ] } };
+    expect(modelPriceSummary(model, { mode: "auto", has_reference_video: false })).toBe("8.25 USD / 次");
+    expect(modelPriceSummary(model, { mode: "auto", has_reference_video: true })).toBe("10.5 USD / 次");
+    expect(modelEstimatedCost(model, { mode: "auto", has_reference_video: true })).toBe("10.5 USD");
+    expect(modelEstimatedCost(model, { mode: "auto" })).toBeUndefined();
+    expect(modelPriceSummary(model, { mode: "generate", has_reference_video: true })).toBe("当前模式与参考视频不匹配");
+    expect(modelEstimatedCost(model, { mode: "edit", has_reference_video: false })).toBeUndefined();
   });
   it("keeps video names separate from prices when the catalog uses 次 and 请求 interchangeably", () => {
     expect(cleanModelDisplayName("grok-imagine-video（¥0.08/次）", "¥0.08/请求")).toBe("grok-imagine-video");

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  AutoInterfaceAdapter, OpenAIImageAdapter, StaticConnectionResolver, remainingVideoModel,
+  AutoInterfaceAdapter, OpenAIImageAdapter, StaticConnectionResolver, remainingVideoModel, remainingVideoTransport,
   type DocumentedModelInterface, type ModelDescriptor, type ProviderAdapter, type ProviderOperation,
 } from "@super-canvas/providers";
 import { guardNativeVideoRunnableContract } from "./native-video-runnable-contract";
 
-const video = (id = "grok-imagine-video"): ModelDescriptor => ({
+const video = (id = "future-video-without-contract"): ModelDescriptor => ({
   id, name: id, operations: ["video.generate", "video.image-to-video"], outputKinds: ["video"],
   metadata: { canvasRunnable: true, operationsSource: "inferred", priceLabel: "¥0.2/请求" },
 });
@@ -29,9 +29,18 @@ async function runtimeValidation(config: Record<string, unknown>, model: ModelDe
 }
 
 describe("native video executable contract guard", () => {
-  it.each(["grok-imagine-video", "grok-imagine-video-1.5"])("keeps Mikoto %s visible and priced while matching runtime's missing-contract refusal", async id => {
+  it.each(["grok-imagine-video", "grok-imagine-video-1.5"])("keeps Mikoto %s runnable through its documented native multipart contract", async id => {
     const model = video(id), result = guardNativeVideoRunnableContract(mikoto, model);
-    expect(result).toMatchObject({ id, outputKinds: ["video"], operations: model.operations, parameters: [], metadata: {
+    expect(result).toBe(model);
+    expect(result.metadata).toMatchObject({ canvasRunnable: true, priceLabel: "¥0.2/请求" });
+    expect(remainingVideoTransport("mikoto", id)?.submit).toMatchObject({ path: "/v1/videos", method: "POST", bodyMode: "multipart" });
+    expect((await runtimeValidation(mikoto.config, model)).valid).toBe(true);
+    expect(model.metadata?.canvasRunnable).toBe(true);
+  });
+
+  it("keeps an unknown Mikoto video visible and priced while refusing its missing executable contract", async () => {
+    const model = video(), result = guardNativeVideoRunnableContract(mikoto, model);
+    expect(result).toMatchObject({ id: model.id, outputKinds: ["video"], operations: model.operations, parameters: [], metadata: {
       canvasRunnable: false, parameterControlsUnavailable: true, priceLabel: "¥0.2/请求", canvasUnavailableReason: expect.stringContaining("协议") } });
     expect((await runtimeValidation(mikoto.config, model)).valid).toBe(false);
     expect(model.metadata?.canvasRunnable).toBe(true);
@@ -68,7 +77,7 @@ describe("native video executable contract guard", () => {
 
   it("recognizes only the exact same supplier/group remaining contract and preserves all existing suppliers", () => {
     const cases = [
-      { supplier: "secure" as const, baseUrl: "https://token.secure-skill.com/v1", id: "grok-imagine-video-1.5", group: "grok视频" },
+      { supplier: "secure" as const, baseUrl: "https://token.secure-skill.com/v1", id: "seedance2.0", group: "sd2视频" },
       { supplier: "chentu" as const, baseUrl: "https://tu.988236.xyz/v1", id: "seedance-2.0-720p", group: "视频" },
       { supplier: "frimodel" as const, baseUrl: "https://api.frimodel.com/v1", id: "videos-standard", group: "视频" },
       { supplier: "cyberafei" as const, baseUrl: "https://api.3365api.cn/v1", id: "grok-imagine-video-1.5-1080p", group: "视频" },

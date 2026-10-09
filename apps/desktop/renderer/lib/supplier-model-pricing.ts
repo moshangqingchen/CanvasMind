@@ -11,7 +11,7 @@ import {
 } from "@super-canvas/providers";
 import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
 import { modelGenerationMediaKinds } from "@super-canvas/providers/model-media";
-import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "@super-canvas/providers/supplier-group-details";
+import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupMediaPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "@super-canvas/providers/supplier-group-details";
 import { getSupplierRecord } from "./supplier-service";
 import { openSupplierSiteSession, supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { repository } from "./server";
@@ -76,6 +76,11 @@ function isWeAiCatalogSite(sourceUrl: string | undefined): boolean {
 function isHangCatalogSite(sourceUrl: string | undefined): boolean {
   try { const url = new URL(sourceUrl ?? ""); return url.origin === "https://api.hangzhale.com" && !url.username && !url.password &&
     !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname); } catch { return false; }
+}
+
+function isSecureCatalogSite(sourceUrl: string | undefined): boolean {
+  try { const url = new URL(sourceUrl ?? ""); return url.origin === "https://token.secure-skill.com" && !url.username && !url.password &&
+    !url.search && !url.hash && /^(?:\/v1|\/api\/v1\/pricing\/channels)?\/?$/u.test(url.pathname); } catch { return false; }
 }
 
 /** The dedicated reader's incomplete docs fallback is automatic, not a user quote. */
@@ -276,9 +281,7 @@ async function applyMeasuredSupplierPrices(
   return models.map((model) => {
     if (model.metadata?.priceSource !== "generated-result" &&
       (model.pricing || (typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.trim() && !unknownPrice.test(model.metadata.priceLabel)))) return model;
-    const image =
-      model.operations.some((operation) => operation.startsWith("image.")) ||
-      /image|dall[-_]?e|flux|seedream|imagen/iu.test(model.id);
+    const image = modelGenerationMediaKinds(model).includes("image");
     if (!image) return model;
     const evidence = measured.get(`${group}\u0000${model.id}`);
     if (!evidence) return model;
@@ -488,7 +491,8 @@ export function applySupplierCatalogPrices(
       ...selected.details,
       ...parseSupplierGroupDetails({ name: selected.id, description: selected.details.description }, selected.details.source),
     } : undefined;
-    const image = model.operations.some(operation => operation.startsWith("image.")) || /image|dall[-_]?e|flux|seedream|imagen/iu.test(model.id);
+    const image = modelGenerationMediaKinds(model).includes("image");
+    const video = modelGenerationMediaKinds(model).includes("video");
     if (details && image) model = { ...model, metadata: { ...model.metadata,
       supplierGroupDescription: details.description ?? "",
       supplierGroupResolutionLabel: supplierGroupResolutionLabel(details),
@@ -513,10 +517,23 @@ export function applySupplierCatalogPrices(
     const friSnapshotLabel = friSnapshotPriceLabel(model, group, catalog, sourceUrl);
     if (hasOwnPrice(model) && !replacingWeAiSnapshot && !friSnapshotLabel) return model;
     const modelPrice = prices.get(model.id);
-    const priceDetails = image ? supplierGroupModelPriceDetails(details, model.id, groupModelIds) : undefined;
+    const priceDetails = image || video ? supplierGroupMediaPriceDetails(supplierGroupModelPriceDetails(details, model.id, groupModelIds), image ? "image" : "video", model.id) : undefined;
     const groupPrice = !priceDetails?.stale ? supplierGroupPriceLabel(priceDetails) : "";
+    const groupFixedLabel = groupPrice.replace(/（分组说明参考）$/u, "").trim();
+    // Group wording may contain several resolution or quality rates. Only an
+    // entire explicit currency/unit quote can become a flat estimate.
+    const groupFixedPrice = /^(?:[¥￥$]\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:元|USD|CNY|RMB|美元))\s*[/／]\s*(?:张|次|请求|秒)$/iu.test(groupFixedLabel)
+      ? groupFixedLabel : undefined;
     const fresh = modelPrice || groupPrice;
     const scopedGroupPrice = model.metadata?.priceSource === "supplier-group" && priceDetails !== details;
+    const pricing = catalogPricing ?? pricingFromSupplierEvidence(modelPrice || groupFixedPrice, priceDetails, catalog.checkedAt, sourceUrl) ??
+      (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined);
+    const missingCurrentVideoQuote = !incomplete && video &&
+      (isSecureCatalogSite(sourceUrl) && !pricing || !fresh &&
+        (isHangCatalogSite(sourceUrl) || /^https:\/\/api\.miaowuai\.store(?:\/|$)/u.test(sourceUrl ?? "") &&
+          ["dreamina-seedance-2.0-fast", "dreamina-seedance-2.0-mini", "seedance-2.0-fast-deal", "seedance-2.5-deal", "video-editing"].includes(model.id)));
+    const priceEvidenceSource = isSecureCatalogSite(sourceUrl) ? "https://token.secure-skill.com/api/v1/pricing/channels" :
+      isHangCatalogSite(sourceUrl) ? "https://price.hangzhale.com/api/provider/pricing" : "https://api.miaowuai.store/api/pricing";
     const old =
       !scopedGroupPrice &&
       ["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) &&
@@ -550,7 +567,7 @@ export function applySupplierCatalogPrices(
     return {
       ...model,
       name,
-      pricing: catalogPricing ?? pricingFromSupplierEvidence(modelPrice, priceDetails, catalog.checkedAt, sourceUrl) ?? (incomplete && !fresh && !scopedGroupPrice ? model.pricing : undefined),
+      pricing,
       metadata: {
         ...model.metadata,
         priceLabel,
@@ -565,6 +582,9 @@ export function applySupplierCatalogPrices(
         priceCheckedAt: old && !fresh && incomplete ? model.metadata?.priceCheckedAt : catalogPricing?.checkedAt || catalog.checkedAt,
         priceLastAttemptAt: catalog.checkedAt,
         supplierPriceGroup: group,
+        ...(missingCurrentVideoQuote ? { priceSourceUrl: priceEvidenceSource,
+          priceUnavailableReason: `${catalog.checkedAt} 已查询 ${priceEvidenceSource}：当前分组 ${group} ${fresh
+            ? `未提供完整型号 ${model.id} 可解析的计价规则` : `未列出完整型号 ${model.id} 的报价`}` } : {}),
       },
     };
   });

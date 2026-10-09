@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import type { ProviderConnectionRecord } from "@super-canvas/db";
 import { encryptSecret, type ModelDescriptor, type RestConnectorConfig } from "@super-canvas/providers";
-import { loadMiaowuCatalog } from "./miaowu-catalog";
-import { MIAOWU_BASE_URL, MIAOWU_PRESET_ID } from "./miaowu-presets";
+import { loadMiaowuCatalog, miaowuUnparameterizedVideoDescriptor } from "./miaowu-catalog";
+import { MIAOWU_BASE_URL, MIAOWU_PRESET_ID, MIAOWU_CONNECTOR, MIAOWU_CHAT_VIDEO_OVERRIDE } from "./miaowu-presets";
 import { scanMiaowuConnection, scanMiaowuKeyModels, syncMiaowuConnection } from "./miaowu-server";
 
 const REPOSITORY_KEY = "__superCanvasRepository";
@@ -105,7 +105,7 @@ describe("authenticated native Miaowu media directory", () => {
     expect(transport).toHaveBeenCalledTimes(2);
   });
 
-  it("persists eighteen priced native media contracts, five pending Key-only IDs, and each authenticated source", async () => {
+  it("persists eighteen priced native media contracts, five declared Chat IDs, and each authenticated source", async () => {
     const repository = makeRepository(authenticatedConnection());
     const result = await scanMiaowuConnection("miaowu-default", { fetch: directoryFetch(), forcePricing: true });
     expect(result.modelIds).toHaveLength(23);
@@ -115,6 +115,7 @@ describe("authenticated native Miaowu media directory", () => {
     expect(config.modelScanComplete).toBe(true);
     const connector = config.connector as unknown as NativeConnector;
     expect(connector.models).toHaveLength(23);
+    expect(config.modelCatalogModels).toEqual(connector.models);
     expect(connector.models.filter(model => model.pricing)).toHaveLength(18);
     expect(connector.models.find(model => model.id === "dola-seedance-2.5")).toMatchObject({ outputKinds: ["video"],
       pricing: { currency: "CNY", unitAmount: .875 }, metadata: { modelDirectorySources: ["authenticated-dream-media-directory"], parameterSource: "pricing.video_api" } });
@@ -125,11 +126,70 @@ describe("authenticated native Miaowu media directory", () => {
       expect(connector.modelOverrides?.[model.id]?.submit?.path ?? connector.submit.path).toBe(row.type === "image" ? "/v1/images" : "/v1/videos");
     }
     for (const id of ["dreamina-seedance-2.0-fast", "dreamina-seedance-2.0-mini", "seedance-2.0-fast-deal", "seedance-2.5-deal", "video-editing"]) {
-      expect(connector.models.find(model => model.id === id)?.metadata).toMatchObject({ canvasRunnable: false, miaowuVideoContractPending: true, parameterSource: "key-model-scan" });
-      expect(connector.modelOverrides?.[id]).toBeUndefined();
+      const model = connector.models.find(model => model.id === id)!;
+      expect(model.metadata).toMatchObject({ canvasRunnable: true, protocol: "openai-chat", generationVerified: false,
+        parameterSource: "supplier-documented-contract", modelDirectorySources: ["openai-key-models"] });
+      expect(model.metadata?.miaowuVideoContractPending).not.toBe(true);
+      expect(model.metadata?.canvasUnavailableReason).toBeUndefined();
+      expect(model.pricing).toBeUndefined();
+      expect(model.parameters).toEqual([]);
+      expect(connector.modelOverrides?.[id]?.submit?.path).toBe("/v1/chat/completions");
+      expect(connector.modelOverrides?.[id]?.output).toMatchObject({ kind: "video", format: "openai-chat-videos", requireOutput: true });
     }
     expect(repository.saveConnection).toHaveBeenCalledTimes(1);
+    const synced = await syncMiaowuConnection("miaowu-default");
+    expect(synced?.config.modelCatalogModels).toEqual((synced?.config.connector as unknown as NativeConnector).models);
+    expect((synced?.config.modelCatalogModels as unknown as ModelDescriptor[]).filter(model => model.metadata?.canvasRunnable === false)).toHaveLength(0);
   });
+
+  it.each(["model-endpoint", "base-endpoint", "mapping", "output", "operation", "binding", "incomplete-binding", "manual", "paid", "native", "denied"] as const)(
+    "preserves the saved exact alias descriptor and its %s contract through scan and catalog sync", async customization => {
+      const id = "dreamina-seedance-2.0-fast";
+      const savedModel: ModelDescriptor = { ...miaowuUnparameterizedVideoDescriptor(id, { group: "default" }),
+        pricing: { kind: "per-request", currency: "CNY", unitAmount: 9, confidence: "exact", checkedAt: "then" },
+        metadata: { ...miaowuUnparameterizedVideoDescriptor(id).metadata, canvasRunnable: true } };
+      const connector = structuredClone(MIAOWU_CONNECTOR);
+      connector.models = [savedModel];
+      const override = structuredClone(MIAOWU_CHAT_VIDEO_OVERRIDE);
+      connector.modelOverrides = { [id]: override };
+      const connection = authenticatedConnection();
+      if (customization === "model-endpoint") override.submit!.path = "/my-verified-video";
+      if (customization === "base-endpoint") { connector.modelOverrides = {}; connector.submit.path = "/my-verified-video"; }
+      if (customization === "mapping") override.submit!.mappings = [{ target: "/content", source: { kind: "request", path: "$.prompt" } }];
+      if (customization === "output") override.output!.path = "$.custom.video";
+      if (customization === "operation") { connector.modelOverrides = {}; connector.operationOverrides = { "video.generate": { submit: { ...connector.submit, path: "/my-verified-video" } } }; }
+      if (customization === "manual") savedModel.metadata = { ...savedModel.metadata, source: "manual" };
+      if (customization === "paid") savedModel.metadata = { ...savedModel.metadata, protocolEvidence: "paid-test" };
+      if (customization === "native") savedModel.metadata = { ...savedModel.metadata, parameterSource: "pricing.video_api" };
+      if (customization === "denied") savedModel.metadata = { ...savedModel.metadata, canvasRunnable: false, canvasUnavailableReason: "403 Key 未开通视频" };
+      if (customization === "binding" || customization === "incomplete-binding") {
+        connection.config.autoModelInterfaces = { [id]: { sourceUrl: `${MIAOWU_BASE_URL}/docs/exact-fixture`,
+          model: { ...savedModel, operations: ["video.generate"] }, connector: { submit: { method: "POST", path: "/documented-video", bodyMode: "json",
+            mappings: [{ target: "/prompt", source: { kind: "request", path: "$.prompt" } }] }, output: { kind: "video", path: "$.video_url" } } } } as unknown as ProviderConnectionRecord["config"];
+        if (customization === "incomplete-binding") savedModel.metadata = { ...savedModel.metadata,
+          canvasRunnable: false, autoInterfaceStatus: "incomplete", canvasUnavailableReason: "接口说明待补充" };
+      }
+      connection.config.connector = connector as unknown as ProviderConnectionRecord["config"];
+      connection.config.modelCatalogModels = [savedModel] as unknown as ProviderConnectionRecord["config"][];
+      makeRepository(connection);
+      const originalBindings = structuredClone(connection.config.autoModelInterfaces);
+      const scan = await scanMiaowuConnection("miaowu-default", { fetch: directoryFetch(), forcePricing: true });
+      for (const current of [scan.connection!, (await syncMiaowuConnection("miaowu-default"))!]) {
+        const config = current.config;
+        const updated = config.connector as unknown as NativeConnector;
+        expect(config.modelCatalogModels).toEqual(updated.models);
+        const model = updated.models.find(row => row.id === id)!;
+        expect(model.pricing).toEqual(savedModel.pricing);
+        expect(model.operations).toEqual(savedModel.operations);
+        expect(model.parameters).toEqual(savedModel.parameters);
+        expect(model.metadata).toMatchObject(savedModel.metadata!);
+        expect(config.autoModelInterfaces).toEqual(originalBindings);
+        if (["model-endpoint", "mapping", "output", "manual", "paid", "native", "denied", "binding", "incomplete-binding"].includes(customization))
+          expect(updated.modelOverrides?.[id]).toEqual(override);
+        if (customization === "base-endpoint") expect(updated.modelOverrides?.[id]?.submit).toEqual(connector.submit);
+        if (customization === "operation") expect(updated.modelOverrides?.[id]?.operationOverrides?.["video.generate"]).toEqual(connector.operationOverrides?.["video.generate"]);
+      }
+    });
 
   it.each([401, 403])("never lets public prices or Dream metadata rescue an unauthorized base Key (%s)", async status => {
     const repository = makeRepository(authenticatedConnection());

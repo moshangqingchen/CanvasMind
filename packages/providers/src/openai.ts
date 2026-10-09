@@ -19,6 +19,7 @@ import { chuangxiangImageEvidence } from "./chuangxiang-image-capabilities.js";
 import { isSecureSkillImageConnection, isSecureSkillImageResult, SecureSkillImageAdapter } from "./secure-skill-image.js";
 import { applyPdogImageCapabilities, isPdogImageConnection, isPdogImageResult, pdogImageOrigin, PdogImageAdapter } from "./pdog-image.js";
 import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
+import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnection, isChuangxiangMidjourneyResult, ChuangxiangMidjourneyAdapter } from "./chuangxiang-midjourney.js";
 import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
 import { applySupplierImageConstraints, isMikotoDocumentedImageSize, supplierImageParameterIssues } from "./supplier-image-constraints.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
@@ -26,6 +27,7 @@ import { getImageEditingCapabilities, imageEditingConnection, imageEditingReques
 import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, weAiBananaModelUnavailable, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
+import { modelSupportsGenerationMedia } from "./model-media.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
   assetToBlob,
@@ -2607,6 +2609,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   private readonly secureSkill: SecureSkillImageAdapter;
   private readonly pdog: PdogImageAdapter;
   private readonly chuangxiang: ChuangxiangImageAdapter;
+  private readonly chuangxiangMidjourney: ChuangxiangMidjourneyAdapter;
 
   public constructor(
     private readonly connections: ProviderConnectionResolver,
@@ -2628,6 +2631,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
     this.chuangxiang = new ChuangxiangImageAdapter(connections, { fetch: this.fetchImpl,
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
+    this.chuangxiangMidjourney = new ChuangxiangMidjourneyAdapter(connections, { fetch: this.fetchImpl,
+      ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
   }
 
   /** Exact documented aliases must reach their own native image protocol. */
@@ -2635,7 +2640,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const source = imageEditingConnection(connection);
     const route = bananaImageRoute(source, model);
     if (!route) return;
-    if (!route.weaiGroup && (this.profile !== "openai" || model !== GEMINI_NANO_BANANA_21_MODEL)) return;
+    if (!route.weaiGroup && (this.profile !== "openai" || !route.pdog && !route.chentu && model !== GEMINI_NANO_BANANA_21_MODEL)) return;
     const descriptor = applyBananaImageCapabilities(source, { id: model, name: model,
       operations: ["image.generate", "image.edit"], metadata: { liveInventory: true } });
     return new BananaImageAdapter(this.connections, route, descriptor, { fetch: this.fetchImpl,
@@ -2770,7 +2775,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
             ? isFriModelImageCandidate(id)
             : this.profile === "openai" && supplierKey === "chentu"
               ? isChentuImageCandidate(id)
-              : id.includes("image") || id === GEMINI_NANO_BANANA_21_MODEL && !!bananaImageRoute(imageEditingConnection(connection), id),
+              : id.includes("image") || this.profile === "openai" && isChuangxiangMidjourneyConnection(imageEditingConnection(connection).config, id) ||
+                id === GEMINI_NANO_BANANA_21_MODEL && !!bananaImageRoute(imageEditingConnection(connection), id),
         ),
     );
     const allowed =
@@ -2860,8 +2866,12 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       ];
     });
     return listed.map(model => {
-      const source = imageEditingConnection(connection);
-      const described = applyChuangxiangCurrentImageCapabilities(source, model);
+      const configured = imageEditingConnection(connection);
+      // This authenticated catalog read supersedes the saved ID list for these descriptors.
+      const source = pdogImageOrigin(connection.baseUrl) || supplierKey === "chentu" ? { ...configured, config: { ...configured.config,
+        scannedModelIds: remoteIds, modelScanStatus: "live" } } : configured;
+      const described = applyChuangxiangMidjourneyCapabilities({ ...source, config: { ...source.config,
+        scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyChuangxiangCurrentImageCapabilities(source, model));
       return applySupplierImageConstraints(source, applyBananaImageCapabilities(source, described));
     });
   }
@@ -2922,6 +2932,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     if (resolvedConnection) issues.push(...imageEditingRequestIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
     if (resolvedConnection) issues.push(...supplierImageParameterIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
     if (resolvedConnection) {
+      const config = imageEditingConnection(resolvedConnection).config;
+      if ((pdogImageOrigin(resolvedConnection.baseUrl) || config.supplierKey === "chentu") &&
+          (config.supplierArchived === true || ["agent", "disabled"].includes(String(config.usage))))
+        return { valid: false, issues: [...issues, { path: "connection", code: "connection_disabled", message: "当前供应商连接已归档或未启用图片用途" }] };
       const native = this.documentedBananaAdapter(resolvedConnection, requestedModel);
       if (native) {
         const result = await native.validate({ ...request, model: requestedModel });
@@ -2931,7 +2945,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         const currentBlocked = isRecord(current) && isRecord(current.metadata) && current.metadata.canvasRunnable === false &&
           (!Array.isArray(current.operations) || applyBananaImageCapabilities(imageEditingConnection(resolvedConnection), current as unknown as ModelDescriptor).metadata?.canvasRunnable === false);
         if ((Array.isArray(ids) && !ids.includes(requestedModel)) ||
-            currentBlocked)
+            currentBlocked || isRecord(current) && !modelSupportsGenerationMedia(current as unknown as ModelDescriptor, "image"))
           issues.push({ path: "model", code: "model_group_mismatch", message: "当前分组没有此 Gemini 型号的可用权限" });
         return { valid: !issues.length && result.valid, issues: [...issues, ...result.issues] };
       }
@@ -2940,6 +2954,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       return this.pdog.validate({ ...request, model: requestedModel });
     if (this.profile === "openai" && resolvedConnection && isChuangxiangImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
       return this.chuangxiang.validate({ ...request, model: requestedModel });
+    if (this.profile === "openai" && resolvedConnection && isChuangxiangMidjourneyConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
+      return this.chuangxiangMidjourney.validate({ ...request, model: requestedModel });
     const resolvedModelGroup =
       this.profile === "weai" && resolvedConnection
         ? configuredModelGroup(resolvedConnection)
@@ -3540,6 +3556,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     }
     if (this.profile === "openai" && isChuangxiangImageConnection({ ...connection.settings, baseUrl }, selectedModel))
       return this.chuangxiang.submit({ ...request, model: selectedModel });
+    if (this.profile === "openai" && isChuangxiangMidjourneyConnection({ ...connection.settings, baseUrl }, selectedModel))
+      return this.chuangxiangMidjourney.submit({ ...request, model: selectedModel });
     if (this.profile === "openai" && isSecureSkillImageConnection({ ...connection.settings, baseUrl }, selectedModel)) {
       return this.secureSkill.submit({ ...request, model: selectedModel });
     }
@@ -3946,6 +3964,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const banana = bananaNativeOutputs(result);
     if (banana) return banana;
     if (isChuangxiangImageResult(result)) return this.chuangxiang.extractOutputs(result);
+    if (isChuangxiangMidjourneyResult(result)) return this.chuangxiangMidjourney.extractOutputs(result);
     if (isPdogImageResult(result)) return this.pdog.extractOutputs(result);
     if (isSecureSkillImageResult(result)) return this.secureSkill.extractOutputs(result);
     if (!result || typeof result !== "object") return [];

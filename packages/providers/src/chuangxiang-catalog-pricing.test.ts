@@ -59,6 +59,32 @@ describe("Chuangxiang plaza prices", () => {
     expect(parseSupplierCatalog(payload, { supplierSiteUrl: "https://other.example" }).groups[0]?.models[0]?.priceLabel).toBe("0.7/张（币种未注明）");
     expect(chuangxiangCatalogPricing({ pricing: { billing_mode: "image", per_request_price: .7 } })).toBeUndefined();
   });
+  it.each([
+    ["midjourney-1k", 3.625, 4.875, .3625, .4875],
+    ["midjourney-2k", 4.875, 6.125, .4875, .6125],
+  ])("prices %s by its exact speed and effective multiplier once", (name, relax, fast, relaxedPrice, fastPrice) => {
+    const row = { name, effective_rate_multiplier: .1, pricing: { billing_mode: "per_request", per_request_price: relax,
+      intervals: [{ tier_label: "relax", per_request_price: relax }, { tier_label: "fast", per_request_price: fast }] } };
+    const priced = chuangxiangCatalogPricing(row, "now")!;
+    expect(priced.pricing).toMatchObject({ kind: "per-request", billingUnit: "request", currency: "CNY" });
+    expect(priced.pricing.unitAmount).toBeUndefined();
+    expect(modelPriceAmount(priced.pricing, { speed: "relax" })).toBe(relaxedPrice);
+    expect(modelPriceAmount(priced.pricing, { speed: "fast" })).toBe(fastPrice);
+    expect(modelPriceAmount(priced.pricing, {})).toBeUndefined();
+    expect(modelPriceAmount(priced.pricing, { speed: "turbo" })).toBeUndefined();
+    const catalog = parseSupplierCatalog({ data: { groups: [{ name: "生图", rate_multiplier: 1, image_rate_multiplier: 1,
+      rate_multiplier_unit_scale: 10, models: [row] }] } }, { supplierSiteUrl: "https://vapi.chuangxiangai.asia", checkedAt: "now" });
+    expect(catalog.groups[0]?.models[0]?.metadata?.chuangxiangCatalogPricing).toEqual(priced.pricing);
+    expect(catalog.groups[0]?.models[0]?.priceLabel).toBe(`relax ¥${relaxedPrice}/请求 · fast ¥${fastPrice}/请求`);
+  });
+  it.each([
+    [{ tier_label: "relax", per_request_price: 3.625 }],
+    [{ tier_label: "relax", per_request_price: 3.625 }, { tier_label: "turbo", per_request_price: 4.875 }],
+    [{ tier_label: "relax", per_request_price: 3.625 }, { tier_label: "fast", per_request_price: -1 }],
+  ])("retains incomplete or unsupported Midjourney speed quotes as unconfirmed", (...intervals) => {
+    expect(chuangxiangCatalogPricing({ name: "midjourney-1k", effective_rate_multiplier: .1,
+      pricing: { billing_mode: "per_request", per_request_price: 3.625, intervals } })).toBeUndefined();
+  });
   it("passes official source context during discovery without using Key permissions as a public fact", async () => {
     const result = await discoverSupplierCatalog({ kind: "sub2api", siteUrl: "https://vapi.chuangxiangai.asia" }, async url => String(url).endsWith("/api/v1/model-plaza") ? Response.json({ data: { groups: [{ name: "视频", models: [{ name: "sd10-seedance-2.0", effective_rate_multiplier: .1, video_pricing: { billing_mode: "per_request", prices: { "720p": 52 } } }] }] } }) : Response.json({ data: [] }));
     expect(result.groups[0]?.models[0]?.priceLabel).toBe("720p ¥5.2/次");

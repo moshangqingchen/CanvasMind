@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedRequest, ProviderAssetInput } from "./contracts.js";
-import { isRemainingVideoModel, normalizeRemainingVideoParameters, remainingVideoModel, remainingVideoModelIds, remainingVideoRequestIssues, remainingVideoSupplier, remainingVideoTransport } from "./remaining-video-contracts.js";
+import { isRemainingVideoModel, normalizeRemainingVideoParameters, remainingVideoModel, remainingVideoModelIds, remainingVideoRequestIssues, remainingVideoRequiresPublicUrls, remainingVideoSupplier, remainingVideoTransport } from "./remaining-video-contracts.js";
 
 const request = (model: string, parameters: Record<string, unknown> = {}, assets: ProviderAssetInput[] = []): NormalizedRequest => ({
   model, parameters, assets, connectionId: "test-connection", operation: assets.some(asset => asset.kind === "image") ? "video.image-to-video" : "video.generate", prompt: "A slow camera move.", idempotencyKey: "no-network-test",
@@ -26,8 +26,56 @@ describe("supplier video contracts", () => {
     expect(remainingVideoSupplier("https://api.3365api.cn.evil.example/v1")).toBeUndefined();
     expect(isRemainingVideoModel("chentu", "seedance2.0 900")).toBe(true);
     expect(isRemainingVideoModel("chentu", "seedance2.0-900")).toBe(false);
-    expect(isRemainingVideoModel("secure", "wan3.0")).toBe(false);
-    expect(remainingVideoModelIds("chentu")).toHaveLength(34);
+    expect(isRemainingVideoModel("secure", "wan3.0")).toBe(true);
+    expect(remainingVideoModelIds("chentu")).toHaveLength(49);
+  });
+
+  it("keeps new Chentu directory IDs intact and only copies published limits", () => {
+    const id = "grok-imagine-video-1.5（按次）", params = normalizeRemainingVideoParameters("chentu", request(id, { duration: 7, custom_upstream_flag: true }, [asset("image")]));
+    expect(params).toMatchObject({ duration: 7, images: ["https://media.example/image-1"] });
+    expect(params).not.toHaveProperty("resolution");
+    expect(params).not.toHaveProperty("custom_upstream_flag");
+    expect(remainingVideoModel("chentu", id)?.id).toBe(id);
+    expect(remainingVideoRequestIssues("chentu", request("MiniMaxH3-720p", { duration: 16 }))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    expect(remainingVideoRequestIssues("chentu", request("H3量化版", {}, Array.from({ length: 5 }, (_, n) => asset("image", n))))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "assets" })]));
+    expect(normalizeRemainingVideoParameters("chentu", request("sd-2.5-M-720p"))).toMatchObject({ duration: 30 });
+  });
+
+  it("uses Miaowu aliases' declared Chat endpoint without borrowing Dream's native fields", () => {
+    const id = "seedance-2.5-deal", model = remainingVideoModel("miaowu", id)!;
+    expect(model.parameters?.find(p => p.key === "duration")?.default).toBeUndefined();
+    expect(model.parameters?.find(p => p.key === "resolution")?.options).toBeUndefined();
+    expect(model.parameters).toEqual([]);
+    expect(normalizeRemainingVideoParameters("miaowu", request(id, { duration: 7, resolution: "channel-specific", size: "forbidden" }, [asset("image")]))).toEqual({});
+    expect(targets("miaowu", id)).not.toContain("/size");
+    expect(remainingVideoTransport("miaowu", id)?.submit?.path).toBe("/v1/chat/completions");
+    expect(remainingVideoTransport("miaowu", id)?.output?.format).toBe("openai-chat-videos");
+    expect(isRemainingVideoModel("miaowu", "video-editing")).toBe(true);
+  });
+
+  it("declares Miaowu editing's source video as prompt links without guessed editing parameters", () => {
+    const model = remainingVideoModel("miaowu", "video-editing")!;
+    expect(model.operations).toEqual(["video.generate"]);
+    expect(model.parameters).toEqual([]);
+    expect(model.inputKinds).toContain("video");
+    expect(model.limits).toMatchObject({ requiresInputVideo: true });
+    expect(model.metadata).toMatchObject({ videoReferenceEncoding: "prompt-urls", generationVerified: false });
+    expect(remainingVideoTransport("miaowu", "video-editing")?.submit?.mappings).toContainEqual({ target: "/messages", source: { kind: "openaiMessages", videoReferenceEncoding: "prompt-urls" } });
+    expect(remainingVideoRequestIssues("miaowu", request("video-editing", {}, [asset("video")]))).toEqual([]);
+    expect(remainingVideoRequestIssues("miaowu", request("video-editing", { video_urls: [asset("video").url] }))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "assets" })]));
+  });
+
+  it("follows Mikoto's deployed multipart frames/reference modes", () => {
+    const first = { ...asset("image"), url: undefined, data: new Uint8Array([1, 2, 3]) } as unknown as ProviderAssetInput;
+    const last = { ...asset("image", 2), role: "lastFrame" as const };
+    const id = "grok-imagine-video", frames = normalizeRemainingVideoParameters("mikoto", request(id, { duration: 6 }, [first, last]));
+    expect(frames).toMatchObject({ mode: "frames", seconds: 6, first_frame: first, last_frame: last });
+    const refs = normalizeRemainingVideoParameters("mikoto", request(id, {}, [asset("image"), asset("image", 2), asset("image", 3)]));
+    expect(refs.mode).toBe("reference");
+    expect(refs["image[]"]).toHaveLength(3);
+    expect(remainingVideoTransport("mikoto", id)?.submit?.bodyMode).toBe("multipart");
+    expect(remainingVideoRequiresPublicUrls("mikoto", id)).toBe(false);
+    expect(remainingVideoRequiresPublicUrls("miaowu", "dreamina-seedance-2.0-fast")).toBe(true);
   });
 
   it("keeps Seedance 431 vendor wire fields distinct and validates measured durations", () => {

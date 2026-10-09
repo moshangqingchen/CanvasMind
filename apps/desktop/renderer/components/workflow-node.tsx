@@ -505,6 +505,7 @@ function GenerationNodeBody({
   }
   const selectedModel = modelOptions.find((model) => model.id === data.model);
   const hasReferenceVideo = data.linkedAssets?.some(asset => asset.kind === "video") === true;
+  const priceParameters = { ...parameters, has_reference_video: hasReferenceVideo };
   const priceModel = selectedModel && nodeType === "video-generation" ? {
     ...selectedModel,
     parameters: parameterDescriptorsForValues(nodeType, data.provider ?? "fake", selectedModel, parameters, undefined, { hasReferenceVideo }),
@@ -702,7 +703,7 @@ function GenerationNodeBody({
                   const candidate = choosePickerConnection(connectionOptions, currentConnection, supplier);
                   return (
                   <option key={supplier} value={supplier}>
-                    {label} · {supplier === currentSupplier ? modelPriceSummary(selectedModel, parameters) : candidate?.modelQuote ?? "选取后报价"} · {billingCompact(billingAccounts.find(account => account.id === candidate?.supplierId)?.billing)}
+                    {label} · {supplier === currentSupplier ? modelPriceSummary(selectedModel, priceParameters) : candidate?.modelQuote ?? "选取后报价"} · {billingCompact(billingAccounts.find(account => account.id === candidate?.supplierId)?.billing)}
                   </option>
                 ); })}
               </select>
@@ -737,7 +738,7 @@ function GenerationNodeBody({
               </select>
             </label>}
           </div>
-          <small className="node-config-supplier-quote" aria-label="当前供应商报价">{currentConnectionOption?.supplierLabel ?? "供应商"} · {modelPriceSummary(selectedModel, parameters)} · {billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing)}</small>
+          <small className="node-config-supplier-quote" aria-label="当前供应商报价">{currentConnectionOption?.supplierLabel ?? "供应商"} · {modelPriceSummary(selectedModel, priceParameters)} · {billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing)}</small>
         </div>
         <div className="node-config-model-field node-config-model-header">
           <span>模型</span>
@@ -745,7 +746,7 @@ function GenerationNodeBody({
             <ModelPicker key={currentConnection} id={`node-inline-model-${nodeId}`} label={`${data.label} 模型`}
               connectionId={currentConnection} models={modelOptions} value={data.model ?? ""}
               capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
-              parameters={{ ...parameters, prompt: renderPromptParts(data.parts ?? []) }}
+              parameters={{ ...priceParameters, prompt: renderPromptParts(data.parts ?? []) }}
               onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
               anchorKey={`${settingsAnchor}:${settingsPlacement.left}:${settingsPlacement.width ?? ""}`} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
@@ -785,7 +786,7 @@ function GenerationNodeBody({
             }
           />
         </section>
-        <ModelPriceDetails model={priceModel} parameters={{ ...parameters, prompt: renderPromptParts(data.parts ?? []) }} />
+        <ModelPriceDetails model={priceModel} parameters={{ ...priceParameters, prompt: renderPromptParts(data.parts ?? []) }} />
         <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
       </div>
     </section>
@@ -863,7 +864,7 @@ function GenerationNodeBody({
             <strong>
               {modelName}
             </strong>
-            <small title={connectionName}>{connectionName.replace(/\s*·\s*画布$/u, "")} · {summary || "API 默认参数"} · {modelPriceSummary(selectedModel, parameters)}</small>
+            <small title={connectionName}>{connectionName.replace(/\s*·\s*画布$/u, "")} · {summary || "API 默认参数"} · {modelPriceSummary(selectedModel, priceParameters)}</small>
           </span>
         </button>
         <button

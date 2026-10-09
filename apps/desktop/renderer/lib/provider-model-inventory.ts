@@ -1198,7 +1198,11 @@ async function readModelResponse(
         // Bind first so exact-ID historical metadata retains catalog ownership.
         // Fresh enrichment can then replace/remove those owned fields without
         // the compatibility binder bringing them back afterward.
-        const bound = bindScannedModelProtocols(latest, visible, original);
+        // A complete authenticated read is the current inventory. Do not let
+        // the previous cache deny new exact IDs while their contracts are bound.
+        const liveDirectoryConnection = { ...latest, config: { ...latest.config,
+          scannedModelIds: visible.map(model => model.id), modelScanStatus: visible.length ? "live" : "empty" } };
+        const bound = bindScannedModelProtocols(liveDirectoryConnection, visible, original);
         const owner = typeof latest.config.supplierId === "string" ? await getSupplierRecord(latest.config.supplierId) : null;
         const siteScope = (supplier: typeof owner) => supplier ? JSON.stringify([
           supplier.state?.sourceId, supplier.siteUrl, supplier.kind,
@@ -1206,10 +1210,10 @@ async function readModelResponse(
         ]) : null;
         const ownerSiteScope = siteScope(owner);
         const refreshId = context.supplierRefreshId ?? String(requestId);
-        const supplierPricedModels = await enrichSupplierModelPrices(latest, bound.models, true, true, { refreshId });
+        const supplierPricedModels = await enrichSupplierModelPrices(liveDirectoryConnection, bound.models, true, true, { refreshId });
         const pricedModels = latest.config.modelGroup === "VIDEO-Seedance官转"
           ? await refreshSavedCangyuanPrices(latest, supplierPricedModels, { force: true }) : supplierPricedModels;
-        const discoveryConnection = owner ? { ...latest, config: { ...latest.config, supplierWebsiteUrl: owner.siteUrl } } : latest;
+        const discoveryConnection = owner ? { ...liveDirectoryConnection, config: { ...liveDirectoryConnection.config, supplierWebsiteUrl: owner.siteUrl } } : liveDirectoryConnection;
         const discovered = await discoverSupplierModelInterfaces(discoveryConnection, pricedModels, original, undefined, {
           force: true, refreshId,
         });

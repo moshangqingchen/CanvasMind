@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "./supplier-group-details.js";
+import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupMediaPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "./supplier-group-details.js";
 
 describe("supplier group evidence", () => {
+  it("retains Mikoto's separate image and per-second video declarations without sharing their rates", () => {
+    const details = parseSupplierGroupDetails({ name: "grok heavy", description: "图片 0.02一张\n视频 0.18/s", image_price_1k: .02 }, "key-groups")!;
+    expect(details.referencePrice).toBe("图片 0.02一张；视频 0.18/s");
+    const image = supplierGroupMediaPriceDetails(details, "image", "grok-imagine-image");
+    expect(supplierGroupPriceLabel(image)).toBe("图片 0.02一张（分组说明参考）");
+    const video = supplierGroupMediaPriceDetails(details, "video", "grok-imagine-video");
+    expect(supplierGroupPriceLabel(video)).toBe("视频 0.18/s（分组说明参考）");
+    expect(video?.imagePrices).toBeUndefined();
+    expect(supplierGroupMediaPriceDetails(parseSupplierGroupDetails({ description: "生图5分一张" }, "key-groups"), "video", "grok-imagine-video")?.referencePrice).toBeUndefined();
+  });
+  it("uses only exact model-scoped video quotes when a mixed group does not label its modality", () => {
+    const ids = ["grok-imagine-video", "grok-imagine-video-1.5"];
+    const details = parseSupplierGroupDetails({ description: `${ids[0]} $0.18/秒\n${ids[1]} $0.3/次\n图片 0.02一张` }, "key-groups")!;
+    expect(supplierGroupMediaPriceDetails(supplierGroupModelPriceDetails(details, ids[0]!, ids), "video", ids[0]!)?.referencePrice).toBe(`${ids[0]} $0.18/秒`);
+    expect(supplierGroupMediaPriceDetails(supplierGroupModelPriceDetails(details, ids[1]!, ids), "video", ids[1]!)?.referencePrice).toBe(`${ids[1]} $0.3/次`);
+    expect(supplierGroupMediaPriceDetails(details, "image", "grok-imagine-image")?.referencePrice).toBe("图片 0.02一张");
+  });
   it("distinguishes pDog native 1K from upscaled 2K/4K using the group's explicit wording", () => {
     const details = parseSupplierGroupDetails({ name: "【生图】image2/2.5-1K2K4K(超分组)",
       description: "0.03/张，1K/2K/4K同价，1K为原生，2K4K为超分，比例可自由调整" }, "key-groups");
