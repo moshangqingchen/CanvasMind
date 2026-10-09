@@ -34,14 +34,16 @@ for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
     const open = () => page.getByRole("button", { name: "打开 新接口参数 模型与参数", exact: true }).click();
     await open();
     const panel = page.getByRole("dialog", { name: "新接口参数 模型与参数" });
-    const tier = panel.getByLabel("清晰度 / 计费档位", { exact: true });
+    const tier = panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });
     const ratio = panel.getByLabel("画面比例", { exact: true });
     const quality = panel.getByLabel("质量", { exact: true });
     await expect(quality).toHaveValue("max");
     const expectedQualities = id === "gpt-image-2.5-x" ? ["auto", "low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "xhigh", "max"];
     expect(await quality.locator("option").evaluateAll(items => items.map(item => (item as HTMLOptionElement).value).filter(Boolean))).toEqual(expectedQualities);
     for (const value of ["1k", "2k", "4k"]) {
-      await tier.selectOption(value);
+      const choice = tier.getByRole("button", { name: value.toUpperCase(), exact: true });
+      await choice.click();
+      await expect(choice).toHaveAttribute("aria-pressed", "true");
       expect(await ratio.locator("option").evaluateAll(items => items.map(item => (item as HTMLOptionElement).value).filter(Boolean))).toEqual(expect.arrayContaining(ratios));
       await ratio.selectOption("9:21");
       await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters)
@@ -52,7 +54,7 @@ for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters)
       .toMatchObject({ tier: "4k", aspect_ratio: "9:21", quality: "low", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}) });
     await page.reload(); await open();
-    await expect(tier).toHaveValue("4k");
+    await expect(tier.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(ratio).toHaveValue("9:21");
     await expect(quality).toHaveValue("low");
     if (id === "gpt-image-2.5-x") await expect(panel.getByLabel("产品线", { exact: true })).toHaveValue("flare");

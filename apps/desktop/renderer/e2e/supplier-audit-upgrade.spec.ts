@@ -34,7 +34,7 @@ for (const [baseUrl, modelGroup, id] of [
     const open = () => page.getByRole("button", { name: "打开 核查参数 模型与参数", exact: true }).click();
     await open();
     const panel = page.getByRole("dialog", { name: "核查参数 模型与参数" });
-    const size = panel.getByLabel("输出分辨率（当前分组仅 1K）", { exact: true });
+    const size = panel.getByLabel("输出分辨率预设", { exact: true });
     const options = await size.locator("option").evaluateAll(items => items.map(item => ({
       label: item.textContent, value: (item as HTMLOptionElement).value,
     })));

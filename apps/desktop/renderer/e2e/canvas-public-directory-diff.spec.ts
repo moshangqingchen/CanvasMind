@@ -131,14 +131,14 @@ test("图片节点只展示图片目录差集，窄窗口保留报价和说明�
   const ui = await fixture(page, request, "image-generation", key, official);
   await expect(ui.summary).toContainText("官网目录 2");
   await expect(ui.list.getByRole("option")).toHaveCount(3);
-  await expect(ui.list.getByRole("option", { name: "gpt-image-3", exact: true })).toContainText("¥0.15/张");
+  await expect(ui.list.getByRole("option", { name: "GPT Image 3", exact: true })).toContainText("¥0.15/张");
   await expect(ui.list.getByRole("option", { name: /video-only|lyria|tts|understanding/u })).toHaveCount(0);
   await expect.poll(() => ui.menu.evaluate(element => {
     const box = element.getBoundingClientRect();
     return box.left >= 11 && box.top >= 11 && box.right <= innerWidth - 11 && box.bottom <= innerHeight - 11 && element.scrollWidth <= element.clientWidth + 1;
   })).toBe(true);
   await ui.search.fill("gpt-image-3");
-  await expect(ui.list.getByRole("option", { name: "gpt-image-3", exact: true })).toBeVisible();
+  await expect(ui.list.getByRole("option", { name: "GPT Image 3", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("narrow-image-directory.png") });
   ui.assertSafe();
 });

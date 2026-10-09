@@ -68,6 +68,68 @@ interface VideoApiRecord {
   pricing?: unknown;
 }
 
+interface ImageApiRecord {
+  modes?: unknown;
+  images_max?: unknown;
+  sizes?: unknown;
+  ratios?: unknown;
+  resolutions?: unknown;
+  pricing?: unknown;
+}
+
+interface ImageOutputDimensions {
+  resolution: string;
+  aspectRatio: string;
+  width: number;
+  height: number;
+}
+
+const IMAGE_MODEL_NAMES: Readonly<Record<string, string>> = {
+  "gpt-image-2.5-flare": "GPT Image 2.5 Flare",
+  "gpt-image-2.5-sunburs": "GPT Image 2.5 Sunburst",
+  "gpt-image-2.5-sunburst": "GPT Image 2.5 Sunburst",
+  "gpt-image-2": "GPT Image 2",
+  "image-nano-banana-pro": "Nano Banana Pro",
+  "image-nano-banana-2": "Nano Banana 2",
+  "image-nano-banana": "Nano Banana",
+  "seedream-5-0-pro": "Seedream 5.0 Pro",
+};
+
+function imageModelName(id: string): string {
+  return IMAGE_MODEL_NAMES[id.toLowerCase()] ?? id;
+}
+
+/** A provider's 1080p image enum is not evidence of a native 1K request tier. */
+function imageResolutionLabel(value: string): string {
+  return /^1080p$/iu.test(value) ? "标准" : value;
+}
+
+function imageOutputDimensions(
+  imageApi: ImageApiRecord,
+  sizes: readonly string[],
+  ratios: readonly string[],
+): ImageOutputDimensions[] {
+  if (!Array.isArray(imageApi.resolutions)) return [];
+  const dimensions = new Map<string, ImageOutputDimensions>();
+  const conflicts = new Set<string>();
+  for (const row of imageApi.resolutions) {
+    if (!isRecord(row) || typeof row.size !== "string" || typeof row.ratio !== "string" ||
+        !sizes.includes(row.size) || !ratios.includes(row.ratio) ||
+        typeof row.width !== "number" || !Number.isSafeInteger(row.width) || row.width <= 0 ||
+        typeof row.height !== "number" || !Number.isSafeInteger(row.height) || row.height <= 0) continue;
+    const key = JSON.stringify([row.size, row.ratio]);
+    if (conflicts.has(key)) continue;
+    const existing = dimensions.get(key);
+    if (existing && (existing.width !== row.width || existing.height !== row.height)) {
+      dimensions.delete(key);
+      conflicts.add(key);
+      continue;
+    }
+    dimensions.set(key, { resolution: row.size, aspectRatio: row.ratio, width: row.width, height: row.height });
+  }
+  return [...dimensions.values()];
+}
+
 export interface MiaowuMarketplaceModel {
   id: string;
   name: string;
@@ -236,8 +298,8 @@ function videoApiRecord(record: PricingRecord): VideoApiRecord | undefined {
     : undefined;
 }
 
-function imageApiRecord(record: PricingRecord): VideoApiRecord | undefined {
-  return isRecord(record.image_api) ? record.image_api as VideoApiRecord : undefined;
+function imageApiRecord(record: PricingRecord): ImageApiRecord | undefined {
+  return isRecord(record.image_api) ? record.image_api as ImageApiRecord : undefined;
 }
 
 function videoParameterOverrides(videoApi: VideoApiRecord): ParameterOverrides {
@@ -326,7 +388,7 @@ function pricingFor(
   const pricedSizes = rules.flatMap(rule => isRecord(rule) && typeof rule.size === "string" &&
     typeof rule.price === "number" && Number.isFinite(rule.price) && rule.price >= 0 ? [{ size: rule.size, price: rule.price }] : []);
   const tiers: StructuredPriceTier[] | undefined = pricedSizes.length && new Set(pricedSizes.map(rule => rule.size)).size === pricedSizes.length
-    ? pricedSizes.map(({size,price}) => ({ id: size, label: size, dimension: "resolution", value: size,
+    ? pricedSizes.map(({size,price}) => ({ id: size, label: imageApiRecord(record) ? imageResolutionLabel(size) : size, dimension: "resolution", value: size,
       price: Number((price * QUOTA_TO_CNY * ratio).toPrecision(12)) })) : undefined;
   if (!yuanRange) {
     return {
@@ -431,6 +493,7 @@ function imageDescriptorFor(id: string, record: PricingRecord, pricing: ParsedPr
   const imageApi = imageApiRecord(record)!;
   const sizes = [...new Set(strings(imageApi.sizes))];
   const ratios = [...new Set(strings(imageApi.ratios))];
+  const outputDimensions = imageOutputDimensions(imageApi, sizes, ratios);
   const imagesMax = nonNegativeInteger(imageApi.images_max);
   const modes = strings(imageApi.modes);
   const operations = [
@@ -438,16 +501,16 @@ function imageDescriptorFor(id: string, record: PricingRecord, pricing: ParsedPr
     ...(imagesMax > 0 && (!modes.length || modes.includes("image-to-image")) ? ["image.edit" as const] : []),
   ];
   return {
-    id, name: `${id}（${pricing.priceLabel}）`,
+    id, name: `${imageModelName(id)}（${pricing.priceLabel}）`,
     description: typeof record.description === "string" && record.description.trim()
       ? record.description.trim() : "喵呜异步图片任务；请求字段与档位以当前模型配置为准。",
     operations,
     inputKinds: ["text", ...(imagesMax > 0 ? ["image" as const, ...(imagesMax > 1 ? ["image[]" as const] : [])] : [])],
     outputKinds: ["image"],
     parameters: [
-      ...(sizes.length ? [{ key: "resolution", label: "输出分辨率", control: "select" as const,
+      ...(sizes.length ? [{ key: "resolution", label: "分辨率", control: "select" as const,
         valueType: "string" as const, required: true, default: sizes.at(-1),
-        options: sizes.map(value => ({ label: value, value })),
+        options: sizes.map(value => ({ label: imageResolutionLabel(value), value })),
         description: "按喵呜当前型号原生 resolution 枚举发送；不是像素 size 参数。" }] : []),
       ...(ratios.length ? [{ key: "aspect_ratio", label: "画面比例", control: "select" as const,
         valueType: "string" as const, default: ratios[0], options: ratios.map(value => ({ label: value, value })),
@@ -462,6 +525,7 @@ function imageDescriptorFor(id: string, record: PricingRecord, pricing: ParsedPr
       pricingCheckedAt: checkedAt, remoteMediaUrlsOnly: true, parameterSource: "pricing.image_api",
       imageNativeResolutionOptions: true, imageNativeRatioOptions: true,
       imageNativeResolutionParameter: "resolution", qualitySupport: "provider-decided",
+      ...(outputDimensions.length ? { imageOutputDimensions: outputDimensions } : {}),
       documentationUrl: "https://api.miaowuai.store/docs/openai-videos",
     },
     limits: { maxInputImages: imagesMax, maxInputVideos: 0, maxInputAudios: 0 },
@@ -522,6 +586,7 @@ export function miaowuCatalogFromPricing(
     const pricing = pricingFor(record, groupRatios);
     const videoApi = videoApiRecord(record);
     const imageApi = imageApiRecord(record);
+    const displayName = imageApi ? imageModelName(id) : id;
     const description =
       typeof record.description === "string" && record.description.trim()
         ? record.description.trim()
@@ -540,7 +605,7 @@ export function miaowuCatalogFromPricing(
     models.push(descriptor);
     const marketplaceModel: MiaowuMarketplaceModel = {
       id,
-      name: `${id}（${pricing.priceLabel}）`,
+      name: `${displayName}（${pricing.priceLabel}）`,
       description,
       capability: imageApi ? "image" : "video",
       priceLabel: pricing.priceLabel,
@@ -556,7 +621,7 @@ export function miaowuCatalogFromPricing(
       const groupPricing = pricingFor(record, groupRatios, group);
       const groupModel: MiaowuMarketplaceModel = {
         ...marketplaceModel,
-        name: `${id}（${groupPricing.priceLabel}）`,
+        name: `${displayName}（${groupPricing.priceLabel}）`,
         priceLabel: groupPricing.priceLabel,
         billingLabel: groupPricing.billingLabel,
         tags: group === "default" ? [] : [group],

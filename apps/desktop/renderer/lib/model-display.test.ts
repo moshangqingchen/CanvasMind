@@ -3,6 +3,23 @@ import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, compara
 import { mediaExpressionPricing, type ModelDescriptor } from "@super-canvas/providers";
 
 describe("appendPriceLabelOnce", () => {
+  it("formats raw image names from saved catalogs without rewriting IDs or custom names", () => {
+    expect(cleanModelDisplayName("gpt-image-2.5-sunburs")).toBe("GPT Image 2.5 Sunburst");
+    expect(cleanModelDisplayName("gpt-image-2.5-sunburst（¥0.08/次）", "¥0.08/次")).toBe("GPT Image 2.5 Sunburst");
+    expect(cleanModelDisplayName("gpt-image-2.5-flare-4k")).toBe("GPT Image 2.5 Flare 4K");
+    expect(cleanModelDisplayName("Image-nano-banana-pro")).toBe("Nano Banana Pro");
+    expect(cleanModelDisplayName("Image-nano-banana-2")).toBe("Nano Banana 2");
+    expect(cleanModelDisplayName("nano-banana2-1k")).toBe("Nano Banana 2 1K");
+    expect(cleanModelDisplayName("nano-banana-2-lite")).toBe("Nano Banana 2 Lite");
+    expect(cleanModelDisplayName("N nano-banana-pro")).toBe("N Nano Banana Pro");
+    expect(cleanModelDisplayName("gemini-nano-banana-2.1")).toBe("Gemini Nano Banana 2.1");
+    expect(cleanModelDisplayName("gemini-3-pro-image-preview（FriModel）")).toBe("Gemini 3 Pro Image Preview（FriModel）");
+    expect(cleanModelDisplayName("ad-gemini-3.1-flash-image-preview")).toBe("AD · Gemini 3.1 Flash Image Preview");
+    expect(cleanModelDisplayName("gemini-3-pro-image-as")).toBe("Gemini 3 Pro Image AS");
+    expect(cleanModelDisplayName("gpt-image-2 · 商家 s1c1")).toBe("GPT Image 2 · 商家 s1c1");
+    expect(cleanModelDisplayName("高质量生图专线")).toBe("高质量生图专线");
+    expect(cleanModelDisplayName("grok-imagine-video-1080p")).toBe("grok-imagine-video-1080p");
+  });
   it("does not summarize media token billing with only the text input/output rates", () => {
     const media: ModelDescriptor = { id: "gpt-image-2", name: "Image", operations: ["image.generate"],
       pricing: { kind: "token", currency: "USD", inputPerMillion: 3.5, outputPerMillion: 7, imageOutputPerMillion: 21,

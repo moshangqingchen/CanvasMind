@@ -477,13 +477,17 @@ export function parametersWithDefaults(
   // Preserve whichever value was explicitly saved instead of reintroducing the
   // other field's descriptor default during model discovery or page reload.
   const hasSize = descriptors.some(isExactSizeParameterDescriptor);
-  const hasAspectRatio = descriptors.some(
-    (descriptor) => descriptor.key === "aspect_ratio",
-  );
-  if (hasSize && hasAspectRatio) {
-    if (current.size !== undefined) delete parameters.aspect_ratio;
-    else if (current.aspect_ratio !== undefined) delete parameters.size;
-    else if (parameters.size !== undefined) delete parameters.aspect_ratio;
+  const aspectRatioKeys = descriptors.filter(
+    (descriptor) => ["aspect_ratio", "aspectRatio", "ratio"].includes(descriptor.key),
+  ).map(descriptor => descriptor.key);
+  if (hasSize && aspectRatioKeys.length) {
+    if (current.size !== undefined) {
+      for (const key of aspectRatioKeys) delete parameters[key];
+    } else if (aspectRatioKeys.some(key => current[key] !== undefined)) {
+      delete parameters.size;
+    } else if (parameters.size !== undefined) {
+      for (const key of aspectRatioKeys) delete parameters[key];
+    }
   }
 
   // These are application-owned controls, independent of a supplier's catalog.

@@ -2006,7 +2006,9 @@ test.describe("超级画布完整验收", () => {
     await page.getByRole("button", { name: "Fit View", exact: true }).click();
     const created = page.locator('.react-flow__node:has(.node-card[data-node-type="image-generation"])').last();
     const inspector = await openNodeParameters(created, connection);
-    await inspector.getByLabel("尺寸", { exact: true }).fill("1536x1024");
+    await inspector.getByLabel("图片宽度", { exact: true }).fill("1536");
+    await inspector.getByLabel("图片高度", { exact: true }).fill("1024");
+    await inspector.getByLabel("图片高度", { exact: true }).press("Enter");
     await inspector.getByLabel("质量").selectOption("high");
     await inspector.getByLabel("生成张数").fill("3");
 
@@ -2152,7 +2154,9 @@ test.describe("超级画布完整验收", () => {
     const imageConfigPopover = await openNodeParameters(imageNode, connection);
     await imageConfigPopover.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true }).click();
     await imageConfigPopover.getByRole("option", { name: "E2E Image Cinematic", exact: true }).click();
-    await imageConfigPopover.getByLabel("尺寸", { exact: true }).fill("2160x3840");
+    await imageConfigPopover.getByLabel("图片宽度", { exact: true }).fill("2160");
+    await imageConfigPopover.getByLabel("图片高度", { exact: true }).fill("3840");
+    await imageConfigPopover.getByLabel("图片高度", { exact: true }).press("Enter");
     await expect(
       imageConfigPopover.getByLabel("E2E 图片生成 模型", { exact: true }),
     ).toContainText("E2E Image Cinematic");
@@ -2224,7 +2228,8 @@ test.describe("超级画布完整验收", () => {
     );
     const restoredInspector = await openNodeParameters(restoredImage);
     await expect(restoredInspector.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true })).toContainText("E2E Image Cinematic");
-    await expect(restoredInspector.getByLabel("尺寸", { exact: true })).toHaveValue("");
+    await expect(restoredInspector.getByLabel("图片宽度", { exact: true })).toHaveValue("");
+    await expect(restoredInspector.getByLabel("图片高度", { exact: true })).toHaveValue("");
     await expect(restoredInspector.getByLabel("质量")).toHaveValue("high");
     await expect(restoredInspector.getByLabel("画面比例")).toHaveValue("9:16");
   });
@@ -3578,7 +3583,9 @@ test.describe("超级画布完整验收", () => {
     const editor = createdNode.locator(".tiptap-prompt");
     await editor.pressSequentially("一张可以立即运行的霓虹街景", { delay: 5 });
     const inspector = await openNodeParameters(createdNode, connection);
-    await inspector.getByLabel("精确尺寸", { exact: true }).fill("1536x1024");
+    await inspector.getByLabel("图片宽度", { exact: true }).fill("1536");
+    await inspector.getByLabel("图片高度", { exact: true }).fill("1024");
+    await inspector.getByLabel("图片高度", { exact: true }).press("Enter");
     await inspector.getByLabel("质量").selectOption("high");
     await inspector.getByLabel("数量").fill("2");
     await inspector.getByRole("button", { name: "关闭模型与参数面板" }).click();
@@ -4340,7 +4347,8 @@ test.describe("超级画布完整验收", () => {
     await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型群组", exact: true })).toContainText(CANGYUAN_BACKUP_IMAGE_GROUP);
     await expect(panel.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true })).toContainText("codex-gpt-image-2-1k");
     await expect(panel.getByLabel("画面比例", { exact: true })).toHaveValue("auto");
-    await expect(panel.getByLabel("分辨率", { exact: true })).toHaveValue("medium");
+    await expect(panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true })
+      .getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(panel.getByLabel("生成张数", { exact: true })).toHaveValue("1");
     await expect
       .poll(async () => {

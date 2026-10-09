@@ -29,7 +29,26 @@ export function cleanModelDisplayName(name: string, priceLabel?: unknown): strin
   // Catalogs may call the same unit 次 / 请求; their price row is authoritative.
   result = result.replace(/[（(]\s*[¥￥$]\s*\d+(?:\.\d+)?\s*\/\s*(?:次|请求|张|秒)(?:·快照)?\s*[）)]/gu, "");
   if (typeof priceLabel === "string" && priceLabel.trim()) result = result.replace(` · ${priceLabel.trim()}`, "");
-  return result.replace(/[（(](?:价格以(?:平台|模型广场)为准|价格未公布|价格需登录查询)[^）)]*[）)]/gu, "").trim() || name;
+  result = result.replace(/[（(](?:价格以(?:平台|模型广场)为准|价格未公布|价格需登录查询)[^）)]*[）)]/gu, "").trim() || name;
+  const annotated = /^(.*?)(\s*(?:[（(]FriModel[）)]|·\s*商家.*))$/iu.exec(result);
+  const base = annotated?.[1]?.trim() ?? result;
+  const annotation = annotated?.[2] ?? "";
+  const image = /^gpt-image-(\d+(?:\.\d+)?)(?:-(flare|sunburst|sunburs))?((?:-(?:[124]k|low|medium|high|xhigh|max|web|x))*)$/iu.exec(base);
+  if (image) {
+    const variant = image[2] ? (/^flare$/iu.test(image[2]) ? " Flare" : " Sunburst") : "";
+    const suffix = image[3]?.split("-").filter(Boolean).map(value => /^[124]k$/iu.test(value) ? value.toUpperCase() : value[0]!.toUpperCase() + value.slice(1).toLowerCase()).join(" ");
+    return `GPT Image ${image[1]}${variant}${suffix ? ` ${suffix}` : ""}${annotation}`;
+  }
+  const banana = /^(?:(N)\s+)?(?:image-)?nano-banana(?:-?(pro|2(?:\.\d+)?))?(?:-(lite))?(?:-([124]k))?$/iu.exec(base);
+  if (banana) return `${banana[1] ? "N " : ""}Nano Banana${banana[2] ? banana[2].toLowerCase() === "pro" ? " Pro" : ` ${banana[2]}` : ""}${banana[3] ? " Lite" : ""}${banana[4] ? ` ${banana[4].toUpperCase()}` : ""}${annotation}`;
+  const gemini = /^(?:(ad|leo)-)?gemini-(?:(\d+(?:\.\d+)?)-(pro|flash)-image|nano-banana-(2\.1))((?:-(?:preview|as|[124]k))*)$/iu.exec(base);
+  if (gemini) {
+    const channel = gemini[1] ? `${gemini[1].toUpperCase()} · ` : "";
+    const name = gemini[4] ? `Gemini Nano Banana ${gemini[4]}` : `Gemini ${gemini[2]} ${gemini[3]!.toLowerCase() === "pro" ? "Pro" : "Flash"} Image`;
+    const suffix = gemini[5]?.split("-").filter(Boolean).map(value => /^as$|^[124]k$/iu.test(value) ? value.toUpperCase() : "Preview").join(" ");
+    return `${channel}${name}${suffix ? ` ${suffix}` : ""}${annotation}`;
+  }
+  return result;
 }
 
 export function modelPriceSummary(model: import("@super-canvas/providers").ModelDescriptor | undefined, parameters: Readonly<Record<string, unknown>>): string {

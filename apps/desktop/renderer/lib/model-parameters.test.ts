@@ -16,6 +16,14 @@ import {
 } from "./model-parameters";
 
 describe("model parameter helpers", () => {
+  it.each(["ratio", "aspectRatio"])("preserves native %s exclusivity when defaults are restored", key => {
+    const descriptors = [
+      { key: "size", label: "尺寸", control: "dimensions" as const, default: "1024x1024" },
+      { key, label: "比例", control: "select" as const, default: "1:1", options: [{ label: "1:1", value: "1:1" }, { label: "9:16", value: "9:16" }] },
+    ];
+    expect(parametersWithDefaults(descriptors, { size: "1024x1024" })).toEqual({ size: "1024x1024" });
+    expect(parametersWithDefaults(descriptors, { [key]: "9:16" })).toEqual({ [key]: "9:16" });
+  });
   it("does not restore removed connector models from an authoritative empty catalog", () => {
     const config = { connector: { models: [{ id: "removed", name: "Removed", operations: ["image.generate"] }] } };
     expect(modelDescriptorsFromConnectionConfig(config)).toHaveLength(1);

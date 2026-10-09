@@ -43,15 +43,15 @@ it("retains all eighteen exact public media models and their native contracts de
 it("preserves current fractional request and second prices instead of rounding them to cents", () => {
   const catalog = miaowuCatalogFromPricing(CURRENT_PUBLIC_FIXTURE);
   const models = new Map(catalog.models.map(model => [model.id, model]));
-  for (const [id, label] of [
-    ["dola-seedance-2.5", "¥0.875/次"], ["dola-seedance-2.0-fast", "¥0.875/次"],
-    ["doubao-seedance-2.0-fast", "¥2.5/次"], ["doubao-seedance-2.5", "¥6.25/次"],
-    ["seedance-2.0-deal", "¥3.125/次"], ["minimax-h3", "¥0.0625/秒"],
-    ["wan3.0-video", "¥0.195–0.65/秒"], ["gpt-image-2.5-flare", "¥0.04–0.2/次"],
-    ["GPT-image-2", "¥0.05/次"],
+  for (const [id, label, displayName] of [
+    ["dola-seedance-2.5", "¥0.875/次", "dola-seedance-2.5"], ["dola-seedance-2.0-fast", "¥0.875/次", "dola-seedance-2.0-fast"],
+    ["doubao-seedance-2.0-fast", "¥2.5/次", "doubao-seedance-2.0-fast"], ["doubao-seedance-2.5", "¥6.25/次", "doubao-seedance-2.5"],
+    ["seedance-2.0-deal", "¥3.125/次", "seedance-2.0-deal"], ["minimax-h3", "¥0.0625/秒", "minimax-h3"],
+    ["wan3.0-video", "¥0.195–0.65/秒", "wan3.0-video"], ["gpt-image-2.5-flare", "¥0.04–0.2/次", "GPT Image 2.5 Flare"],
+    ["GPT-image-2", "¥0.05/次", "GPT Image 2"],
   ]) {
     expect(models.get(id!)?.metadata?.priceLabel).toBe(label);
-    expect(models.get(id!)?.name).toBe(`${id}（${label}）`);
+    expect(models.get(id!)?.name).toBe(`${displayName}（${label}）`);
   }
   expect(modelPriceAmount(models.get("dola-seedance-2.5")!.pricing!, { resolution: "720p", duration: 30 })).toBe(.875);
   expect(models.get("minimax-h3")!.pricing!.kind).toBe("per-second");
@@ -86,6 +86,60 @@ it("matches every current media model's own public enums, durations, reference l
         ...(contract.images_max ? ["image_urls"] : []), ...(contract.videos_max ? ["video_urls"] : []), ...(contract.audios_max ? ["audio_urls"] : [])]);
       expect(model.metadata?.supportsFirstLastFrames).toBe(false);
     }
+  }
+});
+
+it("presents image resolution tiers and model names without changing native request values", () => {
+  const catalog = miaowuCatalogFromPricing(CURRENT_PUBLIC_FIXTURE);
+  const sunburst = catalog.models.find(model => model.id === "gpt-image-2.5-sunburs")!;
+  expect(sunburst.name).toBe("GPT Image 2.5 Sunburst（¥0.04–0.2/次）");
+  expect(catalog.marketplaceModels.find(model => model.id === sunburst.id)?.name).toBe(sunburst.name);
+  expect(miaowuModelsForGroup(catalog, "default").find(model => model.id === sunburst.id)?.name).toBe(sunburst.name);
+  expect(sunburst.parameters?.find(parameter => parameter.key === "resolution")).toMatchObject({
+    label: "分辨率", required: true, default: "4K", options: [
+      { label: "标准", value: "1080p" }, { label: "2K", value: "2K" }, { label: "4K", value: "4K" },
+    ],
+  });
+  expect(sunburst.pricing?.tiers?.[0]).toMatchObject({ label: "标准", value: "1080p" });
+  expect(sunburst.metadata?.imageOutputDimensions).toEqual(CURRENT_PUBLIC_FIXTURE.data
+    .find((row: { model_name: string }) => row.model_name === sunburst.id).image_api.resolutions
+    .map((row: { size: string; ratio: string; width: number; height: number }) => ({
+      resolution: row.size, aspectRatio: row.ratio, width: row.width, height: row.height,
+    })));
+  const banana = catalog.models.find(model => model.id === "Image-nano-banana-pro")!;
+  expect(banana.name).toBe("Nano Banana Pro（¥0.15/次）");
+  expect(banana.parameters?.find(parameter => parameter.key === "resolution")?.options).toEqual([
+    { label: "标准", value: "1080p" }, { label: "2K", value: "2K" },
+  ]);
+  expect(banana.parameters?.map(parameter => parameter.key)).toEqual(["resolution", "aspect_ratio"]);
+  // Video labels and request values remain their own published enums.
+  const video = catalog.models.find(model => model.id === "wan3.0-video")!;
+  expect(video.parameters?.find(parameter => parameter.key === "resolution")?.options).toContainEqual({ label: "1080p", value: "1080p" });
+});
+
+it("keeps only unambiguous published image dimensions and never synthesizes unsupported controls", () => {
+  const catalog = miaowuCatalogFromPricing({ data: [{ model_name: "Image-nano-banana-pro", image_api: {
+    sizes: ["1080p", "2K"], ratios: ["1:1", "16:9"], resolutions: [
+      { size: "1080p", ratio: "1:1", width: 1080, height: 1080 },
+      { size: "1080p", ratio: "1:1", width: 1080, height: 1080 },
+      { size: "2K", ratio: "16:9", width: 2560, height: 1440 },
+      { size: "2K", ratio: "16:9", width: 2048, height: 1152 },
+      { size: "4K", ratio: "1:1", width: 4096, height: 4096 },
+      { size: "2K", ratio: "9:16", width: 1440, height: 2560 },
+      { size: "2K", ratio: "1:1", width: "1440", height: 1440 },
+      { size: "1080p", ratio: "16:9", width: 1920, height: -1080 },
+      { size: "1080p", ratio: "16:9", width: 1920.1, height: 1080 },
+    ],
+  } }, { model_name: "unknown-image-model", image_api: { sizes: ["1080p"], ratios: ["1:1"] } }] });
+  expect(catalog.models[0]?.metadata?.imageOutputDimensions).toEqual([
+    { resolution: "1080p", aspectRatio: "1:1", width: 1080, height: 1080 },
+  ]);
+  expect(catalog.models[1]?.name).toBe("unknown-image-model（价格以平台为准）");
+  expect(catalog.models[1]?.metadata?.imageOutputDimensions).toBeUndefined();
+  for (const model of catalog.models) {
+    expect(model.parameters?.map(parameter => parameter.key)).toEqual(["resolution", "aspect_ratio"]);
+    expect(model.parameters?.find(parameter => parameter.key === "resolution")?.options?.some(option => ["1K", "auto"].includes(String(option.value)))).toBe(false);
+    expect(model.metadata?.qualitySupport).toBe("provider-decided");
   }
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ModelParameterDescriptor } from "@super-canvas/providers";
 import {
   activeResolutionTierForValue,
+  imageDimensionsPresentation,
   resolutionOptionsForTier,
   resolutionTierForValue,
   resolutionTierShortcuts,
@@ -30,6 +31,16 @@ const dimensionsDescriptor: ModelParameterDescriptor = {
 };
 
 describe("resolution tier shortcuts", () => {
+  it("presents exact select/text sizes in the shared layout without inventing options or bounds", () => {
+    for (const control of ["select", "text"] as const) {
+      const descriptor = { ...dimensionsDescriptor, control };
+      const presentation = imageDimensionsPresentation(descriptor);
+      expect(presentation).toEqual({ ...descriptor, control: "dimensions", label: "分辨率" });
+      expect(presentation.options).toBe(descriptor.options);
+    }
+    const tier = { ...dimensionsDescriptor, control: "select" as const, options: [{ label: "4K", value: "4K" }] };
+    expect(imageDimensionsPresentation(tier)).toBe(tier);
+  });
   it("builds 1K, 2K, and 4K shortcuts only from explicit tier options", () => {
     expect(resolutionTierShortcuts(dimensionsDescriptor)).toEqual([
       {
@@ -124,6 +135,9 @@ describe("resolution tier shortcuts", () => {
     expect(
       shouldUseUnifiedResolutionControl(descriptors, { aspect_ratio: "2:3" }),
     ).toBe(false);
+    for (const key of ["aspectRatio", "ratio"]) {
+      expect(shouldUseUnifiedResolutionControl([{ ...descriptors[0]!, key }, dimensionsDescriptor], { [key]: "2:3" })).toBe(false);
+    }
   });
 });
 
@@ -180,6 +194,19 @@ describe("size and aspect-ratio exclusivity", () => {
         context,
       ),
     ).toEqual({ aspect_ratio: "9:16", quality: "high" });
+  });
+  it.each(["ratio", "aspectRatio"])("keeps native %s aliases exclusive with exact dimensions", aspectRatioKey => {
+    const aliased = { ...context, aspectRatioKey };
+    expect(setParameterValueWithSizeExclusivity({ [aspectRatioKey]: "1:1" }, "size", "1024x1024", aliased))
+      .toEqual({ size: "1024x1024" });
+    expect(setParameterValueWithSizeExclusivity({ size: "1024x1024", size_tier: "1K" }, aspectRatioKey, "9:16", aliased))
+      .toEqual({ [aspectRatioKey]: "9:16" });
+    expect(setParameterValueWithSizeExclusivity({ size: "1024x1024" }, "size", undefined, aliased))
+      .toEqual({ [aspectRatioKey]: "auto" });
+  });
+  it("does not delete a supplier's ratio-valued size field", () => {
+    const ratioOnly = { hasSizeControl: false, hasAspectRatioControl: true, aspectRatioKey: "size", defaultAspectRatio: "auto" };
+    expect(setParameterValueWithSizeExclusivity({ size: "1:1" }, "size", "9:16", ratioOnly)).toEqual({ size: "9:16" });
   });
 });
 

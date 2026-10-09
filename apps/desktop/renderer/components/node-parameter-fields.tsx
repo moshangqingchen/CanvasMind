@@ -23,6 +23,8 @@ import {
   tk1688ParametersForResolutionChange,
   tk1688ResolutionControl,
 } from "../lib/tk1688-resolution-control";
+import { isImageRatioParameter, nativeImageResolutionControl } from "../lib/native-image-resolution";
+import { NativeImageResolutionFields } from "./native-image-resolution-fields";
 
 interface NodeParameterFieldsProps {
   nodeId: string;
@@ -170,13 +172,15 @@ export function shouldUseUnifiedResolutionControl(
     return false;
   // A legacy node may contain only aspect_ratio. Keep its old control visible
   // until the user selects an exact/automatic size, then use the unified UI.
-  return parameters.size !== undefined || parameters.aspect_ratio === undefined;
+  const ratioKey = descriptors.find(isImageRatioParameter)?.key;
+  return parameters.size !== undefined || !ratioKey || parameters[ratioKey] === undefined;
 }
 
 interface SizeAspectRatioContext {
   hasSizeControl: boolean;
   hasAspectRatioControl: boolean;
   defaultAspectRatio?: ModelParameterValue;
+  aspectRatioKey?: string;
 }
 
 /**
@@ -190,21 +194,22 @@ export function setParameterValueWithSizeExclusivity(
   context: SizeAspectRatioContext,
 ): Record<string, unknown> {
   const next = setParameterValue(parameters, key, value);
+  const aspectRatioKey = context.aspectRatioKey ?? "aspect_ratio";
 
-  if (key === "size" && context.hasAspectRatioControl) {
+  if (key === "size" && context.hasSizeControl && context.hasAspectRatioControl && aspectRatioKey !== "size") {
     if (value === undefined) {
       const restored = setParameterValue(
         next,
-        "aspect_ratio",
+        aspectRatioKey,
         context.defaultAspectRatio,
       );
       delete restored.size_tier;
       return restored;
     }
-    delete next.aspect_ratio;
+    delete next[aspectRatioKey];
   }
 
-  if (key === "aspect_ratio" && value !== undefined && context.hasSizeControl) {
+  if (key === aspectRatioKey && value !== undefined && context.hasSizeControl && aspectRatioKey !== "size") {
     delete next.size;
     delete next.size_tier;
   }
@@ -224,6 +229,13 @@ export function savedSelectValueMissingFromDescriptor(
       (option) => String(option.value) === String(value),
     )
   );
+}
+
+/** Use one layout for exact sizes, without extending a select-only contract. */
+export function imageDimensionsPresentation(descriptor: ModelParameterDescriptor): ModelParameterDescriptor {
+  return isExactSizeParameterDescriptor(descriptor)
+    ? { ...descriptor, label: "分辨率", control: "dimensions" }
+    : descriptor;
 }
 
 function DimensionsControl({
@@ -320,7 +332,7 @@ function DimensionsControl({
     <div className="field parameter-field parameter-dimensions">
       <div className="parameter-dimensions-heading">
         <label title={descriptor.description}>{descriptor.label}</label>
-        <label className="parameter-dimensions-align" htmlFor={`${id}-align`}>
+        {!readOnlyDimensions && <label className="parameter-dimensions-align" htmlFor={`${id}-align`}>
           <span>
             {requires16PixelAlignment ? "16 倍数（必需）" : "16 倍数对齐"}
           </span>
@@ -336,7 +348,7 @@ function DimensionsControl({
               if (nextAlign16) commit(width, height, nextAlign16);
             }}
           />
-        </label>
+        </label>}
       </div>
       {resolutionShortcuts.length > 0 || showAllResolutionTiers ? (
         <div
@@ -376,7 +388,9 @@ function DimensionsControl({
                 title={!shortcut ? "当前渠道未声明支持此档位" : undefined}
                 onClick={() => {
                   if (!shortcut) return;
-                  const next = sizeOnTierChange(
+                  const next = readOnlyDimensions && !useSavedResolutionTier && String(value).toLowerCase() === "auto"
+                    ? shortcut.value
+                    : sizeOnTierChange(
                     descriptor,
                     value,
                     shortcut.label,
@@ -384,7 +398,7 @@ function DimensionsControl({
                   const [w, h] = dimensionParts(next);
                   setWidth(w);
                   setHeight(h);
-                  update(next, shortcut.label);
+                  update(next, readOnlyDimensions && !useSavedResolutionTier ? null : shortcut.label);
                 }}
                 key={tier}
               >
@@ -491,6 +505,7 @@ function ParameterControl({
   clampNumericInput,
   durationRangeUnverified,
   durationUpperBoundConfirmed,
+  imageLayout,
 }: {
   nodeId: string;
   nodeType: GenerationNodeType;
@@ -502,20 +517,22 @@ function ParameterControl({
   clampNumericInput: boolean;
   durationRangeUnverified: boolean;
   durationUpperBoundConfirmed: boolean;
+  imageLayout: boolean;
 }) {
   // The same node can be configured in the inspector and a popover at once.
   // Each rendered control needs its own ID so labels target the local input.
   const instanceId = useId();
   const id = `${controlId(nodeId, descriptor.key)}-${instanceId}`;
+  const aspectRatioKey = sizeAspectRatioContext.aspectRatioKey ?? "aspect_ratio";
   const value =
-    descriptor.key === "aspect_ratio" &&
-    parameters.aspect_ratio === undefined &&
+    descriptor.key === aspectRatioKey &&
+    parameters[aspectRatioKey] === undefined &&
     parameters.size !== undefined &&
     sizeAspectRatioContext.hasSizeControl
       ? ""
       : descriptor.key === "size" &&
           parameters.size === undefined &&
-          parameters.aspect_ratio !== undefined
+          parameters[aspectRatioKey] !== undefined
         ? ""
         : (parameters[descriptor.key] ?? descriptor.default ?? "");
   const savedSelectValueMissing = savedSelectValueMissingFromDescriptor(
@@ -561,21 +578,26 @@ function ParameterControl({
       nextValue,
       sizeAspectRatioContext,
     );
-    if (tier === null) delete next.size_tier;
+    if (descriptor.control === "select" || tier === null) delete next.size_tier;
     else if (tier !== undefined) next.size_tier = tier;
     onChange(next);
   };
 
-  if (descriptor.control === "dimensions") {
+  const imageDimensions = nodeType === "image-generation" && imageLayout ? imageDimensionsPresentation(descriptor) : descriptor;
+  if (imageDimensions.control === "dimensions") {
     return (
+      <>
       <DimensionsControl
         key={id}
         id={id}
-        descriptor={descriptor}
+        descriptor={imageDimensions}
         value={value}
         savedTier={parameters.size_tier}
         update={updateDimensions}
+        readOnlyDimensions={descriptor.control === "select"}
       />
+      {savedSelectValueMissing && <small role="status" className="parameter-help parameter-wide">已保存：{String(value)}，当前目录未确认此尺寸</small>}
+      </>
     );
   }
 
@@ -599,7 +621,7 @@ function ParameterControl({
 
   return (
     <div
-      className={`field parameter-field${descriptor.key === "lyrics" ? " parameter-wide" : ""}${disabledReason ? " is-disabled" : ""}`}
+      className={`field parameter-field${descriptor.key === "lyrics" || nodeType === "image-generation" && imageLayout && isImageRatioParameter(descriptor) ? " parameter-wide" : ""}${disabledReason ? " is-disabled" : ""}`}
     >
       <label htmlFor={id} title={disabledReason ?? descriptor.description}>
         {descriptor.label}
@@ -644,7 +666,7 @@ function ParameterControl({
           onChange={(event) => update(event.target.value)}
         >
           <option value="">
-            {descriptor.key === "aspect_ratio" &&
+            {descriptor.key === aspectRatioKey &&
             parameters.size !== undefined &&
             sizeAspectRatioContext.hasSizeControl
               ? "按精确尺寸"
@@ -713,6 +735,11 @@ export function NodeParameterFields({
   const tk1688Resolution = provider !== "cli"
     ? tk1688ResolutionControl(model, descriptors, parameters)
     : undefined;
+  const nativeResolution = nodeType === "image-generation" && provider !== "cli" && !tk1688Resolution
+    ? nativeImageResolutionControl(descriptors, model)
+    : undefined;
+  const unifiedExactSize = nodeType === "image-generation" && provider !== "cli" && !nativeResolution && !tk1688Resolution &&
+    shouldUseUnifiedResolutionControl(descriptors.map(imageDimensionsPresentation), parameters);
   const clampNumericInput = provider !== "cli" && model?.metadata?.clampNumericParameters === true;
   const clearUnavailableParameters =
     provider !== "cli" && model?.metadata?.parameterControlsUnavailable === true;
@@ -762,12 +789,13 @@ export function NodeParameterFields({
   ).toLowerCase();
   const compressionEnabled = outputFormat === "jpeg" || outputFormat === "webp";
   const aspectRatioDescriptor = descriptors.find(
-    (descriptor) => descriptor.key === "aspect_ratio",
+    isImageRatioParameter,
   );
   const sizeAspectRatioContext = {
     hasSizeControl: descriptors.some(isExactSizeParameterDescriptor),
     hasAspectRatioControl: Boolean(aspectRatioDescriptor),
     defaultAspectRatio: aspectRatioDescriptor?.default,
+    aspectRatioKey: aspectRatioDescriptor?.key,
   } satisfies SizeAspectRatioContext;
 
   return (
@@ -783,6 +811,15 @@ export function NodeParameterFields({
         </p>
       )}
       <div className="parameter-grid">
+        {nativeResolution && <NativeImageResolutionFields
+          id={`${controlId(nodeId, nativeResolution.resolution.key)}-${resolutionControlId}`}
+          model={model}
+          resolution={nativeResolution.resolution}
+          ratio={nativeResolution.ratio}
+          parameters={parameters}
+          onChange={onChange}
+          hasExactSizeControl={sizeAspectRatioContext.hasSizeControl}
+        />}
         {tk1688Resolution && (
           <DimensionsControl
             id={`${controlId(nodeId, "size")}-${resolutionControlId}`}
@@ -800,7 +837,9 @@ export function NodeParameterFields({
         )}
         {descriptors.filter(
           descriptor => (provider === "cli" || descriptor.key !== "background") &&
-            (provider === "cli" || descriptor.key !== "mask") && (!tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key)),
+            (provider === "cli" || descriptor.key !== "mask") && (!tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key)) &&
+            (!nativeResolution || (descriptor.key !== nativeResolution.resolution.key && descriptor.key !== nativeResolution.ratio?.key)) &&
+            (!unifiedExactSize || descriptor.key !== aspectRatioDescriptor?.key),
         ).map((descriptor) => (
           <ParameterControl
             key={descriptor.key}
@@ -813,6 +852,7 @@ export function NodeParameterFields({
             clampNumericInput={clampNumericInput}
             durationRangeUnverified={model?.metadata?.durationRangeUnverified === true || (!model?.parameters?.length && provider !== "fake")}
             durationUpperBoundConfirmed={durationUpperBoundConfirmed}
+            imageLayout={provider !== "cli"}
             disabledReason={
               provider !== "cli" && descriptor.key === "output_format" && parameters.background === "transparent"
                 ? "透明模式使用 PNG，保留透明通道"

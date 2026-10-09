@@ -2,6 +2,7 @@ import { expect, test, type Page, type APIRequestContext } from "@playwright/tes
 import { imageSizeOptions, type ModelDescriptor } from "@super-canvas/providers";
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel } from "@super-canvas/providers/supplier-group-details";
 import type { ProviderConnectionView } from "../lib/client-api";
+import { cleanModelDisplayName } from "../lib/model-display";
 
 const supplierKey = "custom-pdog-isolated-e2e";
 const groups = {
@@ -147,7 +148,7 @@ test("pDog 同型号切换分组展示原生与超分说明，并保存分组选
   await expect(price).not.toContainText("说明超分");
   await page.reload(); await open();
   await expect(group).toHaveValue(groups.native);
-  await expect(panel.getByRole("combobox", { name: "pDog 文档验收 模型", exact: true })).toContainText("gpt-image-2");
+  await expect(panel.getByRole("combobox", { name: "pDog 文档验收 模型", exact: true })).toContainText("GPT Image 2");
   expect(fixture.safety()).toEqual({ submissions: 0, upstreamRequests: 0 });
   await panel.screenshot({ path: info.outputPath("pdog-native-group.png") });
 });
@@ -178,7 +179,7 @@ test("pDog 香蕉两个型号各自展示 0.07 与 0.08 报价，手选型号保
   const picker = panel.getByRole("combobox", { name: "pDog 文档验收 模型", exact: true });
   await picker.click();
   await panel.getByRole("combobox", { name: "搜索模型名称或 ID", exact: true }).fill(bananaIds[1]!);
-  await panel.getByRole("option", { name: bananaIds[1]!, exact: true }).click();
+  await panel.getByRole("option", { name: cleanModelDisplayName(bananaIds[1]!), exact: true }).click();
   await expect.poll(async () => (await saved()).model).toBe(bananaIds[1]);
   await expect(price).toContainText("0.08/张");
   await expect(price).not.toContainText("0.07/张");
