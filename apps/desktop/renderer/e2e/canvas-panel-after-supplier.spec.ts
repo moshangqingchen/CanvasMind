@@ -348,7 +348,8 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   }).toMatchObject({ connectionId: targetConnection.id, model: exactId });
   await page.screenshot({ path: info.outputPath("supplier-exact-video-group.png") });
   // The same selected group can publish token billing instead of a flat task
-  // price. Preserve the reference-video condition in the compact canvas UI.
+  // price. This canvas has no reference video, so its compact quote must use
+  // the exact no-reference tier instead of the cheaper tier or an unknown range.
   const tokenModel = video(exactId, 2);
   tokenModel.parameters = [...(tokenModel.parameters ?? []), { key: "resolution", label: "分辨率", control: "select", valueType: "string", default: "720p",
     options: [{ value: "720p", label: "720p" }] }];
@@ -365,7 +366,9 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
   await expect(group).toHaveValue("seedance-官方token版");
   const tokenQuote = panel.getByLabel("当前供应商报价", { exact: true });
-  await expect(tokenQuote).toContainText("输出 ¥18.2–29/1M tokens（参考视频条件未确认）");
+  await expect(tokenQuote).toContainText("720p · 不含参考视频 ¥29/1M tokens");
+  await expect(tokenQuote).not.toContainText("参考视频条件未确认");
+  await expect(tokenQuote).not.toContainText("18.2");
   await expect(tokenQuote).not.toContainText("2 CNY / 次");
   expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 2)).toBe(true);
   await page.screenshot({ path: info.outputPath("supplier-token-conditional-price.png") });
