@@ -1147,7 +1147,7 @@ test.describe("超级画布完整验收", () => {
     await openWorkspace(page);
     await page.getByRole("button", { name: "打开智能体", exact: true }).click();
     const inspector = page.locator("aside.inspector");
-    await expect(inspector.getByText("创作智能体", { exact: true })).toBeVisible();
+    await expect(inspector.getByText("创作助手", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "打开超级导演", exact: true })).toHaveCount(0);
     await expect(inspector.getByRole("tab", { name: "导演台", exact: true })).toHaveCount(0);
     await expect(inspector.getByRole("button", { name: "智能体模型设置", exact: true })).toHaveCount(0);
