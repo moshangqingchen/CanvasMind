@@ -89,6 +89,69 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(cangyuanVideoTransport("sd10-seedance-2.0")?.submit?.mappings?.some(m => m.target === "/generate_audio")).toBe(false);
   });
 
+  it("uses the freshly verified Gemini Omni Flash discrete durations without admitting intermediate seconds", () => {
+    const id = "gemini-omni-flash", current = model(id);
+    expect(current.parameters?.find(p => p.key === "duration")).toMatchObject({ control: "select", valueType: "integer", default: 4,
+      options: [4, 6, 8, 10].map(value => ({ label: `${value} 秒`, value })) });
+    for (const duration of [4, 6, 8, 10]) expect(validateCangyuanVideoRequest(request(id, { duration }))).toEqual([]);
+    for (const duration of [-1, 0, 5, 7, 9, 11, 4.5, "6"]) expect(validateCangyuanVideoRequest(request(id, { duration }))).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    expect(cangyuanVideoTransport(id)?.submit?.path).toBe("/v1/videos");
+  });
+
+  it("keeps SD4 720p output at 4–29 seconds for image/audio references and exposes its separate video condition", () => {
+    const id = "sd4-seedance-2.5-720p", current = model(id);
+    expect(current.parameters?.find(p => p.key === "duration")).toMatchObject({ min: 4, max: 29, step: 1, default: 4 });
+    expect(current.metadata).toMatchObject({ durationMaxWithReferenceVideo: 18, referenceNeedsDuration: true });
+    expect(current.metadata?.maxOutputAndInputVideoDurationSeconds).toBeUndefined();
+    expect(current.limits).toMatchObject({ maxInputVideos: 10, maxInputAudios: 10, maxInputVideoDurationSeconds: 30.2, maxTotalInputVideoDurationSeconds: 30.2, maxInputAudioDurationSeconds: 30.2 });
+    for (const duration of [4, 18, 19, 29]) expect(validateCangyuanVideoRequest(request(id, { duration }))).toEqual([]);
+    for (const duration of [3, 30, 4.5, "29"]) expect(validateCangyuanVideoRequest(request(id, { duration }))).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    const assets = [
+      { id: "i", kind: "image" as const, mimeType: "image/png", url: "https://media.test/image.png" },
+      { id: "a", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://media.test/audio.mp3", durationSeconds: 30.2 },
+    ];
+    expect(validateCangyuanVideoRequest({ ...request(id, { duration: 29 }), assets })).toEqual([]);
+    expect(model("sd4-seedance-2.5-480p").parameters?.find(p => p.key === "duration")?.max).toBe(30);
+    expect(model("sd4-seedance-2.5-480p").metadata?.durationMaxWithReferenceVideo).toBeUndefined();
+  });
+
+  it("enforces the SD4 18-second output limit after merging explicit and asset references, before transport", async () => {
+    const id = "sd4-seedance-2.5-720p";
+    const video = { id: "v", kind: "video" as const, mimeType: "video/mp4", url: "https://media.test/video.mp4", durationSeconds: 30.2 };
+    for (const parameters of [{ duration: 18 }, { seconds: 18, reference_videos: [video.url] }]) {
+      const input = { ...request(id, parameters), assets: [video] };
+      expect(normalizeCangyuanVideoParameters(input)).toMatchObject({ duration: 18, reference_videos: [video.url] });
+      // Output and reference are separate limits: 18 + 30.2 is allowed.
+      expect(validateCangyuanVideoRequest(input)).toEqual([]);
+      expect(validateCangyuanVideoRequest({ ...input, parameters: { duration: 19, reference_videos: parameters.reference_videos } })).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    }
+    expect(validateCangyuanVideoRequest(request(id, { duration: 19, reference_videos: [video.url] }))).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    const f = sd8Fixture([{ id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: { canvasRunnable: true } }]);
+    const invalid = { ...request(id, { duration: 19 }), assets: [video] };
+    expect((await f.adapter.validate(invalid)).valid).toBe(false);
+    await expect(f.adapter.submit(invalid)).rejects.toThrow();
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
+  it("checks SD4 measured video and audio single/total durations at 30.2 seconds instead of estimating them", () => {
+    const id = "sd4-seedance-2.5-720p";
+    for (const kind of ["video", "audio"] as const) {
+      const asset = { id: kind, kind, mimeType: kind === "video" ? "video/mp4" : "audio/mpeg", url: `https://media.test/${kind}`, durationSeconds: 30.2 };
+      const field = kind === "video" ? "parameters.reference_videos" : "parameters.reference_audios";
+      const input = { ...request(id, { duration: 18 }), assets: [asset] };
+      expect(validateCangyuanVideoRequest(input)).toEqual([]);
+      for (const durationSeconds of [30.21, undefined]) expect(validateCangyuanVideoRequest({ ...input, assets: [{ ...asset, durationSeconds }] })).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: field })]));
+      expect(validateCangyuanVideoRequest({ ...input, assets: [{ ...asset, durationSeconds: 10.1 }, { ...asset, id: `${kind}-2`, url: `${asset.url}-2`, durationSeconds: 20.1 }] })).toEqual([]);
+      expect(validateCangyuanVideoRequest({ ...input, assets: [{ ...asset, durationSeconds: 15.2 }, { ...asset, id: `${kind}-2`, url: `${asset.url}-2`, durationSeconds: 15.2 }] })).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: field })]));
+    }
+  });
+
   it("keeps the new SD8 S contract distinct, with its own checked date and no guessed price or resolution field", () => {
     const current = model(sd8s);
     expect(current.operations).toEqual(["video.generate", "video.image-to-video"]);

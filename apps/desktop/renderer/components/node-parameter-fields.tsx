@@ -16,6 +16,7 @@ import {
   setParameterValue,
 } from "../lib/model-parameters";
 import type { GenerationNodeType } from "../lib/graph-ui";
+import { videoDurationControl } from "../lib/video-duration-control";
 import { imageModeParameters } from "../lib/image-editing";
 import { validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import {
@@ -33,6 +34,7 @@ interface NodeParameterFieldsProps {
   showAdvanced?: boolean;
   operation?: ProviderOperation;
   transparentSupported?: boolean;
+  hasReferenceVideo?: boolean;
 }
 
 function controlId(nodeId: string, key: string) {
@@ -480,20 +482,26 @@ function DimensionsControl({
 
 function ParameterControl({
   nodeId,
+  nodeType,
   descriptor,
   parameters,
   onChange,
   disabledReason,
   sizeAspectRatioContext,
   clampNumericInput,
+  durationRangeUnverified,
+  durationUpperBoundConfirmed,
 }: {
   nodeId: string;
+  nodeType: GenerationNodeType;
   descriptor: ModelParameterDescriptor;
   parameters: Record<string, unknown>;
   onChange: (parameters: Record<string, unknown>) => void;
   disabledReason?: string;
   sizeAspectRatioContext: SizeAspectRatioContext;
   clampNumericInput: boolean;
+  durationRangeUnverified: boolean;
+  durationUpperBoundConfirmed: boolean;
 }) {
   // The same node can be configured in the inspector and a popover at once.
   // Each rendered control needs its own ID so labels target the local input.
@@ -514,6 +522,7 @@ function ParameterControl({
     descriptor,
     value,
   );
+  const durationControl = videoDurationControl(nodeType, descriptor, value, durationRangeUnverified, durationUpperBoundConfirmed);
   const update = (raw: string | boolean) => {
     let nextValue = coerceParameterInput(descriptor, raw);
     if (
@@ -595,7 +604,37 @@ function ParameterControl({
       <label htmlFor={id} title={disabledReason ?? descriptor.description}>
         {descriptor.label}
       </label>
-      {descriptor.control === "select" ? (
+      {durationControl?.kind === "range" ? (
+        <div className="parameter-duration-range">
+          <div className="parameter-duration-track">
+            <input
+              id={id}
+              className="parameter-duration-slider nodrag nopan"
+              type="range"
+              min={durationControl.min}
+              max={durationControl.max}
+              step={durationControl.step}
+              value={durationControl.value}
+              disabled={Boolean(disabledReason)}
+              title={disabledReason ?? descriptor.description}
+              aria-valuetext={`${durationControl.value} 秒`}
+              aria-describedby={`${id}-bounds`}
+              onChange={(event) => update(event.target.value)}
+            />
+            <output htmlFor={id}>{durationControl.value} 秒</output>
+          </div>
+          <small id={`${id}-bounds`} className="parameter-duration-bounds">
+            <span>{durationControl.min} 秒</span>
+            <span>{durationControl.max} 秒</span>
+          </small>
+        </div>
+      ) : durationControl?.kind === "fixed" ? (
+        <div className="parameter-duration-fixed">
+          <input id={id} type="text" value={String(value)} readOnly
+            disabled={Boolean(disabledReason)} title={disabledReason ?? descriptor.description} />
+          <span>秒 · 固定</span>
+        </div>
+      ) : descriptor.control === "select" ? (
         <select
           id={id}
           value={String(value)}
@@ -664,10 +703,11 @@ export function NodeParameterFields({
   showAdvanced = true,
   operation,
   transparentSupported = false,
+  hasReferenceVideo = false,
 }: NodeParameterFieldsProps) {
   const descriptors = useMemo(
-    () => parameterDescriptorsForValues(nodeType, provider, model, parameters, operation),
-    [model, nodeType, parameters, provider, operation],
+    () => parameterDescriptorsForValues(nodeType, provider, model, parameters, operation, { hasReferenceVideo }),
+    [hasReferenceVideo, model, nodeType, parameters, provider, operation],
   );
   const resolutionControlId = useId();
   const tk1688Resolution = provider !== "cli"
@@ -676,9 +716,14 @@ export function NodeParameterFields({
   const clampNumericInput = provider !== "cli" && model?.metadata?.clampNumericParameters === true;
   const clearUnavailableParameters =
     provider !== "cli" && model?.metadata?.parameterControlsUnavailable === true;
+  const resolutionBounds = model?.metadata?.durationMaxByResolution;
+  const activeResolution = parameters.resolution ?? descriptors.find(d => d.key === "resolution")?.default;
+  const activeDurationMaximum = resolutionBounds && typeof resolutionBounds === "object" && !Array.isArray(resolutionBounds)
+    ? (resolutionBounds as Record<string, unknown>)[String(activeResolution)] : undefined;
+  const durationUpperBoundConfirmed = typeof activeDurationMaximum === "number" && Number.isFinite(activeDurationMaximum);
   const contractValues = Object.fromEntries(Object.entries(parameters).filter(([key]) => descriptors.some(d => d.key === key)));
   const parameterIssues = model && (provider === "cli" || nodeType !== "image-generation")
-    ? validateModelParameters(model, provider === "cli" ? parameters : {
+    ? validateModelParameters(provider === "cli" ? model : { ...model, parameters: descriptors }, provider === "cli" ? parameters : {
       ...Object.fromEntries(descriptors.filter(d => d.default !== undefined).map(d => [d.key, d.default])), ...contractValues,
     }, operation).issues : [];
   const hasLinkedControls = Boolean(model?.parameters?.some(d => d.visibleWhen?.length || d.constraints?.length));
@@ -690,6 +735,7 @@ export function NodeParameterFields({
       provider,
       model,
       parameters,
+      { hasReferenceVideo },
     );
     // Keep the editor's lyrics draft while hidden. Run normalization and the
     // music adapter omit it from instrumental requests.
@@ -700,6 +746,7 @@ export function NodeParameterFields({
     clampNumericInput,
     clearUnavailableParameters,
     hasLinkedControls,
+    hasReferenceVideo,
     model,
     nodeType,
     onChange,
@@ -758,11 +805,14 @@ export function NodeParameterFields({
           <ParameterControl
             key={descriptor.key}
             nodeId={nodeId}
+            nodeType={nodeType}
             descriptor={descriptor}
             parameters={parameters}
             onChange={onChange}
             sizeAspectRatioContext={sizeAspectRatioContext}
             clampNumericInput={clampNumericInput}
+            durationRangeUnverified={model?.metadata?.durationRangeUnverified === true || (!model?.parameters?.length && provider !== "fake")}
+            durationUpperBoundConfirmed={durationUpperBoundConfirmed}
             disabledReason={
               provider !== "cli" && descriptor.key === "output_format" && parameters.background === "transparent"
                 ? "透明模式使用 PNG，保留透明通道"

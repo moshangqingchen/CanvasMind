@@ -359,6 +359,7 @@ function descriptorFor(
       ? record.description.trim()
       : GENERIC_DESCRIPTION;
   const videoApi = videoApiRecord(record)!;
+  const parameterOverrides = videoParameterOverrides(videoApi);
   const imagesMax = nonNegativeInteger(videoApi.images_max);
   const videosMax = nonNegativeInteger(videoApi.videos_max);
   const audiosMax = nonNegativeInteger(videoApi.audios_max);
@@ -376,7 +377,7 @@ function descriptorFor(
     inputKinds,
     outputKinds: ["video"],
     isDefault: id === MIAOWU_DEFAULT_MODEL,
-    parameters: parameters(videoParameterOverrides(videoApi)),
+    parameters: parameters(parameterOverrides),
     ...(pricing.maximum === undefined
       ? {}
       : {
@@ -409,6 +410,7 @@ function descriptorFor(
       videoWireFields: ["model", "prompt", "seconds", "ratio", "resolution", ...(imagesMax ? ["image_urls"] : []), ...(videosMax ? ["video_urls"] : []), ...(audiosMax ? ["audio_urls"] : [])],
       parameterSource: "pricing.video_api",
       clampNumericParameters: true,
+      ...(parameterOverrides.maxSeconds === undefined && !parameterOverrides.secondsOptions?.length ? { durationRangeUnverified: true } : {}),
       ...(Object.keys(numberRecord(videoApi.size_seconds_max)).length
         ? { durationMaxByResolution: numberRecord(videoApi.size_seconds_max) } : {}),
       ...(id === "seedance-2.0-mini"

@@ -49,6 +49,7 @@ export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {
       referenceNeedsDuration: !!(c.videoObjects || c.maxTotalInputVideoDurationSeconds || c.maxOutputAndInputVideoDurationSeconds || c.maxTotalInputAudioDurationSeconds || c.maxInputVideoDurationSeconds || c.maxInputAudioDurationSeconds),
       minInputVideoDurationSeconds: c.minInputVideoDurationSeconds, minTotalInputVideoDurationSeconds: c.minTotalInputVideoDurationSeconds,
       maxOutputAndInputVideoDurationSeconds: c.maxOutputAndInputVideoDurationSeconds,
+      durationMaxWithReferenceVideo: c.durationMaxWithReferenceVideo,
       maxTotalInputAudioDurationSeconds: c.maxTotalInputAudioDurationSeconds,
       ...(model.id.startsWith("doubao-seedance-") ? { billingIncludesInputDuration: true, priceContractWarning: "按视频 token 用量计费，有参考视频与无参考视频费率不同；实际 token 未返回前无法按所选秒数推算总额。" } : {}),
       ...(c.approximateDurationSeconds ? { approximateVideoDurationSeconds: c.approximateDurationSeconds } : {}), videoPollingTimeoutMs: 1_800_000 },
@@ -107,6 +108,8 @@ export function validateCangyuanVideoRequest(request: NormalizedRequest): Valida
     if (["duration", "seed"].includes(d.key) && (typeof value !== "number" || !Number.isInteger(value) || (d.min !== undefined && value < d.min) || (d.key === "duration" && value < 1) || (d.key === "seed" && /非负/u.test(d.description) && value < 0) || (d.max !== undefined && value > d.max))) add(`parameters.${d.key}`, "请输入该型号合法范围内的整数。");
     if (["generate_audio", "face_mode"].includes(d.key) && typeof value !== "boolean") add(`parameters.${d.key}`, "此开关必须为布尔值。");
   }
+  if (c.durationMaxWithReferenceVideo !== undefined && list(p.reference_videos).length && typeof p.duration === "number" && p.duration > c.durationMaxWithReferenceVideo)
+    add("parameters.duration", `此型号带参考视频时，出片时长最多 ${c.durationMaxWithReferenceVideo} 秒。`);
   if (request.model === "niulai-pro" && p.duration === undefined) add("parameters.duration", "牛来 Pro 必须填写 4–15 秒的时长。");
   const assetUrl = (value: unknown) => {
     if (typeof value !== "string") return false;
@@ -143,7 +146,9 @@ export function validateCangyuanVideoRequest(request: NormalizedRequest): Valida
       if (minimum !== undefined && seconds < minimum || maximum !== undefined && seconds > maximum) add(`parameters.${field}`, `此型号单条${kind === "video" ? "视频" : "音频"}时长须在${minimum ?? 0}–${maximum ?? "不限"}秒内。`);
     }
     if (!complete) continue;
-    if (totalMinimum !== undefined && total < totalMinimum || totalMaximum !== undefined && total > totalMaximum) add(`parameters.${field}`, `此型号参考${kind === "video" ? "视频" : "音频"}合计时长须在${totalMinimum ?? 0}–${totalMaximum ?? "不限"}秒内。`);
+    // Summing measured decimal seconds can exceed the same decimal limit by rounding alone.
+    const roundingAllowance = Number.EPSILON * Math.max(1, total, totalMaximum ?? 0) * values.length;
+    if (totalMinimum !== undefined && total < totalMinimum || totalMaximum !== undefined && total - totalMaximum > roundingAllowance) add(`parameters.${field}`, `此型号参考${kind === "video" ? "视频" : "音频"}合计时长须在${totalMinimum ?? 0}–${totalMaximum ?? "不限"}秒内。`);
     if (kind === "video" && c.maxOutputAndInputVideoDurationSeconds) {
       const output = p.duration ?? c.parameters.find(d => d.key === "duration")?.default;
       if (typeof output !== "number" || !Number.isFinite(output)) add("parameters.duration", "此型号需将出片与参考视频合计时长核对，请填写出片时长。");

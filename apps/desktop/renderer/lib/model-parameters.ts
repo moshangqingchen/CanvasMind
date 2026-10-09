@@ -191,18 +191,23 @@ export function parameterDescriptorsFor(
 }
 
 /** Applies model-declared cross-field bounds without changing other models. */
+interface ModelParameterContext {
+  hasReferenceVideo?: boolean;
+}
+
 export function parameterDescriptorsForValues(
   nodeType: GenerationNodeType,
   provider: string,
   model: Pick<ModelDescriptor, "parameters" | "metadata"> | null | undefined,
   parameters: Readonly<Record<string, unknown>>,
   operation?: ProviderOperation,
+  context?: ModelParameterContext,
 ): ModelParameterDescriptor[] {
   const declared = parameterDescriptorsFor(nodeType, provider, model);
   // The same supplier contract drives controls and submission validation.
   // Evaluate visibility and option/range constraints for every provider.
   const effective = { ...Object.fromEntries(declared.filter(d => d.default !== undefined).map(d => [d.key, d.default])), ...parameters };
-  const descriptors = model?.parameters?.length ? declared.flatMap(descriptor => {
+  let descriptors = model?.parameters?.length ? declared.flatMap(descriptor => {
     const resolved = getModelParameterDescriptor(model, descriptor.key, effective, operation);
     if (!resolved) return [];
     const result = { ...descriptor, ...resolved, default: descriptor.default };
@@ -210,8 +215,16 @@ export function parameterDescriptorsForValues(
     return [result];
   }) : declared;
   if (provider === "cli") return descriptors;
+  const referenceMaximum = model?.metadata?.durationMaxWithReferenceVideo;
+  const hasReferenceVideo = context?.hasReferenceVideo === true ||
+    (Array.isArray(parameters.reference_videos) && parameters.reference_videos.length > 0);
+  if (hasReferenceVideo && typeof referenceMaximum === "number" && Number.isFinite(referenceMaximum)) {
+    descriptors = descriptors.map(descriptor => descriptor.key === "duration"
+      ? { ...descriptor, max: Math.min(descriptor.max ?? referenceMaximum, referenceMaximum) }
+      : descriptor);
+  }
   const conditional = model?.metadata?.durationMaxByResolution;
-  const resolution = parameters.resolution;
+  const resolution = effective.resolution;
   if (
     !conditional ||
     typeof conditional !== "object" ||
@@ -493,6 +506,7 @@ export function normalizedParametersForModel(
   provider: string,
   model: Pick<ModelDescriptor, "parameters" | "metadata"> | null | undefined,
   current: Readonly<Record<string, unknown>> = {},
+  context?: ModelParameterContext,
 ): Record<string, unknown> {
   if (provider === "cli") return model ? preserveImageMaskParameters(resolveModelParameters(model as ModelDescriptor, current).parameters, current) : { ...current };
   const descriptors = parameterDescriptorsForValues(
@@ -500,6 +514,8 @@ export function normalizedParametersForModel(
     provider,
     model,
     current,
+    undefined,
+    context,
   );
   const parameters = parametersWithDefaults(descriptors, current);
   if (model?.metadata?.clampNumericParameters === true) {

@@ -2169,7 +2169,11 @@ test.describe("超级画布完整验收", () => {
     await videoEditor.pressSequentially("镜头缓慢向前推进", { delay: 5 });
     const videoConfig = await openNodeParameters(videoNode);
     await expect(videoConfig.getByRole("combobox", { name: "E2E 视频生成 模型", exact: true })).toContainText("Fake");
-    await videoConfig.getByLabel("时长（秒）").fill("8");
+    const videoDuration = videoConfig.getByRole("slider", { name: "时长（秒）", exact: true });
+    await videoDuration.press("End");
+    await videoDuration.press("ArrowLeft");
+    await videoDuration.press("ArrowLeft");
+    await expect(videoDuration).toHaveValue("8");
     await videoConfig.getByLabel("画面比例").fill("720:1280");
 
     await expect

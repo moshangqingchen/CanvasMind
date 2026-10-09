@@ -69,6 +69,7 @@ import { cangyuanAvailabilityForModel, receiveModelAvailabilitySnapshot, CANGYUA
   type ModelAvailabilitySnapshot } from "../lib/cangyuan-availability-ui";
 import { CangyuanAvailabilityBadge, CangyuanModelAvailability } from "./cangyuan-model-availability";
 import { NodeParameterFields } from "./node-parameter-fields";
+import { parameterDescriptorsForValues } from "../lib/model-parameters";
 import { ModelResolutionShortcuts } from "./model-resolution-shortcuts";
 import { shouldReselectNodeFromConfigPointer } from "../lib/node-config-pointer";
 import { PromptEditor } from "./prompt-editor";
@@ -503,6 +504,11 @@ function GenerationNodeBody({
     modelOptions.unshift({ id: data.model, name: data.model, operations: [] });
   }
   const selectedModel = modelOptions.find((model) => model.id === data.model);
+  const hasReferenceVideo = data.linkedAssets?.some(asset => asset.kind === "video") === true;
+  const priceModel = selectedModel && nodeType === "video-generation" ? {
+    ...selectedModel,
+    parameters: parameterDescriptorsForValues(nodeType, data.provider ?? "fake", selectedModel, parameters, undefined, { hasReferenceVideo }),
+  } : selectedModel;
   const modelName = selectedModel ? cleanModelDisplayName(selectedModel.name, selectedModel.metadata?.priceLabel) : data.model ?? "自动模型";
   const cangyuanAvailabilityEnabled =
     currentSupplier === "cangyuan" && nodeType !== "music-generation" &&
@@ -771,6 +777,7 @@ function GenerationNodeBody({
             operation={cliOperationForNode(nodeType, data.linkedAssets?.some(asset => asset.kind === "image") === true)}
             model={selectedModel ?? null}
             parameters={parameters}
+            hasReferenceVideo={hasReferenceVideo}
             transparentSupported={data.imageEditingCapabilities?.transparent === true}
             showAdvanced={false}
             onChange={(nextParameters) =>
@@ -778,7 +785,7 @@ function GenerationNodeBody({
             }
           />
         </section>
-        <ModelPriceDetails model={selectedModel} parameters={{ ...parameters, prompt: renderPromptParts(data.parts ?? []) }} />
+        <ModelPriceDetails model={priceModel} parameters={{ ...parameters, prompt: renderPromptParts(data.parts ?? []) }} />
         <SupplierBillingSummary key={currentConnectionOption?.supplierId} compact supplierId={currentConnectionOption?.supplierId} />
       </div>
     </section>

@@ -2000,6 +2000,32 @@ circle.canvas-drawing-selection-outline {
 .parameter-wide { grid-column: 1 / -1; }
 .parameter-help { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .parameter-grid :is(input, select, textarea) { min-width: 0; max-width: 100%; }
+.parameter-duration-range {
+  min-width: 0;
+  padding: 7px 9px 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0e121b;
+}
+.parameter-duration-track { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.parameter-field input.parameter-duration-slider {
+  flex: 1;
+  width: 0;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.parameter-field input.parameter-duration-slider:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.parameter-duration-track output { flex: 0 0 auto; color: var(--text); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.parameter-duration-bounds { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.parameter-duration-fixed { position: relative; min-width: 0; }
+.parameter-duration-fixed input { padding-right: 78px; font-variant-numeric: tabular-nums; }
+.parameter-duration-fixed > span { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 11px; pointer-events: none; white-space: nowrap; }
 .parameter-toggle { min-width: 0; gap: 8px; }
 .parameter-toggle > span { overflow-wrap: anywhere; }
 .parameter-field.is-disabled label {
