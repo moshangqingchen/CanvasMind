@@ -50,12 +50,15 @@ async function fixture(page: Page, request: APIRequestContext) {
   expect(canvasResponse.ok()).toBeTruthy();
   const canvas = await canvasResponse.json();
   await page.goto(`/canvas/${canvas.id}`);
-  const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
-  if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
   await page.getByRole("button", { name: "打开 列表布局 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "列表布局 模型与参数", exact: true });
   const picker = panel.getByRole("combobox", { name: "列表布局 模型", exact: true });
   await expect(picker).toContainText(lastFamily);
+  // Read the initial desktop drawer state after the canvas and picker are ready,
+  // so its first-frame initialization cannot reopen it after this user action.
+  const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
+  if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
+  await expect(sidebar).toHaveAttribute("aria-expanded", "false");
   return {
     panel, picker,
     list: panel.getByRole("listbox"),
