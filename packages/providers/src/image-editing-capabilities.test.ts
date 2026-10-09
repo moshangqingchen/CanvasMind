@@ -1,4 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const offlineNetwork = vi.hoisted(() => ({
+  lookup: vi.fn<(hostname: string, options?: unknown) => Promise<{ address: string; family: number }[]>>(
+    async () => [{ address: "203.0.113.10", family: 4 }]),
+  fetch: vi.fn(),
+}));
+// The endpoint guard resolves DNS before invoking an injected HTTP transport.
+// Keep these official-origin contract fixtures fully offline at both boundaries.
+vi.mock("node:dns/promises", () => ({ lookup: offlineNetwork.lookup }));
 import type { FetchImplementation, NormalizedRequest, ProviderAssetInput } from "./contracts.js";
 import { StaticConnectionResolver } from "./credentials.js";
 import { getImageEditingCapabilities, imageEditingRequestIssues } from "./image-editing-capabilities.js";
@@ -6,6 +14,29 @@ import { createDefaultProviderRegistry } from "./registry.js";
 import { GenericRestAdapter, type RestConnectorConfig } from "./rest.js";
 import { cangyuanCurrentTransport } from "./cangyuan-current-models.js";
 import { PdogImageAdapter } from "./pdog-image.js";
+
+const fixtureHosts = new Set([
+  "token.secure-skill.com", "tu.988236.xyz", "api.eaheng.com", "genimage.pro",
+  "api.frimodel.com", "api.tk1688.com", "vapi.chuangxiangai.asia", "ai.cangyuansuanli.cn",
+  "asian-acc.we-token.cc", "api.3365api.cn", "ai.whyshy.cn", "assets.example", "other.example",
+]);
+beforeEach(() => {
+  offlineNetwork.lookup.mockClear();
+  offlineNetwork.fetch.mockReset().mockRejectedValue(new Error("Unexpected real HTTP in image editing capability test"));
+  vi.stubGlobal("fetch", offlineNetwork.fetch);
+});
+afterEach(() => {
+  try {
+    expect(offlineNetwork.fetch).not.toHaveBeenCalled();
+    for (const [hostname, options] of offlineNetwork.lookup.mock.calls) {
+      expect(fixtureHosts.has(hostname)).toBe(true);
+      expect(options).toEqual({ all: true, verbatim: true });
+    }
+  } finally {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  }
+});
 
 const connection = (host: string, group = "default", provider = "openai") => ({ provider, config: { baseUrl: `https://${host}/v1`, modelGroup: group } });
 const request: NormalizedRequest = { connectionId: "one", model: "gpt-image-2", operation: "image.generate", prompt: "offline contract", idempotencyKey: "offline-one" };
@@ -107,6 +138,7 @@ describe("actual transparent and mask transport", () => {
     const f = fixture(host, group);
     await f.adapter.submit({ ...request, model, parameters: { background: "transparent" } });
     expect(f.fetch).toHaveBeenCalledOnce();
+    expect(offlineNetwork.lookup).toHaveBeenCalledWith(host, { all: true, verbatim: true });
     const body = JSON.parse(String(f.fetch.mock.calls[0]![1]?.body));
     expect(body.background).toBe("transparent");
     expect(body.output_format).toBe("png");
