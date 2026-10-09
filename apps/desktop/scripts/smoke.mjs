@@ -9,6 +9,7 @@ import { once } from "node:events";
 import { createJpegWithExifThumbnailFixture } from "../renderer/app/api/assets/jpeg-test-fixture.ts";
 import { captureRenderedHome } from "./smoke-rendering.mjs";
 import { runWindowedSmoke } from "./smoke-windowed.mjs";
+import { captureSmokeProfileDiagnostics, diagnoseFailedSmokeProfile } from "./smoke-profile-diagnostics.mjs";
 const desktop = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const rendererRequire = createRequire(join(desktop, "renderer/package.json"));
 const desktopRequire = createRequire(join(desktop, "package.json"));
@@ -25,6 +26,12 @@ if (["1.25", "1.5"].includes(process.env.SMOKE_DISPLAY_SCALE)) args.push(`--forc
 let application = await _electron.launch({ executablePath, args, env: environment, timeout: 90000 });
 const report = { packaged, checks: [] };
 let succeeded = false;
+let restarting = false;
+const profileDiagnostics = async (phase) => {
+  report.profileDiagnostics ??= [];
+  report.profileDiagnostics.push({ phase, checkedAt: new Date().toISOString(),
+    ...(await captureSmokeProfileDiagnostics(report.profileRoot)) });
+};
 try {
   const page = await application.firstWindow();
   const errors = [];
@@ -32,11 +39,13 @@ try {
   await page.getByRole("button", { name: "从空白开始" }).waitFor({ state: "visible", timeout: 15000 });
   const profileRoot = await application.evaluate(({ app }) => app.getPath("userData"));
   report.profileRoot = dirname(profileRoot);
+  await profileDiagnostics("setup-before-duplicate");
   const duplicate = spawn(executablePath, [...args, `--smoke-profile=${report.profileRoot}`], { env: environment, windowsHide: true, stdio: "ignore" });
   const duplicateExit = once(duplicate, "exit");
   const duplicateTimeout = setTimeout(() => duplicate.kill(), 10000);
   assert.equal((await duplicateExit)[0], 0, "second instance must exit cleanly");
   clearTimeout(duplicateTimeout);
+  await profileDiagnostics("setup-after-duplicate-exit");
   report.checks.push("single instance lock");
   await mkdir(join(desktop, "release"), { recursive: true });
   await page.screenshot({ path: join(desktop, "release/smoke-setup.png") });
@@ -383,9 +392,11 @@ try {
   assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
   assert.equal((await api("/api/health")).ok, true);
   report.checks.push("close hides to tray and backend remains available");
+  await profileDiagnostics("before-normal-quit");
   const closed = application.waitForEvent("close", { timeout: 30000 });
   await application.evaluate(({ app }) => { app.quit(); });
   await closed;
+  await profileDiagnostics("after-normal-quit");
   const saved = JSON.parse(await readFile(join(report.profileRoot, "profile/data/super-canvas.json"), "utf8"));
   assert.ok(saved.canvases.some((entry) => entry.id === canvas.id));
   assert.equal(saved.runs.find((entry) => entry.id === submitted.run.id).status, "succeeded");
@@ -394,11 +405,15 @@ try {
   report.checks.push("no renderer exceptions");
   const closedService = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) }).then(() => true, () => false);
   assert.equal(closedService, false);
+  restarting = true;
+  await profileDiagnostics("before-profile-restart");
   application = await _electron.launch({ executablePath, args: [...args, `--smoke-profile=${report.profileRoot}`], env: environment, timeout: 90000 });
+  await profileDiagnostics("profile-restart-launched");
   const reopened = await application.firstWindow();
   const restartErrors = [];
   reopened.on("pageerror", error => restartErrors.push(error.message));
   await reopened.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/$/, { timeout: 90000 });
+  await profileDiagnostics("profile-restart-home-ready");
   report.restartRendering = await captureRenderedHome(application, reopened,
     join(desktop, "release/smoke-home-restart.png"), join(desktop, "release/smoke-home-restart-capture.png"));
   report.checks.push("existing profile restarts into a visible homepage with nonempty Electron paint");
@@ -433,12 +448,25 @@ try {
   report.checks.push("restart reuses DPAPI key, database and archived media");
   assert.equal(restartErrors.length, 0, restartErrors.join("\n"));
   report.checks.push("no renderer exceptions after restart");
+  await profileDiagnostics("before-restart-normal-quit");
   const finalClose = application.waitForEvent("close", { timeout: 30000 });
   await application.evaluate(({ app }) => { app.quit(); });
   await finalClose;
+  await profileDiagnostics("after-restart-normal-quit");
   succeeded = true;
 } catch (error) {
   report.error = error.stack;
+  if (restarting) {
+    await profileDiagnostics("profile-restart-failed");
+    let timer;
+    try {
+      report.restartProfileDiagnostic = await Promise.race([
+        application.evaluate(diagnoseFailedSmokeProfile, report.profileRoot)
+          .catch(() => ({ stage: "evaluation", status: "unavailable", available: null })),
+        new Promise(resolve => { timer = setTimeout(() => resolve({ stage: "evaluation", status: "timeout", available: null }), 5000); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  }
   const page = await application.firstWindow().catch(() => null);
   if (page && !page.isClosed()) {
     report.visibleText = await page.locator("body").innerText().catch(() => "");

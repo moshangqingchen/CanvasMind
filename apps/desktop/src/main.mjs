@@ -35,7 +35,9 @@ const dataRoot = smoke ? smokeRoot() : development
   ? process.env.SUPERCANVAS_DESKTOP_TEST_ROOT : join(process.env.LOCALAPPDATA || app.getPath("appData"), "SuperCanvasDesktop");
 app.setPath("userData", join(dataRoot, "browser"));
 const locked = app.requestSingleInstanceLock();
-if (!locked) app.quit();
+// A rejected instance must exit before Chromium initializes and commits a
+// separate encryption key into the owning instance's shared Local State.
+if (!locked) app.exit(0);
 let window, tray, backend, origin, token, secrets, updater, rendererRecovery;
 let referenceChannel, configuringReference = false;
 let starting = false, quitting = false, intentionalStop = false, waitingExit = false, applyUpdate = false;
