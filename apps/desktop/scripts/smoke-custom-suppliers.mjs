@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 
 /** Exercise managed supplier identity through the real packaged API and canvas UI. */
 export async function smokeCustomSuppliers(page, api, origin) {
+  const modelLabels = {
+    "gpt-image-2": "GPT Image 2",
+    "gpt-image-2.5": "GPT Image 2.5",
+    "gpt-image-2.5-flare": "GPT Image 2.5 Flare",
+    "gpt-image-2.5-sunburst": "GPT Image 2.5 Sunburst",
+  };
   const models = ["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].map((id, index) => ({
     id, name: id, isDefault: index === 0,
     operations: ["image.generate", "image.edit"],
@@ -63,11 +69,11 @@ export async function smokeCustomSuppliers(page, api, origin) {
   assert.equal(await panel.getByLabel("供应商验收 模型群组").inputValue(), monster.group);
   await panel.getByRole("combobox", { name: "供应商验收 模型", exact: true }).click();
   for (const model of models) {
-    const option = panel.getByRole("option", { name: model.id, exact: true });
+    const option = panel.getByRole("option", { name: modelLabels[model.id], exact: true });
     await option.waitFor({ state: "visible" });
     assert.equal(await option.isEnabled(), true);
   }
-  await panel.getByRole("option", { name: "gpt-image-2.5", exact: true }).click();
+  await panel.getByRole("option", { name: "GPT Image 2.5", exact: true }).click();
   await page.getByRole("button", { name: "画布自动保存状态" }).filter({ hasText: "已保存" }).waitFor();
   const saved = await api(`/api/canvas/${canvas.id}`);
   assert.equal(saved.graph.nodes[0].data.connectionId, monster.connection.id);
