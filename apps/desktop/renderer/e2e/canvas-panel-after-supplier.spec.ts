@@ -43,13 +43,45 @@ async function chooseNativeWithMouse(page: Page, select: Locator, value: string)
   for (let item = 0; item < index; item++) await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(select).toHaveValue(value);
+  await expect.poll(() => select.evaluate((element) => element.matches(":open"))).toBe(false);
+}
+
+async function clickExposedControl(control: Locator) {
+  const position = await control.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    for (const x of [12, bounds.width / 2, bounds.width - 12]) {
+      for (const y of [bounds.height / 2, 12, bounds.height - 12]) {
+        const hit = document.elementFromPoint(bounds.left + x, bounds.top + y);
+        if (hit && element.contains(hit)) return { x, y };
+      }
+    }
+    return null;
+  });
+  expect(position, "the control must have an exposed clickable area").not.toBeNull();
+  await control.click({ position: position! });
 }
 
 async function wheelPanel(page: Page, panel: Locator, delta: number) {
   const body = panel.locator(".node-config-popover-body");
-  const bounds = await body.boundingBox();
-  expect(bounds).not.toBeNull();
-  await page.mouse.move(bounds!.x + bounds!.width - 40, bounds!.y + bounds!.height / 2);
+  const target = await body.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const left = Math.max(bounds.left + 8, 1);
+    const right = Math.min(bounds.right - 24, innerWidth - 1);
+    const top = Math.max(bounds.top + 8, 1);
+    const bottom = Math.min(bounds.bottom - 8, innerHeight - 1);
+    if (right <= left || bottom <= top) return { point: null, reason: "body outside viewport" };
+    // Hit-test the visible body, including its padding, so an overlapping
+    // attached panel cannot silently receive the intended panel's wheel.
+    for (const x of [right, left, (left + right) / 2]) {
+      for (const y of [(top + bottom) / 2, top, bottom]) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit && element.contains(hit)) return { point: { x, y }, reason: "body hit" };
+      }
+    }
+    return { point: null, reason: "body covered by another surface" };
+  });
+  expect(target.point, target.reason).not.toBeNull();
+  await page.mouse.move(target.point!.x, target.point!.y);
   await page.mouse.wheel(0, delta);
   return body;
 }
@@ -391,7 +423,9 @@ test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉
   await page.mouse.down();
   try {
     const selectionEndX = interruption !== "pointercancel"
-      ? paneBounds!.x + 2
+      // React Flow's edge zone is 40px. Use its slowest real auto-pan speed
+      // so capture assertions cannot push both panels into the same edge clamp.
+      ? paneBounds!.x + 39
       : supplierBounds!.x - 15;
     await page.mouse.move(selectionEndX, bodyBounds!.y + bodyBounds!.height - 30, { steps: 12 });
     await expect(page.locator(".react-flow__selection")).toBeVisible();
@@ -465,16 +499,24 @@ test(`框选被 ${interruption} 中断后移除遮挡，参数面板仍能下拉
   // incidentally cleaning up the cancelled gesture. Keep Ctrl down in the
   // pointercancel case to also exercise the pane's selection capture handler.
   try {
-    await first.model.click();
+    await clickExposedControl(first.model);
     await expect(first.model).toHaveAttribute("aria-expanded", "true");
-    await first.panel.getByRole("option", { name: models[1]!.name, exact: true }).click();
+    await clickExposedControl(first.panel.getByRole("option", { name: models[1]!.name, exact: true }));
     await expect(first.model).toContainText(models[1]!.id);
   } finally {
     await page.keyboard.up("Control");
   }
+  // Marquee-selected nodes open the assistant rail and narrow the canvas,
+  // making the two attached panels overlap after auto-pan. Restore the
+  // fixture's layout only after the first model action has proved recovery.
+  const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
+  if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
   await chooseNativeWithMouse(page, first.group, ui.alternateGroup);
+  const neighboringBody = ui.panels[1]!.panel.locator(".node-config-popover-body");
+  const neighboringScroll = await neighboringBody.evaluate((element) => element.scrollTop);
   const body = await wheelPanel(page, first.panel, 700);
   await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => neighboringBody.evaluate((element) => element.scrollTop)).toBe(neighboringScroll);
   await wheelPanel(page, first.panel, -2_000);
   await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBe(0);
   ui.assertNoRuns();
