@@ -73,6 +73,8 @@ async function scenario(page: Page, saved: string, initial = options, supplierKe
   });
   await page.goto(`/canvas/${canvasId}`);
   await page.getByRole("button", { name: "打开智能体", exact: true }).click();
+  await expect(page.getByRole("region", { name: "通用创作智能体" })
+    .getByRole("button", { name: "聊天", exact: true })).toHaveAttribute("aria-pressed", "true");
   return state;
 }
 

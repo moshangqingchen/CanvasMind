@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   List,
   MoreHorizontal,
+  MessageCircle,
   Pencil,
   PanelsTopLeft,
   Pause,
@@ -568,22 +569,39 @@ export function WorkspaceHome() {
               <span className={styles.eyebrowLine} />
             </div>
             <h1 id="workspace-heading">
-              让灵感，
+              从一个想法，
               <br />
-              <span>自由生长。</span>
+              <span>开始创作。</span>
             </h1>
             <p className={styles.heroDescription}>
-              连接文字、图像与视频，让每一个想象成为作品。
+              先聊灵感，再用文字、图像与视频，把想法做成作品。
             </p>
             <div className={styles.heroActions}>
               <button
                 className={styles.primaryButton}
                 disabled={startingDesign}
-                onClick={() => setDialog({ kind: "create" })}
+                aria-busy={startingDesignKind === "chat"}
+                onClick={async () => {
+                  if (startingDesignRef.current) return;
+                  startingDesignRef.current = true;
+                  setStartingDesignKind("chat");
+                  try {
+                    const currentProjects = await fetchProjects();
+                    const project = await createProject(nextDesignProjectTitle("创作对话", currentProjects));
+                    router.push(`${projectUrl(project.id)}?agent=chat`);
+                  } catch (error) {
+                    setNotice({ message: error instanceof Error ? error.message : "项目创建失败", error: true });
+                    startingDesignRef.current = false;
+                    setStartingDesignKind(null);
+                  }
+                }}
               >
-                <Plus size={18} />
-                创建画布
+                {startingDesignKind === "chat" ? <LoaderCircle size={18} className={styles.spinning} /> : <MessageCircle size={18} />}
+                聊聊创作想法
                 <ArrowUpRight size={16} className={styles.buttonArrow} />
+              </button>
+              <button className={styles.blankCanvasButton} disabled={startingDesign} onClick={() => setDialog({ kind: "create" })}>
+                <Plus size={16} />创建画布
               </button>
               {recentProject ? (
                 <Link

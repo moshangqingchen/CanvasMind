@@ -13,6 +13,7 @@ export async function POST(request: Request) {
     z
       .object({
         sessionId: z.string().min(1),
+        intent: z.literal("canvas-plan"),
         proposal: AgentProposalSchema,
         selectedNodeIds: z.array(z.string()).max(100).default([]),
       })

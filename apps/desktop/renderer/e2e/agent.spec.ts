@@ -146,12 +146,13 @@ async function scenario(page: Page, mode: "text" | "media" | "failure" | "discon
     if (path === "/api/agent/turn") {
       turns++;
       const input = request.postDataJSON();
+      expect(input.intent).toBe(mode === "media" ? "canvas-plan" : "chat");
       session.messages.push({
         id: `u-${turns}`,
         role: "user",
         content: input.message,
         createdAt: now,
-        metadata: { requestId: input.requestId, attachmentAssetIds: input.attachmentAssetIds },
+        metadata: { requestId: input.requestId, intent: input.intent, attachmentAssetIds: input.attachmentAssetIds },
       });
       if (mode === "failure" || mode === "disconnect") {
         session.messages.push({ id: `error-${turns}`, role: "assistant", content: "模型暂未返回正文，请重新编辑后发送", createdAt: now,
@@ -326,6 +327,7 @@ test("纯文字分镜任务追问、编辑与刷新恢复，不强制生成节�
 });
 test("生成方案经过两次确认，第一次确认后刷新仍不运行", async ({ page }) => {
   const s = await scenario(page, "media");
+  await page.getByRole("button", { name: "制作画布方案", exact: true }).click();
   await page.getByLabel("创作任务要求").fill("给我制作产品主视觉");
   await page.getByRole("button", { name: "发送任务" }).click();
   await expect(

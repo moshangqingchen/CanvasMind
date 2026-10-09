@@ -4550,6 +4550,22 @@ function CanvasShell({
   }, [assets, canvasId, graphicDesignModels, initialization.status, projectId]);
 
   const consumedDesignEntry = useRef(false);
+  const consumedChatEntry = useRef(false);
+  useEffect(() => {
+    if (initialization.status !== "ready" || consumedChatEntry.current) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("agent") !== "chat") return;
+    const frame = requestAnimationFrame(() => {
+      consumedChatEntry.current = true;
+      setMobileInspectorOpen(true);
+      setMobileProjectsOpen(false);
+      setMobileLibraryOpen(false);
+      url.searchParams.delete("agent");
+      window.history.replaceState(window.history.state, "", url.toString());
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initialization.status]);
+
   useEffect(() => {
     if (initialization.status !== "ready" || consumedDesignEntry.current) return;
     const url = new URL(window.location.href);

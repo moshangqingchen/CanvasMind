@@ -224,6 +224,8 @@ export const AgentTurnSchema = z
     connectionId: id,
     modelId: id,
     message: text,
+    // Explicit user action; never inferred from message or model output.
+    intent: z.enum(["chat", "canvas-plan"]).optional(),
     attachmentAssetIds: z.array(id).max(16).default([]),
     selectedNodeIds: z.array(id).max(100).default([]),
     reasoningEffort: z.string().max(20).optional(),
@@ -260,6 +262,7 @@ export interface AgentPlan {
   status: string;
   summary: string;
   baseCanvasRevision: number;
+  sourceRequestId?: string;
   proposal: AgentProposal;
   calls: RoutedDirectorCall[];
   patch?: DirectorGraphPatch;

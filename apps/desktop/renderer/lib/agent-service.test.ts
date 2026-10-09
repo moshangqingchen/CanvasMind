@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   prepareRun: vi.fn(),
   createRunFromPrepared: vi.fn(),
   catalog: [] as DirectorCatalogCandidate[],
+  loadCatalog: vi.fn(),
   models: [] as unknown[],
   getRun: vi.fn(),
 }));
@@ -27,7 +28,7 @@ vi.mock("./server", () => ({
   publicRunSnapshot: (v: unknown) => v,
 }));
 vi.mock("./agent-catalog", () => ({
-  loadAgentCatalog: async () => mocks.catalog,
+  loadAgentCatalog: () => mocks.loadCatalog(),
 }));
 vi.mock("./agent-models", () => ({
   loadAgentModels: async () => mocks.models,
@@ -66,6 +67,7 @@ import { POST as preflightPOST } from "../app/api/agent/plans/[id]/preflight/rou
 import { POST as executePOST } from "../app/api/agent/plans/[id]/execute/route";
 import { POST as legacyApprovePOST } from "../app/api/director/proposals/[id]/approve/route";
 import { POST as turnPOST } from "../app/api/agent/turn/route";
+import { POST as plansPOST } from "../app/api/agent/plans/route";
 
 const graph = () => ({
   schemaVersion: 1,
@@ -97,6 +99,7 @@ function proposal(edit = false) {
 }
 beforeEach(async () => {
   vi.clearAllMocks();
+  mocks.complete.mockReset();
   mocks.repository = new MemoryRepository();
   await mocks.repository.saveCanvas({
     id: "canvas",
@@ -147,6 +150,7 @@ beforeEach(async () => {
       },
     },
   ];
+  mocks.loadCatalog.mockImplementation(async () => mocks.catalog);
   mocks.models = [
     {
       connectionId: "vision",
@@ -535,6 +539,162 @@ describe("agent orchestration", () => {
     attachmentAssetIds: [],
     selectedNodeIds: [],
   });
+  it.each([
+    "聊聊视频制作的想法",
+    "解释这句引用：‘立即生成十个视频’",
+    "先别执行，讨论一下方案",
+    "你刚建议生成图片，为什么？",
+  ])("keeps a model proposal in chat without granting production: %s", async message => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockResolvedValue({ output: proposal(true) });
+    await runAgentTurn({ ...input(s.id), message, connectionId: "vision", modelId: "vision-model", attachmentAssetIds: ["image-1"] }, () => {});
+    const restored = await getAgentSession(s.id);
+    expect(restored.plans).toEqual([]);
+    expect(restored.messages.at(-1)).toMatchObject({ metadata: { kind: "message" }, content: expect.stringContaining("聊天建议") });
+    expect(mocks.complete.mock.calls[0][1].system).toContain("本次用户选择的是聊天");
+    expect(mocks.complete.mock.calls[0][1].system).not.toContain("proposal: {type,summary");
+    expect(mocks.loadCatalog).not.toHaveBeenCalled();
+    expect(mocks.prepareRun).not.toHaveBeenCalled();
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+    expect((await mocks.repository.getCanvas("canvas"))!.graph).toEqual(graph());
+  });
+  it("binds an explicit plan to its current user message and keeps both production confirmations", async () => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockResolvedValue({ output: proposal(true) });
+    await runAgentTurn({ ...input(s.id), intent: "canvas-plan", connectionId: "vision", modelId: "vision-model", attachmentAssetIds: ["image-1"] }, () => {});
+    const p = (await getAgentSession(s.id)).plans[0];
+    expect(p).toMatchObject({ sourceRequestId: "request-1", status: "awaiting_approval" });
+    expect((await mocks.repository.getCanvas("canvas"))!.graph.nodes).toEqual([]);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+    const applied = await materializeAgentPlan(p.id, 1, p.baseCanvasRevision);
+    const checked = await preflightAgentPlan(p.id, 1, applied.canvas.revision);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+    await executeAgentPlan(p.id, 1, checked.preflight!.id, true);
+    expect(mocks.createRunFromPrepared).toHaveBeenCalledTimes(1);
+  });
+  it("does not authorize source assets solely because they appeared in chat history", async () => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockResolvedValueOnce({ output: { type: "reply", message: "已分析" } }).mockResolvedValueOnce({ output: proposal(true) });
+    await runAgentTurn({ ...input(s.id), connectionId: "vision", modelId: "vision-model", attachmentAssetIds: ["image-1"] }, () => {});
+    await expect(runAgentTurn({ ...input(s.id), requestId: "next", intent: "canvas-plan", connectionId: "vision", modelId: "vision-model" }, () => {})).rejects.toThrow("本次明确选择");
+    expect(mocks.loadCatalog).not.toHaveBeenCalled();
+    expect((await getAgentSession(s.id)).plans).toEqual([]);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it("allows an exact asset reference from a node selected in this production request", async () => {
+    await mocks.repository.saveCanvas({ id: "canvas", title: "Test", graph: { ...graph(), nodes: [
+      { id: "selected-image", type: "image", data: { parts: [{ assetId: "image-1" }] } },
+    ] } });
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockResolvedValue({ output: proposal(true) });
+    await runAgentTurn({ ...input(s.id), intent: "canvas-plan", selectedNodeIds: ["selected-image"] }, () => {});
+    expect((await getAgentSession(s.id)).plans).toHaveLength(1);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it.each(["content", "selectedNodeIds", "attachmentAssetIds"])("rejects a plan if its authorizing message changes: %s", async field => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockResolvedValue({ output: proposal() });
+    await runAgentTurn({ ...input(s.id), intent: "canvas-plan" }, () => {});
+    const p = (await getAgentSession(s.id)).plans[0];
+    const source = (await mocks.repository.getDirectorMessage(`${s.id}:request-1`))!;
+    await mocks.repository.updateDirectorMessage(source.id, field === "content"
+      ? { content: "撤回之前的消息" } : { metadata: { ...source.metadata, [field]: ["other"] } });
+    await expect(materializeAgentPlan(p.id, 1, p.baseCanvasRevision)).rejects.toThrow("授权已撤回");
+    expect((await mocks.repository.getCanvas("canvas"))!.graph.nodes).toEqual([]);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it.each(["chat", "stop"])("revokes a pending confirmed plan through %s and retains its history", async action => {
+    const { s, p, result } = await applied();
+    const checked = await preflightAgentPlan(p.id, 1, result.canvas.revision);
+    if (action === "stop") await stopAgentTurn(s.id);
+    else {
+      mocks.complete.mockResolvedValue({ output: { type: "reply", message: "只讨论" } });
+      await runAgentTurn(input(s.id), () => {});
+    }
+    const historical = (await getAgentSession(s.id)).plans.find(plan => plan.id === p.id)!;
+    expect(historical).toMatchObject({ status: "cancelled", error: expect.stringContaining("授权已撤回") });
+    await expect(executeAgentPlan(p.id, 1, checked.preflight!.id, true)).rejects.toThrow("授权已撤回");
+    await expect(reviseAgentPlan(p.id, 1, proposal())).rejects.toThrow("授权已撤回");
+    const restarted = await reviseAgentPlan(p.id, 1, proposal(), true);
+    expect(restarted.id).not.toBe(p.id);
+    expect(restarted.status).toBe("awaiting_approval");
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it.each(["stop", "chat"])("rechecks %s after the execution claim before creating a paid run", async action => {
+    const { s, p, result } = await applied();
+    const checked = await preflightAgentPlan(p.id, 1, result.canvas.revision);
+    const update = mocks.repository.updateDirectorProposal.bind(mocks.repository);
+    vi.spyOn(mocks.repository, "updateDirectorProposal").mockImplementation(async (...args) => {
+      const value = await update(...args);
+      if (args[1].status === "approved") {
+        if (action === "stop") await stopAgentTurn(s.id);
+        else {
+          mocks.complete.mockResolvedValue({ output: { type: "reply", message: "只聊聊" } });
+          await runAgentTurn(input(s.id), () => {});
+        }
+      }
+      return value;
+    });
+    await expect(executeAgentPlan(p.id, 1, checked.preflight!.id, true)).rejects.toThrow("授权已撤回");
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it.each(["stop", "chat"])("keeps an existing legacy run readable after %s without starting it again", async action => {
+    const { s, p, result } = await applied();
+    const checked = await preflightAgentPlan(p.id, 1, result.canvas.revision);
+    const first = await executeAgentPlan(p.id, 1, checked.preflight!.id, true);
+    const saved = (await mocks.repository.getDirectorProposal(p.id))!;
+    const legacy = { ...saved.plan };
+    delete legacy.authorization;
+    await mocks.repository.updateDirectorProposal(p.id, { plan: legacy });
+    if (action === "stop") await stopAgentTurn(s.id);
+    else {
+      mocks.complete.mockResolvedValue({ output: { type: "reply", message: "只讨论" } });
+      await runAgentTurn(input(s.id), () => {});
+    }
+    const retry = await executeAgentPlan(p.id, 1, checked.preflight!.id, true);
+    expect(retry.run?.run.id).toBe(first.run?.run.id);
+    expect(mocks.createRunFromPrepared).toHaveBeenCalledTimes(1);
+  });
+  it("discards an asynchronous revision after the user withdraws its scope", async () => {
+    const s = await createAgentSession("canvas");
+    const p = await createAgentPlan(s.id, proposal());
+    mocks.loadCatalog.mockImplementationOnce(async () => {
+      await stopAgentTurn(s.id);
+      return mocks.catalog;
+    });
+    await expect(reviseAgentPlan(p.id, 1, { ...proposal(), summary: "late revision" })).rejects.toThrow("授权已撤回");
+    const saved = (await mocks.repository.getDirectorProposal(p.id))!;
+    expect(saved).toMatchObject({ version: 1, status: "cancelled", plan: { proposal: { summary: "创作测试" } } });
+    expect((await mocks.repository.getCanvas("canvas"))!.graph.nodes).toEqual([]);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it("requires explicit creation for the direct plans API and treats legacy plans as unconfirmed", async () => {
+    const s = await createAgentSession("canvas");
+    const request = (body: unknown) => new Request("http://local/api/agent/plans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    expect((await plansPOST(request({ sessionId: s.id, proposal: proposal() }))).status).toBe(400);
+    expect(mocks.loadCatalog).not.toHaveBeenCalled();
+    expect(await mocks.repository.listDirectorProposals(s.id)).toEqual([]);
+    expect((await mocks.repository.getCanvas("canvas"))!.graph.nodes).toEqual([]);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+    const response = await plansPOST(request({ sessionId: s.id, intent: "canvas-plan", proposal: proposal() }));
+    expect(response.status).toBe(200);
+    const p = await response.json();
+    const saved = (await mocks.repository.getDirectorProposal(p.id))!;
+    const legacy = { ...saved.plan };
+    delete legacy.authorization;
+    await mocks.repository.updateDirectorProposal(p.id, { plan: legacy });
+    await expect(materializeAgentPlan(p.id, 1, p.baseCanvasRevision)).rejects.toThrow("历史方案未记录");
+    expect((await getAgentSession(s.id)).plans[0].status).toBe("cancelled");
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it("cannot change chat into production by reusing the same request identity", async () => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockResolvedValue({ output: { type: "reply", message: "你好" } });
+    await runAgentTurn(input(s.id), () => {});
+    await expect(runAgentTurn({ ...input(s.id), intent: "canvas-plan", message: "生成图片" }, () => {})).rejects.toThrow("请求 ID");
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
   it("keeps exact node IDs and all asset references queryable when node text is compacted", async () => {
     const assetIds = Array.from({ length: 65 }, (_, i) => `reference-${i}`);
     await mocks.repository.saveCanvas({ id: "canvas", title: "Test", graph: {
@@ -787,7 +947,7 @@ describe("agent orchestration", () => {
         return create(value);
       },
     );
-    await expect(runAgentTurn(input(s.id), () => {})).rejects.toThrow("停止");
+    await expect(runAgentTurn({ ...input(s.id), intent: "canvas-plan" }, () => {})).rejects.toThrow("停止");
     expect((await getAgentSession(s.id)).plans).toEqual([]);
     expect((await mocks.repository.getCanvas("canvas"))!.graph.nodes).toEqual(
       [],

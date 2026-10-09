@@ -29,6 +29,7 @@ export async function PATCH(request: Request, c: Context) {
       .object({
         version: z.number().int().positive(),
         proposal: AgentProposalSchema,
+        intent: z.literal("canvas-plan").optional(),
       })
       .strict(),
     MAX_SMALL_JSON_BODY_BYTES,
@@ -40,6 +41,7 @@ export async function PATCH(request: Request, c: Context) {
         (await c.params).id,
         p.data.version,
         p.data.proposal,
+        p.data.intent === "canvas-plan",
       ),
     );
   } catch (e) {

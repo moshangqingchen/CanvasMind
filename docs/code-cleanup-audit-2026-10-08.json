@@ -1,0 +1,491 @@
+{
+  "schema": "code-cleanup-audit-safe-v1",
+  "checkedAt": "2026-10-09T03:07:55.008Z",
+  "localDate": "2026-10-08",
+  "timezone": "America/Los_Angeles",
+  "protectedBaseline": {
+    "version": "0.2.74",
+    "sourceCommit": "8a9e74bf2f258884f85f52e1facc5002e80a487f",
+    "buildAndReleaseReusedAsCleanupTestResults": false
+  },
+  "scope": "This cleanup subtask only; concurrent UI and agent changes are owned and validated separately.",
+  "sourceAudit": {
+    "trackedFileCount": 1152,
+    "sourceModules": 838,
+    "staticEdges": 2324,
+    "rendererLibExportDeclarations": 1083,
+    "noStaticIncomingCandidatesRetained": [
+      "apps/cloud-generation/src/worker.ts",
+      "apps/desktop/renderer/e2e/global-setup.ts",
+      "apps/desktop/src/preload.cjs",
+      "apps/desktop/src/runtime-hook.cjs",
+      "docs/audits/2026-10-05/graph-benchmark.mjs"
+    ],
+    "identicalVitestConfigsRetained": [
+      {
+        "sha256": "24107e72849c07fb2bee932608d3182fd4b3bf9c34d680667044674df41589af",
+        "files": [
+          "packages/core/vitest.config.ts",
+          "packages/director/vitest.config.ts"
+        ]
+      }
+    ]
+  },
+  "sourceCleanup": {
+    "schema": "private-wrapper-removal-safe-v1",
+    "checkedAt": "2026-10-09T03:03:50.942Z",
+    "file": "apps/desktop/renderer/lib/client-api.ts",
+    "removedNames": [
+      "fetchCangyuanCatalog",
+      "fetchCangyuanMarketplace",
+      "fetchMiaowuCatalog",
+      "fetchMiaowuMarketplace",
+      "fetchCyberAfeiCatalog",
+      "fetchCyberAfeiMarketplace",
+      "fetchChentuCatalog",
+      "fetchChentuMarketplace"
+    ],
+    "before": {
+      "bytes": 48308,
+      "lines": 1413,
+      "sha256": "76c6f59a73fa7b31edd0e6c1965bf1931e9310dcafe82cecaa52fb673ca66f62"
+    },
+    "after": {
+      "bytes": 42188,
+      "lines": 1207,
+      "sha256": "01e6d416c4d2eaa444c25b810e4a6d74d1e4f630d882dadcbea2473d7b9b5455"
+    },
+    "removed": [
+      {
+        "name": "fetchCangyuanCatalog",
+        "start": 38091,
+        "end": 38793,
+        "line": 1131,
+        "bytes": 722,
+        "sha256": "cdc520a19d381689f6aa63d7ef45fa2cd2080b271b30e699555a5df8718cb6ba"
+      },
+      {
+        "name": "fetchCangyuanMarketplace",
+        "start": 38793,
+        "end": 39433,
+        "line": 1157,
+        "bytes": 662,
+        "sha256": "24bb31fc6d725ec5272386f8c34b0bb598d7dfb14ca0cb9e14e6904437e86b87"
+      },
+      {
+        "name": "fetchMiaowuCatalog",
+        "start": 42103,
+        "end": 42801,
+        "line": 1248,
+        "bytes": 718,
+        "sha256": "f707d03c35ddb697f2020ea427d6b8a47ce35b24c6157b878376a0d66dddaf90"
+      },
+      {
+        "name": "fetchMiaowuMarketplace",
+        "start": 42801,
+        "end": 43437,
+        "line": 1274,
+        "bytes": 658,
+        "sha256": "d40aef246bff3beeff6364035e37e5e39cc507e4c3dad066cb304bc379746595"
+      },
+      {
+        "name": "fetchCyberAfeiCatalog",
+        "start": 43437,
+        "end": 44435,
+        "line": 1297,
+        "bytes": 1022,
+        "sha256": "3a08c462dd7d4d073cb35c16059c755301a54695384b364be8a6d06ff41e3763"
+      },
+      {
+        "name": "fetchCyberAfeiMarketplace",
+        "start": 44435,
+        "end": 45111,
+        "line": 1328,
+        "bytes": 702,
+        "sha256": "1ed9fba8d92d8c3f8509b25ca0412e1dad9d2248922cf2e0bc40a2b9ceacbf97"
+      },
+      {
+        "name": "fetchChentuCatalog",
+        "start": 45111,
+        "end": 46069,
+        "line": 1351,
+        "bytes": 978,
+        "sha256": "48eee5bc8781efc970c2947376a849c3da64fd378704aae92d2e1792a9596282"
+      },
+      {
+        "name": "fetchChentuMarketplace",
+        "start": 46069,
+        "end": 46705,
+        "line": 1382,
+        "bytes": 658,
+        "sha256": "4cf80bb23446026794169b050513951e37780546273b4ced85df64fd1dd2a636"
+      }
+    ],
+    "retainedTopLevelStatementsUnchanged": true,
+    "retainedStatementCount": 93,
+    "preserved": [
+      "All catalog server endpoints",
+      "Authenticated/partial model scan semantics",
+      "Cangyuan availability cache/API",
+      "Shared marketplace view types used by director-provider-options",
+      "Agent requests and authorization interfaces",
+      "All rollback snapshot source"
+    ],
+    "safety": {
+      "formalReads": 0,
+      "credentialReads": 0,
+      "formalWrites": 0,
+      "networkRequests": 0,
+      "generationRequests": 0
+    },
+    "evidencePolicy": "Root approved cleanup of these private wrappers. Current tracked code and maintenance scripts have no call references; matching historical UI files are self-contained rollback copies and are retained.",
+    "removedLines": 206,
+    "removedBytes": 6120,
+    "sourceFilesRemoved": 0,
+    "currentRuntimeCallReferences": 0,
+    "historicalReferences": {
+      "selfContainedSnapshots": [
+        ".codex-temp/desktop-only-20260921/source-before/apps/web",
+        ".codex-temp/rollback-snapshot-pre-9/apps/web",
+        ".codex-temp/rollback-snapshot-pre-9/snapshot-files/apps/web"
+      ],
+      "runtimeImportsOfCurrentDeletedWrappers": 0,
+      "scriptsMentioningClientApi": [
+        ".codex-temp/desktop-only-20260921/local-upload-tests.mjs",
+        ".codex-temp/desktop-only-20260921/remove-public-transfers.mjs",
+        ".codex-temp/desktop-only-20260921/renderer-boundary.mjs"
+      ],
+      "scriptRoles": "Legacy source text edits or upload test generation; none calls the removed catalogue wrappers."
+    }
+  },
+  "generatedCleanup": {
+    "schema": "bounded-generated-cleanup-safe-v1",
+    "startedAt": "2026-10-09T02:57:37.1533416Z",
+    "targets": [
+      {
+        "path": "apps/desktop/renderer/playwright-report",
+        "absolute": "D:\\project development\\超级画布\\apps\\desktop\\renderer\\playwright-report",
+        "bytes": 528222,
+        "files": 1,
+        "fileProofs": [
+          {
+            "path": "apps/desktop/renderer/playwright-report/index.html",
+            "bytes": 528222,
+            "sha256": "CC444FF92CA34BEFBF8E4EAA5000346F89BE0848E384F9E33F827B91B3A8B5F0"
+          }
+        ]
+      },
+      {
+        "path": "apps/desktop/renderer/test-results",
+        "absolute": "D:\\project development\\超级画布\\apps\\desktop\\renderer\\test-results",
+        "bytes": 45123,
+        "files": 2,
+        "fileProofs": [
+          {
+            "path": "apps/desktop/renderer/test-results/.last-run.json",
+            "bytes": 45,
+            "sha256": "91D1C43004802CD49950D78EB11C8FA7D05DA8FFFFE219A8B13B2F561BC00903"
+          },
+          {
+            "path": "apps/desktop/renderer/test-results/miaowu-canvas-upgrade-Miao-05865--twenty-three-model-upgrade/miaowu-dola-after-upgrade.png",
+            "bytes": 45078,
+            "sha256": "CCC865A369EE42673038DF45141D856042D1CD314F4AC0323DB7811DDEDC5874"
+          }
+        ]
+      },
+      {
+        "path": "apps/desktop/renderer/tsconfig.tsbuildinfo",
+        "absolute": "D:\\project development\\超级画布\\apps\\desktop\\renderer\\tsconfig.tsbuildinfo",
+        "bytes": 311441,
+        "files": 1,
+        "fileProofs": [
+          {
+            "path": "apps/desktop/renderer/tsconfig.tsbuildinfo",
+            "bytes": 311441,
+            "sha256": "66E139DC6BF2398C168E7359D66253ACA5F087AFC0D680F74167706BE3F9F1CD"
+          }
+        ]
+      }
+    ],
+    "bytes": 884786,
+    "files": 4,
+    "writerCheck": {
+      "checkedAt": "2026-10-09T02:57:36.5329654Z",
+      "potentialWriters": 0,
+      "commandLinesWritten": false
+    },
+    "duplicateScreenshot": {
+      "removed": {
+        "path": "apps/desktop/renderer/test-results/miaowu-canvas-upgrade-Miao-05865--twenty-three-model-upgrade/miaowu-dola-after-upgrade.png",
+        "bytes": 45078,
+        "sha256": "CCC865A369EE42673038DF45141D856042D1CD314F4AC0323DB7811DDEDC5874"
+      },
+      "retained": {
+        "path": ".codex-temp/release-v0.2.73/production-ui-runner-prepared-20261008T234848Z/final-e1a-20261009T001121784Z/test-results/miaowu-canvas-upgrade-Miao-58fb8-ithout-duplicate-completion/miaowu-dola-after-upgrade.png",
+        "bytes": 45078,
+        "sha256": "CCC865A369EE42673038DF45141D856042D1CD314F4AC0323DB7811DDEDC5874"
+      },
+      "equal": true
+    },
+    "protectedBefore": [
+      {
+        "path": "apps/desktop/renderer/.next-desktop/BUILD_ID",
+        "bytes": 21,
+        "sha256": "8CA955623263FBDEDA99B52150AEB4B44BCD59BB642D90A1E83B5436E8775971"
+      },
+      {
+        "path": "apps/desktop/stage/server/apps/desktop/renderer/.next-desktop/BUILD_ID",
+        "bytes": 21,
+        "sha256": "8CA955623263FBDEDA99B52150AEB4B44BCD59BB642D90A1E83B5436E8775971"
+      },
+      {
+        "path": "apps/desktop/release/win-unpacked/resources/runtime/server/apps/desktop/renderer/.next-desktop/BUILD_ID",
+        "bytes": 21,
+        "sha256": "8CA955623263FBDEDA99B52150AEB4B44BCD59BB642D90A1E83B5436E8775971"
+      },
+      {
+        "path": "apps/desktop/dist/main.cjs",
+        "bytes": 96221,
+        "sha256": "8DAE3E3BF49FB7D57DB0688F5EF6BACE76C61120361C3EBAEFAE1036B0B7F6E9"
+      },
+      {
+        "path": "apps/desktop/release/SuperCanvas-Setup-0.2.74-x64.exe",
+        "bytes": 219096083,
+        "sha256": "D5291F130551896F3197FC20AC2AF27B12B944C5D1AD11452DB9FEBD4BCADC0A"
+      },
+      {
+        "path": "apps/desktop/release/SuperCanvas-Setup-0.2.74-x64.exe.blockmap",
+        "bytes": 226586,
+        "sha256": "B3396A96096D1385F408043AE4034FB97210BBB3A365633D896CC7C6B61F186F"
+      },
+      {
+        "path": "apps/desktop/release/latest.yml",
+        "bytes": 1543,
+        "sha256": "20603645B5DBF42998FB36BED320AACA22DAC2F161E88AE197A3D969311CFCAE"
+      },
+      {
+        "path": ".codex-temp/release-v0.2.74/local-artifact-final-8a9-safe.json",
+        "bytes": 1060,
+        "sha256": "BD882D61D7F4BC5E853465B6855BA4AB48741F88F06B348D3148A06265BEF630"
+      },
+      {
+        "path": ".codex-temp/release-v0.2.74/local-final-8a9-validation-safe.json",
+        "bytes": 7626,
+        "sha256": "15ABD83660969DA583D3319A0EA0679CFF8F4AF36F64B81AA58912486F414164"
+      },
+      {
+        "path": ".codex-temp/release-v0.2.74-final-8a9e74bf-ci-review/8a9e74bf-final-remote-validation-safe.json",
+        "bytes": 19838,
+        "sha256": "65866B036E7AD4B50FCFBD134EC2316B05F7A7E3CDE0751DE03EB5B9A33292BA"
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-suppliers/suppliers-desktop.png",
+        "bytes": 201064,
+        "sha256": "1DE22E089BEE7C1A526C74EFE0174DC36ACEADC9AFA1A934CE0840324A39B523"
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-suppliers/suppliers-manual-flow.png",
+        "bytes": 95433,
+        "sha256": "48FAF2EA23B7DC074884BE5433B05219E9D2662CB70CD90651F69695DF92E61C"
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-suppliers/suppliers-mobile.png",
+        "bytes": 39403,
+        "sha256": "B25FCC4581172D48EE72D99DF550CCBEDE8CD309811EB23345A5F573C0C53037"
+      },
+      {
+        "path": ".codex-temp/release-v0.2.73/production-ui-runner-prepared-20261008T234848Z/final-e1a-20261009T001121784Z/test-results/miaowu-canvas-upgrade-Miao-58fb8-ithout-duplicate-completion/miaowu-dola-after-upgrade.png",
+        "bytes": 45078,
+        "sha256": "CCC865A369EE42673038DF45141D856042D1CD314F4AC0323DB7811DDEDC5874"
+      }
+    ],
+    "preserved": [
+      "All unique supplier screenshots",
+      "Current 74 renderer/stage/dist/unpacked/installer/latest",
+      "All CI/public/local QA and rollback evidence",
+      "node_modules",
+      "profiles, canvases, assets, credentials, backups"
+    ],
+    "applied": true,
+    "finishedAt": "2026-10-09T02:57:38.0946599Z",
+    "protectedAfter": [
+      {
+        "path": "apps/desktop/renderer/.next-desktop/BUILD_ID",
+        "bytes": 21,
+        "sha256": "8CA955623263FBDEDA99B52150AEB4B44BCD59BB642D90A1E83B5436E8775971"
+      },
+      {
+        "path": "apps/desktop/stage/server/apps/desktop/renderer/.next-desktop/BUILD_ID",
+        "bytes": 21,
+        "sha256": "8CA955623263FBDEDA99B52150AEB4B44BCD59BB642D90A1E83B5436E8775971"
+      },
+      {
+        "path": "apps/desktop/release/win-unpacked/resources/runtime/server/apps/desktop/renderer/.next-desktop/BUILD_ID",
+        "bytes": 21,
+        "sha256": "8CA955623263FBDEDA99B52150AEB4B44BCD59BB642D90A1E83B5436E8775971"
+      },
+      {
+        "path": "apps/desktop/dist/main.cjs",
+        "bytes": 96221,
+        "sha256": "8DAE3E3BF49FB7D57DB0688F5EF6BACE76C61120361C3EBAEFAE1036B0B7F6E9"
+      },
+      {
+        "path": "apps/desktop/release/SuperCanvas-Setup-0.2.74-x64.exe",
+        "bytes": 219096083,
+        "sha256": "D5291F130551896F3197FC20AC2AF27B12B944C5D1AD11452DB9FEBD4BCADC0A"
+      },
+      {
+        "path": "apps/desktop/release/SuperCanvas-Setup-0.2.74-x64.exe.blockmap",
+        "bytes": 226586,
+        "sha256": "B3396A96096D1385F408043AE4034FB97210BBB3A365633D896CC7C6B61F186F"
+      },
+      {
+        "path": "apps/desktop/release/latest.yml",
+        "bytes": 1543,
+        "sha256": "20603645B5DBF42998FB36BED320AACA22DAC2F161E88AE197A3D969311CFCAE"
+      },
+      {
+        "path": ".codex-temp/release-v0.2.74/local-artifact-final-8a9-safe.json",
+        "bytes": 1060,
+        "sha256": "BD882D61D7F4BC5E853465B6855BA4AB48741F88F06B348D3148A06265BEF630"
+      },
+      {
+        "path": ".codex-temp/release-v0.2.74/local-final-8a9-validation-safe.json",
+        "bytes": 7626,
+        "sha256": "15ABD83660969DA583D3319A0EA0679CFF8F4AF36F64B81AA58912486F414164"
+      },
+      {
+        "path": ".codex-temp/release-v0.2.74-final-8a9e74bf-ci-review/8a9e74bf-final-remote-validation-safe.json",
+        "bytes": 19838,
+        "sha256": "65866B036E7AD4B50FCFBD134EC2316B05F7A7E3CDE0751DE03EB5B9A33292BA"
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-suppliers/suppliers-desktop.png",
+        "bytes": 201064,
+        "sha256": "1DE22E089BEE7C1A526C74EFE0174DC36ACEADC9AFA1A934CE0840324A39B523"
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-suppliers/suppliers-manual-flow.png",
+        "bytes": 95433,
+        "sha256": "48FAF2EA23B7DC074884BE5433B05219E9D2662CB70CD90651F69695DF92E61C"
+      },
+      {
+        "path": "apps/desktop/renderer/test-results-suppliers/suppliers-mobile.png",
+        "bytes": 39403,
+        "sha256": "B25FCC4581172D48EE72D99DF550CCBEDE8CD309811EB23345A5F573C0C53037"
+      },
+      {
+        "path": ".codex-temp/release-v0.2.73/production-ui-runner-prepared-20261008T234848Z/final-e1a-20261009T001121784Z/test-results/miaowu-canvas-upgrade-Miao-58fb8-ithout-duplicate-completion/miaowu-dola-after-upgrade.png",
+        "bytes": 45078,
+        "sha256": "CCC865A369EE42673038DF45141D856042D1CD314F4AC0323DB7811DDEDC5874"
+      }
+    ],
+    "protectedHashesUnchanged": true,
+    "safety": {
+      "formalReads": 0,
+      "formalWrites": 0,
+      "sourceFilesDeleted": 0,
+      "networkRequests": 0,
+      "generationRequests": 0,
+      "processStops": 0,
+      "recursiveDeletionShell": "PowerShell Remove-Item -LiteralPath",
+      "workspaceBoundariesVerified": true,
+      "reparsePointsRejected": true
+    }
+  },
+  "verification": {
+    "cleanupBoundary": {
+      "command": "node --test scripts/clean.test.mjs",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "observedExitCode": 0,
+      "source": "Single first execution tool stdout"
+    },
+    "clientApi": {
+      "command": "pnpm --filter @super-canvas/desktop-ui exec vitest run lib/client-api --reporter=verbose",
+      "testFiles": 12,
+      "passed": 63,
+      "failed": 0,
+      "skipped": 0,
+      "testFrameworkRetries": 0,
+      "observedExitCode": 0
+    },
+    "lint": {
+      "command": "pnpm --filter @super-canvas/desktop-ui exec eslint lib/client-api.ts",
+      "observedExitCode": 0
+    },
+    "typecheck": {
+      "command": "pnpm exec tsc --project .codex-temp/code-cleanup-second-20261008/tsconfig-client-api.json --pretty false",
+      "strict": true,
+      "incremental": false,
+      "observedExitCode": 0
+    },
+    "diffCheck": {
+      "command": "git diff --check -- apps/desktop/renderer/lib/client-api.ts",
+      "observedExitCode": 0,
+      "addedLines": 0,
+      "removedLines": 206
+    }
+  },
+  "evidence": [
+    {
+      "path": ".codex-temp/code-cleanup-second-20261008/source-audit-safe.json",
+      "bytes": 1810,
+      "sha256": "32eba708754a47be40071afe4b455352147bdac9ba8179ba33fbfb87a36b5994"
+    },
+    {
+      "path": ".codex-temp/code-cleanup-second-20261008/export-audit-safe.json",
+      "bytes": 8775,
+      "sha256": "2005bac08d647d133fd76844617b0957c0aff64fe956ca50a69980cd261057f1"
+    },
+    {
+      "path": ".codex-temp/code-cleanup-second-20261008/private-wrapper-removal-safe.json",
+      "bytes": 3190,
+      "sha256": "a39f5400cd207a6f5d67f62fbbdc395dadea1d1be2e7d25d1a9b36f31d9e22ca"
+    },
+    {
+      "path": ".codex-temp/code-cleanup-second-20261008/generated-cleanup-plan-safe.json",
+      "bytes": 5951,
+      "sha256": "75f029775d0bf5772590a18539fe15eab93fb71eede0fa5dff663e38e4949937"
+    },
+    {
+      "path": ".codex-temp/code-cleanup-second-20261008/generated-cleanup-result-safe.json",
+      "bytes": 9377,
+      "sha256": "a503c4e9f2c9c3702fcdd24687d25c553ad9949e297ce58734865af8bf6f8ec1"
+    },
+    {
+      "path": ".codex-temp/code-cleanup-second-20261008/client-api-tests.log",
+      "bytes": 9154,
+      "sha256": "7fabff4757ca0c668f268440b7132f656bed61aa9068a39901c7dff948d0124b"
+    },
+    {
+      "path": ".codex-temp/code-cleanup-second-20261008/client-api-lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".codex-temp/code-cleanup-second-20261008/client-api-types.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "safety": {
+    "formalProfileReads": 0,
+    "formalWrites": 0,
+    "credentialReads": 0,
+    "paidGenerationRequests": 0,
+    "networkRequests": 0,
+    "processStops": 0,
+    "versionsChanged": 0,
+    "commits": 0,
+    "pushes": 0,
+    "releases": 0
+  },
+  "limitations": [
+    "Import and identifier audits only identify candidates; framework and compatibility uses were checked separately before removal.",
+    "Deleted cache bytes are operation totals. Later development can recreate generated caches.",
+    "Removed private wrappers reduce maintenance surface; no measured runtime performance benefit is claimed.",
+    "Other collaborators are editing UI and agent code concurrently; this report only verifies the cleanup-owned client-api range."
+  ]
+}

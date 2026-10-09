@@ -15,6 +15,7 @@ import {
   CircleX,
   Clock3,
   LoaderCircle,
+  Layers3,
   MinusCircle,
   Play,
 } from "lucide-react";
@@ -116,7 +117,7 @@ const statusNames: Record<string, string> = {
   running: "生成中",
   succeeded: "已完成",
   failed: "生成失败",
-  cancelled: "已取消",
+  cancelled: "已撤回",
   expired: "方案已过期",
 };
 const resultStatuses: Record<string, { label: string; Icon: typeof Circle; tone: string }> = {
@@ -146,6 +147,7 @@ export function AgentPanel(props: Props) {
   const [selection, setSelection] = useState<{ key: string; snapshot?: AgentModelOption }>({ key: "" });
   const choice = selection.key;
   const [draft, setDraft] = useState("");
+  const [intent, setIntent] = useState<NonNullable<AgentTurnInput["intent"]>>("chat");
   const [attachments, setAttachments] = useState<AssetView[]>([]);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState("");
@@ -340,6 +342,7 @@ export function AgentPanel(props: Props) {
     receivedDraft.current = props.draftRequest.id;
     // This is a one-time external canvas command, not a value derived on each render.
     /* eslint-disable react-hooks/set-state-in-effect */
+    setIntent("chat");
     setDraft(props.draftRequest.text);
     const asset = props.assets.find(
       (a) => a.id === props.draftRequest?.assetId,
@@ -382,6 +385,7 @@ export function AgentPanel(props: Props) {
     setAttachments([]);
     setStage("");
     setLegacy(null);
+    setIntent("chat");
   };
   const addFiles = async (files: File[]) =>
     run(async () => {
@@ -442,6 +446,7 @@ export function AgentPanel(props: Props) {
           requestId: crypto.randomUUID(),
           connectionId: selected.connectionId,
           modelId: selected.modelId,
+          intent,
           message: message.trim() || "请分析这些素材并帮助我确定下一步",
           attachmentAssetIds: ids,
           selectedNodeIds:
@@ -464,7 +469,10 @@ export function AgentPanel(props: Props) {
         throw error;
       } finally {
         if (alive.current && current === operation.current) {
-          if (succeeded) setAttachments([]);
+          if (succeeded) {
+            setAttachments([]);
+            setIntent("chat");
+          }
           setStage("");
           // The durable session contains the result even if the event stream broke.
           await Promise.allSettled([refresh(task.id), modelLoad()]);
@@ -478,6 +486,7 @@ export function AgentPanel(props: Props) {
     operation.current++;
     setStage("分析已停止");
     setBusy(false);
+    setIntent("chat");
     if (session)
       void agentRequest(`/sessions/${session.id}`, {}).then(() => refresh(session.id)).catch((e) =>
         setError(e.message),
@@ -545,7 +554,7 @@ export function AgentPanel(props: Props) {
       <header className={styles.header}>
         <span>
           <Bot size={19} />
-          <strong>创作智能体</strong>
+          <strong>创作助手</strong>
         </span>
         <div>
           <button
@@ -593,12 +602,13 @@ export function AgentPanel(props: Props) {
               if (alive.current) {
                 setSession(next);
                 setLegacy(null);
+                setIntent("chat");
               }
             })
           }
         >
           <option value="" disabled>
-            开始一个创作任务
+            开始一段新对话
           </option>
           {[
             ...(session && !sessions.some((s) => s.id === session.id)
@@ -654,15 +664,15 @@ export function AgentPanel(props: Props) {
             {!session?.messages.length && (
               <div className={styles.welcome}>
                 <span className={styles.welcomeIcon}><Bot size={30} /></span>
-                <h3>把创作任务交给我</h3>
-                <p>写分镜、改图片、优化文案，或把多个步骤组合成画布工作流。</p>
+                <h3>有什么想法，聊聊吧。</h3>
+                <p>聊灵感、写文案、完善分镜。准备动手时，再一起制作画布方案。</p>
                 <div>
                   {[
-                    "帮我写一份广告分镜",
-                    "分析参考图并制定修改方案",
+                    "一起聊聊这次创作的方向",
+                    "帮我梳理参考图里的设计思路",
                     "帮我完善这段提示词",
                   ].map((s) => (
-                    <button key={s} onClick={() => setDraft(s)}>
+                    <button key={s} onClick={() => { setIntent("chat"); setDraft(s); }}>
                       {s}
                     </button>
                   ))}
@@ -781,6 +791,7 @@ export function AgentPanel(props: Props) {
                               ];
                         const plan = await agentRequest<AgentPlan>("/plans", {
                           sessionId: session.id,
+                          intent: "canvas-plan",
                           proposal: {
                             type: "proposal",
                             summary: `将「${a.title}」放入画布`,
@@ -792,11 +803,12 @@ export function AgentPanel(props: Props) {
                         updatePlan(plan);
                       })
                     }
-                    onContinue={(a) =>
+                    onContinue={(a) => {
+                      setIntent("canvas-plan");
                       setDraft(
                         `请为这份成果规划图片或视频节点，先给我确认方案：\n${JSON.stringify(a)}`,
-                      )
-                    }
+                      );
+                    }}
                   />
                 ) : null}
               </article>
@@ -813,7 +825,11 @@ export function AgentPanel(props: Props) {
                     updatePlan(
                       await agentRequest<AgentPlan>(
                         `/plans/${p.id}`,
-                        { version: p.version, proposal },
+                        {
+                          version: p.version,
+                          proposal,
+                          ...(["failed", "succeeded", "cancelled"].includes(p.status) ? { intent: "canvas-plan" } : {}),
+                        },
                         "PATCH",
                       ),
                     );
@@ -865,6 +881,17 @@ export function AgentPanel(props: Props) {
           else void addFiles(Array.from(e.dataTransfer.files));
         }}
       >
+        <div className={styles.intentRow} role="group" aria-label="对话方式">
+          <button type="button" aria-pressed={intent === "chat"} disabled={busy} onClick={() => setIntent("chat")}>
+            聊天
+          </button>
+          <button type="button" aria-pressed={intent === "canvas-plan"} disabled={busy} onClick={() => setIntent("canvas-plan")}>
+            制作画布方案
+          </button>
+        </div>
+        <p className={styles.intentHint}>
+          {intent === "chat" ? "聊想法、问问题；制作时请选择画布方案。" : "先给你检查方案，确认后再放入画布。"}
+        </p>
         {props.selectedNode && (
           <label className={styles.context}>
             <input
@@ -895,7 +922,7 @@ export function AgentPanel(props: Props) {
         </div>
         <textarea
           aria-label="创作任务要求"
-          placeholder="描述你想完成的任务，也可以粘贴或拖入参考素材…"
+          placeholder={intent === "chat" ? "聊聊想法，或放入参考素材…" : "描述你希望制作的内容与要求…"}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onPaste={(e) => {
@@ -916,7 +943,12 @@ export function AgentPanel(props: Props) {
             }
           }}
         />
-        <div className={styles.selectors}>
+        <details className={styles.modelSettings} open>
+          <summary>
+            <span>对话模型</span>
+            <strong title={selected?.modelName}>{selected?.modelName ?? "选择模型"}</strong>
+          </summary>
+          <div className={styles.selectors}>
           <select
             aria-label="智能体 API 供应商"
             value={selected?.supplierId ?? ""}
@@ -1029,6 +1061,7 @@ export function AgentPanel(props: Props) {
           {selected.inputLimits?.maxAssets !== undefined && <span>供应商每轮总量：最多 {selected.inputLimits.maxAssets} 个附件</span>}
           <small>本应用每轮最多 16 个附件，单个 16 MB，总计 24 MB；引用节点素材计入。</small>
         </div>}
+        </details>
         <div className={styles.actions}>
           <input
             hidden
@@ -1062,12 +1095,14 @@ export function AgentPanel(props: Props) {
             <button
               className={styles.primary}
               aria-label="发送任务"
+              title={intent === "chat" ? "发送消息" : "制作待确认的画布方案"}
               disabled={
                 !selected?.available || (!draft.trim() && !attachments.length)
               }
               onClick={() => void submit()}
             >
               <Send size={16} />
+              <span>{intent === "chat" ? "发送" : "制作方案"}</span>
             </button>
           )}
         </div>
@@ -1267,7 +1302,8 @@ function PlanCard({
     plan.proposal.texts.find((text) => text.targetNodeId === nodeId)?.title ||
     `节点 ${index + 1}`;
   return (
-    <article className={styles.card}>
+    <article className={`${styles.card} ${styles.productionCard}`}>
+      <span className={styles.productionLabel}><Layers3 size={14} />画布方案</span>
       <small>
         {statusNames[plan.status] ?? plan.status} · 方案 v{plan.version}
       </small>

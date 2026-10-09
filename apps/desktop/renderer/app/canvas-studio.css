@@ -1,20 +1,6 @@
 /* Immersive canvas theme. Scoped so the library and project home keep their own styling. */
 .canvas-editor {
   color-scheme: dark;
-  --bg: #101116;
-  --panel: #1b1d25;
-  --panel-2: #252733;
-  --panel-3: #303342;
-  --line: #343746;
-  --muted: #a1a6b7;
-  --text: #eef0f7;
-  --accent: #b5a6ff;
-  --accent-2: #9bddd0;
-  --danger: #ff91a4;
-  --shadow: 0 16px 48px #0005;
-  --ui-panel-border: #343746;
-  --ui-panel-border-strong: #a99af0;
-  --ui-glow-purple: #ac9cf51a;
   --canvas-topbar-height: 64px;
   position: relative;
   display: block;
@@ -199,42 +185,7 @@
 .canvas-editor .inspector h2 { color: #e6e8ed; }
 .canvas-editor .inspector-resize-handle::after { background: #777080; box-shadow: none; }
 .canvas-editor .inspector-resize-handle::before { background: #baa5f5; }
-.canvas-editor :is(.agent-panel, .agent-panel-head, .agent-conversation, .agent-session-bar, .agent-model-controls) {
-  background: transparent;
-  color: var(--text);
-  border-color: var(--line);
-  box-shadow: none;
-}
-.canvas-editor .agent-panel { scrollbar-gutter: auto; }
-.canvas-editor .agent-panel-head { padding: 16px 6px 12px; border: 0; }
-.canvas-editor .agent-panel-head strong { color: #ececf0; font-size: 13px; }
-.canvas-editor .agent-panel small { color: var(--muted); }
-.canvas-editor .agent-panel-icon { background: #b7a2f012; color: #c6b7f2; border: 1px solid #51485e; border-radius: 11px; }
-.canvas-editor .agent-panel .agent-new-chat { background: #2b2d30; color: #c9c4d4; border-color: #393b40; }
-.canvas-editor .agent-panel select { color-scheme: dark !important; }
-.canvas-editor .agent-panel [aria-label="导演会话"] { background: transparent !important; padding: 0 5px 10px !important; border: 0 !important; }
 .canvas-editor .director-stages-idle { display: none !important; }
-.canvas-editor .agent-conversation { padding: 12px 5px; }
-.canvas-editor .agent-message { background: #282a2e; border-color: #383b41; color: #d4d7df; border-radius: 12px; }
-.canvas-editor .agent-message.user { background: #34303c; color: #eee7ff; border-color: #4a405a; }
-.canvas-editor .agent-message.error { background: #3c272e; color: #ffadb8; border-color: #653846; }
-.canvas-editor .agent-panel .agent-composer {
-  background: #141517;
-  border: 1px solid #33353a;
-  border-radius: 17px;
-  margin: 8px 0 0;
-  transition: border-color 180ms, box-shadow 180ms;
-}
-.canvas-editor .agent-panel .agent-composer:focus-within { border-color: #76678f; box-shadow: 0 0 0 3px #b8a2fa0a; }
-.canvas-editor .agent-panel textarea { background: transparent; color: #dfe0e5; border: 0; font-size: 12px; line-height: 1.8; padding: 14px; }
-.canvas-editor .agent-composer textarea:focus-visible { outline: 0; box-shadow: none; }
-.canvas-editor .agent-composer::before, .canvas-editor .agent-composer::after { display: none; }
-.canvas-editor .agent-composer [aria-label="超级导演模型配置"] { padding-bottom: 4px !important; }
-.canvas-editor .agent-composer [aria-label="超级导演模型配置"] .agent-new-chat { width: auto; min-width: max-content; padding-inline: 9px; }
-.canvas-editor .agent-panel .agent-composer button { background: #292b2f; color: #beb8cc; border-color: #39373f; }
-.canvas-editor .agent-panel .agent-composer .agent-send { background: #c5b7f3; color: #262032; border: 0; border-radius: 50%; }
-.canvas-editor .agent-panel .agent-composer .agent-send:disabled { background: #323338; color: #737680; }
-.canvas-editor .agent-composer-footer { padding: 10px 42px 12px 12px; }
 .canvas-editor .director-welcome { margin: auto 0; padding: 32px 8px 44px; text-align: center; }
 .canvas-editor .director-welcome-icon { display: inline-grid; place-items: center; width: 54px; height: 54px; color: #bbade6; margin-bottom: 15px; }
 .canvas-editor .director-welcome h2 { margin: 0; padding: 0; border: 0; font-size: 21px; letter-spacing: -.7px; font-weight: 550; }

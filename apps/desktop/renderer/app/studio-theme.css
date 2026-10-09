@@ -1,6 +1,5 @@
 /* Shared studio layout and semantic dark surfaces. */
 
-:root { color-scheme:dark; --bg:#101114; --panel:#191b1f; --panel-2:#14161a; --panel-3:#252830; --line:#343842; --muted:#a5aab8; --text:#eef0f5; --accent:#8584ed; --accent-2:#80ccd6; --danger:#e9a0ab; --shadow:0 20px 70px #0006; --ui-panel-border:var(--line); --ui-panel-border-strong:#8584ed; --ui-glow-purple:#8584ed15; --ui-glow-cyan:#80ccd615; }
 html, body { background:var(--bg); color:var(--text); }
 body { font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
 button, a, input, select, textarea { -webkit-tap-highlight-color:transparent; }
@@ -18,14 +17,14 @@ button:disabled { cursor: not-allowed; }
 .brand-mark { background:#6558dc; color:white; box-shadow: none; border-radius: 10px; }
 .brand-version { color:var(--muted); border:0; background:none; font-weight: 500; }
 .button, .icon-button, .pill {
-  background:var(--panel); color:#afb6f5; border:1px solid var(--line); box-shadow: none;
+  background:var(--panel-2); color:var(--text); border:1px solid var(--line); box-shadow: none;
   border-radius: 10px; transition: background .15s, border-color .15s, box-shadow .15s;
 }
-.button:hover, .icon-button:hover { background:var(--panel); border-color:var(--line); color:#afb6f5; transform: none; }
+.button:hover, .icon-button:hover { background:var(--panel-3); border-color:var(--line-strong); color:var(--text); transform: none; }
 .button.primary, .button.primary:hover, .node-run-button {
-  background:#6256d9; color:white; border-color:#6256d9; box-shadow: 0 4px 12px rgb(98 86 217 / 12%);
+  background:linear-gradient(135deg, #a592f7, #8170de); color:white; border-color:rgba(169,152,255,.3); box-shadow: 0 4px 14px rgb(130 113 237 / 16%);
 }
-.button.primary:hover { background:#5448c4; }
+.button.primary:hover { background:linear-gradient(135deg, #b2a1fa, #8d7be8); }
 .button.ghost { background:transparent; }
 .button.danger, .icon-button.danger { color:#e9a4ae; border-color:var(--line); background:var(--panel); }
 .button.danger:hover { background:var(--panel); }
@@ -36,14 +35,11 @@ button:disabled { cursor: not-allowed; }
 .node-status.running, .node-status.submitting { background:#8271e7; box-shadow: none; }
 .section-title, .field label, .parameter-field label { color:#afb6f5; }
 .field-note, .menu-hint, .project-menu-hint, .asset-kind, .node-linked-limit { color:var(--muted); }
-.search, .field input, .field textarea, .field select, .parameter-field input,
-.parameter-field select, .node-inline-toolbar select, .agent-model-controls select,
-.agent-panel input, .agent-panel textarea, .agent-panel select, .project-create-form input,
-.project-rename-field input, .settings-form input, .settings-form select, .settings-form textarea {
-  color:#afb6f5; background:var(--panel); border-color:var(--line); box-shadow: none;
+.search, .field input, .field textarea, .field select, .parameter-field input, .parameter-field select, .node-inline-toolbar select, .project-create-form input, .project-rename-field input, .settings-form input, .settings-form select, .settings-form textarea {
+  color:var(--text); background:color-mix(in srgb, var(--bg) 55%, var(--panel)); border-color:var(--line); box-shadow: none;
 }
 input::placeholder, textarea::placeholder { color:var(--muted); opacity: 1; }
-option, optgroup { color:#afb6f5; background: var(--panel); }
+option, optgroup { color:var(--text); background: var(--panel); }
 .modal-backdrop, .project-action-backdrop, .project-import-backdrop, .mobile-backdrop { background:rgb(37 39 55 / 24%); backdrop-filter: blur(5px); }
 .modal-window, .project-action-dialog, .project-import-modal, .settings-modal-window,
 .shortcuts-modal, .node-config-popover, .node-config-popover-portal, .node-model-select-options {
@@ -68,7 +64,7 @@ option, optgroup { color:#afb6f5; background: var(--panel); }
 .project-menu button, .project-context-menu button, .canvas-context-menu button,
 .node-context-menu button, .connection-menu button, .mention-floating-menu button { color:#afb6f5; }
 .project-menu button:hover, .project-context-menu button:hover, .canvas-context-menu button:hover,
-.node-context-menu button:hover, .connection-menu button:hover { color:#afb6f5; background:var(--panel); }
+.node-context-menu button:hover, .connection-menu button:hover { color:var(--text); background:var(--panel-3); }
 .project-menu-divider, .project-context-menu-divider { background:var(--line); }
 .toast { background:var(--panel); color:var(--text); border-color:var(--line); box-shadow: var(--shadow); }
 .toast-success { border-left-color:var(--line); }
@@ -201,40 +197,7 @@ option, optgroup { color:#afb6f5; background: var(--panel); }
 .canvas-node-group-header { color:var(--muted); background:rgb(247 245 253 / 85%); }
 
 /* Assistant conversations, history and legacy advanced settings. */
-.agent-panel, .agent-panel-head, .agent-composer, .agent-composer-shell, .agent-conversation,
-.agent-session-bar, .agent-panel-footer, .agent-model-controls, .agent-model-picker,
-.agent-configuration, .agent-request-controls { background:var(--panel); color:#afb6f5; border-color:var(--line); box-shadow: none; }
-.agent-panel-head strong, .agent-panel-head h2, .agent-panel-head h3 { color:#afb6f5; }
-.agent-panel-icon, .agent-context { background:var(--panel); color:#afb6f5; border-color:var(--line); box-shadow: none; }
-.agent-message { background:var(--panel); color:#afb6f5; border-color:var(--line); box-shadow: none; }
-.agent-message.user, .agent-message[data-role="user"] { background:var(--panel); color:#afb6f5; border-color:var(--line); }
-.agent-message p, .agent-message li { color:inherit; }
-.agent-context > span { color:#afb6f5; }
-.agent-panel small, .agent-panel .field-note { color:var(--muted); }
-.agent-panel button:not(.primary):not(:disabled) { color:var(--muted); }
-.agent-panel textarea { border-color:var(--line); background:var(--panel); color:#afb6f5; }
-.agent-panel .agent-new-chat, .agent-panel .agent-composer button { color:var(--muted); background:var(--panel); border-color:var(--line); box-shadow: none; }
-.agent-panel .agent-composer .agent-send { color:#fff; background:#7665d4; border-color:var(--line); }
-.agent-panel .agent-composer .agent-send:disabled { color:var(--muted); background:var(--panel); border-color:var(--line); }
-.agent-panel .agent-context strong { color:var(--muted); }
-.agent-panel .agent-composer { background:var(--panel); border:1px solid var(--line); border-radius: 14px; box-shadow: none; }
-.agent-panel .agent-composer-resize-handle { background:var(--panel); border-color:var(--line); }
-.agent-panel .agent-composer-option { border-color:var(--line); background:var(--panel); color:var(--muted); border-radius: 8px; }
-.agent-panel .agent-composer-option:hover, .agent-panel .agent-composer-option:focus-within { background:var(--panel); border-color:var(--line); }
-.agent-panel .agent-composer-option select, .agent-panel .agent-composer-option select option { color:var(--muted); background:transparent; color-scheme: dark; }
-.agent-panel .agent-composer-option select option { background:var(--panel); }
-.canvas-editor .agent-panel .agent-composer-tools { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px; gap: 6px; }
-.canvas-editor .agent-panel .supplier-option { grid-column: 1; grid-row: 1; }
-.canvas-editor .agent-panel .group-option { grid-column: 2; grid-row: 1; }
-.canvas-editor .agent-panel .model-option { grid-column: 1; grid-row: 2; }
-.canvas-editor .agent-panel .reasoning-option { grid-column: 2; grid-row: 2; }
-.canvas-editor .agent-panel .agent-attach { grid-column: 3; grid-row: 2; min-width: 28px; width: 28px; }
-.canvas-editor .agent-composer-footer { padding: 8px 39px 9px 9px; gap: 5px; }
-.canvas-editor .agent-panel .agent-composer-option select { font-size: 10px; }
-.canvas-editor .agent-panel .agent-composer .agent-send { width: 28px; min-width: 28px; height: 30px; right: 7px; }
-.canvas-editor .agent-panel .agent-composer-option > span { display: none; }
 .node-card .node-preview:not(:has(img, video)) { background:var(--panel); color:var(--muted); border-color:var(--line); }
-.agent-research-source, .agent-plan-card, .agent-proposal, .agent-quote, .agent-status-card { background:var(--panel); border-color:var(--line); color:var(--muted); }
 .history-modal-window, .history-detail, .history-list, .history-sidebar, .history-head,
 .generation-history-window, .history-card, .history-toolbar { background:var(--panel); color:#afb6f5; border-color:var(--line); }
 .history-card:hover { border-color:var(--line); }

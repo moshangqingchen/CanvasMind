@@ -5,6 +5,8 @@ test.use({ video: process.env.STUDIO_RECORD_VIDEO === "1" ? { mode: "on", size: 
 
 test("studio canvas keeps navigation, view toggles and draft starters usable", async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
+  let agentTurns = 0;
+  await page.route("**/api/agent/turn", (route) => { agentTurns++; return route.abort("blockedbyclient"); });
   const created = await request.post("/api/projects", { data: { title: "灵感工作室" } });
   expect(created.ok()).toBeTruthy();
   const { project } = await created.json();
@@ -14,8 +16,15 @@ test("studio canvas keeps navigation, view toggles and draft starters usable", a
   await page.goto(`/canvas/${project.id}`);
   await expect(page.getByText("让灵感，在这里发生")).toBeVisible();
   await expect(page.getByRole("button", { name: "打开超级导演", exact: true })).toHaveCount(0);
+  const assistant = page.getByRole("region", { name: "通用创作智能体" });
+  await expect(assistant.getByRole("heading", { name: "有什么想法，聊聊吧。", exact: true })).toBeVisible();
+  await expect(assistant.getByRole("button", { name: "聊天", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // A canvas starter fills a draft; it must not inherit a previously selected production mode.
+  await assistant.getByRole("button", { name: "制作画布方案", exact: true }).click();
   await page.getByRole("button", { name: "创作分镜", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "创作任务要求" })).toHaveValue(/请帮我创作一组分镜/);
+  await expect(assistant.getByRole("button", { name: "聊天", exact: true })).toHaveAttribute("aria-pressed", "true");
+  expect(agentTurns).toBe(0);
   await page.getByRole("textbox", { name: "创作任务要求" }).fill("");
   await page.screenshot({ path: testInfo.outputPath("studio-empty.png") });
 

@@ -1,11 +1,11 @@
 .home {
-  --bg: #0c0e17;
-  --panel: #181826;
-  --panel-2: #232238;
-  --line: rgb(203 194 255 / 10%);
-  --text: #f5f3ff;
-  --muted: #aaa7bd;
-  --accent: #c6b5ff;
+  --bg: #121217;
+  --panel: #1b1b23;
+  --panel-2: #25242e;
+  --line: rgb(215 211 235 / 10%);
+  --text: #efedf5;
+  --muted: #a6a1b3;
+  --accent: #bbaaec;
   --danger: #ffacb8;
   --page-gutter: clamp(24px, 3.8vw, 80px);
   position: relative;
@@ -16,8 +16,8 @@
   color: var(--text);
   color-scheme: dark;
   background:
-    radial-gradient(ellipse at 72% 2%, rgb(100 65 188 / 14%), transparent 42%),
-    linear-gradient(145deg, #11111d, #0b0d16 60%, #10111e);
+    radial-gradient(ellipse at 72% 2%, rgb(133 107 184 / 6%), transparent 42%),
+    var(--bg);
   font-family:
     "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   font-size: 14px;
@@ -48,7 +48,7 @@
   pointer-events: none;
   background: radial-gradient(
     ellipse at 82% 0%,
-    rgb(109 75 210 / 9%),
+    rgb(109 75 210 / 3%),
     transparent 48%
   );
 }
@@ -62,8 +62,8 @@
   height: 68px;
   padding-inline: var(--page-gutter);
   border-bottom: 1px solid var(--line);
-  background: #10111bcc;
-  backdrop-filter: blur(20px) saturate(125%);
+  background: #121217eb;
+  backdrop-filter: blur(12px);
 }
 
 .brand {
@@ -80,13 +80,10 @@
   place-items: center;
   width: 40px;
   height: 42px;
-  border: 1px solid #dcc6ff5c;
-  border-radius: 13px;
-  background: linear-gradient(145deg, #ceaaff, #8a68e4 48%, #6779dc);
+  border: 1px solid #ffffff16;
+  border-radius: 12px;
+  background: #a897e2;
   color: #faf5ff;
-  box-shadow:
-    inset 0 1px 1px #fff8,
-    0 6px 22px #8b5be225;
 }
 
 .brandText {
@@ -128,7 +125,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, #b594ee, #c4b2ff 48%, #a6d9f0);
+  background: var(--accent);
 }
 
 .headerActions {
@@ -178,8 +175,8 @@
 
 .settingsButton:hover,
 .motionButton:hover {
-  border-color: #9079c3;
-  background: #393049;
+  border-color: #ffffff26;
+  background: #ffffff0c;
   color: var(--text);
 }
 .motionButton {
@@ -198,40 +195,22 @@
   flex-direction: column;
   width: 100%;
   min-height: calc(100dvh - 68px);
-  padding: 18px var(--page-gutter) 0;
+  padding: 28px var(--page-gutter) 0;
 }
 
 .hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
   align-items: center;
   gap: 16px;
   min-width: 0;
-  min-height: 280px;
-  padding: 22px 30px;
+  min-height: 286px;
+  padding: 28px 32px;
   overflow: hidden;
-  border: 1px solid rgb(205 187 255 / 25%);
-  border-radius: 24px;
-  background:
-    radial-gradient(ellipse at 82% 50%, rgb(122 85 224 / 18%), transparent 42%),
-    radial-gradient(ellipse at 5% 0%, rgb(201 175 255 / 8%), transparent 52%),
-    linear-gradient(122deg, #1c1b2e, #141622 84%);
-  box-shadow:
-    inset 0 1px 0 #ffffff0d,
-    0 20px 64px #0002;
-}
-.hero::before {
-  position: absolute;
-  content: "";
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    118deg,
-    transparent 20%,
-    rgb(214 193 255 / 4%) 48%,
-    transparent 66%
-  );
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: linear-gradient(112deg, #1b1a23, #17171e 84%);
 }
 .heroCopy {
   position: relative;
@@ -242,6 +221,7 @@
   position: relative;
   align-self: stretch;
   min-width: 0;
+  opacity: 0.72;
 }
 .heroVisual > div {
   min-height: 232px;
@@ -252,7 +232,7 @@
   align-items: center;
   gap: 7px;
   margin-bottom: 9px;
-  color: #bca8ef;
+  color: #aba2bd;
   font-size: 11px;
   letter-spacing: 0.06em;
   white-space: nowrap;
@@ -267,26 +247,24 @@
 .hero h1 {
   margin: 0;
   font-size: 38px;
-  line-height: 1.07;
-  font-weight: 660;
+  line-height: 1.15;
+  font-weight: 600;
   letter-spacing: -0.045em;
   color: #f3eeff;
 }
 
 .hero h1 > span {
-  background: linear-gradient(110deg, #e5d4ff, #c1aaff 45%, #a9cafa 96%);
-  background-clip: text;
-  color: transparent;
+  color: #c6b5ed;
 }
 .heroDescription {
-  margin: 11px 0 14px;
-  color: #c1bcd3;
+  margin: 14px 0 20px;
+  color: var(--muted);
   font-size: 13px;
 }
 .heroActions {
   display: flex;
   align-items: center;
-  gap: 23px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -310,23 +288,17 @@
 }
 
 .primaryButton {
-  color: #211638;
-  border-color: #edd2ff9c;
-  background: linear-gradient(105deg, #ecd4ff, #cbb1ff 57%, #adc6f4);
-  box-shadow:
-    inset 0 1px 0 #fff9,
-    0 6px 24px #9161e533;
+  color: #211a30;
+  border-color: transparent;
+  background: #bbaaec;
 }
 
 .primaryButton:hover {
-  background: #f0dfff;
-  border-color: #fff0ff;
-  box-shadow:
-    inset 0 1px 0 #fffa,
-    0 8px 32px #a174f54f;
+  background: #cabbf2;
+  border-color: transparent;
 }
 .buttonArrow {
-  margin-left: 18px;
+  margin-left: 6px;
   opacity: 0.65;
 }
 .secondaryButton {
@@ -354,11 +326,28 @@
   color: #aaa1ba;
   font-size: 12px;
 }
+.blankCanvasButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: #c3bdcf;
+  background: transparent;
+  font-size: 13px;
+}
+.blankCanvasButton:hover {
+  color: var(--text);
+  background: #ffffff07;
+}
 .quickDesigns {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 22px;
 }
 .quickDesigns button {
   position: relative;
@@ -369,10 +358,10 @@
   min-width: 0;
   min-height: 39px;
   padding: 9px 11px;
-  border: 1px solid #bea4ef35;
+  border: 1px solid transparent;
   border-radius: 10px;
-  background: linear-gradient(125deg, #ad8bec10, #ffffff04);
-  color: #e8dcfa;
+  background: #ffffff04;
+  color: #c7c1d4;
   font: inherit;
   text-align: left;
   transition:
@@ -381,8 +370,8 @@
 }
 
 .quickDesigns button:hover:not(:disabled) {
-  border-color: #d6bdff7d;
-  background: #a885e926;
+  border-color: #ffffff18;
+  background: #ffffff0a;
 }
 .quickDesignIcon {
   display: grid;
@@ -392,14 +381,14 @@
   flex-shrink: 0;
   border: 0;
   background: transparent;
-  color: #d4b8ff;
+  color: #b2a3ce;
 }
 
 .quickDesigns button[data-task="revise"] .quickDesignIcon {
-  color: #ffd3b7;
+  color: #b2a3ce;
 }
 .quickDesigns button[data-task="event-material"] .quickDesignIcon {
-  color: #a9e8e1;
+  color: #b2a3ce;
 }
 .quickDesignCopy {
   display: grid;
@@ -461,7 +450,7 @@
 
 .projectsSection {
   position: relative;
-  margin-top: 24px;
+  margin-top: 32px;
   padding-bottom: 32px;
 }
 .sectionHeading {
@@ -489,10 +478,10 @@
 .sectionTitle > span {
   min-width: 24px;
   padding: 2px 6px;
-  border: 1px solid #9270bf57;
+  border: 1px solid transparent;
   border-radius: 5px;
-  background: #8f69bd26;
-  color: #d3b5f5;
+  background: #ffffff09;
+  color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -631,18 +620,15 @@
   display: grid;
   align-items: stretch;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 22px;
+  gap: 18px;
 }
 .createCard,
 .projectCard {
   position: relative;
   min-width: 0;
-  border: 1px solid #d1bdff26;
-  border-radius: 18px;
-  background: linear-gradient(145deg, #1b192b, #11131e);
-  box-shadow:
-    inset 0 1px 0 #ffffff05,
-    0 12px 28px #0002;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #1a1921;
   transition:
     border-color 180ms,
     box-shadow 180ms;
@@ -651,11 +637,8 @@
 .projectCard:hover,
 .projectCard:focus-within,
 .createCard:hover {
-  border-color: #bba0e97a;
-  box-shadow:
-    inset 0 1px 0 #ffffff0c,
-    0 12px 36px #0005,
-    0 0 30px #a47cdf0a;
+  border-color: #bbaaec45;
+  box-shadow: 0 8px 24px #0002;
 }
 .projectCard[data-menu-open="true"] {
   z-index: 8;
@@ -671,9 +654,7 @@
   padding: 24px 18px;
   border-style: dashed;
   color: #d1b9e6;
-  background:
-    radial-gradient(ellipse at 50% 20%, #7854c427, transparent 70%),
-    linear-gradient(145deg, #221b36, #171423);
+  background: #a897e206;
 }
 
 .createCardEyebrow {
@@ -1233,7 +1214,7 @@
   z-index: 3;
   inset: 0;
   pointer-events: none;
-  opacity: calc(var(--pointer-visible, 0) * 0.32);
+  opacity: calc(var(--pointer-visible, 0) * 0.15);
   background: radial-gradient(
     250px circle at var(--pointer-x, 50vw) var(--pointer-y, 28vh),
     rgb(188 164 255 / 9%),
@@ -1248,7 +1229,7 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  opacity: 0.28;
+  opacity: 0.14;
 }
 .pointerTrail[data-active="false"] {
   opacity: 0;
@@ -1298,14 +1279,27 @@
 }
 
 @media (max-height: 800px) and (min-width: 1001px) {
+  .main {
+    padding-top: 18px;
+  }
   .hero {
-    padding-block: 20px;
+    min-height: 260px;
+    padding-block: 18px;
   }
   .hero h1 {
     font-size: 35px;
   }
+  .heroDescription {
+    margin: 10px 0 14px;
+  }
+  .quickDesigns {
+    margin-top: 14px;
+  }
   .heroVisual > div {
-    min-height: 232px;
+    min-height: 220px;
+  }
+  .projectsSection {
+    margin-top: 24px;
   }
 }
 

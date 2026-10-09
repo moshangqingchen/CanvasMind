@@ -1,19 +1,7 @@
-/* Violet glass studio. Graph geometry remains in canvas-studio. */
+/* Quiet studio surfaces. Graph geometry remains in canvas-studio. */
 .canvas-editor {
-  --bg: #10111b;
-  --panel: #1d1e30;
-  --panel-2: #27283d;
-  --panel-3: #34344c;
-  --line: #3a3c55;
-  --text: #f2f0ff;
-  --muted: #aaaac2;
-  --accent: #bbacff;
-  --accent-2: #a8c6ff;
-  --ui-panel-border: var(--line);
-  --ui-panel-border-strong: #baabff;
   --xy-resize-background-color: #c8b8ff;
   --xy-resize-line-color: #c8b8ff;
-  --shadow: 0 20px 60px #07081166;
   font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
 }
 .canvas-editor .canvas-wrap {
@@ -23,14 +11,14 @@
     var(--bg);
 }
 .canvas-editor .topbar {
-  background: linear-gradient(110deg, #202033ee, #191b2bed 62%, #202238ee);
-  box-shadow: 0 4px 28px #07091622, inset 0 1px #ffffff06;
-  border-bottom-color: #c5beff1b;
+  background: var(--panel);
+  box-shadow: none;
+  border-bottom-color: var(--line);
   padding-inline: 16px;
 }
 .canvas-editor .editor-project-title { font-size: 14px; font-weight: 650; }
 .canvas-editor .brand-mark { color: #c6b4ff; filter: drop-shadow(0 0 9px #a28aff4d); }
-.canvas-editor .brand-version { color: #b5afd4; border-color: #bfb0ff29; background: #aa96ff0b; }
+.canvas-editor .brand-version { color: var(--muted); border-color: transparent; background: transparent; }
 .canvas-editor .button.primary {
   background: linear-gradient(125deg, #d5c1ff, #9faeff);
   border-color: #e0d4ff80;
@@ -40,7 +28,7 @@
 }
 .canvas-editor .button.primary:hover:not(:disabled) { background: linear-gradient(125deg, #e4d5ff, #b7c3ff); box-shadow: 0 6px 24px #a290f238; }
 .canvas-editor .top-actions .api-settings-button { background: #c2b0ff08; border-color: #c5b7ff24; color: #c9c5df; }
-.canvas-editor .top-actions > .icon-button { background: #c2bbff07; border-color: #c5b7ff21; color: #b4b3cb; border-radius: 10px; }
+.canvas-editor .top-actions > .icon-button { background: transparent; border-color: transparent; color: var(--muted); border-radius: 10px; }
 .canvas-editor .top-actions > .icon-button:hover { background: #b9a5ff14; border-color: #baa9ff55; color: #f1eaff; }
 .canvas-editor .canvas-command-trigger {
   display: flex;
@@ -49,9 +37,9 @@
   gap: 8px;
   min-height: 34px;
   padding: 6px 9px;
-  border: 1px solid #b4a8f62b;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: linear-gradient(125deg, #111322aa, #28243a55);
+  background: var(--panel-2);
   color: #b6b3cf;
   font-size: 12px;
   white-space: nowrap;
@@ -82,11 +70,11 @@
   width: 64px;
   padding: 6px;
   gap: 2px;
-  border-color: #cfc1ff29;
-  border-radius: 20px;
-  background: linear-gradient(160deg, #313047e8, #1c2035ee 68%);
-  backdrop-filter: blur(22px) saturate(125%);
-  box-shadow: 0 12px 36px #08091866, inset 0 1px #ffffff10;
+  border-color: var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  backdrop-filter: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
 }
 .canvas-editor .editor-rail button {
   display: flex;
@@ -116,38 +104,28 @@
   line-height: 1.2;
   transition: none;
 }
-.canvas-editor .editor-rail button:first-child { color: #e0c9ff; background: linear-gradient(145deg, #b096ff19, #7e92fc0e); }
+.canvas-editor .editor-rail button:first-child { color: #cbbcff; background: transparent; }
 .canvas-editor .editor-rail button:hover { background: #c0a8ff17; color: #fff5ff; transform: none; }
 .canvas-editor .editor-rail button[aria-pressed="true"] { background: linear-gradient(140deg, #b996ff27, #91a8ff16); color: #e1d3ff; box-shadow: inset 0 0 0 1px #cbb9ff20; }
 .canvas-editor .rail-divider { width: 28px; margin: 4px auto; background: linear-gradient(90deg, transparent, #a69ad136, transparent); }
 .canvas-editor .sidebar.mobile-open,
 .canvas-editor .project-sidebar.mobile-open { left: 92px; width: min(350px, calc(100vw - 106px)); }
 .canvas-editor .workspace.inspector-open > .inspector {
-  background:
-    radial-gradient(ellipse at 25% 0%, #af8bff14, transparent 44%),
-    linear-gradient(155deg, #24243a, #181c2c 75%);
-  border-color: #c1b2ff29;
-  border-radius: 24px;
-  box-shadow: -8px 0 32px #0809181a, inset 0 1px #ffffff0a;
+  background: var(--panel);
+  border-color: var(--line);
+  border-radius: 18px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.18);
 }
 .canvas-editor .inspector-resize-handle::before { background: #b5a3ef; }
-.canvas-editor .agent-panel-head strong { color: #ece6ff; font-size: 14px; }
-.canvas-editor .agent-panel-icon { background: linear-gradient(145deg, #ad8df526, #7799e51a); border-color: #bba3ee45; color: #cdbaff; }
-.canvas-editor .agent-message { background: #2b2b40; border-color: #aba0d122; color: #e1dff0; }
-.canvas-editor .agent-message.user { background: linear-gradient(135deg, #343047, #2d304c); border-color: #bea2ee33; color: #f0e7ff; }
 .canvas-editor .director-welcome h2 { font-size: 23px; font-weight: 600; color: #efe9ff; letter-spacing: -.6px; }
 .canvas-editor .director-welcome p { color: #acaac3; font-size: 13px; }
 .canvas-editor .director-welcome-icon { width: 54px; height: 54px; border: 1px solid #bca4fa3b; border-radius: 18px; background: linear-gradient(145deg, #b496f128, #7895ec12); box-shadow: 0 10px 24px #0b0b1f40, inset 0 1px #ffffff15; color: #cab8ff; }
 .canvas-editor .director-starters button { background: #ffffff05; border-color: #bdb1e726; color: #dad3ed !important; font-size: 12px; }
 .canvas-editor .director-starters button:hover { background: #b69bfa14; border-color: #c0aaff61; }
-.canvas-editor .agent-panel .agent-composer { background: linear-gradient(155deg, #161825, #121525); border-color: #bca8eb2e; border-radius: 18px; box-shadow: inset 0 1px #ffffff05; }
-.canvas-editor .agent-panel .agent-composer:focus-within { border-color: #a892e48c; box-shadow: 0 0 0 3px #b69bfa0a; }
-.canvas-editor .agent-panel textarea { color: #e9e5f7; font-size: 13px; }
-.canvas-editor .agent-panel .agent-composer .agent-send { color: #29213d; background: linear-gradient(140deg, #dac2ff, #a7baff); }
-.canvas-editor .canvas-toolbar { background: linear-gradient(150deg, #313043eb, #20253deb); border-color: #c9bcfa2c; border-radius: 16px; box-shadow: 0 12px 34px #07091766, inset 0 1px #ffffff0e; }
+.canvas-editor .canvas-toolbar { background: var(--panel); border-color: var(--line); border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
 .canvas-editor .canvas-toolbar .button { color: #cfcae0; }
 .canvas-editor .canvas-drawing-tools button.active { background: linear-gradient(140deg, #bfa5ff24, #91afff17); color: #e6d9ff; box-shadow: inset 0 0 0 1px #c9b5ff2b; }
-.canvas-editor .react-flow__controls { background: linear-gradient(140deg, #292b3deb, #1a2032ef); border-color: #c9bcfa27; border-radius: 13px; box-shadow: 0 8px 28px #07091755, inset 0 1px #ffffff0a; }
+.canvas-editor .react-flow__controls { background: var(--panel); border-color: var(--line); border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.15); }
 .canvas-editor .react-flow__controls-button { color: #b9b7d1; }
 .canvas-editor .react-flow__controls-button[aria-pressed="true"] { color: #decbff; background: #ae90ff1f; }
 .canvas-editor .canvas-zoom-value { color: #d8d3ed; font-size: 11px; }
@@ -158,8 +136,8 @@
 .canvas-editor .canvas-empty-hint { color: #9390ad; font-size: 12px; }
 
 /* Hierarchy stays legible at the working zoom level. */
-.canvas-editor .node-card { background: linear-gradient(145deg, #292b40, #1d2235); border-color: #b9afd43d; border-radius: 16px; box-shadow: 0 12px 32px #05081d40, inset 0 1px #ffffff09; }
-.canvas-editor .node-card[data-node-type="prompt"] { background: linear-gradient(145deg, #302a40, #242339 72%); --node-accent: #dfb5df; }
+.canvas-editor .node-card { background: var(--panel-2); border-color: var(--line); border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.2), inset 0 1px rgba(255,255,255,.025); }
+.canvas-editor .node-card[data-node-type="prompt"] { background: #211e2b; --node-accent: #dfb5df; }
 .canvas-editor .node-card[data-node-type="image-generation"] { --node-accent: #bda9ff; }
 .canvas-editor .node-card[data-node-type="video-generation"] { --node-accent: #9bdacd; }
 .canvas-editor .node-card .node-head { background: linear-gradient(100deg, #ffffff06, #bab4ff05); border-bottom-color: #c2b2ea16; }
@@ -184,9 +162,9 @@
 .canvas-editor .node-card .tiptap-prompt { color: #ded9ed; font-size: 14px; line-height: 1.75; }
 .canvas-editor .prompt-overview { color: #c1b7d4; font-size: 14px; }
 .canvas-editor :is(.port-label, .node-linked-limit) { color: #a9a2bd; }
-.canvas-editor .node-config-popover-portal { border-color: #b4a0dc4d; background: #202238; --config-input: #171a2c; --config-border: #4a4562; box-shadow: 0 22px 64px #06081c70, inset 0 1px #ffffff08; }
-.canvas-editor .node-config-popover-portal > header { background: linear-gradient(120deg, #302b45, #252e43); }
-.canvas-editor .node-config-popover-body { background: #202238; }
+.canvas-editor .node-config-popover-portal { border-color: rgba(169,152,255,.3); background: var(--panel); --config-input: #101119; --config-border: var(--line-strong); box-shadow: 0 18px 48px rgba(0,0,0,.4); }
+.canvas-editor .node-config-popover-portal > header { background: var(--panel-2); }
+.canvas-editor .node-config-popover-body { background: var(--panel); }
 .canvas-editor :is(.node-config-model-field, .node-config-provider-selectors select) { color: #e8e1f6; }
 .canvas-editor :is(button, input, textarea, select, [tabindex]):focus-visible { outline-color: #c2aaff; }
 
