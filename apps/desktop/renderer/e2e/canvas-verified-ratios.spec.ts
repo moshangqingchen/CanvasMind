@@ -55,7 +55,7 @@ test("Chuangxiang historical small response keeps 2K and 4K plus every ratio vis
   }
 });
 
-test("one passed 4K probe exposes every ratio, preserves auto, and keeps the panel attached to its node", async ({ page, request }, testInfo) => {
+test("one passed 4K probe exposes every ratio, preserves auto, and keeps the panel below its node while clearing tools", async ({ page, request }, testInfo) => {
   const descriptor = effectiveImageCapabilities({
     supplier: { id: "isolated", name: "隔离", supplierKey: "isolated", kind: "newapi", apiUrl: "https://isolated.invalid", siteUrl: "https://isolated.invalid", catalog: { groups: [] }, scanStatus: "live", createdAt: "now", updatedAt: "now" },
     connection: { id: "fixture", provider: "openai", config: {} },
@@ -77,16 +77,32 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   await open();
   const panel = page.getByRole("dialog", { name: "比例验收 模型与参数" });
   await expect(panel).toHaveCSS("width", "420px");
+  const inspector = page.getByRole("button", { name: "智能体面板", exact: true });
+  if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
+  await expect(inspector).toHaveAttribute("aria-expanded", "false");
   const assertAttached = () => expect.poll(() => panel.evaluate(element => {
-    const card = element.closest(".react-flow__node")!.querySelector(".node-card")!.getBoundingClientRect();
+    const host = element.closest(".react-flow__node")!;
+    const card = host.querySelector(".node-card")!.getBoundingClientRect();
     const bounds = element.getBoundingClientRect();
+    const canvas = host.closest(".canvas-wrap")!.getBoundingClientRect();
+    const rail = document.querySelector(".editor-rail")!.getBoundingClientRect();
+    const left = Math.max(canvas.left + 8, rail.width > 0 && rail.height > 0 ? rail.right + 8 : 0);
+    const right = Math.min(canvas.right, window.innerWidth) - 8;
+    const width = Math.min(card.width, right - left);
+    // Preserve the node anchor unless the rail or viewport requires a shift.
+    const horizontalError = card.width > right - left || card.left < left
+      ? Math.abs(bounds.left - left)
+      : card.right > right ? Math.abs(bounds.right - right) : Math.abs(bounds.left - card.left);
     const viewport = document.querySelector(".react-flow__viewport")!;
     const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a;
+    const close = element.querySelector('[aria-label="关闭模型与参数面板"]')!;
     return Math.max(
-      Math.abs(bounds.x - card.x),
-      Math.abs(bounds.width - card.width),
+      horizontalError,
+      Math.abs(bounds.width - width),
+      left - bounds.left, bounds.right - right,
       Math.abs(bounds.y - card.bottom - 10 * zoom),
       Math.abs(bounds.height - 560 * zoom),
+      Math.abs(close.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(close).width) * zoom),
     );
   })).toBeLessThanOrEqual(1);
   await assertAttached();
@@ -135,6 +151,10 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   await page.reload();
   await open();
   await expect(size).toHaveValue("auto");
+  // Reload restores the default desktop inspector independently of the saved
+  // model parameters. Close it normally before testing the narrow canvas.
+  if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
+  await expect(inspector).toHaveAttribute("aria-expanded", "false");
   await expect(panel.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(panel).toHaveCSS("height", "560px");
   await page.screenshot({ path: testInfo.outputPath("attached-panel-ratios.png") });
@@ -144,5 +164,7 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   await page.screenshot({ path: testInfo.outputPath("panel-below-node.png") });
   await page.setViewportSize({ width: 760, height: 580 });
   await assertAttached();
+  await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
+  expect((await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].position).toEqual({ x: 80, y: 30 });
   expect(submissions).toBe(0);
 });

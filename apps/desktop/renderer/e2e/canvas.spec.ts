@@ -497,14 +497,23 @@ function attachedPanelGeometry(panel: Locator) {
     const node = element.closest(".react-flow__node")!;
     const card = node.querySelector(".node-card")!.getBoundingClientRect();
     const bounds = element.getBoundingClientRect();
+    const canvas = node.closest(".canvas-wrap")!.getBoundingClientRect();
+    const rail = document.querySelector(".editor-rail")!.getBoundingClientRect();
+    const left = Math.max(canvas.left + 8, rail.width > 0 && rail.height > 0 ? rail.right + 8 : 0);
+    const right = Math.min(canvas.right, window.innerWidth) - 8;
+    const width = Math.min(card.width, right - left);
+    const horizontalError = card.width > right - left || card.left < left
+      ? Math.abs(bounds.left - left)
+      : card.right > right ? Math.abs(bounds.right - right) : Math.abs(bounds.left - card.left);
     const viewport = document.querySelector(".react-flow__viewport")!;
     const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a;
     const close = element.querySelector('[aria-label="关闭模型与参数面板"]')!;
     return {
       zoom, width: bounds.width, y: bounds.y,
       attachmentError: Math.max(
-        Math.abs(bounds.x - card.x),
-        Math.abs(bounds.width - card.width),
+        horizontalError,
+        Math.abs(bounds.width - width),
+        left - bounds.left, bounds.right - right,
         Math.abs(bounds.y - card.bottom - 10 * zoom),
         Math.abs(bounds.height - 560 * zoom),
         Math.abs(close.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(close).width) * zoom),
@@ -2013,23 +2022,30 @@ test.describe("超级画布完整验收", () => {
       .toMatchObject({ size: "1536x1024", quality: "high", n: 3 });
   });
 
-  test("模型参数在窄窗口与缩放时保持与节点等宽并同比缩放", async ({ page }) => {
+  test("模型参数在窄窗口避让工具，保持节点纵向锚点与同比缩放", async ({ page }, testInfo) => {
     await openWorkspace(page);
     const node = page.locator('.react-flow__node[data-id="e2e-image"]');
     await node.getByRole("button", { name: /打开 E2E 图片生成 模型与参数/u }).click();
     const dialog = page.getByRole("dialog", { name: "E2E 图片生成 模型与参数" });
     await expect(dialog).toBeVisible();
+    const initialPosition = (await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position;
+    const inspector = page.getByRole("button", { name: "智能体面板", exact: true });
+    if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
+    await expect(inspector).toHaveAttribute("aria-expanded", "false");
     const assertAttached = () => expect.poll(async () => (await attachedPanelGeometry(dialog)).attachmentError).toBeLessThanOrEqual(1);
     for (const width of [1280, 900, 390]) {
       await page.setViewportSize({ width, height: 820 });
       await assertAttached();
+      await dialog.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
+      await page.getByRole("button", { name: "打开节点与素材库", exact: true }).click({ trial: true });
     }
     await page.setViewportSize({ width: 1280, height: 820 });
     const beforeZoom = (await attachedPanelGeometry(dialog)).zoom;
     await page.locator(".react-flow__controls-zoomout").click();
     await expect.poll(async () => (await attachedPanelGeometry(dialog)).zoom).toBeLessThan(beforeZoom);
     await assertAttached();
-    await page.screenshot({ path: "../../../.codex-temp/redesign-model-panel.png" });
+    expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(initialPosition);
+    await page.screenshot({ path: testInfo.outputPath("narrow-clamped-model-panel.png") });
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
   });
@@ -2046,8 +2062,13 @@ test.describe("超级画布完整验收", () => {
     const card = page.locator('.react-flow__node[data-id="e2e-image"] .node-card');
     await card.getByRole("button", { name: /打开 E2E 图片生成 模型与参数/u }).click();
     const panel = page.getByRole("dialog", { name: "E2E 图片生成 模型与参数" });
+    await expect(panel).toBeVisible();
+    const inspector = page.getByRole("button", { name: "智能体面板", exact: true });
+    if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
+    await expect(inspector).toHaveAttribute("aria-expanded", "false");
     const assertAttached = () => expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
     await assertAttached();
+    expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(image.position);
     const pinnedBox = await panel.boundingBox();
     expect(pinnedBox!.width).toBeCloseTo((await card.boundingBox())!.width, 0);
     const header = card.locator(".node-head");
@@ -2058,6 +2079,8 @@ test.describe("超级画布完整验收", () => {
     await assertAttached();
     expect((await panel.boundingBox())!.y).toBeGreaterThan(pinnedBox!.y);
     expect((await panel.boundingBox())!.width).toBeCloseTo(pinnedBox!.width, 0);
+    await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).not.toEqual(image.position);
+    const draggedPosition = (await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position;
     const beforeZoom = await attachedPanelGeometry(panel);
     await page.mouse.move(100, 880);
     await page.mouse.wheel(0, 400);
@@ -2065,6 +2088,7 @@ test.describe("超级画布完整验收", () => {
     await assertAttached();
     const afterZoom = await attachedPanelGeometry(panel);
     expect(afterZoom.width / beforeZoom.width).toBeCloseTo(afterZoom.zoom / beforeZoom.zoom, 3);
+    expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(draggedPosition);
     const beforeResize = await card.boundingBox();
     const handle = page.locator('.react-flow__node[data-id="e2e-image"] .react-flow__resize-control.handle.bottom.right');
     const resizeBox = await handle.boundingBox();
@@ -2073,6 +2097,7 @@ test.describe("超级画布完整验收", () => {
     await expect.poll(async () => (await card.boundingBox())!.width).toBeGreaterThan(beforeResize!.width + 20);
     await assertAttached();
     expect((await panel.boundingBox())!.width).toBeGreaterThan(beforeResize!.width + 20);
+    expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(draggedPosition);
     await page.screenshot({ path: testInfo.outputPath("attached-panel.png") });
   });
 

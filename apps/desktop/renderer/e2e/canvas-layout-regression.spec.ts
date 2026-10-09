@@ -80,29 +80,41 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       const canvasId = await createLayoutCanvas(request, connection.id, zoom, nodeWidth);
       await page.goto(`/canvas/${canvasId}`);
       await expect(page.locator(".canvas-zoom-value")).toHaveText(`${zoom * 100}%`);
-      const inspectorToggle = page.getByRole("button", { name: "智能体面板", exact: true });
-      if (await inspectorToggle.getAttribute("aria-expanded") === "true") await inspectorToggle.click();
       await page.getByRole("button", { name: `打开 ${NODE_LABEL} 模型与参数`, exact: true }).click();
       const panel = page.getByRole("dialog", { name: `${NODE_LABEL} 模型与参数`, exact: true });
+      const model = panel.getByRole("combobox", { name: `${NODE_LABEL} 模型`, exact: true });
+      await expect(model).toHaveAttribute("title", `${MODEL_NAME} · layout-image-model`);
+      const inspectorToggle = page.getByRole("button", { name: "智能体面板", exact: true });
+      if (await inspectorToggle.getAttribute("aria-expanded") === "true") await inspectorToggle.click();
+      await expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
       await expect(panel).toHaveCSS("width", `${nodeWidth}px`);
       await expect(panel).toHaveCSS("font-size", "13px");
-      // At 2x the panel may extend below the screen. Keeping it attached to the
-      // node takes priority over the old screen-space clipping/clamping rule.
+      // Vertical placement and scale follow the node. Horizontal placement
+      // shifts only as needed to clear the rail and stay inside the canvas.
       await expect.poll(() => panel.evaluate((element, expected) => {
         const card = document.querySelector('.react-flow__node[data-id="layout-image"] .node-card')!.getBoundingClientRect();
         const bounds = element.getBoundingClientRect();
+        const canvas = element.closest(".canvas-wrap")!.getBoundingClientRect();
+        const rail = document.querySelector(".editor-rail")!.getBoundingClientRect();
+        const left = Math.max(canvas.left + 8, rail.width > 0 && rail.height > 0 ? rail.right + 8 : 0);
+        const right = Math.min(canvas.right, window.innerWidth) - 8;
+        const width = Math.min(card.width, right - left);
+        const horizontalError = card.width > right - left || card.left < left
+          ? Math.abs(bounds.left - left)
+          : card.right > right ? Math.abs(bounds.right - right) : Math.abs(bounds.left - card.left);
+        const close = element.querySelector('[aria-label="关闭模型与参数面板"]')!;
         return Math.max(
-          Math.abs(bounds.x - card.x),
-          Math.abs(bounds.width - card.width),
-          Math.abs(bounds.width - expected.nodeWidth * expected.zoom),
+          horizontalError,
+          Math.abs(bounds.width - width),
+          Math.abs(bounds.width - Math.min(expected.nodeWidth * expected.zoom, right - left)),
+          left - bounds.left, bounds.right - right,
           Math.abs(bounds.y - card.bottom - 10 * expected.zoom),
           Math.abs(bounds.height - 560 * expected.zoom),
+          Math.abs(close.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(close).width) * expected.zoom),
         );
       }, { zoom, nodeWidth })).toBeLessThanOrEqual(1);
       await expect(panel.getByRole("button", { name: "关闭模型与参数面板" })).toBeInViewport({ ratio: 1 });
       await expect(panel.getByRole("button", { name: "管理供应商与密钥" })).toBeInViewport({ ratio: 1 });
-      const model = panel.getByRole("combobox", { name: `${NODE_LABEL} 模型`, exact: true });
-      await expect(model).toHaveAttribute("title", `${MODEL_NAME} · layout-image-model`);
       await expect(panel.locator(".node-config-provider-header > span").first()).toHaveCSS("font-size", "12px");
       const body = panel.locator(".node-config-popover-body");
       await expect(body).toHaveCSS("overflow-y", "auto");
@@ -113,7 +125,9 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       await expect(label).toHaveCSS("font-size", "12px");
       await expect.poll(() => label.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
       await page.screenshot({ path: testInfo.outputPath(`panel-${zoom * 100}.png`) });
+      await page.getByRole("button", { name: "打开节点与素材库", exact: true }).click({ trial: true });
       await panel.getByRole("button", { name: "关闭模型与参数面板" }).click();
+      expect((await (await request.get(`/api/canvas/${canvasId}`)).json()).graph.nodes[0].position).toEqual({ x: 24 / zoom, y: 40 / zoom });
     }
 
     const toolbar = page.locator(".canvas-toolbar");
