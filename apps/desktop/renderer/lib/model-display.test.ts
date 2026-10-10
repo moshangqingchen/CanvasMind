@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { appendPriceLabelOnce, cleanModelDisplayName, modelPriceSummary, comparableModelPrice, modelEstimatedCost, displayPriceLabel } from "./model-display";
-import { mediaExpressionPricing, type ModelDescriptor } from "@super-canvas/providers";
+import { mediaExpressionPricing, remainingVideoModel, type ModelDescriptor } from "@super-canvas/providers";
 import { chuangxiangCatalogPricing } from "../../../../packages/providers/src/chuangxiang-catalog-pricing";
 import { applyChuangxiangMidjourneyCapabilities } from "@super-canvas/providers/chuangxiang-midjourney-contract";
 
 describe("appendPriceLabelOnce", () => {
+  it("quotes user-authorized Seedance fallback durations without inferring missing resolution support", () => {
+    const model = remainingVideoModel("jiasu", "seedance2.5-全参真人", {
+      id: "seedance2.5-全参真人", name: "seedance2.5-全参真人", operations: ["video.generate"],
+      pricing: { kind: "per-request", unitAmount: 1.1, currency: "CNY", checkedAt: "now", confidence: "exact" },
+    }, { group: "vip" })!;
+    expect(model.metadata?.durationRangeSource).toBe("user-fallback");
+    for (const duration of [1, 29, 30]) {
+      expect(modelEstimatedCost(model, { duration })).toBe("1.1 CNY");
+      expect(modelEstimatedCost(model, { seconds: duration })).toBe("1.1 CNY");
+      expect(modelEstimatedCost(model, { duration, resolution: "720p" })).toBeUndefined();
+    }
+    for (const duration of [0, 31, 38]) expect(modelEstimatedCost(model, { duration })).toBeUndefined();
+  });
   it("does not present an invalid saved video duration as a priced, supported combination", () => {
     const model: ModelDescriptor = { id: "bounded-video", name: "Bounded", operations: ["video.generate"],
       parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", min: 5, max: 30, step: 1, default: 5 }],

@@ -543,8 +543,8 @@ function ParameterControl({
           parameters[aspectRatioKey] !== undefined
         ? ""
         : (parameterValueForModel(sizeAspectRatioContext.model, parameters, descriptor.key) ?? descriptor.default ?? "");
-  const durationControl = videoDurationControl(nodeType, descriptor, value, durationRangeUnverified, durationUpperBoundConfirmed,
-    videoDurationControlContext(sizeAspectRatioContext.model, descriptor.key));
+  const durationContext = videoDurationControlContext(sizeAspectRatioContext.model, descriptor.key);
+  const durationControl = videoDurationControl(nodeType, descriptor, value, durationRangeUnverified, durationUpperBoundConfirmed, durationContext);
   const unverifiedValue = parameterValueForModel(sizeAspectRatioContext.model, parameters, descriptor.key) ?? "";
   const confirmedDefault = durationControl?.kind === "unavailable" ? durationControl.confirmedDefault
     : confirmedVideoParameterDefault(sizeAspectRatioContext.model, descriptor.key) === descriptor.default ? descriptor.default : undefined;
@@ -660,7 +660,7 @@ function ParameterControl({
               title={disabledReason ?? descriptor.description}
               aria-valuetext={durationControl.invalidValue !== undefined ? `已保存 ${durationControl.invalidValue}，需要重新选择；候选 ${durationControl.value} 秒` : `${durationControl.value} 秒`}
               aria-invalid={durationControl.invalidValue !== undefined || undefined}
-              aria-describedby={`${id}-bounds${durationControl.invalidValue !== undefined ? ` ${id}-saved` : ""}`}
+              aria-describedby={`${id}-bounds${durationContext.userFallbackRange ? ` ${id}-source` : ""}${durationControl.invalidValue !== undefined ? ` ${id}-saved` : ""}`}
               onChange={(event) => update(event.target.value)}
             />
             <output htmlFor={id}>{durationControl.invalidValue !== undefined ? `${durationControl.invalidValue}（待修正）` : `${durationControl.value} 秒`}</output>
@@ -669,6 +669,9 @@ function ParameterControl({
             <span>{durationControl.min} 秒</span>
             <span>{durationControl.max} 秒</span>
           </small>
+          {durationContext.userFallbackRange && <small id={`${id}-source`} className="parameter-help" data-duration-source="user-fallback">
+            用户兜底范围：{durationControl.min}–{durationControl.max} 秒。供应商未公布完整范围；已公布的限制仍优先适用。
+          </small>}
           {durationControl.invalidValue !== undefined && <div id={`${id}-saved`} className="parameter-duration-saved parameter-help" role="status">
             <span>已保存的时长 {durationControl.invalidValue} 不符合当前范围或步长。请移动滑块重新选择；原值尚未修改。</span>
             <button type="button" className="button nodrag nopan" disabled={Boolean(disabledReason)}

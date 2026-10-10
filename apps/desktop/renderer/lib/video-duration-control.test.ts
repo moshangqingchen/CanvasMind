@@ -70,6 +70,19 @@ describe("supplier video duration controls", () => {
     expect(videoDurationControl("video-generation", { ...duration, valueType: "number", min: 0.5, max: 2, step: 0.5 }, 1.5)).toMatchObject({ min: 0.5, max: 2, step: 0.5 });
   });
 
+  it("uses explicit user fallback bounds without presenting them as published supplier limits", () => {
+    const descriptor = { ...duration, min: 1, default: undefined, description: "未公开该模型上限。" };
+    const model = { metadata: { durationRangeSource: "user-fallback", durationRangeUnverified: false } };
+    const context = videoDurationControlContext(model);
+    expect(context.userFallbackRange).toBe(true);
+    expect(videoDurationControl("video-generation", descriptor, 29, false, false, context)).toMatchObject({ kind: "range", value: 29, min: 1, max: 30 });
+    expect(videoDurationControl("video-generation", descriptor, 38, false, false, context)).toMatchObject({ kind: "range", min: 1, max: 30, invalidValue: "38" });
+    expect(videoDurationControl("video-generation", descriptor, 29)).toMatchObject({ kind: "unavailable" });
+    const unknown = videoDurationControlContext({ metadata: { ...model.metadata, durationRangeUnverified: true } });
+    expect(unknown.userFallbackRange).toBe(false);
+    expect(videoDurationControl("video-generation", descriptor, 29, true, false, unknown)).toMatchObject({ kind: "unavailable" });
+  });
+
   it("does not turn music duration, quantity or text parameters into video sliders", () => {
     expect(videoDurationControl("music-generation", duration, 5)).toBeUndefined();
     expect(videoDurationControl("image-generation", duration, 5)).toBeUndefined();

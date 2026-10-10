@@ -62,11 +62,22 @@ const referenceConditional: ModelDescriptor = {
   parameters: [{ key: "duration", label: "视频时长", control: "number", valueType: "integer", default: 5, min: 4, max: 29, step: 1 }],
 };
 const jiasuUndocumented: ModelDescriptor = {
-  ...remainingVideoModel("jiasu", "seedance2.5-全参真人", {
-    id: "seedance2.5-全参真人", name: "seedance2.5-全参真人", operations: ["video.generate"],
-    metadata: { canvasRunnable: true },
+  ...remainingVideoModel("jiasu", "jiasu-undocumented-fixture", {
+    id: "jiasu-undocumented-fixture", name: "未公布时长的其他视频型号", operations: ["video.generate"],
+    metadata: { canvasRunnable: true, jiasuCatalogRecord: { supportedEndpointTypes: ["openai-video"], apiParameters: [] } },
   }, { group: "vip" })!,
   pricing: { kind: "per-request", currency: "CNY", unitAmount: 1.1, checkedAt, confidence: "exact" },
+};
+const jiasuUserFallback: ModelDescriptor = {
+  ...remainingVideoModel("jiasu", "seedance2.5-全参真人", {
+    id: "seedance2.5-全参真人", name: "seedance2.5-全参真人", operations: ["video.generate"], metadata: { canvasRunnable: true },
+  }, { group: "vip" })!,
+  pricing: { kind: "per-request", currency: "CNY", unitAmount: 1.1, checkedAt, confidence: "exact" },
+};
+const jiasu20UserFallback: ModelDescriptor = {
+  ...remainingVideoModel("jiasu", "seedance2.0-mini-A", {
+    id: "seedance2.0-mini-A", name: "seedance2.0-mini-A", operations: ["video.generate"], metadata: { canvasRunnable: true },
+  }, { group: "vip" })!,
 };
 const documentedDefaults: ModelDescriptor = {
   ...remainingVideoModel("jiasu", "jiasu-exact-default-fixture", {
@@ -84,7 +95,7 @@ const manualDuration: ModelDescriptor = { ...continuous, id: "manual-free-durati
 const nativeUnknown: ModelDescriptor = { ...remainingVideoModel("chentu", "grok--video1.0")!,
   pricing: { kind: "per-request", currency: "CNY", unitAmount: 1.1, checkedAt, confidence: "exact" },
 };
-const models = [continuous, conditional, discrete, fixedSelect, fixedSeconds, unknownMaximum, legacyValue, suggestedValues, unverifiedMaximum, referenceConditional, jiasuUndocumented, documentedDefaults, manualDuration, nativeUnknown];
+const models = [continuous, conditional, discrete, fixedSelect, fixedSeconds, unknownMaximum, legacyValue, suggestedValues, unverifiedMaximum, referenceConditional, jiasuUndocumented, jiasuUserFallback, jiasu20UserFallback, documentedDefaults, manualDuration, nativeUnknown];
 
 test.beforeAll(() => {
   expect(process.env.PLAYWRIGHT_BASE_URL, "时长验收必须使用 globalSetup 的隔离数据库与 profile").toBeFalsy();
@@ -388,7 +399,7 @@ test("失效历史枚举保留并提示，下拉只允许当前供应商档位",
   } finally { f.safe(); }
 });
 
-test("佳速 vip 全参真人保留旧38秒与720p，显式选择供应商默认后清除别名并恢复按次报价", async ({ page, request }, testInfo) => {
+test("非Seedance未知型号保留旧38秒与720p，显式选择供应商默认后清除别名并恢复按次报价", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, jiasuUndocumented, { duration: 38, seconds: 35, resolution: "720p" });
   try {
     const duration = f.panel.getByLabel(jiasuUndocumented.parameters!.find(parameter => parameter.key === "duration")!.label, { exact: true });
@@ -408,10 +419,10 @@ test("佳速 vip 全参真人保留旧38秒与720p，显式选择供应商默认
     await page.reload(); await f.open();
     await expect(duration).toHaveValue("38");
     await expect(resolution).toHaveValue("720p");
-    await f.panel.screenshot({ path: testInfo.outputPath("jiasu-real-person-preserved-unconfirmed.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("jiasu-unknown-preserved-unconfirmed.png") });
     await resolution.evaluate(element => element.scrollIntoView({ block: "nearest" }));
     await expect(resolution).toBeInViewport({ ratio: 1 });
-    await f.panel.screenshot({ path: testInfo.outputPath("jiasu-real-person-preserved-resolution.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("jiasu-unknown-preserved-resolution.png") });
     await duration.selectOption("");
     await expect.poll(async () => {
       const saved = (await f.savedParameters())!;
@@ -429,7 +440,66 @@ test("佳速 vip 全参真人保留旧38秒与720p，显式选择供应商默认
     await expect(resolution).toHaveValue("");
     await expect(price).toContainText("本次预计费用 1.1 CNY");
     await f.assertUnmoved();
-    await f.panel.screenshot({ path: testInfo.outputPath("jiasu-real-person-supplier-defaults.png") });
+    await f.panel.screenshot({ path: testInfo.outputPath("jiasu-unknown-supplier-defaults.png") });
+  } finally { f.safe(); }
+});
+
+test("佳速全参真人采用用户1至30秒兜底，保留旧38并明确修正为29，未知分辨率仍需选择默认", async ({ page, request }, testInfo) => {
+  const f = await setup(page, request, jiasuUserFallback, { duration: 38, seconds: 35, resolution: "720p" });
+  try {
+    const duration = f.panel.getByRole("slider", { name: "视频时长", exact: true });
+    const resolution = f.panel.getByLabel("输出分辨率", { exact: true });
+    const prices = f.panel.getByLabel("当前参数价格", { exact: true });
+    await expect(duration).toHaveAttribute("min", "1");
+    await expect(duration).toHaveAttribute("max", "30");
+    await expect(duration).toHaveAttribute("step", "1");
+    await expect(duration).toHaveAttribute("aria-invalid", "true");
+    await expect(f.panel.locator(".parameter-duration-range output")).toHaveText("38（待修正）");
+    await expect(f.panel.locator('[data-duration-source="user-fallback"]')).toContainText("用户兜底范围：1–30 秒");
+    await expect(f.panel.locator('[data-duration-source="user-fallback"]')).toContainText("供应商未公布完整范围");
+    await expect(resolution).toHaveValue("720p");
+    await expect(resolution).toHaveAttribute("aria-invalid", "true");
+    await expect(prices).not.toContainText("本次预计费用");
+    await expect.poll(f.savedParameters).toMatchObject({ duration: 38, seconds: 35, resolution: "720p" });
+    await page.reload(); await f.open();
+    await expect(duration).toHaveAttribute("aria-invalid", "true");
+    await expect.poll(f.savedParameters).toMatchObject({ duration: 38, seconds: 35, resolution: "720p" });
+    await f.panel.screenshot({ path: testInfo.outputPath("jiasu-user-fallback-preserved-38.png") });
+    await duration.press("End"); await duration.press("ArrowLeft");
+    await expect(duration).toHaveValue("29");
+    await expect(duration).not.toHaveAttribute("aria-invalid", "true");
+    await expect.poll(async () => (await f.savedParameters())?.seconds).toBeUndefined();
+    await expect.poll(f.savedParameters).toMatchObject({ duration: 29, resolution: "720p" });
+    await expect(prices).not.toContainText("本次预计费用");
+    await resolution.selectOption("");
+    await expect.poll(f.savedParameters).toMatchObject({ duration: 29 });
+    await expect.poll(async () => (await f.savedParameters())?.resolution).toBeUndefined();
+    await expect(prices).toContainText("本次预计费用 1.1 CNY");
+    await page.reload(); await f.open();
+    await expect(duration).toHaveValue("29"); await expect(resolution).toHaveValue("");
+    await expect(prices).toContainText("本次预计费用 1.1 CNY");
+    await f.panel.screenshot({ path: testInfo.outputPath("jiasu-user-fallback-29-restored.png") });
+    await f.assertUnmoved();
+  } finally { f.safe(); }
+});
+
+test("未公布范围的Seedance2.0采用用户1至15秒兜底，型号切换不会借用2.5的30秒上限", async ({ page, request }) => {
+  const f = await setup(page, request, jiasu20UserFallback, { duration: 29 });
+  try {
+    const duration = f.panel.getByRole("slider", { name: "视频时长", exact: true });
+    await expect(duration).toHaveAttribute("min", "1"); await expect(duration).toHaveAttribute("max", "15");
+    await expect(duration).toHaveAttribute("aria-invalid", "true");
+    await expect(f.panel.locator('[data-duration-source="user-fallback"]')).toContainText("用户兜底范围：1–15 秒");
+    await expect.poll(f.savedParameters).toMatchObject({ duration: 29 });
+    await duration.press("End");
+    await expect.poll(f.savedParameters).toMatchObject({ duration: 15 });
+    await page.reload(); await f.open();
+    await expect(duration).toHaveValue("15");
+    await f.choose(jiasuUserFallback);
+    await expect(duration).toHaveAttribute("max", "30");
+    await f.choose(jiasu20UserFallback);
+    await expect(duration).toHaveAttribute("max", "15");
+    await f.assertUnmoved();
   } finally { f.safe(); }
 });
 

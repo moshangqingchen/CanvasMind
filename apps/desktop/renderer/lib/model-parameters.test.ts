@@ -118,6 +118,23 @@ describe("Jiasu saved video parameters", () => {
     expect(saved.seconds).toBe(6);
     expect(setParameterValueWithSizeExclusivity(saved, "duration", 7, { ...context, model: { metadata: {} } })).toHaveProperty("seconds", 6);
   });
+
+  it("keeps invalid history under the user's Seedance fallback until an explicit edit, without relaxing resolution", () => {
+    const model = descriptor("seedance2.5-全参真人");
+    expect(model.metadata).toMatchObject({ durationRangeSource: "user-fallback", durationRangeUnverified: false, resolutionRangeUnverified: true });
+    expect(model.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 1, max: 30, step: 1 });
+    const saved = { duration: 38, seconds: 35, resolution: "720p" };
+    const normalized = normalizedParametersForModel("video-generation", "openai", model, saved);
+    expect(normalized).toMatchObject(saved);
+    expect(saved).toEqual({ duration: 38, seconds: 35, resolution: "720p" });
+    const edited = setParameterValue(normalized, "duration", 29, model);
+    expect(edited).toMatchObject({ duration: 29, resolution: "720p" });
+    expect(edited).not.toHaveProperty("seconds");
+    const issues = (parameters: Record<string, unknown>) => jiasuVideoRequestIssues({ idempotencyKey: "user-fallback-no-http", connectionId: "jiasu-parameters",
+      operation: "video.generate", model: model.id, prompt: "本地参数验证", parameters }, model, "vip");
+    expect(issues(edited).map(issue => issue.path)).toEqual(["parameters.resolution"]);
+    expect(issues(setParameterValue(edited, "resolution", undefined, model))).toEqual([]);
+  });
 });
 
 describe("native supplier video duration aliases", () => {

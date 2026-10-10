@@ -18,17 +18,18 @@ export function videoDurationControlContext(model: Pick<ModelDescriptor, "metada
     preserveExplicitControl: metadata?.durationRangeUnverified !== true &&
       (metadata?.source === "manual" || metadata?.source === "paid-test" || metadata?.protocolEvidence === "paid-test"),
     confirmedDefault: confirmedVideoParameterDefault(model, key),
+    userFallbackRange: metadata?.durationRangeSource === "user-fallback" && metadata?.durationRangeUnverified !== true,
   };
 }
 
-/** Use the already-resolved supplier contract, never an inferred duration range. */
+/** Use resolved supplier bounds or an explicitly identified user fallback. */
 export function videoDurationControl(
   nodeType: GenerationNodeType,
   descriptor: ModelParameterDescriptor,
   value: unknown,
   rangeUnverified = false,
   conditionalUpperBoundConfirmed = false,
-  context: ReturnType<typeof videoDurationControlContext> = { preserveExplicitControl: false, confirmedDefault: undefined },
+  context: ReturnType<typeof videoDurationControlContext> = { preserveExplicitControl: false, confirmedDefault: undefined, userFallbackRange: false },
 ): VideoDurationControl | undefined {
   if (nodeType !== "video-generation" || !["duration", "seconds"].includes(descriptor.key)) return;
   const unavailable = (): VideoDurationControl | undefined => context.preserveExplicitControl ? undefined : ({ kind: "unavailable",
@@ -46,7 +47,7 @@ export function videoDurationControl(
   if (descriptor.control !== "number" || descriptor.options?.length) return unavailable();
   // Older saved catalogs predate the explicit provenance flag. Their existing
   // warning still distinguishes an editor guard from a published supplier cap.
-  if (!conditionalUpperBoundConfirmed && (rangeUnverified || /未公开[^。；;]*上限/u.test(descriptor.description ?? ""))) return unavailable();
+  if (!conditionalUpperBoundConfirmed && (rangeUnverified || !context.userFallbackRange && /未公开[^。；;]*上限/u.test(descriptor.description ?? ""))) return unavailable();
   const { min, max } = descriptor;
   const step = descriptor.step ?? 1;
   if (min === undefined || max === undefined || !Number.isFinite(min) ||

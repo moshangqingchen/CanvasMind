@@ -85,11 +85,10 @@ describe("Jiasu exact video supplier contract", () => {
 
   it("preserves unconfirmed saved values but rejects them before either adapter can send a request", async () => {
     const id = "seedance2.5-全参真人", model = jiasuVideoModel(id, undefined, "vip")!;
-    expect(model.metadata).toMatchObject({ durationRangeUnverified: true, resolutionRangeUnverified: true });
+    expect(model.metadata).toMatchObject({ durationRangeSource: "user-fallback", durationRangeUnverified: false, resolutionRangeUnverified: true });
     const duration = model.parameters?.find(parameter => parameter.key === "duration");
     expect(duration).toMatchObject({ control: "number", valueType: "integer" });
-    expect(duration).not.toHaveProperty("min");
-    expect(duration).not.toHaveProperty("max");
+    expect(duration).toMatchObject({ min: 1, max: 30 });
     expect(duration).not.toHaveProperty("default");
     expect(model.parameters?.find(parameter => parameter.key === "resolution")).toMatchObject({ control: "select", options: [] });
     const f = fixture(id, [], { modelGroup: "vip", connector: { ...jiasuVideoTransport(), models: [model], restrictModels: true } }, model);
@@ -100,7 +99,7 @@ describe("Jiasu exact video supplier contract", () => {
         expect(normalizeJiasuVideoParameters(input, model)).toMatchObject({ duration: parameters.duration ?? parameters.seconds, resolution: parameters.resolution });
         const result = await adapter.validate(input);
         expect(result.issues).toEqual(expect.arrayContaining([
-          expect.objectContaining({ path: "parameters.duration", message: expect.stringContaining("恢复供应商默认") }),
+          expect.objectContaining({ path: "parameters.duration", message: expect.stringContaining("整数秒数") }),
           expect.objectContaining({ path: "parameters.resolution", message: expect.stringContaining("恢复供应商默认") }),
         ]));
         await expect(adapter.submit(input)).rejects.toThrow("恢复供应商默认");
@@ -127,9 +126,9 @@ describe("Jiasu exact video supplier contract", () => {
     expect(jiasuVideoRequestIssues(request(id, { duration: 8, resolution: "1080p" }), refreshed)).toEqual([]);
     expect(jiasuVideoRequestIssues(request(id, { duration: 38 }), refreshed)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
     const sparse = jiasuVideoModel(id, { ...refreshed, metadata: { ...refreshed.metadata, jiasuCatalogRecord: { apiParameters: [] } } })!;
-    expect(sparse.metadata).toMatchObject({ durationRangeUnverified: true, resolutionRangeUnverified: true });
+    expect(sparse.metadata).toMatchObject({ durationRangeSource: "user-fallback", durationRangeUnverified: false, resolutionRangeUnverified: true });
     expect(sparse.metadata).not.toHaveProperty("videoParameterConfirmedDefaults");
-    expect(sparse.parameters?.find(parameter => parameter.key === "duration")).not.toHaveProperty("max");
+    expect(sparse.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 1, max: 30 });
   });
 
   it("accepts exact duration enums and published defaults without inventing missing ranges", () => {
@@ -140,11 +139,11 @@ describe("Jiasu exact video supplier contract", () => {
     expect(enumerated.metadata).not.toHaveProperty("durationRangeUnverified");
     expect(jiasuVideoRequestIssues(request(id, { duration: 6 }), enumerated)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
     const defaults = jiasuVideoModel(id, current([{ name: "duration", default: "8" }, { name: "resolution", default: "1080p" }]))!;
-    expect(defaults.metadata).toMatchObject({ durationRangeUnverified: true, resolutionRangeUnverified: true, videoParameterConfirmedDefaults: { duration: 8, resolution: "1080p" } });
+    expect(defaults.metadata).toMatchObject({ durationRangeSource: "user-fallback", durationRangeUnverified: false, resolutionRangeUnverified: true, videoParameterConfirmedDefaults: { duration: 8, resolution: "1080p" } });
     expect(defaults.parameters?.find(parameter => parameter.key === "resolution")?.options).toEqual([{ label: "1080p（供应商默认）", value: "1080p" }]);
     expect(normalizeJiasuVideoParameters(request(id), defaults)).toEqual({ duration: 8, ratio: "16:9", resolution: "1080p" });
     expect(jiasuVideoRequestIssues(request(id), defaults)).toEqual([]);
-    expect(jiasuVideoRequestIssues(request(id, { duration: 9, resolution: "720p" }), defaults)).toHaveLength(2);
+    expect(jiasuVideoRequestIssues(request(id, { duration: 9, resolution: "720p" }), defaults)).toEqual([expect.objectContaining({ path: "parameters.resolution" })]);
   });
 
   it("uses proven defaults through actual adapters while blocking every other unknown-range value offline", async () => {
@@ -160,7 +159,7 @@ describe("Jiasu exact video supplier contract", () => {
         expect(await adapter.validate(request(id, parameters))).toEqual({ valid: true, issues: [] });
       for (const parameters of [{ duration: 38 }, { resolution: "720p" }]) {
         expect((await adapter.validate(request(id, parameters))).valid).toBe(false);
-        await expect(adapter.submit(request(id, parameters))).rejects.toThrow("恢复供应商默认");
+        await expect(adapter.submit(request(id, parameters))).rejects.toThrow(/整数秒数|恢复供应商默认/u);
       }
       expect(f.fetcher).not.toHaveBeenCalled();
       await adapter.submit(request(id));
@@ -170,7 +169,7 @@ describe("Jiasu exact video supplier contract", () => {
     const refreshed = jiasuVideoModel(id, { ...model, metadata: { ...model.metadata, jiasuCatalogRecord: { apiParameters: [] } } }, "vip")!;
     expect(refreshed.metadata).not.toHaveProperty("videoParameterConfirmedDefaults");
     expect(normalizeJiasuVideoParameters(request(id), refreshed)).toEqual({ ratio: "16:9" });
-    expect(jiasuVideoRequestIssues(request(id, { duration: 8, resolution: "1080p" }), refreshed)).toHaveLength(2);
+    expect(jiasuVideoRequestIssues(request(id, { duration: 8, resolution: "1080p" }), refreshed)).toEqual([expect.objectContaining({ path: "parameters.resolution" })]);
   });
 
   it("blocks observed sd-2.5-J2 480p failure in vip while retaining official ranges and prices", async () => {

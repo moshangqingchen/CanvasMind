@@ -28,6 +28,9 @@ describe("saved Jiasu video parameters through the execution runtime", () => {
       { model: "sd-2.5-J2", parameters: { seconds: 38, resolution: "720p", ratio: "16:9" } },
       { model: "seedance2.5-全参真人", parameters: { duration: 38, resolution: "720p", aspect_ratio: "16:9" } },
       { model: "seedance2.5-全参真人", parameters: { seconds: 38, ratio: "16:9" } },
+      { model: "seedance2.5-全参真人", parameters: { duration: 31, ratio: "16:9" } },
+      { model: "seedance2.0-满血", parameters: { duration: 16, ratio: "16:9" } },
+      { model: "seedance2.0-满血", parameters: { seconds: 0, ratio: "16:9" } },
     ]) {
       const repository = new MemoryRepository();
       const storage: ObjectStorage = { put: async () => { throw Error("Invalid request must not archive"); }, get: async () => null };

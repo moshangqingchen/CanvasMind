@@ -1,6 +1,7 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ProviderAssetInput, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride } from "./rest.js";
 import { JIASU_VIDEO_CATALOG } from "./jiasu-video-catalog-data.js";
+import { seedanceDurationFallback, seedanceDurationFallbackDescription, seedanceDurationFallbackMetadata } from "./seedance-duration-fallback.js";
 
 export const JIASU_VIDEO_DOCS = "https://aijiasu.apifox.cn/";
 export const JIASU_VIDEO_QUERY_DOCS = "https://aijiasu.apifox.cn/api-511071739";
@@ -68,7 +69,7 @@ function parseParameters(value: unknown): Row[] {
   return array(value).map(record).filter(row => typeof row.name === "string");
 }
 function declaration(id: string, model?: ModelDescriptor): { description: string; apiParameters: Row[] } | undefined {
-  if (model?.metadata?.source === "manual" || model?.metadata?.protocolEvidence === "paid-test") return undefined;
+  if (["manual", "paid-test"].includes(String(model?.metadata?.source)) || model?.metadata?.protocolEvidence === "paid-test") return undefined;
   const live = record(model?.metadata?.jiasuCatalogRecord), snapshot = catalog.get(id);
   const endpoints = array(live.supportedEndpointTypes ?? model?.metadata?.endpointTypes ?? model?.metadata?.supported_endpoint_types);
   if (!snapshot && id !== specialMinimax && !endpoints.includes("openai-video")) return undefined;
@@ -101,13 +102,15 @@ function durationParameter(id: string, facts: { description: string; apiParamete
   const values = enumValues(range);
   const options = values.length && values.every(value => /^\d+(?:秒)?$/u.test(value))
     ? [...new Set(values.map(value => Number(value.replace("秒", ""))))].filter(value => value > 0) : [];
-  const min = match ? Number(match[1]) : undefined, max = match ? Number(match[2]) : undefined;
+  const lower = /^(?:>=|≥)\s*(\d+)(?:秒)?$/u.exec(range), upper = /^(?:<=|≤)\s*(\d+)(?:秒)?$/u.exec(range);
+  const min = match ? Number(match[1]) : number(declared?.min ?? declared?.minimum ?? lower?.[1]);
+  const max = match ? Number(match[2]) : number(declared?.max ?? declared?.maximum ?? upper?.[1]);
   const bounded = min !== undefined && max !== undefined && min > 0 && max >= min;
   const defaultValue = number(declared?.default);
   const validDefault = defaultValue !== undefined && Number.isInteger(defaultValue) && defaultValue > 0 &&
-    (!options.length || options.includes(defaultValue)) && (!bounded || defaultValue >= min && defaultValue <= max);
+    (!options.length || options.includes(defaultValue)) && (min === undefined || defaultValue >= min) && (max === undefined || defaultValue <= max);
   const descriptor: ModelParameterDescriptor = { key: "duration", label: "视频时长", control: options.length ? "select" : "number", valueType: "integer", step: 1,
-    ...(bounded ? { min, max } : {}), ...(options.length ? { options: options.map(value => ({ label: `${value} 秒`, value })) } : {}),
+    ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), ...(options.length ? { options: options.map(value => ({ label: `${value} 秒`, value })) } : {}),
     ...(validDefault ? { default: defaultValue } : {}), ...(declared?.required === true ? { required: true } : {}),
     description: bounded || options.length ? String(declared?.description ?? "供应商型号广场声明的时长。")
       : "官网未公布此完整型号的可选时长；不传由供应商使用型号默认值，不能提交未经确认的自定义秒数。" };
@@ -138,7 +141,11 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
   const ratiosOrCommon = ratios.length ? ratios : ["16:9", "9:16", "1:1"];
   const declaredSizes = resolutions(id, facts), evidence = resolutionEvidence(id, current, group);
   const sizes = evidence?.allowedResolutions ? [...evidence.allowedResolutions] : declaredSizes.filter(size => !evidence?.rejectedResolutions.includes(size));
-  const range = declaredRange(facts.apiParameters, "resolution"), duration = durationParameter(id, facts);
+  const range = declaredRange(facts.apiParameters, "resolution"), declaredDuration = durationParameter(id, facts);
+  const durationFallback = seedanceDurationFallback(id, { min: declaredDuration.min, max: declaredDuration.max,
+    values: declaredDuration.options?.map(option => option.value), default: declaredDuration.default });
+  const duration = durationFallback ? { ...declaredDuration, min: durationFallback.min, max: durationFallback.max,
+    description: seedanceDurationFallbackDescription(durationFallback) } : declaredDuration;
   const declaredDefault = typeof range?.default === "string" ? range.default.trim() : "";
   const defaultResolution = sizes.includes(declaredDefault) ? declaredDefault : sizes.includes("720p") ? "720p" : sizes[0];
   const confirmedDefaults: { duration?: number; resolution?: string } = {};
@@ -160,6 +167,8 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
   const supported = (kind: "image" | "video" | "audio") => refs[{ image: "maxInputImages", video: "maxInputVideos", audio: "maxInputAudios" }[kind] as keyof typeof refs] !== 0;
   const { jiasuResolutionEvidence: _previousEvidence, jiasuDeclaredResolutions: _previousDeclared, jiasuContractGroup: _previousGroup,
     durationRangeUnverified: _previousDurationRange, resolutionRangeUnverified: _previousResolutionRange,
+    durationRangeSource: _previousDurationSource, durationRangeFallbackFamily: _previousDurationFamily,
+    userFallbackDurationRange: _previousDurationFallback,
     videoParameterConfirmedDefaults: _previousConfirmedDefaults, ...currentMetadata } = current?.metadata ?? {};
   const currentGroup = group?.trim() || String(current?.metadata?.jiasuContractGroup ?? current?.metadata?.catalogGroup ?? "");
   return { ...current, id, name: current?.name ?? id, operations: supported("image") ? ["video.generate", "video.image-to-video"] : ["video.generate"], parameters,
@@ -168,7 +177,8 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
       protocol: "openai-videos", documentationUrl: id === specialMinimax ? "https://aijiasu.apifox.cn/api-520050937" : JIASU_VIDEO_DOCS,
       endpointPath: "/v1/video/generations", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false,
       videoContractCheckedAt: String(current?.metadata?.jiasuCatalogCheckedAt ?? "2026-10-09"), videoSupportedResolutions: sizes, videoMinDuration: duration.min, videoMaxDuration: duration.max,
-      ...(!duration.options?.length && duration.max === undefined ? { durationRangeUnverified: true } : {}),
+      ...(!duration.options?.length && (duration.min === undefined || duration.max === undefined) ? { durationRangeUnverified: true } : {}),
+      ...seedanceDurationFallbackMetadata(durationFallback),
       ...(!sizes.length ? { resolutionRangeUnverified: true } : {}),
       ...(Object.keys(confirmedDefaults).length ? { videoParameterConfirmedDefaults: confirmedDefaults } : {}),
       ...(currentGroup ? { jiasuContractGroup: currentGroup } : {}),

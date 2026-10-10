@@ -7,8 +7,7 @@ import { normalizeRemainingVideoParameters, remainingVideoModel, remainingVideoR
 const unconfirmed: { supplier: RemainingVideoSupplier; baseUrl: string; ids: string[]; required?: boolean; group?: string }[] = [
   { supplier: "chentu", baseUrl: "https://tu.988236.xyz", ids: ["sora-v3-pro"], required: true },
   { supplier: "chentu", baseUrl: "https://tu.988236.xyz", ids: ["grok-imagine-video-1.5（按次）", "grok-video1.5-fast", "grok--video1.0", "minimax-h3 768p"] },
-  { supplier: "secure", baseUrl: "https://token.secure-skill.com", ids: ["seedance2.0"], group: "sd特价分组1", required: true },
-  { supplier: "cyberafei", baseUrl: "https://api.3365api.cn", ids: ["minimax-h3", "seedance2.0", "seedance2.5", "veo3.1", "veo3.1-fast", "veo3.1-lite", "omni-flash"] },
+  { supplier: "cyberafei", baseUrl: "https://api.3365api.cn", ids: ["minimax-h3", "veo3.1", "veo3.1-fast", "veo3.1-lite", "omni-flash"] },
   { supplier: "mikoto", baseUrl: "https://api.mikoto.vip", ids: ["grok-imagine-video", "grok-imagine-video-1.5"] },
   { supplier: "hangzhale", baseUrl: "https://api.hangzhale.com", ids: ["grok-imagine-video", "grok-imagine-video-1.5"] },
 ];

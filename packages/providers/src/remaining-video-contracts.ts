@@ -1,6 +1,7 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ProviderAssetInput, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride } from "./rest.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
+import { seedanceDurationFallback, seedanceDurationFallbackDescription, seedanceDurationFallbackMetadata, type SeedanceDurationFallback } from "./seedance-duration-fallback.js";
 import { isJiasuApiUrl, isJiasuVideoModel, jiasuVideoModelIds, jiasuVideoModel, jiasuVideoTransport, normalizeJiasuVideoParameters, jiasuVideoRequestIssues, jiasuVideoGroupMismatch, JIASU_VIDEO_DOCS } from "./jiasu-video-contract.js";
 
 /** Exact supplier contracts re-read from public official documents on 2026-10-07. */
@@ -13,6 +14,7 @@ export interface RemainingVideoContext {
 }
 interface VideoContract {
   durations?: readonly number[]; min?: number | undefined; max?: number | undefined;
+  durationFallback?: SeedanceDurationFallback;
   resolutions: readonly string[]; ratios: readonly string[];
   images?: number | undefined; videos?: number | undefined; audios?: number;
   imageField?: string | undefined; videoField?: string | undefined; audioField?: string | undefined;
@@ -289,11 +291,11 @@ function directoryContractFor(supplier: RemainingVideoSupplier, id: string, cont
   return undefined;
 }
 
-function contractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext = {}): VideoContract | undefined {
+function supplierContractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext = {}): VideoContract | undefined {
   if (supplier === "jiasu") return isJiasuVideoModel(id, context.model) ? { resolutions: [], ratios: [], directoryContract: true, docs: JIASU_VIDEO_DOCS } : undefined;
-  if (supplier === "miaowu" && (context.model?.metadata?.source === "manual" || context.model?.metadata?.protocolEvidence === "paid-test" || ["pricing.video_api", "dream.video_schema"].includes(String(context.model?.metadata?.parameterSource)))) return undefined;
+  if (supplier === "miaowu" && (["manual", "paid-test"].includes(String(context.model?.metadata?.source)) || context.model?.metadata?.protocolEvidence === "paid-test" || ["pricing.video_api", "dream.video_schema"].includes(String(context.model?.metadata?.parameterSource)))) return undefined;
   const c = contracts[supplier][id] ?? directoryContractFor(supplier, id, context); if (!c) return undefined;
-  if (c.directoryContract && (context.model?.metadata?.source === "manual" || context.model?.metadata?.protocolEvidence === "paid-test")) return undefined;
+  if (c.directoryContract && (["manual", "paid-test"].includes(String(context.model?.metadata?.source)) || context.model?.metadata?.protocolEvidence === "paid-test")) return undefined;
   if (c.sourceVideoChat && context.assets?.some(asset => asset.kind === "video")) return { ...directoryChatVideo, sourceVideoChat: true,
     videos: undefined, videoField: "video_urls", requiresVideo: true, httpsOnly: true, videoReferenceEncoding: "prompt-urls",
     ...(c.billingUnit ? { billingUnit: c.billingUnit } : {}), docs: c.docs, ...(c.note ? { note: c.note } : {}) };
@@ -323,6 +325,14 @@ function contractFor(supplier: RemainingVideoSupplier, id: string, context: Rema
       ...(context.model?.limits?.maxInputImages === undefined ? {} : { images: context.model.limits.maxInputImages }) };
   }
   return c;
+}
+
+function contractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext = {}): VideoContract | undefined {
+  const c = supplierContractFor(supplier, id, context);
+  if (!c || c.chatVideo || c.omitDuration || supplier === "jiasu" ||
+      ["manual", "paid-test"].includes(String(context.model?.metadata?.source)) || context.model?.metadata?.protocolEvidence === "paid-test") return c;
+  const fallback = seedanceDurationFallback(id, { min: c.min, max: c.max, values: c.durations, default: c.defaultDuration });
+  return fallback ? { ...c, min: fallback.min, max: fallback.max, durationFallback: fallback } : c;
 }
 
 export function remainingVideoSupplier(baseUrl: unknown): RemainingVideoSupplier | undefined {
@@ -372,6 +382,9 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
   if (supplier === "jiasu") return jiasuVideoModel(id, current ?? context?.model, context?.group);
   const c = contractFor(supplier, id, { model: current, ...context }); if (!c) return undefined;
   const metadata = { ...current?.metadata };
+  delete metadata.durationRangeSource;
+  delete metadata.durationRangeFallbackFamily;
+  delete metadata.userFallbackDurationRange;
   // A fresh, exact contract supersedes an older generic range warning. Keep
   // the warning when the supplier still has not published a complete range.
   const durationRangeConfirmed = hasDurationRange(c);
@@ -382,7 +395,7 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
   const initialDuration = defaultDuration(c);
   const parameters: ModelParameterDescriptor[] = [{ key: "duration", label: "视频时长", control: c.durations ? "select" : "number", valueType: "integer", required: !c.durationOptional,
     ...(initialDuration !== undefined ? { default: initialDuration } : {}), ...(c.durations ? { options: c.durations.map(value => ({ label: `${value} 秒`, value })) } : { min: c.min ?? 1, ...(c.max ? { max: c.max } : {}), step: 1 }),
-    ...(c.note ? { description: c.note } : {}) },
+    ...(c.durationFallback ? { description: seedanceDurationFallbackDescription(c.durationFallback) } : c.note ? { description: c.note } : {}) },
     ...(!c.omitRatio ? [{ key: "aspect_ratio", label: "画面比例", control: c.freeRatio || !c.ratios.length ? "text" as const : "select" as const, valueType: "string" as const,
       ...(c.ratios.length ? { default: c.defaultRatio ?? c.ratios[0]!, options: c.ratios.map(value => ({ label: value, value })) } : { description: "比例以当前 Key 能力接口为准；留空使用供应商默认值。" }) }] : []),
     ...(c.openResolution ? [{ key: "resolution", label: "输出分辨率", control: "text" as const, valueType: "string" as const, description: "供应商尚未公布此完整型号的可选分辨率；留空使用上游默认。" }] : c.resolutions.length ? [{ key: "resolution", label: "输出分辨率", control: "select" as const, valueType: "string" as const, default: c.defaultResolution ?? (c.resolutions.includes("720p") ? "720p" : c.resolutions[0]!), required: supplier !== "weai", options: c.resolutions.map(value => ({ label: value, value })),
@@ -393,7 +406,7 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
     limits: { ...(c.chatVideo ? {} : current?.limits), ...(c.images === undefined ? {} : { maxInputImages: Math.max(c.images, c.frames ? 2 : 0) }), ...(c.videos === undefined ? {} : { maxInputVideos: c.videos }),
       ...(c.audios === undefined ? {} : { maxInputAudios: supplier === "secure" && id.startsWith("grok-") ? 0 : c.audios }), ...(c.maxAssets ? { maxInputAssets: c.maxAssets } : {}), ...(c.requiresImage ? { requiresInputImage: true } : {}), ...(c.requiresVideo ? { requiresInputVideo: true } : {}),
       ...(c.videoSeconds ? { maxTotalInputVideoDurationSeconds: c.videoSeconds } : {}), ...(c.audioSeconds ? { maxInputAudioDurationSeconds: c.audioSeconds } : {}) },
-    metadata: { ...metadata, supplier, modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: c.chatVideo ? "openai-chat" : "openai-videos", documentationUrl: c.docs, videoContractCheckedAt: c.directoryContract ? "2026-10-09" : "2026-10-07", remoteMediaUrlsOnly: !c.multipartFrames && !c.multipartReference,
+    metadata: { ...metadata, ...seedanceDurationFallbackMetadata(c.durationFallback), supplier, modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: c.chatVideo ? "openai-chat" : "openai-videos", documentationUrl: c.docs, videoContractCheckedAt: c.directoryContract ? "2026-10-09" : "2026-10-07", remoteMediaUrlsOnly: !c.multipartFrames && !c.multipartReference,
       ...(c.directoryContract ? { endpointPath: c.chatVideo ? "/v1/chat/completions" : c.submitPath ?? "/v1/videos", endpointMethod: "POST" } : {}),
       ...(c.directoryContract ? { parameterSource: "supplier-documented-contract", parameterControlsUnavailable: false, protocolEvidence: "supplier-documentation", generationVerified: false, miaowuVideoContractPending: false } : {}),
       ...(c.videoReferenceEncoding ? { videoReferenceEncoding: c.videoReferenceEncoding } : {}),
