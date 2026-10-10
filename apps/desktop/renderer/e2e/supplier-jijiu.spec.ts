@@ -29,7 +29,7 @@ test.beforeAll(() => {
   expect(groups).toHaveLength(9);
 });
 
-async function setup(page: Page, request: APIRequestContext, kind: "image" | "video", initialGroup: string, options: { incomplete?: boolean; wrongGroup?: boolean } = {}) {
+async function setup(page: Page, request: APIRequestContext, kind: "image" | "video", initialGroup: string, options: { incomplete?: boolean; wrongGroup?: boolean; initialModelId?: string; initialParameters?: Record<string, unknown> } = {}) {
   await page.setViewportSize({ width: 1600, height: 1080 });
   await page.clock.setFixedTime(new Date("2026-10-10T04:00:00Z"));
   let submissions = 0, upstream = 0, complete = !options.incomplete;
@@ -67,8 +67,8 @@ async function setup(page: Page, request: APIRequestContext, kind: "image" | "vi
   await page.route(/\/api\/providers(?:\?.*)?$/u, route => route.request().method() === "GET" ? route.fulfill({ json: connections }) : route.continue());
   await page.route(/\/api\/suppliers(?:\?.*)?$/u, route => route.request().method() === "GET" ? route.fulfill({ json: [supplier] }) : route.continue());
   const connection = connections.find(item => item.config.modelGroup === initialGroup)!;
-  const first = modelMap.get(initialGroup)![0]!;
-  const parameters = Object.fromEntries((first.parameters ?? []).filter(parameter => parameter.default !== undefined).map(parameter => [parameter.key, parameter.default]));
+  const first = options.initialModelId ? modelMap.get(initialGroup)!.find(model => model.id === options.initialModelId)! : modelMap.get(initialGroup)![0]!;
+  const parameters = { ...Object.fromEntries((first.parameters ?? []).filter(parameter => parameter.default !== undefined).map(parameter => [parameter.key, parameter.default])), ...options.initialParameters };
   const createdCanvas = await request.post("/api/canvas", { data: { title: "极九目录参数离线验收", graph: {
     schemaVersion: 1, viewport: { x: 0, y: 0, zoom: 1 }, edges: [], nodes: [{ id: "jijiu-media", type: "workflow", position: { x: 85, y: 60 }, style: { width: 420, height: 180 },
       data: { nodeType: `${kind}-generation`, label, provider: "openai", connectionId: connection.id, model: first.id, parameters, qualityMode: "custom", parts: [],
@@ -297,6 +297,53 @@ test("极九固定30、4–29与mini4–10切换保存，错误分组型号不�
     await expect(f.panel.getByRole("combobox", { name: "视频时长", exact: true })).toHaveValue("30");
     await expect(slider).toHaveCount(0);
     await expect.poll(async () => (await f.saved()).parameters.duration).toBe(30);
+  } finally { f.safe(); }
+});
+
+test("极九视频比例快捷选择、自定义原值与供应商默认保存刷新", async ({ page, request }, testInfo) => {
+  const writtenRatios: unknown[] = [];
+  page.on("request", outgoing => {
+    if (outgoing.method() !== "PUT" || !new URL(outgoing.url()).pathname.startsWith("/api/canvas/")) return;
+    const body = outgoing.postDataJSON() as { graph?: { nodes?: Array<{ data?: { parameters?: Record<string, unknown> } }> } };
+    for (const node of body.graph?.nodes ?? []) writtenRatios.push(node.data?.parameters?.aspect_ratio);
+  });
+  const modelId = "SD2.5特价30-10线路一";
+  const f = await setup(page, request, "video", "视频SD.2.5", { initialModelId: modelId, initialParameters: { aspect_ratio: "3:2", duration: 30, resolution: "720p", seed: 0 } });
+  try {
+    const ratio = f.panel.getByRole("combobox", { name: "画面比例", exact: true });
+    const custom = f.panel.getByRole("textbox", { name: "画面比例（自定义）", exact: true });
+    await expect(f.panel.getByRole("slider", { name: "视频时长", exact: true })).toHaveAttribute("min", "4");
+    await expect(f.panel.getByRole("slider", { name: "视频时长", exact: true })).toHaveAttribute("max", "30");
+    await expect(f.panel.getByRole("combobox", { name: "输出分辨率", exact: true })).toHaveValue("720p");
+    await expect(f.panel.getByLabel("当前参数价格", { exact: true }).locator(":scope > span").filter({ hasText: "当前组合价格" }).locator("strong")).toHaveText("1.5 CNY / 次");
+    await expect(ratio.locator("option")).toHaveText(["供应商默认", "16:9（横屏）", "9:16（竖屏）", "1:1（方形）", "自定义"]);
+    await expect(ratio).toHaveValue("__custom_ratio__"); await expect(custom).toHaveValue("3:2");
+    expect((await f.saved()).parameters.aspect_ratio).toBe("3:2");
+    await page.reload(); await f.open();
+    await expect(custom).toHaveValue("3:2");
+    for (const value of ["16:9", "9:16", "1:1"]) {
+      await ratio.selectOption(value); await expect(custom).toHaveCount(0);
+      await expect.poll(async () => (await f.saved()).parameters.aspect_ratio).toBe(value);
+    }
+    await ratio.selectOption("__custom_ratio__");
+    await expect(custom).toHaveValue("1:1");
+    expect((await f.saved()).parameters.aspect_ratio).toBe("1:1");
+    await custom.fill("21:9");
+    await expect.poll(async () => (await f.saved()).parameters.aspect_ratio).toBe("21:9");
+    await f.panel.screenshot({ path: testInfo.outputPath("jijiu-video-custom-ratio-21-9.png") });
+    await page.reload(); await f.open(); await expect(custom).toHaveValue("21:9");
+    await ratio.selectOption(""); await expect(custom).toHaveCount(0);
+    await expect.poll(async () => (await f.saved()).parameters).not.toHaveProperty("aspect_ratio");
+    await page.reload(); await f.open(); await expect(ratio).toHaveValue("");
+    await ratio.selectOption("__custom_ratio__"); await expect(custom).toHaveValue("");
+    expect((await f.saved()).parameters).not.toHaveProperty("aspect_ratio");
+    await custom.fill("2.39:1");
+    await expect.poll(async () => (await f.saved()).parameters.aspect_ratio).toBe("2.39:1");
+    await f.choose("SD2.5特价30-10-10-线路二"); await f.choose(modelId);
+    await expect(custom).toHaveValue("2.39:1");
+    await expect.poll(async () => (await f.saved()).parameters.aspect_ratio).toBe("2.39:1");
+    expect(writtenRatios.length).toBeGreaterThan(0);
+    expect(writtenRatios.every(value => value === undefined || typeof value === "string" && /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(value))).toBe(true);
   } finally { f.safe(); }
 });
 

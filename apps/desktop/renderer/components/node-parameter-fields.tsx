@@ -499,9 +499,61 @@ function DimensionsControl({
   );
 }
 
+export function jijiuVideoAspectRatioPresets(
+  model: Pick<ModelDescriptor, "metadata"> | null | undefined,
+  descriptor: ModelParameterDescriptor,
+): Array<{ value: string; label: string }> {
+  if (model?.metadata?.jijiuVideoContract !== true || descriptor.key !== "aspect_ratio" || descriptor.control !== "text") return [];
+  const presets = model.metadata.videoAspectRatioPresets;
+  if (!Array.isArray(presets)) return [];
+  const seen = new Set<string>();
+  return presets.flatMap((preset: unknown) => {
+    if (!preset || typeof preset !== "object" || !("value" in preset) || !("label" in preset) || typeof preset.value !== "string" || typeof preset.label !== "string"
+      || !preset.label.trim() || !/^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(preset.value)
+      || !preset.value.split(":").every(part => Number(part) > 0 && Number.isFinite(Number(part))) || seen.has(preset.value)) return [];
+    seen.add(preset.value);
+    return [{ value: preset.value, label: preset.label }];
+  });
+}
+
+function VideoRatioSuggestions({
+  id, descriptor, presets, value, disabledReason, update,
+}: {
+  id: string;
+  descriptor: ModelParameterDescriptor;
+  presets: Array<{ value: string; label: string }>;
+  value: string;
+  disabledReason?: string;
+  update: (value: string) => void;
+}) {
+  // This choice controls presentation only. It must never become a request value.
+  const customChoice = "__custom_ratio__";
+  const [editingValue, setEditingValue] = useState<string | null>(null);
+  const custom = editingValue === value || value !== "" && !presets.some(option => option.value === value);
+  return (
+    <>
+      <select id={id} value={custom ? customChoice : value} disabled={Boolean(disabledReason)}
+        title={disabledReason ?? descriptor.description} aria-required={descriptor.required}
+        onChange={event => {
+          if (event.target.value === customChoice) setEditingValue(value);
+          else { setEditingValue(null); update(event.target.value); }
+        }}>
+        <option value="">供应商默认</option>
+        {presets.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        <option value={customChoice}>自定义</option>
+      </select>
+      {custom && <input type="text" aria-label={`${descriptor.label}（自定义）`} value={value}
+        disabled={Boolean(disabledReason)} placeholder={descriptor.placeholder}
+        title={disabledReason ?? descriptor.description} aria-required={descriptor.required}
+        onChange={event => { setEditingValue(event.target.value); update(event.target.value); }} />}
+    </>
+  );
+}
+
 function ParameterControl({
   nodeId,
   nodeType,
+  modelId,
   descriptor,
   parameters,
   onChange,
@@ -515,6 +567,7 @@ function ParameterControl({
 }: {
   nodeId: string;
   nodeType: GenerationNodeType;
+  modelId?: string;
   descriptor: ModelParameterDescriptor;
   parameters: Record<string, unknown>;
   onChange: (parameters: Record<string, unknown>) => void;
@@ -544,6 +597,7 @@ function ParameterControl({
         ? ""
         : (parameterValueForModel(sizeAspectRatioContext.model, parameters, descriptor.key) ?? descriptor.default ?? "");
   const durationContext = videoDurationControlContext(sizeAspectRatioContext.model, descriptor.key);
+  const ratioPresets = nodeType === "video-generation" ? jijiuVideoAspectRatioPresets(sizeAspectRatioContext.model, descriptor) : [];
   const durationControl = videoDurationControl(nodeType, descriptor, value, durationRangeUnverified, durationUpperBoundConfirmed, durationContext);
   const unverifiedValue = parameterValueForModel(sizeAspectRatioContext.model, parameters, descriptor.key) ?? "";
   const confirmedDefault = durationControl?.kind === "unavailable" ? durationControl.confirmedDefault
@@ -718,6 +772,9 @@ function ParameterControl({
             </option>
           ))}
         </select>
+      ) : ratioPresets.length > 0 ? (
+        <VideoRatioSuggestions key={`${nodeId}:${modelId ?? ""}:${descriptor.key}`}
+          id={id} descriptor={descriptor} presets={ratioPresets} value={String(value)} disabledReason={disabledReason} update={update} />
       ) : descriptor.key === "lyrics" ? (
         <textarea id={id} value={String(value)} rows={6} maxLength={20000} disabled={Boolean(disabledReason)} placeholder="[Verse] 你的歌词…" onChange={event => update(event.target.value)} />
       ) : (
@@ -889,6 +946,7 @@ export function NodeParameterFields({
             key={descriptor.key}
             nodeId={nodeId}
             nodeType={nodeType}
+            modelId={model?.id}
             descriptor={descriptor}
             parameters={parameters}
             onChange={onChange}

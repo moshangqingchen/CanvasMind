@@ -55,7 +55,8 @@ export function jijiuVideoModel(id: string, current?: ModelDescriptor, group?: s
       description: "留空采用供应商线路默认时长；超范围值会在提交前阻止，不接受上游静默裁剪。" },
     { key: "resolution", label: "输出分辨率", control: "select", valueType: "string", options: (c.resolutions ?? []).map(value => ({ label: value, value })),
       ...(!c.resolutions?.length ? { description: c.note ?? "此完整型号尚未公布生成分辨率枚举，省略该字段使用供应商默认；计费档位不代表生成支持。" } : {}) },
-    { key: "aspect_ratio", label: "画面比例", control: "text", valueType: "string", description: "供应商接受宽高比，例如 16:9、9:16、1:1；留空使用线路默认。" },
+    { key: "aspect_ratio", label: "画面比例", control: "text", valueType: "string", placeholder: "供应商默认（留空）",
+      description: "快捷比例来自供应商官方示例，也可填写自定义正数宽高比；留空不发送比例，由供应商决定，官方未公布具体默认比例。" },
     { key: "seed", label: "随机种子", control: "number", valueType: "integer" },
     { key: "negative_prompt", label: "负面提示词", control: "text", valueType: "string" },
     ...(c.minimax ? [
@@ -68,6 +69,7 @@ export function jijiuVideoModel(id: string, current?: ModelDescriptor, group?: s
     metadata: { ...metadata, supplier: "jijiu", modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: "openai-videos", documentationUrl: JIJIU_VIDEO_DOCS,
       endpointPath: "/v1/videos", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false, videoContractCheckedAt: "2026-10-10",
       videoMinDuration: min, videoMaxDuration: max, ...(min === max ? { videoDurationValues: [min], videoParameterConfirmedDefaults: { duration: min } } : {}), videoSupportedResolutions: [...(c.resolutions ?? [])], ...(!c.resolutions?.length ? { resolutionRangeUnverified: true } : {}),
+      videoAspectRatioPresets: [{ label: "16:9（横屏）", value: "16:9" }, { label: "9:16（竖屏）", value: "9:16" }, { label: "1:1（方形）", value: "1:1" }],
       remoteMediaUrlsOnly: true, supportsFirstLastFrames: true, videoSupportsFirstLastFrames: true, allowFrameMediaMix: true, videoReferenceImageLimit: c.images, videoReferenceVideoLimit: c.videos, videoReferenceAudioLimit: c.audios,
       parameterControlsUnavailable: false, jijiuVideoContract: true, ...(group ? { jijiuContractGroup: group } : {}), ...(c.note ? { videoContractNote: c.note } : {}), ...(c.wan ? { videoContractNote: "参考视频每段最多 15 秒；参考视频总时长加输出时长合计最多 30 秒，并按合计时长计费。" } : {}),
       ...(c.wan || c.inputDurationBilling ? { billingIncludesInputDuration: true, priceContractWarning: "按参考视频总时长加输出时长计费；未计入输入视频时长时不显示输出秒数推算的总价。" } : {}),

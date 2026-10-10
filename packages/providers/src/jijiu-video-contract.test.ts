@@ -93,6 +93,47 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(normalizeJijiuVideoParameters(input)).not.toHaveProperty("duration");
   });
 
+  it("offers official aspect-ratio examples without declaring a default or a closed selector", () => {
+    const model = jijiuVideoModel("SD2.5特价30-10线路一"), ratio = model?.parameters?.find(p => p.key === "aspect_ratio");
+    expect(ratio).toMatchObject({ control: "text", valueType: "string", placeholder: "供应商默认（留空）" });
+    expect(ratio).not.toHaveProperty("default");
+    expect(ratio).not.toHaveProperty("options");
+    expect(model?.metadata?.videoAspectRatioPresets).toEqual([{ label: "16:9（横屏）", value: "16:9" }, { label: "9:16（竖屏）", value: "9:16" }, { label: "1:1（方形）", value: "1:1" }]);
+  });
+
+  it.each(["16:9", "9:16", "1:1", "21:9", "2.39:1", "", undefined])("preserves ratio %j through automatic and direct REST requests without real network", async ratio => {
+    const id = "SD2.5特价30-10线路一", model = jijiuVideoModel(id)!;
+    for (const direct of [false, true]) {
+      const f = fixture(id, [Response.json({ id: "task_ratio_fixture", status: "queued" })], {
+        accountKeyGroup: "视频SD.2.5", modelGroup: "视频SD.2.5", connector: { ...jijiuVideoTransport(), models: [model], restrictModels: true },
+      });
+      const adapter = direct ? new GenericRestAdapter(f.resolver, { fetch: f.fetcher }) : f.adapter;
+      const input = request(id, { duration: 30, resolution: "720p", ...(ratio === undefined ? {} : { aspect_ratio: ratio }) });
+      const original = structuredClone(input);
+      expect(await adapter.validate(input)).toEqual({ valid: true, issues: [] });
+      await adapter.submit(input);
+      expect(f.fetcher).toHaveBeenCalledTimes(1);
+      expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://newapi.jijiucanvas.com/v1/videos");
+      expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: "Offline contract fixture", seconds: 30, resolution: "720p",
+        ...(ratio ? { aspect_ratio: ratio } : {}) });
+      expect(input).toEqual(original);
+    }
+  });
+
+  it("keeps a saved custom ratio alias and rejects nonpositive ratios before HTTP", async () => {
+    const id = "SD2.5特价30-10线路一";
+    const f = fixture(id, [Response.json({ id: "task_custom_ratio", status: "queued" })]);
+    const input = request(id, { duration: 30, ratio: "21:9" });
+    await f.adapter.submit(input);
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ aspect_ratio: "21:9" });
+    expect(input.parameters).toEqual({ duration: 30, ratio: "21:9" });
+    for (const ratio of ["0:9", "16:0", "-1:1", "widescreen"]) {
+      const denied = fixture(id);
+      await expect(denied.adapter.submit(request(id, { duration: 30, aspect_ratio: ratio }))).rejects.toThrow();
+      expect(denied.fetcher).not.toHaveBeenCalled();
+    }
+  });
+
   it("blocks unsupported media, duplicate frames, private URLs and conflicting aliases before HTTP", async () => {
     const bad = [request("SD2.5特价30-10-10-线路一", {}, [video]), request("SD2.0mini稳定900B", {}, [audio]), request("MinimaxH3", { seconds: 5, duration: 6 }), request("MinimaxH3", { ratio: "1:1", aspect_ratio: "9:16" }), request("MinimaxH3", { images: ["http://127.0.0.1/secret"] }), request("MinimaxH3", {}, [{ ...image, role: "firstFrame" }, { ...image, role: "firstFrame" }]), request("MinimaxH3", { size: "1280x720" })];
     for (const input of bad) { const f = fixture(input.model!); await expect(f.adapter.submit(input)).rejects.toThrow(); expect(f.fetcher).not.toHaveBeenCalled(); }
