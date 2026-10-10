@@ -17,6 +17,9 @@ import { supplierImageParameterIssues } from "./supplier-image-constraints.js";
 import { isJiasuImageConnection, isJiasuImageResult, JiasuImageAdapter } from "./jiasu-images.js";
 import { isJiasuApiUrl, jiasuVideoGroupMismatch } from "./jiasu-video-contract.js";
 import { isJijiuApiUrl, jijiuVideoGroupMismatch } from "./jijiu-video-contract.js";
+import { isJijiuGptImage, jijiuGptImageRequestIssues } from "./jijiu-image-contract.js";
+import { OpenAIImageAdapter } from "./openai.js";
+import { validateModelParameters } from "./cli-contracts.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -25,6 +28,9 @@ export function savedModelInterfaces(settings: Readonly<Record<string, unknown>>
 }
 
 const marked = (result: unknown) => result && typeof result === "object" && "autoInterface" in result && result.autoInterface === true;
+const jijiuImagesResult = (result: unknown) => result && typeof result === "object" &&
+  "autoInterfaceTransport" in result && result.autoInterfaceTransport === "jijiu-native-images";
+const explicitImageContract = (model: ModelDescriptor | undefined) => ["manual", "paid-test"].includes(String(model?.metadata?.source)) || model?.metadata?.protocolEvidence === "paid-test";
 function mark(task: ProviderTask): ProviderTask {
   return { ...task, result: { ...(task.result as Record<string, unknown>), autoInterface: true } };
 }
@@ -32,9 +38,11 @@ function mark(task: ProviderTask): ProviderTask {
 /** Prefer supplier-documented routes and freeze each task's transport for recovery. */
 export class AutoInterfaceAdapter implements ProviderAdapter {
   private readonly rest: GenericRestAdapter;
+  private readonly jijiuImages: OpenAIImageAdapter;
   constructor(private readonly connections: ProviderConnectionResolver, private readonly fallback: ProviderAdapter,
     private readonly options: GenericRestAdapterOptions = {}) {
     this.rest = new GenericRestAdapter(connections, options);
+    this.jijiuImages = new OpenAIImageAdapter(connections, options);
   }
 
   private async selected(request: NormalizedRequest): Promise<ProviderAdapter> {
@@ -56,6 +64,29 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     const catalog = connection.settings?.modelCatalogModels;
     let current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
     const binding = savedModelInterfaces(connection.settings)[request.model];
+    if (["openai", "rest"].includes(connection.provider) && request.operation.startsWith("image.") && isJijiuGptImage(config, request.model)) {
+      // An automatic OpenAPI binding can predate the exact supplier contract:
+      // its auto-only schema or body template must not reject/drop size/quality.
+      // Explicit user/paid contracts retain their own schema and transport.
+      const permissionIssues = jijiuGptImageRequestIssues(imageEditingConnection(connection), request).filter(issue => issue.path === "model");
+      assertValidResult({ valid: !permissionIssues.length, issues: permissionIssues });
+      const declaredBinding = binding?.connector && binding.model?.id === request.model && binding.model.operations.includes(request.operation);
+      if (declaredBinding && (explicitImageContract(binding.model) || explicitImageContract(current))) {
+        const configuredModel = explicitImageContract(binding.model) ? binding.model : current!;
+        if (configuredModel.parameters?.length) assertValidResult(validateModelParameters(configuredModel, request.parameters, request.operation));
+        return new GenericRestAdapter(this.connections, { ...this.options,
+          config: { ...binding.connector, models: [configuredModel], restrictModels: true } });
+      }
+      const connector = this.options.config ?? connection.settings?.connector as RestConnectorConfig | undefined;
+      const connectorModel = connector?.models?.find(model => model.id === request.model);
+      if (connector && (explicitImageContract(connectorModel) || explicitImageContract(current))) {
+        const configuredModel = explicitImageContract(connectorModel) ? connectorModel : current;
+        if (configuredModel?.parameters?.length) assertValidResult(validateModelParameters(configuredModel, request.parameters, request.operation));
+        return new GenericRestAdapter(this.connections, { ...this.options, config: connector });
+      }
+      if (explicitImageContract(current)) return this.fallback;
+      return this.jijiuImages;
+    }
     const supplier = remainingVideoSupplier(connection.baseUrl);
     const group = connection.settings?.accountKeyGroup ?? connection.settings?.modelGroup ?? connection.settings?.group ?? connection.settings?.supplierGroupId;
     const description = connection.settings?.supplierGroupDescription ?? connection.settings?.groupDescription;
@@ -182,9 +213,17 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
   async submit(request: NormalizedRequest) {
     const adapter = await this.selected(request);
     const task = await adapter.submit(request);
+    if (adapter === this.jijiuImages) return { ...mark(task), result: { ...(task.result as Record<string, unknown>),
+      autoInterface: true, autoInterfaceTransport: "jijiu-native-images" } };
     return adapter === this.fallback ? task : mark(task);
   }
   async poll(task: ProviderTask) {
+    if (jijiuImagesResult(task.result)) {
+      // Images returns synchronously. Recovery decodes the persisted response,
+      // without reselecting an edited binding, polling or resubmitting a task.
+      if (!(await this.jijiuImages.extractOutputs(task.result)).length) throw new Error("极九图片原响应中没有可恢复的图片，请核对原请求，不能自动重发");
+      return { ...task, status: "succeeded" as const };
+    }
     if (isJiasuImageResult(task.result)) return new JiasuImageAdapter(this.connections, this.options).poll(task);
     if (marked(task.result)) {
       const state = await this.rest.poll(task);
@@ -197,6 +236,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     return this.fallback.poll(task);
   }
   async cancel(task: ProviderTask) {
+    if (jijiuImagesResult(task.result)) return;
     if (marked(task.result)) return this.rest.cancel(task);
     return this.fallback.cancel?.(task);
   }
@@ -205,10 +245,11 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     return this.fallback.verifyWebhook(request, id);
   }
   extractOutputs(result: unknown) {
+    if (jijiuImagesResult(result)) return this.jijiuImages.extractOutputs(result);
     if (isJiasuImageResult(result)) return new JiasuImageAdapter(this.connections, this.options).extractOutputs(result);
     const banana = bananaNativeOutputs(result);
     if (banana) return Promise.resolve(banana);
     return marked(result) ? this.rest.extractOutputs(result) : this.fallback.extractOutputs(result);
   }
-  async cleanup(result: unknown) { if (!marked(result)) await this.fallback.cleanup?.(result); }
+  async cleanup(result: unknown) { if (!marked(result) && !jijiuImagesResult(result)) await this.fallback.cleanup?.(result); }
 }

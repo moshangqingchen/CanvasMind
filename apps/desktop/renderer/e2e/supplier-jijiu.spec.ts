@@ -130,7 +130,11 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
         await expect(option).toHaveAttribute("aria-disabled", "false");
         await option.click(); await expect(f.picker).toContainText(model.id); seen.add(model.id);
         if (kind === "image") {
-          await expect(f.panel.getByLabel("质量", { exact: true })).toHaveCount(0);
+          if (model.id === "gpt-image-2-2K/4K") {
+            const quality = f.panel.getByLabel("质量", { exact: true });
+            await expect(quality.locator('option:not([value=""])')).toHaveText(["自动（供应商默认）", "最高"]);
+            await quality.selectOption("high");
+          } else await expect(f.panel.getByLabel("质量", { exact: true })).toHaveCount(0);
           await expect(f.panel.getByLabel("输出格式", { exact: true })).toHaveCount(0);
           await expect(f.panel.locator('input[aria-label="图片宽度"]:not([readonly]),input[aria-label="图片高度"]:not([readonly])')).toHaveCount(0);
           const size = model.parameters!.find(parameter => ["size", "image_size"].includes(parameter.key))!;
@@ -206,6 +210,69 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
     }
     expect(seen.size).toBe(kind === "image" ? 7 : 18);
     await f.panel.screenshot({ path: testInfo.outputPath(`jijiu-${kind}-final-group.png`) });
+  } finally { f.safe(); }
+});
+
+test("极九高档GPT的原生K档与独立最高质量保存、刷新和切组保持一致", async ({ page, request }, testInfo) => {
+  const f = await setup(page, request, "image", "default");
+  const modelId = "gpt-image-2-2K/4K";
+  const tiers = f.panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });
+  const quality = f.panel.getByRole("combobox", { name: "质量", exact: true });
+  try {
+    await f.choose(modelId);
+    await expect(tiers.getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
+    expect(await quality.locator('option:not([value=""])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(["auto", "high"]);
+    const notes = f.panel.locator(".parameter-contract-details");
+    await expect(notes).toHaveCount(1);
+    await expect(notes).not.toHaveAttribute("open", "");
+    await expect(f.panel.locator(".parameter-group-note")).toHaveCount(0);
+    for (const tier of ["1K", "2K", "4K"]) {
+      await tiers.getByRole("button", { name: tier, exact: true }).click();
+      await quality.selectOption("high");
+      await expect(tiers.getByRole("button", { name: tier, exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ size: tier, quality: "high" });
+      await expect(f.panel.getByRole("textbox", { name: "图片宽度", exact: true })).toHaveValue("");
+      await expect(f.panel.getByRole("textbox", { name: "图片高度", exact: true })).toHaveValue("");
+    }
+    const price = f.panel.getByLabel("当前参数价格", { exact: true });
+    await expect(price.locator(":scope > span").filter({ hasText: "当前组合价格" }).locator("strong")).toHaveText("0.1 CNY / 次");
+    await expect(price.locator(":scope > span").filter({ hasText: "本次预计费用" }).locator("strong")).toHaveText("0.1 CNY");
+    await quality.scrollIntoViewIfNeeded();
+    await f.panel.screenshot({ path: testInfo.outputPath("jijiu-gpt-4k-high-controls.png") });
+    await page.reload(); await f.open();
+    await expect(f.picker).toContainText(modelId);
+    await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(quality).toHaveValue("high");
+    await f.selectGroup("图片-GPT-image-2-2K/4K"); await f.choose(modelId);
+    // The same supplier/model carries the current legal selection into a new
+    // group; an already configured group restores its own saved selection.
+    await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(quality).toHaveValue("high");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ size: "4K", quality: "high" });
+    await tiers.getByRole("button", { name: "2K", exact: true }).click();
+    await quality.selectOption("high");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ size: "2K", quality: "high" });
+    await f.selectGroup("default"); await f.choose(modelId);
+    await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(quality).toHaveValue("high");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ size: "4K", quality: "high" });
+    await f.selectGroup("图片-GPT-image-2-2K/4K"); await f.choose(modelId);
+    await expect(tiers.getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(quality).toHaveValue("high");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ size: "2K", quality: "high" });
+    await f.selectGroup("default"); await f.choose(modelId);
+    await page.reload(); await f.open();
+    await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await f.selectGroup("图片-GPT-image-2-2K/4K"); await f.choose(modelId);
+    await expect(tiers.getByRole("button", { name: "2K", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(quality).toHaveValue("high");
+    await quality.scrollIntoViewIfNeeded();
+    await f.panel.screenshot({ path: testInfo.outputPath("jijiu-gpt-2k-high-independent-group.png") });
+    await quality.selectOption("auto");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ size: "2K", quality: "auto" });
+    await tiers.getByRole("button", { name: "自动", exact: true }).click();
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ size: "auto", quality: "auto" });
+    await expect(tiers.getByRole("button", { name: "自动", exact: true })).toHaveAttribute("aria-pressed", "true");
   } finally { f.safe(); }
 });
 

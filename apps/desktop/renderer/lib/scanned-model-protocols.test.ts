@@ -34,7 +34,7 @@ const scanned = (
 });
 
 describe("scanned model protocol binding", () => {
-  it("binds all seven exact Jijiu images to their documented protocol without guessing pixels or quality", () => {
+  it("binds all seven exact Jijiu images and exposes high-tier GPT quality without inventing pixels", () => {
     const fixture = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/jijiu-billing-20261010.json", import.meta.url), "utf8")) as {
       data: Array<{ model_name: string; tags: string; enable_groups: string[] }>;
     };
@@ -47,7 +47,12 @@ describe("scanned model protocol binding", () => {
       expect(model.metadata).toMatchObject({ jijiuImageContract: true, canvasRunnable: true, outputKindsSource: "declared", imagePixelBudgetPublished: false,
         protocol: row.model_name.startsWith("gemini-") ? "gemini-generate-content" : "openai-images" });
       expect(model.operations).toEqual(["image.generate", "image.edit"]);
-      expect(model.parameters?.some(parameter => ["quality", "output_format", "width", "height"].includes(parameter.key))).toBe(false);
+      expect(model.parameters?.some(parameter => ["output_format", "width", "height"].includes(parameter.key))).toBe(false);
+      const quality = model.parameters?.find(parameter => parameter.key === "quality");
+      if (row.model_name === "gpt-image-2-2K/4K") {
+        expect(quality?.options?.map(option => option.value)).toEqual(["auto", "high"]);
+        expect(model.parameters?.find(parameter => parameter.key === "size")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
+      } else expect(quality).toBeUndefined();
     }
   });
   it("keeps wrong-group Jijiu images and explicitly declared chat outputs unavailable", () => {

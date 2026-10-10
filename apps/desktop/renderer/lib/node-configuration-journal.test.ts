@@ -55,6 +55,16 @@ function videoNode(model: string): CanvasNode {
 }
 
 describe("node configuration refresh journal", () => {
+  it("restores per-model parameter selections during an immediate refresh before the server save completes", () => {
+    const storage = new MemoryStorage();
+    const selected = videoNode("gpt-image-2");
+    selected.data.nodeType = "image-generation";
+    selected.data.modelParameterSelections = [{ connectionId: "jijiu-key", model: "gpt-image-2-2K/4K", provider: "openai",
+      qualityMode: "custom", parameters: { size: "4K", quality: "high" } }];
+    journalNodeConfiguration("canvas-1", selected, storage);
+    const restored = applyPendingNodeConfigurations([videoNode("old")], "canvas-1", readPendingNodeConfigurations(storage));
+    expect(restored[0]?.data.modelParameterSelections).toEqual(selected.data.modelParameterSelections);
+  });
   it("restores a model and its derived parameters over the stale server graph", () => {
     const storage = new MemoryStorage();
     const selected = videoNode("seedance-2.0-fast");

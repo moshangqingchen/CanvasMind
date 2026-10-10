@@ -95,7 +95,7 @@ jobs:
         run: pnpm --filter @super-canvas/desktop-ui exec vitest run lib/supplier-billing.test.ts lib/supplier-billing-read.test.ts lib/client-supplier-billing.test.ts lib/model-display.test.ts lib/jijiu-pricing.test.ts
 
       - name: Verify quality defaults, supplier switching and saved selections
-        run: pnpm --filter @super-canvas/desktop-ui exec playwright test e2e/canvas-declared-image-parameters.spec.ts e2e/canvas-supplier-picker.spec.ts e2e/supplier-billing.spec.ts e2e/app-update.spec.ts e2e/canvas-panel-zoom.spec.ts e2e/canvas-panel-interaction.spec.ts e2e/canvas-panel-nonoverlap.spec.ts e2e/canvas-layout-regression.spec.ts e2e/canvas-clipboard.spec.ts e2e/video-duration-controls.spec.ts e2e/supplier-audit-upgrade.spec.ts e2e/supplier-jijiu.spec.ts
+        run: pnpm --filter @super-canvas/desktop-ui exec playwright test e2e/canvas-declared-image-parameters.spec.ts e2e/canvas-supplier-picker.spec.ts e2e/supplier-billing.spec.ts e2e/app-update.spec.ts e2e/canvas-panel-zoom.spec.ts e2e/canvas-panel-interaction.spec.ts e2e/canvas-panel-nonoverlap.spec.ts e2e/canvas-layout-regression.spec.ts e2e/canvas-clipboard.spec.ts e2e/video-duration-controls.spec.ts e2e/supplier-audit-upgrade.spec.ts e2e/supplier-jijiu.spec.ts e2e/supplier-jijiu-persistence.spec.ts
         env:
           PLAYWRIGHT_CHANNEL: chromium
 

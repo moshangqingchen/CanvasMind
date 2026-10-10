@@ -12,7 +12,7 @@ export interface PendingNodeConfiguration {
   data: Pick<
     CanvasNodeData,
     "provider" | "connectionId" | "model" | "inputs" | "parameters" | "qualityMode"
-  >;
+  > & { modelParameterSelections?: unknown };
 }
 
 function storageOrNull(): Storage | null {
@@ -87,6 +87,7 @@ function configurationData(
     inputs: data.inputs,
     parameters: data.parameters,
     qualityMode: data.qualityMode,
+    modelParameterSelections: data.modelParameterSelections,
   };
 }
 

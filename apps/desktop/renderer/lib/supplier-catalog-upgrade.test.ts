@@ -26,6 +26,21 @@ async function fixture() {
 }
 
 describe("supplier catalog upgrade", () => {
+  it("upgrades a saved Jijiu catalog once and retains its exact model selection across launches", async () => {
+    const f = await fixture();
+    await f.save("jijiu-high-tier", { baseUrl: "https://newapi.jijiucanvas.com/v1", usage: "canvas",
+      modelGroup: "图片-GPT-image-2-2K/4K", accountKeyGroup: "图片-GPT-image-2-2K/4K",
+      defaultModel: "gpt-image-2-2K/4K", catalogUpgradeRevision: "2026-10-09-full-supplier-recheck-contracts-prices-v11" });
+    f.service.start(); await f.service.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(1);
+    expect((await f.repository.getConnection("jijiu-high-tier"))?.config).toMatchObject({
+      defaultModel: "gpt-image-2-2K/4K", catalogUpgradeRevision: SUPPLIER_CATALOG_REVISION,
+      modelGroup: "图片-GPT-image-2-2K/4K", accountKeyGroup: "图片-GPT-image-2-2K/4K",
+    });
+    const restarted = new SupplierCatalogUpgrade({ repository: f.repository, readModels: f.readModels });
+    restarted.start(); await restarted.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(1);
+  });
   it("notifies the picker when a verified legacy group migration preserves the Key and model cache", async () => {
     const f = await fixture();
     const supplier = await f.repository.saveSupplier({ id: "supplier", name: "Synora", supplierKey: "synora", siteUrl: "https://synoralink.com", apiUrl: "https://synoralink.com/v1", kind: "sub2api", catalog: { groups: [] }, scanStatus: "live",

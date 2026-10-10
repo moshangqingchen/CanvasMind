@@ -227,6 +227,7 @@ import {
 import { localizeRunError } from "../lib/error-localization";
 import { weAiImageGenerationDefault } from "../lib/new-image-generation-default";
 import { withCurrentImageRequestParameters } from "../lib/image-request-parameters";
+import { rememberModelParameters, savedModelParameters, transferableJijiuModelParameters } from "../lib/saved-model-parameters";
 import { removeUnreturnedGeneratedResults } from "../lib/generated-result-sync";
 import {
   collectReferencedAssetIds,
@@ -5194,12 +5195,15 @@ function CanvasShell({
         (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
       )
         return;
+      if (connectionId === node.data.connectionId) return;
+      const modelParameterSelections = rememberModelParameters(node.data);
       if (connectionId === "fake-default") {
         updateNodeData(
           nodeId,
           {
             provider: "fake",
             connectionId,
+            modelParameterSelections,
             qualityMode: "highest",
             model:
               nodeType === "video-generation"
@@ -5215,14 +5219,23 @@ function CanvasShell({
       }
       const connection = connections.find((item) => item.id === connectionId);
       if (!connection) return;
+      const previousSelection = nodeType === "image-generation"
+        ? savedModelParameters(modelParameterSelections, connectionId) : undefined;
+      const transferredSelection = nodeType === "image-generation" && !previousSelection
+        ? transferableJijiuModelParameters(node.data, connections.find(item => item.id === node.data.connectionId), connection,
+          modelForConnectionAndNode(connection, nodeType, node.data.model)) : undefined;
       const configuredModel = modelForConnectionAndNode(
         connection,
         nodeType,
-        defaultModelForConnection(connection),
+        previousSelection?.model ?? transferredSelection?.model ?? defaultModelForConnection(connection),
       );
+      const restoredSelection = configuredModel && previousSelection?.model === configuredModel.id
+        ? previousSelection : transferredSelection;
       const nextParameters = connection.provider === "cli" && configuredModel
         ? resolveModelParameters(configuredModel, {}, cliOperationForNode(nodeType, directLinkedAssetsForNode(node.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).some(asset => asset.kind === "image"))).parameters
-        : parametersWithDefaults(parameterDescriptorsFor(nodeType, connection.provider, configuredModel));
+        : restoredSelection
+          ? { ...normalizedParametersForModel(nodeType, connection.provider, configuredModel, restoredSelection.parameters), ...restoredSelection.parameters }
+          : parametersWithDefaults(parameterDescriptorsFor(nodeType, connection.provider, configuredModel));
       const selectedParameters = nodeType === "image-generation" && connection.provider !== "cli"
         ? imageModeParameters(nextParameters, getImageEditingCapabilities(connection, configuredModel?.id ?? "", nextParameters).transparent)
         : nextParameters;
@@ -5231,7 +5244,8 @@ function CanvasShell({
         {
           provider: connection.provider,
           connectionId: connection.id,
-          qualityMode: connection.provider === "cli" ? undefined : "highest",
+          modelParameterSelections,
+          qualityMode: connection.provider === "cli" ? undefined : restoredSelection ? restoredSelection.qualityMode : "highest",
           model: configuredModel?.id,
           inputs: generationInputsForModel(
             nodeType,
@@ -5257,6 +5271,9 @@ function CanvasShell({
         (nodeType !== "image-generation" && nodeType !== "video-generation" && nodeType !== "music-generation")
       )
         return;
+      // Reselecting the current row is not a new model choice.
+      if (modelId === node.data.model) return;
+      const modelParameterSelections = rememberModelParameters(node.data);
       const connection = connections.find(
         (item) => item.id === node.data.connectionId,
       );
@@ -5270,6 +5287,8 @@ function CanvasShell({
           )
         : null;
       const nextModel = listedModel ?? configuredModel;
+      const restoredSelection = nodeType === "image-generation" && node.data.connectionId
+        ? savedModelParameters(modelParameterSelections, node.data.connectionId, modelId) : undefined;
       if (connection?.provider === "cli" && nextModel) {
         const hasImage = directLinkedAssetsForNode(node.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).some(asset => asset.kind === "image");
         const resolved = resolveModelParameters(nextModel, node.data.parameters ?? {}, cliOperationForNode(nodeType, hasImage));
@@ -5307,7 +5326,9 @@ function CanvasShell({
         delete currentParameters.n;
       }
       if (resolutionParameters) Object.assign(currentParameters, resolutionParameters);
-      const nextParameters = parametersWithDefaults(parameterDescriptorsFor(nodeType, node.data.provider ?? "fake", nextModel), currentParameters);
+      const nextParameters = restoredSelection
+        ? { ...normalizedParametersForModel(nodeType, node.data.provider ?? "fake", nextModel, restoredSelection.parameters), ...restoredSelection.parameters }
+        : parametersWithDefaults(parameterDescriptorsFor(nodeType, node.data.provider ?? "fake", nextModel), currentParameters);
       const selectedParameters = nodeType === "image-generation" && connection
         ? imageModeParameters(nextParameters, getImageEditingCapabilities(connection, modelId, nextParameters).transparent)
         : nextParameters;
@@ -5315,7 +5336,8 @@ function CanvasShell({
         nodeId,
         {
           model: modelId,
-          qualityMode: modelId !== node.data.model ? "highest" : node.data.qualityMode,
+          modelParameterSelections,
+          qualityMode: restoredSelection ? restoredSelection.qualityMode : "highest",
           inputs: generationInputsForModel(
             nodeType,
             nextModel,

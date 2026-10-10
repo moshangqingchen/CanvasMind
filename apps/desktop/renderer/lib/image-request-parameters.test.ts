@@ -4,6 +4,8 @@ import { imageSizeOptions, type ModelDescriptor } from "@super-canvas/providers"
 import type { ProviderConnectionView } from "./client-api";
 import type { CanvasNode } from "../components/types";
 import { withCurrentImageRequestParameters } from "./image-request-parameters";
+import { normalizedParametersForModel, parameterDescriptorsFor, parameterValueForModel, setParameterValue } from "./model-parameters";
+import { jijiuGptImageRequestIssues, jijiuGptImageParameters } from "@super-canvas/providers/jijiu-image-contract";
 
 const cached: ModelDescriptor = { id: "gpt-image-2", name: "Cached pDog GPT", operations: ["image.generate", "image.edit"],
   parameters: [
@@ -23,6 +25,45 @@ describe("current image contracts in saved canvas catalogs", () => {
   let canvasModule: Pick<typeof import("../components/canvas-app"), "configureNewGenerationNode" | "modelDiscoveryMigrationPatch" | "normalizeGenerationNodeForRun">;
   beforeAll(async () => { vi.stubGlobal("React", React); canvasModule = await import("../components/canvas-app"); });
   afterAll(() => vi.unstubAllGlobals());
+
+  it.each(["2K", "4K"])("restores Jijiu %s/high from an auto-only saved catalog through refresh and run", size => {
+    const legacy: ModelDescriptor = { id: "gpt-image-2-2K/4K", name: "极九 GPT Image 2 2K/4K", operations: ["image.generate", "image.edit"],
+      parameters: [{ key: "size", label: "尺寸", control: "select", default: "auto", options: [{ value: "auto", label: "自动" }] }],
+      metadata: { jijiuImageContract: true, imageNativeParameterContract: true, imageNativeResolutionOptions: true,
+        priceLabel: "0.13 元/张", imageSupportedResolutions: ["1K", "2K", "4K"] } };
+    const jijiu: ProviderConnectionView = { ...connection, id: "jijiu-native", config: { baseUrl: "https://newapi.jijiucanvas.com/v1",
+      modelGroup: "图片-GPT-image-2-2K/4K", accountKeyGroup: "图片-GPT-image-2-2K/4K", usage: "canvas", defaultModel: legacy.id,
+      scannedModelIds: [legacy.id], modelScanStatus: "live", modelCatalogModels: [legacy] } };
+    const restored = JSON.parse(JSON.stringify({ ...source(), data: { ...source().data, connectionId: jijiu.id, model: legacy.id,
+      qualityMode: "custom", parameters: { size, quality: "high" } } })) as CanvasNode;
+    const model = withCurrentImageRequestParameters(jijiu, [legacy])[0]!;
+    expect(model.parameters?.find(parameter => parameter.key === "size")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
+    expect(parameterDescriptorsFor("image-generation", "openai", model).find(parameter => parameter.key === "quality")?.default).toBe("high");
+    expect(model.metadata?.priceLabel).toBe("0.13 元/张");
+    expect(canvasModule.modelDiscoveryMigrationPatch("image-generation", restored.data, "openai", model)?.parameters).toBeUndefined();
+    const normalized = canvasModule.normalizeGenerationNodeForRun(restored, [jijiu], { connectionId: jijiu.id, items: [legacy], authoritative: true });
+    expect(normalized.data.parameters).toMatchObject({ size, quality: "high" });
+    const request = { idempotencyKey: "jijiu-saved-tier", connectionId: jijiu.id, model: legacy.id, operation: "image.generate" as const,
+      prompt: "saved selection", parameters: normalized.data.parameters };
+    expect(jijiuGptImageRequestIssues(jijiu, request)).toEqual([]);
+    expect(jijiuGptImageParameters(normalized.data.parameters, legacy.id)).toEqual({ n: 1, size, quality: "high" });
+    expect(legacy.parameters).toHaveLength(1);
+  });
+
+  it.each(["resolution", "image_size", "imageSize", "size_tier"])("shows and restores Jijiu's saved %s alias without injecting a conflicting auto size", alias => {
+    const jijiu = { ...connection, config: { baseUrl: "https://newapi.jijiucanvas.com/v1", modelGroup: "图片-GPT-image-2-2K/4K" } };
+    const model = withCurrentImageRequestParameters(jijiu, [{ ...cached, id: "gpt-image-2-2K/4K" }])[0]!;
+    const current = { [alias]: "4K", quality: "high" };
+    expect(parameterValueForModel(model, current, "size")).toBe("4K");
+    const normalized = normalizedParametersForModel("image-generation", "openai", model, current);
+    expect(normalized).toMatchObject({ ...current, size: "4K" });
+    expect(jijiuGptImageParameters(normalized, model.id)).toEqual({ n: 1, size: "4K", quality: "high" });
+    expect(setParameterValue(normalized, "size", "2K", model)).toEqual({ size: "2K", quality: "high" });
+    const conflict = normalizedParametersForModel("image-generation", "openai", model, { ...current, size: "2K" });
+    expect(conflict).toMatchObject({ ...current, size: "2K" });
+    expect(jijiuGptImageRequestIssues(jijiu, { idempotencyKey: "conflict", connectionId: jijiu.id, model: model.id,
+      operation: "image.generate", prompt: "saved conflict", parameters: conflict }).some(issue => issue.code === "conflicting_resolution")).toBe(true);
+  });
 
   it("replaces a generic max schema without mutating the cache or its price evidence", () => {
     const snapshot = structuredClone(cached);

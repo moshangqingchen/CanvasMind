@@ -836,18 +836,19 @@ export function NodeParameterFields({
     aspectRatioKey: aspectRatioDescriptor?.key,
     model,
   } satisfies SizeAspectRatioContext;
+  const compactImageNotes = nodeType === "image-generation" && model?.metadata?.jijiuImageContract === true && model.id === "gpt-image-2-2K/4K";
 
   return (
     <>
       {provider === "cli" && !model && <p className="parameter-group-note">请先在“个人 AI 网站”中接入并同步模型与参数。</p>}
-      {typeof model?.metadata?.imageParameterContractNote === "string" && model.metadata.imageParameterContractNote && (
+      {!compactImageNotes && typeof model?.metadata?.imageParameterContractNote === "string" && model.metadata.imageParameterContractNote && (
         <p className="parameter-group-note">{model.metadata.imageParameterContractNote}</p>
       )}
       {parameterIssues.length > 0 && <div role="alert" className="parameter-group-note">{parameterIssues.map(issue => <p key={`${issue.path}:${issue.code}`}>{issue.message}</p>)}{provider === "cli" && <p>已保留原参数，请修正后再生成。</p>}</div>}
       {typeof model?.metadata?.imageCapabilityNote === "string" && model.metadata.imageCapabilityNote && (
         <p className="parameter-group-note">实测说明：{model.metadata.imageCapabilityNote}</p>
       )}
-      {typeof model?.metadata?.supplierGroupResolutionLabel === "string" && model.metadata.supplierGroupResolutionLabel && (
+      {!compactImageNotes && typeof model?.metadata?.supplierGroupResolutionLabel === "string" && model.metadata.supplierGroupResolutionLabel && (
         <p className="parameter-group-note" title={typeof model.metadata.supplierGroupDescription === "string" ? model.metadata.supplierGroupDescription : undefined}>
           分组说明：{model.metadata.supplierGroupResolutionLabel}{model.metadata.supplierGroupInfoStale ? "（上次读取，本次未确认）" : ""}
         </p>
@@ -920,6 +921,15 @@ export function NodeParameterFields({
           </div>
         )}
       </div>
+      {compactImageNotes && model.metadata && Boolean(model.metadata.imageParameterContractNote || model.metadata.supplierGroupResolutionLabel) && (
+        <details className="parameter-contract-details" onPointerDown={event => event.stopPropagation()}>
+          <summary>参数说明与分组依据{model.metadata.supplierGroupInfoStale ? "（分组说明待更新）" : ""}</summary>
+          {typeof model.metadata.imageParameterContractNote === "string" && <p>{model.metadata.imageParameterContractNote}</p>}
+          {typeof model.metadata.supplierGroupResolutionLabel === "string" && <p title={typeof model.metadata.supplierGroupDescription === "string" ? model.metadata.supplierGroupDescription : undefined}>
+            分组说明：{model.metadata.supplierGroupResolutionLabel}{model.metadata.supplierGroupInfoStale ? "（上次读取，本次未确认）" : ""}
+          </p>}
+        </details>
+      )}
       {showAdvanced ? (
         <AdvancedParametersEditor
           key={`${nodeId}:${parameterJson}`}

@@ -3573,7 +3573,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       const response = await fetchProviderJson<OpenAIImageResponse>(this.fetchImpl,
         `${origin}/v1/images/${request.operation === "image.edit" ? "edits" : "generations"}`, {
           method: "POST", headers: mergeHeaders(connection.headers, { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }),
-          body: JSON.stringify({ model: selectedModel, prompt: request.prompt, ...jijiuGptImageParameters(request.parameters),
+          body: JSON.stringify({ model: selectedModel, prompt: request.prompt, ...jijiuGptImageParameters(request.parameters, selectedModel),
             ...(request.operation === "image.edit" ? { image: assets!.map(asset => asset.url!) } : {}) }),
         }, { phase: "submit", timeoutMs: configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs"), maxResponseBytes: 128 * 1024 * 1024, idempotent: false });
       if (!(await this.extractOutputs({ response, protocol: "openai-images" })).length)

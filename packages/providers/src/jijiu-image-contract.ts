@@ -2,6 +2,9 @@ import type { ModelDescriptor, NormalizedRequest, ValidationIssue } from "./cont
 import type { ImageEditingConnection } from "./image-editing-capabilities.js";
 
 export const JIJIU_IMAGE_DOCS = "https://newapi.jijiucanvas.com/docs/api-docs.md";
+const JIJIU_HIGH_TIER_GPT_IMAGE = "gpt-image-2-2K/4K";
+const JIJIU_GPT_NATIVE_TIERS = ["1K", "2K", "4K"] as const;
+const GPT_TIER_KEYS = ["size", "resolution", "image_size", "imageSize", "size_tier"] as const;
 export const JIJIU_GPT_IMAGE_IDS = ["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2-2K/4K"] as const;
 export const JIJIU_GEMINI_IMAGE_IDS = ["gemini-3-pro-image", "gemini-3.1-flash-image", "gemini-nano-banana-2.1"] as const;
 export const JIJIU_IMAGE_IDS: readonly string[] = [...JIJIU_GPT_IMAGE_IDS, ...JIJIU_GEMINI_IMAGE_IDS];
@@ -29,21 +32,23 @@ export function jijiuImageGroupAllowed(config: Readonly<Record<string, unknown>>
     (!Array.isArray(config.scannedModelIds) || config.scannedModelIds.includes(id));
 }
 
-/** Exact supplier cards declare tiers, but do not publish a GPT pixel matrix. */
+/** Published tiers remain usable independently of an unpublished pixel matrix. */
 export function applyJijiuImageCapabilities(connection: ImageEditingConnection, model: ModelDescriptor): ModelDescriptor {
   if (!["openai", "rest"].includes(connection.provider) || !jijiuImageOrigin(connection.config.baseUrl) || !JIJIU_IMAGE_IDS.includes(model.id)) return model;
-  if (model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" || explicitlyUnavailable(model)) return model;
+  if (["manual", "paid-test"].includes(String(model.metadata?.source)) || model.metadata?.protocolEvidence === "paid-test" || explicitlyUnavailable(model)) return model;
   if (model.metadata?.operationsSource === "declared" && !model.operations.some(operation => operation.startsWith("image."))) return model;
   if (model.metadata?.outputKindsSource === "declared" && !model.outputKinds?.some(k => k === "image" || k === "image[]")) return model;
   if (!jijiuImageGroupAllowed(connection.config, model.id)) return { ...model, metadata: { ...model.metadata, canvasRunnable: false, canvasUnavailableReason: "当前极九 Key 或分组没有此完整图片型号权限" } };
   const gemini = (JIJIU_GEMINI_IMAGE_IDS as readonly string[]).includes(model.id);
-  const tiers = gemini || model.id === "gpt-image-2-2K/4K" ? ["1K", "2K", "4K"] : ["1K"];
+  const highTierGpt = model.id === JIJIU_HIGH_TIER_GPT_IMAGE;
+  const tiers = gemini || highTierGpt ? [...JIJIU_GPT_NATIVE_TIERS] : ["1K"];
   const metadata: Record<string, unknown> = { ...model.metadata, canvasRunnable: true, autoInterfaceStatus: "connected", jijiuImageContract: true,
     protocol: gemini ? "gemini-generate-content" : "openai-images", operationsSource: "declared", outputKindsSource: "declared",
     imageNativeParameterContract: true, imageNativeResolutionOptions: true, imageNativeResolutionParameter: gemini ? "image_size" : "size",
-    imageSupportedResolutions: tiers, imageRequestResolutions: gemini ? tiers : [], imageResolutionMode: "native-variable-pixels",
+    imageSupportedResolutions: tiers, imageRequestResolutions: gemini || highTierGpt ? tiers : [], imageResolutionMode: "native-variable-pixels",
     imagePixelBudgetPublished: false, imageOutputEncodingDeclared: false, imageNativeQualityOptions: true,
     imageParameterContractNote: gemini ? "官网声明 1K / 2K / 4K；未公布逐比例像素、自定义宽高、质量与编码规则，实际像素以原图为准。"
+      : highTierGpt ? "官网声明 1K / 2K / 4K；按用户要求使用原生档位与最高质量 high。4K/high 已有一次原图样本；未公布逐比例像素和自定义宽高，实际像素以原图为准。"
       : "官网未公布逐比例像素、自定义宽高、质量与编码规则。保留上游默认尺寸；1024 × 1024 仅为官方请求示例，不能推导其他档位像素。",
     supportsImageEdit: true, supportsReferenceImages: true, parameterControlsUnavailable: false,
     documentationUrl: JIJIU_IMAGE_DOCS, protocolEvidence: "supplier-documentation", parameterSource: "supplier-documentation-and-exact-model-card",
@@ -51,6 +56,19 @@ export function applyJijiuImageCapabilities(connection: ImageEditingConnection, 
   delete metadata.canvasUnavailableReason;
   for (const key of ["imageOutputDimensions", "imageOutputReferenceDimensions", "imageFixedResolution", "imageResolutionProfiles", "imageNativeQualityParameter", "maxInputImageBytes"])
     delete metadata[key];
+  if (highTierGpt) {
+    // The user explicitly requested these published tiers despite the absent
+    // pixel schema. Keep the request-profile evidence separate from paid proof.
+    Object.assign(metadata, { imageNativeQualityParameter: "quality", qualitySupport: "user-requested",
+      imageQualitySource: "openai-compatible-user-request", imageTierSource: "supplier-model-card",
+      imageTierRequestSource: "user-requested-native-size", imageParameterPresetSource: "jijiu-high-tier-user-request",
+      imageAllTierRequestsVerified: false,
+      imageNativeTierRequestSamples: [{ operation: "image.generate", group: "图片-GPT-image-2-2K/4K", parameters: { size: "4K", quality: "high", n: 1 },
+        checkedAt: "2026-10-10T08:19:14.811Z", output: { width: 2880, height: 2880, format: "png", bytes: 3734557,
+          sha256: "0a72660f53bc5cef0885f42885a8c9204f56fb82045ef8b4a48cd0cf6bb713a5" }, evidence: "single-request-original-file", allAspectRatiosVerified: false }] });
+    for (const key of ["imageUnsupportedResolutions", "imageApproximateResolutions", "fixedQuality", "imageQualityNote", "imageTierRequestVerified", "imageQualityRequestVerified"])
+      delete metadata[key];
+  }
   const limits = { ...model.limits, maxOutputImages: 1 };
   delete limits.maxInputImages;
   return { ...model, operations: ["image.generate", "image.edit"], capabilities: ["image.generate", "image.edit"], inputKinds: ["text", "image", "image[]"], outputKinds: ["image"], limits,
@@ -62,13 +80,19 @@ export function applyJijiuImageCapabilities(connection: ImageEditingConnection, 
     ] : [
       { key: "size", label: "输出尺寸", control: "select", valueType: "string", default: "auto", options: [
         { value: "auto", label: "自动 · 比例与像素由供应商决定" },
-        ...(model.id === "gpt-image-2-2K/4K" ? [] : [{ value: "1024x1024", label: "1K · 1:1 · 1024 × 1024（官方示例）" }])], description: String(metadata.imageParameterContractNote) },
+        ...(highTierGpt ? tiers.map(value => ({ value, label: value })) : [{ value: "1024x1024", label: "1K · 1:1 · 1024 × 1024（官方示例）" }])], description: String(metadata.imageParameterContractNote) },
+      ...(highTierGpt ? [{ key: "quality", label: "质量", control: "select" as const, valueType: "string" as const, default: "auto",
+        options: [{ value: "auto", label: "自动（供应商默认）" }, { value: "high", label: "最高" }],
+        description: "最高质量发送 GPT Image 2 的 high；自动不发送 quality。" }] : []),
       { key: "n", label: "生成张数", control: "number", valueType: "integer", default: 1, min: 1, max: 1 },
     ], metadata };
 }
 
-export function jijiuGptImageParameters(input: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
-  return { n: input.n ?? 1, ...(input.size !== undefined && input.size !== "auto" ? { size: input.size } : {}) };
+export function jijiuGptImageParameters(input: Readonly<Record<string, unknown>> = {}, model?: string): Record<string, unknown> {
+  const highTier = model === JIJIU_HIGH_TIER_GPT_IMAGE;
+  const size = highTier ? GPT_TIER_KEYS.map(key => input[key]).find(value => value !== undefined) : input.size;
+  return { n: input.n ?? 1, ...(size !== undefined && size !== "auto" ? { size } : {}),
+    ...(highTier && input.quality !== undefined && input.quality !== "auto" ? { quality: input.quality } : {}) };
 }
 export function jijiuGptImageRequestIssues(connection: ImageEditingConnection, request: NormalizedRequest): ValidationIssue[] {
   const issues: ValidationIssue[] = [], input = request.parameters ?? {}, id = request.model ?? "";
@@ -80,8 +104,18 @@ export function jijiuGptImageRequestIssues(connection: ImageEditingConnection, r
   if (!["image.generate", "image.edit"].includes(request.operation)) add("operation", "unsupported_operation", "极九图片接口仅用于图片生成和编辑");
   if (!request.prompt.trim()) add("prompt", "required", "请输入图片描述");
   if (input.n !== undefined && input.n !== 1) add("parameters.n", "invalid_count", "当前画布一次请求生成一张图片");
-  if (input.size !== undefined && input.size !== "auto" && !(input.size === "1024x1024" && id !== "gpt-image-2-2K/4K")) add("parameters.size", "undocumented_size", "此型号未公布该像素组合，请选择供应商默认尺寸或已列出的官方示例");
-  for (const key of ["quality", "output_format", "output_compression", "width", "height", "resolution", "image_size", "size_tier", "aspect_ratio", "aspectRatio", "ratio", "response_format", "background"])
+  const highTier = id === JIJIU_HIGH_TIER_GPT_IMAGE;
+  if (highTier) {
+    const sizes = GPT_TIER_KEYS.filter(key => input[key] !== undefined).map(key => input[key]);
+    if (new Set(sizes).size > 1) add("parameters.size", "conflicting_resolution", "已保存的分辨率字段冲突，请明确选择档位");
+    for (const key of GPT_TIER_KEYS) if (input[key] !== undefined && !["auto", ...JIJIU_GPT_NATIVE_TIERS].includes(input[key] as string))
+      add(`parameters.${key}`, "invalid_resolution", "请选择此完整型号的自动、1K、2K 或 4K 档位；不把档位换算为未经公布的像素");
+    if (input.quality !== undefined && !["auto", "high"].includes(input.quality as string))
+      add("parameters.quality", "invalid_quality", "最高质量使用 high，请选择自动或最高；不发送未知 max");
+  } else if (input.size !== undefined && input.size !== "auto" && input.size !== "1024x1024")
+    add("parameters.size", "undocumented_size", "此型号未公布该像素组合，请选择供应商默认尺寸或已列出的官方示例");
+  for (const key of ["output_format", "output_compression", "width", "height", "aspect_ratio", "aspectRatio", "ratio", "response_format", "background",
+    ...(!highTier ? ["quality", "resolution", "image_size", "imageSize", "size_tier"] : [])])
     if (input[key] !== undefined && input[key] !== "auto") add(`parameters.${key}`, "undocumented_parameter", "极九当前完整型号未公布此参数组合；已保存的值不会静默替换");
   const assets = request.assets ?? [];
   if (request.operation === "image.edit" && !assets.length) add("assets", "reference_required", "图片编辑需要参考图");

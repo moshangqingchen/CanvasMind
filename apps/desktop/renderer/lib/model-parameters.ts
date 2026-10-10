@@ -530,7 +530,15 @@ export function normalizedParametersForModel(
   // Native video objects such as materials/face have no individual UI descriptor.
   // New nodes still receive defaults; explicit model changes use parametersWithDefaults.
   if (model?.metadata?.imageNativeParameterContract === true) {
-    return { ...parametersWithDefaults(descriptors, current, true), ...current };
+    const parameters = { ...parametersWithDefaults(descriptors, current, true), ...current };
+    for (const [canonical, previousKeys] of modelParameterAliases(model)) {
+      if (current[canonical] !== undefined) continue;
+      const previous = previousKeys.find(key => current[key] !== undefined);
+      // A saved native tier alias must not conflict with an injected auto default.
+      // Retain the original fields so genuine conflicts still reach validation.
+      if (previous) parameters[canonical] = current[previous];
+    }
+    return parameters;
   }
   if (model?.metadata?.jiasuImageProtocol === 1 ||
       nodeType === "video-generation" && model?.metadata?.jiasuVideoContract === true) {
@@ -651,6 +659,8 @@ export function setParameterValue(
 }
 
 export function modelParameterAliases(model?: Pick<ModelDescriptor, "metadata" | "parameters"> | null): ReadonlyArray<readonly [string, readonly string[]]> {
+  if (model?.metadata?.jijiuImageContract === true && model.metadata.imageParameterPresetSource === "jijiu-high-tier-user-request")
+    return [["size", ["resolution", "image_size", "imageSize", "size_tier"]]];
   if (model?.metadata?.jiasuImageProtocol === 1)
     return [["ratio", ["aspect_ratio", "aspectRatio"]], ["resolution", ["image_size", "size_tier"]]];
   if (model?.metadata?.jiasuVideoContract === true)
