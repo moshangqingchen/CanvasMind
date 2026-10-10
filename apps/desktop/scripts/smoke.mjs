@@ -10,6 +10,7 @@ import { createJpegWithExifThumbnailFixture } from "../renderer/app/api/assets/j
 import { captureRenderedHome } from "./smoke-rendering.mjs";
 import { runWindowedSmoke } from "./smoke-windowed.mjs";
 import { captureSmokeProfileDiagnostics, diagnoseFailedSmokeProfile } from "./smoke-profile-diagnostics.mjs";
+import { smokeBundledVideo } from "./smoke-video.mjs";
 const desktop = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const rendererRequire = createRequire(join(desktop, "renderer/package.json"));
 const desktopRequire = createRequire(join(desktop, "package.json"));
@@ -17,6 +18,10 @@ const { _electron } = rendererRequire("@playwright/test");
 const packaged = process.argv.includes("--packaged");
 const environment = { ...process.env, ELECTRON_ENABLE_LOGGING: "0" };
 delete environment.ELECTRON_RUN_AS_NODE;
+if (packaged) {
+  for (const key of Object.keys(environment)) if (key.toLowerCase() === "path") delete environment[key];
+  environment.PATH = "";
+}
 const executablePath = packaged ? join(desktop, "release/win-unpacked/SuperCanvas.exe") : desktopRequire("electron");
 if (process.argv.includes("--windowed")) {
   await runWindowedSmoke({ electron: _electron, executablePath, baseArgs: packaged ? [] : [desktop], environment, desktop, packaged });
@@ -135,6 +140,8 @@ try {
   }, { path, body, method });
   assert.equal((await api("/api/desktop/lifecycle")).activeRuns, 0);
   report.checks.push("packaged lifecycle hook and durability barrier");
+  report.bundledVideo = await smokeBundledVideo(api);
+  report.checks.push("bundled offline CLI video archive and full original decode without system FFmpeg");
   const referenceStatus = await page.evaluate(() => window.superCanvasDesktop.getReferenceChannel());
   assert.equal(referenceStatus.enabled, false);
   assert.equal(referenceStatus.tokenConfigured, false);

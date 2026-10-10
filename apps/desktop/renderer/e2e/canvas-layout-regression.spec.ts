@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
+import { attachedPanelGeometry } from "./attached-panel-geometry";
 
 const NODE_LABEL = "布局验收：长名称模型与参数";
 const MODEL_NAME = "用于检验长模型名称截断和完整提示的高质量图像生成模型";
@@ -89,30 +90,9 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       await expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
       await expect(panel).toHaveCSS("width", `${nodeWidth}px`);
       await expect(panel).toHaveCSS("font-size", "13px");
-      // Vertical placement and scale follow the node. Horizontal placement
-      // shifts only as needed to clear the rail and stay inside the canvas.
-      await expect.poll(() => panel.evaluate((element, expected) => {
-        const card = document.querySelector('.react-flow__node[data-id="layout-image"] .node-card')!.getBoundingClientRect();
-        const bounds = element.getBoundingClientRect();
-        const canvas = element.closest(".canvas-wrap")!.getBoundingClientRect();
-        const rail = document.querySelector(".editor-rail")!.getBoundingClientRect();
-        const left = Math.max(canvas.left + 8, rail.width > 0 && rail.height > 0 ? rail.right + 8 : 0);
-        const right = Math.min(canvas.right, window.innerWidth) - 8;
-        const width = Math.min(card.width, right - left);
-        const horizontalError = card.width > right - left || card.left < left
-          ? Math.abs(bounds.left - left)
-          : card.right > right ? Math.abs(bounds.right - right) : Math.abs(bounds.left - card.left);
-        const close = element.querySelector('[aria-label="关闭模型与参数面板"]')!;
-        return Math.max(
-          horizontalError,
-          Math.abs(bounds.width - width),
-          Math.abs(bounds.width - Math.min(expected.nodeWidth * expected.zoom, right - left)),
-          left - bounds.left, bounds.right - right,
-          Math.abs(bounds.y - card.bottom - 10 * expected.zoom),
-          Math.abs(bounds.height - 560 * expected.zoom),
-          Math.abs(close.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(close).width) * expected.zoom),
-        );
-      }, { zoom, nodeWidth })).toBeLessThanOrEqual(1);
+      // Preserve node scale while flipping or clamping placement when the
+      // viewport cannot fit the panel below its node.
+      await expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
       await expect(panel.getByRole("button", { name: "关闭模型与参数面板" })).toBeInViewport({ ratio: 1 });
       await expect(panel.getByRole("button", { name: "管理供应商与密钥" })).toBeInViewport({ ratio: 1 });
       await expect(panel.locator(".node-config-provider-header > span").first()).toHaveCSS("font-size", "12px");
@@ -124,6 +104,12 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       const label = panel.locator(".parameter-field label").filter({ hasText: QUALITY_LABEL });
       await expect(label).toHaveCSS("font-size", "12px");
       await expect.poll(() => label.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+      await quality.scrollIntoViewIfNeeded();
+      await expect(quality).toBeInViewport({ ratio: 1 });
+      if (zoom === 2) {
+        await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+      }
+      await expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
       await page.screenshot({ path: testInfo.outputPath(`panel-${zoom * 100}.png`) });
       await page.getByRole("button", { name: "打开节点与素材库", exact: true }).click({ trial: true });
       await panel.getByRole("button", { name: "关闭模型与参数面板" }).click();

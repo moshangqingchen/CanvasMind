@@ -1,0 +1,10 @@
+{
+  "version": "n9.0.2-17-g2a571b6068",
+  "license": "LGPL-3.0-or-later",
+  "releaseTag": "autobuild-2026-09-30-13-08",
+  "archiveRoot": "ffmpeg-n9.0.2-17-g2a571b6068-win64-lgpl-shared-9.0",
+  "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-win64-lgpl-shared-9.0.zip",
+  "sha256": "7157177b8a6cb2174c1650ba8c71b363f2c78cba5330f88c4c02cf5b2b880646",
+  "sourceUrl": "https://github.com/FFmpeg/FFmpeg/tree/2a571b6068",
+  "buildSourceUrl": "https://github.com/BtbN/FFmpeg-Builds/tree/autobuild-2026-09-30-13-08"
+}

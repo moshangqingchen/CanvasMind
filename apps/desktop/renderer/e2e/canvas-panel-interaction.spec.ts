@@ -5,6 +5,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import { attachedPanelGeometry } from "./attached-panel-geometry";
 
 const models = [
   {
@@ -283,8 +284,10 @@ test("异步模型目录返回后反复切换供应商与群组仍可编辑参�
   ui.assertNoRuns();
 });
 
-test("缩放后平移画布与拖动节点时，参数面板一直贴在节点下方", async ({ page, request }) => {
-  await page.setViewportSize({ width: 1440, height: 1080 });
+test("空间充足时参数面板随节点平移与拖动，节点离屏后面板保持可操作", async ({ page, request }) => {
+  // Keep space for the full scaled panel and drag path. Narrow/clamped windows
+  // are covered separately; an overlapping panel must not receive node drags.
+  await page.setViewportSize({ width: 1440, height: 1600 });
   const ui = await openPanel(page, request);
   await page.getByRole("button", { name: "抓手模式", exact: true }).click();
   const node = page.locator('.react-flow__node[data-id="source"] .node-card');
@@ -303,15 +306,9 @@ test("缩放后平移画布与拖动节点时，参数面板一直贴在节点�
       worldX: position.m41,
       worldY: position.m42,
       zoom: transform.a,
-      attachmentError: Math.max(
-        Math.abs(panel.x - card.x),
-        Math.abs(panel.width - card.width),
-        Math.abs(panel.y - card.bottom - 10 * transform.a),
-        Math.abs(panel.height - 560 * transform.a),
-      ),
     };
   });
-  const assertAttached = () => expect.poll(async () => (await geometry()).attachmentError).toBeLessThanOrEqual(1);
+  const assertAttached = () => expect.poll(async () => (await attachedPanelGeometry(ui.panel)).attachmentError).toBeLessThanOrEqual(1);
 
   await page.locator(".react-flow__controls-zoomout").click();
   await expect.poll(async () => (await geometry()).zoom).toBeLessThan(1);
@@ -333,6 +330,7 @@ test("缩放后平移画布与拖动节点时，参数面板一直贴在节点�
     await page.mouse.up();
   }
   const afterPan = await geometry();
+  expect((await attachedPanelGeometry(ui.panel)).direction).toBe("below");
   expect(afterPan.worldX).toBe(beforePan.worldX);
   expect(afterPan.worldY).toBe(beforePan.worldY);
 
@@ -348,6 +346,7 @@ test("缩放后平移画布与拖动节点时，参数面板一直贴在节点�
     await expect.poll(async () => (await geometry()).nodeX - afterPan.nodeX).toBeGreaterThan(80);
     await expect.poll(async () => (await geometry()).nodeY - afterPan.nodeY).toBeGreaterThan(25);
     const dragged = await geometry();
+    expect((await attachedPanelGeometry(ui.panel)).direction).toBe("below");
     const deltaX = dragged.nodeX - afterPan.nodeX;
     const deltaY = dragged.nodeY - afterPan.nodeY;
     expect(dragged.panelX - afterPan.panelX).toBeCloseTo(deltaX, 0);
@@ -384,8 +383,9 @@ test("缩放后平移画布与拖动节点时，参数面板一直贴在节点�
   }
   await ui.quantity.fill("2");
   await expect(ui.quantity).toHaveValue("2");
-  // The attached header now sits behind the app's top bar. Escape must still
-  // close the panel while its node is offscreen and restore normal culling.
+  await ui.panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
+  // Clamping keeps the header accessible while the node is offscreen. Escape
+  // must still close the panel and restore normal culling.
   await page.keyboard.press("Escape");
   await expect(ui.panel).toBeHidden();
   ui.assertNoRuns();

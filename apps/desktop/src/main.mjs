@@ -17,6 +17,7 @@ import { configureUpdates } from "./update-config.mjs";
 import { ReferenceChannel } from "./reference-channel.mjs";
 import { exitWaitPresentation } from "./exit-policy.mjs";
 import { DesktopRendererRecovery, rendererLoadFailure } from "./renderer-recovery.mjs";
+import { mediaToolEnvironment } from "./media-tools.mjs";
 
 app.setAppUserModelId(APP_ID);
 const smoke = process.argv.includes("--smoke-test");
@@ -136,6 +137,7 @@ async function start() {
     intentionalStop = false;
     const hook = app.isPackaged ? join(runtime, "runtime-hook.cjs") : join(__dirname, "runtime-hook.cjs");
     const environment = { ...backendEnvironment(process.env, dataRoot, port, token, secrets), ...(smoke || development ? { SUPPLIER_AUTO_VERIFY: "off" } : {}) };
+    if (!development) Object.assign(environment, mediaToolEnvironment(runtime));
     environment.SUPERCANVAS_CLI_EXAMPLES_ROOT = development
       ? resolve(__dirname, "../../../packages/providers/examples")
       : join(runtime, "server/packages/providers/examples");

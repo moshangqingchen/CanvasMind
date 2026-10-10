@@ -20,7 +20,7 @@ const publicPricing = JSON.parse(readFileSync(new URL("../lib/miaowu-catalog-202
 const cyber = cyberAfeiCatalogFromPricing({ data: [{ model_name: "gemini-3.1-flash-image-preview", quota_type: 1,
   model_price: 0.08, enable_groups: ["图片视频模型综合分组"], supported_endpoint_types: ["gemini"] }] });
 
-type Fixture = { supplier: string; model: ModelDescriptor; key: string; ratioKey: string; values: string[]; labels: string[]; pixels?: boolean };
+type Fixture = { supplier: string; model: ModelDescriptor; key: string; ratioKey: string; values: string[]; labels: string[]; pixels?: boolean; referencePixels?: Record<string, readonly [number, number]> };
 const fixtures: Fixture[] = [
   { supplier: "GenImage", model: banana("https://genimage.pro/v1", "geminiResponseUrl", "gemini-3-pro-image-preview"),
     key: "image_size", ratioKey: "aspect_ratio", values: ["1K", "2K", "4K"], labels: ["1K", "2K", "4K"] },
@@ -31,7 +31,9 @@ const fixtures: Fixture[] = [
   { supplier: "We-AI compatible", model: weAIModelDescriptors("gemini-3-pro-image", true, WEAI_GEMINI_MODEL_GROUP, "gemini-openai-compatible")[0]!,
     key: "size", ratioKey: "aspect_ratio", values: ["auto", "1K", "2K", "4K"], labels: ["自动", "1K", "2K", "4K"] },
   { supplier: "Cangyuan Nano 2.1", model: cangyuanCurrentModel(seed("gemini-nano-banana-2.1")),
-    key: "quality", ratioKey: "aspect_ratio", values: ["1k", "2k", "4k"], labels: ["1K", "2K", "4K"] },
+    // This supplier's current schema explicitly accepts auto as its native 1K default.
+    key: "quality", ratioKey: "aspect_ratio", values: ["1k", "2k", "4k", "auto"], labels: ["1K", "2K", "4K", "自动"], pixels: true,
+    referencePixels: { "1k": [768, 1376], "2k": [1536, 2752], "4k": [3072, 5504] } },
   { supplier: "Cangyuan legacy Banana", model: CANGYUAN_BACKUP_IMAGE_CONNECTOR.models!.find(model => model.id === CANGYUAN_BANANA_PRO_4K_MODEL)!,
     key: "quality", ratioKey: "aspect_ratio", values: ["auto", "low", "medium", "high"], labels: ["自动", "1K", "2K", "4K"] },
   { supplier: "Miaowu Banana Pro", model: miaowuCatalogFromPricing(publicPricing).models.find(model => model.id === "Image-nano-banana-pro")!,
@@ -116,10 +118,22 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
     await expect(f.panel.getByRole("combobox", { name: /质量|清晰度|输出分辨率|^分辨率$/u })).toHaveCount(0);
     await expect(f.panel.getByLabel("图片宽度", { exact: true })).toHaveCount(fixture.pixels ? 1 : 0);
     await expect(f.panel.getByLabel("图片高度", { exact: true })).toHaveCount(fixture.pixels ? 1 : 0);
+    const assertReferencePixels = async (tier: string) => {
+      if (!fixture.referencePixels) return;
+      const dimensions = fixture.referencePixels[tier];
+      for (const [index, label] of ["图片宽度", "图片高度"].entries()) {
+        const field = f.panel.getByLabel(label, { exact: true });
+        await expect(field).toHaveJSProperty("readOnly", true);
+        await expect(field).toHaveValue(dimensions ? String(dimensions[index]) : "");
+        if (dimensions) await expect(field).toHaveAttribute("title", /供应商参考像素.*不作为 size 请求发送/u);
+        else await expect(field).toHaveAttribute("placeholder", "以原图为准");
+      }
+    };
     const ratioDescriptor = fixture.model.parameters!.find(parameter => parameter.key === fixture.ratioKey)!;
     expect(await ratio.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean)))
       .toEqual(ratioDescriptor.options!.map(option => String(option.value)));
     await ratio.selectOption("9:16");
+    await assertReferencePixels(fixture.values.at(-1)!);
     // A provider's K labels can have unrelated wire values, such as low/medium.
     // Every button must preserve those values and both original parameter keys.
     for (let index = 0; index < fixture.values.length; index++) {
@@ -128,10 +142,12 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
       await expect(choice).toHaveAttribute("aria-pressed", "true");
       await expect.poll(async () => (await f.saved()).parameters)
         .toEqual({ [fixture.key]: fixture.values[index], [fixture.ratioKey]: "9:16" });
+      await assertReferencePixels(fixture.values[index]);
     }
     await page.reload(); await f.open();
     await expect(tiers.getByRole("button", { name: fixture.labels.at(-1), exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(ratio).toHaveValue("9:16");
+    await assertReferencePixels(fixture.values.at(-1)!);
     await expect.poll(async () => (await f.saved()).parameters)
       .toEqual({ [fixture.key]: fixture.values.at(-1), [fixture.ratioKey]: "9:16" });
     await f.panel.screenshot({ path: testInfo.outputPath(`${fixture.supplier.replace(/[^a-z0-9]/giu, "-")}-banana-parameters.png`) });

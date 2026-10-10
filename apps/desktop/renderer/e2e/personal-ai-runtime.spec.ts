@@ -57,11 +57,13 @@ test("真实模拟 CLI 从目录与参数运行到可播放视频，重复请求
   expect((await duplicate.json()).run.id).toBe(runId);
   const video = page.locator(`video[src*="${assetId}"]`).first();
   await expect(video).toBeAttached();
-  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.videoWidth)).toBe(32);
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => ({ width: element.videoWidth, height: element.videoHeight })))
+    .toEqual({ width: 1280, height: 720 });
   await video.evaluate(async (element: HTMLVideoElement) => { element.muted = true; await element.play(); });
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
   await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("已保存");
   await page.reload();
-  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.videoWidth)).toBe(32);
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => ({ width: element.videoWidth, height: element.videoHeight })))
+    .toEqual({ width: 1280, height: 720 });
   await page.screenshot({ path: testInfo.outputPath("personal-ai-video-playback.png") });
 });

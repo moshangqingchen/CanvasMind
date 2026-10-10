@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { verifyMediaTools } from "./media-tools.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(join(root, "package.json"));
 const { load } = createRequire(require.resolve("electron-updater"))("js-yaml");
@@ -13,6 +14,8 @@ assert.equal(config.provider, "github");
 assert.equal(config.owner, "moshangqingchen");
 assert.equal(config.repo, "CanvasMind");
 assert.ok(config.updaterCacheDirName);
+const mediaTools = await verifyMediaTools(join(root, "release/win-unpacked/resources/runtime"));
+console.log("Verified bundled media tools with empty system PATH: " + JSON.stringify(mediaTools));
 if (!process.argv.includes("--unpacked")) {
   const latest = load(await readFile(join(root, "release/latest.yml"), "utf8"));
   const name = "SuperCanvas-Setup-" + version + "-x64.exe";

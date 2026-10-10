@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { effectiveImageCapabilities } from "../lib/supplier-capabilities";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 import { bindScannedModelProtocols } from "../lib/scanned-model-protocols";
+import { attachedPanelGeometry } from "./attached-panel-geometry";
 
 for (const [id, values] of [
   ["gpt-image-2.5-flare-yf", ["auto", "low", "medium", "high", "xhigh", "max"]],
@@ -55,7 +56,7 @@ test("Chuangxiang historical small response keeps 2K and 4K plus every ratio vis
   }
 });
 
-test("one passed 4K probe exposes every ratio, preserves auto, and keeps the panel below its node while clearing tools", async ({ page, request }, testInfo) => {
+test("one passed 4K probe exposes every ratio, preserves auto, and anchors the panel within the viewport while clearing tools", async ({ page, request }, testInfo) => {
   const descriptor = effectiveImageCapabilities({
     supplier: { id: "isolated", name: "隔离", supplierKey: "isolated", kind: "newapi", apiUrl: "https://isolated.invalid", siteUrl: "https://isolated.invalid", catalog: { groups: [] }, scanStatus: "live", createdAt: "now", updatedAt: "now" },
     connection: { id: "fixture", provider: "openai", config: {} },
@@ -80,31 +81,7 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   const inspector = page.getByRole("button", { name: "智能体面板", exact: true });
   if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
   await expect(inspector).toHaveAttribute("aria-expanded", "false");
-  const assertAttached = () => expect.poll(() => panel.evaluate(element => {
-    const host = element.closest(".react-flow__node")!;
-    const card = host.querySelector(".node-card")!.getBoundingClientRect();
-    const bounds = element.getBoundingClientRect();
-    const canvas = host.closest(".canvas-wrap")!.getBoundingClientRect();
-    const rail = document.querySelector(".editor-rail")!.getBoundingClientRect();
-    const left = Math.max(canvas.left + 8, rail.width > 0 && rail.height > 0 ? rail.right + 8 : 0);
-    const right = Math.min(canvas.right, window.innerWidth) - 8;
-    const width = Math.min(card.width, right - left);
-    // Preserve the node anchor unless the rail or viewport requires a shift.
-    const horizontalError = card.width > right - left || card.left < left
-      ? Math.abs(bounds.left - left)
-      : card.right > right ? Math.abs(bounds.right - right) : Math.abs(bounds.left - card.left);
-    const viewport = document.querySelector(".react-flow__viewport")!;
-    const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a;
-    const close = element.querySelector('[aria-label="关闭模型与参数面板"]')!;
-    return Math.max(
-      horizontalError,
-      Math.abs(bounds.width - width),
-      left - bounds.left, bounds.right - right,
-      Math.abs(bounds.y - card.bottom - 10 * zoom),
-      Math.abs(bounds.height - 560 * zoom),
-      Math.abs(close.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(close).width) * zoom),
-    );
-  })).toBeLessThanOrEqual(1);
+  const assertAttached = () => expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
   await assertAttached();
   const size = panel.getByLabel("输出分辨率预设", { exact: true });
   const options = await size.locator("option").allTextContents();
@@ -114,7 +91,7 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   await size.selectOption("auto");
   await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters).toMatchObject({ size: "auto", size_tier: "4K" });
   await panel.locator("summary").last().click();
-  await expect(panel).toHaveCSS("height", "560px");
+  await assertAttached();
   const body = panel.locator(".node-config-popover-body");
   await expect(body).toHaveCSS("overflow-y", "auto");
   await body.evaluate(el => { el.scrollTop = el.scrollHeight; });
@@ -137,12 +114,20 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   await modelSelect.click();
   const menu = panel.getByRole("listbox");
   await expect(menu).toBeInViewport({ ratio: 1 });
-  const menuBox = await menu.boundingBox();
-  const panelBox = await panel.boundingBox();
-  expect(menuBox!.y + menuBox!.height).toBeLessThan(panelBox!.y + panelBox!.height);
-  await expect(panel).toHaveCSS("height", "560px");
+  // ModelPicker uses the browser top layer and may open beside or beyond the
+  // inspector. Its own viewport margin, not the scrolling parent, bounds it.
+  await expect.poll(() => menu.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const left = (viewport?.offsetLeft ?? 0) + 12;
+    const top = (viewport?.offsetTop ?? 0) + 12;
+    const right = left + (viewport?.width ?? window.innerWidth) - 24;
+    const bottom = top + (viewport?.height ?? window.innerHeight) - 24;
+    return Math.max(left - bounds.left, top - bounds.top, bounds.right - right, bounds.bottom - bottom);
+  })).toBeLessThanOrEqual(1);
+  await assertAttached();
   await panel.getByRole("option", { name: "简单型号", exact: true }).click();
-  await expect(panel).toHaveCSS("height", "560px");
+  await assertAttached();
   await expect(body).toHaveJSProperty("scrollTop", 0);
   await panel.getByRole("combobox", { name: "比例验收 模型", exact: true }).click();
   await panel.getByRole("option", { name: "比例验收", exact: true }).click();
@@ -156,12 +141,12 @@ test("one passed 4K probe exposes every ratio, preserves auto, and keeps the pan
   if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
   await expect(inspector).toHaveAttribute("aria-expanded", "false");
   await expect(panel.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(panel).toHaveCSS("height", "560px");
+  await assertAttached();
   await page.screenshot({ path: testInfo.outputPath("attached-panel-ratios.png") });
   await assertAttached();
   await page.setViewportSize({ width: 1280, height: 720 });
   await assertAttached();
-  await page.screenshot({ path: testInfo.outputPath("panel-below-node.png") });
+  await page.screenshot({ path: testInfo.outputPath("panel-within-viewport.png") });
   await page.setViewportSize({ width: 760, height: 580 });
   await assertAttached();
   await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });

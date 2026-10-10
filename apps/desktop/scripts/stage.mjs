@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { join, relative, isAbsolute, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { stageMediaTools } from "./media-tools.mjs";
 import {
   runtimeDependencies,
   validateRuntimeLock,
@@ -120,6 +121,7 @@ await cp(
   join(server, "packages/providers/examples"),
   { recursive: true },
 );
+const mediaTools = await stageMediaTools(stage);
 const audit = async (directory) => {
   for (const name of await readdir(directory)) {
     const path = join(directory, name);
@@ -165,6 +167,7 @@ await writeFile(
     {
       nodeVersion: version,
       nodeSha256: actual,
+      mediaTools,
       dependencyLockSha256: createHash("sha256")
         .update(runtimeLock)
         .digest("hex"),
