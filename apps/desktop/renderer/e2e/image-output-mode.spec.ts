@@ -93,10 +93,18 @@ async function setup(page: Page, request: APIRequestContext, kind: "secure" | "m
   return { panel, normal, transparent, saved, open, connections, safe };
 }
 
-test("普通与透明模式显示、PNG 参数持久化，切换不支持的型号恢复普通模式", async ({ page, request }, info) => {
+async function expectEncoding(f: Awaited<ReturnType<typeof setup>>, background: "opaque" | "transparent" | null, format: string, compression: number | null = null) {
+  await expect.poll(async () => {
+    const parameters = (await f.saved()).parameters;
+    return { background: parameters.background ?? null, format: parameters.output_format, compression: parameters.output_compression ?? null };
+  }).toEqual({ background, format, compression });
+}
+
+test("生成模式与编码按型号保存，未支持型号保持普通，返回恢复明确选择", async ({ page, request }, info) => {
   const f = await setup(page, request, "secure");
   try {
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
+    await expectEncoding(f, "opaque", "jpeg", 80);
     await expect(f.transparent).toBeVisible();
     await f.transparent.click();
     await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
@@ -124,27 +132,51 @@ test("普通与透明模式显示、PNG 参数持久化，切换不支持的型�
     await expect(picker.getByText("可透明", { exact: true })).toHaveCount(0);
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
     await expect.poll(async () => Object.hasOwn((await f.saved()).parameters, "background")).toBe(false);
+    await expectEncoding(f, null, "png");
     await page.reload(); await f.open();
     await expect(picker).toContainText(image25.name);
     await expect(f.transparent).toHaveCount(0);
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
+    await f.panel.getByLabel("输出格式", { exact: true }).selectOption("jpeg");
+    await expectEncoding(f, null, "jpeg");
 
     await picker.click();
     await f.panel.getByRole("option", { name: image2.name, exact: true }).click();
     await expect(f.transparent).toBeVisible();
+    await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
+    await expect(f.normal).toHaveAttribute("aria-pressed", "false");
+    await expectEncoding(f, "transparent", "png");
+    await expect(f.panel.getByLabel("输出格式", { exact: true })).toBeDisabled();
+    await page.reload(); await f.open();
+    await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
+    await expectEncoding(f, "transparent", "png");
+
+    // Explicitly replace the remembered transparent selection, then verify that
+    // each model restores its own mode/encoding rather than a shared reset.
+    await f.normal.click();
+    await f.panel.getByLabel("输出格式", { exact: true }).selectOption("webp");
+    await expectEncoding(f, "opaque", "webp");
+    await picker.click(); await f.panel.getByRole("option", { name: image25.name, exact: true }).click();
+    await expect(f.transparent).toHaveCount(0);
+    await expectEncoding(f, null, "jpeg");
+    await picker.click(); await f.panel.getByRole("option", { name: image2.name, exact: true }).click();
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
-    await expect.poll(async () => (await f.saved()).parameters.background).toBe("opaque");
+    await expectEncoding(f, "opaque", "webp");
+    await page.reload(); await f.open();
+    await expect(f.normal).toHaveAttribute("aria-pressed", "true");
+    await expectEncoding(f, "opaque", "webp");
     await f.panel.screenshot({ path: info.outputPath("image-output-mode.png") });
   } finally { f.safe(); }
 });
 
-test("同型号切换精确供应商分组，未支持组只显示普通模式并保存选择", async ({ page, request }, info) => {
+test("生成模式与编码按精确分组保存，未支持组保持普通，返回恢复明确选择", async ({ page, request }, info) => {
   const f = await setup(page, request, "monster");
   try {
     const picker = f.panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
     await expect(picker.getByText("可透明", { exact: true })).toBeVisible();
+    await expectEncoding(f, "opaque", "jpeg", 80);
     await f.transparent.click();
-    await expect.poll(async () => (await f.saved()).parameters.background).toBe("transparent");
+    await expectEncoding(f, "transparent", "png");
     const group = f.panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
     await group.selectOption(b1);
     await expect.poll(async () => (await f.saved()).connectionId).toBe(f.connections[1]!.id);
@@ -152,17 +184,38 @@ test("同型号切换精确供应商分组，未支持组只显示普通模式�
     await expect(picker.getByText("可透明", { exact: true })).toHaveCount(0);
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
     await expect.poll(async () => Object.hasOwn((await f.saved()).parameters, "background")).toBe(false);
+    await expectEncoding(f, null, "png");
     await page.reload(); await f.open();
     await expect(group).toHaveValue(b1);
     await expect(f.transparent).toHaveCount(0);
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
+    await f.panel.getByLabel("输出格式", { exact: true }).selectOption("jpeg");
+    await expectEncoding(f, null, "jpeg");
 
     await group.selectOption(b4);
     await expect.poll(async () => (await f.saved()).connectionId).toBe(f.connections[0]!.id);
     await expect(f.transparent).toBeVisible();
     await expect(picker.getByText("可透明", { exact: true })).toBeVisible();
+    await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
+    await expect(f.normal).toHaveAttribute("aria-pressed", "false");
+    await expectEncoding(f, "transparent", "png");
+    await expect(f.panel.getByLabel("输出格式", { exact: true })).toBeDisabled();
+    await page.reload(); await f.open();
+    await expect(group).toHaveValue(b4);
+    await expect(f.transparent).toHaveAttribute("aria-pressed", "true");
+    await expectEncoding(f, "transparent", "png");
+    await f.normal.click();
+    await f.panel.getByLabel("输出格式", { exact: true }).selectOption("webp");
+    await expectEncoding(f, "opaque", "webp");
+    await group.selectOption(b1);
+    await expect(f.transparent).toHaveCount(0);
+    await expectEncoding(f, null, "jpeg");
+    await group.selectOption(b4);
     await expect(f.normal).toHaveAttribute("aria-pressed", "true");
-    await expect.poll(async () => (await f.saved()).parameters.background).toBe("opaque");
+    await expectEncoding(f, "opaque", "webp");
+    await page.reload(); await f.open();
+    await expect(f.normal).toHaveAttribute("aria-pressed", "true");
+    await expectEncoding(f, "opaque", "webp");
     await f.panel.screenshot({ path: info.outputPath("image-output-mode-group.png") });
   } finally { f.safe(); }
 });

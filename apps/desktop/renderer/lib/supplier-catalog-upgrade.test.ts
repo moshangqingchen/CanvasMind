@@ -26,11 +26,72 @@ async function fixture() {
 }
 
 describe("supplier catalog upgrade", () => {
+  const previousRevision = "2026-10-09-full-supplier-recheck-contracts-prices-v11";
+  it.each([previousRevision, SUPPLIER_CATALOG_REVISION])("retains a non-Jijiu %s success for the same identity without rewriting its version", async revision => {
+    const f = await fixture();
+    await f.save("active");
+    f.service.start(); await f.service.settle();
+    const saved = (await f.repository.getConnection("active"))!;
+    await f.repository.saveConnection({ ...saved, config: { ...saved.config,
+      catalogUpgradeRevision: revision, catalogUpgradeAttemptRevision: revision } });
+    f.readModels.mockClear();
+    f.service.start(); await f.service.settle();
+    expect(f.readModels).not.toHaveBeenCalled();
+    expect((await f.repository.getConnection("active"))?.config.catalogUpgradeRevision).toBe(revision);
+  });
+  it.each([previousRevision, SUPPLIER_CATALOG_REVISION])("honors the 24-hour retry interval of a non-Jijiu %s failed attempt", async revision => {
+    const f = await fixture();
+    await f.save("active");
+    f.service.start(); await f.service.settle();
+    const saved = (await f.repository.getConnection("active"))!;
+    const config: typeof saved.config = { ...saved.config, catalogUpgradeAttemptRevision: revision };
+    delete config.catalogUpgradeRevision;
+    await f.repository.saveConnection({ ...saved, config });
+    f.readModels.mockClear();
+    f.advance(24 * 60 * 60 * 1000 - 1);
+    f.service.start(); await f.service.settle();
+    expect(f.readModels).not.toHaveBeenCalled();
+    f.advance(1);
+    f.service.start(); await f.service.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(1);
+    expect((await f.repository.getConnection("active"))?.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
+  });
+  it("retries a changed non-Jijiu identity despite its v11 success and recent attempt", async () => {
+    const f = await fixture();
+    await f.save("active");
+    f.service.start(); await f.service.settle();
+    const saved = (await f.repository.getConnection("active"))!;
+    await f.repository.saveConnection({ ...saved, encryptedSecret: "replacement-test-key", config: { ...saved.config,
+      catalogUpgradeRevision: previousRevision, catalogUpgradeAttemptRevision: previousRevision } });
+    f.readModels.mockClear();
+    f.service.start(); await f.service.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(1);
+    expect((await f.repository.getConnection("active"))?.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
+  });
+  it("still migrates a non-Jijiu revision older than v11 even after a recent attempt", async () => {
+    const f = await fixture();
+    await f.save("active");
+    f.service.start(); await f.service.settle();
+    const saved = (await f.repository.getConnection("active"))!;
+    const older = "2026-10-09-full-supplier-recheck-contracts-prices-v10";
+    await f.repository.saveConnection({ ...saved, config: { ...saved.config,
+      catalogUpgradeRevision: older, catalogUpgradeAttemptRevision: older } });
+    f.readModels.mockClear();
+    f.service.start(); await f.service.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(1);
+    expect((await f.repository.getConnection("active"))?.config.catalogUpgradeRevision).toBe(SUPPLIER_CATALOG_REVISION);
+  });
   it("upgrades a saved Jijiu catalog once and retains its exact model selection across launches", async () => {
     const f = await fixture();
     await f.save("jijiu-high-tier", { baseUrl: "https://newapi.jijiucanvas.com/v1", usage: "canvas",
       modelGroup: "图片-GPT-image-2-2K/4K", accountKeyGroup: "图片-GPT-image-2-2K/4K",
       defaultModel: "gpt-image-2-2K/4K", catalogUpgradeRevision: "2026-10-09-full-supplier-recheck-contracts-prices-v11" });
+    f.service.start(); await f.service.settle();
+    const saved = (await f.repository.getConnection("jijiu-high-tier"))!;
+    // A valid same-identity v11 success/recent attempt still needs Jijiu's v12.
+    await f.repository.saveConnection({ ...saved, config: { ...saved.config,
+      catalogUpgradeRevision: previousRevision, catalogUpgradeAttemptRevision: previousRevision } });
+    f.readModels.mockClear();
     f.service.start(); await f.service.settle();
     expect(f.readModels).toHaveBeenCalledTimes(1);
     expect((await f.repository.getConnection("jijiu-high-tier"))?.config).toMatchObject({

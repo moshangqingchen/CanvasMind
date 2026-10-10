@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { MemoryRepository, ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
 
 export const SUPPLIER_CATALOG_REVISION = "2026-10-10-jijiu-native-tier-parameters-v12";
+const PREVIOUS_SUPPLIER_CATALOG_REVISION = "2026-10-09-full-supplier-recheck-contracts-prices-v11";
 const RETRY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const UPGRADED_HOSTS = new Set([
   "ai.cangyuansuanli.cn", "tu.988236.xyz", "api.frimodel.com", "api.mikoto.vip",
@@ -52,6 +53,14 @@ function supported(connection: ProviderConnectionRecord): boolean {
   } catch { return false; }
 }
 
+function acceptsRevision(connection: ProviderConnectionRecord, revision: unknown): boolean {
+  if (revision === SUPPLIER_CATALOG_REVISION) return true;
+  if (revision !== PREVIOUS_SUPPLIER_CATALOG_REVISION) return false;
+  // v12 changes only Jijiu. Other suppliers retain v11 success and retry timing.
+  try { return new URL(String(connection.config.baseUrl ?? "")).host !== "newapi.jijiucanvas.com"; }
+  catch { return false; }
+}
+
 /** One read-only upstream catalog migration per connection identity. It never
  * creates Keys, edits canvases, or schedules capability/generation probes. */
 export class SupplierCatalogUpgrade {
@@ -78,10 +87,10 @@ export class SupplierCatalogUpgrade {
       if (!supported(connection)) return false;
       if (!currentSupplierSource(connection, suppliers)) return false;
       const fingerprint = identity(connection);
-      if (connection.config.catalogUpgradeRevision === SUPPLIER_CATALOG_REVISION &&
+      if (acceptsRevision(connection, connection.config.catalogUpgradeRevision) &&
         connection.config.catalogUpgradeIdentity === fingerprint) return false;
       const attempted = Date.parse(String(connection.config.catalogUpgradeAttemptedAt ?? ""));
-      return connection.config.catalogUpgradeAttemptRevision !== SUPPLIER_CATALOG_REVISION ||
+      return !acceptsRevision(connection, connection.config.catalogUpgradeAttemptRevision) ||
         connection.config.catalogUpgradeIdentity !== fingerprint || !Number.isFinite(attempted) || now - attempted >= RETRY_INTERVAL_MS;
     });
     this.state.total = connections.length;
