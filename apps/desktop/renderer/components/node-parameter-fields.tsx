@@ -18,7 +18,7 @@ import {
   usesSecureSeedreamSizePrecedence,
 } from "../lib/model-parameters";
 import type { GenerationNodeType } from "../lib/graph-ui";
-import { videoDurationControl } from "../lib/video-duration-control";
+import { confirmedVideoParameterDefault, videoDurationControl, videoDurationControlContext } from "../lib/video-duration-control";
 import { imageModeParameters } from "../lib/image-editing";
 import { validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import {
@@ -510,6 +510,7 @@ function ParameterControl({
   clampNumericInput,
   durationRangeUnverified,
   durationUpperBoundConfirmed,
+  resolutionRangeUnverified,
   imageLayout,
 }: {
   nodeId: string;
@@ -522,6 +523,7 @@ function ParameterControl({
   clampNumericInput: boolean;
   durationRangeUnverified: boolean;
   durationUpperBoundConfirmed: boolean;
+  resolutionRangeUnverified: boolean;
   imageLayout: boolean;
 }) {
   // The same node can be configured in the inspector and a popover at once.
@@ -541,11 +543,17 @@ function ParameterControl({
           parameters[aspectRatioKey] !== undefined
         ? ""
         : (parameterValueForModel(sizeAspectRatioContext.model, parameters, descriptor.key) ?? descriptor.default ?? "");
+  const durationControl = videoDurationControl(nodeType, descriptor, value, durationRangeUnverified, durationUpperBoundConfirmed,
+    videoDurationControlContext(sizeAspectRatioContext.model, descriptor.key));
+  const unverifiedValue = parameterValueForModel(sizeAspectRatioContext.model, parameters, descriptor.key) ?? "";
+  const confirmedDefault = durationControl?.kind === "unavailable" ? durationControl.confirmedDefault
+    : confirmedVideoParameterDefault(sizeAspectRatioContext.model, descriptor.key) === descriptor.default ? descriptor.default : undefined;
+  const unverifiedValueMissing = unverifiedValue !== "" && (confirmedDefault === undefined || String(unverifiedValue) !== String(confirmedDefault));
+  const selectOptions = durationControl?.kind === "select" ? durationControl.options : descriptor.options;
   const savedSelectValueMissing = savedSelectValueMissingFromDescriptor(
-    descriptor,
+    durationControl?.kind === "select" ? { ...descriptor, control: "select", options: selectOptions } : descriptor,
     value,
   );
-  const durationControl = videoDurationControl(nodeType, descriptor, value, durationRangeUnverified, durationUpperBoundConfirmed);
   const update = (raw: string | boolean) => {
     let nextValue = coerceParameterInput(descriptor, raw);
     if (
@@ -650,30 +658,45 @@ function ParameterControl({
               value={durationControl.value}
               disabled={Boolean(disabledReason)}
               title={disabledReason ?? descriptor.description}
-              aria-valuetext={`${durationControl.value} 秒`}
-              aria-describedby={`${id}-bounds`}
+              aria-valuetext={durationControl.invalidValue !== undefined ? `已保存 ${durationControl.invalidValue}，需要重新选择；候选 ${durationControl.value} 秒` : `${durationControl.value} 秒`}
+              aria-invalid={durationControl.invalidValue !== undefined || undefined}
+              aria-describedby={`${id}-bounds${durationControl.invalidValue !== undefined ? ` ${id}-saved` : ""}`}
               onChange={(event) => update(event.target.value)}
             />
-            <output htmlFor={id}>{durationControl.value} 秒</output>
+            <output htmlFor={id}>{durationControl.invalidValue !== undefined ? `${durationControl.invalidValue}（待修正）` : `${durationControl.value} 秒`}</output>
           </div>
           <small id={`${id}-bounds`} className="parameter-duration-bounds">
             <span>{durationControl.min} 秒</span>
             <span>{durationControl.max} 秒</span>
           </small>
+          {durationControl.invalidValue !== undefined && <div id={`${id}-saved`} className="parameter-duration-saved parameter-help" role="status">
+            <span>已保存的时长 {durationControl.invalidValue} 不符合当前范围或步长。请移动滑块重新选择；原值尚未修改。</span>
+            <button type="button" className="button nodrag nopan" disabled={Boolean(disabledReason)}
+              onClick={() => update(String(durationControl.value))}>使用 {durationControl.value} 秒</button>
+          </div>}
         </div>
-      ) : durationControl?.kind === "fixed" ? (
-        <div className="parameter-duration-fixed">
-          <input id={id} type="text" value={String(value)} readOnly
-            disabled={Boolean(disabledReason)} title={disabledReason ?? descriptor.description} />
-          <span>秒 · 固定</span>
+      ) : durationControl?.kind === "unavailable" || nodeType === "video-generation" && descriptor.key === "resolution" && resolutionRangeUnverified ? (
+        <div className="parameter-duration-unavailable">
+          <select id={id} value={String(unverifiedValue)} disabled={Boolean(disabledReason)}
+            title={disabledReason ?? descriptor.description} aria-describedby={`${id}-unavailable`}
+            aria-invalid={unverifiedValueMissing || undefined} onChange={event => update(event.target.value)}>
+            <option value="">供应商默认（未公开可选范围）</option>
+            {confirmedDefault !== undefined && <option value={String(confirmedDefault)}>{String(confirmedDefault)}（已公布默认值）</option>}
+            {unverifiedValueMissing && <option value={String(unverifiedValue)} disabled>{String(unverifiedValue)}（已保存，当前未确认）</option>}
+          </select>
+          <small id={`${id}-unavailable`} role="status" className="parameter-help">
+            {durationControl?.kind === "unavailable" ? durationControl.reason : "供应商尚未确认此完整型号的可选分辨率，保留当前值。"}
+            选择供应商默认会清除当前自定义值。
+          </small>
         </div>
-      ) : descriptor.control === "select" ? (
+      ) : durationControl?.kind === "select" || descriptor.control === "select" ? (
         <select
           id={id}
           value={String(value)}
           disabled={Boolean(disabledReason)}
           title={disabledReason ?? descriptor.description}
           aria-required={descriptor.required}
+          aria-invalid={nodeType === "video-generation" && savedSelectValueMissing || undefined}
           onChange={(event) => update(event.target.value)}
         >
           <option value="">
@@ -684,9 +707,9 @@ function ParameterControl({
               : "模型默认"}
           </option>
           {savedSelectValueMissing ? (
-            <option value={String(value)}>{String(value)}（已保存）</option>
+            <option value={String(value)} disabled={nodeType === "video-generation"}>{String(value)}（已保存{durationControl?.kind === "select" ? "，不在当前档位" : ""}）</option>
           ) : null}
-          {(descriptor.options ?? []).map((option) => (
+          {(selectOptions ?? []).map((option) => (
             <option key={String(option.value)} value={String(option.value)}>
               {option.label}
             </option>
@@ -721,6 +744,7 @@ function ParameterControl({
           ) : null}
         </>
       )}
+      {durationControl?.kind === "select" && savedSelectValueMissing && <small role="status" className="parameter-help">已保留原时长 {String(value)}，请选择供应商当前支持的档位。</small>}
       {disabledReason && <small className="parameter-help">{disabledReason}</small>}
     </div>
   );
@@ -868,6 +892,7 @@ export function NodeParameterFields({
             clampNumericInput={clampNumericInput}
             durationRangeUnverified={model?.metadata?.durationRangeUnverified === true || (!model?.parameters?.length && provider !== "fake")}
             durationUpperBoundConfirmed={durationUpperBoundConfirmed}
+            resolutionRangeUnverified={model?.metadata?.resolutionRangeUnverified === true}
             imageLayout={provider !== "cli"}
             disabledReason={
               provider !== "cli" && descriptor.key === "output_format" && parameters.background === "transparent"

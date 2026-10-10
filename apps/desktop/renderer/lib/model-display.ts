@@ -3,6 +3,8 @@ import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog"
 import { getModelParameterDescriptor, validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { measuredPriceScopeMatches } from "./supplier-price-evidence";
+import { confirmedVideoParameterDefault, videoDurationControl, videoDurationControlContext } from "./video-duration-control";
+import { modelParameterAliases } from "./model-parameters";
 
 /** A missing local quote is not evidence that the supplier never published one. */
 export function displayPriceLabel(label: unknown, status?: unknown): string {
@@ -106,9 +108,42 @@ function jiasuMeasuredVideoReferenceMatch(model: ModelDescriptor, measured: Reco
   return a.consistent && b.consistent && a.mode === b.mode && a.count === b.count && a.seconds === b.seconds;
 }
 
+function videoPriceAliases(model: ModelDescriptor, parameters: Readonly<Record<string, unknown>>) {
+  if (!model.operations.some(operation => operation.startsWith("video."))) return parameters;
+  const values = { ...parameters };
+  for (const [canonical, aliases] of modelParameterAliases(model)) {
+    const alias = aliases.find(key => parameters[key] !== undefined);
+    if (parameters[canonical] === undefined && alias) values[canonical] = parameters[alias];
+  }
+  return values;
+}
+
+function videoParameterPriceIssue(model: ModelDescriptor, parameters: Readonly<Record<string, unknown>>): string | undefined {
+  if (!model.operations.some(operation => operation.startsWith("video.")) || !model.parameters?.length) return;
+  const values = { ...Object.fromEntries(model.parameters.filter(parameter => parameter.default !== undefined).map(parameter => [parameter.key, parameter.default])), ...parameters };
+  for (const [canonical, aliases] of modelParameterAliases(model)) {
+    if (aliases.some(alias => parameters[canonical] !== undefined && parameters[alias] !== undefined && parameters[canonical] !== parameters[alias])) return "当前参数不支持，请重新选择";
+  }
+  if (model.metadata?.resolutionRangeUnverified === true && values.resolution !== undefined &&
+      values.resolution !== confirmedVideoParameterDefault(model, "resolution")) return "当前分辨率未确认，请选择供应商默认";
+  for (const key of ["duration", "seconds"]) {
+    const descriptor = getModelParameterDescriptor(model, key, values);
+    if (!descriptor || values[key] === undefined) continue;
+    const confirmedUpperBound = descriptor.constraints?.some(constraint => constraint.max !== undefined &&
+      constraint.when.every(condition => condition.values.some(value => value === values[condition.parameter]))) ?? false;
+    const control = videoDurationControl("video-generation", descriptor, values[key], model.metadata?.durationRangeUnverified === true, confirmedUpperBound, videoDurationControlContext(model, key));
+    if (control?.kind === "unavailable" && values[key] !== control.confirmedDefault) return "当前时长范围未确认，请选择供应商默认";
+    if (control?.kind === "range" && control.invalidValue !== undefined) return "当前参数不支持，请重新选择";
+    if (!validateModelParameters({ parameters: [descriptor] }, { [key]: values[key] }).valid) return "当前参数不支持，请重新选择";
+  }
+}
+
 export function modelPriceSummary(model: import("@super-canvas/providers").ModelDescriptor | undefined, parameters: Readonly<Record<string, unknown>>): string {
   if (!model) return "价格未知";
   model = normalizeTk1688CnyModel(model);
+  parameters = videoPriceAliases(model, parameters);
+  const parameterIssue = videoParameterPriceIssue(model, parameters);
+  if (parameterIssue) return parameterIssue;
   const media = mediaPriceParameters(model, parameters);
   if (!media.valid) return "当前模式与参考视频不匹配";
   parameters = media.parameters;
@@ -195,6 +230,8 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
 export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
   if (!model || model.metadata?.priceSource === "generated-result" || model.metadata?.priceStatus === "partial") return undefined;
   model = normalizeTk1688CnyModel(model);
+  parameters = videoPriceAliases(model, parameters);
+  if (videoParameterPriceIssue(model, parameters)) return undefined;
   const media = mediaPriceParameters(model, parameters);
   if (!media.valid) return undefined;
   parameters = media.parameters;
@@ -220,6 +257,9 @@ export function modelEstimatedCost(model: ModelDescriptor | null | undefined, pa
 export function comparableModelPrice(models: readonly import("@super-canvas/providers").ModelDescriptor[], id: string | undefined, parameters: Readonly<Record<string, unknown>>): string {
   const model = models.find(item => item.id === id);
   if (!model) return id ? "当前分组无此型号" : "未选择型号";
+  parameters = videoPriceAliases(model, parameters);
+  const parameterIssue = videoParameterPriceIssue(model, parameters);
+  if (parameterIssue) return parameterIssue;
   if (model.parameters?.some(parameter => {
     const resolved = getModelParameterDescriptor(model, parameter.key, parameters);
     return parameters[parameter.key] !== undefined && (!resolved || resolved.options?.length && !resolved.options.some(option => String(option.value) === String(parameters[parameter.key])));

@@ -11,6 +11,29 @@ const asset = (kind: "image" | "video" | "audio", n = 1, role?: ProviderAssetInp
 const targets = (supplier: Parameters<typeof remainingVideoTransport>[0], id: string, group?: string) => remainingVideoTransport(supplier, id, { group })?.submit?.mappings?.map(mapping => mapping.target);
 
 describe("supplier video contracts", () => {
+  it.each(["seedance-2.0-720p", "seedance-2.0-v4"])("replaces a cached unknown-duration warning with %s's documented range", id => {
+    const current: ModelDescriptor = { id, name: id, operations: ["video.generate"],
+      parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", min: 1 }],
+      metadata: { durationRangeUnverified: true, accountEvidence: "preserved" } };
+    const model = remainingVideoModel("chentu", id, current)!;
+    expect(model.metadata).not.toHaveProperty("durationRangeUnverified");
+    expect(model.metadata?.accountEvidence).toBe("preserved");
+    expect(current.metadata?.durationRangeUnverified).toBe(true);
+    const duration = model.parameters?.find(parameter => parameter.key === "duration");
+    if (id === "seedance-2.0-720p") expect(duration).toMatchObject({ min: 4, max: 15 });
+    else expect(duration?.options?.map(option => option.value)).toEqual([10]);
+    expect(remainingVideoRequestIssues("chentu", request(id, { duration: 38 }))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+  });
+
+  it("retains the unverified-duration warning when the exact supplier contract has no published upper bound", () => {
+    const id = "sora-v3-pro";
+    const current: ModelDescriptor = { id, name: id, operations: ["video.generate"], metadata: { durationRangeUnverified: true } };
+    const model = remainingVideoModel("chentu", id, current)!;
+    expect(model.metadata?.durationRangeUnverified).toBe(true);
+    expect(model.parameters?.find(parameter => parameter.key === "duration")?.max).toBeUndefined();
+    expect(model.parameters?.find(parameter => parameter.key === "duration")?.options).toBeUndefined();
+  });
+
   it("keeps the secure SD2.5 per-request group distinct from per-second groups", () => {
     const fixed = remainingVideoModel("secure", "seedance-2.5", undefined, { group: "sd-2.5-条" })!;
     expect(fixed.metadata?.billingUnit).toBe("request");

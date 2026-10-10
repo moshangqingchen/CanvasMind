@@ -8,6 +8,7 @@ import type { GenerationNodeType } from "./graph-ui";
 import { withHighestQualityDefault } from "./model-quality";
 import { preserveImageMaskParameters } from "./image-editing";
 import { getModelParameterDescriptor, resolveModelParameters } from "@super-canvas/providers/cli-contracts";
+import { videoDurationControl, videoDurationControlContext } from "./video-duration-control";
 
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
   {
@@ -534,7 +535,7 @@ export function normalizedParametersForModel(
   if (model?.metadata?.jiasuImageProtocol === 1 ||
       nodeType === "video-generation" && model?.metadata?.jiasuVideoContract === true) {
     const parameters = { ...parametersWithDefaults(descriptors, {}, true), ...current };
-    for (const [canonical, previousKeys] of jiasuParameterAliases(model)) {
+    for (const [canonical, previousKeys] of modelParameterAliases(model)) {
       if (current[canonical] !== undefined) continue;
       const previous = previousKeys.find(key => current[key] !== undefined);
       // Show a saved alias in the current control instead of masking it with a
@@ -543,9 +544,29 @@ export function normalizedParametersForModel(
     }
     return parameters;
   }
+  const aliases = modelParameterAliases(model);
   const parameters = parametersWithDefaults(descriptors, current);
+  for (const [canonical, previousKeys] of aliases) {
+    for (const alias of previousKeys) if (current[alias] !== undefined) parameters[alias] = current[alias];
+    if (current[canonical] !== undefined) continue;
+    const previous = previousKeys.find(key => current[key] !== undefined);
+    if (previous) parameters[canonical] = current[previous];
+  }
+  // A catalog refresh or dependent resolution change must expose an invalid
+  // saved duration for correction instead of changing the requested video.
+  // Explicit model changes still use parametersWithDefaults directly.
+  if (nodeType === "video-generation") {
+    for (const key of ["duration", "seconds"]) {
+      const descriptor = descriptors.find(descriptor => descriptor.key === key);
+      if (!descriptor) continue;
+      if (current[key] !== undefined) parameters[key] = current[key];
+      else if (!aliases.some(([canonical, previous]) => canonical === key && previous.some(alias => current[alias] !== undefined)) &&
+        videoDurationControl(nodeType, descriptor, descriptor.default, model?.metadata?.durationRangeUnverified === true, false, videoDurationControlContext(model, key))?.kind === "unavailable") delete parameters[key];
+    }
+  }
   if (model?.metadata?.clampNumericParameters === true) {
     for (const descriptor of descriptors) {
+      if (nodeType === "video-generation" && ["duration", "seconds"].includes(descriptor.key)) continue;
       const value = parameters[descriptor.key];
       const numeric =
         typeof value === "number"
@@ -624,16 +645,21 @@ export function setParameterValue(
   }
   // A user's explicit control edit supersedes that field's saved aliases.
   // Readback and run normalization preserve originals for conflict validation.
-  for (const [canonical, aliases] of jiasuParameterAliases(model))
+  for (const [canonical, aliases] of modelParameterAliases(model))
     if (key === canonical) for (const alias of aliases) delete next[alias];
   return next;
 }
 
-function jiasuParameterAliases(model?: Pick<ModelDescriptor, "metadata"> | null): ReadonlyArray<readonly [string, readonly string[]]> {
+export function modelParameterAliases(model?: Pick<ModelDescriptor, "metadata" | "parameters"> | null): ReadonlyArray<readonly [string, readonly string[]]> {
   if (model?.metadata?.jiasuImageProtocol === 1)
     return [["ratio", ["aspect_ratio", "aspectRatio"]], ["resolution", ["image_size", "size_tier"]]];
   if (model?.metadata?.jiasuVideoContract === true)
     return [["duration", ["seconds"]], ["aspect_ratio", ["ratio"]]];
+  const metadata = model?.metadata;
+  if (metadata?.source !== "manual" && metadata?.protocolEvidence !== "paid-test" && metadata?.source !== "paid-test" &&
+    typeof metadata?.supplier === "string" && typeof metadata.videoContractCheckedAt === "string" &&
+    model?.parameters?.some(parameter => parameter.key === "duration") && !model.parameters.some(parameter => parameter.key === "seconds"))
+    return [["duration", ["seconds"]]];
   return [];
 }
 
@@ -657,7 +683,7 @@ export function parameterValueForModel(
     }
   }
   if (parameters[key] !== undefined) return parameters[key];
-  const aliases = jiasuParameterAliases(model).find(([canonical]) => canonical === key)?.[1];
+  const aliases = modelParameterAliases(model).find(([canonical]) => canonical === key)?.[1];
   const previous = aliases?.find(alias => parameters[alias] !== undefined);
   return previous ? parameters[previous] : undefined;
 }

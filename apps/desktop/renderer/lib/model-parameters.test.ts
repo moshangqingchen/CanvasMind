@@ -14,6 +14,7 @@ import {
   modelDescriptorForSavedSelection,
   modelDescriptorForSavedSelectionOrDefault,
   modelDescriptorListsEqual,
+  modelParameterAliases,
   parameterDescriptorsFor,
   parametersWithDefaults,
   normalizedParametersForModel,
@@ -56,12 +57,14 @@ describe("Jiasu saved video parameters", () => {
     expect(normalized.data.parameters).toEqual(saved);
     expect(restored).toEqual(snapshot);
     expect(jiasuVideoRequestIssues({ idempotencyKey: "saved-video-request", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
-      prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip").map(issue => issue.path)).toEqual(["parameters.resolution"]);
+      prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip").map(issue => issue.path)).toEqual([
+        ...(model.metadata?.durationRangeUnverified ? ["parameters.duration"] : []), "parameters.resolution",
+      ]);
   });
 
   it.each(ids)("preserves legal material and face objects and fills only missing defaults for %s", id => {
     const model = descriptor(id);
-    const selected = { resolution: "720p", duration: 5,
+    const selected = { resolution: "720p", ...(model.metadata?.durationRangeUnverified ? {} : { duration: 5 }),
       materials: [{ type: "video", url: "https://media.example/reference.mp4", name: "参考视频" }],
       face: { enabled: true, mode: "heavy" } };
     const normalized = normalizedParametersForModel("video-generation", "openai", model, selected);
@@ -91,11 +94,13 @@ describe("Jiasu saved video parameters", () => {
     });
     expect(normalized.data.parameters).toEqual({ seconds: 5, duration: 5, ratio: "9:16", aspect_ratio: "9:16", resolution: "720p" });
     expect(jiasuVideoRequestIssues({ idempotencyKey: "video-alias-request", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
-      prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip")).toEqual([]);
+      prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip").map(issue => issue.path)).toEqual(model.metadata?.durationRangeUnverified ? ["parameters.duration"] : []);
     const conflict = normalizedParametersForModel("video-generation", "openai", model, { duration: 5, seconds: 6, aspect_ratio: "16:9", ratio: "9:16" });
     expect(conflict).toMatchObject({ duration: 5, seconds: 6, aspect_ratio: "16:9", ratio: "9:16" });
     expect(jiasuVideoRequestIssues({ idempotencyKey: "video-alias-conflict", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
-      prompt: "静止镜头", parameters: conflict }, model, "vip").map(issue => issue.path)).toEqual(["parameters.duration", "parameters.aspect_ratio"]);
+      prompt: "静止镜头", parameters: conflict }, model, "vip").map(issue => issue.path)).toEqual([
+        "parameters.duration", "parameters.aspect_ratio", ...(model.metadata?.durationRangeUnverified ? ["parameters.duration"] : []),
+      ]);
   });
 
   it("lets explicit video control edits replace only their own old aliases", () => {
@@ -112,6 +117,31 @@ describe("Jiasu saved video parameters", () => {
       prompt: "静止镜头", parameters: ratioEdited }, model, "vip")).toEqual([]);
     expect(saved.seconds).toBe(6);
     expect(setParameterValueWithSizeExclusivity(saved, "duration", 7, { ...context, model: { metadata: {} } })).toHaveProperty("seconds", 6);
+  });
+});
+
+describe("native supplier video duration aliases", () => {
+  it.each(["MiniMaxH3", "grok--video1.0"])("keeps native seconds aliases for %s until an explicit duration edit", id => {
+    const model = remainingVideoModel("chentu", id)!;
+    expect(modelParameterAliases(model)).toContainEqual(["duration", ["seconds"]]);
+    const saved = { seconds: 38, resolution: "720p" };
+    expect(parameterValueForModel(model, saved, "duration")).toBe(38);
+    const normalized = normalizedParametersForModel("video-generation", "rest", model, saved);
+    expect(normalized).toMatchObject({ seconds: 38, duration: 38, resolution: "720p" });
+    const cleared = setParameterValue(normalized, "duration", undefined, model);
+    expect(cleared).not.toHaveProperty("duration");
+    expect(cleared).not.toHaveProperty("seconds");
+    expect(cleared).toHaveProperty("resolution", "720p");
+    expect(saved).toEqual({ seconds: 38, resolution: "720p" });
+  });
+
+  it("does not merge independently configured manual or native dual duration fields", () => {
+    const native = remainingVideoModel("chentu", "MiniMaxH3")!;
+    const manual = { ...native, metadata: { ...native.metadata, source: "manual" } };
+    expect(modelParameterAliases(manual)).toEqual([]);
+    const dual = { ...native, parameters: [...native.parameters!, { key: "seconds", label: "Independent seconds", control: "number" as const }] };
+    expect(modelParameterAliases(dual)).toEqual([]);
+    expect(setParameterValue({ duration: 5, seconds: 6 }, "duration", 7, dual)).toEqual({ duration: 7, seconds: 6 });
   });
 });
 
@@ -766,13 +796,13 @@ describe("model parameter helpers", () => {
         duration: 1000,
         resolution: "720p",
       }),
-    ).toMatchObject({ duration: 12, resolution: "720p" });
+    ).toMatchObject({ duration: 1000, resolution: "720p" });
     expect(
       normalizedParametersForModel("video-generation", "rest", model, {
         duration: 1000,
         resolution: "480p",
       }),
-    ).toMatchObject({ duration: 15, resolution: "480p" });
+    ).toMatchObject({ duration: 1000, resolution: "480p" });
   });
   it("resolves supplier visibility and discrete duration constraints outside CLI", () => {
     const model: ModelDescriptor = { id: "video", name: "Video", operations: ["video.generate"], parameters: [
@@ -784,6 +814,6 @@ describe("model parameter helpers", () => {
     const fields = parameterDescriptorsForValues("video-generation", "rest", model, { resolution: "1080p", instrumental: true });
     expect(fields.find(d => d.key === "duration")).toMatchObject({default:8,options:[{label:"8 秒",value:8}]});
     expect(fields.some(d => d.key === "lyrics")).toBe(false);
-    expect(normalizedParametersForModel("video-generation", "rest", model, {resolution:"1080p",duration:5,instrumental:true,lyrics:"old"})).toEqual({resolution:"1080p",duration:8,instrumental:true});
+    expect(normalizedParametersForModel("video-generation", "rest", model, {resolution:"1080p",duration:5,instrumental:true,lyrics:"old"})).toEqual({resolution:"1080p",duration:5,instrumental:true});
   });
 });

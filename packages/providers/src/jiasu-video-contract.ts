@@ -98,11 +98,19 @@ function durationParameter(id: string, facts: { description: string; apiParamete
   const declared = declaredRange(facts.apiParameters, "duration"), range = String(declared?.range ?? "");
   const proseRange = /(?:时长[：:]?\s*|支持|生成)?(\d+)\s*[-–]\s*(\d+)\s*秒/u.exec(facts.description);
   const match = /^(\d+)\s*[-–]\s*(\d+)(?:秒)?$/u.exec(range) ?? proseRange;
-  const single = /^\d+(?:秒)?$/u.test(range) ? Number(range.replace("秒", "")) : undefined;
-  const descriptor: ModelParameterDescriptor = { key: "duration", label: "视频时长", control: single !== undefined ? "select" : "number", valueType: "integer", min: match ? Number(match[1]) : 1, step: 1,
-    ...(match ? { max: Number(match[2]) } : {}), ...(single !== undefined ? { options: [{ label: `${single} 秒`, value: single }] } : {}),
-    ...(number(declared?.default) !== undefined ? { default: number(declared?.default)! } : {}), ...(declared?.required === true ? { required: true } : {}),
-    description: declared ? String(declared.description ?? "供应商型号广场声明的时长。") : "可留空，由供应商使用该型号默认时长；未公布范围不套用其他渠道。" };
+  const values = enumValues(range);
+  const options = values.length && values.every(value => /^\d+(?:秒)?$/u.test(value))
+    ? [...new Set(values.map(value => Number(value.replace("秒", ""))))].filter(value => value > 0) : [];
+  const min = match ? Number(match[1]) : undefined, max = match ? Number(match[2]) : undefined;
+  const bounded = min !== undefined && max !== undefined && min > 0 && max >= min;
+  const defaultValue = number(declared?.default);
+  const validDefault = defaultValue !== undefined && Number.isInteger(defaultValue) && defaultValue > 0 &&
+    (!options.length || options.includes(defaultValue)) && (!bounded || defaultValue >= min && defaultValue <= max);
+  const descriptor: ModelParameterDescriptor = { key: "duration", label: "视频时长", control: options.length ? "select" : "number", valueType: "integer", step: 1,
+    ...(bounded ? { min, max } : {}), ...(options.length ? { options: options.map(value => ({ label: `${value} 秒`, value })) } : {}),
+    ...(validDefault ? { default: defaultValue } : {}), ...(declared?.required === true ? { required: true } : {}),
+    description: bounded || options.length ? String(declared?.description ?? "供应商型号广场声明的时长。")
+      : "官网未公布此完整型号的可选时长；不传由供应商使用型号默认值，不能提交未经确认的自定义秒数。" };
   if (id === "sd-2.0-mini-J1") {
     // The exact model description further restricts its otherwise 4–15 schema.
     descriptor.default = 12;
@@ -131,17 +139,28 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
   const declaredSizes = resolutions(id, facts), evidence = resolutionEvidence(id, current, group);
   const sizes = evidence?.allowedResolutions ? [...evidence.allowedResolutions] : declaredSizes.filter(size => !evidence?.rejectedResolutions.includes(size));
   const range = declaredRange(facts.apiParameters, "resolution"), duration = durationParameter(id, facts);
-  const declaredDefault = String(range?.default ?? "");
+  const declaredDefault = typeof range?.default === "string" ? range.default.trim() : "";
   const defaultResolution = sizes.includes(declaredDefault) ? declaredDefault : sizes.includes("720p") ? "720p" : sizes[0];
+  const confirmedDefaults: { duration?: number; resolution?: string } = {};
+  if (duration.default !== undefined && duration.default === number(declaredRange(facts.apiParameters, "duration")?.default))
+    confirmedDefaults.duration = duration.default as number;
+  if (declaredDefault && !/[\u0000-\u001f\u007f]/u.test(declaredDefault) &&
+      (sizes.length ? sizes.includes(declaredDefault) : !evidence?.rejectedResolutions.includes(declaredDefault)))
+    confirmedDefaults.resolution = declaredDefault;
   const parameters: ModelParameterDescriptor[] = [duration,
     { key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: String(declaredRange(facts.apiParameters, "ratio")?.default ?? "16:9"), options: ratiosOrCommon.map(value => ({ label: value, value })) },
-    { key: "resolution", label: "输出分辨率", control: sizes.length ? "select" : "text", valueType: "string",
-      ...(sizes.length ? { default: defaultResolution!, options: sizes.map(value => ({ label: value, value })) } : { placeholder: "可留空，供应商默认 720p", description: "型号未公布枚举范围；按供应商通用合同提交，不套用其他渠道。" }),
+    { key: "resolution", label: "输出分辨率", control: "select", valueType: "string",
+      ...(sizes.length ? { default: defaultResolution!, options: sizes.map(value => ({ label: value, value })) } : {
+        options: confirmedDefaults.resolution ? [{ label: `${confirmedDefaults.resolution}（供应商默认）`, value: confirmedDefaults.resolution }] : [],
+        ...(confirmedDefaults.resolution ? { default: confirmedDefaults.resolution } : {}),
+        description: "官网未公布此完整型号的分辨率范围；不传由供应商使用型号默认值。通用文档的默认 720p 不代表此型号支持自选档位。" }),
       ...(evidence ? { description: evidence.allowedResolutions ? "当前佳速 vip 响应仅支持 720p；计费枚举不代表生成支持范围。" : "当前佳速 vip 的 480p 任务实际失败；保留官方报价，当前不可选择或提交 480p。720p/1080p 来自官方声明。" } : {}),
       ...(range?.required === true ? { required: true } : {}) },
   ];
   const supported = (kind: "image" | "video" | "audio") => refs[{ image: "maxInputImages", video: "maxInputVideos", audio: "maxInputAudios" }[kind] as keyof typeof refs] !== 0;
-  const { jiasuResolutionEvidence: _previousEvidence, jiasuDeclaredResolutions: _previousDeclared, jiasuContractGroup: _previousGroup, ...currentMetadata } = current?.metadata ?? {};
+  const { jiasuResolutionEvidence: _previousEvidence, jiasuDeclaredResolutions: _previousDeclared, jiasuContractGroup: _previousGroup,
+    durationRangeUnverified: _previousDurationRange, resolutionRangeUnverified: _previousResolutionRange,
+    videoParameterConfirmedDefaults: _previousConfirmedDefaults, ...currentMetadata } = current?.metadata ?? {};
   const currentGroup = group?.trim() || String(current?.metadata?.jiasuContractGroup ?? current?.metadata?.catalogGroup ?? "");
   return { ...current, id, name: current?.name ?? id, operations: supported("image") ? ["video.generate", "video.image-to-video"] : ["video.generate"], parameters,
     inputKinds: ["text", ...(supported("image") ? ["image" as const, "image[]" as const] : []), ...(supported("video") ? ["video" as const, "video[]" as const] : []), ...(supported("audio") ? ["audio" as const, "audio[]" as const] : [])], outputKinds: ["video"],
@@ -149,6 +168,9 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
       protocol: "openai-videos", documentationUrl: id === specialMinimax ? "https://aijiasu.apifox.cn/api-520050937" : JIASU_VIDEO_DOCS,
       endpointPath: "/v1/video/generations", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false,
       videoContractCheckedAt: String(current?.metadata?.jiasuCatalogCheckedAt ?? "2026-10-09"), videoSupportedResolutions: sizes, videoMinDuration: duration.min, videoMaxDuration: duration.max,
+      ...(!duration.options?.length && duration.max === undefined ? { durationRangeUnverified: true } : {}),
+      ...(!sizes.length ? { resolutionRangeUnverified: true } : {}),
+      ...(Object.keys(confirmedDefaults).length ? { videoParameterConfirmedDefaults: confirmedDefaults } : {}),
       ...(currentGroup ? { jiasuContractGroup: currentGroup } : {}),
       ...(evidence ? { jiasuResolutionEvidence: evidence, jiasuDeclaredResolutions: declaredSizes } : {}),
       remoteMediaUrlsOnly: true, supportsFirstLastFrames: true, videoSupportsFirstLastFrames: true, allowFrameMediaMix: true,
@@ -210,11 +232,15 @@ export function jiasuVideoRequestIssues(request: NormalizedRequest, model?: Mode
   if (source.aspect_ratio !== undefined && source.ratio !== undefined && source.aspect_ratio !== source.ratio) add("parameters.aspect_ratio", "aspect_ratio 与 ratio 不能冲突。");
   for (const key of Object.keys(source)) if (!["duration", "seconds", "aspect_ratio", "ratio", "resolution", "images", "videos", "audios", "materials", "face"].includes(key)) add(`parameters.${key}`, `佳速合同未声明参数 ${key}；首尾帧请连接图片素材并选择对应角色。`);
   const duration = descriptor.parameters?.find(parameter => parameter.key === "duration"), seconds = p.duration;
-  if (seconds !== undefined && (typeof seconds !== "number" || !Number.isInteger(seconds) || seconds < (duration?.min ?? 1) || duration?.max !== undefined && seconds > duration.max || duration?.options?.length && !duration.options.some(option => option.value === seconds))) add("parameters.duration", "请选择该型号声明范围内的整数秒数。");
+  if (seconds !== undefined && descriptor.metadata?.durationRangeUnverified === true && seconds !== duration?.default)
+    add("parameters.duration", "佳速未公布此完整型号的可选时长；请明确恢复供应商默认，不能提交未经确认的自定义秒数。");
+  else if (seconds !== undefined && (typeof seconds !== "number" || !Number.isInteger(seconds) || seconds < (duration?.min ?? 1) || duration?.max !== undefined && seconds > duration.max || duration?.options?.length && !duration.options.some(option => option.value === seconds))) add("parameters.duration", "请选择该型号声明范围内的整数秒数。");
   if (request.model === "sd-2.0-mini-J1" && p.resolution === "720p" && typeof seconds === "number" && seconds > 12) add("parameters.duration", "此型号 720p 最长 12 秒；480p 最长 15 秒。");
   for (const [key, value] of [["aspect_ratio", p.ratio], ["resolution", p.resolution]] as const) {
-    const options = descriptor.parameters?.find(parameter => parameter.key === key)?.options;
-    if (value !== undefined && (typeof value !== "string" || options?.length && !options.some(option => option.value === value) || key === "resolution" && evidence?.rejectedResolutions.includes(String(value))))
+    const parameter = descriptor.parameters?.find(parameter => parameter.key === key), options = parameter?.options;
+    if (key === "resolution" && value !== undefined && descriptor.metadata?.resolutionRangeUnverified === true && value !== parameter?.default)
+      add("parameters.resolution", "佳速未公布此完整型号的分辨率范围；请明确恢复供应商默认，不能提交未经确认的自选分辨率。");
+    else if (value !== undefined && (typeof value !== "string" || options?.length && !options.some(option => option.value === value) || key === "resolution" && evidence?.rejectedResolutions.includes(String(value))))
       add(`parameters.${key}`, key === "resolution" && evidence && (evidence.allowedResolutions || evidence.rejectedResolutions.includes(String(value))) ? evidence.allowedResolutions ? "当前佳速 vip 此型号实际响应仅支持 720p，计费枚举中的其他分辨率不能用于生成。" : "当前佳速 vip 此型号 480p 任务实际失败，已禁止再次提交此分辨率；官方 480p 报价保留用于核对。" : "参数不在当前佳速型号公布的枚举内。");
   }
   const counts = { image: 0, video: 0, audio: 0 }, frames = { first_frame: 0, end_frame: 0 };

@@ -475,10 +475,12 @@ it("preserves Cyber Omni's generate/edit resolution prices through generic suppl
   const enriched = applySupplierCatalogPrices([descriptor], group, { ...parsed, status: "live", kind: "newapi", complete: true, checkedAt: "now" }, origin)[0]!;
   expect(enriched.pricing).toEqual(descriptor.pricing);
   expect(enriched.pricing?.unitAmount).toBeUndefined();
-  expect(modelEstimatedCost(enriched, { mode: "generate", resolution: "720p" })).toBe("8.25 USD");
-  expect(modelEstimatedCost(enriched, { mode: "edit", resolution: "720p" })).toBe("10.5 USD");
+  // Published rates remain available, but a quote alone does not confirm the request's resolution contract.
+  expect(enriched.metadata?.resolutionRangeUnverified).toBe(true);
+  expect(modelEstimatedCost(enriched, { mode: "generate", resolution: "720p" })).toBeUndefined();
+  expect(modelEstimatedCost(enriched, { mode: "edit", resolution: "720p" })).toBeUndefined();
   expect(modelEstimatedCost(enriched, { mode: "{{mode}}", resolution: "720p" })).toBeUndefined();
-  expect(modelPriceSummary(enriched, { mode: "{{mode}}", resolution: "{{resolution}}" })).toBe(descriptor.metadata?.priceLabel);
+  expect(modelPriceSummary(enriched, { mode: "{{mode}}", resolution: "{{resolution}}" })).toContain("当前分辨率未确认");
 });
 
 const secureCatalog = (multiplier = 1): SupplierCatalogDiscovery => ({

@@ -162,8 +162,12 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     }
     if (current?.metadata?.autoInterfaceStatus === "incomplete") throw new Error(String(current.metadata.canvasUnavailableReason ?? "供应商接口说明待补充"));
     if (!binding?.connector || binding.model?.id !== request.model || !binding.model.operations.includes(request.operation)) return this.fallback;
+    // A sparse directory refresh must not discard the saved video interface's
+    // parameter schema. Explicit current declarations still take precedence.
+    const configuredModel = current && request.operation.startsWith("video.") && !current.parameters?.length && binding.model.parameters?.length
+      ? { ...current, parameters: binding.model.parameters } : current ?? binding.model;
     return new GenericRestAdapter(this.connections, { ...this.options,
-      config: { ...binding.connector, models: [current ?? binding.model], restrictModels: true } });
+      config: { ...binding.connector, models: [configuredModel], restrictModels: true } });
   }
 
   testConnection(id: string) { return this.fallback.testConnection(id); }

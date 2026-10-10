@@ -138,7 +138,9 @@ put("miaowu", ["video-editing"], { ...directoryChatVideo, videos: undefined, vid
 put("mikoto", ["grok-imagine-video", "grok-imagine-video-1.5"], { min: 1, resolutions: [], ratios: [], durationOptional: true,
   videos: 0, audios: 0, multipartFrames: true, directoryContract: true, secondsField: "seconds", openResolution: true,
   frames: "ordered-images", imageField: "image[]", outputPaths: ["$.url", "$.content_url", "$.video_url", "$.media_url", "$.result_url", "$.metadata.url", "$.content.video_url", "$.content.url", "$.data.url", "$.data.video_url"],
-  docs: "https://image.mikoto.vip/", extraParameters: [{ key: "mode", label: "图片模式", control: "select", valueType: "string", default: "auto",
+  docs: "https://image.mikoto.vip/", extraParameters: [
+    { key: "size", label: "输出像素尺寸", control: "text", valueType: "string", description: "供应商 multipart size 原字段，例如 1280x720；留空使用上游默认，具体尺寸权限以当前型号和分组为准。" },
+    { key: "mode", label: "图片模式", control: "select", valueType: "string", default: "auto",
     options: [{ label: "自动", value: "auto" }, { label: "首尾帧", value: "frames" }, { label: "参考图片", value: "reference" }] }],
   note: "按供应商官方画布接入 multipart 视频接口；图片直接上传，自动模式中 1–2 张为首尾帧、3 张以上为参考图。参数不套用其他供应商，未进行收费生成验证。" });
 
@@ -354,15 +356,36 @@ export function restoreRemainingVideoModel(supplier: RemainingVideoSupplier | un
   const { canvasUnavailableReason: _reason, ...metadata } = repaired.metadata ?? {};
   return { ...repaired, metadata: { ...metadata, canvasRunnable: true, autoInterfaceStatus: "complete" } };
 }
+function hasDurationRange(c: VideoContract): boolean {
+  return c.durations?.length
+    ? c.durations.every(value => Number.isInteger(value) && value > 0)
+    : c.min !== undefined && c.max !== undefined && Number.isFinite(c.min) && Number.isFinite(c.max) && c.min > 0 && c.max >= c.min;
+}
+function defaultDuration(c: VideoContract): number | undefined {
+  if (c.defaultDuration !== undefined) return c.defaultDuration;
+  if (c.durations?.length) return c.durations[0];
+  // A UI initial selection within a proven range is safe. A generic minimum
+  // alone does not establish either the supplier's range or its default.
+  return !c.durationOptional && hasDurationRange(c) ? Math.min(c.max!, Math.max(c.min!, 5)) : undefined;
+}
 export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string, current?: ModelDescriptor, context?: RemainingVideoContext): ModelDescriptor | undefined {
   if (supplier === "jiasu") return jiasuVideoModel(id, current ?? context?.model, context?.group);
   const c = contractFor(supplier, id, { model: current, ...context }); if (!c) return undefined;
+  const metadata = { ...current?.metadata };
+  // A fresh, exact contract supersedes an older generic range warning. Keep
+  // the warning when the supplier still has not published a complete range.
+  const durationRangeConfirmed = hasDurationRange(c);
+  if (durationRangeConfirmed) delete metadata.durationRangeUnverified;
+  else if (!c.chatVideo && !c.omitDuration) metadata.durationRangeUnverified = true;
+  if (c.resolutions.length) delete metadata.resolutionRangeUnverified;
+  else if (c.openResolution) metadata.resolutionRangeUnverified = true;
+  const initialDuration = defaultDuration(c);
   const parameters: ModelParameterDescriptor[] = [{ key: "duration", label: "视频时长", control: c.durations ? "select" : "number", valueType: "integer", required: !c.durationOptional,
-    ...(!c.durationOptional || c.defaultDuration !== undefined || c.durations ? { default: c.defaultDuration ?? c.durations?.[0] ?? Math.max(c.min ?? 1, 5) } : {}), ...(c.durations ? { options: c.durations.map(value => ({ label: `${value} 秒`, value })) } : { min: c.min ?? 1, ...(c.max ? { max: c.max } : {}), step: 1 }),
+    ...(initialDuration !== undefined ? { default: initialDuration } : {}), ...(c.durations ? { options: c.durations.map(value => ({ label: `${value} 秒`, value })) } : { min: c.min ?? 1, ...(c.max ? { max: c.max } : {}), step: 1 }),
     ...(c.note ? { description: c.note } : {}) },
     ...(!c.omitRatio ? [{ key: "aspect_ratio", label: "画面比例", control: c.freeRatio || !c.ratios.length ? "text" as const : "select" as const, valueType: "string" as const,
       ...(c.ratios.length ? { default: c.defaultRatio ?? c.ratios[0]!, options: c.ratios.map(value => ({ label: value, value })) } : { description: "比例以当前 Key 能力接口为准；留空使用供应商默认值。" }) }] : []),
-    ...(c.openResolution ? [{ key: "resolution", label: "输出分辨率", control: "text" as const, valueType: "string" as const, description: "留空使用供应商默认值；接受范围以当前型号和分组为准。" }] : c.resolutions.length ? [{ key: "resolution", label: "输出分辨率", control: "select" as const, valueType: "string" as const, default: c.defaultResolution ?? (c.resolutions.includes("720p") ? "720p" : c.resolutions[0]!), required: supplier !== "weai", options: c.resolutions.map(value => ({ label: value, value })),
+    ...(c.openResolution ? [{ key: "resolution", label: "输出分辨率", control: "text" as const, valueType: "string" as const, description: "供应商尚未公布此完整型号的可选分辨率；留空使用上游默认。" }] : c.resolutions.length ? [{ key: "resolution", label: "输出分辨率", control: "select" as const, valueType: "string" as const, default: c.defaultResolution ?? (c.resolutions.includes("720p") ? "720p" : c.resolutions[0]!), required: supplier !== "weai", options: c.resolutions.map(value => ({ label: value, value })),
       ...(supplier === "weai" || c.omitResolution ? { description: "输出档位由完整模型名固定；不会额外发送 resolution。" } : {}) }] : []),
     ...(c.outputAudio ? [{ key: "generate_audio", label: "生成声音", control: "toggle" as const, valueType: "boolean" as const, default: true }] : []), ...(c.extraParameters ?? [])];
   return { ...current, id, name: current?.name ?? id, operations: c.requiresImage ? ["video.image-to-video"] : c.requiresVideo ? ["video.generate"] : ["video.generate", "video.image-to-video"],
@@ -370,7 +393,7 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
     limits: { ...(c.chatVideo ? {} : current?.limits), ...(c.images === undefined ? {} : { maxInputImages: Math.max(c.images, c.frames ? 2 : 0) }), ...(c.videos === undefined ? {} : { maxInputVideos: c.videos }),
       ...(c.audios === undefined ? {} : { maxInputAudios: supplier === "secure" && id.startsWith("grok-") ? 0 : c.audios }), ...(c.maxAssets ? { maxInputAssets: c.maxAssets } : {}), ...(c.requiresImage ? { requiresInputImage: true } : {}), ...(c.requiresVideo ? { requiresInputVideo: true } : {}),
       ...(c.videoSeconds ? { maxTotalInputVideoDurationSeconds: c.videoSeconds } : {}), ...(c.audioSeconds ? { maxInputAudioDurationSeconds: c.audioSeconds } : {}) },
-    metadata: { ...current?.metadata, supplier, modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: c.chatVideo ? "openai-chat" : "openai-videos", documentationUrl: c.docs, videoContractCheckedAt: c.directoryContract ? "2026-10-09" : "2026-10-07", remoteMediaUrlsOnly: !c.multipartFrames && !c.multipartReference,
+    metadata: { ...metadata, supplier, modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: c.chatVideo ? "openai-chat" : "openai-videos", documentationUrl: c.docs, videoContractCheckedAt: c.directoryContract ? "2026-10-09" : "2026-10-07", remoteMediaUrlsOnly: !c.multipartFrames && !c.multipartReference,
       ...(c.directoryContract ? { endpointPath: c.chatVideo ? "/v1/chat/completions" : c.submitPath ?? "/v1/videos", endpointMethod: "POST" } : {}),
       ...(c.directoryContract ? { parameterSource: "supplier-documented-contract", parameterControlsUnavailable: false, protocolEvidence: "supplier-documentation", generationVerified: false, miaowuVideoContractPending: false } : {}),
       ...(c.videoReferenceEncoding ? { videoReferenceEncoding: c.videoReferenceEncoding } : {}),
@@ -399,7 +422,10 @@ export function normalizeRemainingVideoParameters(supplier: RemainingVideoSuppli
   const c = contractFor(supplier, request.model ?? "", { ...context, assets: request.assets }); if (!c) return { ...request.parameters };
   if (c.chatVideo) return {};
   const original = request.parameters ?? {}, assets = request.assets ?? [], p: Record<string, unknown> = {};
-  if (!c.omitDuration) p[c.secondsField ?? "duration"] = original.duration ?? original.seconds ?? c.defaultDuration ?? c.durations?.[0] ?? (c.durationOptional ? undefined : Math.max(c.min ?? 1, 5));
+  if (!c.omitDuration) {
+    const duration = original.duration ?? original.seconds ?? defaultDuration(c);
+    if (duration !== undefined) p[c.secondsField ?? "duration"] = duration;
+  }
   if (!c.omitRatio) p[c.ratioField ?? "aspect_ratio"] = original.aspect_ratio ?? original.ratio ?? c.defaultRatio ?? c.ratios[0];
   if (supplier !== "weai" && !c.omitResolution && c.resolutions.length) p.resolution = original.resolution ?? c.defaultResolution ?? (c.resolutions.includes("720p") ? "720p" : c.resolutions[0]);
   if (c.openResolution && typeof original.resolution === "string" && original.resolution.trim()) p.resolution = original.resolution.trim();
@@ -499,6 +525,7 @@ export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: st
       mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }, { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
         { target: "/seconds", source: { kind: "request", path: "$.parameters.seconds" }, coerce: "string", omitIfUndefined: true },
         { target: "/size", source: { kind: "videoDimensions", resolutionPath: "$.parameters.resolution", aspectRatioPath: "$.parameters.aspect_ratio" }, omitIfUndefined: true },
+        { target: "/size", source: { kind: "request", path: "$.parameters.size" }, omitIfUndefined: true },
         { target: "/resolution_name", source: { kind: "request", path: "$.parameters.resolution" }, omitIfUndefined: true },
         ...["mode", "first_frame", "last_frame", "image[]"].map(field => ({ target: `/${field}`, source: { kind: "request" as const, path: field === "image[]" ? '$.parameters["image[]"]' : `$.parameters.${field}` }, omitIfUndefined: true, omitIfEmpty: true }))], response },
       poll: { path: "/v1/videos/{taskId}", method: "GET", bodyMode: "none", response }, pollIntervalMs: 4000,
@@ -525,11 +552,23 @@ export function remainingVideoRequestIssues(supplier: RemainingVideoSupplier, re
   const c = contractFor(supplier, request.model ?? "", { ...context, assets: request.assets }); if (!c) return [];
   const p = normalizeRemainingVideoParameters(supplier, request, context), issues: ValidationIssue[] = [], add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
   const seconds = c.omitDuration ? request.parameters?.duration ?? c.durations?.[0] : p[c.secondsField ?? "duration"];
+  if (!c.chatVideo && !c.omitDuration && !hasDurationRange(c)) {
+    if (seconds !== undefined && seconds !== c.defaultDuration)
+      add("parameters.duration", "当前供应商未确认此型号的时长范围，不能提交自定义时长；请使用已公布的供应商默认值或补全此分组的时长合同。");
+    else if (seconds === undefined && !c.durationOptional)
+      add("parameters.duration", "当前型号需要时长，但供应商尚未公布有效范围或默认值，本次生成尚未提交。");
+  }
   if (seconds !== undefined && (typeof seconds !== "number" || !Number.isInteger(seconds) || c.durations && !c.durations.includes(seconds) || c.min !== undefined && seconds < c.min || c.max !== undefined && seconds > c.max)) add("parameters.duration", c.durations ? `此型号只支持 ${c.durations.join(" / ")} 秒。` : `时长必须为 ${c.min ?? 1}${c.max ? `–${c.max}` : " 以上"} 的整数秒。`);
   const ratio = p[c.ratioField ?? "aspect_ratio"];
   if (!c.omitRatio && !c.freeRatio && c.ratios.length && !c.ratios.includes(String(ratio))) add("parameters.aspect_ratio", `此型号比例仅支持 ${c.ratios.join(" / ")}。`);
   if (c.freeRatio && !/^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(String(ratio))) add("parameters.aspect_ratio", "画面比例必须为正数宽高比，例如 16:9。");
   const resolution = request.parameters?.resolution ?? p.resolution;
+  if (c.openResolution && !c.resolutions.length && request.parameters?.resolution !== undefined)
+    add("parameters.resolution", "当前供应商尚未确认此完整型号的可选分辨率，请选择供应商默认；已保存的自定义分辨率不会提交。");
+  const size = request.parameters?.size;
+  if ((c.multipartReference || c.multipartFrames) && size !== undefined &&
+      (typeof size !== "string" || !/^\d+x\d+$/u.test(size) || !size.split("x").every(value => Number.isSafeInteger(Number(value)) && Number(value) > 0)))
+    add("parameters.size", "输出像素尺寸必须为正整数宽x高，例如 1280x720；具体范围以当前供应商型号为准。");
   if (c.multipartReference && resolution !== undefined && !request.parameters?.size && !(["720p", "1080p"].includes(String(resolution)) && ["16:9", "9:16"].includes(String(ratio)))) add("parameters.size", "此分辨率与画幅请填写供应商接受的输出像素尺寸，不能静默替换为默认尺寸。");
   if (resolution !== undefined && c.resolutions.length && !c.resolutions.includes(String(resolution))) add("parameters.resolution", `此型号分辨率仅支持 ${c.resolutions.join(" / ")}。`);
   if (request.parameters?.duration !== undefined && request.parameters.seconds !== undefined && request.parameters.duration !== request.parameters.seconds) add("parameters.duration", "duration 与 seconds 不能冲突。");

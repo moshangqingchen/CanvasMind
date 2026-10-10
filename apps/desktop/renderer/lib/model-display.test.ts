@@ -5,6 +5,56 @@ import { chuangxiangCatalogPricing } from "../../../../packages/providers/src/ch
 import { applyChuangxiangMidjourneyCapabilities } from "@super-canvas/providers/chuangxiang-midjourney-contract";
 
 describe("appendPriceLabelOnce", () => {
+  it("does not present an invalid saved video duration as a priced, supported combination", () => {
+    const model: ModelDescriptor = { id: "bounded-video", name: "Bounded", operations: ["video.generate"],
+      parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", min: 5, max: 30, step: 1, default: 5 }],
+      pricing: { kind: "per-request", unitAmount: 1.1, currency: "CNY", checkedAt: "now", confidence: "exact" } };
+    expect(modelPriceSummary(model, { duration: 38 })).toContain("当前参数不支持");
+    expect(modelEstimatedCost(model, { duration: 38 })).toBeUndefined();
+    expect(comparableModelPrice([model], model.id, { duration: 38 })).toContain("当前参数不支持");
+    expect(modelPriceSummary(model, { duration: 30 })).toBe("1.1 CNY / 次");
+    expect(modelEstimatedCost(model, { duration: 30 })).toBe("1.1 CNY");
+    expect(model.pricing?.unitAmount).toBe(1.1);
+  });
+  it("keeps a Jiasu default-request quote while withholding estimates for unverified custom values", () => {
+    const model: ModelDescriptor = { id: "unpublished-video-range", name: "Unknown range", operations: ["video.generate"],
+      metadata: { jiasuVideoContract: true, durationRangeUnverified: true, resolutionRangeUnverified: true },
+      parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", step: 1 },
+        { key: "resolution", label: "分辨率", control: "select", options: [] }],
+      pricing: { kind: "per-request", unitAmount: 1.1, currency: "CNY", checkedAt: "now", confidence: "exact" } };
+    for (const values of [{ duration: 38 }, { seconds: 38 }, { resolution: "720p" }]) {
+      expect(modelPriceSummary(model, values)).toContain("未确认");
+      expect(modelEstimatedCost(model, values)).toBeUndefined();
+    }
+    expect(modelPriceSummary(model, {})).toBe("1.1 CNY / 次");
+    expect(modelEstimatedCost(model, {})).toBe("1.1 CNY");
+    const otherSupplier = { ...model, metadata: { durationRangeUnverified: true, resolutionRangeUnverified: true } };
+    expect(modelPriceSummary(otherSupplier, { resolution: "1440p" })).toContain("当前分辨率未确认");
+    expect(modelEstimatedCost(otherSupplier, { resolution: "1440p" })).toBeUndefined();
+  });
+  it("prices an evidenced supplier default without treating an old generic default as confirmed", () => {
+    const model: ModelDescriptor = { id: "default-only", name: "Default only", operations: ["video.generate"],
+      metadata: { jiasuVideoContract: true, durationRangeUnverified: true, resolutionRangeUnverified: true,
+        videoParameterConfirmedDefaults: { duration: 8, resolution: "1080p" } },
+      parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", default: 8 },
+        { key: "resolution", label: "分辨率", control: "select", default: "1080p", options: [{ value: "1080p", label: "供应商默认" }] }],
+      pricing: { kind: "per-request", unitAmount: 1.1, currency: "CNY", checkedAt: "now", confidence: "exact" } };
+    expect(modelEstimatedCost(model, {})).toBe("1.1 CNY");
+    expect(modelEstimatedCost(model, { seconds: 8, resolution: "1080p" })).toBe("1.1 CNY");
+    expect(modelEstimatedCost(model, { duration: 38 })).toBeUndefined();
+    expect(modelEstimatedCost({ ...model, metadata: { ...model.metadata, videoParameterConfirmedDefaults: undefined } }, {})).toBeUndefined();
+  });
+  it("preserves explicit free-form contracts and uses native duration aliases for per-second quotes", () => {
+    const model: ModelDescriptor = { id: "manual", name: "Manual", operations: ["video.generate"], metadata: { source: "manual" },
+      parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", min: 1, default: 5 }],
+      pricing: { kind: "per-second", unitAmount: .2, currency: "CNY", checkedAt: "now", confidence: "exact" } };
+    expect(modelEstimatedCost(model, { duration: 38 })).toBe("7.6 CNY");
+    const native: ModelDescriptor = { ...model, metadata: { supplier: "mikoto", videoContractCheckedAt: "now" },
+      parameters: [{ ...model.parameters![0]!, max: 60, step: 1 }] };
+    expect(modelEstimatedCost(native, { seconds: 38 })).toBe("7.6 CNY");
+    expect(modelEstimatedCost(native, { duration: 5, seconds: 38 })).toBeUndefined();
+    expect(modelEstimatedCost({ ...native, metadata: { ...native.metadata, durationRangeUnverified: true } }, { seconds: 38 })).toBeUndefined();
+  });
   it("formats raw image names from saved catalogs without rewriting IDs or custom names", () => {
     expect(cleanModelDisplayName("gpt-image-2.5-sunburs")).toBe("GPT Image 2.5 Sunburst");
     expect(cleanModelDisplayName("gpt-image-2.5-sunburst（¥0.08/次）", "¥0.08/次")).toBe("GPT Image 2.5 Sunburst");

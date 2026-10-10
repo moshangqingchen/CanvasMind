@@ -1528,7 +1528,9 @@ export class GenericRestAdapter implements ProviderAdapter {
           if (maximum !== undefined && [...request.prompt].length > maximum)
             issues.push({ path: "prompt", code: "prompt_too_long", message: `当前型号提示词最多 ${maximum} 个字符，本次生成尚未提交。` });
         }
-        if (configuredModel.parameters?.length && media !== "image" && (musicRequest || videoRequest || cangyuanVideo || remainingVideo)) {
+        // Saved/manual video transports retain their own declared constraints,
+        // even when a fixed connector deliberately bypasses native contracts.
+        if (configuredModel.parameters?.length && (media === "video" || musicRequest)) {
           const values = musicRequest ? withCangyuanMusicRequestParameters(request).parameters ?? {} : request.parameters ?? {};
           const declared = Object.fromEntries(Object.entries(values).filter(([key]) => configuredModel.parameters?.some(p => p.key === key)));
           const defaults = Object.fromEntries(configuredModel.parameters.filter(p => p.default !== undefined && getModelParameterDescriptor(configuredModel, p.key, values, request.operation)).map(p => [p.key, p.default]));

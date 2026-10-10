@@ -49,7 +49,10 @@ describe("current Cyber Afei conditional ledger prices", () => {
     expect(pricing.tiers).toHaveLength(Object.keys(quote.amounts).length);
     for (const [resolution, amount] of Object.entries(quote.amounts)) {
       expect(modelPriceAmount(pricing, { resolution })).toBe(amount * .5);
-      expect(modelEstimatedCost(model, { resolution, duration: 10 })).toBe(`${amount * .5 * (quote.unit === "second" ? 10 : 1)} USD`);
+      // These fixtures publish rates, not a model-specific duration contract.
+      // The exact unit quote remains usable; a made-up 10-second request must
+      // not become a confirmed task estimate just because its price is known.
+      expect(modelEstimatedCost(model, { resolution, duration: 10 })).toBeUndefined();
       expect(model.metadata?.priceLabel).toContain(`${resolution} $${amount * .5}/${quote.unit === "second" ? "秒" : "请求"}`);
     }
     expect(catalog.marketplaceGroups[0]?.models.find(model => model.id === quote.id)?.priceLabel).toBe(model.metadata?.priceLabel);
@@ -86,7 +89,7 @@ describe("current Cyber Afei conditional ledger prices", () => {
     for (const [mode, prices] of Object.entries({ generate: { "720p": 8.25, "1080p": 15, "4K": 21 }, edit: { "720p": 10.5, "1080p": 15, "4K": 21 } })) {
       for (const [resolution, price] of Object.entries(prices)) {
         expect(modelPriceAmount(model.pricing!, { mode, resolution })).toBe(price * .5);
-        expect(modelEstimatedCost(model, { mode, resolution, duration: 10 })).toBe(`${price * .5} USD`);
+        expect(modelEstimatedCost(model, { mode, resolution, duration: 10 })).toBeUndefined();
       }
     }
     expect(modelPriceAmount(model.pricing!, {})).toBeUndefined();

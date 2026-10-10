@@ -83,9 +83,9 @@ const cases: NativeCase[] = [
   { label: "Secure SD2.5 by-seconds group", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "seedance-2.5", group: "sd特价分组1",
     parameters: { duration: 10, aspect_ratio: "9:16", resolution: "720p" }, assets: [image, video, audio], path: "/v1/videos",
     body: { prompt, seconds: 10, aspect_ratio: "9:16", resolution: "720p", images: [image.url], videos: [video.url], audios: [audio.url] } },
-  { label: "Secure SD2 by-request group", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "seedance2.0", group: "sd特价分组1",
-    parameters: { duration: 10, aspect_ratio: "16:9", resolution: "720p" }, assets: [image], path: "/v1/videos",
-    body: { prompt, duration: 10, aspect_ratio: "16:9", resolution: "720p", images: [image.url] } },
+  { label: "Secure SD2 fixed-duration VividAI group", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "seedance2.0", group: "vividai-video",
+    parameters: { duration: 15, resolution: "720p" }, assets: [image], path: "/v1/videos",
+    body: { prompt, duration: 15, resolution: "720p", image_urls: [image.url] } },
   { label: "Secure shared SD2.5 ID in VividAI group", supplier: "secure", baseUrl: "https://token.secure-skill.com/v1", model: "seedance-2.5", group: "vividai-video",
     parameters: { duration: 15, aspect_ratio: "9:16", resolution: "1080p" }, assets: [image], path: "/v1/videos",
     body: { prompt, duration: 15, resolution: "1080p", image_urls: [image.url] } },
@@ -154,13 +154,13 @@ describe("native video routing without a saved REST connector", () => {
     const f = fixture("cyberafei", "https://api.3365api.cn/v1", "omni-flash", "图片视频模型综合分组", [
       Response.json({ id: "omni-generation", status: "queued" }), Response.json({ status: "completed", url: "https://media.example/omni.mp4" }),
     ]);
-    const input = request("omni-flash", { mode: "generate", duration: 6, size: "1280x720" }, [localImage]);
+    const input = request("omni-flash", { mode: "generate", size: "1280x720" }, [localImage]);
     expect((await f.adapter.validate(input)).valid).toBe(true);
     const task = await f.adapter.submit(input);
     expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://api.3365api.cn/v1/videos");
     const body = f.fetcher.mock.calls[0]?.[1]?.body as FormData;
     expect(body.get("model")).toBe("omni-flash");
-    expect(body.get("seconds")).toBe("6");
+    expect(body.has("seconds")).toBe(false);
     expect(body.get("size")).toBe("1280x720");
     expect(body.has("mode")).toBe(false);
     expect(new Uint8Array(await (body.get("input_reference") as Blob).arrayBuffer())).toEqual(localImage.data);
@@ -228,11 +228,11 @@ describe("native video routing without a saved REST connector", () => {
     const current: ModelDescriptor = { id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: {
       endpointTypes: ["openai", "openai-video"], outputKindsSource: "declared", operationsSource: "declared" } };
     const f = fixture("cyberafei", "https://api.3365api.cn", id, "video-group", [Response.json({ id: "future-native-task", status: "queued" })], {}, "openai", current);
-    await f.adapter.submit(request(id, { duration: 9, provider_unknown_field: true }));
+    await f.adapter.submit(request(id, { provider_unknown_field: true }));
     expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://api.3365api.cn/v1/videos");
     const body = f.fetcher.mock.calls[0]?.[1]?.body as FormData;
     expect(body.get("model")).toBe(id);
-    expect(body.get("seconds")).toBe("9");
+    expect(body.has("seconds")).toBe(false);
     expect(body.has("provider_unknown_field")).toBe(false);
   });
   it.each([
@@ -278,9 +278,9 @@ describe("native video routing without a saved REST connector", () => {
   it.each(["grok-imagine-video", "grok-imagine-video-1.5"])("submits and recovers Hang's deployed Grok %s async contract", async id => {
     const f = fixture("hangzhale", "https://api.hangzhale.com", id, "Grok Heavy",
       [Response.json({ request_id: "hang-video-task", status: "pending" }), Response.json({ status: "done", video: { url: "https://media.example/hang.mp4" } })]);
-    const task = await f.adapter.submit(request(id, { duration: 8, aspect_ratio: "16:9", resolution: "720p", seconds_wrong: 42 }, [image], id.endsWith("1.5") ? "video.image-to-video" : "video.generate"));
+    const task = await f.adapter.submit(request(id, { aspect_ratio: "16:9", seconds_wrong: 42 }, [image], id.endsWith("1.5") ? "video.image-to-video" : "video.generate"));
     expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://api.hangzhale.com/v1/videos/generations");
-    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt, duration: 8, aspect_ratio: "16:9", resolution: "720p", reference_images: [{ url: image.url }] });
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt, aspect_ratio: "16:9", reference_images: [{ url: image.url }] });
     const state = await f.adapter.poll(JSON.parse(JSON.stringify(task)) as ProviderTask);
     expect(state.status).toBe("succeeded");
     expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://api.hangzhale.com/v1/videos/hang-video-task");
@@ -293,22 +293,22 @@ describe("native video routing without a saved REST connector", () => {
       canvasUnavailableReason: "该型号的视频参数与调用协议待供应商文档确认", outputKindsSource: "inferred", operationsSource: "inferred", autoInterfaceStatus: "incomplete" } };
     const f = fixture("chentu", "https://tu.988236.xyz", id, "grok纯享视频", [Response.json({ id: "restored-video-task", status: "queued" })], {}, "openai", current);
     const before = structuredClone(f.connection);
-    expect((await f.adapter.validate(request(id, { duration: 8 }, [image]))).valid).toBe(true);
-    await f.adapter.submit(request(id, { duration: 8 }, [image]));
+    expect((await f.adapter.validate(request(id, {}, [image]))).valid).toBe(true);
+    await f.adapter.submit(request(id, {}, [image]));
     expect(f.fetcher.mock.calls[0]?.[0]).toBe("https://tu.988236.xyz/v1/videos");
     expect(f.connection).toEqual(before);
   });
   it.each(["minimax-h3", "seedance2.0", "seedance2.5", "veo3.1", "veo3.1-fast", "veo3.1-lite"])("uses Afei's published openai-video endpoint for %s", async id => {
     const f = fixture("cyberafei", "https://api.3365api.cn", id, "图片视频模型综合分组", [Response.json({ id: "afei-openai-task", status: "queued" })]);
     const data = new Uint8Array([137, 80, 78, 71]);
-    const task = await f.adapter.submit(request(id, { duration: 8, aspect_ratio: "16:9", resolution: "720p" }, [{ id: "local-ref", kind: "image", mimeType: "image/png", data }], "video.image-to-video"));
+    const task = await f.adapter.submit(request(id, { size: "1280x720" }, [{ id: "local-ref", kind: "image", mimeType: "image/png", data }], "video.image-to-video"));
     expect(f.fetcher).toHaveBeenCalledOnce();
     const [url, init] = f.fetcher.mock.calls[0]!;
     expect(url).toBe("https://api.3365api.cn/v1/videos");
     const form = init?.body as FormData;
     expect(form).toBeInstanceOf(FormData);
     expect(form.get("model")).toBe(id);
-    expect(form.get("seconds")).toBe("8");
+    expect(form.has("seconds")).toBe(false);
     expect(form.get("size")).toBe("1280x720");
     expect(new Uint8Array(await (form.get("input_reference") as Blob).arrayBuffer())).toEqual(data);
     expect(form.has("resolution")).toBe(false);
@@ -322,16 +322,16 @@ describe("native video routing without a saved REST connector", () => {
     const firstBytes = new Uint8Array([137, 80, 78, 71]), lastBytes = new Uint8Array([137, 80, 78, 72]);
     const inputs: ProviderAssetInput[] = [{ id: "first-local", kind: "image", role: "firstFrame", mimeType: "image/png", data: firstBytes },
       { id: "last-local", kind: "image", role: "lastFrame", mimeType: "image/png", data: lastBytes }];
-    const task = await f.adapter.submit(request("grok-imagine-video-1.5", { duration: 6, resolution: "720p", aspect_ratio: "16:9" }, inputs, "video.image-to-video"));
+    const task = await f.adapter.submit(request("grok-imagine-video-1.5", { size: "1280x720" }, inputs, "video.image-to-video"));
     expect(f.fetcher).toHaveBeenCalledOnce();
     const [url, init] = f.fetcher.mock.calls[0]!;
     expect(url).toBe("https://api.mikoto.vip/v1/videos");
     const form = init?.body as FormData;
     expect(form).toBeInstanceOf(FormData);
     expect(form.get("model")).toBe("grok-imagine-video-1.5");
-    expect(form.get("seconds")).toBe("6");
+    expect(form.has("seconds")).toBe(false);
     expect(form.get("size")).toBe("1280x720");
-    expect(form.get("resolution_name")).toBe("720p");
+    expect(form.has("resolution_name")).toBe(false);
     expect(form.get("mode")).toBe("frames");
     expect(new Uint8Array(await (form.get("first_frame") as Blob).arrayBuffer())).toEqual(firstBytes);
     expect(new Uint8Array(await (form.get("last_frame") as Blob).arrayBuffer())).toEqual(lastBytes);

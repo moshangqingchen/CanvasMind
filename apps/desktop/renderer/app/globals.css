@@ -2030,9 +2030,9 @@ circle.canvas-drawing-selection-outline {
 .parameter-field input.parameter-duration-slider:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .parameter-duration-track output { flex: 0 0 auto; color: var(--text); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .parameter-duration-bounds { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; line-height: 1.4; }
-.parameter-duration-fixed { position: relative; min-width: 0; }
-.parameter-duration-fixed input { padding-right: 78px; font-variant-numeric: tabular-nums; }
-.parameter-duration-fixed > span { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 11px; pointer-events: none; white-space: nowrap; }
+.parameter-duration-unavailable { display: grid; gap: 6px; min-width: 0; }
+.parameter-duration-saved { display: grid; gap: 8px; overflow-wrap: anywhere; }
+.parameter-duration-saved > button { justify-self: start; }
 .parameter-toggle { min-width: 0; gap: 8px; }
 .parameter-toggle > span { overflow-wrap: anywhere; }
 .parameter-field.is-disabled label {
