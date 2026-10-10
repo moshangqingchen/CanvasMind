@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { parseSupplierGroupDetails, supplierGroupModelPriceDetails, supplierGroupMediaPriceDetails, supplierGroupPriceLabel, supplierGroupResolutionLabel, supplierTextMentionsModel } from "./supplier-group-details.js";
 
 describe("supplier group evidence", () => {
+  it("keeps Synora's separate banana owners attached to the following reference prices without inventing model or currency mappings", () => {
+    const details = parseSupplierGroupDetails({ name: "香蕉官转", description: "香蕉二，0.06/张，香蕉pro,0.08/张" }, "key-groups")!;
+    expect(details.referencePrice).toBe("香蕉二，0.06/张；香蕉pro，0.08/张");
+    expect(supplierGroupPriceLabel(details)).toBe("香蕉二，0.06/张；香蕉pro，0.08/张（分组说明参考）");
+    expect(supplierGroupModelPriceDetails(details, "gemini-3-pro-image-preview")).toBe(details);
+    expect(details.imagePrices).toBeUndefined();
+  });
+  it("retains a separate modality owner so an image quote cannot become a video quote", () => {
+    const details = parseSupplierGroupDetails({ description: "图片，$0.1/张，视频，$0.2/秒，充值1:5" }, "key-groups")!;
+    expect(supplierGroupMediaPriceDetails(details, "image", "image-v99")?.referencePrice).toBe("图片，$0.1/张");
+    expect(supplierGroupMediaPriceDetails(details, "video", "video-v99")?.referencePrice).toBe("视频，$0.2/秒");
+  });
+  it("scopes complete IDs separated from their prices by commas even when the other ID is absent from the Key inventory", () => {
+    const details = parseSupplierGroupDetails({ description: "vendor/image.v99，$0.11/张；vendor/image.v99-pro，$0.22/张" }, "key-groups")!;
+    expect(supplierGroupModelPriceDetails(details, "vendor/image.v99")?.referencePrice).toBe("vendor/image.v99，$0.11/张");
+    expect(supplierGroupModelPriceDetails(details, "vendor/image.v99-pro")?.referencePrice).toBe("vendor/image.v99-pro，$0.22/张");
+    expect(supplierGroupModelPriceDetails(details, "vendor/image.v99-fast")?.referencePrice).toBeUndefined();
+  });
   it("preserves Synora's shared screenshot quote for Image 2 and both Image 2.5 variants", () => {
     const details = parseSupplierGroupDetails({ name: "全参生图专线", description: "原生4k，image2和2.5均支持所有参数，0.07/张", rate_multiplier: 1 }, "key-groups")!;
     expect(details).toMatchObject({ referencePrice: "0.07/张", nativeResolutions: ["4K"], supportedResolutions: ["4K"], rateMultiplier: 1 });

@@ -21,13 +21,12 @@ export const FRIMODEL_WEBSITE_URL = "https://platform.frimodel.com/";
 export const FRIMODEL_DOCS_URL = "https://ai-doc.apifox.cn";
 
 /**
- * FriModel's documented OpenAI Images edit page applies to GPT Image 2
- * models. Keep this predicate deliberately narrow for UI fallbacks: models
- * outside this family must be confirmed by a separate protocol descriptor
- * before the canvas offers a reference-image edit input.
+ * FriModel's current Images edit specification accepts the image model from
+ * the current Key's group list (https://ai-doc.apifox.cn/473749172e0.md).
+ * Keep the exact official Image 2.5 IDs separate from Adobe quality rules.
  */
 export function friModelSupportsImageEdit(modelId: string): boolean {
-  return /^gpt-image-2(?:-|$)/iu.test(modelId.trim()) || /^gpt-image-2\.5-(?:flare|sunburst)-adobe$/iu.test(modelId.trim());
+  return /^gpt-image-2(?:-|$)/iu.test(modelId.trim()) || /^gpt-image-2\.5-(?:flare|sunburst)(?:-adobe)?$/iu.test(modelId.trim());
 }
 
 const FRIMODEL_EDIT_SIZE_OPTIONS = [

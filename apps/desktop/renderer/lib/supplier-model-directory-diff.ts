@@ -40,7 +40,7 @@ export function supplierCatalogDisplayPrice(model: SupplierCatalogModel): string
 function displayDescriptor(model: SupplierCatalogModel, keyConfirmed: boolean): ModelDescriptor {
   const metadata = model.metadata ?? {};
   const previousPrice = metadata.supplierCatalogModelStale === true;
-  const pricing = metadata.supplierPriceConflict === true || metadata.sub2apiPlazaPricingIncomplete === true || metadata.weaiLegacyPricingIncomplete === true || metadata.miaowuCatalogPricingIncomplete === true || metadata.chuangxiangCatalogPricingIncomplete === true ? undefined : (metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
+  const pricing = metadata.supplierPriceConflict === true || metadata.sub2apiPlazaPricingIncomplete === true || metadata.weaiLegacyPricingIncomplete === true || metadata.miaowuCatalogPricingIncomplete === true || metadata.chuangxiangCatalogPricingIncomplete === true || metadata.jiasuCatalogPricingIncomplete === true ? undefined : (metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
     metadata.weaiLegacyPricing ?? metadata.sub2apiPlazaPricing ?? metadata.miaowuCatalogPricing ?? metadata.hangCatalogPricing ?? metadata.officialCatalogPricing) as ModelDescriptor["pricing"];
   return { id: model.id, name: model.name || model.id, operations: [], parameters: [],
     inputKinds: model.inputKinds, outputKinds: model.outputKinds, limits: model.limits,
@@ -59,9 +59,15 @@ export function catalogPickerDirectory(connection: ProviderConnectionView | unde
   if (!connection || !nodeType || connection.provider === "fake" || connection.provider === "cli") return undefined;
   const supplier = suppliers.find(item => item.state?.visibility !== "deleted" && supplierOwnsConnection(item, connection));
   if (!supplier) return undefined;
-  const groupId = providerConnectionGroup(connection);
-  const group = supplier.catalog.groups.find(item => item.id === groupId) ??
-    supplier.catalog.groups.find(item => item.id === connection.config.accountKeyGroup);
+  const officialGroupId = String(connection.config.accountKeyGroupId ?? "");
+  const accountGroup = typeof connection.config.accountKeyGroup === "string" ? connection.config.accountKeyGroup.trim() : "";
+  const groups = /^\d+$/u.test(officialGroupId)
+    ? supplier.catalog.groups.filter(item => item.supplierGroupId === officialGroupId)
+    : supplier.catalog.groups.filter(item => item.id === (accountGroup || providerConnectionGroup(connection)));
+  const currentGroups = groups.filter(item => item.status !== "missing" && item.details?.stale !== true);
+  // Names can be reused or changed. A known Key binding is authoritative,
+  // and ambiguous group identities cannot supply another group's price.
+  const group = currentGroups.length === 1 ? currentGroups[0] : groups.length === 1 ? groups[0] : undefined;
   if (!group || group.source === "manual" || group.status === "missing") return undefined;
   const kind = nodeType === "image-generation" ? "image" : nodeType === "video-generation" ? "video" : "music";
   const catalog = group.models.map(model => displayDescriptor(model, keyConfirmed)).filter(model => modelSupportsGenerationMedia(model, kind));

@@ -38,6 +38,12 @@ export function nativeImageResolutionControl(
     if (!["size", "quality"].includes(descriptor.key)) return false;
     return concrete.length > 0 && concrete.every(option => /^(?:\d+k|\d+p|512|web)$/iu.test(String(option.value)));
   });
+  if (!resolution && model?.metadata?.imageNativeParameterContract === true && descriptors.some(isImageRatioParameter)) {
+    const label = String(model.metadata.imageFixedResolution ?? "供应商原生");
+    return { resolution: { key: "__fixed_resolution", label: "分辨率", control: "select", valueType: "string", default: label,
+      options: [{ value: label, label }], description: model.metadata.imageFixedResolution ? "清晰度由完整型号决定；切换档位需要切换型号。供应商未公开逐比例像素表，以原图为准。" : "该完整型号没有可选 K 档；尺寸由供应商按画幅决定，以原图像素为准。" },
+      ratio: descriptors.find(descriptor => isImageRatioParameter(descriptor) && descriptor.control === "select") };
+  }
   if (!resolution) return undefined;
   return { resolution, ratio: descriptors.find(descriptor => isImageRatioParameter(descriptor) && descriptor.control === "select") };
 }
@@ -48,7 +54,15 @@ export function declaredImageOutputDimensions(
   resolution: unknown,
   ratio: unknown,
 ): { width: number; height: number } | undefined {
-  const dimensions = model?.metadata?.imageOutputDimensions;
+  return declaredDimensions(model?.metadata?.imageOutputDimensions, resolution, ratio);
+}
+
+/** Supplier reference pixels are separate from promised output dimensions. */
+export function declaredImageReferenceDimensions(model: ModelDescriptor | null | undefined, resolution: unknown, ratio: unknown): { width: number; height: number } | undefined {
+  return declaredDimensions(model?.metadata?.imageOutputReferenceDimensions, resolution, ratio);
+}
+
+function declaredDimensions(dimensions: unknown, resolution: unknown, ratio: unknown): { width: number; height: number } | undefined {
   if (!Array.isArray(dimensions)) return undefined;
   const matches = dimensions.filter(entry => entry && typeof entry === "object" &&
     entry.resolution === resolution && entry.aspectRatio === ratio &&
@@ -57,4 +71,21 @@ export function declaredImageOutputDimensions(
   const first = matches[0];
   if (!first || matches.some(entry => entry.width !== first.width || entry.height !== first.height)) return undefined;
   return { width: first.width as number, height: first.height as number };
+}
+
+/** A ratio option describes this selected native tier, without guessing pixels. */
+export function nativeImageRatioOptionLabel(
+  model: ModelDescriptor | null | undefined,
+  resolution: ModelParameterDescriptor,
+  value: unknown,
+  ratio: ModelParameterOption,
+): string {
+  const tier = resolution.options?.find(option => String(option.value) === String(value)) ??
+    { value: String(value ?? ""), label: String(value ?? "") };
+  const label = imageResolutionOptionLabel(tier);
+  const dimensions = declaredImageOutputDimensions(model, value, ratio.value);
+  if (dimensions) return `${label} · ${String(ratio.value)} · ${dimensions.width} × ${dimensions.height}`;
+  const reference = declaredImageReferenceDimensions(model, value, ratio.value);
+  if (reference) return `${label} · ${String(ratio.value)} · ${reference.width} × ${reference.height}（参考）`;
+  return `${label} · ${ratio.label}`;
 }

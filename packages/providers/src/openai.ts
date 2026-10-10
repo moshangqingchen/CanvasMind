@@ -15,9 +15,12 @@ import type {
 } from "./contracts.js";
 import { chentuAzImageDescriptor, isChentuAzImageModel, CHENTU_AZ_IMAGE_SIZES } from "./chentu-az.js";
 import { monsterImageEvidence } from "./monster-image-capabilities.js";
+import { applyHangImageCapabilities, hangImageBaseUrl } from "./hang-image-contract.js";
 import { chuangxiangImageEvidence } from "./chuangxiang-image-capabilities.js";
-import { isSecureSkillImageConnection, isSecureSkillImageResult, SecureSkillImageAdapter } from "./secure-skill-image.js";
+import { isSecureSkillImageConnection, isSecureSkillImageResult, isSecureSkillSeedreamConnection, SecureSkillImageAdapter } from "./secure-skill-image.js";
+import { isSecureSkillSeedreamResult, SecureSkillSeedreamAdapter } from "./secure-skill-seedream.js";
 import { applyPdogImageCapabilities, isPdogImageConnection, isPdogImageResult, pdogImageOrigin, PdogImageAdapter } from "./pdog-image.js";
+import { applyJiasuImageCapabilities, isJiasuImageConnection, isJiasuImageResult, JiasuImageAdapter } from "./jiasu-images.js";
 import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnection, isChuangxiangMidjourneyResult, ChuangxiangMidjourneyAdapter } from "./chuangxiang-midjourney.js";
 import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
@@ -234,12 +237,13 @@ function isFriModelImageCandidate(model: string): boolean {
 }
 
 /**
- * FriModel documents the multipart `/v1/images/edits` contract for its GPT
- * Image 2 OpenAI Images models. Other image-looking IDs remain generation
- * candidates until FriModel publishes an edit contract for them.
+ * FriModel's current Images edit specification accepts the image model from
+ * the current Key's group list (https://ai-doc.apifox.cn/473749172e0.md).
+ * Include the exact official Image 2.5 IDs without borrowing Adobe quality
+ * rules or treating arbitrary image-looking IDs as an Images edit contract.
  */
 function friModelSupportsImageEdit(model: string): boolean {
-  return /^gpt-image-2(?:-|$)/iu.test(model.trim()) || isFriModelImage25(model);
+  return /^gpt-image-2(?:-|$)/iu.test(model.trim()) || /^gpt-image-2\.5-(?:flare|sunburst)(?:-adobe)?$/iu.test(model.trim());
 }
 
 function isFriModelImage25(model: string): boolean {
@@ -2612,7 +2616,9 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   private readonly profile: ImageProviderProfile;
   private readonly defaultBaseUrl: string;
   private readonly secureSkill: SecureSkillImageAdapter;
+  private readonly secureSeedream: SecureSkillSeedreamAdapter;
   private readonly pdog: PdogImageAdapter;
+  private readonly jiasu: JiasuImageAdapter;
   private readonly chuangxiang: ChuangxiangImageAdapter;
   private readonly chuangxiangMidjourney: ChuangxiangMidjourneyAdapter;
 
@@ -2632,7 +2638,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     this.submitTimeoutMs = options.requestTimeoutMs ?? 0;
     this.secureSkill = new SecureSkillImageAdapter(connections, { fetch: this.fetchImpl,
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
+    this.secureSeedream = new SecureSkillSeedreamAdapter(connections, { fetch: this.fetchImpl,
+      ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
     this.pdog = new PdogImageAdapter(connections, { fetch: this.fetchImpl,
+      ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
+    this.jiasu = new JiasuImageAdapter(connections, { fetch: this.fetchImpl,
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
     this.chuangxiang = new ChuangxiangImageAdapter(connections, { fetch: this.fetchImpl,
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }) });
@@ -2645,7 +2655,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const source = imageEditingConnection(connection);
     const route = bananaImageRoute(source, model);
     if (!route) return;
-    if (!route.weaiGroup && (this.profile !== "openai" || !route.pdog && !route.chentu && model !== GEMINI_NANO_BANANA_21_MODEL)) return;
+    if (!route.weaiGroup && (this.profile !== "openai" || !route.pdog && !route.chentu && !route.synora && !route.tk1688 && model !== GEMINI_NANO_BANANA_21_MODEL)) return;
     const descriptor = applyBananaImageCapabilities(source, { id: model, name: model,
       operations: ["image.generate", "image.edit"], metadata: { liveInventory: true } });
     return new BananaImageAdapter(this.connections, route, descriptor, { fetch: this.fetchImpl,
@@ -2877,7 +2887,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         scannedModelIds: remoteIds, modelScanStatus: "live" } } : configured;
       const described = applyChuangxiangMidjourneyCapabilities({ ...source, config: { ...source.config,
         scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyChuangxiangCurrentImageCapabilities(source, model));
-      return applySupplierImageConstraints(source, applyBananaImageCapabilities(source, described));
+      return applyHangImageCapabilities(source, applySupplierImageConstraints(source, applyJiasuImageCapabilities({ ...source, config: { ...source.config,
+        scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyBananaImageCapabilities(source, described))));
     });
   }
 
@@ -2955,12 +2966,16 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         return { valid: !issues.length && result.valid, issues: [...issues, ...result.issues] };
       }
     }
+    if (this.profile === "openai" && resolvedConnection && isJiasuImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
+      return this.jiasu.validate({ ...request, model: requestedModel });
     if (this.profile === "openai" && resolvedConnection && isPdogImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
       return this.pdog.validate({ ...request, model: requestedModel });
     if (this.profile === "openai" && resolvedConnection && isChuangxiangImageConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
       return this.chuangxiang.validate({ ...request, model: requestedModel });
     if (this.profile === "openai" && resolvedConnection && isChuangxiangMidjourneyConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
       return this.chuangxiangMidjourney.validate({ ...request, model: requestedModel });
+    if (this.profile === "openai" && resolvedConnection && isSecureSkillSeedreamConnection({ ...resolvedConnection.settings, baseUrl: resolvedConnection.baseUrl }, requestedModel))
+      return this.secureSeedream.validate({ ...request, model: requestedModel });
     const resolvedModelGroup =
       this.profile === "weai" && resolvedConnection
         ? configuredModelGroup(resolvedConnection)
@@ -3538,16 +3553,18 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const connection = await this.connections.resolve(request.connectionId);
     const apiKey = requireApiKey(connection);
     const supplierKey = configuredSupplierKey(connection);
-    const baseUrl = configuredBaseUrl(
+    const selectedModel =
+      request.model ??
+      configuredImageModel(connection, this.defaultModel, this.profile);
+    const baseUrl = (this.profile === "openai" ? hangImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, selectedModel) : undefined) ?? configuredBaseUrl(
       connection,
       this.defaultBaseUrl,
       this.profile,
     );
-    const selectedModel =
-      request.model ??
-      configuredImageModel(connection, this.defaultModel, this.profile);
     const native = this.documentedBananaAdapter(connection, selectedModel);
     if (native) return native.submit({ ...request, model: selectedModel });
+    if (this.profile === "openai" && isJiasuImageConnection({ ...connection.settings, baseUrl }, selectedModel))
+      return this.jiasu.submit({ ...request, model: selectedModel });
     const transparentEvidence = request.operation === "image.generate" && request.parameters?.background === "transparent"
       ? verifiedTransparentImageEvidence(imageEditingConnection(connection), selectedModel, request.parameters) : undefined;
     // Pin only transparent generation to the exact measured Images path.
@@ -3566,6 +3583,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     if (this.profile === "openai" && isSecureSkillImageConnection({ ...connection.settings, baseUrl }, selectedModel)) {
       return this.secureSkill.submit({ ...request, model: selectedModel });
     }
+    if (this.profile === "openai" && isSecureSkillSeedreamConnection({ ...connection.settings, baseUrl }, selectedModel))
+      return this.secureSeedream.submit({ ...request, model: selectedModel });
     const useWeAITransport = isWeAITokenEndpoint(baseUrl);
     // Existing marketplace connections carry generated requestTimeoutMs values
     // for metadata reads. They must not cut off paid image generation. Only a
@@ -3592,6 +3611,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       isWeAIAdobeUrlOutputGroup(configuredModelGroup(connection), model);
     const imageRequestParameters = {
       ...imageParameters(effectiveParameters, model, this.profile, modelGroup, supplierKey, baseUrl, tk1688Model),
+      ...(this.profile === "openai" && hangImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, model) && effectiveParameters?.n === undefined ? { n: 1 } : {}),
       ...(forceWeAIUrlOutput ? { response_format: "url" } : {}),
       // Exact live proof can extend a conservative group allowlist for transparent generation.
       // Keep normal requests on their existing parameter contract.
@@ -3960,12 +3980,16 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   }
 
   public async poll(task: ProviderTask): Promise<ProviderTask> {
+    if (isSecureSkillSeedreamResult(task.result)) return this.secureSeedream.poll(task);
+    if (isJiasuImageResult(task.result)) return this.jiasu.poll(task);
     if (isPdogImageResult(task.result)) return this.pdog.poll(task);
     if (!isSecureSkillImageResult(task.result)) throw new Error("当前图片接口没有可查询的异步任务");
     return this.secureSkill.poll(task);
   }
 
   public async extractOutputs(result: unknown): Promise<RemoteArtifact[]> {
+    if (isSecureSkillSeedreamResult(result)) return this.secureSeedream.extractOutputs(result);
+    if (isJiasuImageResult(result)) return this.jiasu.extractOutputs(result);
     const banana = bananaNativeOutputs(result);
     if (banana) return banana;
     if (isChuangxiangImageResult(result)) return this.chuangxiang.extractOutputs(result);

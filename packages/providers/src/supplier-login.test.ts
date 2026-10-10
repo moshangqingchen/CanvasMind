@@ -334,6 +334,32 @@ describe("supplier website login", () => {
       expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
     }
   });
+  it("authenticates exact Sub2API model/group billing filters while retaining the credential boundary", async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => Response.json({ code: 0, data: { access_token: "session-secret" } }));
+    const session = await loginSupplierSite({ siteUrl: "https://site.test", kind: "sub2api", credentials }, fetcher);
+    const base = "https://site.test/api/v1/usage";
+    await session.fetch(base + "?page=1&page_size=100&group_id=74&model=grok-imagine-image-2.0");
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer session-secret");
+    expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    for (const [url, method] of [
+      [base + "?model=grok-imagine-image&group_id=74", "POST"],
+      [base + "?model=grok-imagine-image&group_id=0", "GET"],
+      [base + "?model=grok-imagine-image&group_id=74&group_id=75", "GET"],
+      [base + "?model=grok-imagine-image&model=another", "GET"],
+      [base + "?model=&group_id=74", "GET"],
+      [base + "?model=bad%0Amodel&group_id=74", "GET"],
+      [base + "?model=grok-imagine-image&group_id=74&redirect=https://other.test", "GET"],
+      [base + "?model=grok-imagine-image&group_id=74#fragment", "GET"],
+      ["https://other.test/api/v1/usage?model=grok-imagine-image&group_id=74", "GET"],
+      ["https://site.test/api/v1/usage/errors?model=grok-imagine-image&group_id=74", "GET"],
+    ]) {
+      await session.fetch(url!, { method });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+    }
+    const newapi = await loginSupplierSite({ siteUrl: "https://site.test", kind: "newapi", credentials }, fetcher);
+    await newapi.fetch("https://site.test/api/log/self?model=grok-imagine-image&group_id=74");
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+  });
   it("logs into Sub2API and falls back to key groups with a session confined to that site", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetcher = vi.fn(

@@ -8,7 +8,9 @@ import type {
 import type {
   ModelDescriptor,
 } from "@super-canvas/providers";
+import { canApplyCangyuanCurrentContract, cangyuanCurrentModel } from "@super-canvas/providers/cangyuan-current-models";
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
+import { applyJiasuImageCapabilities } from "@super-canvas/providers/jiasu-image-contract";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
 import { modelPriceAmount } from "@super-canvas/providers/media-billing";
 import { IMAGE_SIZE_RATIOS, imageSizeForTier, imageSizeOptions } from "@super-canvas/providers/image-size-presets";
@@ -16,6 +18,8 @@ import { parseSupplierGroupDetails } from "@super-canvas/providers/supplier-grou
 import { withHighestQualityDefault } from "./model-quality";
 import { imageQualityPresetsForHighest } from "@super-canvas/providers/image-quality-presets";
 import { isTk1688ApiUrl, tk1688ImagePolicyModelId } from "@super-canvas/providers/tk1688-model-policy";
+import { supplierImageMenuContract } from "./supplier-image-menu-contract";
+import { secureSeedreamImageContract } from "./secure-seedream-image-contract";
 
 export const RESOLUTIONS: ImageResolutionTier[] = ["1K", "2K", "4K"];
 export const EVIDENCE_LABELS = {
@@ -116,7 +120,9 @@ export function effectiveImageCapabilities(input: {
   documentation?: string;
 }): EffectiveImageCapabilities {
   const { supplier, connection, fingerprint } = input;
-  const model = applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, input.model));
+  const imageModel = secureSeedreamImageContract(connection, supplierImageMenuContract(connection, applyJiasuImageCapabilities(connection, applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, input.model)))));
+  const model = canApplyCangyuanCurrentContract(connection.config, typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl, imageModel.id)
+    ? cangyuanCurrentModel(imageModel) : imageModel;
   const policyBaseUrl = typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl;
   const tk1688 = isTk1688ApiUrl(policyBaseUrl);
   const policyModelId = tk1688ImagePolicyModelId(model.id, policyBaseUrl);
@@ -150,6 +156,36 @@ export function effectiveImageCapabilities(input: {
         ? model.metadata.tk1688FixedSize.replace("x", ":") : ratio?.default === "auto" || ratio?.default === undefined ? "1:1" : String(ratio.default),
       needsQualityProbe: false,
     };
+  }
+  if (model.metadata?.imageNativeParameterContract === true) {
+    const resolutions = RESOLUTIONS.filter(tier => Array.isArray(model.metadata?.imageSupportedResolutions) && model.metadata.imageSupportedResolutions.includes(tier));
+    const parameters = model.parameters ?? [];
+    const size = parameters.find(parameter => parameter.key === model.metadata?.imageNativeResolutionParameter) ?? parameters.find(parameter => parameter.key === "size");
+    const ratio = parameters.find(parameter => parameter.key === "aspect_ratio");
+    const quality = parameters.find(parameter => parameter.key === "quality");
+    const evidence: ImageCapabilityEvidence[] = resolutions.map(resolution => ({
+      id: `${connection.id}:${model.id}:${resolution}`, supplierId: supplier.id, sourceId: supplier.state?.sourceId ?? "legacy", connectionId: connection.id, group,
+      modelId: model.id, operation: "image.generate", kind: "documentation", sourceUrl: String(model.metadata?.documentationUrl ?? supplier.siteUrl),
+      checkedAt: String(model.metadata?.contractCheckedAt ?? supplier.scannedAt ?? supplier.updatedAt), fingerprint, status: "declared", resolution,
+      excerpt: "该供应商完整型号的官方档位；像素表或预算未公开时保留具体资料缺项，不生成通用尺寸。",
+    }));
+    const history = (input.tests ?? []).filter(test => test.connectionId === connection.id && test.modelId === model.id && test.fingerprint === fingerprint &&
+      !["cancelled", "superseded"].includes(test.status)).map(currentResolutionEvidence);
+    for (const test of history) {
+      if (test.status !== "succeeded" && !test.submittedAt) continue;
+      const status = test.status === "succeeded" ? test.approximate ? "approximate" : "verified" : "conflict";
+      const entry: ImageCapabilityEvidence = { id: `${connection.id}:${model.id}:${test.resolution}:history`, supplierId: supplier.id,
+        sourceId: test.sourceId, connectionId: connection.id, group, modelId: model.id, operation: "image.generate", kind: "test", checkedAt: test.updatedAt,
+        fingerprint, status, resolution: test.resolution, actualWidth: test.actualWidth, actualHeight: test.actualHeight,
+        excerpt: `保留原请求 ${test.requestId}：请求 ${test.expectedWidth}×${test.expectedHeight}，实际 ${test.actualWidth ?? "待取回"}×${test.actualHeight ?? "待取回"}。历史像素结果不扩展当前完整型号的档位或比例。` };
+      const index = evidence.findIndex(item => item.resolution === test.resolution);
+      if (index >= 0) evidence[index] = entry; else evidence.push(entry);
+    }
+    return { model: { ...model, metadata: { ...model.metadata, imageCapabilityEvidence: evidence, imageCapabilityPolicy: 2 } }, evidence,
+      tiers: resolutions.map(tier => ({ tier, status: evidence.find(item => item.resolution === tier)?.status ?? "declared" })), probeTiers: [], quality: quality?.default === undefined ? undefined : String(quality.default),
+      qualityOptions: quality?.options?.map(option => String(option.value)) ?? [], qualityKey: quality?.key, sizeKey: size?.key,
+      sizeIsTier: size?.key === model.metadata?.imageNativeResolutionParameter, ratioKey: ratio?.key,
+      ratio: String(ratio?.options?.find(option => option.value === "16:9")?.value ?? ratio?.default ?? "auto"), needsQualityProbe: false };
   }
   if (model.metadata?.imageNativeResolutionOptions === true) {
     const nativeGroup = supplier.catalog.groups.find(item => item.id === group);
@@ -756,15 +792,15 @@ export function verificationParameters(
     : new RegExp(`\\b${tier}\\b`, "iu").test(option.label) && option.label.match(/\d+:\d+/u)?.[0] === capabilities.ratio);
   const fixedSize = capabilities.model.metadata?.tk1688FixedSize;
   const selectedSize = typeof fixedSize === "string" && /^\d+x\d+$/u.test(fixedSize) ? fixedSize
-    : option?.value ?? (capabilities.sizeIsTier ? tier : imageSizeForTier(tier, capabilities.ratio, descriptor?.max));
-  const size = /^\d+x\d+$/u.test(String(selectedSize)) ? String(selectedSize) : imageSizeForTier(tier, capabilities.ratio);
+    : option?.value ?? (capabilities.model.metadata?.imageNativeParameterContract === true ? undefined : capabilities.sizeIsTier ? tier : imageSizeForTier(tier, capabilities.ratio, descriptor?.max));
+  const size = /^\d+x\d+$/u.test(String(selectedSize)) ? String(selectedSize) : capabilities.model.metadata?.imageNativeParameterContract === true ? "0x0" : imageSizeForTier(tier, capabilities.ratio);
   const [width, height] = size.split("x").map(Number);
   const parameters: Record<string, string | number | boolean> = capabilities.model.metadata?.tk1688OmitN === true ? {} : { n: 1 };
-  if (capabilities.sizeKey)
+  if (capabilities.sizeKey && selectedSize !== undefined)
     parameters[capabilities.sizeKey] = selectedSize;
   if (capabilities.ratioKey)
     parameters[capabilities.ratioKey] = capabilities.ratio;
-  if (capabilities.qualityKey && capabilities.quality)
+  if (capabilities.qualityKey && capabilities.quality && capabilities.qualityKey !== capabilities.sizeKey)
     parameters[capabilities.qualityKey] = capabilities.quality;
   for (const parameter of capabilities.model.parameters ?? [])
     if (parameters[parameter.key] === undefined && parameter.required && parameter.default !== undefined &&

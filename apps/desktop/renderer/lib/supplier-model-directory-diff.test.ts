@@ -66,6 +66,37 @@ describe("public media directory differences", () => {
     expect(catalogPickerDirectory(connection, [{ ...source, catalog: { groups: [{ ...source.catalog.groups[0]!, status: "missing" }] } }], [], "video-generation", true)).toBeUndefined();
   });
 
+  it("follows the Key's stable official group through a rename and never borrows a reused name", () => {
+    const source = supplier([]);
+    const originalGroup = source.catalog.groups[0]!;
+    source.catalog.groups = [
+      { ...originalGroup, id: "renamed", supplierGroupId: "43", models: [{ ...catalogModel("same-video"), priceLabel: "¥0.50/秒" }] },
+      { ...originalGroup, id: "group", supplierGroupId: "44", models: [{ ...catalogModel("same-video"), priceLabel: "¥0.90/秒" }] },
+    ];
+    const bound = { ...connection, config: { ...connection.config, accountKeyGroup: "group", accountKeyGroupId: "43" } };
+    const directory = catalogPickerDirectory(bound, [source], [], "video-generation", true)!;
+    expect(directory.models[0]?.metadata?.priceLabel).toBe("¥0.50/秒");
+    source.catalog.groups = source.catalog.groups.filter(group => group.supplierGroupId !== "43");
+    expect(catalogPickerDirectory(bound, [source], [], "video-generation", true)).toBeUndefined();
+  });
+
+  it("uses a Key's official named group before a separate user model-group label", () => {
+    const source = supplier([catalogModel("user-group-video")]);
+    source.catalog.groups.push({ ...source.catalog.groups[0]!, id: "key-group", models: [{ ...catalogModel("key-group-video"), priceLabel: "¥0.50/秒" }] });
+    const bound = { ...connection, config: { ...connection.config, accountKeyGroup: "key-group" } };
+    expect(catalogPickerDirectory(bound, [source], [], "video-generation", true)?.models.map(model => model.id)).toEqual(["key-group-video"]);
+  });
+
+  it("rejects ambiguous official identities, but prefers the single current group over its retained missing entry", () => {
+    const source = supplier([catalogModel("current-video")]);
+    const current = { ...source.catalog.groups[0]!, supplierGroupId: "43" };
+    const bound = { ...connection, config: { ...connection.config, accountKeyGroupId: 43 } };
+    source.catalog.groups = [current, { ...current, id: "old-name", status: "missing" }];
+    expect(catalogPickerDirectory(bound, [source], [], "video-generation", true)?.models.map(model => model.id)).toEqual(["current-video"]);
+    source.catalog.groups[1] = { ...current, id: "duplicate" };
+    expect(catalogPickerDirectory(bound, [source], [], "video-generation", true)).toBeUndefined();
+  });
+
   it("reports pending Key or stale public records honestly and does not inherit public paid-verification metadata", () => {
     const source = supplier([{ ...catalogModel("video"), metadata: { canvasRunnable: true, imageCapabilitiesVerifiedAt: "untrusted-directory-value" } }]);
     const result = catalogPickerDirectory(connection, [source], [], "video-generation", false, true)!;
@@ -84,7 +115,7 @@ describe("public media directory differences", () => {
     expect(supplierCatalogDisplayPrice({ ...catalogModel("video"), priceLabel: "¥0.62/秒（上次价格）", metadata: { supplierCatalogModelStale: true } })).toBe("¥0.62/秒（上次价格）");
   });
 
-  it.each(["weaiLegacyPricing", "sub2apiPlazaPricing"])("keeps %s typed image quotes and conditions in disabled public rows with the original read time", field => {
+  it.each(["weaiLegacyPricing", "sub2apiPlazaPricing", "officialCatalogPricing"])("keeps %s typed image quotes and conditions in disabled public rows with the original read time", field => {
     const checkedAt = "2026-10-08T16:18:29.747Z";
     const pricing: NonNullable<ModelDescriptor["pricing"]> = { kind: "tiered", billingUnit: "image", currency: "USD", checkedAt, confidence: "exact", tiers: [
       { id: "1K", label: "1K", price: .02, conditions: [{ parameter: "resolution", operator: "equals", value: "1K" }] },
@@ -107,7 +138,7 @@ describe("public media directory differences", () => {
     expect(conflicted.pricing).toBeUndefined();
     expect(modelPriceSummary(conflicted, { resolution: "2K" })).toBe("价格存在冲突，待确认");
     source.catalog.groups[0]!.models[0]!.priceLabel = "价格条件待确认";
-    source.catalog.groups[0]!.models[0]!.metadata = { [field]: pricing, [`${field}Incomplete`]: true };
+    source.catalog.groups[0]!.models[0]!.metadata = { [field]: pricing, [field === "officialCatalogPricing" ? "jiasuCatalogPricingIncomplete" : `${field}Incomplete`]: true };
     const pending = catalogPickerDirectory(connection, [source], [], "image-generation", true)!.models[0]!;
     expect(pending.pricing).toBeUndefined();
     expect(modelPriceSummary(pending, { resolution: "2K" })).toBe("价格条件待确认");

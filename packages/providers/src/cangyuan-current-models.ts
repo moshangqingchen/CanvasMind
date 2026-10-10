@@ -1,162 +1,47 @@
-import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, StructuredModelPricing, StructuredPriceTier, ValidationIssue } from "./contracts.js";
-import type { RestModelConnectorOverride, RestRequestMapping } from "./rest.js";
-import { imageSizeForTier, imageSizeOptions, type ImageSizeTier } from "./image-size-presets.js";
+import type { ModelDescriptor, NormalizedRequest, StructuredModelPricing, StructuredPriceTier, ValidationIssue } from "./contracts.js";
+import type { RestConnectorConfig, RestModelConnectorOverride } from "./rest.js";
+import { cangyuanDocumentedImageModel, cangyuanDocumentedImageTransport, cangyuanDocumentedImageIssues, hasCangyuanImageDocument } from "./cangyuan-image-contract.js";
 
-const ids = new Set(["gpt-image-2-x", "gpt-image-2.5-x", "midjourney-v7", "seedream-5.0-pro-x", "gemini-nano-banana-2.1"]);
-const operations = ["image.generate", "image.edit"] as const;
-const gptRatios = ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "21:9"];
-const qualities = ["low", "medium", "high", "xhigh", "max"];
-const kTiers = ["1k", "2k", "4k"];
-const options = (values: readonly string[]) => values.map(value => ({ label: value, value }));
-export const isCangyuanCurrentModel = (id: string | undefined): boolean => ids.has(id ?? "");
+export const isCangyuanCurrentModel = (id: string | undefined): boolean => hasCangyuanImageDocument(id ?? "");
 export function isCangyuanCurrentRequest(id: string | undefined, baseUrl?: string): boolean {
   if (!isCangyuanCurrentModel(id)) return false;
   try { return /(^|\.)cangyuansuanli\.cn$/u.test(new URL(baseUrl ?? "").hostname); } catch { return false; }
 }
-
-/** Exact public IDs reviewed in the supplier's dedicated JSON documents, 2026-10-01. */
-export function cangyuanCurrentModel(model: ModelDescriptor): ModelDescriptor {
-  if (!ids.has(model.id)) return model;
-  if (model.id === "gemini-nano-banana-2.1") {
-    const metadata = { ...model.metadata }, reason = String(metadata.canvasUnavailableReason ?? "");
-    const denied = /401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|unavailable|disabled/iu.test(reason);
-    const runnable = !denied && (metadata.canvasRunnable !== false || metadata.autoInterfaceStatus === "incomplete" || /协议|接口|尚未内置|protocol|adapter/iu.test(reason));
-    if (runnable) { delete metadata.canvasUnavailableReason; delete metadata.pendingLiveScan; delete metadata.protocolSourceModel; if (metadata.autoInterfaceStatus === "incomplete") delete metadata.autoInterfaceStatus; }
-    return { ...model, operations, inputKinds: ["text", "image", "image[]"], outputKinds: ["image", "image[]"],
-    parameters: [
-      { key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: "1:1", options: options(gptRatios), operations, description: "支持十种比例，省略为 1:1；不支持任意宽高或 9:21。" },
-      { key: "quality", label: "输出分辨率", control: "select", valueType: "string", default: "4k", options: options(kTiers), operations, description: "清晰度用 quality，省略或 auto 按 1K 计费；参考像素与成品像素可能略有差异。" },
-      { key: "n", label: "生成张数", control: "select", valueType: "integer", default: 1, options: [{ label: "1 张", value: 1 }], operations },
-    ],
-    limits: { ...model.limits, maxInputImages: 14, supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"] },
-    metadata: { ...metadata, canvasRunnable: runnable, protocol: "rest", cangyuanCurrentContract: model.id, operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "image",
-      documentationUrl: "https://ai.cangyuansuanli.cn/docs-static/models/gemini-nano-banana-2.1.json", contractCheckedAt: "2026-10-07", remoteMediaUrlsOnly: true,
-      imageSupportedResolutions: ["1K", "2K", "4K"], imageRequestResolutions: ["1K", "2K", "4K"], imageNativeResolutionParameter: "quality", imageNativeQualityOptions: true,
-      maxInputImageBytes: 35 * 1024 * 1024, supportsMask: false },
-  }; }
-  const gpt = model.id.startsWith("gpt-image");
-  const image25 = model.id === "gpt-image-2.5-x";
-  const seedream = model.id === "seedream-5.0-pro-x";
-  const parameters: ModelParameterDescriptor[] = [
-    { key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: gpt ? "auto" : "16:9",
-      options: [{ label: "自动", value: "auto" }, ...options([...gptRatios, "9:21"])],
-      ...(!gpt && !seedream ? { description: "9:21 未列入 V7 官方比例，保留选项待核对；其余十种为官方声明。" } : {}), operations },
-  ];
-  if (image25) parameters.push({ key: "series", label: "产品线", control: "select", valueType: "string", required: true,
-    default: "sunburst", options: options(["flare", "sunburst"]), operations });
-  if (gpt) parameters.push(
-    { key: "tier", label: "清晰度 / 计费档位", control: "select", valueType: "string", default: "4k",
-      options: options(["web", ...kTiers]), description: "web 由渠道决定尺寸；1k / 2k / 4k 指定清晰度，精确宽高须在所选档位预算内。", operations },
-    { key: "quality", label: "质量", control: "select", valueType: "string", default: "max", options: options(image25 ? ["auto", ...qualities] : qualities),
-      visibleWhen: [{ parameter: "tier", values: kTiers }],
-      description: image25 ? "仅 1k / 2k / 4k 生效；xhigh / max 按所选档标准价双倍计费。" : "仅 1k / 2k / 4k 生效，质量不改变价格。", operations },
-  );
-  if (gpt || seedream) parameters.push({ key: "size", label: "自定义宽高", control: "dimensions", valueType: "string",
-    default: "auto", min: 1, ...(seedream ? { max: 2048, step: 16 } : {}),
-    ...(seedream ? { options: imageSizeOptions(["1K", "2K"], 2048) } : {}),
-    description: gpt ? "可选精确宽高；必须先选明确的 1k / 2k / 4k 计费档。" : "最高 2K；非原生比例由渠道就近收敛，成品像素以返回图片为准。", operations });
-  if (model.id === "gpt-image-2-x") parameters.push({ key: "mask", label: "蒙版 HTTPS 地址", control: "text", valueType: "string",
-    visibleWhen: [{ parameter: "tier", values: kTiers }], operations: ["image.edit"] });
-  parameters.push({ key: "n", label: "生成张数", control: "number", valueType: "integer", default: 1, min: 1, max: 1, operations });
-  const metadata = { ...model.metadata };
-  delete metadata.canvasUnavailableReason;
-  delete metadata.protocolSourceModel;
-  delete metadata.pendingLiveScan;
-  return { ...model, operations, parameters, inputKinds: ["text", "image", "image[]"], outputKinds: ["image", "image[]"],
-    limits: { ...model.limits, maxInputImages: image25 ? 16 : gpt ? 9 : seedream ? 10 : 5, supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"] },
-    metadata: { ...metadata, canvasRunnable: true, protocol: "rest", cangyuanCurrentContract: model.id,
-      documentationUrl: `https://ai.cangyuansuanli.cn/docs-static/models/${model.id}.json`,
-      imageSupportedResolutions: gpt ? ["1K", "2K", "4K"] : seedream ? ["1K", "2K"] : [],
-      imageRequestResolutions: gpt ? ["1K", "2K", "4K"] : seedream ? ["1K", "2K"] : [],
-      ...(gpt ? { imageNativeResolutionParameter: "tier", imageNativeQualityOptions: true } : { qualitySupport: "provider-decided" }),
-      ...(seedream ? { imageUnsupportedResolutions: ["4K"] } : {}),
-      ...(!gpt && !seedream ? { imageResolutionMode: "provider-decided", multipleOutputsPerRequest: true } : {}),
-    } };
-}
-
-export function cangyuanCurrentTransport(id: string): RestModelConnectorOverride | undefined {
-  if (!ids.has(id)) return undefined;
-  const gpt = id.startsWith("gpt-image");
-  const nano = id === "gemini-nano-banana-2.1";
-  const mappings: RestRequestMapping[] = [
-    { target: "/model", source: { kind: "request", path: "$.model" } },
-    { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
-    { target: "/size", source: { kind: "request", path: "$.parameters.aspect_ratio" }, omitIfUndefined: true, omitValues: ["auto"] },
-    ...(!nano ? [{ target: "/size", source: { kind: "request" as const, path: "$.parameters.size" }, omitIfUndefined: true, omitValues: ["auto"] }] : []),
-    ...(nano ? [{ target: "/quality", source: { kind: "request" as const, path: "$.parameters.quality" }, omitIfUndefined: true, omitValues: ["auto"] }] : []),
-    ...(gpt ? [
-      { target: "/tier", source: { kind: "request" as const, path: "$.parameters.tier" }, omitIfUndefined: true },
-      { target: "/quality", source: { kind: "request" as const, path: "$.parameters.quality" }, omitIfUndefined: true,
-        when: [{ path: "$.parameters.tier", values: kTiers }] },
-    ] : []),
-    ...(id === "gpt-image-2.5-x" ? [{ target: "/series", source: { kind: "request" as const, path: "$.parameters.series" } }] : []),
-  ];
-  const response = { taskIdPath: "$.id", taskIdFallbackPaths: ["$.task_id"], statusPath: "$.status", errorPath: "$.error.message", progressPath: "$.progress" };
-  const submit = (edit: boolean) => ({ path: `/v1/images/${edit ? "edits" : "generations"}`, method: "POST" as const,
-    bodyMode: "json" as const, template: { async: true, n: 1, response_format: "url" }, mappings: [...mappings,
-      ...(edit ? [{ target: "/images", source: { kind: "assets" as const, assetKind: "image" as const }, omitIfEmpty: true }] : []),
-      ...(edit && id === "gpt-image-2-x" ? [{ target: "/mask", source: { kind: "request" as const, path: "$.parameters.mask" }, omitIfUndefined: true, omitIfEmpty: true,
-        when: [{ path: "$.parameters.tier", values: kTiers }] }] : [])], response });
-  const poll = (edit: boolean) => ({ path: `/v1/images/${edit ? "edits" : "generations"}/{taskId}`, method: "GET" as const, bodyMode: "none" as const, response });
-  return { submit: submit(false), poll: poll(false), pollIntervalMs: 5_000,
-    output: { path: "$.data", kind: "image", urlPath: "url", base64Path: "b64_json", defaultMimeType: "image/png" },
-    operationOverrides: { "image.edit": { submit: submit(true), poll: poll(true) } } };
-}
-
-/** Preflight exact-ID conditions before any upload or paid submission. */
+export const cangyuanCurrentModel = (model: ModelDescriptor): ModelDescriptor => cangyuanDocumentedImageModel(model);
+export const cangyuanCurrentTransport = (id: string, parameters?: Readonly<Record<string, unknown>>): RestModelConnectorOverride | undefined => cangyuanDocumentedImageTransport(id, parameters);
 export function cangyuanCurrentRequestIssues(request: NormalizedRequest, baseUrl?: string): ValidationIssue[] {
-  if (!isCangyuanCurrentRequest(request.model, baseUrl)) return [];
-  const p = request.parameters ?? {}, issues: ValidationIssue[] = [];
-  const add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
-  const gpt = request.model!.startsWith("gpt-image"), image25 = request.model === "gpt-image-2.5-x";
-  const nano = request.model === "gemini-nano-banana-2.1";
-  const tier = p.tier ?? "web";
-  if (gpt && !["web", ...kTiers].includes(String(tier))) add("parameters.tier", "沧元清晰度档只能为 web、1k、2k、4k。");
-  if (image25 && !["flare", "sunburst"].includes(String(p.series))) add("parameters.series", "gpt-image-2.5-x 必须选择 flare 或 sunburst 产品线。");
-  if (gpt && tier === "web" && p.size !== undefined && p.size !== "auto" && /^\d+x\d+$/u.test(String(p.size)))
-    add("parameters.tier", "精确宽高请求必须选择 1k / 2k / 4k 计费档；仅有 size 的旧参数不能作为 web 档提交。");
-  if (gpt && p.tier === undefined && p.quality !== undefined) add("parameters.tier", "带质量参数的旧请求必须先选择明确的 1k / 2k / 4k 清晰度档。");
-  if (gpt && tier === "web" && p.aspect_ratio === "9:21") add("parameters.tier", "9:21 通过精确像素请求，请选择 1k / 2k / 4k 档；web 未声明该比例。");
-  if (request.model === "midjourney-v7" && p.aspect_ratio === "9:21") add("parameters.aspect_ratio", "Midjourney V7 官方尚未声明 9:21；此比例待核对，当前不会提交收费请求。");
-  if (gpt && kTiers.includes(String(tier)) && p.quality !== undefined && !(image25 && p.quality === "auto") && !qualities.includes(String(p.quality)))
-    add("parameters.quality", "该型号质量只能为 low、medium、high、xhigh、max。");
-  if (p.n !== undefined && p.n !== 1) add("parameters.n", "该型号每次请求只能 n=1。");
-  const references = request.assets?.filter(a => a.kind === "image" && a.role !== "mask") ?? [];
-  const limit = nano ? 14 : image25 ? tier === "web" ? 9 : 16 : gpt ? 9 : request.model === "midjourney-v7" ? 5 : 10;
-  if (references.length > limit) add("assets", `${request.model} 当前档位最多支持 ${limit} 张参考图。`);
-  if (nano) {
-    if (p.aspect_ratio !== undefined && !gptRatios.includes(String(p.aspect_ratio))) add("parameters.aspect_ratio", "Nano 2.1 只支持文档声明的十种比例，不支持 9:21 或 auto。");
-    if (p.size !== undefined) add("parameters.size", "Nano 2.1 使用画面比例控件，不接受自定义宽高或另行 size 参数。");
-    if (p.quality !== undefined && ![...kTiers, "auto"].includes(String(p.quality))) add("parameters.quality", "Nano 2.1 清晰度只能为 1k、2k、4k，或省略/auto。");
-    for (const key of Object.keys(p)) if (!["aspect_ratio", "quality", "n", "size"].includes(key)) add(`parameters.${key}`, `Nano 2.1 专属 Images 合同不支持 ${key}。`);
-    if (request.assets?.some(a => a.role === "mask")) add("assets", "Nano 2.1 不支持蒙版。");
-    for (const asset of references) {
-      if (asset.url !== undefined && !/^https:\/\//u.test(asset.url)) add("assets", "Nano 2.1 参考图必须为公网 HTTPS URL。");
-      if (!["image/png", "image/jpeg", "image/webp"].includes(asset.mimeType)) add("assets", "Nano 2.1 仅支持 PNG、JPEG、WebP 参考图。");
-      if (asset.data && asset.data.byteLength > 35 * 1024 * 1024) add("assets", "Nano 2.1 每张参考图不得超过 35MB。");
-    }
-  }
-  if (p.mask && (request.model !== "gpt-image-2-x" || tier === "web" || request.operation !== "image.edit")) add("parameters.mask", "仅 gpt-image-2-x 的 1k / 2k / 4k 编辑请求支持蒙版。");
-  if (p.mask && !String(p.mask).startsWith("https://")) add("parameters.mask", "蒙版必须使用公网 HTTPS 地址。");
-  if (request.model === "midjourney-v7" && request.prompt.length > 4000) add("prompt", "Midjourney V7 提示词最多 4000 字符。");
-  if (request.model === "seedream-5.0-pro-x" && request.prompt.length > 8000) add("prompt", "Seedream 提示词最多 8000 字符。");
-  if (request.model === "seedream-5.0-pro-x" && /^\d+x\d+$/u.test(String(p.size)) && String(p.size).split("x").some(v => Number(v) > 2048))
-    add("parameters.size", "seedream-5.0-pro-x 最高 2K，请选择 1K / 2K 请求预设。");
-  return issues;
+  return isCangyuanCurrentRequest(request.model, baseUrl) ? cangyuanDocumentedImageIssues(request) : [];
+}
+/** Preserve the requested shape; never substitute a generic K-to-pixel table. */
+export const withCangyuanCurrentRequestParameters = (request: NormalizedRequest, _baseUrl?: string): NormalizedRequest => request;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The undocumented GPT 9:21 ratio uses documented WxH instead of a new ratio enum. */
-export function withCangyuanCurrentRequestParameters(request: NormalizedRequest, baseUrl?: string): NormalizedRequest {
-  if (!isCangyuanCurrentRequest(request.model, baseUrl)) return request;
-  if (request.model === "seedream-5.0-pro-x") {
-    const ratio = String(request.parameters?.aspect_ratio ?? "");
-    const nearest: Record<string, string> = { "5:4": "4:3", "4:5": "3:4", "9:21": "9:16" };
-    return nearest[ratio] ? { ...request, parameters: { ...request.parameters, aspect_ratio: nearest[ratio] } } : request;
-  }
-  if (!request.model?.startsWith("gpt-image") ||
-    request.parameters?.aspect_ratio !== "9:21" || !kTiers.includes(String(request.parameters.tier)) ||
-    (request.parameters.size !== undefined && request.parameters.size !== "auto")) return request;
-  return { ...request, parameters: { ...request.parameters, size: imageSizeForTier(String(request.parameters.tier).toUpperCase() as ImageSizeTier, "9:21") } };
+/** Shared by the renderer and adapter; never import the server transport to inspect a contract. */
+export function managesCangyuanCurrentTransport(settings: Readonly<Record<string, unknown>>, baseUrl: string | undefined, config: RestConnectorConfig, model?: string): boolean {
+  if (!isCangyuanCurrentRequest(model, baseUrl)) return false;
+  if ((Array.isArray(settings.manualModels) && settings.manualModels.some(row => isRecord(row) && row.id === model)) ||
+      (isRecord(settings.autoModelInterfaces) && settings.autoModelInterfaces[model!])) return false;
+  const override = config.modelOverrides?.[model!];
+  if (JSON.stringify(override) === JSON.stringify(cangyuanCurrentTransport(model!))) return true;
+  if (!["cangyuan-gpt-image-2", "cangyuan-gpt-image-2-4k"].includes(String(settings.preset))) return false;
+  const definition = override?.submit ?? config.submit;
+  if (definition.path !== "/v1/images/generations" || definition.bodyMode !== "json" || !definition.mappings?.length) return false;
+  if (definition.template && (!isRecord(definition.template) || Object.keys(definition.template).some(k => !["async", "n"].includes(k)))) return false;
+  const expected: Record<string, readonly string[]> = { "/model": ["$.model"], "/prompt": ["$.prompt"], "/size": ["$.parameters.size", "$.parameters.aspect_ratio"],
+    "/quality": ["$.parameters.quality"], "/background": ["$.parameters.background"], "/n": ["$.parameters.n"], "/aspect_ratio": ["$.parameters.aspect_ratio"] };
+  return definition.mappings.every(mapping => !mapping.when && (
+    mapping.source.kind === "request" && expected[mapping.target]?.includes(mapping.source.path) ||
+    mapping.target === "/response_format" && mapping.source.kind === "literal" && mapping.source.value === "url" ||
+    mapping.target === "/images" && mapping.source.kind === "assets" && mapping.source.assetKind === "image"
+  ));
+}
+
+export function canApplyCangyuanCurrentContract(settings: Readonly<Record<string, unknown>>, baseUrl: string | undefined, model?: string): boolean {
+  const connector = settings.connector;
+  return isRecord(connector) && isRecord(connector.submit) && managesCangyuanCurrentTransport(settings, baseUrl, connector as unknown as RestConnectorConfig, model);
 }
 
 /** Parse only the two published exact billing shapes; never execute supplier expressions. */

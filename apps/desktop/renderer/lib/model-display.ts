@@ -2,6 +2,7 @@ import { modelPriceAmount, tokenComponentRate } from "@super-canvas/providers/me
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { getModelParameterDescriptor, validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { measuredPriceScopeMatches } from "./supplier-price-evidence";
 
 /** A missing local quote is not evidence that the supplier never published one. */
 export function displayPriceLabel(label: unknown, status?: unknown): string {
@@ -60,6 +61,51 @@ function mediaPriceParameters(model: ModelDescriptor, parameters: Readonly<Recor
     ? { ...parameters, mode: hasVideo ? "edit" : "generate" } : parameters, valid: true };
 }
 
+/** A Jiasu video observation needs the actual reference-video billing facts.
+ * Missing facts cannot mean zero references or reuse a different video sample.
+ */
+function jiasuMeasuredVideoReferenceMatch(model: ModelDescriptor, measured: Record<string, unknown>,
+  current: Readonly<Record<string, unknown>>, previous: Readonly<Record<string, unknown>>): boolean {
+  let jiasu = model.metadata?.jiasuVideoContract === true;
+  try { jiasu ||= new URL(String(measured.sourceUrl ?? "")).origin === "https://ai.jiasuapi.com"; } catch { /* No source URL. */ }
+  if (!jiasu || !model.operations.some(operation => operation.startsWith("video."))) return true;
+  const facts = (values: Readonly<Record<string, unknown>>) => {
+    const native = Array.isArray(values.videos) ? values.videos : undefined;
+    const materials = Array.isArray(values.materials) ? values.materials.filter(value => value && typeof value === "object" &&
+      (value as Record<string, unknown>).type === "video") : undefined;
+    const references = native || materials ? [...(native ?? []), ...(materials ?? [])] : undefined;
+    const videoMode = values.video_input === "none" || values.video_input === "video" ? values.video_input : undefined;
+    const referenceMode = values.has_reference_video === true ? "video" : values.has_reference_video === false ? "none" : undefined;
+    const declared = videoMode ?? referenceMode;
+    const mode = declared ?? (references ? references.length ? "video" : "none" : undefined);
+    const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+    const numericFact = (keys: string[]) => {
+      const declaredValues = keys.filter(key => values[key] !== undefined).map(key => number(values[key]));
+      return { value: declaredValues[0], valid: declaredValues.every(value => value !== undefined && value === declaredValues[0]) };
+    };
+    const declaredCount = numericFact(["reference_video_count", "input_video_count", "video_count"]);
+    const declaredSeconds = numericFact(["reference_video_duration_seconds", "total_input_video_duration_seconds", "input_video_duration_seconds"]);
+    const count = declaredCount.value ?? references?.length ?? (mode === "none" ? 0 : undefined);
+    const durations = references?.map(value => value && typeof value === "object"
+      ? number((value as Record<string, unknown>).duration_seconds) : undefined);
+    const measuredSeconds = durations?.every(value => value !== undefined) ? durations.reduce((sum, value) => sum + value!, 0) : undefined;
+    const seconds = declaredSeconds.value ?? measuredSeconds ?? (mode === "none" ? 0 : undefined);
+    const declarationsAgree = (values.video_input === undefined || videoMode !== undefined) &&
+      (values.has_reference_video === undefined || referenceMode !== undefined) &&
+      (!videoMode || !referenceMode || videoMode === referenceMode) && declaredCount.valid && declaredSeconds.valid &&
+      (references === undefined || count === references.length) &&
+      (measuredSeconds === undefined || seconds === measuredSeconds) &&
+      (references?.every(value => !value || typeof value !== "object" ||
+        (value as Record<string, unknown>).duration_seconds === undefined ||
+        (number((value as Record<string, unknown>).duration_seconds) ?? 0) > 0) ?? true);
+    const consistent = declarationsAgree && (mode === "none" ? count === 0 && seconds === 0 : mode === "video" ?
+      count !== undefined && Number.isInteger(count) && count > 0 && seconds !== undefined && seconds > 0 : false);
+    return { mode, count, seconds, consistent };
+  };
+  const a = facts(current), b = facts(previous);
+  return a.consistent && b.consistent && a.mode === b.mode && a.count === b.count && a.seconds === b.seconds;
+}
+
 export function modelPriceSummary(model: import("@super-canvas/providers").ModelDescriptor | undefined, parameters: Readonly<Record<string, unknown>>): string {
   if (!model) return "价格未知";
   model = normalizeTk1688CnyModel(model);
@@ -76,17 +122,32 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   if (measured && typeof model.metadata?.priceLabel === "string") {
     const previousParameters = measured.parameters && typeof measured.parameters === "object" && !Array.isArray(measured.parameters)
       ? measured.parameters as Record<string, unknown> : {};
+    if (measured.parameterScope === "exact") {
+      const defaults = Object.fromEntries((model.parameters ?? []).filter(parameter => parameter.default !== undefined)
+        .map(parameter => [parameter.key, parameter.default]));
+      const equivalentDefaults = measured.equivalentDefaults && typeof measured.equivalentDefaults === "object" && !Array.isArray(measured.equivalentDefaults)
+        ? measured.equivalentDefaults as Record<string, unknown> : {};
+      const matches = measuredPriceScopeMatches({ ...defaults, ...parameters }, previousParameters, equivalentDefaults);
+      return `${matches ? "" : "当前组合未测价；上次 "}${model.metadata.priceLabel}`;
+    }
     const sampledResolution = String(measured.resolution ?? previousParameters.resolution ?? "").toUpperCase().replace("×", "X");
     const sampledSize = previousParameters.size ?? (/^\d+X\d+$/u.test(sampledResolution) ? sampledResolution : undefined);
     const dimensionChanged = Boolean(tier && tier !== sampledResolution) ||
       Boolean(parameters.size !== undefined && (sampledSize !== undefined
         ? String(parameters.size).toUpperCase().replace("×", "X") !== String(sampledSize).toUpperCase().replace("×", "X") : !tier));
     const qualityChanged = quality !== undefined && String(quality) !== String(measured.quality ?? previousParameters.quality);
-    const billingParameterChanged = ["n", "duration", "seconds", "generate_audio", "mode", "has_reference_video"].some(key => {
+    const billingParameterChanged = ["n", "duration", "seconds", "generate_audio", "generateAudio", "audio", "mode", "has_reference_video", "has_reference_image", "has_reference_audio",
+      "ratio", "aspect_ratio", "aspectRatio", "fps", "frame_rate", "reference_images", "image_urls", "images", "reference_audio", "audio_url"].some(key => {
       const current = parameters[key] ?? model.parameters?.find(parameter => parameter.key === key)?.default;
-      return current !== undefined && String(current) !== String(previousParameters[key]);
+      const previous = previousParameters[key] ?? (key === "has_reference_video" ?
+        previousParameters.video_input === "video" ? true : previousParameters.video_input === "none" ? false : undefined : undefined);
+      if (["has_reference_image", "has_reference_video", "has_reference_audio"].includes(key) && current === false && previous === undefined) return false;
+      if (current && typeof current === "object" || previous && typeof previous === "object")
+        return !measuredPriceScopeMatches({ [key]: current }, { [key]: previous });
+      return current !== undefined && String(current) !== String(previous);
     });
-    return `${dimensionChanged || qualityChanged || billingParameterChanged ? "当前组合未测价；上次 " : ""}${model.metadata.priceLabel}`;
+    const referenceChanged = !jiasuMeasuredVideoReferenceMatch(model, measured, parameters, previousParameters);
+    return `${dimensionChanged || qualityChanged || billingParameterChanged || referenceChanged ? "当前组合未测价；上次 " : ""}${model.metadata.priceLabel}`;
   }
   if (pricing) {
     const defaults = Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default]));

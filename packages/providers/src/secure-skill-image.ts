@@ -8,6 +8,14 @@ const MODELS = new Set(["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sun
 export function isSecureSkillImageConnection(config: Readonly<Record<string, unknown>> | undefined, model?: string): boolean {
   const selected = model || config?.defaultModel;
   if (typeof selected !== "string" || !MODELS.has(selected)) return false;
+  return isSecureSkillOrigin(config);
+}
+
+export function isSecureSkillSeedreamConnection(config: Readonly<Record<string, unknown>> | undefined, model?: string): boolean {
+  return (model || config?.defaultModel) === "seedream-5.0-pro" && isSecureSkillOrigin(config);
+}
+
+function isSecureSkillOrigin(config: Readonly<Record<string, unknown>> | undefined): boolean {
   try {
     const url = new URL(String(config?.baseUrl ?? ""));
     return url.protocol === "https:" && url.hostname === "token.secure-skill.com" &&
@@ -18,7 +26,8 @@ export function isSecureSkillImageConnection(config: Readonly<Record<string, unk
 
 export function secureSkillRequiresPublicAssets(provider: string, config: Readonly<Record<string, unknown>> | undefined,
   model?: string, operation?: ProviderOperation): boolean {
-  return provider === "openai" && operation === "image.edit" && isSecureSkillImageConnection(config, model);
+  return provider === "openai" && operation === "image.edit" &&
+    (isSecureSkillImageConnection(config, model) || isSecureSkillSeedreamConnection(config, model));
 }
 
 // https://token.secure-skill.com/docs — GPT Image 2 / 2.5, async reference image example.

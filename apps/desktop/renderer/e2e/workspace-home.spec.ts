@@ -128,6 +128,7 @@ async function mockWorkspace(page: Page, initial: HomeProject[]) {
     if (
       pathname === "/api/assets" ||
       pathname === "/api/providers" ||
+      pathname === "/api/suppliers" ||
       pathname === "/api/agent/models" ||
       pathname === "/api/agent/sessions"
     )
@@ -442,6 +443,81 @@ test.describe("画布工作台", () => {
     await page.keyboard.press("Escape");
     await expect(renameDialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
+    expect(state.mutations).toEqual([]);
+  });
+
+  test("窗口底部的画布菜单向上展开，调整窗口后重新避让边界", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const projects = Array.from({ length: 12 }, (_, index) => ({
+      ...older, id: `menu-boundary-${index}`, title: `边界画布 ${index}`,
+    }));
+    const state = await mockWorkspace(page, projects);
+    await page.goto("/");
+    await page.getByRole("button", { name: "列表视图", exact: true }).click();
+    const trigger = page.getByRole("button", { name: "边界画布 6 的画布操作", exact: true });
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.evaluate(element => {
+      const home = element.closest<HTMLElement>("div[data-motion]")!;
+      home.scrollTop += element.getBoundingClientRect().top - (window.innerHeight - 60);
+    });
+    await trigger.focus();
+    await trigger.press("ArrowDown");
+    const menu = page.getByRole("menu", { name: "边界画布 6 的操作菜单", exact: true });
+    await expect(menu).toHaveAttribute("data-side", "top");
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    await expect(menu.getByRole("menuitem", { name: "重命名", exact: true })).toBeFocused();
+
+    await page.setViewportSize({ width: 1280, height: 1040 });
+    await expect(menu).toHaveAttribute("data-side", "bottom");
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    expect(state.mutations).toEqual([]);
+  });
+
+  test("卡片键盘高光可见，减少动态效果时保留静态反馈", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await mockWorkspace(page, [older]);
+    await page.goto("/");
+    const card = page.getByRole("article", { name: older.title, exact: true });
+    await card.getByRole("link").focus();
+    await expect.poll(() => card.evaluate(element => getComputedStyle(element, "::after").opacity)).toBe("1");
+    expect(await card.evaluate(element => getComputedStyle(element, "::after").transitionDuration)).toBe("0s");
+    await expect(page.locator('canvas[class*="pointerTrail"]')).toBeHidden();
+    await expect(card.getByRole("link")).toBeFocused();
+  });
+
+  test("设置分类支持方向键探索和 Enter 激活，保留未保存的草稿", async ({ page }) => {
+    const state = await mockWorkspace(page, []);
+    await page.goto("/");
+    await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+    const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
+    const tabs = settings.getByRole("tab");
+    const suppliers = tabs.filter({ hasText: "供应商与模型" });
+    const personal = tabs.filter({ hasText: "个人 AI 网站" });
+    const cloud = tabs.filter({ hasText: "云端生图" });
+    await expect(suppliers).toBeFocused();
+    await expect(settings.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
+    await suppliers.press("ArrowRight");
+    await expect(personal).toBeFocused();
+    await expect(suppliers).toHaveAttribute("aria-selected", "true");
+    await personal.press("Enter");
+    await expect(personal).toHaveAttribute("aria-selected", "true");
+    const connectionName = settings.getByLabel("连接名称", { exact: true });
+    await expect(connectionName).toBeEnabled();
+    await connectionName.fill("未保存的个人网站");
+    await personal.focus();
+    await personal.press("End");
+    await expect(cloud).toBeFocused();
+    await expect(connectionName).toHaveValue("未保存的个人网站");
+    page.once("dialog", dialog => dialog.dismiss());
+    await cloud.press("Enter");
+    await expect(personal).toHaveAttribute("aria-selected", "true");
+    await expect(connectionName).toHaveValue("未保存的个人网站");
+    await cloud.press("Home");
+    await expect(suppliers).toBeFocused();
+    await suppliers.press("ArrowLeft");
+    await expect(cloud).toBeFocused();
     expect(state.mutations).toEqual([]);
   });
 

@@ -6,6 +6,7 @@ import { modelPriceAmount } from "./media-billing.js";
 import { GenericRestAdapter, restRequestRequiresPublicAssets, type RestConnectorConfig } from "./rest.js";
 import { IMAGE_SIZE_RATIOS } from "./image-size-presets.js";
 import type { ModelDescriptor, NormalizedRequest } from "./contracts.js";
+import { CANGYUAN_IMAGE_DOCUMENTS } from "./cangyuan-image-documents.js";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/cangyuan-current-pricing.json", import.meta.url), "utf8"));
 const baseUrl = "https://ai.cangyuansuanli.cn";
@@ -24,6 +25,57 @@ function adapterFor(id: string, response: unknown = { data: [{ url: "https://ima
 }
 
 describe("Cangyuan current complete public IDs", () => {
+  it.each(Object.entries(CANGYUAN_IMAGE_DOCUMENTS))("maps exact document fields and creation-specific polling for %s", async (id, document) => {
+    const model = descriptor(id);
+    expect(model.metadata?.imageNativeParameterContract).toBe(true);
+    expect(model.metadata?.documentationUrl).toBe(document.sourceUrl);
+    expect(model.metadata?.imageContractDocumentSha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(model.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value).filter(v => v !== "auto") ?? []).toEqual(document.ratios);
+    const parameters = { ...(id === "gpt-image-2.5-x" ? { series: "flare", tier: "web" } : {}),
+      ...(document.ratios[0] ? { aspect_ratio: document.ratios[0] } : document.pixelOptions[0] ? { size: document.pixelOptions[0] } : {}),
+      ...(document.qualityOptions.length && id !== "gpt-image-2-x" && id !== "gpt-image-2.5-x" ? { quality: model.parameters!.find(p => p.key === "quality")!.options![0]!.value } : {}) };
+    for (const edit of document.editing ? [false, true] : [false]) {
+      const { adapter, fetcher } = adapterFor(id, { id: "saved-task", status: "running" });
+      const task = await adapter.submit({ ...request(id, parameters), operation: edit ? "image.edit" : "image.generate",
+        ...(edit ? { assets: [{ id: "ref", kind: "image" as const, mimeType: "image/png", url: "https://images.example/ref.png" }] } : {}) });
+      const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
+      for (const field of Object.keys(body)) expect(document.fields).toHaveProperty(field);
+      const path = edit && !/^midjourney-[12]k$/u.test(id) ? "/v1/images/edits" : "/v1/images/generations";
+      expect(String(fetcher.mock.calls[0]![0])).toBe(`${baseUrl}${path}`);
+      if (edit) expect(body.images).toEqual(["https://images.example/ref.png"]);
+      await adapter.poll(task);
+      expect(String(fetcher.mock.calls[1]![0])).toBe(`${baseUrl}${path}/saved-task`);
+    }
+  });
+
+  it("distinguishes Grok's restricted pixel choices from K tiers and rejects arbitrary dimensions", async () => {
+    for (const id of ["grok-imagine-image", "grok-imagine-image-2.0"]) {
+      expect(descriptor(id).parameters?.find(p => p.key === "size")).toMatchObject({ control: "select", default: "1024x1024" });
+      expect(descriptor(id).metadata?.imageSupportedResolutions).toEqual([]);
+      const { adapter, fetcher } = adapterFor(id);
+      await expect(adapter.submit(request(id, { size: "2048x2048" }))).rejects.toThrow();
+      expect(fetcher).not.toHaveBeenCalled();
+    }
+  });
+
+  it("accepts Grok's documented data URI references without demanding external hosting", async () => {
+    const { adapter, fetcher, connector } = adapterFor("grok-imagine-image-2.0");
+    const dataUri = "data:image/png;base64,aW1hZ2U=";
+    expect(restRequestRequiresPublicAssets(connector, "grok-imagine-image-2.0", "image.edit", { baseUrl, connector })).toBe(false);
+    await adapter.submit({ ...request("grok-imagine-image-2.0", { size: "1792x1024" }), operation: "image.edit",
+      assets: [{ id: "ref", kind: "image", mimeType: "image/png", url: dataUri }] });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)).images).toEqual([dataUri]);
+  });
+
+  it("uses Midjourney editor's single source and matching edits query endpoint", async () => {
+    const { adapter, fetcher } = adapterFor("midjourney-2k", { id: "editor-task", status: "running" });
+    const task = await adapter.submit({ ...request("midjourney-2k", { reference: "editor", mask: "https://images.example/mask.png" }), operation: "image.edit",
+      assets: [{ id: "ref", kind: "image", mimeType: "image/png", url: "https://images.example/ref.png" }] });
+    expect(String(fetcher.mock.calls[0]![0])).toBe(`${baseUrl}/v1/images/edits`);
+    await adapter.poll(task);
+    expect(String(fetcher.mock.calls[1]![0])).toBe(`${baseUrl}/v1/images/edits/editor-task`);
+  });
+
   it("uses Nano 2.1's independent Images protocol and exact quality prices", async () => {
     const id = "gemini-nano-banana-2.1";
     expect(descriptor(id).parameters?.map(p => p.key)).toEqual(["aspect_ratio", "quality", "n"]);
@@ -61,9 +113,11 @@ describe("Cangyuan current complete public IDs", () => {
     expect(descriptor("seedream-5.0-pro-x").metadata?.imageSupportedResolutions).toEqual(["1K", "2K"]);
   });
 
-  it.each(["gpt-image-2-x", "gpt-image-2.5-x"])("omits web quality and forbidden fields for %s", async id => {
+  it.each(["gpt-image-2-x", "gpt-image-2.5-x"])("omits hidden web quality and rejects undocumented fields for %s", async id => {
     const { adapter, fetcher } = adapterFor(id);
-    await adapter.submit(request(id, { tier: "web", series: "flare", quality: "max", aspect_ratio: "16:9", image_size: "4K", output_resolution: "4K", background: "opaque" }));
+    await expect(adapter.submit(request(id, { tier: "web", image_size: "4K" }))).rejects.toThrow(/image_size/u);
+    expect(fetcher).not.toHaveBeenCalled();
+    await adapter.submit(request(id, { tier: "web", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}), quality: "max", aspect_ratio: "16:9" }));
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ model: id, prompt: "offline contract test", tier: "web", n: 1,
       size: "16:9", async: true, response_format: "url", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}) });
   });
@@ -71,14 +125,14 @@ describe("Cangyuan current complete public IDs", () => {
   it.each(["gpt-image-2-x", "gpt-image-2.5-x"])("maps every K/ratio request through legal native fields for %s", async id => {
     for (const tier of ["1k", "2k", "4k"]) for (const ratio of IMAGE_SIZE_RATIOS) {
       const { adapter, fetcher } = adapterFor(id);
-      await adapter.submit(request(id, { tier, series: "sunburst", quality: "max", aspect_ratio: ratio }));
+      if (ratio === "9:21") {
+        await expect(adapter.submit(request(id, { tier, ...(id === "gpt-image-2.5-x" ? { series: "sunburst" } : {}), quality: "max", aspect_ratio: ratio }))).rejects.toThrow(/9:21/u);
+        expect(fetcher).not.toHaveBeenCalled(); continue;
+      }
+      await adapter.submit(request(id, { tier, ...(id === "gpt-image-2.5-x" ? { series: "sunburst" } : {}), quality: "max", aspect_ratio: ratio }));
       const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
       expect(body.tier).toBe(tier); expect(body.quality).toBe("max");
-      if (ratio === "9:21") {
-        expect(body.size).toMatch(/^\d+x\d+$/u);
-        const [w, h] = body.size.split("x").map(Number);
-        expect(w / h).toBeCloseTo(9 / 21, 1);
-      } else expect(body.size).toBe(ratio);
+      expect(body.size).toBe(ratio);
       expect(body).not.toHaveProperty("aspect_ratio");
     }
   });
@@ -109,7 +163,7 @@ describe("Cangyuan current complete public IDs", () => {
     for (const ratio of IMAGE_SIZE_RATIOS) {
       const { adapter, fetcher } = adapterFor("midjourney-v7", { id: "mj-task", status: "running" });
       if (ratio === "9:21") { await expect(adapter.submit(request("midjourney-v7", { aspect_ratio: ratio }))).rejects.toThrow(/9:21/u); expect(fetcher).not.toHaveBeenCalled(); continue; }
-      const task = await adapter.submit(request("midjourney-v7", { aspect_ratio: ratio, quality: "max", speed: "fast", tier: "4k" }));
+      const task = await adapter.submit(request("midjourney-v7", { aspect_ratio: ratio }));
       const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
       expect(body.size).toBe(ratio); expect(body.n).toBe(1); expect(body).not.toHaveProperty("quality"); expect(body).not.toHaveProperty("speed"); expect(body).not.toHaveProperty("tier");
       fetcher.mockResolvedValueOnce(Response.json({ id: "mj-task", status: "completed", data: [{ url: "https://images.example/one.png" }, { url: "https://images.example/two.png" }] }));
@@ -120,19 +174,23 @@ describe("Cangyuan current complete public IDs", () => {
     }
   });
 
-  it("converges all Seedream request ratios to eight native shapes without quality", async () => {
+  it("uses only Seedream's eight declared shapes without silently substituting saved ratios", async () => {
     for (const ratio of IMAGE_SIZE_RATIOS) {
       const { adapter, fetcher } = adapterFor("seedream-5.0-pro-x");
-      await adapter.submit(request("seedream-5.0-pro-x", { aspect_ratio: ratio, quality: "max" }));
+      if (["5:4", "4:5", "9:21"].includes(ratio)) {
+        await expect(adapter.submit(request("seedream-5.0-pro-x", { aspect_ratio: ratio }))).rejects.toThrow();
+        expect(fetcher).not.toHaveBeenCalled(); continue;
+      }
+      await adapter.submit(request("seedream-5.0-pro-x", { aspect_ratio: ratio }));
       const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
       expect(["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"]).toContain(body.size);
-      if (["5:4", "4:5", "9:21"].includes(ratio)) expect(body.size).toBe(({ "5:4": "4:3", "4:5": "3:4", "9:21": "9:16" })[ratio as "5:4"]);
+      expect(body.size).toBe(ratio);
       expect(body).not.toHaveProperty("quality"); expect(body).not.toHaveProperty("aspect_ratio");
     }
   });
 
-  it("blocks missing series, ambiguous legacy dimensions, invalid tier/count and excessive references before fetch", async () => {
-    for (const input of [request("gpt-image-2.5-x", { tier: "4k" }), request("gpt-image-2-x", { size: "3840x2160" }),
+  it("blocks missing series, invalid tier/count and excessive references before fetch", async () => {
+    for (const input of [request("gpt-image-2.5-x", { tier: "4k" }), request("gpt-image-2-x", { size: "0x2160" }),
       request("gpt-image-2-x", { quality: "max" }), request("gpt-image-2-x", { tier: "8k" }), request("gpt-image-2-x", { tier: "4k", quality: "auto" }), request("midjourney-v7", { n: 2 })]) {
       const { adapter, fetcher } = adapterFor(input.model!);
       await expect(adapter.submit(input)).rejects.toThrow(); expect(fetcher).not.toHaveBeenCalled();

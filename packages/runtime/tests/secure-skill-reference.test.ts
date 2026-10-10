@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository } from "@super-canvas/db";
 import type { ProviderAdapter } from "@super-canvas/providers";
 import type { ObjectStorage } from "@super-canvas/storage";
+import { validPngBytes } from "./fixtures/image-bytes.js";
+import { validWebmBytes } from "./fixtures/video-bytes.js";
 import { RunService } from "../src/service.js";
 import * as channel from "../src/reference-channel.js";
 
@@ -32,7 +34,7 @@ describe("supplier runtime reference delivery", () => {
     });
     const adapter: ProviderAdapter = { submit, async testConnection() {}, async listModels() { return []; },
       async validate() { return { valid: true, issues: [] }; },
-      async extractOutputs() { return [{ kind: "video", data: new Uint8Array([4, 5, 6]), mimeType: "video/mp4" }]; } };
+      async extractOutputs() { return [{ kind: "video", data: new Uint8Array(validWebmBytes), mimeType: "video/mp4" }]; } };
     class Service extends RunService { override adapters() { return new Map([["openai", adapter]]); } }
     const storage: ObjectStorage = { async get() { return { bytes: new Uint8Array([1, 2, 3]), contentType: "image/png" }; }, async put() {} };
     const service = new Service({ repository, storage, pollIntervalMs: 0, executionMode: "queue", enqueueRun: async () => {} });
@@ -73,7 +75,7 @@ describe("supplier runtime reference delivery", () => {
     });
     const adapter: ProviderAdapter = { submit, async testConnection() {}, async listModels() { return []; },
       async validate() { return { valid: true, issues: [] }; },
-      async extractOutputs() { return [{ kind: "image", data: new Uint8Array([4, 5, 6]), mimeType: "image/png" }]; } };
+      async extractOutputs() { return [{ kind: "image", data: new Uint8Array(validPngBytes), mimeType: "image/png" }]; } };
     class Service extends RunService { override adapters() { return new Map([["openai", adapter]]); } }
     const storage: ObjectStorage = { async get() { return { bytes: new Uint8Array([1, 2, 3]), contentType: "image/png" }; }, async put() {} };
     const service = new Service({ repository, storage, pollIntervalMs: 0, executionMode: "queue", enqueueRun: async () => {} });

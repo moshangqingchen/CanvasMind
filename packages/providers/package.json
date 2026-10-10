@@ -6,6 +6,21 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./hang-image-contract": {
+      "types": "./src/hang-image-contract.ts",
+      "import": "./dist/hang-image-contract.js",
+      "default": "./dist/hang-image-contract.js"
+    },
+    "./cangyuan-current-models": {
+      "types": "./src/cangyuan-current-models.ts",
+      "import": "./dist/cangyuan-current-models.js",
+      "default": "./dist/cangyuan-current-models.js"
+    },
+    "./jiasu-image-contract": {
+      "types": "./src/jiasu-image-contract.ts",
+      "import": "./dist/jiasu-image-contract.js",
+      "default": "./dist/jiasu-image-contract.js"
+    },
     "./supplier-image-constraints": {
       "types": "./src/supplier-image-constraints.ts",
       "import": "./dist/supplier-image-constraints.js",

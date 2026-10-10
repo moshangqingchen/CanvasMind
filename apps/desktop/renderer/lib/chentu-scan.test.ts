@@ -4,6 +4,7 @@ import { encryptSecret } from "@super-canvas/providers";
 import { chentuCatalogFromPricing } from "./chentu-catalog";
 import { scanChentuConnection } from "./chentu-server";
 import { CHENTU_PRESET_ID } from "./chentu-presets";
+import { savedModelAvailabilityError } from "./model-availability";
 
 vi.mock("./chentu-catalog", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./chentu-catalog")>()),
@@ -42,6 +43,21 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>).__superCanvasRepository;
   vi.unstubAllEnvs();
 });
+
+it.each([{ ids: ["gemini-3-pro-image-preview"] }, { ids: [] }])(
+  "preserves a removed selected image ID through repeated refreshes while blocking it against %j",
+  async ({ ids }) => {
+    current.config.defaultModel = "gpt-image-2.5-flare-leo";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const scan = await scanChentuConnection(current.id, {
+        fetch: vi.fn(async () => Response.json({ data: ids.map(id => ({ id })) })) as unknown as typeof fetch,
+      });
+      expect(current.config.defaultModel).toBe("gpt-image-2.5-flare-leo");
+      expect(current.config.scannedModelIds).toEqual(ids);
+      expect(savedModelAvailabilityError({ ...current.config, modelCatalogModels: scan.canvasDisplayModels }, "gpt-image-2.5-flare-leo")).toBeTruthy();
+    }
+  },
+);
 
 it.each(["canvas", "agent", "disabled"])(
   "keeps the saved key and %s usage after successful scans with no runnable protocol",

@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
-import sharp from "sharp";
 import {
   fetchProviderJson,
   type ModelDescriptor,
   type NormalizedRequest,
 } from "@super-canvas/providers";
-import { downloadRemoteArtifact, cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, type CloudGenerationConfig } from "@super-canvas/runtime";
+import { inspectImageOutput, imageOutputContractMismatches, downloadRemoteArtifact, cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, type CloudGenerationConfig } from "@super-canvas/runtime";
 import type {
   SupplierRecord,
   SupplierVerificationCase,
@@ -173,11 +172,16 @@ export function getSupplierVerificationService() {
       if (existing) {
         const stored = await storage.get(existing.storageKey);
         if (stored) {
-          const metadata = await sharp(stored.bytes).metadata();
+          const inspected = await inspectImageOutput(stored.bytes);
+          const mismatches = imageOutputContractMismatches(inspected, test.parameters);
+          const storageKey = `verification/${id}/original.${inspected.extension}`;
+          if (existing.storageKey !== storageKey || stored.contentType !== inspected.mimeType) await storage.put(storageKey, stored.bytes, inspected.mimeType);
+          await repository.saveAsset({ ...existing, mimeType: inspected.mimeType, storageKey, metadata: { ...existing.metadata, ...inspected.metadata, imageOutputContractMismatches: mismatches } });
+          if (mismatches.length) throw new Error(`原始核验图片已保留，但输出不符合请求：${mismatches.join("；")}`);
           return {
             assetId: id,
-            width: metadata.width!,
-            height: metadata.height!,
+            width: inspected.metadata.width,
+            height: inspected.metadata.height,
           };
         }
       }
@@ -198,12 +202,10 @@ export function getSupplierVerificationService() {
           })
         ).bytes;
       if (!bytes) throw new Error("图片未能下载");
-      const meta = await sharp(bytes, {
-        limitInputPixels: 100_000_000,
-      }).metadata();
-      if (!meta.width || !meta.height) throw new Error("图片尺寸无法解码");
-      const mime = `image/${meta.format ?? "png"}`;
-      const storageKey = `verification/${id}/original.${meta.format ?? "png"}`;
+      const inspected = await inspectImageOutput(bytes);
+      const mismatches = imageOutputContractMismatches(inspected, test.parameters);
+      const mime = inspected.mimeType;
+      const storageKey = `verification/${id}/original.${inspected.extension}`;
       await storage.put(storageKey, bytes, mime);
       await repository.saveAsset({
         id,
@@ -218,11 +220,13 @@ export function getSupplierVerificationService() {
           supplierId: test.supplierId,
           model: test.modelId,
           parameters: test.parameters,
-          width: meta.width,
-          height: meta.height,
+          ...inspected.metadata,
+          imageOutputContractMismatches: mismatches,
+          ...(output.mimeType !== undefined ? { providerReportedMimeType: output.mimeType } : {}),
         },
       });
-      return { assetId: id, width: meta.width, height: meta.height };
+      if (mismatches.length) throw new Error(`原始核验图片已保留，但输出不符合请求：${mismatches.join("；")}`);
+      return { assetId: id, width: inspected.metadata.width, height: inspected.metadata.height };
     },
     charge: readCharge,
   }));

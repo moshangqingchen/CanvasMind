@@ -8,7 +8,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { APP_ID, TOKEN_HEADER, UPDATE_INTERVAL, backendEnvironment, isAppUrl, isAppRequestUrl, externalUrl } from "./policy.mjs";
+import { APP_ID, TOKEN_HEADER, UPDATE_INTERVAL, backendEnvironment, isAppUrl, externalUrl, liveWindowContents, windowRequestHeaders } from "./policy.mjs";
 import { developmentCommands, stopOwnedChild } from "./development.mjs";
 import { discoverSource, initializeProfile, loadProfile } from "./data.mjs";
 import { DesktopUpdater } from "./updater.mjs";
@@ -390,13 +390,11 @@ if (locked) {
       prepareErrorWindow: recoverCrashedSetupWindow,
     });
     const session = window.webContents.session;
-    const clipboardWriteAllowed = (contents, permission) => contents?.id === window.webContents.id && isAppUrl(contents.getURL(), origin) && ["clipboard-sanitized-write", "clipboard-write"].includes(permission);
+    const clipboardWriteAllowed = (contents, permission) => Boolean(contents && !contents.isDestroyed() && contents.id === liveWindowContents(window)?.id && isAppUrl(contents.getURL(), origin) && ["clipboard-sanitized-write", "clipboard-write"].includes(permission));
     session.setPermissionRequestHandler((contents, permission, callback) => callback(clipboardWriteAllowed(contents, permission)));
     session.setPermissionCheckHandler((contents, permission) => clipboardWriteAllowed(contents, permission));
     session.webRequest.onBeforeSendHeaders((details, callback) => {
-      for (const key of Object.keys(details.requestHeaders)) if (key.toLowerCase() === TOKEN_HEADER) delete details.requestHeaders[key];
-      if (isAppRequestUrl(details.url, origin, development) && details.webContentsId === window.webContents.id) details.requestHeaders[TOKEN_HEADER] = token;
-      callback({ requestHeaders: details.requestHeaders });
+      callback({ requestHeaders: windowRequestHeaders(details, window, origin, development, token) });
     });
     session.on("will-download", (_event, item) => {
       if (smoke) item.setSavePath(join(dataRoot, item.getFilename()));

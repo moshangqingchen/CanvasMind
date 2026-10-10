@@ -12,7 +12,7 @@ import {
   cangyuanCatalogFromPricing,
   cangyuanConnectorForModels,
 } from "./cangyuan-catalog";
-import type { ModelDescriptor } from "@super-canvas/providers";
+import { cangyuanCurrentTransport, type ModelDescriptor } from "@super-canvas/providers";
 import { parametersWithDefaults } from "./model-parameters";
 import { resolutionTierShortcuts, sizeOnTierChange } from "../components/node-parameter-fields";
 
@@ -307,9 +307,9 @@ describe("verified supplier 2.5 capabilities", () => {
       );
       expect(
         cached.parameters?.find((p) => p.key === "size")?.options,
-      ).toHaveLength(12);
+      ).toHaveLength(0);
       expect(m.parameters?.find((p) => p.key === "size")?.options).toHaveLength(
-        12,
+        0,
       );
       expect(m.operations).toContain("image.edit");
       expect(m.parameters?.find((p) => p.key === "quality")).toMatchObject({
@@ -323,8 +323,8 @@ describe("verified supplier 2.5 capabilities", () => {
             (o) => o.value === "auto" || o.label.startsWith(tier.toUpperCase()),
           ),
       ).toBe(true);
-      const override = cangyuanConnectorForModels("IMAGE", [m])
-        .modelOverrides?.[id];
+      expect(cangyuanConnectorForModels("IMAGE", [m]).modelOverrides?.[id]).toBeUndefined();
+      const override = cangyuanCurrentTransport(id);
       expect(override?.submit?.mappings).toContainEqual(
         expect.objectContaining({ target: "/quality" }),
       );

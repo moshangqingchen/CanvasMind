@@ -7,6 +7,22 @@ export const [UPDATE_OWNER, UPDATE_REPO] = UPDATE_REPOSITORY.split("/");
 export const UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
 export const TOKEN_HEADER = "x-supercanvas-desktop-token";
 
+/** Session callbacks can arrive after the owning BrowserWindow is destroyed. */
+export function liveWindowContents(window) {
+  if (!window || window.isDestroyed()) return undefined;
+  const contents = window.webContents;
+  return contents && !contents.isDestroyed() ? contents : undefined;
+}
+
+export function windowRequestHeaders(details, window, origin, development, token) {
+  const headers = { ...details.requestHeaders };
+  for (const key of Object.keys(headers)) if (key.toLowerCase() === TOKEN_HEADER) delete headers[key];
+  const contents = liveWindowContents(window);
+  if (contents && isAppRequestUrl(details.url, origin, development) && details.webContentsId === contents.id)
+    headers[TOKEN_HEADER] = token;
+  return headers;
+}
+
 export function isAppUrl(value, origin) {
   try { return Boolean(origin) && new URL(value).origin === origin; } catch { return false; }
 }

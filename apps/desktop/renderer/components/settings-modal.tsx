@@ -6,11 +6,17 @@ import {
   SettingsDraftGuardProvider,
   useSettingsLeaveGuard,
 } from "./settings-draft-guard";
-import type { ProviderConnectionView } from "../lib/client-api";
 import { SupplierManager } from "./supplier-manager";
 import { PersonalAiSettings } from "./personal-ai-settings";
 import { ReferenceChannelSettings } from "./reference-channel-settings";
 import { CloudGenerationSettings } from "./cloud-generation-settings";
+const SETTINGS_TABS = [
+  { id: "suppliers", label: "供应商与模型" },
+  { id: "personal-ai", label: "个人 AI 网站" },
+  { id: "reference", label: "素材通道" },
+  { id: "cloud", label: "云端生图" },
+] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
@@ -30,11 +36,8 @@ function SettingsModalContent({
   onClose,
   initialCangyuanGroup,
 }: SettingsModalProps) {
-  const [tab, setTab] = useState<
-    "suppliers" | "reference" | "personal-ai" | "cloud"
-  >("suppliers");
+  const [tab, setTab] = useState<SettingsTab>("suppliers");
 
-  const [, setConnections] = useState<ProviderConnectionView[]>([]);
   const { requestLeave } = useSettingsLeaveGuard();
   const requestClose = useCallback(() => {
     requestLeave(onClose, { action: "关闭设置" });
@@ -71,42 +74,33 @@ function SettingsModalContent({
             aria-label="设置分类"
             role="tablist"
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "suppliers"}
-              aria-controls="sm-suppliers-panel"
-              onClick={() => changeTab("suppliers")}
-            >
-              供应商与模型
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "personal-ai"}
-              aria-controls="sm-personal-ai-panel"
-              onClick={() => changeTab("personal-ai")}
-            >
-              个人 AI 网站
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "reference"}
-              aria-controls="sm-reference-panel"
-              onClick={() => changeTab("reference")}
-            >
-              素材通道
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "cloud"}
-              aria-controls="sm-cloud-panel"
-              onClick={() => changeTab("cloud")}
-            >
-              云端生图
-            </button>
+            {SETTINGS_TABS.map(({ id, label }) => (
+              <button
+                key={id}
+                id={`sm-${id}-tab`}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                aria-controls={tab === id ? `sm-${id}-panel` : undefined}
+                tabIndex={tab === id ? 0 : -1}
+                onClick={() => changeTab(id)}
+                onKeyDown={(event) => {
+                  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                  event.preventDefault();
+                  const tabs = Array.from(
+                    event.currentTarget.parentElement!.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+                  );
+                  const current = tabs.indexOf(event.currentTarget);
+                  const next = event.key === "Home" ? 0
+                    : event.key === "End" ? tabs.length - 1
+                      : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+                  // Manual activation keeps keyboard exploration from discarding drafts.
+                  tabs[next]?.focus();
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
           <button
             type="button"
@@ -120,10 +114,9 @@ function SettingsModalContent({
         {tab === "suppliers" ? (
           <SupplierManager
             initialCangyuanGroup={initialCangyuanGroup}
-            onConnectionsChanged={setConnections}
           />
         ) : tab === "personal-ai" ? (
-          <PersonalAiSettings onConnectionsChanged={setConnections} />
+          <PersonalAiSettings />
         ) : tab === "cloud" ? (
           <CloudGenerationSettings />
         ) : (

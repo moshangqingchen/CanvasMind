@@ -39,7 +39,7 @@ describe("current Cangyuan image catalog and saved scan integration", () => {
     const bound = bindScannedModelProtocols(current, scanned);
     expect(bound.models.map(m => m.id).sort()).toEqual(scanned.map(m => m.id).sort());
     for (const model of bound.models) expect(model.metadata?.canvasRunnable).toBe(true);
-    expect(bound.connector?.modelOverrides).toEqual(current.config.connector.modelOverrides ?? {});
+    expect(bound.connector?.modelOverrides).toEqual(current.config.connector.modelOverrides);
     const rebound = bindScannedModelProtocols({ ...current, config: { ...current.config, connector: bound.connector } }, bound.models);
     expect(rebound.models).toEqual(bound.models);
   });
@@ -65,7 +65,7 @@ describe("current Cangyuan image catalog and saved scan integration", () => {
     expect(capabilities).toBeTruthy();
     expect(model.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
     const connector = cangyuanConnectorForModels("IMAGE", [model]);
-    expect(connector.assetsRequirePublicUrls).toBe(connection().config.connector.assetsRequirePublicUrls);
+    expect(connector.assetsRequirePublicUrls).toBe(true);
     expect(connector.modelOverrides?.[model.id]).toBeUndefined();
   });
 
@@ -101,7 +101,8 @@ describe("current Cangyuan image catalog and saved scan integration", () => {
       apiKey: "offline-test", settings: { ...current.config, connector } }]), { fetch: fetcher });
     const references = Array.from({ length: 16 }, (_, i) => ({ id: String(i), kind: "image" as const, mimeType: "image/png", url: `https://images.example/${i}.png` }));
     const request = { connectionId: "offline", model: model.id, operation: "image.edit" as const, prompt: "offline fixed 4k references",
-      idempotencyKey: "offline", assets: references, parameters: { quality: "max", n: 1, aspect_ratio: "16:9", tier: "web", series: "flare" } };
+      idempotencyKey: "offline", assets: references, parameters: { quality: "max", n: 1, aspect_ratio: "16:9" } };
+    await expect(adapter.submit({ ...request, parameters: { ...request.parameters, tier: "web", series: "flare" } })).rejects.toThrow(/tier/u);
     // Exact standalone flare/sunburst-4k contracts do not declare masks. Unlike
     // stale x-model resolution fields, a requested edit mask must never vanish.
     await expect(adapter.submit({ ...request, parameters: { ...request.parameters, mask: "https://images.example/mask.png" } }))

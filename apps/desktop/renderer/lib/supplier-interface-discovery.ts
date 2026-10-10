@@ -5,6 +5,7 @@ import {
   cangyuanVideoModel, isCangyuanNativeSeedanceRequest, modelGenerationMediaKinds,
   chuangxiangVideoModel, isChuangxiangVideoConnection,
   remainingVideoModel, remainingVideoSupplier,
+  jiasuVideoGroupMismatch,
   preservesMiaowuExplicitVideoContract,
 } from "@super-canvas/providers";
 import { bananaImageRoute, applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
@@ -68,7 +69,7 @@ function nativeContract(connection: Connection, model: ModelDescriptor): ModelDe
     }
   }
   const remainingSupplier = remainingVideoSupplier(connection.config.baseUrl);
-  if (remainingSupplier && (!declaredOutput || modelGenerationMediaKinds(model).join("+") === "video") &&
+  if (remainingSupplier && !(remainingSupplier === "jiasu" && jiasuVideoGroupMismatch(connection.config)) && !["agent", "disabled"].includes(String(connection.config.usage)) && (!declaredOutput || modelGenerationMediaKinds(model).join("+") === "video") &&
       connection.config.supplierArchived !== true && !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
       (!Array.isArray(connection.config.scannedModelIds) || connection.config.scannedModelIds.includes(model.id))) {
     const descriptor = remainingVideoModel(remainingSupplier, model.id, model, {

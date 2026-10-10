@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import type { ModelDescriptor } from "@super-canvas/providers";
+import React from "react";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { jiasuVideoRequestIssues, remainingVideoModel, type ModelDescriptor } from "@super-canvas/providers";
+import { applyJiasuImageCapabilities, jiasuImageRequestIssues, normalizeJiasuImageParameters } from "@super-canvas/providers/jiasu-image-contract";
+import type { CanvasNode } from "../components/types";
+import type { ProviderConnectionView } from "./client-api";
+import { NativeImageResolutionFields } from "../components/native-image-resolution-fields";
+import { setParameterValueWithSizeExclusivity } from "../components/node-parameter-fields";
 import {
   coerceParameterInput,
   isExactSizeParameterDescriptor,
@@ -11,9 +17,197 @@ import {
   parameterDescriptorsFor,
   parametersWithDefaults,
   normalizedParametersForModel,
+  parameterValueForModel,
   parameterDescriptorsForValues,
   setParameterValue,
 } from "./model-parameters";
+
+describe("Jiasu saved video parameters", () => {
+  const ids = ["sd-2.5-J2", "doubao-seedance-2-0-260128", "doubao-seedance-2-5-260628"];
+  const descriptor = (id: string) => remainingVideoModel("jiasu", id, {
+    id, name: id, operations: ["video.generate"], metadata: { canvasRunnable: true },
+  }, { group: "vip" })!;
+  const source = (model: ModelDescriptor, parameters: Record<string, unknown>): CanvasNode => ({
+    id: "jiasu-saved-video", type: "workflow", position: { x: 0, y: 0 }, data: {
+      nodeType: "video-generation", label: "Saved video", provider: "openai", connectionId: "jiasu-parameters",
+      model: model.id, qualityMode: "custom", parameters, parts: [],
+      inputs: [{ id: "prompt", kind: "text", label: "提示词" }], outputs: [{ id: "video", kind: "video", label: "视频" }],
+    },
+  });
+  const connection = (model: ModelDescriptor): ProviderConnectionView => ({
+    id: "jiasu-parameters", name: "Jiasu parameter fixture", provider: "openai", apiKey: "", apiKeySet: true, apiKeyUsable: true,
+    config: { baseUrl: "https://ai.jiasuapi.com/v1", modelGroup: "vip", accountKeyGroup: "vip", usage: "canvas",
+      defaultModel: model.id, modelScanStatus: "live", scannedModelIds: [model.id], modelCatalogModels: [model] },
+  });
+  let canvas: Pick<typeof import("../components/canvas-app"), "normalizeGenerationNodeForRun">;
+  beforeAll(async () => { vi.stubGlobal("React", React); canvas = await import("../components/canvas-app"); });
+  afterAll(() => vi.unstubAllGlobals());
+
+  it.each(ids)("retains saved rejected 480p for %s through reload and run validation", id => {
+    const model = descriptor(id);
+    const saved = { duration: 5, resolution: "480p", aspect_ratio: "9:16",
+      materials: [{ type: "image", url: "https://media.example/reference.png", name: "参考图" }],
+      face: { enabled: true, mode: "light" } };
+    const original = source(model, saved), restored = JSON.parse(JSON.stringify(original)) as CanvasNode;
+    const snapshot = structuredClone(restored);
+    const normalized = canvas.normalizeGenerationNodeForRun(restored, [connection(model)], {
+      connectionId: "jiasu-parameters", items: [model], authoritative: true,
+    });
+    expect(normalized.data.parameters).toEqual(saved);
+    expect(restored).toEqual(snapshot);
+    expect(jiasuVideoRequestIssues({ idempotencyKey: "saved-video-request", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
+      prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip").map(issue => issue.path)).toEqual(["parameters.resolution"]);
+  });
+
+  it.each(ids)("preserves legal material and face objects and fills only missing defaults for %s", id => {
+    const model = descriptor(id);
+    const selected = { resolution: "720p", duration: 5,
+      materials: [{ type: "video", url: "https://media.example/reference.mp4", name: "参考视频" }],
+      face: { enabled: true, mode: "heavy" } };
+    const normalized = normalizedParametersForModel("video-generation", "openai", model, selected);
+    expect(normalized).toEqual({ aspect_ratio: "16:9", ...selected });
+    expect(jiasuVideoRequestIssues({ idempotencyKey: "legal-video-request", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
+      prompt: "静止镜头", parameters: normalized }, model, "vip")).toEqual([]);
+    const empty = normalizedParametersForModel("video-generation", "openai", model);
+    expect(empty).toMatchObject({ resolution: "720p", aspect_ratio: "16:9" });
+    if (id.startsWith("doubao-")) expect(empty).not.toHaveProperty("duration");
+    else expect(empty.duration).toBe(30);
+  });
+
+  it("keeps the existing explicit model switch path from inheriting unsupported values", () => {
+    const model = descriptor("doubao-seedance-2-0-260128");
+    const changed = parametersWithDefaults(parameterDescriptorsFor("video-generation", "openai", model), {
+      duration: 5, resolution: "480p", aspect_ratio: "2:1", face: { enabled: true, mode: "light" },
+    });
+    expect(changed).toEqual({ duration: 5, resolution: "720p", aspect_ratio: "16:9" });
+    expect(normalizedParametersForModel("video-generation", "openai", model, changed)).toEqual(changed);
+  });
+
+  it.each(ids)("uses saved video aliases instead of masking them with new defaults for %s", id => {
+    const model = descriptor(id);
+    const restored = JSON.parse(JSON.stringify(source(model, { seconds: 5, ratio: "9:16", resolution: "720p" }))) as CanvasNode;
+    const normalized = canvas.normalizeGenerationNodeForRun(restored, [connection(model)], {
+      connectionId: "jiasu-parameters", items: [model], authoritative: true,
+    });
+    expect(normalized.data.parameters).toEqual({ seconds: 5, duration: 5, ratio: "9:16", aspect_ratio: "9:16", resolution: "720p" });
+    expect(jiasuVideoRequestIssues({ idempotencyKey: "video-alias-request", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
+      prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip")).toEqual([]);
+    const conflict = normalizedParametersForModel("video-generation", "openai", model, { duration: 5, seconds: 6, aspect_ratio: "16:9", ratio: "9:16" });
+    expect(conflict).toMatchObject({ duration: 5, seconds: 6, aspect_ratio: "16:9", ratio: "9:16" });
+    expect(jiasuVideoRequestIssues({ idempotencyKey: "video-alias-conflict", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
+      prompt: "静止镜头", parameters: conflict }, model, "vip").map(issue => issue.path)).toEqual(["parameters.duration", "parameters.aspect_ratio"]);
+  });
+
+  it("lets explicit video control edits replace only their own old aliases", () => {
+    const model = descriptor("sd-2.5-J2");
+    const saved = { seconds: 6, ratio: "9:16", duration: 5, aspect_ratio: "16:9", resolution: "720p", face: { enabled: true, mode: "light" } };
+    const context = { hasSizeControl: false, hasAspectRatioControl: true, aspectRatioKey: "aspect_ratio", model };
+    expect(parameterValueForModel(model, { seconds: 6, ratio: "9:16" }, "duration")).toBe(6);
+    expect(parameterValueForModel(model, { seconds: 6, ratio: "9:16" }, "aspect_ratio")).toBe("9:16");
+    const durationEdited = setParameterValueWithSizeExclusivity(saved, "duration", 7, context);
+    expect(durationEdited).toEqual({ duration: 7, ratio: "9:16", aspect_ratio: "16:9", resolution: "720p", face: saved.face });
+    const ratioEdited = setParameterValueWithSizeExclusivity(durationEdited, "aspect_ratio", "1:1", context);
+    expect(ratioEdited).toEqual({ duration: 7, aspect_ratio: "1:1", resolution: "720p", face: saved.face });
+    expect(jiasuVideoRequestIssues({ idempotencyKey: "video-control-edit", connectionId: "jiasu-parameters", operation: "video.generate", model: model.id,
+      prompt: "静止镜头", parameters: ratioEdited }, model, "vip")).toEqual([]);
+    expect(saved.seconds).toBe(6);
+    expect(setParameterValueWithSizeExclusivity(saved, "duration", 7, { ...context, model: { metadata: {} } })).toHaveProperty("seconds", 6);
+  });
+});
+
+describe("Jiasu saved image aliases", () => {
+  const ids = ["gpt-image-2.5-1k", "gpt-image-2.5-sunburst-1k"];
+  const config = { baseUrl: "https://ai.jiasuapi.com/v1", modelGroup: "vip", accountKeyGroup: "vip", usage: "canvas",
+    modelScanStatus: "live", scannedModelIds: ids };
+  const descriptor = (id: string) => applyJiasuImageCapabilities({ provider: "openai", config }, {
+    id, name: id, operations: ["image.generate", "image.edit"], metadata: { canvasRunnable: true },
+  });
+  const connection = (model: ModelDescriptor): ProviderConnectionView => ({
+    id: "jiasu-image-aliases", name: "Jiasu image aliases fixture", provider: "openai", apiKey: "", apiKeySet: true, apiKeyUsable: true,
+    config: { ...config, defaultModel: model.id, modelCatalogModels: [model] },
+  });
+  let canvas: Pick<typeof import("../components/canvas-app"), "normalizeGenerationNodeForRun">;
+  beforeAll(async () => { vi.stubGlobal("React", React); canvas = await import("../components/canvas-app"); });
+  afterAll(() => vi.unstubAllGlobals());
+  const run = (model: ModelDescriptor, parameters: Record<string, unknown>) => {
+    const node: CanvasNode = { id: "jiasu-image-aliases", type: "workflow", position: { x: 0, y: 0 }, data: {
+      nodeType: "image-generation", label: "Saved image", provider: "openai", connectionId: "jiasu-image-aliases", model: model.id,
+      qualityMode: "custom", parameters, parts: [], inputs: [{ id: "prompt", kind: "text", label: "提示词" }], outputs: [{ id: "image", kind: "image", label: "图片" }],
+    } };
+    const restored = JSON.parse(JSON.stringify(node)) as CanvasNode;
+    const normalized = canvas.normalizeGenerationNodeForRun(restored, [connection(model)], {
+      connectionId: "jiasu-image-aliases", items: [model], authoritative: true,
+    });
+    expect(restored.data.parameters).toEqual(parameters);
+    return normalized.data.parameters!;
+  };
+  const issues = (model: ModelDescriptor, parameters: Readonly<Record<string, unknown>>) => jiasuImageRequestIssues(connection(model), {
+    idempotencyKey: "image-alias-fixture", connectionId: "jiasu-image-aliases", operation: "image.generate", model: model.id, prompt: "静止画面", parameters,
+  });
+
+  it.each(ids)("restores selected ratio and 1K aliases for %s without default substitution", id => {
+    const model = descriptor(id);
+    for (const ratioKey of ["aspect_ratio", "aspectRatio"]) for (const resolutionKey of ["image_size", "size_tier"]) {
+      const selected = { [ratioKey]: "9:16", [resolutionKey]: "1K" };
+      const normalized = run(model, selected);
+      expect(normalized).toMatchObject({ ...selected, ratio: "9:16", resolution: "1K" });
+      expect(normalizeJiasuImageParameters(id, normalized, model)).toMatchObject({ ratio: "9:16", resolution: "1K" });
+      expect(issues(model, normalized)).toEqual([]);
+    }
+  });
+
+  it.each(ids)("keeps rejected 4K aliases visible and invalid for %s after run normalization", id => {
+    const model = descriptor(id);
+    for (const resolutionKey of ["image_size", "size_tier"]) {
+      const normalized = run(model, { [resolutionKey]: "4K", aspect_ratio: "9:16" });
+      expect(normalized).toMatchObject({ [resolutionKey]: "4K", resolution: "4K", ratio: "9:16", aspect_ratio: "9:16" });
+      expect(normalizeJiasuImageParameters(id, normalized, model).resolution).toBe("4K");
+      expect(issues(model, normalized)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.resolution", code: "invalid_resolution" })]));
+    }
+  });
+
+  it.each(ids)("retains every explicit conflicting alias for %s so provider validation rejects it", id => {
+    const model = descriptor(id);
+    const selected = { ratio: "1:1", aspect_ratio: "9:16", aspectRatio: "16:9", resolution: "1K", image_size: "4K", size_tier: "4K" };
+    const normalized = run(model, selected);
+    expect(normalized).toMatchObject(selected);
+    expect(issues(model, normalized).some(issue => issue.path.startsWith("parameters."))).toBe(true);
+  });
+
+  it.each(ids)("shows saved aliases and lets native image controls explicitly repair them for %s", id => {
+    const model = descriptor(id);
+    const original = { image_size: "4K", size_tier: "4K", aspect_ratio: "9:16", aspectRatio: "9:16", quality: "auto" };
+    let selected: Record<string, unknown> = original;
+    const elements = (node: React.ReactNode): React.ReactElement<Record<string, unknown>>[] => {
+      if (Array.isArray(node)) return node.flatMap(elements);
+      if (!React.isValidElement(node)) return [];
+      const element = node as React.ReactElement<Record<string, unknown>>;
+      return [element, ...elements(element.props.children as React.ReactNode)];
+    };
+    const render = () => elements(NativeImageResolutionFields({ id: "jiasu-control", model, parameters: selected,
+      resolution: model.parameters!.find(parameter => parameter.key === "resolution")!, ratio: model.parameters!.find(parameter => parameter.key === "ratio")!,
+      onChange: parameters => { selected = parameters; } }));
+    const old = render();
+    expect(old.find(element => element.type === "select")?.props.value).toBe("9:16");
+    expect(old.find(element => element.props.role === "status")?.props.children).toEqual(expect.arrayContaining([expect.stringContaining("4K")]));
+    const chooseResolution = old.find(element => element.type === "button")?.props.onClick as () => void;
+    chooseResolution();
+    expect(selected).toEqual({ resolution: "1K", aspect_ratio: "9:16", aspectRatio: "9:16", quality: "auto" });
+    const chooseRatio = render().find(element => element.type === "select")?.props.onChange as (event: { target: { value: string } }) => void;
+    chooseRatio({ target: { value: "16:9" } });
+    expect(selected).toEqual({ resolution: "1K", ratio: "16:9", quality: "auto" });
+    expect(issues(model, normalizedParametersForModel("image-generation", "openai", model, selected))).toEqual([]);
+    expect(original).toEqual({ image_size: "4K", size_tier: "4K", aspect_ratio: "9:16", aspectRatio: "9:16", quality: "auto" });
+  });
+
+  it("leaves aliases from other supplier descriptors untouched during explicit edits", () => {
+    const other: ModelDescriptor = { id: "other-image", name: "Other image", operations: ["image.generate"], metadata: {} };
+    const saved = { resolution: "1K", image_size: "4K", size_tier: "4K", ratio: "1:1", aspect_ratio: "9:16" };
+    expect(setParameterValue(saved, "resolution", "2K", other)).toEqual({ ...saved, resolution: "2K" });
+    expect(setParameterValue(saved, "ratio", "16:9", other)).toEqual({ ...saved, ratio: "16:9" });
+    expect(parameterValueForModel(other, { aspect_ratio: "9:16" }, "ratio")).toBeUndefined();
+  });
+});
 
 describe("model parameter helpers", () => {
   it.each(["ratio", "aspectRatio"])("preserves native %s exclusivity when defaults are restored", key => {

@@ -14,11 +14,15 @@ import {
   remainingVideoSupplier,
   isMiaowuUnverifiedKeyScanVideoModel,
   isMiaowuUnverifiedAutoVideoContract,
+  isMiaowuLegacyChatVideoOverride,
+  isMiaowuLegacyVideoBaseConnector,
   MIAOWU_VIDEO_CONTRACT_PENDING_REASON,
   savedModelInterfaces,
 } from "@super-canvas/providers";
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
+import { applyJiasuImageCapabilities } from "@super-canvas/providers/jiasu-image-contract";
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
+import { applyHangImageCapabilities } from "@super-canvas/providers/hang-image-contract";
 import { applySupplierImageConstraints } from "@super-canvas/providers/supplier-image-constraints";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
 import { applyChuangxiangMidjourneyCapabilities } from "@super-canvas/providers/chuangxiang-midjourney-contract";
@@ -254,12 +258,34 @@ function bindExistingModelProtocols(
     return { models: [...scanned] };
   const connector: RestConnectorConfig = {
     ...structuredClone(current),
-    modelOverrides: {
+    ...(savedTemplate?.modelOverrides !== undefined || old?.modelOverrides !== undefined || current.modelOverrides !== undefined ? { modelOverrides: {
       ...savedTemplate?.modelOverrides,
       ...old?.modelOverrides,
       ...current.modelOverrides,
-    },
+    } } : {}),
   };
+  // A refreshed native connector deliberately has no per-model override. The
+  // merge above must not revive the old automatic Chat route from its template.
+  // The same repair applies to a cached scan, without replacing custom routes.
+  if (isDefaultMiaowuConnection(connection) && connection.config.modelScanStatus === "live" &&
+      isMiaowuLegacyVideoBaseConnector(connector)) {
+    for (const model of scanned) {
+      const metadata = model.metadata;
+      const previousModels = [model, ...(current.models ?? []), ...(old?.models ?? []), ...(savedTemplate?.models ?? [])]
+        .filter(row => row.id === model.id);
+      if (capability(model) !== "video" || metadata?.canvasRunnable === false || metadata?.videoSchemaStale === true ||
+          !["dream.video_schema", "pricing.video_api"].includes(String(metadata?.parameterSource)) ||
+          previousModels.some(row => row.metadata?.source === "manual" || row.metadata?.protocolEvidence === "paid-test") ||
+          hasMiaowuExplicitVideoInterface(connection, model) || hasMiaowuExplicitVideoInterface(previous, model) ||
+          model.operations.some(operation => operation.startsWith("video.") &&
+            [current, old, savedTemplate].some(value => Object.keys(value?.operationOverrides?.[operation] ?? {}).length > 0))) continue;
+      if (isMiaowuLegacyChatVideoOverride(connector.modelOverrides?.[model.id])) {
+        const overrides = { ...connector.modelOverrides };
+        delete overrides[model.id];
+        connector.modelOverrides = overrides;
+      }
+    }
+  }
   const templates = [
     ...new Map(
       [
@@ -427,11 +453,14 @@ function bindExistingModelProtocols(
     (m) => m.operations.length && m.metadata?.canvasRunnable !== false,
   );
   const liveIds = new Set(connector.models.map((m) => m.id));
-  connector.modelOverrides = Object.fromEntries(
-    Object.entries(connector.modelOverrides ?? {}).filter(([id]) =>
+  const previousOverrides = connector.modelOverrides;
+  const retainedOverrides = Object.fromEntries(
+    Object.entries(previousOverrides ?? {}).filter(([id]) =>
       liveIds.has(id),
     ),
   );
+  if (previousOverrides !== undefined || Object.keys(retainedOverrides).length) connector.modelOverrides = retainedOverrides;
+  else delete connector.modelOverrides;
   return { models, connector, templateConnector };
 }
 
@@ -505,8 +534,10 @@ export function bindScannedModelProtocols(
   const currentCangyuan = connection.provider === "rest" && supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection);
   let models = applySavedModelInterfaces(connection, compatibleModels)
     .map(model => applyBananaImageCapabilities(connection, model))
+    .map(model => applyHangImageCapabilities(connection, model))
     .map(model => applyChuangxiangMidjourneyCapabilities(connection, model))
     .map(model => applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, model)))
+    .map(model => applyJiasuImageCapabilities(connection, model))
     .map(model => applyChuangxiangCurrentVideoCapabilities(connection, model)).map(withHighestModelQualityDefault)
     .map(model => applySupplierImageConstraints(connection, model));
   if (currentCangyuan) {

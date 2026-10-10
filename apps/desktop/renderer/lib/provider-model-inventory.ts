@@ -62,6 +62,7 @@ import {
   mergeManualProviderModels,
 } from "./manual-provider-models";
 import { enrichTk1688ModelInventory, tk1688InventoryDefaultModel } from "./tk1688-catalog";
+import { mergeMonsterNativeImageCatalog, mikotoNativeImageCatalogUrl, monsterNativeImageCatalogUrl } from "./monster-native-image-catalog";
 
 function adapterFor(service: RunService, provider: string) {
   const anyService = service as unknown as {
@@ -148,7 +149,13 @@ async function listCustomGroupModels(connection: {
     typeof connection.config.defaultModel === "string"
       ? connection.config.defaultModel.trim()
       : "";
-  return scanProviderModelCatalog(payload, { defaultModel, baseUrl });
+  const scan = scanProviderModelCatalog(payload, { defaultModel, baseUrl });
+  const nativeImageUrl = monsterNativeImageCatalogUrl(connection.config) ?? mikotoNativeImageCatalogUrl(connection.config);
+  if (!nativeImageUrl) return scan;
+  const nativeImages = await fetchProviderJson(providerFetch, nativeImageUrl, {
+    method: "GET", headers: { "x-goog-api-key": apiKey }, cache: "no-store",
+  }, { phase: "connect", timeoutMs: 20_000 });
+  return mergeMonsterNativeImageCatalog(scan, nativeImages, defaultModel, baseUrl);
 }
 
 async function persistCustomGroupModelScan(
@@ -1114,13 +1121,16 @@ async function readModelResponse(
       const cached = original.config.modelCatalogModels as unknown as ModelDescriptor[];
       const currentPrices = await refreshSavedCangyuanPrices(original, cached);
       const bound = bindScannedModelProtocols(original, await enrichSupplierModelPrices(original, currentPrices, false, false));
-      if (JSON.stringify(bound.models) !== JSON.stringify(cached)) {
-        original = await repository.saveConnection({ ...original, config: {
-          ...original.config,
-          modelCatalogModels: bound.models as unknown as typeof original.config.modelCatalogModels,
-          ...(bound.connector ? { connector: bound.connector as unknown as typeof original.config.connector,
-            modelProtocolTemplate: bound.templateConnector as unknown as typeof original.config.connector } : {}),
-        } }, { expected: original });
+      const reboundConfig = {
+        ...original.config,
+        modelCatalogModels: bound.models as unknown as typeof original.config.modelCatalogModels,
+        ...(bound.connector ? { connector: bound.connector as unknown as typeof original.config.connector,
+          modelProtocolTemplate: bound.templateConnector as unknown as typeof original.config.connector } : {}),
+      };
+      // A transport-only repair must reach the saved connection used by runs,
+      // even when the displayed model descriptors are already current.
+      if (JSON.stringify(reboundConfig) !== JSON.stringify(original.config)) {
+        original = await repository.saveConnection({ ...original, config: reboundConfig }, { expected: original });
       }
       const models = await offlineInventoryPrices(original, mergeManualProviderModels(original, bound.models));
       return withModelInventoryMetadata(Response.json(

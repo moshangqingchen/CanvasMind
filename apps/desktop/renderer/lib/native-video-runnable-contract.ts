@@ -1,7 +1,7 @@
 import {
   cangyuanVideoModel, cangyuanVideoTransport, isCangyuanNativeSeedanceRequest,
   chuangxiangVideoModel, chuangxiangVideoTransport, isChuangxiangVideoConnection,
-  modelGenerationMediaKinds, modelSupportsGenerationMedia, remainingVideoModel, remainingVideoSupplier, remainingVideoTransport,
+  jiasuVideoGroupMismatch, modelGenerationMediaKinds, modelSupportsGenerationMedia, remainingVideoModel, remainingVideoSupplier, remainingVideoTransport,
   savedModelInterfaces, type ModelDescriptor, type ProviderOperation,
 } from "@super-canvas/providers";
 
@@ -48,6 +48,9 @@ export function guardNativeVideoRunnableContract(connection: Connection, model: 
   // separate operation policy; a missing video route cannot disable its images.
   if (modelGenerationMediaKinds(model).some(kind => kind !== "video")) return model;
   const config = connection.config, ids = config.scannedModelIds;
+  if (remainingVideoSupplier(config.baseUrl) === "jiasu" &&
+    (jiasuVideoGroupMismatch(config) || ["agent", "disabled"].includes(String(config.usage))))
+    return pending(model, "当前 Key 分组或连接用途不允许此视频型号在画布运行");
   if (config.supplierArchived === true || ["empty", "unauthorized"].includes(String(config.modelScanStatus)) ||
     Array.isArray(ids) && !ids.includes(model.id) || unavailable.test(String(model.metadata?.canvasUnavailableReason ?? "")))
     return pending(model, String(model.metadata?.canvasUnavailableReason || "当前 Key 或分组没有此视频型号的可用权限"));

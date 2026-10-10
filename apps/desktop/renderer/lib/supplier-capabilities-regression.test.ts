@@ -216,7 +216,7 @@ describe("current supplier descriptor integration", () => {
       createdAt: "now", updatedAt: "now", config: { supplierId: "cangyuan-test", supplierKey: "cangyuan", supplierSourceId: "legacy",
         baseUrl: "https://ai.cangyuansuanli.cn", preset: "cangyuan-gpt-image-2", modelGroup: "IMAGE", usage: "canvas", connector: connector as never } };
     const bound = bindScannedModelProtocols(before, [legacy, ...native]);
-    expect(bound.connector?.modelOverrides).toEqual(connector.modelOverrides);
+    expect(bound.connector?.modelOverrides ?? {}).toEqual(connector.modelOverrides ?? {});
     const after = { ...before, config: { ...before.config, connector: bound.connector as never } };
     expect(verificationFingerprint(after, "mock-key", legacy.id)).toBe(verificationFingerprint(before, "mock-key", legacy.id));
     expect(verificationFingerprint(after, "mock-key")).toBe(verificationFingerprint(before, "mock-key"));
@@ -276,7 +276,7 @@ describe("durable quality-plan correction", () => {
     const prepared = (await repository.getSupplierVerification(owner.id))!;
     expect(prepared.cases.filter(test => legacy.some(current => current.id === test.modelId))).toEqual(history);
     expect(prepared.evidence.find(item => item.modelId === legacy[0]!.id && item.resolution === "4K")?.status).toBe("verified");
-    expect(prepared.evidence.find(item => item.modelId === legacy[1]!.id && item.resolution === "4K")?.status).toBe("assumed");
+    expect(prepared.evidence.find(item => item.modelId === legacy[1]!.id && item.resolution === "4K")?.status).toBe("conflict");
     expect(prepared).toMatchObject({ used: 2, paused: true, pauseReason: "safety", reason: "原请求待核对" });
     await service.kick();
     expect(submit).not.toHaveBeenCalled();

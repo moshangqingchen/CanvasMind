@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { consumeCliArtifact } from "./cli-artifact.js";
 import { readLocalMediaMetadata } from "./media-duration.js";
+import { imageOutputContractMismatches, inspectImageOutput, type ImageOutputInspection } from "./image-output.js";
+import { consumeValidatedVideoOutput, inspectVideoOutput, videoOutputContractMismatches, videoOutputParametersFromInput, type VideoOutputInspection } from "./video-output-validation.js";
 import { recordSubmissionPhase } from "./submission-timeline.js";
 import { repositoryScheduler, runtimeConcurrency, scheduleReadyNodes, type RuntimeConcurrency, type RuntimeScheduler } from "./scheduler.js";
 import { assertDesktopPublicAssets } from "./desktop-preflight.js";
@@ -36,6 +38,7 @@ import {
   FakeProviderAdapter,
   imageSizeForTier,
   isPdogImageConnection,
+  isJiasuImageConnection,
   pdogImageSizeForTier,
   GenericRestAdapter,
   cangyuanMusicTransport,
@@ -1624,7 +1627,12 @@ export class RunService {
         if (asset) {
           if (asset.metadata.runId !== runId || asset.metadata.nodeId !== node.nodeId)
             throw new Error("已有输出资产与运行不匹配，已停止取回");
-          if (await this.hasValidArchivedObject(asset)) {
+          if (await this.hasValidArchivedObject(asset) &&
+              (artifact.kind !== "image" || asset.metadata.imageOutputVerified === true &&
+                !(Array.isArray(asset.metadata.imageOutputContractMismatches) && asset.metadata.imageOutputContractMismatches.length)) &&
+              (artifact.kind !== "video" || asset.metadata.fake === true || asset.metadata.videoMediaVerified === true && asset.metadata.videoDecodeStatus === "full-video-decoded" &&
+                !(Array.isArray(asset.metadata.videoOutputContractMismatches) && asset.metadata.videoOutputContractMismatches.length) &&
+                videoOutputContractMismatches({ metadata: asset.metadata }, videoOutputParametersFromInput(node.inputJson)).length === 0)) {
             await this.archiveProjectAsset(asset, runId);
             ids.push(id);
             continue;
@@ -3062,8 +3070,10 @@ export class RunService {
         throw new Error("该模型需要参考素材的公网链接，请在设置的“素材通道”中连接本机通道，或选择支持直接上传素材的模型");
       }
     }
+    const nativeJiasuImage = ["openai", "rest"].includes(providerName) && operation.startsWith("image.") &&
+      isJiasuImageConnection(connectionConfig, model);
     let parameters =
-      providerName === "weai"
+      nativeJiasuImage ? { ...rawParameters } : providerName === "weai"
         ? normalizeWeAiParameters(rawParameters, requestedModel, modelGroup)
         : providerName !== "cli" && supplier === "chentu"
           ? normalizeChentuParameters(rawParameters)
@@ -3073,7 +3083,7 @@ export class RunService {
     const bananaRoute = model && connectionConfig
       ? bananaImageRoute({ provider: providerName, config: connectionConfig }, model) : undefined;
     if (bananaRoute) parameters = normalizeBananaParameters(bananaRoute, parameters);
-    if (providerName === "rest" && semanticType(node) === "image-generation") {
+    if (!nativeJiasuImage && providerName === "rest" && semanticType(node) === "image-generation") {
       parameters = normalizeRestImageBatchParameter(
         parameters,
         model,
@@ -3087,7 +3097,9 @@ export class RunService {
       },
       unresolvedAsset: "empty",
     });
-    if (!resumingTask && providerName !== "cli" && semanticType(node) === "image-generation") {
+    // Exact supplier contracts validate saved size/tier/ratio/count choices themselves.
+    // Generic inference must not erase an illegal selection before that validation.
+    if (!resumingTask && !nativeJiasuImage && providerName !== "cli" && semanticType(node) === "image-generation") {
       const imageDescriptor = configuredImageDescriptor(
         connectionConfig,
         model,
@@ -3650,15 +3662,55 @@ export class RunService {
     outputIndex: number,
   ): Promise<string> {
     const artifactKind = artifact.kind;
+    const outputNode = artifactKind === "image" || artifactKind === "video"
+      ? (await this.repository.listNodeRuns(runId)).find(value => value.nodeId === nodeId) : undefined;
+    const requestedOutputParameters = isRecord(outputNode?.inputJson.parameters) ? outputNode.inputJson.parameters : {};
+    const outputParameters = artifactKind === "video" ? videoOutputParametersFromInput(outputNode?.inputJson ?? {}) : requestedOutputParameters;
     const id = createHash("sha256")
       .update(`${runId}\0${nodeId}\0${outputIndex}`)
       .digest("hex");
     const existing = await this.repository.getAsset(id);
-    if (existing && !existing.deleted && existing.metadata.archiveComplete === true &&
+    if (existing && !existing.deleted && existing.metadata.archiveComplete !== false &&
         existing.metadata.runId === runId && existing.metadata.nodeId === nodeId &&
-        existing.metadata.outputIndex === outputIndex) {
+        (existing.metadata.outputIndex === undefined || existing.metadata.outputIndex === outputIndex)) {
       if (await this.hasValidArchivedObject(existing)) {
-        await this.archiveProjectAsset(existing, runId);
+        let verifiedAsset = existing;
+        if (artifactKind === "image" && (existing.metadata.imageOutputVerified !== true ||
+            Array.isArray(existing.metadata.imageOutputContractMismatches) && existing.metadata.imageOutputContractMismatches.length)) {
+          const stored = await this.storage.get(existing.storageKey);
+          if (!stored) throw new Error("已归档图片原文件无法读取");
+          const inspected = await inspectImageOutput(stored.bytes);
+          const key = `assets/${id}/original.${inspected.extension}`;
+          if (key !== existing.storageKey || stored.contentType !== inspected.mimeType)
+            await this.storage.put(key, stored.bytes, inspected.mimeType);
+          const mismatches = imageOutputContractMismatches(inspected, outputParameters);
+          verifiedAsset = await this.repository.saveAsset({ ...existing, mimeType: inspected.mimeType, storageKey: key,
+            metadata: { ...existing.metadata, ...inspected.metadata, archiveComplete: true, outputIndex,
+              ...(existing.mimeType !== inspected.mimeType ? { reportedOutputMimeType: existing.mimeType } : {}),
+              imageOutputContractMismatches: mismatches,
+            } });
+        }
+        if (artifactKind === "video" && existing.metadata.fake !== true && (existing.metadata.videoMediaVerified !== true || existing.metadata.videoDecodeStatus !== "full-video-decoded" ||
+            Array.isArray(existing.metadata.videoOutputContractMismatches) && existing.metadata.videoOutputContractMismatches.length ||
+            videoOutputContractMismatches({ metadata: existing.metadata }, outputParameters).length > 0)) {
+          const stored = await this.storage.get(existing.storageKey);
+          if (!stored) throw new Error("已归档视频原文件无法读取");
+          const inspected = await inspectVideoOutput(stored.bytes, { maxBytes: artifactDownloadMaxBytes() });
+          const mismatches = videoOutputContractMismatches(inspected, outputParameters);
+          const key = `assets/${id}/original.${inspected.extension}`;
+          if (key !== existing.storageKey || stored.contentType !== inspected.mimeType)
+            await this.storage.put(key, stored.bytes, inspected.mimeType);
+          verifiedAsset = await this.repository.saveAsset({ ...existing, mimeType: inspected.mimeType, storageKey: key,
+            metadata: { ...existing.metadata, ...inspected.metadata, archiveComplete: true, outputIndex,
+              ...(existing.mimeType !== inspected.mimeType ? { reportedOutputMimeType: existing.mimeType } : {}),
+              videoOutputContractMismatches: mismatches,
+            } });
+        }
+        await this.archiveProjectAsset(verifiedAsset, runId);
+        if (Array.isArray(verifiedAsset.metadata.imageOutputContractMismatches) && verifiedAsset.metadata.imageOutputContractMismatches.length)
+          throw new Error(`图片原文件已保留，但输出不符合请求：${verifiedAsset.metadata.imageOutputContractMismatches.join("；")}`);
+        if (Array.isArray(verifiedAsset.metadata.videoOutputContractMismatches) && verifiedAsset.metadata.videoOutputContractMismatches.length)
+          throw new Error(`视频原文件已保留，但输出尚未完成验收：${verifiedAsset.metadata.videoOutputContractMismatches.join("；")}`);
         return id;
       }
     }
@@ -3667,8 +3719,11 @@ export class RunService {
       : undefined;
     const extension = localExtension ?? (artifactKind === "video" ? "mp4" : artifactKind === "audio" ?
       ({ "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a", "audio/aac": "m4a", "audio/mpeg": "mp3" } as Record<string, string>)[artifact.mimeType ?? ""] ?? "mp3" : "png");
-    const storageKey = `assets/${id}/original.${extension}`;
+    let storageKey = `assets/${id}/original.${extension}`;
     let persisted: StoredObjectMetadata | undefined;
+    let inspectedVideo: VideoOutputInspection | undefined;
+    let videoMismatches: string[] = [];
+    let reportedVideoMimeType: string | undefined;
     let bytes = artifact.data;
     const maxBytes = artifactDownloadMaxBytes();
     let mime =
@@ -3678,13 +3733,29 @@ export class RunService {
         : artifactKind === "audio"
           ? "audio/mpeg"
           : "image/png");
+    const fakeArtifact = artifact.metadata?.fake === true;
+    const consumeVideo = async (chunks: AsyncIterable<Uint8Array>) => {
+      await consumeValidatedVideoOutput(chunks, async (original, inspected) => {
+        inspectedVideo = inspected;
+        if (mime.split(";", 1)[0]?.trim().toLowerCase() !== inspected.mimeType) reportedVideoMimeType = mime;
+        mime = inspected.mimeType;
+        storageKey = `assets/${id}/original.${inspected.extension}`;
+        if (this.storage.putStream) persisted = await this.storage.putStream(storageKey, original, mime);
+        else {
+          const parts: Uint8Array[] = [];
+          for await (const chunk of original) parts.push(chunk);
+          bytes = Buffer.concat(parts);
+        }
+      }, { maxBytes });
+    };
     if (artifact.localFile) {
       const node = (await this.repository.listNodeRuns(runId)).find(value => value.nodeId === nodeId);
       if (!node || node.inputJson.provider !== "cli" || typeof node.inputJson.connectionId !== "string")
         throw new Error("本地输出仅允许已绑定任务的 CLI 连接归档");
       const expectedRoot = join(this.cliJobRoot, cliJobKey(node.inputJson.connectionId, `${runId}:${node.id}`), "output");
       await consumeCliArtifact(artifact.localFile, expectedRoot, maxBytes, async chunks => {
-        if (this.storage.putStream) {
+        if (artifactKind === "video" && !fakeArtifact) await consumeVideo(chunks);
+        else if (this.storage.putStream && artifactKind !== "image") {
           persisted = await this.storage.putStream(storageKey, chunks, mime);
         } else {
           const parts: Uint8Array[] = [];
@@ -3703,7 +3774,12 @@ export class RunService {
       }
     }
     if (!bytes && artifact.url) {
-      if (this.storage.putStream) {
+      if (artifactKind === "video" && !fakeArtifact) {
+        await retryOperation(() => consumeRemoteArtifact(artifact.url!, async (chunks, contentType) => {
+          mime = contentType ?? mime;
+          await consumeVideo(chunks);
+        }, { maxBytes }));
+      } else if (this.storage.putStream && artifactKind !== "image") {
         persisted = await retryOperation(() => consumeRemoteArtifact(artifact.url!, async (chunks, contentType) => {
           mime = contentType ?? mime;
           return this.storage.putStream!(storageKey, chunks, mime);
@@ -3731,6 +3807,25 @@ export class RunService {
       throw new Error("供应商返回了空文件（0 字节），没有可用的媒体内容");
     }
     if (size > maxBytes) throw new Error(`Provider output exceeds ${maxBytes} bytes`);
+    let inspectedImage: ImageOutputInspection | undefined;
+    let reportedOutputMimeType: string | undefined;
+    let imageMismatches: string[] = [];
+    if (artifactKind === "image") {
+      if (!bytes) throw new Error("图片原文件未取得，无法验证真实编码与像素");
+      inspectedImage = await inspectImageOutput(bytes);
+      if (mime.split(";", 1)[0]?.trim().toLowerCase() !== inspectedImage.mimeType) reportedOutputMimeType = mime;
+      mime = inspectedImage.mimeType;
+      storageKey = `assets/${id}/original.${inspectedImage.extension}`;
+      imageMismatches = imageOutputContractMismatches(inspectedImage, outputParameters);
+    }
+    if (artifactKind === "video" && !fakeArtifact && !inspectedVideo) {
+      if (!bytes) throw new Error("视频原文件未取得，无法验证真实编码与画面");
+      inspectedVideo = await inspectVideoOutput(bytes, { maxBytes });
+      if (mime.split(";", 1)[0]?.trim().toLowerCase() !== inspectedVideo.mimeType) reportedVideoMimeType = mime;
+      mime = inspectedVideo.mimeType;
+      storageKey = `assets/${id}/original.${inspectedVideo.extension}`;
+    }
+    if (inspectedVideo) videoMismatches = videoOutputContractMismatches(inspectedVideo, outputParameters);
     const kindLabel =
       artifactKind === "video"
         ? "视频"
@@ -3756,11 +3851,29 @@ export class RunService {
         runId,
         nodeId,
         outputIndex,
+        ...(inspectedImage ? { ...inspectedImage.metadata,
+          ...(reportedOutputMimeType ? { reportedOutputMimeType } : {}),
+          ...(artifact.mimeType && artifact.mimeType !== inspectedImage.mimeType ? { providerOutputMimeType: artifact.mimeType } : {}),
+          ...(artifact.filename ? { providerOutputFilename: artifact.filename } : {}),
+          imageRequestedParameters: Object.fromEntries(Object.entries(outputParameters).filter(([key]) =>
+            ["size", "width", "height", "resolution", "image_size", "imageSize", "ratio", "aspect_ratio", "aspectRatio", "quality", "output_format", "background", "n", "output_compression"].includes(key))),
+          ...(imageMismatches.length ? { imageOutputContractMismatches: imageMismatches } : {}),
+        } : {}),
+        ...(inspectedVideo ? { ...inspectedVideo.metadata,
+          ...(reportedVideoMimeType ? { reportedOutputMimeType: reportedVideoMimeType } : {}),
+          ...(artifact.mimeType && artifact.mimeType !== inspectedVideo.mimeType ? { providerOutputMimeType: artifact.mimeType } : {}),
+          ...(artifact.filename ? { providerOutputFilename: artifact.filename } : {}),
+          videoRequestedParameters: Object.fromEntries(Object.entries(requestedOutputParameters).filter(([key]) =>
+            ["mode", "size", "width", "height", "resolution", "ratio", "aspect_ratio", "aspectRatio", "duration", "seconds", "duration_seconds", "quality", "fps", "frame_rate", "audio", "generate_audio", "generateAudio", "sound"].includes(key))),
+          videoEffectiveOutputParameters: Object.fromEntries(Object.entries(outputParameters).filter(([key]) =>
+            ["size", "width", "height", "resolution", "ratio", "aspect_ratio", "aspectRatio", "duration", "seconds", "duration_seconds", "quality", "fps", "frame_rate", "audio", "generate_audio", "generateAudio"].includes(key))),
+          ...(videoMismatches.length ? { videoOutputContractMismatches: videoMismatches } : {}),
+        } : {}),
         ...(originRun ? { canvasId: originRun.canvasId } : {}),
         ...(typeof originData.designSourceAssetId === "string" ? { designSourceAssetId: originData.designSourceAssetId } : {}),
         ...(typeof originData.label === "string" ? { designNodeLabel: originData.label } : {}),
         archiveComplete: true,
-        fake: Boolean(artifact.url?.includes("example.invalid")),
+        fake: fakeArtifact,
       },
     });
     await this.archiveProjectAsset(archivedAsset, runId, bytes);
@@ -3769,6 +3882,10 @@ export class RunService {
       runId,
       payload: { assetId: id, kind: artifact.kind },
     });
+    if (imageMismatches.length)
+      throw new Error(`图片原文件已保留，但输出不符合请求：${imageMismatches.join("；")}`);
+    if (videoMismatches.length)
+      throw new Error(`视频原文件已保留，但输出尚未完成验收：${videoMismatches.join("；")}`);
     return id;
   }
 }

@@ -197,6 +197,7 @@ export function applyMonsterImageCapabilities(
     metadata: {
       ...model.metadata,
       imageCapabilitiesVerifiedAt: "2026-09-20",
+      imageNativeQualityOptions: true,
       imageTestedQualities: [...verified.qualities],
       imageCapabilitiesVerificationSource:
         "docs/monster-image-verification-2026-09-20.md",

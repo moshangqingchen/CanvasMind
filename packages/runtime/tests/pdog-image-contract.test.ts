@@ -4,9 +4,10 @@ import { createDefaultProviderRegistry, encryptSecret, imageSizeOptions, StaticC
   type FetchImplementation, type ProviderAdapter, type ProviderConnectionResolver } from "@super-canvas/providers";
 import type { ObjectStorage, StoredObject } from "@super-canvas/storage";
 import { RunService, type RuntimeOptions } from "../src/service.js";
+import { validPngBase64 } from "./fixtures/image-bytes.js";
 
 const model = "gpt-image-2.5-sunburst";
-const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKcAAAAASUVORK5CYII=";
+const png = validPngBase64;
 const fixtureMasterKey = "pdog-runtime-fixture-master";
 class MemoryStorage implements ObjectStorage {
   private values = new Map<string, StoredObject>();

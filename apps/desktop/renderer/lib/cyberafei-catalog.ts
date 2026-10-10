@@ -784,6 +784,13 @@ function grokImageParameters(id: string): ModelParameterDescriptor[] {
   ];
 }
 
+function providerDecidedImageControls(id: string) {
+  const fixedTier = /-(2K|4K)$/u.exec(id)?.[1];
+  return { imageNativeParameterContract: true, imageParameterContract: "provider-decided", qualitySupport: "provider-decided",
+    imageResolutionMode: "provider-decided",
+    imageParameterContractNote: `${fixedTier ? `此完整型号固定${fixedTier}档位，` : ""}当前接口按提示词和适用的参考图生成；像素、比例及质量由上游决定，没有独立参数可选。` };
+}
+
 function ratioParameter(): ModelParameterDescriptor {
   return {
     key: "ratio",
@@ -966,6 +973,7 @@ function descriptorFor(record: PricingRecord): ModelDescriptor | null {
             : "provider-may-normalize",
         docsPath: "/pricing",
         protocolEvidence: "paid-test",
+        ...(!grokImageParameters(id).length ? providerDecidedImageControls(id) : {}),
       },
       parameters: grokImageParameters(id),
       limits: { maxInputImages: 0, supportedMimeTypes: IMAGE_MIME_TYPES },
@@ -1025,7 +1033,7 @@ function currentImageDescriptor(record: PricingRecord, id: string): ModelDescrip
       fixedOutputCount: 1, protocolEvidence: "official-endpoint-catalog-and-standard-protocol",
       docsPath: endpoint === "gemini" ? "/docs/#/banana" : "/api/pricing", supportVerification: "not-generation-tested",
       referenceImageLimitSource: "adapter", referenceImageLimit: CURRENT_IMAGE_REFERENCE_LIMIT,
-      ...(endpoint === "gemini" ? { resolutionVerification: "model-dependent-not-generation-tested" } : { sizeBehavior: "provider-decided" }) },
+      ...(endpoint === "gemini" ? { resolutionVerification: "model-dependent-not-generation-tested" } : { sizeBehavior: "provider-decided", ...providerDecidedImageControls(id) }) },
   };
 }
 

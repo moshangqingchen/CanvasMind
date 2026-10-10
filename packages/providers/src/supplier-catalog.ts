@@ -13,6 +13,7 @@ import { isMiaowuCatalogSource, miaowuCatalogMediaKind, miaowuCatalogMediaPricin
 import { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 import { HANG_PRICE_URL, isHangCatalogSource, parseHangChatPrices } from "./hang-catalog-pricing.js";
 import { isSynoraLedgerSource, readSynoraLedgerPrices, type SupplierLedgerPrice } from "./supplier-ledger-pricing.js";
+import { isJiasuCatalogSource, jiasuCatalogMediaKind, jiasuCatalogMediaPricing, jiasuCatalogRecord } from "./jiasu-catalog-pricing.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
@@ -108,6 +109,7 @@ function mergeCatalogModel(previous: DiscoveredSupplierModel, incoming: Discover
   delete merged.metadata.tk1688Pricing;
   delete merged.metadata.weaiLegacyPricing;
   delete merged.metadata.sub2apiPlazaPricing;
+  delete merged.metadata.officialCatalogPricing;
   return { ...merged, priceLabel: "价格存在冲突，待确认", metadata: { ...merged.metadata,
     supplierPriceConflict: true, supplierPriceAlternatives: unique } };
 }
@@ -401,6 +403,21 @@ export function parseSupplierCatalog(
       root?.currency ?? data?.currency ?? priceDisplay.currency,
     );
     const nativeDisplayCurrency = explicitCurrency || currency;
+    const jiasuKind = jiasuCatalogMediaKind(raw, priceDisplay.supplierSiteUrl);
+    if (isJiasuCatalogSource(priceDisplay.supplierSiteUrl) && jiasuKind) {
+      const supplierRecord = jiasuCatalogRecord(raw);
+      const native = jiasuCatalogMediaPricing(raw, { supplierSiteUrl: priceDisplay.supplierSiteUrl, group: id,
+        groupMultiplier: Number(ratios?.[id] ?? 1), currency: nativeDisplayCurrency,
+        currencyMultiplier: explicitCurrency ? 1 : priceDisplay.multiplier ?? 1, checkedAt: priceDisplay.checkedAt });
+      return { ...model, capability: jiasuKind, protocol: jiasuKind === "image" ? "openai-images" as const : "openai-videos" as const,
+        outputKinds: [jiasuKind], priceLabel: native?.priceLabel ?? "价格条件待确认",
+        metadata: { ...model.metadata, catalogCapability: jiasuKind, outputKindsSource: "declared", catalogGenerationDeclarationSource: "official-endpoint-map",
+          jiasuCatalogRecord: { ...supplierRecord, ...(native?.pricing.billingUnit ? { billingUnit: native.pricing.billingUnit } : {}) },
+          jiasuApiParameters: supplierRecord.apiParameters, jiasuCatalogDescription: supplierRecord.description, jiasuCatalogCheckedAt: priceDisplay.checkedAt ?? "",
+          ...(native ? { officialCatalogPricing: native.pricing, jiasuCatalogPricingEvidence: native.evidence,
+            officialCatalogPriceGroupVerified: typeof ratios?.[id] === "number" && Number.isFinite(ratios[id]) && Number(ratios[id]) >= 0 }
+            : { jiasuCatalogPricingIncomplete: true, priceUnavailableReason: "官方视频用量/条件费率未完整公布" }) } };
+    }
     const miaowuNative = isMiaowuCatalogSource(priceDisplay.supplierSiteUrl) && (record(record(raw)?.image_api) || record(record(raw)?.video_api));
     if (miaowuNative) {
       const native = miaowuCatalogMediaPricing(raw, { ...(priceDisplay.supplierSiteUrl ? { supplierSiteUrl: priceDisplay.supplierSiteUrl } : {}),

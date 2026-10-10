@@ -14,6 +14,8 @@ import { chuangxiangVideoModel, chuangxiangVideoTransport, isChuangxiangVideoCon
 import { remainingVideoSupplier, remainingVideoModel, remainingVideoTransport, remainingVideoRequiresPublicUrls, restoreRemainingVideoModel, type RemainingVideoContext } from "./remaining-video-contracts.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
 import { supplierImageParameterIssues } from "./supplier-image-constraints.js";
+import { isJiasuImageConnection, isJiasuImageResult, JiasuImageAdapter } from "./jiasu-images.js";
+import { isJiasuApiUrl, jiasuVideoGroupMismatch } from "./jiasu-video-contract.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -38,6 +40,10 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     if (!request.model) return this.fallback;
     const connection = await this.connections.resolve(request.connectionId);
     const config = imageEditingConnection(connection).config;
+    if (request.operation.startsWith("video.") && isJiasuApiUrl(connection.baseUrl) && jiasuVideoGroupMismatch(connection.settings))
+      throw new Error("当前佳速 Key 绑定的分组与型号分组不一致，请同步正确分组后再生成。");
+    if (["openai", "rest"].includes(connection.provider) && request.operation.startsWith("image.") && isJiasuImageConnection(config, request.model))
+      return new JiasuImageAdapter(this.connections, this.options, request.model);
     if ((pdogImageOrigin(connection.baseUrl) || config.supplierKey === "chentu") &&
         (config.supplierArchived === true || ["agent", "disabled"].includes(String(config.usage))))
       throw new Error("当前供应商连接已归档或未启用图片用途");
@@ -172,6 +178,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     return adapter === this.fallback ? task : mark(task);
   }
   async poll(task: ProviderTask) {
+    if (isJiasuImageResult(task.result)) return new JiasuImageAdapter(this.connections, this.options).poll(task);
     if (marked(task.result)) {
       const state = await this.rest.poll(task);
       if (state.status === "succeeded" && task.result && typeof task.result === "object" &&
@@ -191,6 +198,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     return this.fallback.verifyWebhook(request, id);
   }
   extractOutputs(result: unknown) {
+    if (isJiasuImageResult(result)) return new JiasuImageAdapter(this.connections, this.options).extractOutputs(result);
     const banana = bananaNativeOutputs(result);
     if (banana) return Promise.resolve(banana);
     return marked(result) ? this.rest.extractOutputs(result) : this.fallback.extractOutputs(result);

@@ -7,6 +7,7 @@ import { CLI_DEFAULTS, CliProviderAdapter, configFingerprint, cliJobKey, MOCK_CL
 import { LocalObjectStorage } from "@super-canvas/storage";
 import { RunService } from "../src/service.js";
 import { consumeCliArtifact } from "../src/cli-artifact.js";
+import { validWebmBytes } from "./fixtures/video-bytes.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -20,7 +21,7 @@ function graph(data: JsonObject = {}) {
     nodes: [{ id: "generate", type: "workflow", data: {
       nodeType: "video-generation", provider: "cli", connectionId: "personal",
       model: "mock-video", parts: [{ type: "text", text: "中文引号\"与换行\n$()`" }],
-      parameters: { resolution: "720p", duration: 4 }, outputs: [{ id: "video", kind: "video" }], ...data,
+      parameters: { size: "32x32", duration: 1 }, outputs: [{ id: "video", kind: "video" }], ...data,
     } }],
   };
 }
@@ -39,7 +40,7 @@ async function fixture(data: JsonObject = {}) {
     testConnection: async () => {}, listModels: async () => [], validate: async () => ({ valid: true, issues: [] }),
     submit: vi.fn(async () => ({ providerTaskId: "remote-1", status: "succeeded", result: { cli: { supportsCancel: false } } })),
     poll: vi.fn(async task => ({ ...task, status: "succeeded" })),
-    extractOutputs: async () => [{ kind: "video", data: new Uint8Array([1, 2, 3]), mimeType: "video/mp4" }],
+    extractOutputs: async () => [{ kind: "video", data: new Uint8Array(validWebmBytes), mimeType: "video/webm" }],
     cancel: vi.fn(async () => {}), cleanup: vi.fn(async () => {}),
   };
   vi.spyOn(service, "adapters").mockReturnValue(new Map([["cli", adapter]]));
@@ -104,7 +105,7 @@ describe("personal CLI runtime", () => {
     const prepared = await service.prepareRun({ canvasId: "canvas", scope: "all" });
     await repository.createRun({ id: "deleted-input", canvasId: "canvas", clientRequestId: "deleted-input", scope: "all", status: "running", revisionGraph: prepared.revisionGraph });
     await repository.createNodeRun({ id: "existing-node", workflowRunId: "deleted-input", nodeId: "generate", attempt: 1, status: "running", providerTaskId: "existing-id", outputAssetIds: [], errorJson: null,
-      inputJson: { provider: "cli", connectionId: "personal", operation: "video.image-to-video", prompt: "submitted prompt", parameters: { resolution: "720p", duration: 4 }, cliDeadlineAt: Date.now() + 60_000,
+      inputJson: { provider: "cli", connectionId: "personal", operation: "video.image-to-video", prompt: "submitted prompt", parameters: { size: "32x32", duration: 1 }, cliDeadlineAt: Date.now() + 60_000,
         providerTask: { providerTaskId: "existing-id", status: "running", result: { cli: { supportsCancel: false } } } } });
     const validate = vi.spyOn(adapter, "validate");
     await service.resumeRun("deleted-input");
@@ -189,11 +190,11 @@ describe("personal CLI runtime", () => {
     vi.mocked(adapter.submit).mockImplementation(async request => {
       const root = join(cliJobRoot, cliJobKey(request.connectionId, request.idempotencyKey), "output");
       await mkdir(root, { recursive: true });
-      output = join(root, "fixture.mp4");
-      await writeFile(output, new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]));
+      output = join(root, "fixture.webm");
+      await writeFile(output, validWebmBytes);
       return { providerTaskId: "local-video", status: "succeeded", result: { root: await realpath(root), path: await realpath(output) } };
     });
-    adapter.extractOutputs = async value => [{ kind: "video", localFile: value as { root: string; path: string }, mimeType: "video/mp4" }];
+    adapter.extractOutputs = async value => [{ kind: "video", localFile: value as { root: string; path: string }, mimeType: "video/webm" }];
     const stream = vi.spyOn(storage, "putStream");
     const run = await service.createRun({ canvasId: "canvas", clientRequestId: "local", scope: "all" });
     const result = await terminal(service, run.id);
@@ -209,7 +210,7 @@ describe("personal CLI runtime", () => {
     expect(snapshot.run.status).toBe("needs_attention");
     expect(snapshot.nodes[0].providerTaskId).toBe("local-video");
     expect(adapter.cleanup).toHaveBeenCalledTimes(1);
-    expect(await readFile(output)).toHaveLength(8);
+    expect(await readFile(output)).toEqual(validWebmBytes);
   });
 
   it("rejects local files from another task before reading them", async () => {

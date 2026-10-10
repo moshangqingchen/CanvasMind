@@ -25,6 +25,19 @@ const referencePricePattern = /(?:[¥￥$]?\s*\d+(?:\.\d+)?\s*(?:元|分|毛|刀
 const leadingReferencePricePattern = new RegExp(`^(?:${referencePricePattern.source})`, "iu");
 const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
+/** Keep a separate, explicit model/modality label beside its following amount.
+ * Bare brand wording stays a reference; it does not identify an API model ID. */
+function attachedPriceOwnerClauses(description: string): string[] {
+  const clauses: string[] = [];
+  const owner = /^(?:香蕉(?:二|\d+(?:\.\d+)?|pro)|(?:nano[- ]?banana|gemini|gpt[- ]?image)(?:[- ][\w.]+)*|[a-z][a-z\d]*(?:[./_-][a-z\d]+)+|图片|视频|image|video)$/iu;
+  for (const part of description.split(/[，,。;；\n]/u).map(value => value.trim()).filter(Boolean)) {
+    const previous = clauses.at(-1);
+    if (previous && owner.test(previous) && leadingReferencePricePattern.test(part)) clauses[clauses.length - 1] = `${previous}，${part}`;
+    else clauses.push(part);
+  }
+  return clauses;
+}
+
 /** A base model ID must never match a different model with an added suffix. */
 export function supplierTextMentionsModel(text: string, modelId: string): boolean {
   return Boolean(modelId) && new RegExp(`(?<![\\w.-])${escapePattern(modelId)}(?![\\w.-])`, "iu").test(text);
@@ -77,10 +90,8 @@ export function parseSupplierGroupDetails(row: Record<string, unknown>, source: 
   }
   for (const tier of unsupported) supported.delete(tier);
   // Preserve conditions and wording, never infer currency or recharge conversions.
-  const referencePrice = description.split(/[，,。;；\n]/u).filter(clause =>
-    !/充值|实付|汇率|兑换/iu.test(clause) &&
-    referencePricePattern.test(clause),
-  ).map(s => s.trim()).join("；").slice(0, 256);
+  const referencePrice = attachedPriceOwnerClauses(description).filter(clause => !/充值|实付|汇率|兑换/iu.test(clause) &&
+    referencePricePattern.test(clause)).join("；").slice(0, 256);
   const imagePrices = tiers.flatMap(resolution => {
     const amount = number(row[`image_price_${resolution.toLowerCase()}`]);
     return amount === undefined ? [] : [{ resolution, amount }];
@@ -131,7 +142,7 @@ export function supplierGroupModelPriceDetails(details: SupplierGroupDetails | u
   const labels: string[] = [];
   let scoped = false;
   const clauses: string[] = [];
-  for (const part of details.description.split(/[，,。;；\n]/u)) {
+  for (const part of attachedPriceOwnerClauses(details.description)) {
     const previous = clauses.at(-1);
     // Some sites put an exact ID after the amount: “香蕉2：0.07/张, ID：gemini-...”.
     // Keep this explicit association before separating model-specific prices.
@@ -147,7 +158,7 @@ export function supplierGroupModelPriceDetails(details: SupplierGroupDetails | u
     // must not become a shared price for the one model currently being read.
     const declaredIds = [...clause.matchAll(/(?<![\w./-])[a-z][a-z0-9]*(?:[./_-][a-z0-9]+)+(?![\w./-])/giu)]
       .filter(mention => leadingReferencePricePattern.test(clause.slice(mention.index + mention[0].length)
-        .replace(/^\s*(?:\*\*)?\s*[:：]?\s*/u, "")));
+        .replace(/^\s*(?:\*\*)?\s*[:：,，]?\s*/u, "")));
     const candidates = [...clause.matchAll(exactPattern),
       ...declaredIds,
       ...clause.matchAll(/\b(?:gpt[- ]?)?image[- ]?2(?:\.5|\.0)?(?:-[a-z0-9]+(?:-[a-z0-9]+)*| +[a-z][a-z0-9]*(?:-[a-z0-9]+)*)?(?![\w.-])/giu)]

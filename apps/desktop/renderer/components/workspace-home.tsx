@@ -30,7 +30,7 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   createProject,
   deleteProject,
@@ -350,13 +350,24 @@ export function WorkspaceHome() {
       window.removeEventListener("focus", reload);
     };
   }, [reload]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!menuId) return;
-    const items =
-      activeMenuRef.current?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitem"]',
-      );
-    items?.[menuFocusIndex.current < 0 ? items.length - 1 : 0]?.focus();
+    const menu = activeMenuRef.current;
+    const trigger = menuTriggerRef.current;
+    if (!menu || !trigger) return;
+    const placeMenu = () => {
+      const bounds = trigger.getBoundingClientRect();
+      const below = window.innerHeight - bounds.bottom - 12;
+      const above = bounds.top - 12;
+      const openAbove = below < menu.scrollHeight && above > below;
+      menu.dataset.side = openAbove ? "top" : "bottom";
+      menu.style.maxHeight = `${Math.max(0, openAbove ? above : below)}px`;
+    };
+    placeMenu();
+    const items = menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    items[menuFocusIndex.current < 0 ? items.length - 1 : 0]?.focus({
+      preventScroll: true,
+    });
     const close = (event: PointerEvent) => {
       if (
         !(event.target instanceof Element) ||
@@ -373,24 +384,26 @@ export function WorkspaceHome() {
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", escape);
+    const home = homeRef.current;
+    home?.addEventListener("scroll", placeMenu, { passive: true });
+    window.addEventListener("resize", placeMenu);
     return () => {
       document.removeEventListener("pointerdown", close);
       document.removeEventListener("keydown", escape);
+      home?.removeEventListener("scroll", placeMenu);
+      window.removeEventListener("resize", placeMenu);
     };
   }, [menuId]);
   useEffect(() => {
     const home = homeRef.current;
     if (!home || !pointerEffectsEnabled) return;
     let frame = 0;
-    let hoveredCard: HTMLElement | null = null;
     let latest: PointerEvent | null = null;
     const reset = () => {
       window.cancelAnimationFrame(frame);
       frame = 0;
       latest = null;
       home.style.removeProperty("--pointer-visible");
-      hoveredCard?.style.removeProperty("--card-active");
-      hoveredCard = null;
     };
     const paint = () => {
       frame = 0;
@@ -398,18 +411,6 @@ export function WorkspaceHome() {
       home.style.setProperty("--pointer-x", `${latest.clientX}px`);
       home.style.setProperty("--pointer-y", `${latest.clientY}px`);
       home.style.setProperty("--pointer-visible", "1");
-      const target = latest.target instanceof Element ? latest.target : null;
-      const card =
-        target?.closest<HTMLElement>("[data-workspace-card]") ?? null;
-      if (hoveredCard !== card)
-        hoveredCard?.style.removeProperty("--card-active");
-      hoveredCard = card;
-      if (card) {
-        const bounds = card.getBoundingClientRect();
-        card.style.setProperty("--card-x", `${latest.clientX - bounds.left}px`);
-        card.style.setProperty("--card-y", `${latest.clientY - bounds.top}px`);
-        card.style.setProperty("--card-active", "1");
-      }
     };
     const move = (event: PointerEvent) => {
       if (
@@ -804,7 +805,6 @@ export function WorkspaceHome() {
               {!projects.length && !query.trim() ? (
                 <button
                   className={styles.createCard}
-                  data-workspace-card
                   type="button"
                   disabled={startingDesign}
                   onClick={() => setDialog({ kind: "create" })}
@@ -826,7 +826,6 @@ export function WorkspaceHome() {
               {visibleProjects.map((project) => (
                 <article
                   className={styles.projectCard}
-                  data-workspace-card
                   key={project.id}
                   aria-label={project.title}
                   data-menu-open={menuId === project.id}

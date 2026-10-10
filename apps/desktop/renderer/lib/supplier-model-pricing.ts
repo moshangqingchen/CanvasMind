@@ -21,7 +21,7 @@ import { applyTk1688CatalogModel } from "./tk1688-catalog";
 
 type Connection = { config: Readonly<Record<string, unknown>> };
 const unknownPrice =
-  /价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询|价格目录未完整读取|暂未取得报价|价格未知|价格未确定/u;
+  /价格以(?:平台|模型广场)为准|价格未公布|价格查询失败|价格需登录查询|价格未查询|价格目录未完整读取|暂未取得报价|价格未知|价格未确定|价格条件待确认/u;
 type CatalogCacheEntry = { until: number; result: Promise<SupplierCatalogDiscovery> };
 const cache = new Map<
   string,
@@ -156,6 +156,50 @@ type MeasuredPrice = {
   sourceUrl?: string;
 };
 
+/** Saved ledger observations are independent of media acceptance. They neither
+ * create verification successes nor enable unavailable models. Reapply from the
+ * connection on every catalog refresh so a cache replacement cannot lose them.
+ */
+export function applySavedMeasuredPrices(models: readonly ModelDescriptor[], config: Readonly<Record<string, unknown>>,
+  scope: { sourceId: string; supplierGroupId: string; apiUrl: string }): ModelDescriptor[] {
+  const object = (value: unknown): Record<string, unknown> | undefined => value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : undefined;
+  const observations = Array.isArray(config.measuredPriceEvidence) ? config.measuredPriceEvidence : [];
+  const valid = observations.flatMap(value => {
+    const sample = object(value), charge = object(sample?.actualCharge), parameters = object(sample?.parameters);
+    if (!sample || !charge || !parameters || sample.parameterScope !== "exact" || sample.sourceId !== scope.sourceId ||
+      sample.supplierGroupId !== scope.supplierGroupId || sample.accountKeyId !== String(config.accountKeyId ?? "") ||
+      typeof sample.modelId !== "string" || !sample.modelId || typeof sample.checkedAt !== "string" || !Number.isFinite(Date.parse(sample.checkedAt)) ||
+      typeof charge.amount !== "number" || !Number.isFinite(charge.amount) || charge.amount < 0 || !["request", "image"].includes(String(charge.unit))) return [];
+    const taskMatch = typeof sample.providerTaskId === "string" && Boolean(sample.providerTaskId) && charge.taskId === sample.providerTaskId;
+    const requestMatch = typeof sample.requestId === "string" && Boolean(sample.requestId) && charge.requestId === sample.requestId;
+    if (!taskMatch && !requestMatch) return [];
+    try {
+      const source = new URL(String(charge.sourceUrl ?? "")), api = new URL(scope.apiUrl);
+      if (source.origin !== api.origin || source.username || source.password || source.hash || !["https:", "http:"].includes(source.protocol)) return [];
+    } catch { return []; }
+    const currency = typeof charge.currency === "string" && charge.currency.trim() ? charge.currency.trim() : undefined;
+    const amount = Number(charge.amount.toPrecision(10));
+    const label = `${currency ? measuredPriceLabel(amount, currency, charge.unit as "image" | "request").replace("（生成实测）", "")
+      : `${amount} 账户计价单位/${charge.unit === "image" ? "张" : "次"}`}（账单实测，仅${Object.keys(parameters).length ? "对应参数" : "默认请求"}${sample.originalStatus === "awaiting-download" ? "；原件待取回" : ""}）`;
+    return [{ sample, parameters, charge, label, checkedAt: sample.checkedAt, modelId: sample.modelId }];
+  }).sort((a, b) => Date.parse(b.checkedAt) - Date.parse(a.checkedAt));
+  return models.map(model => {
+    if (model.metadata?.priceSource !== "generated-result" && (model.pricing || typeof model.metadata?.priceLabel === "string" &&
+      Boolean(model.metadata.priceLabel.trim()) && !unknownPrice.test(model.metadata.priceLabel))) return model;
+    if (!modelGenerationMediaKinds(model).some(kind => kind === "image" || kind === "video")) return model;
+    const evidence = valid.find(item => item.modelId === model.id);
+    if (!evidence) return model;
+    const previous = object(model.metadata?.measuredPrice);
+    if (previous && Date.parse(String(previous.checkedAt ?? "")) > Date.parse(evidence.checkedAt)) return model;
+    return { ...model, pricing: undefined, metadata: { ...model.metadata, priceSource: "generated-result", priceStatus: "measured",
+      priceLabel: evidence.label, priceCheckedAt: evidence.checkedAt, supplierPriceGroupId: scope.supplierGroupId,
+      measuredPrice: { ...evidence.sample, amount: evidence.charge.amount, currency: evidence.charge.currency,
+        unit: evidence.charge.unit, sourceUrl: evidence.charge.sourceUrl, parameters: evidence.parameters,
+        equivalentDefaults: object(evidence.sample.equivalentDefaults) ?? {} } } };
+  });
+}
+
 function measuredPriceLabel(
   amount: number,
   currency: string,
@@ -286,8 +330,8 @@ async function applyMeasuredSupplierPrices(
   return models.map((model) => {
     if (model.metadata?.priceSource !== "generated-result" &&
       (model.pricing || (typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.trim() && !unknownPrice.test(model.metadata.priceLabel)))) return model;
-    const image = modelGenerationMediaKinds(model).includes("image");
-    if (!image) return model;
+    const media = modelGenerationMediaKinds(model);
+    if (!media.includes("image") && !media.includes("video")) return model;
     const evidence = measured.get(`${group}\u0000${model.id}`);
     if (!evidence) return model;
     const existing = model.metadata?.measuredPrice as Record<string, unknown> | undefined;
@@ -328,6 +372,10 @@ function catalogInterfaceMetadata(model: ModelDescriptor, catalogModel: { metada
   const incomplete = catalog.complete === false || ["failed", "unauthorized"].includes(catalog.status) || groupStale;
   let supplied = false;
   if (catalogModel && !["failed", "unauthorized"].includes(catalog.status)) {
+    if (catalogModel.metadata?.jiasuCatalogRecord) {
+      for (const field of ["jiasuCatalogRecord", "jiasuApiParameters", "jiasuCatalogDescription", "jiasuCatalogCheckedAt"])
+        if (catalogModel.metadata[field] !== undefined) metadata[field] = catalogModel.metadata[field];
+    }
     const fields = [
       ["endpointTypes", "supplierCatalogEndpointTypes"],
       ["documentationUrl", "supplierCatalogDocumentationUrl"],
@@ -473,12 +521,18 @@ export function applySupplierCatalogPrices(
       ["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) &&
       (model.pricing || typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel)) &&
       Number.isFinite(priceAt) && Number.isFinite(catalogAt) && priceAt > catalogAt) return model;
-    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete", "miaowuCatalogPricingIncomplete", "chuangxiangCatalogPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
-    if (incompletePricingFields.length && !hasOwnPrice(model)) {
-      const metadata = { ...model.metadata };
+    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete", "miaowuCatalogPricingIncomplete", "chuangxiangCatalogPricingIncomplete", "jiasuCatalogPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
+    const jiasuTokenPlaceholder = catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true &&
+      (model.pricing?.kind === "token" || /(?:\/\s*1M|token)/iu.test(String(model.metadata?.priceLabel ?? "")));
+    if (incompletePricingFields.length && (!hasOwnPrice(model) || jiasuTokenPlaceholder)) {
+      const metadata = { ...catalogInterfaceMetadata(model, catalogModel, catalog, selected?.details?.stale === true) };
       delete metadata.weaiLegacyPricing; delete metadata.sub2apiPlazaPricing; delete metadata.miaowuCatalogPricing;
-      return { ...model, pricing: undefined, metadata: { ...metadata, priceLabel: "价格条件待确认", priceSource: "supplier-catalog",
-        priceStatus: "unconfirmed", ...Object.fromEntries(incompletePricingFields.map(field => [field, true])), priceUnavailableReason: "官方价格条件待确认",
+      if (catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true) delete metadata.officialCatalogPricing;
+      const oldLabel = String(model.metadata?.priceLabel ?? "");
+      const name = jiasuTokenPlaceholder && oldLabel ? model.name.replace(` · ${oldLabel}`, "").replace(`（${oldLabel}）`, "").replace(`(${oldLabel})`, "") : model.name;
+      return { ...model, name, pricing: undefined, metadata: { ...metadata, priceLabel: "价格条件待确认", priceSource: "supplier-catalog",
+        priceStatus: "unconfirmed", ...Object.fromEntries(incompletePricingFields.map(field => [field, true])),
+        priceUnavailableReason: catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true ? String(catalogModel.metadata.priceUnavailableReason) : "官方价格条件待确认",
         priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt, supplierPriceGroup: group } };
     }
     if (catalogModel?.metadata?.supplierCatalogModelStale === true && !hasOwnPrice(model)) {
@@ -512,12 +566,14 @@ export function applySupplierCatalogPrices(
     if (catalogModel?.metadata?.sub2apiPlazaPricing && model.metadata?.sub2apiPlazaPricingIncomplete === true ||
       catalogModel?.metadata?.weaiLegacyPricing && model.metadata?.weaiLegacyPricingIncomplete === true ||
       catalogModel?.metadata?.miaowuCatalogPricing && model.metadata?.miaowuCatalogPricingIncomplete === true ||
-      catalogModel?.metadata?.chuangxiangCatalogPricing && model.metadata?.chuangxiangCatalogPricingIncomplete === true) {
+      catalogModel?.metadata?.chuangxiangCatalogPricing && model.metadata?.chuangxiangCatalogPricingIncomplete === true ||
+      catalogModel?.metadata?.officialCatalogPricing && model.metadata?.jiasuCatalogPricingIncomplete === true) {
       const metadata = { ...model.metadata };
       if (catalogModel?.metadata?.sub2apiPlazaPricing) delete metadata.sub2apiPlazaPricingIncomplete;
       if (catalogModel?.metadata?.weaiLegacyPricing) delete metadata.weaiLegacyPricingIncomplete;
       if (catalogModel?.metadata?.miaowuCatalogPricing) delete metadata.miaowuCatalogPricingIncomplete;
       if (catalogModel?.metadata?.chuangxiangCatalogPricing) delete metadata.chuangxiangCatalogPricingIncomplete;
+      if (catalogModel?.metadata?.jiasuCatalogPricingEvidence) delete metadata.jiasuCatalogPricingIncomplete;
       if (metadata.priceUnavailableReason === "官方价格条件待确认") delete metadata.priceUnavailableReason;
       model = { ...model, metadata };
     }
@@ -734,6 +790,8 @@ export async function enrichSupplierModelPrices(
   );
   const supplierGroupId = sameSource ? String(connection.config.accountKeyGroupId ??
     supplier.catalog.groups.find(item => item.id === group)?.supplierGroupId ?? "") : undefined;
+  const savedMeasured = (result: ModelDescriptor[]) => sameSource && supplierGroupId
+    ? applySavedMeasuredPrices(result, connection.config, { sourceId: supplier.state?.sourceId ?? "legacy", supplierGroupId, apiUrl }) : result;
   if (!allowNetwork || (!force && models.every(hasOwnPrice))) {
     const catalogModels = sameSource ? applySupplierCatalogPrices(models,
       group,
@@ -741,7 +799,7 @@ export async function enrichSupplierModelPrices(
         kind: supplier.kind, status: supplier.scanStatus === "unscanned" ? "failed" : supplier.scanStatus,
         complete: supplier.scanComplete === true,
         checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl, { savedCatalog: true, supplierGroupId }) : [...models];
-    return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, supplier?.siteUrl || apiUrl, false), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined);
+    return savedMeasured(await applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, supplier?.siteUrl || apiUrl, false), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined));
   }
   const siteUrl = sameSource
     ? supplier.siteUrl
@@ -817,5 +875,5 @@ export async function enrichSupplierModelPrices(
     siteUrl,
     { supplierGroupId },
   );
-  return applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, siteUrl, allowNetwork), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined);
+  return savedMeasured(await applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, siteUrl, allowNetwork), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined));
 }

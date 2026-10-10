@@ -8,6 +8,7 @@ import {
   scheduleReadyNodes,
 } from "../src/scheduler.js";
 import { RunService } from "../src/service.js";
+import { validPngBytes } from "./fixtures/image-bytes.js";
 
 function gate() {
   let resolve!: () => void;
@@ -193,7 +194,7 @@ function adapter(submit: ProviderAdapter["submit"]): ProviderAdapter {
     validate: async () => ({ valid: true, issues: [] }),
     submit,
     extractOutputs: async () => [
-      { kind: "image", data: new Uint8Array([1, 2, 3]), mimeType: "image/png" },
+      { kind: "image", data: new Uint8Array(validPngBytes), mimeType: "image/png" },
     ],
   };
 }

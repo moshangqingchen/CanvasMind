@@ -17,6 +17,134 @@ function fixture(baseUrl: string, options: { model?: string; group?: string; pro
 }
 
 describe("supplier banana image protocols", () => {
+  it("uses Mikoto's exact native nano-banana-2.1 ID and all supplier-declared tiers/ratios without claiming fixed pixels", async () => {
+    const selected = "nano-banana-2.1";
+    const f = fixture("https://api.mikoto.vip", { model: selected, group: "gemini生图", settings: { accountKeyGroupId: "28" } });
+    const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected, name: selected, operations: ["image.generate"] });
+    expect(descriptor.metadata?.imageNativeParameterContract).toBe(true);
+    expect(descriptor.metadata?.imageSupportedResolutions).toEqual(["1K", "2K", "4K"]);
+    expect(descriptor.metadata?.imageOutputDimensions).toBeUndefined();
+    expect(descriptor.parameters?.some(parameter => parameter.key === "quality")).toBe(false);
+    expect(applyBananaImageCapabilities({ provider: "openai", config: f.config }, JSON.parse(JSON.stringify(descriptor)))).toEqual(descriptor);
+    for (const image_size of ["1K", "2K", "4K"]) for (const aspect_ratio of ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]) {
+      f.fetch.mockClear();
+      await f.adapter.submit({ ...request, model: selected, parameters: { image_size, aspect_ratio } });
+      const [url, init] = f.fetch.mock.calls[0]!;
+      expect(String(url)).toBe("https://api.mikoto.vip/v1beta/models/nano-banana-2.1:generateContent");
+      expect(new Headers(init?.headers).get("x-goog-api-key")).toBe("fixture-key");
+      expect(JSON.parse(String(init?.body)).generationConfig).toEqual({ responseModalities: ["TEXT", "IMAGE"], imageConfig: { imageSize: image_size, aspectRatio: aspect_ratio } });
+    }
+    f.fetch.mockClear();
+    await f.adapter.submit({ ...request, model: selected, operation: "image.edit", parameters: {},
+      assets: [{ id: "reference", kind: "image", mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }] });
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).contents[0].parts[1]).toEqual({ inlineData: { mimeType: "image/png", data: png } });
+    f.fetch.mockClear();
+    for (const parameters of [{ quality: "max" }, { size: "2048x2048" }, { aspect_ratio: "21:9" }, { image_size: "8K" }]) {
+      expect(normalizeBananaParameters(bananaImageRoute({ provider: "openai", config: f.config }, selected)!, parameters)).toMatchObject(parameters);
+      await expect(f.adapter.submit({ ...request, model: selected, parameters })).rejects.toThrow();
+    }
+    expect(f.fetch).not.toHaveBeenCalled();
+    expect(bananaImageRoute({ provider: "openai", config: { ...f.config, accountKeyGroupId: "40" } }, selected)).toBeUndefined();
+    expect(bananaImageRoute({ provider: "openai", config: f.config }, "nano-banana2")).toBeUndefined();
+  });
+  it.each(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "gemini-nano-banana-2.1", "nano-banana-2.1"])(
+    "uses Monster C1's native full ID %s for generation and reference editing", async selected => {
+      const f = fixture("https://api.eaheng.com/v1", { model: selected, group: "C1-Gemini（香蕉生图）", settings: { accountKeyGroupId: "11" } });
+      const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected, name: selected, operations: ["image.generate"] });
+      expect(descriptor.operations).toEqual(["image.generate", "image.edit"]);
+      expect(descriptor.parameters?.find(p => p.key === "image_size")?.options?.map(o => o.value)).toEqual(["auto"]);
+      expect(descriptor.metadata?.imageOutputDimensions).toBeUndefined();
+      for (const operation of ["image.generate", "image.edit"] as const) {
+        f.fetch.mockClear();
+        const task = await f.adapter.submit({ ...request, model: selected, operation, parameters: {},
+          ...(operation === "image.edit" ? { assets: [{ id: "reference", kind: "image" as const, mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }] } : {}) });
+        expect(f.fetch).toHaveBeenCalledOnce();
+        const [url, init] = f.fetch.mock.calls[0]!;
+        expect(String(url)).toBe(`https://api.eaheng.com/v1beta/models/${selected}:generateContent`);
+        expect(new Headers(init?.headers).get("x-goog-api-key")).toBe("fixture-key");
+        const body = JSON.parse(String(init?.body));
+        expect(body.generationConfig).toEqual({ responseModalities: ["IMAGE"] });
+        expect(body.contents[0].parts).toHaveLength(operation === "image.edit" ? 2 : 1);
+        if (operation === "image.edit") expect(body.contents[0].parts[1]).toEqual({ inlineData: { mimeType: "image/png", data: png } });
+        expect(await f.adapter.extractOutputs(task.result)).toHaveLength(1);
+      }
+      f.fetch.mockClear();
+      for (const parameters of [{ image_size: "4K" }, { aspect_ratio: "16:9" }, { quality: "max" }]) {
+        expect(normalizeBananaParameters(bananaImageRoute({ provider: "openai", config: f.config }, selected)!, parameters)).toMatchObject(parameters);
+        await expect(f.adapter.submit({ ...request, model: selected, parameters })).rejects.toThrow();
+      }
+      expect(f.fetch).not.toHaveBeenCalled();
+      expect(bananaImageRoute({ provider: "openai", config: { ...f.config, accountKeyGroupId: "12" } }, selected)).toBeUndefined();
+      expect(bananaImageRoute({ provider: "openai", config: { ...f.config, scannedModelIds: [] } }, selected)?.unavailableReason).toContain("未返回");
+    });
+  it("does not mistake a text-only Monster native result for image generation success", async () => {
+    const f = fixture("https://api.eaheng.com/v1", { group: "C1-Gemini（香蕉生图）", reply: { candidates: [{ content: { parts: [{ text: "no image" }] } }] } });
+    await expect(f.adapter.submit({ ...request, parameters: {} })).rejects.toThrow("没有图片");
+    expect(f.fetch).toHaveBeenCalledOnce();
+  });
+  it("keeps the newly confirmed 词元 vip nano2.1 separate from merchant SKUs and unquoted K tiers", async () => {
+    const selected = "gemini-nano-banana-2.1";
+    const f = fixture("https://api.tk1688.com/v1", { model: selected, group: "vip" });
+    const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected, name: selected, operations: ["image.generate"] });
+    expect(descriptor.parameters?.find(p => p.key === "image_size")?.options?.map(o => o.value)).toEqual(["auto"]);
+    expect(descriptor.pricing).toBeUndefined();
+    expect(descriptor.metadata?.imageContractParameterCoverage).toBe("automatic-only-exact-key-id");
+    await f.adapter.submit({ ...request, model: selected, parameters: {} });
+    const [url, init] = f.fetch.mock.calls[0]!;
+    expect(String(url)).toBe(`https://api.tk1688.com/v1beta/models/${selected}:generateContent`);
+    expect(new Headers(init?.headers).get("x-goog-api-key")).toBe("fixture-key");
+    expect(JSON.parse(String(init?.body)).generationConfig).toEqual({ responseModalities: ["IMAGE"] });
+    f.fetch.mockClear();
+    await expect(f.adapter.submit({ ...request, model: selected, parameters: { resolution: "4K" } })).rejects.toThrow();
+    expect(f.fetch).not.toHaveBeenCalled();
+    expect(bananaImageRoute({ provider: "openai", config: f.config }, `${selected}@s1c34`)).toBeUndefined();
+    expect(bananaImageRoute({ provider: "openai", config: { ...f.config, scannedModelIds: [] } }, selected)?.unavailableReason).toContain("未返回");
+  });
+  it.each([
+    ["香蕉2专线", "gemini-3.1-flash-image"], ["香蕉2专线", "gemini-3.1-flash-image-preview"], ["香蕉2专线", "gemini-nano-banana-2.1"],
+    ["香蕉pro专线", "gemini-3-pro-image"], ["香蕉pro专线", "gemini-3-pro-image-preview"],
+    ["香蕉官转", "gemini-3-pro-image-preview"], ["香蕉官转", "gemini-3.1-flash-image-preview"],
+  ])("binds Synora's current %s / %s Key ID to its own native protocol without guessed tiers", async (group, selected) => {
+    const f = fixture("https://synoralink.com/v1", { model: selected, group });
+    const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, {
+      id: selected, name: selected, operations: [], metadata: { canvasRunnable: false, canvasUnavailableReason: "尚未验证该模型的画布调用协议", imageOutputDimensions: [{ resolution: "4K", width: 4096, height: 4096, ratio: "1:1" }] },
+    });
+    expect(descriptor.operations).toEqual(["image.generate", "image.edit"]);
+    expect(descriptor.parameters?.find(p => p.key === "image_size")).toMatchObject({ default: "auto", options: [{ value: "auto", label: "模型默认（不指定档位）" }] });
+    expect(descriptor.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toEqual(["auto"]);
+    expect(descriptor.metadata?.imageOutputDimensions).toBeUndefined();
+    expect(descriptor.metadata?.imageSupportedResolutions).toEqual([]);
+    const restored = applyBananaImageCapabilities({ provider: "openai", config: f.config }, JSON.parse(JSON.stringify(descriptor)));
+    expect(restored).toEqual(descriptor);
+    const task = await f.adapter.submit({ ...request, model: selected, parameters: { image_size: "auto", aspect_ratio: "auto", n: 1 } });
+    const [url, init] = f.fetch.mock.calls[0]!;
+    expect(String(url)).toBe(`https://synoralink.com/v1beta/models/${selected}:generateContent`);
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fixture-key");
+    expect(JSON.parse(String(init?.body))).toEqual({ contents: [{ role: "user", parts: [{ text: request.prompt }] }], generationConfig: { responseModalities: ["IMAGE"] } });
+    expect(await f.adapter.extractOutputs(task.result)).toHaveLength(1);
+  });
+  it.each([{ image_size: "4K" }, { size: "2880x2880" }, { aspect_ratio: "9:21" }, { thinking_level: "high" }, { quality: "max" }, { background: "transparent" }])(
+    "preserves and rejects unpublished Synora saved parameters %j before charging", async parameters => {
+      const f = fixture("https://synoralink.com/v1", { group: "香蕉pro专线" });
+      const route = bananaImageRoute({ provider: "openai", config: f.config }, model)!;
+      expect(normalizeBananaParameters(route, parameters)).toMatchObject(parameters);
+      expect((await f.adapter.validate({ ...request, parameters })).valid).toBe(false);
+      await expect(f.adapter.submit({ ...request, parameters })).rejects.toThrow();
+      expect(f.fetch).not.toHaveBeenCalled();
+    });
+  it("sends Synora reference bytes inline, repairs REST routes, and preserves real permission denials", async () => {
+    const f = fixture("https://synoralink.com/v1", { group: "香蕉pro专线", provider: "rest" });
+    await f.adapter.submit({ ...request, parameters: {}, operation: "image.edit", assets: [{ id: "ref", kind: "image", mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }] });
+    const body = JSON.parse(String(f.fetch.mock.calls[0]![1]?.body));
+    expect(body.contents[0].parts[1]).toEqual({ inlineData: { mimeType: "image/png", data: png } });
+    expect(body.generationConfig).toEqual({ responseModalities: ["IMAGE"] });
+    const denied: ModelDescriptor = { id: model, name: model, operations: [], metadata: { canvasRunnable: false, canvasUnavailableReason: "403 权限拒绝" } };
+    expect(applyBananaImageCapabilities({ provider: "rest", config: f.config }, denied)).toBe(denied);
+    f.fetch.mockClear();
+    const other = fixture("https://synoralink.com/v1", { group: "香蕉2专线", model });
+    await expect(other.adapter.submit({ ...request, parameters: {} })).rejects.toThrow();
+    expect(other.fetch).not.toHaveBeenCalled();
+  });
   it.each([
     ["https://genimage.pro/v1", undefined, "Authorization", "Bearer fixture-key", model],
     ["https://api.frimodel.com/v1", "gemini_image", "x-goog-api-key", "fixture-key", model],

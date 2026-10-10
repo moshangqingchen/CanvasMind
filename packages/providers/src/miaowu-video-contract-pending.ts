@@ -33,6 +33,11 @@ const legacyChatOverride = {
     ] },
   output: { path: "$.choices[0].message.content", fallbackPaths: ["$.video_url", "$.url", "$.data[0].url"], kind: "video", defaultMimeType: "video/mp4" },
 };
+
+/** Only the unchanged built-in Chat mapping may be retired by a native schema. */
+export function isMiaowuLegacyChatVideoOverride(value: unknown): boolean {
+  return matches(value, legacyChatOverride);
+}
 const response = { taskIdPath: "$.id", statusPath: "$.status", progressPath: "$.progress", errorPath: "$.error.message" };
 const legacyVideoSubmit = { path: "/v1/videos", method: "POST", bodyMode: "json", mappings: [
   { target: "/model", source: { kind: "request", path: "$.model" } },

@@ -19,7 +19,7 @@ vi.mock("../../../lib/supplier-model-pricing", async original => ({ ...await ori
   enrichSupplierModelPrices: async (_connection: unknown, models: readonly ModelDescriptor[]) => [...models] }));
 import { createDefaultProviderRegistry, encryptSecret, StaticConnectionResolver } from "@super-canvas/providers";
 import { readProviderModelInventory } from "../../../lib/provider-model-inventory";
-import { MIAOWU_BASE_URL, MIAOWU_PRESET_ID } from "../../../lib/miaowu-presets";
+import { MIAOWU_BASE_URL, MIAOWU_PRESET_ID, MIAOWU_CONNECTOR, MIAOWU_CHAT_VIDEO_OVERRIDE } from "../../../lib/miaowu-presets";
 
 const publicPricing = JSON.parse(readFileSync(new URL("../../../lib/miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
 const directories = JSON.parse(readFileSync(new URL("../../../lib/miaowu-server-20261008.fixture.json", import.meta.url), "utf8"));
@@ -69,6 +69,23 @@ afterEach(() => {
 });
 
 describe("Miaowu authenticated union through the shared inventory entry", () => {
+  it("persists a freshly scanned native route without reviving the previous automatic Chat override", async () => {
+    const previous = (await mocks.repository.getConnection(connectionId))!;
+    const connector = structuredClone(MIAOWU_CONNECTOR);
+    connector.modelOverrides = { ...connector.modelOverrides, "seedance-2.0-deal": structuredClone(MIAOWU_CHAT_VIDEO_OVERRIDE) };
+    await mocks.repository.saveConnection({ ...previous, config: { ...previous.config,
+      connector: connector as never, modelProtocolTemplate: structuredClone(connector) as never } });
+    const response = await readInventory();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Model-Scan-Complete")).toBe("true");
+    const saved = (await mocks.repository.getConnection(connectionId))!;
+    for (const key of ["connector", "modelProtocolTemplate"]) {
+      const transport = saved.config[key] as unknown as typeof connector;
+      expect(transport.modelOverrides?.["seedance-2.0-deal"]).toBeUndefined();
+      expect(transport.submit.path).toBe("/v1/videos");
+    }
+  });
+
   it("returns newly discovered native models on an ordinary read without persisting the preview", async () => {
     const original = (await mocks.repository.getConnection(connectionId))!;
     // A legacy connection has a prior Key scan but no saved model snapshot.

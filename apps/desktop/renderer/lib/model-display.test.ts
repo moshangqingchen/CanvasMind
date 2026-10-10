@@ -99,6 +99,52 @@ describe("appendPriceLabelOnce", () => {
     expect(modelPriceSummary(model, { quality: "high" })).toBe(`当前组合未测价；上次 ${label}`);
     expect(modelPriceSummary(model, { size_tier: "2K" })).toBe(`当前组合未测价；上次 ${label}`);
   });
+  it("keeps a complete default-request ledger observation exact after control or catalog changes", () => {
+    const label = "0.8 账户计价单位/次（账单实测，仅默认请求；原件待取回）";
+    const model: ModelDescriptor = { id: "video", name: "Video", operations: ["video.generate"],
+      parameters: [{ key: "n", label: "数量", control: "number", default: 1 }],
+      metadata: { priceSource: "generated-result", priceLabel: label, measuredPrice: {
+        parameterScope: "exact", parameters: {}, equivalentDefaults: { n: 1 }, originalStatus: "awaiting-download" } } };
+    expect(modelPriceSummary(model, { prompt: "different text", has_reference_video: false })).toBe(label);
+    for (const parameters of [{ ratio: "16:9" }, { reference_images: ["https://media.example/a.png"] }, { has_reference_image: true },
+      { mode: "edit" }, { n: 2 }, { fps: 24 }, { quality: "auto" }])
+      expect(modelPriceSummary(model, parameters)).toBe(`当前组合未测价；上次 ${label}`);
+    expect(modelPriceSummary({ ...model, parameters: [{ key: "ratio", label: "比例", control: "select", default: "16:9" }] }, {}))
+      .toBe(`当前组合未测价；上次 ${label}`);
+    expect(modelEstimatedCost(model, {})).toBeUndefined();
+    expect(modelPriceSummary({ ...model, metadata: { ...model.metadata, measuredPrice: {
+      parameterScope: "exact", parameters: { ratio: "16:9", n: 1 } } } }, {})).toBe(`当前组合未测价；上次 ${label}`);
+  });
+  it("keeps Jiasu video samples scoped to known reference mode, count and actual input duration", () => {
+    const label = "¥4.968/次（生成实测） · 720p";
+    const base = { duration: 5, resolution: "720p" };
+    const model = (parameters: Record<string, unknown>): ModelDescriptor => ({ id: "doubao-seedance-2-0-260128", name: "Video", operations: ["video.generate"],
+      metadata: { jiasuVideoContract: true, priceSource: "generated-result", priceLabel: label, measuredPrice: { resolution: "720p", parameters } } });
+    const none = model({ ...base, video_input: "none" });
+    expect(modelPriceSummary(none, { ...base, video_input: "none" })).toBe(label);
+    expect(modelPriceSummary(none, { ...base, has_reference_video: false })).toBe(label);
+    expect(modelPriceSummary(none, base)).toBe(`当前组合未测价；上次 ${label}`);
+    expect(modelPriceSummary(none, { ...base, video_input: "video" })).toBe(`当前组合未测价；上次 ${label}`);
+    const sampled = model({ ...base, video_input: "video", reference_video_count: 2, reference_video_duration_seconds: 15 });
+    const current = { ...base, video_input: "video", reference_video_count: 2, reference_video_duration_seconds: 15 };
+    expect(modelPriceSummary(sampled, current)).toBe(label);
+    for (const changed of [{ reference_video_count: 1 }, { reference_video_duration_seconds: 14 }, { video_input: "none" }])
+      expect(modelPriceSummary(sampled, { ...current, ...changed })).toBe(`当前组合未测价；上次 ${label}`);
+    expect(modelPriceSummary(sampled, { ...base, videos: [{ url: "https://media.example/one.mp4", duration_seconds: 7 }, { url: "https://media.example/two.mp4", duration_seconds: 8 }] })).toBe(label);
+    expect(modelPriceSummary(sampled, { ...base, videos: ["https://media.example/unknown-duration.mp4"] })).toBe(`当前组合未测价；上次 ${label}`);
+    for (const conflicting of [
+      { ...current, has_reference_video: false }, { ...current, input_video_count: 1 },
+      { ...current, total_input_video_duration_seconds: 14 },
+      { ...current, videos: [{ url: "https://media.example/one.mp4", duration_seconds: 15 }] },
+      { ...current, videos: [{ url: "https://media.example/one.mp4", duration_seconds: 7 }, { url: "https://media.example/two.mp4", duration_seconds: 7 }] },
+      { ...current, videos: [{ url: "https://media.example/one.mp4", duration_seconds: -1 }, { url: "https://media.example/two.mp4", duration_seconds: 16 }] },
+    ]) expect(modelPriceSummary(sampled, conflicting)).toBe(`当前组合未测价；上次 ${label}`);
+    expect(modelPriceSummary(none, { ...base, video_input: "none", reference_video_count: 0, reference_video_duration_seconds: 0,
+      videos: ["https://media.example/reference.mp4"] })).toBe(`当前组合未测价；上次 ${label}`);
+    expect(modelEstimatedCost(sampled, current)).toBeUndefined();
+    const other = { ...sampled, metadata: { ...sampled.metadata, jiasuVideoContract: false } };
+    expect(modelPriceSummary(other, base)).toBe(label);
+  });
 
   it("keeps unknown billing conditions outside an exact ledger sample", () => {
     const label = "$0.08/张（账单实测） · 4K";

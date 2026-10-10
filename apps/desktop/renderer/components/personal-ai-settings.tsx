@@ -20,7 +20,7 @@ function draftFrom(connection: ProviderConnectionView): Draft {
   return { ...newDraft("custom"), ...saved, name: connection.name, args: saved.args ?? [], argumentsJson: JSON.stringify(saved.args ?? [], null, 2) };
 }
 
-export function PersonalAiSettings({ onConnectionsChanged }: { onConnectionsChanged: (connections: ProviderConnectionView[]) => void }) {
+export function PersonalAiSettings() {
   const [connections, setConnections] = useState<ProviderConnectionView[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<Draft>(newDraft);
@@ -30,19 +30,16 @@ export function PersonalAiSettings({ onConnectionsChanged }: { onConnectionsChan
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const active = useRef(true);
-  const callback = useRef(onConnectionsChanged);
   const selected = connections.find(connection => connection.id === selectedId);
   const dirty = JSON.stringify(draft) !== baseline;
   const { requestLeave } = useSettingsLeaveGuard();
-  useEffect(() => { callback.current = onConnectionsChanged; }, [onConnectionsChanged]);
   useSettingsDraft({ id: "personal-ai-connection", label: `${draft.name || "个人 AI 网站"}的连接配置`, dirty, busy, onDiscard: () => setDraft(JSON.parse(baseline) as Draft) });
   const applyDraft = (value: Draft, id = "") => { setDraft(value); setBaseline(JSON.stringify(value)); setSelectedId(id); setError(""); setMessage(""); };
-  const acceptConnections = (items: ProviderConnectionView[]) => { setConnections(items); callback.current(items); };
   useEffect(() => {
     active.current = true;
     void fetchConnections().then(items => {
       if (!active.current) return;
-      setConnections(items); callback.current(items);
+      setConnections(items);
       const first = items.find(connection => connection.provider === "cli");
       if (first) { const value = draftFrom(first); setDraft(value); setBaseline(JSON.stringify(value)); setSelectedId(first.id); }
     }).catch(cause => { if (active.current) setError(cause instanceof Error ? cause.message : "无法读取个人 AI 网站"); })
@@ -70,7 +67,7 @@ export function PersonalAiSettings({ onConnectionsChanged }: { onConnectionsChan
       const settings = parseCliConnectorConfig({ ...draft, args });
       const connection = await saveConnection({ id: selectedId || undefined, name: draft.name.trim(), provider: "cli", config: { ...(selected?.config ?? {}), usage: "canvas", cli: { ...settings, siteId: settings.siteId.trim(), siteName: settings.siteName.trim(), executable: settings.executable.trim(), args, cwd: settings.cwd?.trim() || undefined } } });
       if (!active.current) return;
-      acceptConnections([...connections.filter(item => item.id !== connection.id), connection]); applyDraft(draftFrom(connection), connection.id);
+      setConnections([...connections.filter(item => item.id !== connection.id), connection]); applyDraft(draftFrom(connection), connection.id);
       setMessage("连接已保存。检测连接和同步模型需要分别点击下方按钮。");
     } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : "保存失败"); }
     finally { if (active.current) setBusy(false); }
@@ -81,19 +78,19 @@ export function PersonalAiSettings({ onConnectionsChanged }: { onConnectionsChan
     try {
       const result = await runCliConnectionAction(selected.id, action);
       if (!active.current) return;
-      acceptConnections(connections.map(item => item.id === result.connection.id ? result.connection : item));
+      setConnections(connections.map(item => item.id === result.connection.id ? result.connection : item));
       applyDraft(draftFrom(result.connection), result.connection.id);
       setMessage(action === "describe" ? `已同步 ${result.models?.length ?? modelDescriptorsFromConnectionConfig(result.connection.config).length} 个模型，参数由当前 CLI 返回。` : cliStatusLabel(result.connection));
     } catch (cause) {
       if (active.current) setError(cause instanceof Error ? cause.message : "操作失败");
       const items = await fetchConnections().catch(() => null);
-      if (active.current && items) acceptConnections(items);
+      if (active.current && items) setConnections(items);
     } finally { if (active.current) setBusy(false); }
   }
   async function remove() {
     if (!selected || !window.confirm(`删除“${selected.name}”连接？画布节点和素材会保留。`)) return;
     setBusy(true); setError("");
-    try { const items = await deleteCliConnection(selected.id); if (active.current) { acceptConnections(items); applyDraft(newDraft()); setMessage("连接已删除"); } }
+    try { const items = await deleteCliConnection(selected.id); if (active.current) { setConnections(items); applyDraft(newDraft()); setMessage("连接已删除"); } }
     catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : "删除失败"); }
     finally { if (active.current) setBusy(false); }
   }

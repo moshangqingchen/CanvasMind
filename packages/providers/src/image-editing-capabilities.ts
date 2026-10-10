@@ -14,7 +14,7 @@ const image25 = new Set(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
 const monsterModels = new Set(["gpt-image-2", "gpt-image-2.5", ...image25,
   "gpt-image-2.5-flare-high", "gpt-image-2.5-flare-max", "gpt-image-2.5-sunburst-high", "gpt-image-2.5-sunburst-max"]);
 const cangyuanMaskModels = new Set(["gpt-image-2-1k", "gpt-image-2-2k", "gpt-image-2-4k",
-  "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
+  "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2-o", "gpt-image-2.5-flare-o", "gpt-image-2.5-sunburst-o"]);
 
 /** Browser-safe, exact supplier contracts. Model-family resemblance is not evidence. */
 function declaredImageEditingCapabilities(connection: ImageEditingConnection, modelId: string,
@@ -42,7 +42,8 @@ function declaredImageEditingCapabilities(connection: ImageEditingConnection, mo
   }
   if (connection.provider === "rest" && ["ai.cangyuansuanli.cn", "vip-api.cangyuansuanli.cn", "direct-api.cangyuansuanli.cn"].includes(url.hostname)) {
     return { transparent: false, mask: cangyuanMaskModels.has(modelId) ||
-      (modelId === "gpt-image-2-x" && ["1k", "2k", "4k"].includes(String(parameters.tier))) ? "url" : null };
+      (modelId === "gpt-image-2-x" && ["1k", "2k", "4k"].includes(String(parameters.tier))) ||
+      (/^midjourney-[12]k$/u.test(modelId) && parameters.reference === "editor") ? "url" : null };
   }
   return none;
 }

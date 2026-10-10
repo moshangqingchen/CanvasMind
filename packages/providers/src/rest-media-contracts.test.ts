@@ -62,6 +62,21 @@ describe("current media contracts repair saved REST transports", () => {
     expect(fetcher.mock.calls[0]?.[0]).toBe("https://token.secure-skill.com/v1/jobs");
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, aspect_ratio: "16:9", resolution: "1080p", messages: [{ role: "user", content: "Ocean sunrise" }] });
   });
+  it.each([
+    ["https://token.secure-skill.com/v1", "secure", "omni_video_edit", "Flow"],
+    ["https://tu.988236.xyz", "chentu", "kling-o3", "video"],
+  ] as const)("retains actual sent output fields through poll when source video controls duration: %s", async (url, supplier, id, group) => {
+    const model = remainingVideoModel(supplier, id, undefined, { group })!;
+    const { adapter, fetcher } = fixture(url, model, [Response.json({ task_id: "source-video", status: "queued" }),
+      Response.json({ task_id: "source-video", status: "completed", video_url: "https://media.example/original.mp4" })], { accountKeyGroup: group });
+    const task = await adapter.submit(request(id, { duration: 8, aspect_ratio: "16:9", resolution: "720p" }, [videoAsset]));
+    const snapshot = (task.result as { videoOutputParameters: Record<string, unknown> }).videoOutputParameters;
+    expect(snapshot).toMatchObject({ resolution: "720p" });
+    expect(snapshot).not.toHaveProperty("duration"); expect(snapshot).not.toHaveProperty("seconds");
+    expect(JSON.stringify(snapshot)).not.toContain("reference.mp4"); expect(JSON.stringify(snapshot)).not.toContain("Ocean sunrise");
+    expect(await adapter.poll(JSON.parse(JSON.stringify(task)))).toMatchObject({ status: "succeeded", result: { videoOutputParameters: snapshot } });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it.each(["https://ai.cangyuansuanli.cn", "https://vapi.chuangxiangai.asia"])("keeps accepted video responses without task IDs uncertain at %s", async baseUrl => {
     const id = "sd10-seedance-2.0", model = baseUrl.includes("cangyuan") ? cangyuanModel(id) : chuangxiangVideoModel(id);
     const { adapter, fetcher } = fixture(baseUrl, model, [Response.json({ status: "queued" })]);

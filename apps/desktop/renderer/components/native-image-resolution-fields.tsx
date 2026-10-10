@@ -1,8 +1,8 @@
 "use client";
 
 import type { ModelDescriptor, ModelParameterDescriptor, ModelParameterValue } from "@super-canvas/providers";
-import { coerceParameterInput, setParameterValue } from "../lib/model-parameters";
-import { declaredImageOutputDimensions, imageResolutionOptionLabel } from "../lib/native-image-resolution";
+import { coerceParameterInput, parameterValueForModel, setParameterValue } from "../lib/model-parameters";
+import { declaredImageOutputDimensions, declaredImageReferenceDimensions, imageResolutionOptionLabel, nativeImageRatioOptionLabel } from "../lib/native-image-resolution";
 
 export function NativeImageResolutionFields({
   id, model, resolution, ratio, parameters, onChange, hasExactSizeControl = false,
@@ -15,21 +15,26 @@ export function NativeImageResolutionFields({
   onChange: (parameters: Record<string, unknown>) => void;
   hasExactSizeControl?: boolean;
 }) {
-  const value = parameters[resolution.key] ?? resolution.default ?? "";
+  const value = parameterValueForModel(model, parameters, resolution.key) ?? resolution.default ?? "";
   const ratioValue = ratio && !(hasExactSizeControl && parameters.size !== undefined)
-    ? parameters[ratio.key] ?? ratio.default ?? "" : "";
-  const dimensions = declaredImageOutputDimensions(model, value, ratioValue);
+    ? parameterValueForModel(model, parameters, ratio.key) ?? ratio.default ?? "" : "";
+  const exactDimensions = declaredImageOutputDimensions(model, value, ratioValue);
+  const referenceDimensions = declaredImageReferenceDimensions(model, value, ratioValue);
+  const dimensions = exactDimensions ?? referenceDimensions;
+  const dimensionsTitle = referenceDimensions && !exactDimensions ? "供应商参考像素；成品可能略有不同，不作为 size 请求发送" : "仅显示供应商已公布的像素；未公布时以原图为准";
   const options = resolution.options ?? [];
   const missing = value !== "" && !options.some(option => String(option.value) === String(value));
   const update = (descriptor: ModelParameterDescriptor, raw: ModelParameterValue) => {
-    const next = setParameterValue(parameters, descriptor.key, coerceParameterInput(descriptor, String(raw)));
+    const next = setParameterValue(parameters, descriptor.key, coerceParameterInput(descriptor, String(raw)), model);
     if (descriptor.key === ratio?.key && raw !== "" && hasExactSizeControl) {
       delete next.size;
       delete next.size_tier;
     }
     onChange(next);
   };
-  const showDimensions = Array.isArray(model?.metadata?.imageOutputDimensions) && model.metadata.imageOutputDimensions.length > 0;
+  // An exact size control owns the editable W/H fields. Do not render a second,
+  // disconnected pair here (especially when the supplier publishes no pixels).
+  const showDimensions = !hasExactSizeControl && (model?.metadata?.imageNativeParameterContract === true || (Array.isArray(model?.metadata?.imageOutputDimensions) && model.metadata.imageOutputDimensions.length > 0));
 
   return <div className="field parameter-field parameter-dimensions parameter-native-resolution">
     <div className="parameter-dimensions-heading">
@@ -40,7 +45,7 @@ export function NativeImageResolutionFields({
       {options.map(option => <button key={String(option.value)} type="button"
         className="parameter-dimensions-shortcut"
         aria-pressed={String(value) === String(option.value)}
-        onClick={() => update(resolution, option.value)}>
+        disabled={resolution.key === "__fixed_resolution"} onClick={() => update(resolution, option.value)}>
         {imageResolutionOptionLabel(option)}
       </button>)}
     </div>
@@ -54,17 +59,22 @@ export function NativeImageResolutionFields({
         <option value="">{hasExactSizeControl && parameters.size !== undefined ? "按精确尺寸" : "模型默认"}</option>
         {ratioValue !== "" && !ratio.options?.some(option => String(option.value) === String(ratioValue)) &&
           <option value={String(ratioValue)}>{String(ratioValue)}（已保存）</option>}
-        {(ratio.options ?? []).map(option => <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}
+        {(ratio.options ?? []).map(option => <option key={String(option.value)} value={String(option.value)}>
+          {nativeImageRatioOptionLabel(model, resolution, value, option)}
+        </option>)}
       </select>
     </>}
     {showDimensions && <div className="parameter-dimensions-inputs">
       <span>W</span>
       <input id={`${id}-width`} aria-label="图片宽度" value={dimensions?.width ?? ""} readOnly
-        placeholder="宽" title="尺寸由所选分辨率和比例确定" />
+        placeholder={dimensions ? "宽" : "以原图为准"} title={dimensionsTitle} />
       <span className="parameter-dimensions-swap">↔</span>
       <span>H</span>
       <input id={`${id}-height`} aria-label="图片高度" value={dimensions?.height ?? ""} readOnly
-        placeholder="高" title="尺寸由所选分辨率和比例确定" />
+        placeholder={dimensions ? "高" : "以原图为准"} title={dimensionsTitle} />
     </div>}
+    {showDimensions && referenceDimensions && !exactDimensions && <small className="parameter-help">W/H 为供应商参考像素，实际以原图为准；请求仅发送比例。</small>}
+    {resolution.description && <small className="parameter-help">{resolution.description}</small>}
+    {ratio?.description && <small className="parameter-help">{ratio.description}</small>}
   </div>;
 }

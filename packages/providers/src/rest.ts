@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { videoOutputParametersFromBody } from "./video-output-contract.js";
 import type {
   ArtifactKind,
   FetchImplementation,
@@ -16,7 +17,7 @@ import type {
   ValidationResult,
 } from "./contracts.js";
 import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
-import { cangyuanCurrentRequestIssues, cangyuanCurrentTransport, isCangyuanCurrentRequest, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
+import { canApplyCangyuanCurrentContract, managesCangyuanCurrentTransport, cangyuanCurrentRequestIssues, cangyuanCurrentTransport, isCangyuanCurrentRequest, withCangyuanCurrentRequestParameters } from "./cangyuan-current-models.js";
 import { cangyuanMusicModel, cangyuanMusicRequestIssues, cangyuanMusicTransport, isCangyuanMusicRequest, withCangyuanMusicRequestParameters } from "./cangyuan-music.js";
 import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanVideoRequest, normalizeCangyuanVideoParameters, validateCangyuanVideoRequest } from "./cangyuan-video-contract.js";
 import { remainingVideoSupplier, isRemainingVideoModel, remainingVideoModel, remainingVideoTransport, remainingVideoRequiresPublicUrls, restoreRemainingVideoModel, isRemainingVideoPublicHttpsUrl, normalizeRemainingVideoParameters, remainingVideoRequestIssues, type RemainingVideoContext } from "./remaining-video-contracts.js";
@@ -24,6 +25,8 @@ import { modelSupportsGenerationMedia } from "./model-media.js";
 import { isMiaowuLegacyVideoBaseConnector, isMiaowuUnverifiedAutoVideoContract, MIAOWU_VIDEO_CONTRACT_PENDING_REASON } from "./miaowu-video-contract-pending.js";
 import { getModelParameterDescriptor, validateModelParameters } from "./cli-contracts.js";
 import { chatMediaOutputs } from "./chat-image-output.js";
+import { isJiasuApiUrl, jiasuVideoGroupMismatch } from "./jiasu-video-contract.js";
+import { uploadJiasuMedia } from "./jiasu-media.js";
 
 function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor, assets?: readonly ProviderAssetInput[]): RemainingVideoContext {
   const group = settings?.accountKeyGroup ?? settings?.modelGroup ?? settings?.group ?? settings?.supplierGroupId;
@@ -235,13 +238,14 @@ interface RestTaskEnvelope {
   taskId?: string;
   status?: ProviderTaskStatus;
   model?: string;
+  videoOutputParameters?: Record<string, unknown>;
 }
 
 /** The selected request, not a mixed group's blanket flag, decides transport. */
 export function restRequestRequiresPublicAssets(value: unknown, model?: string, operation?: ProviderOperation, settings?: unknown): boolean {
   if (operation?.startsWith("video.") && isRecord(settings) && isChuangxiangVideoConnection(settings, model)) return true;
   if (operation?.startsWith("image.") && isRecord(settings) &&
-    canApplyCangyuanCurrentContract(settings, typeof settings.baseUrl === "string" ? settings.baseUrl : undefined, model)) return true;
+    canApplyCangyuanCurrentContract(settings, typeof settings.baseUrl === "string" ? settings.baseUrl : undefined, model)) return !/^grok-imagine-image(?:-2\.0)?$/u.test(model ?? "");
   if (!isRecord(value) || value.assetsRequirePublicUrls !== true) return false;
   const config = value as unknown as RestConnectorConfig;
   const modelOverride = model ? config.modelOverrides?.[model] : undefined;
@@ -286,31 +290,6 @@ function imageJsonMaxResponseBytes(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Repair only a built-in/current contract or an identifiable legacy template. */
-function managesCangyuanCurrentTransport(settings: Readonly<Record<string, unknown>>, baseUrl: string | undefined, config: RestConnectorConfig, model?: string): boolean {
-  if (!isCangyuanCurrentRequest(model, baseUrl)) return false;
-  if ((Array.isArray(settings.manualModels) && settings.manualModels.some(row => isRecord(row) && row.id === model)) ||
-      (isRecord(settings.autoModelInterfaces) && settings.autoModelInterfaces[model!])) return false;
-  const override = config.modelOverrides?.[model!];
-  if (JSON.stringify(override) === JSON.stringify(cangyuanCurrentTransport(model!))) return true;
-  if (!["cangyuan-gpt-image-2", "cangyuan-gpt-image-2-4k"].includes(String(settings.preset))) return false;
-  const definition = override?.submit ?? config.submit;
-  if (definition.path !== "/v1/images/generations" || definition.bodyMode !== "json" || !definition.mappings?.length) return false;
-  if (definition.template && (!isRecord(definition.template) || Object.keys(definition.template).some(k => !["async", "n"].includes(k)))) return false;
-  const expected: Record<string, readonly string[]> = { "/model": ["$.model"], "/prompt": ["$.prompt"], "/size": ["$.parameters.size", "$.parameters.aspect_ratio"],
-    "/quality": ["$.parameters.quality"], "/background": ["$.parameters.background"], "/n": ["$.parameters.n"], "/aspect_ratio": ["$.parameters.aspect_ratio"] };
-  return definition.mappings.every(mapping => !mapping.when && (
-    mapping.source.kind === "request" && expected[mapping.target]?.includes(mapping.source.path) ||
-    mapping.target === "/response_format" && mapping.source.kind === "literal" && mapping.source.value === "url" ||
-    mapping.target === "/images" && mapping.source.kind === "assets" && mapping.source.assetKind === "image"
-  ));
-}
-
-export function canApplyCangyuanCurrentContract(settings: Readonly<Record<string, unknown>>, baseUrl: string | undefined, model?: string): boolean {
-  const connector = settings.connector;
-  return isRecord(connector) && isRecord(connector.submit) && managesCangyuanCurrentTransport(settings, baseUrl, connector as unknown as RestConnectorConfig, model);
 }
 
 function looksLikeAsset(value: unknown): value is ProviderAssetInput {
@@ -1151,7 +1130,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     // Model restrictions and credentials remain owned by the saved connection.
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, base, model)) {
       const current = cangyuanCurrentTransport(model!)!;
-      return { ...applyOverride(applyOverride(selected, current), operation ? current.operationOverrides?.[operation] : undefined), assetsRequirePublicUrls: true };
+      return { ...applyOverride(applyOverride(selected, current), operation ? current.operationOverrides?.[operation] : undefined), assetsRequirePublicUrls: !/^grok-imagine-image(?:-2\.0)?$/u.test(model ?? "") };
     }
     return selected;
   }
@@ -1319,6 +1298,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     phase: "connect" | "submit" | "poll" | "cancel",
     request?: NormalizedRequest,
     task?: ProviderTask,
+    observeBody?: (body: BodyInit | undefined) => void,
   ): Promise<unknown> {
     let body = await this.buildBody(definition, request, task);
     const taskId = task ? getProviderTaskId(task) : undefined;
@@ -1334,6 +1314,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       (method === "GET" || method === "DELETE" ? "none" : "json");
     const endpoint = this.resolveUrl(connection.baseUrl, definition.path, config, taskId);
     if (phase === "submit" && request) body = this.transparentSubmitBody(connection, request, endpoint, method, bodyMode, body);
+    observeBody?.(body);
     const maxResponseBytes =
       phase === "submit" || phase === "poll"
         ? imageJsonMaxResponseBytes(config, request?.parameters)
@@ -1436,6 +1417,8 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     try {
       const connection = await this.connections.resolve(request.connectionId);
+      if (request.operation.startsWith("video.") && isJiasuApiUrl(connection.baseUrl) && jiasuVideoGroupMismatch(connection.settings))
+        issues.push({ path: "model", code: "model_group_mismatch", message: "当前佳速 Key 绑定的分组与型号分组不一致，请同步正确分组后再生成。" });
       issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
       const baseConfig = this.configFrom(connection);
       const catalog = connection.settings?.modelCatalogModels;
@@ -1461,8 +1444,11 @@ export class GenericRestAdapter implements ProviderAdapter {
       if (musicRequest) issues.push(...cangyuanMusicRequestIssues(request));
       if (cangyuanVideo || remainingVideo) {
         const hosting = referenceImageHostingEnabled(connection.settings);
-        const assets = request.assets?.map(asset => hosting && asset.kind === "image" && asset.data && !asset.url
-          ? { ...asset, url: `https://pending-reference.super-canvas.invalid/${encodeURIComponent(asset.id)}` } : asset);
+        const jiasuUpload = remainingSupplier === "jiasu";
+        const assets = request.assets?.map(asset => jiasuUpload && (asset.data || asset.url?.startsWith("data:"))
+          ? { ...asset, url: `https://pending-jiasu-media.super-canvas.invalid/${encodeURIComponent(asset.id)}` }
+          : hosting && asset.kind === "image" && asset.data && !asset.url
+            ? { ...asset, url: `https://pending-reference.super-canvas.invalid/${encodeURIComponent(asset.id)}` } : asset);
         const prepared = { ...request, ...(assets ? { assets } : {}) };
         if (cangyuanVideo) issues.push(...validateCangyuanVideoRequest(prepared));
         if (remainingVideo) issues.push(...remainingVideoRequestIssues(remainingSupplier!, prepared, videoContext));
@@ -1638,6 +1624,16 @@ export class GenericRestAdapter implements ProviderAdapter {
             code: "missing_video",
             message: `${configuredModel.name} requires an input video`,
           });
+        if (request.operation.startsWith("video.") &&
+          configuredModel.metadata?.parameterSource === "dream.video_schema" &&
+          configuredModel.metadata.supportsFirstLastFrames === false &&
+          request.assets?.some(asset => asset.role === "firstFrame" || asset.role === "lastFrame")) {
+          issues.push({
+            path: "assets",
+            code: "unsupported_frame_role",
+            message: `${configuredModel.name} 当前原生 schema 只支持普通参考素材，不支持首尾帧角色；请明确选择参考图后再提交。`,
+          });
+        }
         if (configuredModel.metadata?.supportsFirstLastFrames === true) {
           const firstFrames =
             request.assets?.filter((asset) => asset.role === "firstFrame") ??
@@ -1771,6 +1767,11 @@ export class GenericRestAdapter implements ProviderAdapter {
       request.operation,
       request.assets,
     );
+    if (!this.fixedConfig && /^midjourney-[12]k$/u.test(request.model ?? "") &&
+        managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, this.configFrom(connection), request.model)) {
+      const current = cangyuanCurrentTransport(request.model!, request.parameters)!;
+      config = { ...config, ...current, ...current.operationOverrides?.[request.operation] };
+    }
     const editingConnection = imageEditingConnection(connection);
     const capabilities = getImageEditingCapabilities(editingConnection, request.model ?? "", request.parameters);
     const hasMask = request.assets?.some(asset => asset.role === "mask") || Boolean(request.parameters?.mask);
@@ -1795,11 +1796,15 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     if (!this.fixedConfig && managesCangyuanCurrentTransport(connection.settings ?? {}, connection.baseUrl, this.configFrom(connection), request.model))
       outboundRequest = withCangyuanCurrentRequestParameters(outboundRequest, connection.baseUrl);
-    if (request.assets?.length && restRequestRequiresPublicAssets(config)) {
-      const needsHosting = request.assets.some(asset => !asset.url?.startsWith("https://"));
+    if (request.operation.startsWith("video.") && isJiasuApiUrl(connection.baseUrl) && request.assets?.length)
+      outboundRequest = { ...outboundRequest, assets: await uploadJiasuMedia(connection, request.assets, {
+        fetch: this.fetchImpl, requestTimeoutMs: this.requestTimeoutMs,
+      }) };
+    if (outboundRequest.assets?.length && restRequestRequiresPublicAssets(config)) {
+      const needsHosting = outboundRequest.assets.some(asset => !asset.url?.startsWith("https://"));
       if (needsHosting && !referenceImageHostingEnabled(connection.settings))
         throw new Error("该模型需要参考图 HTTPS 链接。请在供应商分组中启用参考图临时链接，再重新运行；当前生成尚未提交。");
-      if (needsHosting) outboundRequest = { ...outboundRequest, assets: await uploadTemporaryReferenceImages(request.assets, this.fetchImpl) };
+      if (needsHosting) outboundRequest = { ...outboundRequest, assets: await uploadTemporaryReferenceImages(outboundRequest.assets, this.fetchImpl) };
     }
     const videoRequest = ["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(imageEditingConnection(connection).config, request.model);
     if (videoRequest) outboundRequest = { ...outboundRequest, parameters: normalizeChuangxiangVideoParameters(outboundRequest) };
@@ -1807,12 +1812,15 @@ export class GenericRestAdapter implements ProviderAdapter {
     const remainingSupplier = !this.fixedConfig && !preservesMiaowuExplicitVideoContract(imageEditingConnection(connection).config, config.models?.find(model => model.id === request.model), request.operation) ? remainingVideoSupplier(connection.baseUrl) : undefined;
     const videoContext = remainingVideoContext(connection.settings, config.models?.find(m => m.id === request.model), outboundRequest.assets);
     if (remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext)) outboundRequest = { ...outboundRequest, parameters: normalizeRemainingVideoParameters(remainingSupplier, outboundRequest, videoContext) };
+    let videoOutputParameters: Record<string, unknown> | undefined;
     const received = await this.execute(
       connection,
       config,
       config.submit,
       "submit",
       outboundRequest,
+      undefined,
+      config.output.kind === "video" ? body => { videoOutputParameters = videoOutputParametersFromBody(body); } : undefined,
     );
     const cloudTask = isRecord(received) && typeof received.__superCanvasCloudPoll === "string" ? received.__superCanvasCloudPoll : undefined;
     const remote = cloudTask ? (received as Record<string, unknown>).remote : received;
@@ -1849,6 +1857,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       status,
       ...(request.model ? { model: request.model } : {}),
       ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
+      ...(videoOutputParameters === undefined ? {} : { videoOutputParameters }),
     };
     const result: ProviderTask = {
       providerTaskId,

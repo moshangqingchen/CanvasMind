@@ -6,6 +6,7 @@ import { MemoryRepository } from "@super-canvas/db";
 import { OpenAIImageAdapter, StaticConnectionResolver } from "@super-canvas/providers";
 import { RunService } from "../src/service.js";
 import { saveCloudGenerationConfig } from "../src/cloud-generation.js";
+import { validPngBase64 } from "./fixtures/image-bytes.js";
 const mocks = vi.hoisted(() => ({ fetch: vi.fn<typeof fetch>() }));
 vi.mock("@super-canvas/providers", async original => ({ ...await original<typeof import("@super-canvas/providers")>(), providerFetch: mocks.fetch }));
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]) }));
@@ -31,7 +32,7 @@ it.each([false, true])("keeps cloud submissions safe after a lost acceptance or 
         }
         return Response.json({}, { status: 404 });
       }
-      if (url.endsWith("/response")) return Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }, { headers: { "x-supercanvas-response": "1" } });
+      if (url.endsWith("/response")) return Response.json({ data: [{ b64_json: validPngBase64 }] }, { headers: { "x-supercanvas-response": "1" } });
       if (++progressQueries <= 2) return Response.json({ state: "running", phase: "generating" });
       const pending = (await repository.listNodeRuns(run.id))[0];
       expect(pending?.status).toBe("running");

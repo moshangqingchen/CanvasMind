@@ -13,6 +13,7 @@ import {
 } from "@super-canvas/storage";
 import { RunService } from "../src/service.js";
 import * as downloads from "../src/remote-download.js";
+import { validPngBytes } from "./fixtures/image-bytes.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -149,20 +150,12 @@ describe("artifact checkpoints", () => {
     },
   );
 
-  it("rejects and removes an empty streamed output before saving an asset", async () => {
+  it("rejects an empty image before writing any storage object or saving an asset", async () => {
     const directory = await mkdtemp(join(tmpdir(), "canvas-empty-stream-"));
     try {
       const storage = new LocalObjectStorage(directory);
       const remove = vi.spyOn(storage, "delete");
-      vi.spyOn(downloads, "consumeRemoteArtifact").mockImplementation(
-        async (_url, callback) =>
-          callback(
-            (async function* () {
-              yield new Uint8Array();
-            })(),
-            "image/png",
-          ),
-      );
+      vi.spyOn(downloads, "downloadRemoteArtifact").mockResolvedValue({ bytes: new Uint8Array(), contentType: "image/png" });
       const { service, repository } = await fixture(storage, [
         { kind: "image", url: "https://example.test/empty.png" },
       ]);
@@ -178,8 +171,7 @@ describe("artifact checkpoints", () => {
         message: expect.stringContaining("0 字节"),
       });
       expect(await repository.listAssets()).toEqual([]);
-      expect(remove).toHaveBeenCalledTimes(1);
-      expect(await storage.head(remove.mock.calls[0][0])).toBeNull();
+      expect(remove).not.toHaveBeenCalled();
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -202,7 +194,7 @@ describe("artifact checkpoints", () => {
         .mockImplementation(async (url) => {
           if (url.endsWith("two") && failSecond)
             throw new Error("fixture unavailable");
-          return { bytes: new Uint8Array([1, 2, 3]), contentType: "image/png" };
+          return { bytes: new Uint8Array(validPngBytes), contentType: "image/png" };
         });
       const { service, repository, submit } = await fixture(
         storage,
@@ -256,7 +248,7 @@ describe("artifact checkpoints", () => {
         .mockImplementation(async (url) => {
           if (url.endsWith("two") && failSecond)
             throw new Error("fixture unavailable");
-          return { bytes: new Uint8Array([1, 2, 3]), contentType: "image/png" };
+          return { bytes: new Uint8Array(validPngBytes), contentType: "image/png" };
         });
       const { service, repository, submit } = await fixture(storage, [
         { kind: "image", url: "https://example.test/one" },
@@ -296,7 +288,7 @@ describe("artifact checkpoints", () => {
     },
   );
 
-  it("streams a remote result into storage and the project archive without a buffered read", async () => {
+  it("archives the fully inspected original image to storage and the project mirror without an extra storage read", async () => {
     const directory = await mkdtemp(
       join(tmpdir(), "canvas-stream-checkpoint-"),
     );
@@ -309,16 +301,16 @@ describe("artifact checkpoints", () => {
         );
       const bufferedDownload = vi
         .spyOn(downloads, "downloadRemoteArtifact")
-        .mockRejectedValue(new Error("Buffered download is forbidden"));
+        .mockResolvedValue({ bytes: new Uint8Array(validPngBytes), contentType: "image/png" });
       const consume = vi
         .spyOn(downloads, "consumeRemoteArtifact")
         .mockImplementation(async (_url, callback) =>
           callback(
             (async function* () {
-              yield new Uint8Array([1, 2]);
-              yield new Uint8Array([3, 4]);
+              yield validPngBytes.slice(0, 20);
+              yield validPngBytes.slice(20);
             })(),
-            "image/webp",
+            "image/png",
           ),
         );
       const archived: number[] = [];
@@ -328,9 +320,8 @@ describe("artifact checkpoints", () => {
         }: {
           bytes: Uint8Array | AsyncIterable<Uint8Array>;
         }) => {
-          expect(bytes).not.toBeInstanceOf(Uint8Array);
-          for await (const chunk of bytes as AsyncIterable<Uint8Array>)
-            archived.push(...chunk);
+          if (bytes instanceof Uint8Array) archived.push(...bytes);
+          else for await (const chunk of bytes) archived.push(...chunk);
         },
       } as unknown as ProjectFileStore;
       const { service, repository } = await fixture(
@@ -346,16 +337,16 @@ describe("artifact checkpoints", () => {
       expect((await terminal(service, run.id)).run.status).toBe("succeeded");
       const [asset] = await repository.listAssets();
       expect(asset).toMatchObject({
-        size: 4,
-        mimeType: "image/webp",
-        metadata: { archiveComplete: true },
+        size: validPngBytes.byteLength,
+        mimeType: "image/png",
+        metadata: { archiveComplete: true, imageOutputVerified: true },
       });
       expect(asset.metadata.etag).toBe(
         (await storage.head(asset.storageKey))?.etag,
       );
-      expect(archived).toEqual([1, 2, 3, 4]);
-      expect(consume).toHaveBeenCalledTimes(1);
-      expect(bufferedDownload).not.toHaveBeenCalled();
+      expect(archived).toEqual(Array.from(validPngBytes));
+      expect(consume).not.toHaveBeenCalled();
+      expect(bufferedDownload).toHaveBeenCalledTimes(1);
       expect(get).not.toHaveBeenCalled();
     } finally {
       await rm(directory, { recursive: true, force: true });

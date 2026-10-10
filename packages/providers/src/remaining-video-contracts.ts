@@ -1,9 +1,10 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ProviderAssetInput, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride } from "./rest.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
+import { isJiasuApiUrl, isJiasuVideoModel, jiasuVideoModelIds, jiasuVideoModel, jiasuVideoTransport, normalizeJiasuVideoParameters, jiasuVideoRequestIssues, jiasuVideoGroupMismatch, JIASU_VIDEO_DOCS } from "./jiasu-video-contract.js";
 
 /** Exact supplier contracts re-read from public official documents on 2026-10-07. */
-export type RemainingVideoSupplier = "chentu" | "frimodel" | "weai" | "secure" | "cyberafei" | "miaowu" | "mikoto" | "hangzhale";
+export type RemainingVideoSupplier = "chentu" | "frimodel" | "weai" | "secure" | "cyberafei" | "miaowu" | "mikoto" | "hangzhale" | "jiasu";
 export interface RemainingVideoContext {
   group?: string | undefined;
   groupDescription?: string | undefined;
@@ -48,7 +49,7 @@ interface VideoContract {
 const triple = ["16:9", "9:16", "1:1"] as const;
 const portrait = ["16:9", "9:16"] as const;
 const chentuDocs = "https://tu.988236.xyz/docs/";
-const contracts: Record<RemainingVideoSupplier, Record<string, VideoContract>> = { chentu: {}, frimodel: {}, weai: {}, secure: {}, cyberafei: {}, miaowu: {}, mikoto: {}, hangzhale: {} };
+const contracts: Record<RemainingVideoSupplier, Record<string, VideoContract>> = { chentu: {}, frimodel: {}, weai: {}, secure: {}, cyberafei: {}, miaowu: {}, mikoto: {}, hangzhale: {}, jiasu: {} };
 const put = (s: RemainingVideoSupplier, ids: readonly string[], c: VideoContract) => { for (const id of ids) contracts[s][id] = { ...c }; };
 const chentuBase: VideoContract = { min: 4, max: 15, resolutions: ["720p"], ratios: triple, images: 9, videos: 3, audios: 3,
   imageField: "reference_images", videoField: "reference_videos", audioField: "reference_audios", secondsField: "duration", docs: chentuDocs };
@@ -287,6 +288,7 @@ function directoryContractFor(supplier: RemainingVideoSupplier, id: string, cont
 }
 
 function contractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext = {}): VideoContract | undefined {
+  if (supplier === "jiasu") return isJiasuVideoModel(id, context.model) ? { resolutions: [], ratios: [], directoryContract: true, docs: JIASU_VIDEO_DOCS } : undefined;
   if (supplier === "miaowu" && (context.model?.metadata?.source === "manual" || context.model?.metadata?.protocolEvidence === "paid-test" || ["pricing.video_api", "dream.video_schema"].includes(String(context.model?.metadata?.parameterSource)))) return undefined;
   const c = contracts[supplier][id] ?? directoryContractFor(supplier, id, context); if (!c) return undefined;
   if (c.directoryContract && (context.model?.metadata?.source === "manual" || context.model?.metadata?.protocolEvidence === "paid-test")) return undefined;
@@ -322,11 +324,12 @@ function contractFor(supplier: RemainingVideoSupplier, id: string, context: Rema
 }
 
 export function remainingVideoSupplier(baseUrl: unknown): RemainingVideoSupplier | undefined {
+  if (isJiasuApiUrl(baseUrl)) return "jiasu";
   try { const host = new URL(String(baseUrl)).hostname.toLowerCase();
     return host === "tu.988236.xyz" ? "chentu" : ["api.frimodel.com", "platform.frimodel.com"].includes(host) ? "frimodel" : host === "video.we-token.cc" ? "weai" : host === "token.secure-skill.com" ? "secure" : host === "api.3365api.cn" ? "cyberafei" : host === "api.miaowuai.store" ? "miaowu" : host === "api.mikoto.vip" ? "mikoto" : host === "api.hangzhale.com" ? "hangzhale" : undefined;
   } catch { return undefined; }
 }
-export const remainingVideoModelIds = (supplier: RemainingVideoSupplier): string[] => Object.keys(contracts[supplier]);
+export const remainingVideoModelIds = (supplier: RemainingVideoSupplier): string[] => supplier === "jiasu" ? jiasuVideoModelIds() : Object.keys(contracts[supplier]);
 export const isRemainingVideoModel = (supplier: RemainingVideoSupplier | undefined, id: string | undefined, context?: RemainingVideoContext): boolean => Boolean(supplier && id && contractFor(supplier, id, context));
 export const remainingVideoRequiresPublicUrls = (supplier: RemainingVideoSupplier, id: string, context?: RemainingVideoContext): boolean => {
   const c = contractFor(supplier, id, context);
@@ -335,13 +338,15 @@ export const remainingVideoRequiresPublicUrls = (supplier: RemainingVideoSupplie
 /** Repair only old missing-contract flags backed by this Key's current inventory. */
 export function restoreRemainingVideoModel(supplier: RemainingVideoSupplier | undefined, id: string, current: ModelDescriptor | undefined,
   settings: Readonly<Record<string, unknown>> | undefined, context?: RemainingVideoContext): ModelDescriptor | undefined {
+  if (supplier === "jiasu" && jiasuVideoGroupMismatch(settings)) return undefined;
   if (!supplier || !current || !contractFor(supplier, id, context)?.directoryContract ||
       !Array.isArray(settings?.scannedModelIds) || !settings.scannedModelIds.includes(id) ||
       ["empty", "unauthorized"].includes(String(settings?.modelScanStatus)) || settings?.supplierArchived === true ||
       ["disabled", "agent"].includes(String(settings?.usage))) return undefined;
   const reason = String(current.metadata?.canvasUnavailableReason ?? "");
   if (/401|403|权限|未开通|拒绝|下架|停用|未返回|unauthorized|forbidden|not.?returned|unavailable|disabled/iu.test(reason) ||
-      !/(?:尚未提供.*(?:参数|调用合同)|(?:参数|调用协议|接口合同).*待.*(?:确认|补充)|没有匹配的调用协议|协议未确认|接口说明待补充)/u.test(reason)) return undefined;
+      !/(?:尚未提供.*(?:参数|调用合同)|(?:参数|调用协议|接口合同).*待.*(?:确认|补充)|没有匹配的调用协议|协议未确认|接口说明待补充)/u.test(reason) &&
+      !(supplier === "jiasu" && /尚未验证.*(?:画布|调用)协议|画布协议尚未验证/u.test(reason))) return undefined;
   if (current.outputKinds?.length && current.metadata?.outputKindsSource !== "inferred" && !current.outputKinds.includes("video") ||
       current.metadata?.operationsSource === "declared" && !current.operations.some(operation => operation.startsWith("video."))) return undefined;
   const repaired = remainingVideoModel(supplier, id, current, context);
@@ -350,6 +355,7 @@ export function restoreRemainingVideoModel(supplier: RemainingVideoSupplier | un
   return { ...repaired, metadata: { ...metadata, canvasRunnable: true, autoInterfaceStatus: "complete" } };
 }
 export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string, current?: ModelDescriptor, context?: RemainingVideoContext): ModelDescriptor | undefined {
+  if (supplier === "jiasu") return jiasuVideoModel(id, current ?? context?.model, context?.group);
   const c = contractFor(supplier, id, { model: current, ...context }); if (!c) return undefined;
   const parameters: ModelParameterDescriptor[] = [{ key: "duration", label: "视频时长", control: c.durations ? "select" : "number", valueType: "integer", required: !c.durationOptional,
     ...(!c.durationOptional || c.defaultDuration !== undefined || c.durations ? { default: c.defaultDuration ?? c.durations?.[0] ?? Math.max(c.min ?? 1, 5) } : {}), ...(c.durations ? { options: c.durations.map(value => ({ label: `${value} 秒`, value })) } : { min: c.min ?? 1, ...(c.max ? { max: c.max } : {}), step: 1 }),
@@ -389,6 +395,7 @@ export function isRemainingVideoPublicHttpsUrl(value: unknown): value is string 
 const imageRoles = (assets: readonly ProviderAssetInput[], role: "firstFrame" | "lastFrame") => assets.filter(a => a.kind === "image" && a.role === role).map(a => a.url);
 /** Produces only documented wire fields and keeps the user's asset order. */
 export function normalizeRemainingVideoParameters(supplier: RemainingVideoSupplier, request: NormalizedRequest, context?: RemainingVideoContext): Record<string, unknown> {
+  if (supplier === "jiasu") return normalizeJiasuVideoParameters(request, context?.model, context?.group);
   const c = contractFor(supplier, request.model ?? "", { ...context, assets: request.assets }); if (!c) return { ...request.parameters };
   if (c.chatVideo) return {};
   const original = request.parameters ?? {}, assets = request.assets ?? [], p: Record<string, unknown> = {};
@@ -469,6 +476,7 @@ export function normalizeRemainingVideoParameters(supplier: RemainingVideoSuppli
   return p;
 }
 export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: string, context?: RemainingVideoContext): RestModelConnectorOverride | undefined {
+  if (supplier === "jiasu") return isJiasuVideoModel(id, context?.model) ? jiasuVideoTransport() : undefined;
   const c = contractFor(supplier, id, context); if (!c) return undefined;
   if (c.chatVideo) return { submit: { path: "/v1/chat/completions", method: "POST", bodyMode: "json", template: { stream: false }, idempotent: false,
     mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }, { target: "/messages", source: { kind: "openaiMessages", ...(c.videoReferenceEncoding ? { videoReferenceEncoding: c.videoReferenceEncoding } : {}) } }] },
@@ -513,6 +521,7 @@ export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: st
       ...(c.flow || c.pollPath === "/v1/videos/tasks/{taskId}" ? {} : { contentFallback: { path: c.contentPath ?? "/v1/videos/{taskId}/content" } }) } };
 }
 export function remainingVideoRequestIssues(supplier: RemainingVideoSupplier, request: NormalizedRequest, context?: RemainingVideoContext): ValidationIssue[] {
+  if (supplier === "jiasu") return jiasuVideoRequestIssues(request, context?.model, context?.group);
   const c = contractFor(supplier, request.model ?? "", { ...context, assets: request.assets }); if (!c) return [];
   const p = normalizeRemainingVideoParameters(supplier, request, context), issues: ValidationIssue[] = [], add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
   const seconds = c.omitDuration ? request.parameters?.duration ?? c.durations?.[0] : p[c.secondsField ?? "duration"];

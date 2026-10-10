@@ -373,7 +373,7 @@ function GenerationNodeBody({
   }, [nodeId, onConfigurationOpenChange, settingsOpen]);
   // Share the node's coordinate space so the panel pans, zooms and resizes with it.
   const [settingsHost, setSettingsHost] = useState<HTMLElement | null>(null);
-  const [settingsPlacement, setSettingsPlacement] = useState<{ left: number; width?: number }>({ left: 0 });
+  const [settingsPlacement, setSettingsPlacement] = useState<{ left: number; top?: number; width?: number; maxHeight?: number }>({ left: 0 });
   const settingsTrigger = useRef<HTMLButtonElement | null>(null);
   const settingsBody = useRef<HTMLDivElement | null>(null);
   const settingsAnchor = useStore(state => {
@@ -392,6 +392,7 @@ function GenerationNodeBody({
     const canvas = settingsHost.closest<HTMLElement>(".canvas-wrap");
     const rail = settingsHost.closest(".canvas-editor")?.querySelector<HTMLElement>(".editor-rail");
     if (!canvas) return;
+    const viewportTools = [...canvas.querySelectorAll<HTMLElement>(".canvas-toolbar, .react-flow__controls, .react-flow__minimap")];
     let active = true;
     const place = () => {
       if (!active || !Number.isFinite(settingsZoom) || settingsZoom <= 0) return;
@@ -405,21 +406,43 @@ function GenerationNodeBody({
       if (hostBounds.width <= 0 || available <= 0) return;
       const width = Math.min(hostBounds.width, available);
       const left = Math.min(Math.max(hostBounds.left, leftBoundary), rightBoundary - width);
+      const topBoundary = Math.max(canvasBounds.top, 0) + 8;
+      let bottomBoundary = Math.min(canvasBounds.bottom, window.innerHeight) - 8;
+      for (const tool of viewportTools) {
+        const bounds = tool.getBoundingClientRect();
+        if (bounds.width > 0 && bounds.height > 0 && bounds.right > left && bounds.left < left + width)
+          bottomBoundary = Math.min(bottomBoundary, bounds.top - 8);
+      }
+      const availableHeight = bottomBoundary - topBoundary;
+      if (availableHeight <= 0) return;
+      const height = Math.min(560 * settingsZoom, availableHeight);
+      const below = hostBounds.bottom + 10 * settingsZoom;
+      const above = hostBounds.top - 10 * settingsZoom - height;
+      const top = below >= topBoundary && below + height <= bottomBoundary ? below
+        : above >= topBoundary && above + height <= bottomBoundary ? above
+        : Math.max(topBoundary, Math.min(below, bottomBoundary - height));
       // The portal remains inside the transformed node. Convert only its
       // visual placement to local coordinates; never move or resize the node.
-      const next = { left: (left - hostBounds.left) / settingsZoom, width: width / settingsZoom };
+      const next = { left: (left - hostBounds.left) / settingsZoom, width: width / settingsZoom,
+        top: (top - hostBounds.top) / settingsZoom, maxHeight: availableHeight / settingsZoom };
       setSettingsPlacement(previous => Math.abs(previous.left - next.left) < .01 &&
-        previous.width !== undefined && Math.abs(previous.width - next.width) < .01 ? previous : next);
+        previous.width !== undefined && Math.abs(previous.width - next.width) < .01 &&
+        previous.top !== undefined && Math.abs(previous.top - next.top) < .01 &&
+        previous.maxHeight !== undefined && Math.abs(previous.maxHeight - next.maxHeight) < .01 ? previous : next);
     };
     place();
     const observer = new ResizeObserver(place);
     observer.observe(settingsHost);
     observer.observe(canvas);
     if (rail) observer.observe(rail);
+    for (const tool of viewportTools) observer.observe(tool);
+    const toolPositionObserver = new MutationObserver(place);
+    toolPositionObserver.observe(canvas, { attributes: true, attributeFilter: ["data-compact-tools"] });
     window.addEventListener("resize", place);
     return () => {
       active = false;
       observer.disconnect();
+      toolPositionObserver.disconnect();
       window.removeEventListener("resize", place);
     };
   }, [settingsAnchor, settingsHost, settingsOpen, settingsZoom]);
@@ -505,7 +528,11 @@ function GenerationNodeBody({
   }
   const selectedModel = modelOptions.find((model) => model.id === data.model);
   const hasReferenceVideo = data.linkedAssets?.some(asset => asset.kind === "video") === true;
-  const priceParameters = { ...parameters, has_reference_video: hasReferenceVideo };
+  const priceParameters = { ...parameters,
+    has_reference_video: hasReferenceVideo,
+    has_reference_image: data.linkedAssets?.some(asset => asset.kind === "image") === true,
+    has_reference_audio: data.linkedAssets?.some(asset => asset.kind === "audio") === true,
+  };
   const priceModel = selectedModel && nodeType === "video-generation" ? {
     ...selectedModel,
     parameters: parameterDescriptorsForValues(nodeType, data.provider ?? "fake", selectedModel, parameters, undefined, { hasReferenceVideo }),
@@ -748,7 +775,7 @@ function GenerationNodeBody({
               capabilities={connectionAvailable ? data.modelImageCapabilities : undefined}
               parameters={{ ...priceParameters, prompt: renderPromptParts(data.parts ?? []) }}
               onChange={id => data.onModelChange?.(id)} open={modelMenuOpen} onOpenChange={setModelMenuOpen}
-              anchorKey={`${settingsAnchor}:${settingsPlacement.left}:${settingsPlacement.width ?? ""}`} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
+              anchorKey={`${settingsAnchor}:${settingsPlacement.left}:${settingsPlacement.top ?? ""}:${settingsPlacement.width ?? ""}`} loading={data.modelOptionsLoading} failed={data.modelOptionsError}
               authoritative={data.modelOptionsAuthoritative} allowManual={!data.modelOptionsAuthoritative}
               catalogDirectory={data.catalogPickerDirectory}
               badge={cangyuanAvailabilityEnabled ? model => <CangyuanAvailabilityBadge

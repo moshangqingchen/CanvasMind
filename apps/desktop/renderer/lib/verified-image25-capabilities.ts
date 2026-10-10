@@ -2,9 +2,10 @@ import type {
   ModelDescriptor,
   ModelParameterDescriptor,
 } from "@super-canvas/providers";
+import { cangyuanCurrentModel, isCangyuanCurrentModel } from "@super-canvas/providers/cangyuan-current-models";
 import { supplierKeyForConnection } from "./supplier-identity";
 import { matchesSupplierTemplate } from "./supplier-template-source";
-import { imageSizeOptions, type ImageSizeTier } from "@super-canvas/providers";
+import { imageSizeOptions, type ImageSizeTier } from "@super-canvas/providers/image-size-presets";
 import { IMAGE_QUALITY_PRESET_DESCRIPTION } from "@super-canvas/providers/image-quality-presets";
 import { mikotoGroup, MIKOTO_IMAGE_HIGH_GROUP, MIKOTO_IMAGE_MEDIUM_GROUP } from "./mikoto-presets";
 
@@ -65,6 +66,7 @@ export function applyVerifiedImage25Capabilities(
     )
   )
     return model;
+  if (supplier === "cangyuan" && isCangyuanCurrentModel(model.id)) return cangyuanCurrentModel(model);
   if (mikotoDeclaredGpt) {
     const declared = mikotoGroup(group)!.models[0]!;
     const metadata = { ...model.metadata, ...declared.metadata };

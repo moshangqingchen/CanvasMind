@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SupplierVerificationCase } from "@super-canvas/db";
-import { chargeFromVerificationResponse, chargeFromVerificationUsage, verificationChargeForComparison } from "./supplier-verification-failure";
+import { chargeFromVerificationResponse, chargeFromVerificationUsage, verificationChargeForComparison, verificationFailure } from "./supplier-verification-failure";
 import { reconcileVerificationCharge } from "./supplier-capabilities";
 
 const testCase = (result?: Record<string, unknown>) => ({ requestId: "request", task: { providerTaskId: "task", result } }) as unknown as SupplierVerificationCase;
@@ -59,5 +59,51 @@ describe("verification charge evidence", () => {
     }
     expect(reconcileVerificationCharge(test.expectedCharge, verificationChargeForComparison(test, { ...actual, currency: "credits" }), test.requestId)).toBe("unknown");
     expect(reconcileVerificationCharge(test.expectedCharge, verificationChargeForComparison(test, { ...actual, requestId: "other", taskId: undefined }), test.requestId)).toBe("unknown");
+  });
+});
+
+describe("verification failure identity and balance evidence", () => {
+  const failure = (status: number, responseBody?: unknown, message = "request rejected") => verificationFailure(
+    Object.assign(new Error(message), { details: { status, responseBody } }),
+  );
+
+  it.each([11.5, 17.5])("does not block a valid Key for the Jiasu HTTP403 precharge threshold %s", precharge => {
+    expect(failure(403, JSON.stringify({ error: {
+      code: "insufficient_user_quota", message: `当前剩余额度: ¥9.98，本次请求预扣额度: ¥${precharge}`,
+    } }))).toMatchObject({ balance: true, authentication: false, unavailable: false, definiteReason: "账户余额不足", terminal: true, free: false });
+  });
+
+  it.each([
+    { error: { code: "insufficient_balance", message: "payment rejected" } },
+    { data: { error: { code: "insufficient_quota", message: "payment rejected" } } },
+    { message: "当前账户余额不足，请充值后重试" },
+    "Insufficient user quota before submission",
+  ])("recognizes explicit account quota or balance evidence without inferring a free request", body => {
+    expect(failure(403, body)).toMatchObject({ balance: true, authentication: false, definiteReason: "账户余额不足", free: false });
+  });
+
+  it.each([401, 403])("retains genuine HTTP%s authentication failures", status => {
+    expect(failure(status)).toMatchObject({ balance: false, authentication: true, definiteReason: "鉴权失败，请检查当前分组 Key" });
+  });
+
+  it.each([
+    { code: "AUTH_INSUFFICIENT_PRIVILEGE", message: "权限不足，请充值升级分组" },
+    { error: { code: "permission_denied", message: "Permission denied; contact billing" } },
+    { message: "无此权限，请充值升级" },
+  ])("does not turn a permission denial into a balance diagnosis", body => {
+    expect(failure(403, body)).toMatchObject({ balance: false, authentication: true, definiteReason: "鉴权失败，请检查当前分组 Key" });
+  });
+
+  it.each([
+    { error: { code: "insufficient_quota", message: "上游账号余额不足，请联系供应商" } },
+    { error: { message: "Upstream account balance is insufficient" } },
+    { error: { message: "No available accounts for this group" } },
+  ])("does not request account recharge or invalidate a Key for upstream pool failures", body => {
+    expect(failure(403, body)).toMatchObject({ unavailable: true, balance: false, authentication: false, definiteReason: undefined });
+  });
+
+  it("preserves HTTP402 account balance handling and explicit no-charge evidence", () => {
+    expect(failure(402, { error: { charged: false } })).toMatchObject({ balance: true, authentication: false, free: true, definiteReason: "账户余额不足" });
+    expect(failure(504)).toMatchObject({ balance: false, authentication: false, terminal: false });
   });
 });

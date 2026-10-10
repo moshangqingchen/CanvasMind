@@ -57,8 +57,8 @@ describe("native image layout across actual Banana supplier contracts", () => {
     const parameters = { quality: "2k", aspect_ratio: "9:16" };
     const control = controlFor(model, parameters);
     expect(control?.resolution.key).toBe("quality");
-    expect(control?.resolution.options?.map(option => option.value)).toEqual(["1k", "2k", "4k"]);
-    expect(control?.resolution.options?.map(imageResolutionOptionLabel)).toEqual(["1K", "2K", "4K"]);
+    expect(control?.resolution.options?.map(option => option.value)).toEqual(["1k", "2k", "4k", "auto"]);
+    expect(control?.resolution.options?.map(imageResolutionOptionLabel)).toEqual(["1K", "2K", "4K", "自动"]);
     expect(normalizedParametersForModel("image-generation", "rest", model, parameters)).toEqual(parameters);
     expect(declaredImageOutputDimensions(model, "2k", "9:16")).toBeUndefined();
   });

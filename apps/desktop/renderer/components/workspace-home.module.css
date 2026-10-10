@@ -636,9 +636,25 @@
 
 .projectCard:hover,
 .projectCard:focus-within,
-.createCard:hover {
+.createCard:hover,
+.createCard:focus-visible {
   border-color: #bbaaec45;
-  box-shadow: 0 8px 24px #0002;
+  box-shadow: 0 0 0 1px #bbaaec12, 0 8px 24px #0002;
+}
+.projectCard::after,
+.createCard::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 50% 0%, #bbaaec12, transparent 65%);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms;
+}
+.projectCard:is(:hover, :focus-within)::after,
+.createCard:is(:hover, :focus-visible):not(:disabled)::after {
+  opacity: 1;
 }
 .projectCard[data-menu-open="true"] {
   z-index: 8;
@@ -816,10 +832,16 @@
   gap: 3px;
   min-width: 170px;
   padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid #bea3df57;
   border-radius: 9px;
   background: #241d31;
   box-shadow: 0 14px 36px #0007;
+}
+.dropdown[data-side="top"] {
+  top: auto;
+  bottom: calc(100% + 5px);
 }
 .dropdown button {
   display: flex;

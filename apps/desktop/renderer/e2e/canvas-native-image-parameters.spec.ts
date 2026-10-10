@@ -110,10 +110,12 @@ for (const [id, name, tierLabels] of [
       expect(await ratio.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean)))
         .toEqual(["1:1", "16:9", "9:16", "4:3", "3:4"]);
       await assertDimensions(1080, 1080);
+      await expect(ratio.getByRole("option", { name: "标准 · 1:1 · 1080 × 1080", exact: true })).toHaveCount(1);
       await assertNative("1080p", "1:1");
 
       await tiers.getByRole("button", { name: "2K", exact: true }).click();
       await assertDimensions(1440, 1440);
+      await expect(ratio.getByRole("option", { name: "2K · 1:1 · 1440 × 1440", exact: true })).toHaveCount(1);
       await ratio.selectOption("16:9");
       await assertDimensions(2560, 1440);
       await assertNative("2K", "16:9");

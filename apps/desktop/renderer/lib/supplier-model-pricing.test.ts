@@ -45,6 +45,7 @@ import {
   enrichSupplierModelPrices,
   measuredPricesFromVerification,
   applyDocumentedModelPrice,
+  applySavedMeasuredPrices,
 } from "./supplier-model-pricing";
 import { parseSupplierCatalog, parseSupplierPricingChannels } from "@super-canvas/providers";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
@@ -52,6 +53,83 @@ import { cyberAfeiCatalogFromPricing, resolveCyberAfeiScannedGroup } from "./cyb
 import { applyWeAiLivePricing, type WeAiLiveModelPricing } from "./weai-catalog";
 
 const weaiSnapshotOrigin = "https://asian-acc.we-token.cc";
+describe("durable exact ledger observations", () => {
+  const scope = { sourceId: "source-a", supplierGroupId: "74", apiUrl: "https://supplier.example/v1" };
+  const model: ModelDescriptor = { id: "video-exact", name: "Video", operations: ["video.generate"], metadata: {
+    priceLabel: "暂未取得报价", invokable: false, invocationBlockedReason: "INSUFFICIENT_BALANCE" } };
+  const sample = { sourceId: "source-a", supplierGroupId: "74", accountKeyId: "key-a", modelId: "video-exact",
+    checkedAt: "2026-10-09T12:00:00Z", providerTaskId: "task-a", requestId: "request-a", parameterScope: "exact", parameters: {},
+    originalStatus: "awaiting-download", actualCharge: { taskId: "task-a", requestId: "ledger-request", amount: .8, unit: "request",
+      sourceUrl: "https://supplier.example/api/v1/usage?group_id=74" } };
+  const config = { accountKeyId: "key-a", measuredPriceEvidence: [sample] };
+  it("survives a catalog replacement and restart without declaring the original accepted or guessing currency", () => {
+    const first = applySavedMeasuredPrices([model], config, scope)[0]!;
+    expect(first.metadata).toMatchObject({ priceStatus: "measured", invokable: false, invocationBlockedReason: "INSUFFICIENT_BALANCE",
+      measuredPrice: { parameterScope: "exact", originalStatus: "awaiting-download", providerTaskId: "task-a" } });
+    expect(modelPriceSummary(first, {})).toBe("0.8 账户计价单位/次（账单实测，仅默认请求；原件待取回）");
+    expect(modelPriceSummary(first, { ratio: "1:1" })).toContain("当前组合未测价");
+    expect(first.pricing).toBeUndefined();
+    const restarted = applySavedMeasuredPrices([model], JSON.parse(JSON.stringify(config)), scope)[0]!;
+    expect(restarted).toEqual(first);
+  });
+  it("requires exact source, stable group, current Key, full model and same task/request", () => {
+    for (const changed of [{ sourceId: "other" }, { supplierGroupId: "75" }, { accountKeyId: "other" }, { modelId: "video-exact-alias" },
+      { providerTaskId: "other" }, { actualCharge: { ...sample.actualCharge, sourceUrl: "https://other.example/usage" } },
+      { actualCharge: { ...sample.actualCharge, amount: Number.NaN } }, { checkedAt: "invalid" }, { parameterScope: "partial" }]) {
+      expect(applySavedMeasuredPrices([model], { ...config, measuredPriceEvidence: [{ ...sample, ...changed }] }, scope)[0]).toEqual(model);
+    }
+  });
+  it("keeps published prices authoritative and does not treat observations as invocation permission", () => {
+    const quoted = { ...model, metadata: { ...model.metadata, priceSource: "supplier-group", priceLabel: "$1/次" } };
+    expect(applySavedMeasuredPrices([quoted], config, scope)[0]).toEqual(quoted);
+    expect(modelEstimatedCost(applySavedMeasuredPrices([model], config, scope)[0], {})).toBeUndefined();
+  });
+});
+it("repairs Jiasu video token placeholders, carries its public contract, and accepts a later exact billing tier", () => {
+  const id = "doubao-seedance-2-0-260128", source = "https://ai.jiasuapi.com";
+  const group = parseSupplierCatalog({ group_ratio: { vip: 1 }, data: [{ model_name: id, quota_type: 0, model_ratio: 23,
+    completion_ratio: 1, enable_groups: ["vip"], supported_endpoint_types: ["openai-video"], api_parameters: JSON.stringify([
+      { name: "duration", type: "integer", range: "5-15", default: "5" },
+    ]), billing_usage_schema: { resolution: { enum: ["480p", "720p", "1080p"] }, video_input: { enum: ["none", "video"] }, tokens: { type: "number", unit: "token" } } }] },
+    { supplierSiteUrl: source, currency: "CNY", checkedAt: "2026-10-09T12:00:00Z" }).groups[0]!;
+  const catalog: SupplierCatalogDiscovery = { groups: [group], kind: "newapi", status: "live", complete: true, checkedAt: "2026-10-09T12:00:00Z" };
+  const old: ModelDescriptor = { id, name: `${id} · 输入 ¥46/1M · 输出 ¥46/1M`, operations: ["video.generate"], outputKinds: ["video"],
+    pricing: { kind: "token", currency: "CNY", inputPerMillion: 46, outputPerMillion: 46, confidence: "estimate", checkedAt: "2026-10-08T12:00:00Z" },
+    metadata: { priceLabel: "输入 ¥46/1M · 输出 ¥46/1M" } };
+  const pending = applySupplierCatalogPrices([old], "vip", catalog, source)[0]!;
+  expect(pending.pricing).toBeUndefined();
+  expect(pending.name).toBe(id);
+  expect(pending.metadata).toMatchObject({ priceLabel: "价格条件待确认", priceStatus: "unconfirmed", jiasuCatalogPricingIncomplete: true,
+    jiasuCatalogRecord: { supportedEndpointTypes: ["openai-video"], apiParameters: [{ name: "duration", type: "integer", range: "5-15", default: "5" }] } });
+  const fresh = structuredClone(catalog);
+  fresh.groups[0]!.models[0]!.priceLabel = "720p ¥0.3/秒";
+  fresh.groups[0]!.models[0]!.metadata = { ...fresh.groups[0]!.models[0]!.metadata, jiasuCatalogPricingIncomplete: false, jiasuCatalogPricingEvidence: "video-final",
+    officialCatalogPricing: { kind: "tiered", currency: "CNY", billingUnit: "second", confidence: "exact", checkedAt: fresh.checkedAt, sourceUrl: `${source}/api/pricing`,
+      tiers: [{ id: "720p", label: "720p", dimension: "resolution", value: "720p", price: .3 }] } };
+  const priced = applySupplierCatalogPrices([pending], "vip", fresh, source)[0]!;
+  expect(priced.pricing).toMatchObject({ billingUnit: "second", tiers: [{ price: .3 }] });
+  expect(priced.metadata?.jiasuCatalogPricingIncomplete).toBeUndefined();
+});
+
+it("uses a successful Jiasu video charge only for its measured parameters when conditional rates are unavailable", async () => {
+  const id = "doubao-seedance-2-0-260128", source = "https://ai.jiasuapi.com";
+  const supplier = { id: "jiasu-price", apiUrl: `${source}/v1`, siteUrl: source, state: { sourceId: "jiasu-source" },
+    catalog: { groups: [{ id: "vip", label: "vip", models: [{ id, capability: "video", priceLabel: "价格条件待确认", metadata: {
+      jiasuCatalogPricingIncomplete: true, priceUnavailableReason: "官方视频用量/条件费率未完整公布", jiasuCatalogRecord: { supportedEndpointTypes: ["openai-video"], apiParameters: [] },
+    } }] }] }, kind: "newapi", scanStatus: "live", scanComplete: true, scannedAt: "2026-10-09T12:00:00Z", updatedAt: "2026-10-09T12:00:00Z" };
+  vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+  vi.mocked(repository.getSupplierVerification).mockResolvedValue({ sourceId: "jiasu-source", cases: [{ sourceId: "jiasu-source", status: "succeeded", requestId: "video-request", group: "vip", modelId: id,
+    resolution: "720p", parameters: { resolution: "720p", duration: 5, video_input: "none" },
+    actualCharge: { amount: 4.968, currency: "CNY", unit: "request", requestId: "video-request", checkedAt: "2026-10-09T12:00:00Z" } }] } as unknown as Awaited<ReturnType<typeof repository.getSupplierVerification>>);
+  const video: ModelDescriptor = { id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: {} };
+  const priced = (await enrichSupplierModelPrices({ config: { supplierId: supplier.id, supplierSourceId: "jiasu-source", baseUrl: supplier.apiUrl, modelGroup: "vip" } }, [video], false, false))[0]!;
+  expect(priced.pricing).toBeUndefined();
+  expect(priced.metadata).toMatchObject({ priceSource: "generated-result", priceStatus: "measured", measuredPrice: { amount: 4.968, parameters: { duration: 5, resolution: "720p", video_input: "none" } } });
+  expect(modelEstimatedCost(priced, { duration: 5 })).toBeUndefined();
+  vi.mocked(getSupplierRecord).mockResolvedValue(null);
+  vi.mocked(repository.getSupplierVerification).mockResolvedValue(null);
+});
+
 it("uses the latest exact Synora ledger sample instead of an obsolete common group rate", () => {
   const id = "gpt-image-2.5-sunburst";
   // Synthetic timestamps preserve ordering without retaining account billing times.

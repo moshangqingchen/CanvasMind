@@ -1,0 +1,398 @@
+{
+  "checkedAt": "2026-10-10T00:20:10.081Z",
+  "rows": [
+    {
+      "supplier": "喵呜 API",
+      "connectionId": "fixture-miaowu-video-1",
+      "group": "default",
+      "model": "seedance-2.0-pro",
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=seedance-2.0-pro",
+      "checkedAt": "2026-10-10T00:20:07.294Z",
+      "status": "live",
+      "attempts": [
+        {
+          "attempt": 1,
+          "checkedAt": "2026-10-10T00:20:07.294Z",
+          "httpStatus": 200,
+          "contentType": "application/json; charset=utf-8",
+          "bytes": 1270,
+          "sha256": "6ab235a4bc6658f3543ac6f20ea4824b2f858ecb84132b787f8efcc1909e9ec5"
+        }
+      ],
+      "httpStatus": 200,
+      "payload": {
+        "id": "seedance-2.0-pro",
+        "name": "seedance-2.0-pro",
+        "display_name": "seedance-2.0-pro",
+        "type": "video",
+        "request_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "audio_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 3,
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "image_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 9,
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "ratio": {
+                  "enum": [
+                    "1:1",
+                    "16:9",
+                    "9:16",
+                    "4:3",
+                    "3:4",
+                    "21:9"
+                  ],
+                  "type": "string"
+                },
+                "seconds": {
+                  "pattern": "^[1-9][0-9]*$",
+                  "type": "string",
+                  "x-dream-integer-string-max": 15,
+                  "x-dream-integer-string-min": 4
+                },
+                "size": {
+                  "enum": [
+                    "720p",
+                    "480p"
+                  ],
+                  "type": "string"
+                },
+                "video_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 0,
+                  "minItems": 0,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "prompt"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "model",
+            "params"
+          ],
+          "type": "object",
+          "x-dream-pricing": {
+            "rules": [
+              {
+                "price": 0.04,
+                "seconds_max": 15,
+                "size": "720p"
+              },
+              {
+                "price": 0.02142857142857143,
+                "seconds_max": 15,
+                "size": "480p"
+              }
+            ],
+            "unit": "per_second"
+          },
+          "x-dream-schema-version": 1
+        },
+        "group_ratio": {
+          "default": 1
+        },
+        "pricing_display": {
+          "currency": "CNY",
+          "symbol": "¥",
+          "usd_exchange_rate": 7,
+          "groups": {
+            "default": {
+              "unit": "per_second",
+              "rules": [
+                {
+                  "size": "720p",
+                  "seconds_max": 15,
+                  "price": 0.28
+                },
+                {
+                  "size": "480p",
+                  "seconds_max": 15,
+                  "price": 0.15
+                }
+              ]
+            }
+          }
+        }
+      },
+      "finishedAt": "2026-10-10T00:20:08.159Z"
+    },
+    {
+      "supplier": "喵呜 API",
+      "connectionId": "fixture-miaowu-video-2",
+      "group": "default",
+      "model": "seedance-2.5-pro",
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=seedance-2.5-pro",
+      "checkedAt": "2026-10-10T00:20:07.341Z",
+      "status": "live",
+      "attempts": [
+        {
+          "attempt": 1,
+          "checkedAt": "2026-10-10T00:20:07.341Z",
+          "httpStatus": 200,
+          "contentType": "application/json; charset=utf-8",
+          "bytes": 1142,
+          "sha256": "13952410b48e1a6509974c4dd75b853e896f86bbaffc726dda16937ce83fae8d"
+        }
+      ],
+      "httpStatus": 200,
+      "payload": {
+        "id": "seedance-2.5-pro",
+        "name": "seedance-2.5-pro",
+        "display_name": "seedance-2.5-pro",
+        "type": "video",
+        "request_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "audio_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "image_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 30,
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "prompt": {
+                  "maxLength": 5000,
+                  "type": "string"
+                },
+                "ratio": {
+                  "enum": [
+                    "16:9",
+                    "9:16",
+                    "4:3",
+                    "3:4",
+                    "1:1"
+                  ],
+                  "type": "string"
+                },
+                "seconds": {
+                  "pattern": "^[1-9][0-9]*$",
+                  "type": "string",
+                  "x-dream-integer-string-max": 29,
+                  "x-dream-integer-string-min": 4
+                },
+                "size": {
+                  "enum": [
+                    "720p"
+                  ],
+                  "type": "string"
+                },
+                "video_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 0,
+                  "minItems": 0,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "prompt"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "model",
+            "params"
+          ],
+          "type": "object",
+          "x-dream-pricing": {
+            "rules": [
+              {
+                "price": 1.4285714285714286,
+                "size": "720p"
+              }
+            ],
+            "unit": "per_call"
+          },
+          "x-dream-schema-version": 1
+        },
+        "group_ratio": {
+          "default": 1
+        },
+        "pricing_display": {
+          "currency": "CNY",
+          "symbol": "¥",
+          "usd_exchange_rate": 7,
+          "groups": {
+            "default": {
+              "unit": "per_call",
+              "rules": [
+                {
+                  "size": "720p",
+                  "price": 10
+                }
+              ]
+            }
+          }
+        }
+      },
+      "finishedAt": "2026-10-10T00:20:08.163Z"
+    },
+    {
+      "supplier": "喵呜 API",
+      "connectionId": "fixture-miaowu-video-3",
+      "group": "default",
+      "model": "doubao-seedance-2.0-mini",
+      "url": "https://api.miaowuai.store/v1/dream/model_schema?model=doubao-seedance-2.0-mini",
+      "checkedAt": "2026-10-10T00:20:08.160Z",
+      "status": "live",
+      "attempts": [
+        {
+          "attempt": 1,
+          "checkedAt": "2026-10-10T00:20:08.161Z",
+          "httpStatus": 200,
+          "contentType": "application/json; charset=utf-8",
+          "bytes": 1129,
+          "sha256": "c9d6c1b7e29c2f2f6da2c5c24e6917c803ccd17c2aec347cca3db0bcef5b6c67"
+        }
+      ],
+      "httpStatus": 200,
+      "payload": {
+        "id": "doubao-seedance-2.0-mini",
+        "name": "doubao-seedance-2.0-mini",
+        "display_name": "doubao-seedance-2.0-mini",
+        "type": "video",
+        "request_schema": {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "audio_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 0,
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "image_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 9,
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "ratio": {
+                  "enum": [
+                    "9:16",
+                    "16:9"
+                  ],
+                  "type": "string"
+                },
+                "seconds": {
+                  "pattern": "^[1-9][0-9]*$",
+                  "type": "string",
+                  "x-dream-integer-string-max": 15,
+                  "x-dream-integer-string-min": 5
+                },
+                "size": {
+                  "enum": [
+                    "720p"
+                  ],
+                  "type": "string"
+                },
+                "video_urls": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 0,
+                  "minItems": 0,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "prompt"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "model",
+            "params"
+          ],
+          "type": "object",
+          "x-dream-pricing": {
+            "rules": [
+              {
+                "price": 0.14285714285714285,
+                "size": "720p"
+              }
+            ],
+            "unit": "per_call"
+          },
+          "x-dream-schema-version": 1
+        },
+        "group_ratio": {
+          "default": 1
+        },
+        "pricing_display": {
+          "currency": "CNY",
+          "symbol": "¥",
+          "usd_exchange_rate": 7,
+          "groups": {
+            "default": {
+              "unit": "per_call",
+              "rules": [
+                {
+                  "size": "720p",
+                  "price": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "finishedAt": "2026-10-10T00:20:08.418Z"
+    }
+  ]
+}

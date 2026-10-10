@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   GenericRestAdapter,
+  cangyuanCurrentModel,
+  cangyuanCurrentTransport,
   type ProviderConnectionResolver,
 } from "@super-canvas/providers";
 import {
@@ -61,15 +63,17 @@ it.each(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-s
   const model = cangyuanCatalogFromPricing({ data: [{ model_name: id, request_unit: "image", enable_groups: ["IMAGE"], image_ui_params: { params: {
     aspectRatio: { enabled: true, options: [{ value: "1:1", label: "1:1" }, { value: "16:9", label: "16:9" }] }, customDimensions: { enabled: true },
   } } }] }).groups.IMAGE[0]!;
-  expect(model.parameters?.some(p => p.key === "size")).toBe(false);
-  expect(model.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toEqual(["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9", "9:21"]);
+  expect(model.parameters).toEqual(cangyuanCurrentModel({ id, name: id, operations: [] }).parameters);
+  expect(model.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).not.toContain("9:21");
 });
 
 it("adds Seedream's custom-size request presets without claiming exact output", () => {
   const model = cangyuanCatalogFromPricing({ data: [{ model_name: "doubao-seedream-5-0-pro", request_unit: "image", enable_groups: ["IMAGE"], image_ui_params: { params: { customDimensions: { enabled: true } } } }] }).groups.IMAGE[0]!;
   const sizes = model.parameters?.find(p => p.key === "size")?.options;
-  expect(sizes?.map(o => o.value)).toEqual(expect.arrayContaining(["auto", "1024x1024", "2048x1152", "1152x2048"]));
-  expect(sizes?.filter(o => o.value !== "auto").every(o => o.label.includes("请求预设"))).toBe(true);
+  expect(sizes?.map(o => o.value)).toEqual(["1024x1024", "2048x1152"]);
+  expect(model.parameters?.find(p => p.key === "size")).toMatchObject({ min: 1, step: 1 });
+  expect(model.parameters?.find(p => p.key === "size")?.max).toBeUndefined();
+  expect(model.metadata?.imagePixelBudgetPublished).toBe(false);
 });
 
 it("preserves Banana 4K documented pixels above the GPT edge limit", () => {
@@ -95,15 +99,10 @@ it("preserves Banana 4K documented pixels above the GPT edge limit", () => {
       },
     ],
   }).groups.IMAGE[0]!;
-  expect(model.parameters?.find((p) => p.key === "size")).toMatchObject({
-    max: 5504,
-    default: "auto",
-    options: [
-      expect.objectContaining({ value: "auto" }),
-      { label: "4K · 1:1 · 4096 × 4096", value: "4096x4096" },
-      { label: "4K · 16:9 · 5504 × 3072", value: "5504x3072" },
-    ],
-  });
+  expect(model.parameters?.find((p) => p.key === "size")).toBeUndefined();
+  expect(model.metadata?.imageOutputDimensions).toBeUndefined();
+  expect(model.metadata?.imageFixedResolution).toBe("4K");
+  expect(model.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toContain("16:9");
   expect(model.parameters?.some((p) => p.key === "quality")).toBe(false);
 });
 
@@ -129,7 +128,7 @@ it("labels Gemini K-valued quality as resolution and defaults to 4K", () => {
     ],
   }).groups.IMAGE[0]!;
   expect(model.parameters?.find((p) => p.key === "quality")).toMatchObject({
-    label: "分辨率",
+    label: "输出分辨率",
     default: "4k",
   });
 });
@@ -268,7 +267,7 @@ describe("Cangyuan live catalog", () => {
       "gpt-image-2",
       "veo-3-1",
     ]);
-    expect(catalog.groups.IMAGE[0]?.name).toBe("GPT Image 2（¥0.02/张）");
+    expect(catalog.groups.IMAGE[0]?.name).toBe("gpt-image-2（¥0.02/张）");
     expect(catalog.groups.IMAGE[0]).toMatchObject({
       operations: ["image.generate", "image.edit"],
       inputKinds: ["text", "image", "image[]"],
@@ -360,7 +359,7 @@ describe("Cangyuan live catalog", () => {
         provider: "rest",
         apiKey: "test-key",
         baseUrl: "https://ai.cangyuansuanli.cn",
-        settings: { connector },
+        settings: { ...cangyuanImageConnectionConfig(), connector },
       }),
     };
     const adapter = new GenericRestAdapter(resolver, { fetch: fetchMock });
@@ -380,7 +379,7 @@ describe("Cangyuan live catalog", () => {
           data: new Uint8Array([1, 2, 3]),
         },
       ],
-      parameters: { aspect_ratio: "1:1", quality: "high", n: 1 },
+      parameters: { aspect_ratio: "1:1", n: 1 },
     };
 
     await expect(adapter.validate(request)).resolves.toEqual({
@@ -408,7 +407,7 @@ describe("Cangyuan live catalog", () => {
     );
   });
 
-  it.each(["1:1", "9:21"])("maps GPT Image 2 canvas ratio %s to the generation size field without snapping", async ratio => {
+  it.each(["1:1", "21:9"])("maps a documented GPT Image 2 ratio %s to size", async ratio => {
     const catalog = cangyuanCatalogFromPricing(pricingPayload);
     const connector = cangyuanConnectorForModels("IMAGE", catalog.groups.IMAGE);
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
@@ -424,7 +423,7 @@ describe("Cangyuan live catalog", () => {
           provider: "rest",
           apiKey: "test-key",
           baseUrl: "https://ai.cangyuansuanli.cn",
-          settings: { connector },
+          settings: { ...cangyuanImageConnectionConfig(), connector },
         }),
       },
       { fetch: fetchMock },
@@ -436,7 +435,7 @@ describe("Cangyuan live catalog", () => {
       model: "gpt-image-2",
       prompt: "正方形宣传图",
       idempotencyKey: "run:generate",
-      parameters: { aspect_ratio: ratio, quality: "high", n: 1 },
+      parameters: { aspect_ratio: ratio, n: 1 },
       assets: [],
     });
 
@@ -537,7 +536,7 @@ describe("Cangyuan live catalog", () => {
           provider: "rest",
           apiKey: "test-key",
           baseUrl: "https://ai.cangyuansuanli.cn",
-          settings: { connector },
+          settings: { ...cangyuanImageConnectionConfig(), connector },
         }),
       },
       { fetch: fetchMock },
@@ -551,7 +550,6 @@ describe("Cangyuan live catalog", () => {
       idempotencyKey: "run:backup-4k",
       parameters: {
         aspect_ratio: "1:1",
-        background: "opaque",
         n: 1,
       },
       assets: [],
@@ -583,7 +581,6 @@ describe("Cangyuan live catalog", () => {
       idempotencyKey: "run:backup-edit",
       parameters: {
         aspect_ratio: "1:1",
-        background: "opaque",
         n: 1,
       },
       assets: [
@@ -619,14 +616,14 @@ describe("Cangyuan live catalog", () => {
       const connector = cangyuanConnectorForModels(group, [descriptor]);
       expect(connector.assetsRequirePublicUrls).toBe(true);
       const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ id: "ref-test", status: "queued" })).mockResolvedValueOnce(Response.json({ id: "ref-test", status: "completed", data: [{ url: "https://example.com/result.png" }] }));
-      const adapter = new GenericRestAdapter({ resolve: async () => ({ id: "cangyuan", provider: "rest", apiKey: "test-key", baseUrl: "https://ai.cangyuansuanli.cn", settings: { connector } }) }, { fetch: fetchMock });
+      const adapter = new GenericRestAdapter({ resolve: async () => ({ id: "cangyuan", provider: "rest", apiKey: "test-key", baseUrl: "https://ai.cangyuansuanli.cn", settings: { ...cangyuanImageConnectionConfig(), connector } }) }, { fetch: fetchMock });
       const task = await adapter.submit({ connectionId: "cangyuan", model, operation: "image.edit", prompt: "Use all references", idempotencyKey: `edit-${model}-${encodeURIComponent(group)}`, assets: refs.map((url, index) => ({ id: `ref-${index}`, kind: "image" as const, mimeType: "image/png", url })) });
       const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
       expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://ai.cangyuansuanli.cn/v1/images/edits");
       expect(body).toMatchObject({ model, images: refs, async: true, n: 1 });
       await adapter.poll(task);
       expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://ai.cangyuansuanli.cn/v1/images/edits/ref-test");
-      expect(connector.modelOverrides?.[model]?.submit?.path).toBe("/v1/images/generations");
+      expect(connector.modelOverrides?.[model]).toBeUndefined();
     }
   });
 
@@ -668,18 +665,19 @@ describe("Cangyuan live catalog", () => {
       ],
     });
     const connector = cangyuanConnectorForModels("IMAGE", catalog.groups.IMAGE);
-    const override = connector.modelOverrides?.["nano-banana2-4k"];
+    expect(connector.modelOverrides?.["nano-banana2-4k"]).toBeUndefined();
+    const override = cangyuanCurrentTransport("nano-banana2-4k");
     const generationTargets =
       override?.submit?.mappings?.map((mapping) => mapping.target) ?? [];
     const edit = override?.operationOverrides?.["image.edit"]?.submit;
     const editTargets = edit?.mappings?.map((mapping) => mapping.target) ?? [];
 
     expect(generationTargets).toEqual(
-      expect.arrayContaining(["/size", "/n", "/response_format"]),
+      expect.arrayContaining(["/size", "/model", "/prompt"]),
     );
     expect(generationTargets).not.toContain("/aspect_ratio");
     expect(edit).toMatchObject({
-      path: "/v1/images/generations",
+      path: "/v1/images/edits",
       bodyMode: "json",
     });
     expect(editTargets).toContain("/images");
@@ -736,7 +734,7 @@ describe("Cangyuan live catalog", () => {
           provider: "rest",
           apiKey: "test-key",
           baseUrl: "https://ai.cangyuansuanli.cn",
-          settings: { connector },
+          settings: { ...cangyuanImageConnectionConfig(), connector },
         }),
       },
       { fetch: fetchMock },
@@ -1059,21 +1057,20 @@ describe("Cangyuan live catalog", () => {
     expect(
       model?.parameters?.find((parameter) => parameter.key === "aspect_ratio")
         ?.options?.[0],
-    ).toEqual({ label: "自动（提示词优先）", value: "auto" });
+    ).toEqual({ label: "自动（供应商默认）", value: "auto" });
     expect(
       model?.parameters?.find((parameter) => parameter.key === "aspect_ratio")
         ?.default,
     ).toBe("auto");
     expect(
       model?.parameters?.find((parameter) => parameter.key === "size"),
-    ).toMatchObject({ control: "dimensions", step: 16, max: 3840 });
+    ).toMatchObject({ control: "dimensions", min: 1, step: 1 });
     expect(
       model?.parameters?.find((parameter) => parameter.key === "quality")
         ?.default,
-    ).toBe("high");
-    const connector = cangyuanConnectorForModels("IMAGE", catalog.groups.IMAGE);
+    ).toBe("max");
     expect(
-      connector.modelOverrides?.["gpt-image-2-4k"]?.submit?.mappings?.map(
+      cangyuanCurrentTransport("gpt-image-2-4k")?.submit?.mappings?.map(
         (mapping) => mapping.target,
       ),
     ).toContain("/quality");

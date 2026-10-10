@@ -32,7 +32,7 @@ function connector(route: BananaRoute, descriptor: ModelDescriptor): RestConnect
   }
   return { auth: route.auth === "google" ? { type: "header", headerName: "x-goog-api-key" } : { type: "bearer" }, models: [descriptor], restrictModels: true,
     submit: { path: `/v1beta/models/${encodeURIComponent(route.model)}:generateContent`, method: "POST", bodyMode: "json", idempotent: false,
-      template: { contents: [{ role: "user", parts: [{ text: "" }] }], generationConfig: { responseModalities: ["IMAGE"] } },
+      template: { contents: [{ role: "user", parts: [{ text: "" }] }], generationConfig: { responseModalities: route.mikoto ? ["TEXT", "IMAGE"] : ["IMAGE"] } },
       mappings: [
         { target: "/contents/0/parts/0/text", source: { kind: "request", path: "$.prompt" } },
         ...Array.from({ length: route.maxInputs }, (_, offset) => ({ target: `/contents/0/parts/${offset + 1}`, source: {
@@ -59,6 +59,9 @@ export class BananaImageAdapter extends GenericRestAdapter {
     const normalized = this.normalized(request);
     const result = await super.validate(normalized);
     const issues = [...result.issues];
+    if (this.route.synora || this.route.tk1688 || this.route.monster || this.route.mikoto) for (const key of Object.keys(request.parameters ?? {}))
+      if (!["aspect_ratio", "aspectRatio", "image_size", "imageSize", "resolution", "size_tier", "size", "n"].includes(key))
+        issues.push({ path: `parameters.${key}`, code: "unpublished_supplier_parameter", message: `${this.route.synora ? "Synora" : this.route.monster ? "怪兽 C1" : this.route.mikoto ? "Mikoto Gemini" : "词元 vip"} 当前分组未公布 ${key} 图片参数，无法确认该请求的合法组合` });
     if (this.route.thinking && request.parameters &&
       (Object.hasOwn(request.parameters, "thinking_level") || Object.hasOwn(request.parameters, "thinkingLevel"))) {
       const selected = request.parameters.thinking_level ?? request.parameters.thinkingLevel;
@@ -96,7 +99,7 @@ export class BananaImageAdapter extends GenericRestAdapter {
     if (this.route.kind === "secure-async" && task.status !== "succeeded" && task.status !== "failed" && task.providerTaskId?.startsWith("rest:sync:"))
       throw new Error("供应商已响应，但未返回香蕉任务编号；不能查询结果，请核对供应商记录，避免重复提交");
     const result: Record<string, unknown> = { ...(task.result as Record<string, unknown>), bananaImage: true };
-    if ((this.route.pdog || this.route.chentu || this.route.model === GEMINI_NANO_BANANA_21_MODEL) && task.status === "succeeded" && !bananaNativeOutputs(result)?.length)
+    if ((this.route.pdog || this.route.chentu || this.route.synora || this.route.monster || this.route.mikoto || this.route.model === GEMINI_NANO_BANANA_21_MODEL) && task.status === "succeeded" && !bananaNativeOutputs(result)?.length)
       throw new ProviderHttpError("Gemini 已返回响应但没有图片；请核对供应商记录及响应中的安全限制，避免重复提交。", {
         kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: result.remote,
       });

@@ -162,6 +162,9 @@ export function parameterDescriptorsFor(
           operations.includes(operation),
         ),
     );
+  // An explicit supplier contract may intentionally have no controls. An
+  // empty list must not revive generic size/quality fields omitted on the wire.
+  if (model?.metadata?.imageNativeParameterContract === true && Array.isArray(model.parameters) && !model.parameters.length) return [];
   if (declared.length > 0) {
     if (provider === "cli") return declared;
     const fixedOutputCount = model?.metadata?.fixedOutputCount;
@@ -521,6 +524,25 @@ export function normalizedParametersForModel(
     undefined,
     context,
   );
+  // Exact supplier refreshes retain saved choices, including values rejected by
+  // the current contract, so validation can explain the change before charging.
+  // Native video objects such as materials/face have no individual UI descriptor.
+  // New nodes still receive defaults; explicit model changes use parametersWithDefaults.
+  if (model?.metadata?.imageNativeParameterContract === true) {
+    return { ...parametersWithDefaults(descriptors, current, true), ...current };
+  }
+  if (model?.metadata?.jiasuImageProtocol === 1 ||
+      nodeType === "video-generation" && model?.metadata?.jiasuVideoContract === true) {
+    const parameters = { ...parametersWithDefaults(descriptors, {}, true), ...current };
+    for (const [canonical, previousKeys] of jiasuParameterAliases(model)) {
+      if (current[canonical] !== undefined) continue;
+      const previous = previousKeys.find(key => current[key] !== undefined);
+      // Show a saved alias in the current control instead of masking it with a
+      // default. Retain all originals so invalid values/conflicts reach validation.
+      if (previous) parameters[canonical] = current[previous];
+    }
+    return parameters;
+  }
   const parameters = parametersWithDefaults(descriptors, current);
   if (model?.metadata?.clampNumericParameters === true) {
     for (const descriptor of descriptors) {
@@ -588,9 +610,54 @@ export function setParameterValue(
   parameters: Readonly<Record<string, unknown>>,
   key: string,
   value: ModelParameterValue | undefined,
+  model?: Pick<ModelDescriptor, "metadata"> | null,
 ): Record<string, unknown> {
   const next = { ...parameters };
   if (value === undefined) delete next[key];
   else next[key] = value;
+  // One image size control owns the current choice. Explicitly selecting new
+  // pixels supersedes this supplier's higher-priority legacy W/H and ratio.
+  if (key === "size" && usesSecureSeedreamSizePrecedence(model)) {
+    delete next.width;
+    delete next.height;
+    delete next.aspect_ratio;
+  }
+  // A user's explicit control edit supersedes that field's saved aliases.
+  // Readback and run normalization preserve originals for conflict validation.
+  for (const [canonical, aliases] of jiasuParameterAliases(model))
+    if (key === canonical) for (const alias of aliases) delete next[alias];
   return next;
+}
+
+function jiasuParameterAliases(model?: Pick<ModelDescriptor, "metadata"> | null): ReadonlyArray<readonly [string, readonly string[]]> {
+  if (model?.metadata?.jiasuImageProtocol === 1)
+    return [["ratio", ["aspect_ratio", "aspectRatio"]], ["resolution", ["image_size", "size_tier"]]];
+  if (model?.metadata?.jiasuVideoContract === true)
+    return [["duration", ["seconds"]], ["aspect_ratio", ["ratio"]]];
+  return [];
+}
+
+export function usesSecureSeedreamSizePrecedence(model?: Pick<ModelDescriptor, "metadata"> | null): boolean {
+  return model?.metadata?.imageParameterContract === "secure-seedream-5.0-pro";
+}
+
+/** Display saved supplier aliases without writing or replacing their values. */
+export function parameterValueForModel(
+  model: Pick<ModelDescriptor, "metadata"> | null | undefined,
+  parameters: Readonly<Record<string, unknown>>,
+  key: string,
+): unknown {
+  if (key === "size" && usesSecureSeedreamSizePrecedence(model)) {
+    if (parameters.width !== undefined || parameters.height !== undefined)
+      return `${parameters.width ?? ""}x${parameters.height ?? ""}`;
+    if (parameters.aspect_ratio !== undefined) {
+      const sizes = model?.metadata?.imageAspectRatioSizes;
+      return sizes && typeof sizes === "object" && !Array.isArray(sizes)
+        ? (sizes as Record<string, unknown>)[String(parameters.aspect_ratio)] ?? "" : "";
+    }
+  }
+  if (parameters[key] !== undefined) return parameters[key];
+  const aliases = jiasuParameterAliases(model).find(([canonical]) => canonical === key)?.[1];
+  const previous = aliases?.find(alias => parameters[alias] !== undefined);
+  return previous ? parameters[previous] : undefined;
 }

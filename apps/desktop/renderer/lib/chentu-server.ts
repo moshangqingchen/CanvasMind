@@ -178,7 +178,7 @@ function configForLiveScan(
         : "";
     config.baseUrl = connection.config.baseUrl;
     config.allowedModels = allowedModels;
-    config.defaultModel = allowedModels.includes(configuredDefault)
+    config.defaultModel = configuredDefault
       ? configuredDefault
       : (allowedModels[0] ?? "");
     delete config.connector;
@@ -202,9 +202,7 @@ function configForLiveScan(
         ? connection.config.defaultModel
         : "";
     config.baseUrl = connection.config.baseUrl;
-    config.defaultModel = imageModels.some(
-      (model) => model.id === configuredDefault,
-    )
+    config.defaultModel = configuredDefault
       ? configuredDefault
       : chentuDefaultModelForLiveGroup(group, imageModels);
     config.requestTimeoutMs = CHENTU_IMAGE_REQUEST_TIMEOUT_MS;
@@ -228,9 +226,7 @@ function configForLiveScan(
         ? connection.config.defaultModel
         : "";
     config.baseUrl = connection.config.baseUrl;
-    config.defaultModel = videoModels.some(
-      (model) => model.id === configuredDefault,
-    )
+    config.defaultModel = configuredDefault
       ? configuredDefault
       : (videoModels[0]?.id ?? "");
     config.requestTimeoutMs = 300_000;
@@ -250,7 +246,7 @@ function configForLiveScan(
         ? `已扫描到 ${scan.modelIds.length} 个模型，但尚无已验证的画布生成协议`
         : "当前分组未扫描到可运行模型";
   delete config.connector;
-  delete config.defaultModel;
+  // Retain the user's selection; the current Key inventory blocks unavailable IDs.
   delete config.allowedModels;
   delete config.requestTimeoutMs;
   return { config, provider: connection.provider };

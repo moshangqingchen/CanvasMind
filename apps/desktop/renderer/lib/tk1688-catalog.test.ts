@@ -11,6 +11,32 @@ const sku = (alias: string, description: string, extra = {}) => ({ base_model: b
 const market = (...items: unknown[]) => ({ success: true, data: { items, total: items.length } });
 
 describe("词元 inventory permission join", () => {
+  it("retains the current Banana 2.1 token SKU without inventing image output from its name or input modalities", () => {
+    // Current marketplace SKU 1186 (2026-10-10 UTC) is per_token. The supplier's
+    // image-station model selector also does not include this exact model ID.
+    const id = "gemini-nano-banana-2.1", alias = `${id}@s1c332`;
+    const inferred: ModelDescriptor = { id, name: id, provider: "openai",
+      operations: ["image.generate"], metadata: { canvasRunnable: true } };
+    const merged = mergeTk1688ModelInventory([inferred], market({
+      id: 1186, base_model: id, alias, status: "active", channel_alive: true,
+      charge_type: "per_token", description: "124K", modalities: ["image", "text"],
+      input_price_usd: 0.01463, output_price_usd: 0.07315,
+      cache_read_price_usd: 0.001463, cache_write_price_usd: 0,
+    }), { success: true, data: { payment_fx_rate_cny_per_usd: 6.8896 } },
+    { accountModelIds: [id, alias] });
+    expect(merged.map(entry => entry.id)).toEqual([id, alias]);
+    for (const entry of merged) {
+      expect(entry.operations).toEqual([]);
+      expect(entry.outputKinds).toEqual(["text"]);
+      expect(entry.inputKinds).toContain("image");
+      expect(entry.metadata?.canvasRunnable).toBe(false);
+      expect(entry.parameters).toBeUndefined();
+    }
+    expect(merged[1]?.pricing).toMatchObject({ kind: "token", currency: "CNY" });
+    expect(merged[1]?.pricing?.tiers?.map(tier => tier.price)).toEqual([0.100794848, 0.50397424, 0.0100794848, 0]);
+    expect(tk1688InventoryDefaultModel({ provider: "openai", config: { usage: "canvas" } }, merged, id)).toBeUndefined();
+    expect(tk1688InventoryDefaultModel({ provider: "rest", config: { usage: "agent" } }, merged, id)?.id).toBe(id);
+  });
   it("syncs the new text merchants only through the current Key, account and online market intersection", () => {
     const families = ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"];
     const products = [

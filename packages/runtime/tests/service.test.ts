@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
 import { FileRepository, MemoryRepository, type JsonObject, type WorkflowRunRecord } from "@super-canvas/db";
 import {
   ProviderHttpError,
@@ -17,6 +18,8 @@ import type { ObjectStorage, StoredObject } from "@super-canvas/storage";
 import { RunService, type RuntimeOptions } from "../src/service.js";
 import * as remoteDownloads from "../src/remote-download.js";
 import * as localMedia from "../src/media-duration.js";
+import { validPngBytes } from "./fixtures/image-bytes.js";
+import { validWebmBytes } from "./fixtures/video-bytes.js";
 
 async function testRepository() {
   const repository = new MemoryRepository();
@@ -793,7 +796,7 @@ function pollingAdapter(errors: readonly Error[]) {
       return [
         {
           kind: "image",
-          data: new Uint8Array([1, 2, 3]),
+          data: new Uint8Array(validPngBytes),
           mimeType: "image/png",
         },
       ];
@@ -829,7 +832,7 @@ function synchronousAdapter(
       return [
         {
           kind: "image",
-          data: new Uint8Array([1, 2, 3]),
+          data: new Uint8Array(validPngBytes),
           mimeType: "image/png",
           url: "https://third-party.example/temporary?secret=value",
         },
@@ -861,7 +864,7 @@ function flakySubmitAdapter() {
       return [
         {
           kind: "image" as const,
-          data: new Uint8Array([1, 2, 3]),
+          data: new Uint8Array(validPngBytes),
           mimeType: "image/png",
         },
       ];
@@ -900,7 +903,7 @@ function countingSynchronousAdapter() {
       return [
         {
           kind: "video",
-          data: new Uint8Array([1, 2, 3]),
+          data: new Uint8Array(validWebmBytes),
           mimeType: "video/mp4",
         },
       ];
@@ -975,7 +978,7 @@ function gatedSubmitAdapter() {
       return [
         {
           kind: "image",
-          data: new Uint8Array([1, 2, 3]),
+          data: new Uint8Array(validPngBytes),
           mimeType: "image/png",
         },
       ];
@@ -1538,7 +1541,7 @@ describe("RunService", () => {
         return { providerTaskId: request.idempotencyKey, status: "succeeded", result: { completed: true } };
       },
       async extractOutputs() {
-        return [{ kind: "image", data: new Uint8Array([1, 2, 3]), mimeType: "image/png" }];
+        return [{ kind: "image", data: new Uint8Array(validPngBytes), mimeType: "image/png" }];
       },
     };
     const service = new AdapterRunService(adapter, repository, new MemoryStorage());
@@ -2418,7 +2421,7 @@ describe("RunService", () => {
         return [
           {
             kind: "image",
-            data: new Uint8Array([1, 2, 3]),
+            data: new Uint8Array(validPngBytes),
             mimeType: "image/png",
           },
         ];
@@ -2506,7 +2509,7 @@ describe("RunService", () => {
         return [
           {
             kind: "image",
-            data: new Uint8Array([1, 2, 3]),
+            data: new Uint8Array(validPngBytes),
             mimeType: "image/png",
           },
         ];
@@ -2597,7 +2600,7 @@ describe("RunService", () => {
         return [
           {
             kind: "image",
-            data: new Uint8Array([1, 2, 3]),
+            data: new Uint8Array(validPngBytes),
             mimeType: "image/png",
           },
         ];
@@ -2819,7 +2822,7 @@ describe("RunService", () => {
           return [
             {
               kind: "image",
-              data: new Uint8Array([1, 2, 3]),
+              data: new Uint8Array(validPngBytes),
               mimeType: "image/png",
             },
           ];
@@ -3097,7 +3100,7 @@ describe("RunService", () => {
           return [
             {
               kind: "image",
-              data: new Uint8Array([1, 2, 3]),
+              data: new Uint8Array(validPngBytes),
               mimeType: "image/png",
             },
           ];
@@ -3191,7 +3194,7 @@ describe("RunService", () => {
         return [
           {
             kind: "image",
-            data: new Uint8Array([1, 2, 3]),
+            data: new Uint8Array(validPngBytes),
             mimeType: "image/png",
           },
         ];
@@ -3360,7 +3363,7 @@ describe("RunService", () => {
           return [
             {
               kind: "image",
-              data: new Uint8Array([1, 2, 3]),
+              data: new Uint8Array(validPngBytes),
               mimeType: "image/png",
             },
           ];
@@ -3406,7 +3409,7 @@ describe("RunService", () => {
     const adapter: ProviderAdapter = {
       async testConnection() {}, async listModels() { return []; }, async validate() { return { valid: true, issues: [] }; },
       async submit(request) { submitted = request.parameters; return { providerTaskId: "test", status: "succeeded", result: {} }; },
-      async extractOutputs() { return [{ kind: "image", data: new Uint8Array([1, 2, 3]), mimeType: "image/png" }]; },
+      async extractOutputs() { return [{ kind: "image", data: new Uint8Array(validPngBytes), mimeType: "image/png" }]; },
     };
     const service = new AdapterRunService(adapter, repository, storage, "inline", "openai");
     const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "auto-reference", scope: "all" });
@@ -3423,7 +3426,7 @@ describe("RunService", () => {
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
     const model = "gemini-3-pro-image-preview";
-    const bytes = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKcAAAAASUVORK5CYII=", "base64"));
+    const bytes = new Uint8Array(validPngBytes);
     await storage.put("banana-ref.png", bytes, "image/png");
     await repository.saveAsset({ id: "banana-ref", name: "参考图", kind: "image", mimeType: "image/png", size: bytes.length, storageKey: "banana-ref.png", metadata: {} });
     const config = { baseUrl: "https://genimage.pro/v1", defaultModel: model, modelCatalogModels: [{ id: model, name: model, operations: ["image.generate"], metadata: { canvasRunnable: true } }] };
@@ -3549,7 +3552,7 @@ describe("RunService", () => {
         return [
           {
             kind: "image",
-            data: new Uint8Array([1, 2, 3]),
+            data: new Uint8Array(validPngBytes),
             mimeType: "image/png",
           },
         ];
@@ -4346,7 +4349,7 @@ describe("RunService", () => {
         return [
           {
             kind: "image",
-            data: new Uint8Array([1, 2, 3]),
+            data: new Uint8Array(validPngBytes),
             mimeType: "image/png",
           },
         ];
@@ -4400,7 +4403,7 @@ describe("RunService archive-only result recovery", () => {
     });
     return { run, node, downstream };
   }
-  function neverGenerateAdapter(outputs = [{ kind: "image" as const, data: new Uint8Array([1, 2, 3]), mimeType: "image/png" }]) {
+  function neverGenerateAdapter(outputs = [{ kind: "image" as const, data: new Uint8Array(validPngBytes), mimeType: "image/png" }]) {
     const submit = vi.fn(async (): Promise<ProviderTask> => { throw new Error("Recovery must not submit"); });
     const poll = vi.fn(async (): Promise<ProviderTask> => { throw new Error("Recovery must not poll"); });
     const extractOutputs = vi.fn(async () => outputs);
@@ -4463,6 +4466,52 @@ describe("RunService archive-only result recovery", () => {
     expect(provider.extractOutputs).toHaveBeenCalledWith(savedSuccess.result);
   });
 
+  it("archives the original JPEG using its true encoding, pixels and suffix despite a PNG response label", async () => {
+    const repository = await testRepository();
+    const { run } = await seed(repository);
+    const bytes = await sharp({ create: { width: 2, height: 3, channels: 3, background: "red" } }).jpeg().toBuffer();
+    const provider = neverGenerateAdapter();
+    provider.adapter.extractOutputs = async () => [{ kind: "image", data: bytes, mimeType: "image/png" }];
+    const storage = new MemoryStorage();
+    await new AdapterRunService(provider.adapter, repository, storage).recoverRunOutputs(run.id);
+    const [asset] = await repository.listAssets();
+    expect(asset?.mimeType).toBe("image/jpeg");
+    expect(asset?.storageKey).toMatch(/original\.jpg$/u);
+    expect(asset?.metadata).toMatchObject({ imageOutputVerified: true, width: 2, height: 3, imageHasAlpha: false, imageHasTransparentPixels: false, reportedOutputMimeType: "image/png" });
+    expect((await storage.get(asset!.storageKey))?.bytes).toEqual(new Uint8Array(bytes));
+    expect(provider.submit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a JSON body labeled as PNG and preserves the saved provider response for recovery", async () => {
+    const repository = await testRepository();
+    const { run, node } = await seed(repository);
+    const provider = neverGenerateAdapter();
+    provider.adapter.extractOutputs = async () => [{ kind: "image", data: new TextEncoder().encode('{"error":"upstream failed"}'), mimeType: "image/png" }];
+    await expect(new AdapterRunService(provider.adapter, repository, new MemoryStorage()).recoverRunOutputs(run.id)).rejects.toThrow("原始结果仍保留");
+    expect(await repository.listAssets()).toEqual([]);
+    expect(await repository.getNodeRun(node.id)).toEqual(node);
+    expect(provider.submit).not.toHaveBeenCalled();
+  });
+
+  it("keeps an opaque original after a transparent request fails inspection and retries only that original", async () => {
+    const repository = await testRepository();
+    const { run, node } = await seed(repository);
+    await repository.updateNodeRun(node.id, { inputJson: { ...node.inputJson, parameters: { output_format: "png", background: "transparent" } } });
+    const provider = neverGenerateAdapter();
+    const storage = new MemoryStorage();
+    const service = new AdapterRunService(provider.adapter, repository, storage);
+    await expect(service.recoverRunOutputs(run.id)).rejects.toThrow("原始结果仍保留");
+    const [asset] = await repository.listAssets();
+    expect(asset?.metadata.imageHasTransparentPixels).toBe(false);
+    expect(asset?.metadata.imageOutputContractMismatches).toEqual(expect.arrayContaining([expect.stringMatching(/透明/u)]));
+    expect((await storage.get(asset!.storageKey))?.bytes).toEqual(new Uint8Array(validPngBytes));
+    provider.adapter.extractOutputs = async () => [{ kind: "image", url: "https://expired.example.test/original.png" }];
+    const download = vi.spyOn(remoteDownloads, "downloadRemoteArtifact").mockRejectedValue(new Error("Do not download expired original"));
+    try { await expect(service.recoverRunOutputs(run.id)).rejects.toThrow("原始结果仍保留"); expect(download).not.toHaveBeenCalled(); }
+    finally { download.mockRestore(); }
+    expect(provider.submit).not.toHaveBeenCalled(); expect(provider.poll).not.toHaveBeenCalled();
+  });
+
   it("coalesces simultaneous service instances and reuses the archived output on later calls", async () => {
     const repository = await testRepository();
     const { run, node } = await seed(repository);
@@ -4494,8 +4543,8 @@ describe("RunService archive-only result recovery", () => {
     const storage = new MemoryStorage();
     const id = createHash("sha256").update(`${run.id}\0${node.nodeId}\0${0}`).digest("hex");
     const storageKey = `assets/${id}/original.png`;
-    await storage.put(storageKey, new Uint8Array([1, 2, 3]), "image/png");
-    await repository.saveAsset({ id, name: "Already archived", kind: "image", mimeType: "image/png", size: 3, storageKey,
+    await storage.put(storageKey, validPngBytes, "image/png");
+    await repository.saveAsset({ id, name: "Already archived", kind: "image", mimeType: "image/png", size: validPngBytes.byteLength, storageKey,
       metadata: { runId: run.id, nodeId: node.nodeId } });
     const provider = neverGenerateAdapter();
     provider.adapter.extractOutputs = async () => [{ kind: "image", url: "https://expired.example.test/image.png" }];

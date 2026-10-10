@@ -1546,7 +1546,7 @@ export function cangyuanConnectorForModels(
   const includesVideoModels = models.some((model) =>
     model.operations.some((operation) => operation.startsWith("video.")),
   );
-  const includesGptImageModels = models.some((model) => !isCangyuanCurrentModel(model.id) && /^gpt-image-2(?:[.-]|$)/iu.test(model.id));
+  const includesGptImageModels = models.some((model) => /^gpt-image-2(?:[.-]|$)/iu.test(model.id));
   const modelOverrides: Record<string, RestModelConnectorOverride> = {};
   for (const model of models) {
     // The four dedicated contracts are resolved per request by the adapter;

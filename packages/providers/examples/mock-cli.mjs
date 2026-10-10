@@ -17,7 +17,7 @@ const models = [
     id: "mock-video-v1", name: "模拟视频 · 固定测试片段", provider: "cli",
     operations: ["video.generate", "video.image-to-video"],
     inputKinds: ["text", "image[]"], outputKinds: ["video"],
-    description: "仅验证 CLI 接口；返回固定 1 秒蓝色视频，不根据提示词生成。",
+    description: "仅验证 CLI 接口；按所选尺寸、比例和时长复制固定蓝色测试片段，不根据提示词生成。",
     metadata: { cliMock: true, inputRoles: ["reference", "firstFrame", "lastFrame"] },
     limits: { maxInputImages: 3, maxInputVideos: 0, maxInputAudios: 0, maxInputAssets: 3 },
     parameters: [
@@ -37,6 +37,16 @@ const models = [
     parameters: [{ key: "quality", label: "质量", control: "select", valueType: "string", default: "standard", required: true, options: [{ label: "标准（演示）", value: "standard" }] }],
   },
 ];
+
+const videoFixture = request => {
+  const resolution = request.parameters.resolution;
+  const duration = request.parameters.duration;
+  const orientation = request.parameters.aspectRatio === "9:16" ? "portrait" : "landscape";
+  // Fixture names are selected from the declared contract, never a caller path.
+  if (!["480p", "720p"].includes(resolution) || ![2, 4].includes(duration) || resolution === "720p" && duration !== 2)
+    throw new Error("Unsupported offline video fixture parameters");
+  return fileURLToPath(new URL(`./fixtures/sample-${resolution}-${duration}-${orientation}.webm`, import.meta.url));
+};
 
 try {
   let input = "";
@@ -89,7 +99,7 @@ try {
         if (scenario === "cancel-pending") { respond({ taskId: task.taskId, status: "running", accepted: true }); process.exit(0); }
         if (scenario === "cancel-wrong-task") { respond({ taskId: "wrong-task", status: "cancelled" }); process.exit(0); }
         if (scenario === "cancel-completed") {
-          await copyFile(fileURLToPath(new URL("./fixtures/sample.webm", import.meta.url)), join(outputDirectory, "mock-result.webm"));
+          await copyFile(videoFixture(task.request), join(outputDirectory, "mock-result.webm"));
           respond({ taskId: task.taskId, status: "succeeded", outputs: [{ kind: "video", path: join(outputDirectory, "mock-result.webm"), mimeType: "video/webm" }] });
           process.exit(0);
         }
@@ -105,7 +115,7 @@ try {
           const video = task.request.operation.startsWith("video.");
           const filename = video ? "mock-result.webm" : "mock-result.png";
           const path = scenario === "path-escape" ? join(directory, "mock-task.json") : join(outputDirectory, filename);
-          if (video) await copyFile(fileURLToPath(new URL("./fixtures/sample.webm", import.meta.url)), join(outputDirectory, filename));
+          if (video) await copyFile(videoFixture(task.request), join(outputDirectory, filename));
           else await writeFile(join(outputDirectory, filename), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHosAAAAASUVORK5CYII=", "base64"));
           respond({ taskId: task.taskId, status: "succeeded", outputs: [{ kind: video ? "video" : "image", path, filename, mimeType: video ? "video/webm" : "image/png" }] });
         }

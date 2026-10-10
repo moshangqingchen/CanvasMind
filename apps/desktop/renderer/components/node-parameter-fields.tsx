@@ -12,8 +12,10 @@ import {
   coerceParameterInput,
   isExactSizeParameterDescriptor,
   normalizedParametersForModel,
+  parameterValueForModel,
   parameterDescriptorsForValues,
   setParameterValue,
+  usesSecureSeedreamSizePrecedence,
 } from "../lib/model-parameters";
 import type { GenerationNodeType } from "../lib/graph-ui";
 import { videoDurationControl } from "../lib/video-duration-control";
@@ -44,7 +46,7 @@ function controlId(nodeId: string, key: string) {
 }
 
 function dimensionParts(value: unknown): [string, string] {
-  const match = /^(\d+)x(\d+)$/iu.exec(String(value ?? "").trim());
+  const match = /^(\d*)x(\d*)$/iu.exec(String(value ?? "").trim());
   return match ? [match[1]!, match[2]!] : ["", ""];
 }
 
@@ -181,6 +183,7 @@ interface SizeAspectRatioContext {
   hasAspectRatioControl: boolean;
   defaultAspectRatio?: ModelParameterValue;
   aspectRatioKey?: string;
+  model?: Pick<ModelDescriptor, "metadata"> | null;
 }
 
 /**
@@ -193,7 +196,7 @@ export function setParameterValueWithSizeExclusivity(
   value: ModelParameterValue | undefined,
   context: SizeAspectRatioContext,
 ): Record<string, unknown> {
-  const next = setParameterValue(parameters, key, value);
+  const next = setParameterValue(parameters, key, value, context.model);
   const aspectRatioKey = context.aspectRatioKey ?? "aspect_ratio";
 
   if (key === "size" && context.hasSizeControl && context.hasAspectRatioControl && aspectRatioKey !== "size") {
@@ -248,6 +251,8 @@ function DimensionsControl({
   showAllResolutionTiers = false,
   useSavedResolutionTier = false,
   automaticOptions,
+  allowOptionalAlignment = true,
+  showContractDescription = false,
 }: {
   id: string;
   descriptor: ModelParameterDescriptor;
@@ -258,6 +263,8 @@ function DimensionsControl({
   showAllResolutionTiers?: boolean;
   useSavedResolutionTier?: boolean;
   automaticOptions?: readonly ModelParameterOption[];
+  allowOptionalAlignment?: boolean;
+  showContractDescription?: boolean;
 }) {
   const initial = useMemo(() => dimensionParts(value), [value]);
   const [width, setWidth] = useState(initial[0]);
@@ -272,11 +279,8 @@ function DimensionsControl({
     setHeight(initial[1]);
   }
   const requires16PixelAlignment = descriptor.step === 16;
-  // Keep the legacy control's default behavior: dimensions start aligned to
-  // 16 even when a provider does not declare a step. Providers that require
-  // alignment still lock the checkbox below.
-  const [align16, setAlign16] = useState(true);
-  const shouldAlign16 = requires16PixelAlignment || align16;
+  const [align16, setAlign16] = useState(requires16PixelAlignment);
+  const shouldAlign16 = requires16PixelAlignment || (allowOptionalAlignment && align16);
   const resolutionShortcuts = resolutionTierShortcuts(descriptor);
   const autoOption = descriptor.options?.find(
     (option) => String(option.value) === "auto",
@@ -332,7 +336,7 @@ function DimensionsControl({
     <div className="field parameter-field parameter-dimensions">
       <div className="parameter-dimensions-heading">
         <label title={descriptor.description}>{descriptor.label}</label>
-        {!readOnlyDimensions && <label className="parameter-dimensions-align" htmlFor={`${id}-align`}>
+        {!readOnlyDimensions && (requires16PixelAlignment || allowOptionalAlignment) && <label className="parameter-dimensions-align" htmlFor={`${id}-align`}>
           <span>
             {requires16PixelAlignment ? "16 倍数（必需）" : "16 倍数对齐"}
           </span>
@@ -462,7 +466,7 @@ function DimensionsControl({
           title={readOnlyDimensions ? "请从上方选择当前渠道支持的比例与尺寸" : undefined}
           min={descriptor.min}
           max={descriptor.max}
-          step={shouldAlign16 ? 16 : 1}
+          step={shouldAlign16 ? 16 : descriptor.step ?? 1}
           placeholder="宽"
           onChange={(event) => setWidth(event.target.value)}
           onBlur={() => commit()}
@@ -481,7 +485,7 @@ function DimensionsControl({
           title={readOnlyDimensions ? "请从上方选择当前渠道支持的比例与尺寸" : undefined}
           min={descriptor.min}
           max={descriptor.max}
-          step={shouldAlign16 ? 16 : 1}
+          step={shouldAlign16 ? 16 : descriptor.step ?? 1}
           placeholder="高"
           onChange={(event) => setHeight(event.target.value)}
           onBlur={() => commit()}
@@ -490,6 +494,7 @@ function DimensionsControl({
           }}
         />
       </div>
+      {showContractDescription && descriptor.description && <small className="parameter-help">{descriptor.description}</small>}
     </div>
   );
 }
@@ -524,8 +529,9 @@ function ParameterControl({
   const instanceId = useId();
   const id = `${controlId(nodeId, descriptor.key)}-${instanceId}`;
   const aspectRatioKey = sizeAspectRatioContext.aspectRatioKey ?? "aspect_ratio";
-  const value =
-    descriptor.key === aspectRatioKey &&
+  const value = descriptor.key === "size" && usesSecureSeedreamSizePrecedence(sizeAspectRatioContext.model)
+    ? (parameterValueForModel(sizeAspectRatioContext.model, parameters, "size") ?? descriptor.default ?? "")
+    : descriptor.key === aspectRatioKey &&
     parameters[aspectRatioKey] === undefined &&
     parameters.size !== undefined &&
     sizeAspectRatioContext.hasSizeControl
@@ -534,7 +540,7 @@ function ParameterControl({
           parameters.size === undefined &&
           parameters[aspectRatioKey] !== undefined
         ? ""
-        : (parameters[descriptor.key] ?? descriptor.default ?? "");
+        : (parameterValueForModel(sizeAspectRatioContext.model, parameters, descriptor.key) ?? descriptor.default ?? "");
   const savedSelectValueMissing = savedSelectValueMissingFromDescriptor(
     descriptor,
     value,
@@ -583,7 +589,10 @@ function ParameterControl({
     onChange(next);
   };
 
-  const imageDimensions = nodeType === "image-generation" && imageLayout ? imageDimensionsPresentation(descriptor) : descriptor;
+  const nativeImageContract = nodeType === "image-generation" && imageLayout && sizeAspectRatioContext.model?.metadata?.imageNativeParameterContract === true;
+  const imageDimensions = nodeType === "image-generation" && imageLayout
+    ? { ...imageDimensionsPresentation(descriptor), ...(nativeImageContract ? { label: descriptor.label } : {}) }
+    : descriptor;
   if (imageDimensions.control === "dimensions") {
     return (
       <>
@@ -595,6 +604,8 @@ function ParameterControl({
         savedTier={parameters.size_tier}
         update={updateDimensions}
         readOnlyDimensions={descriptor.control === "select"}
+        allowOptionalAlignment={!nativeImageContract}
+        showContractDescription={nativeImageContract}
       />
       {savedSelectValueMissing && <small role="status" className="parameter-help parameter-wide">已保存：{String(value)}，当前目录未确认此尺寸</small>}
       </>
@@ -796,11 +807,15 @@ export function NodeParameterFields({
     hasAspectRatioControl: Boolean(aspectRatioDescriptor),
     defaultAspectRatio: aspectRatioDescriptor?.default,
     aspectRatioKey: aspectRatioDescriptor?.key,
+    model,
   } satisfies SizeAspectRatioContext;
 
   return (
     <>
       {provider === "cli" && !model && <p className="parameter-group-note">请先在“个人 AI 网站”中接入并同步模型与参数。</p>}
+      {typeof model?.metadata?.imageParameterContractNote === "string" && model.metadata.imageParameterContractNote && (
+        <p className="parameter-group-note">{model.metadata.imageParameterContractNote}</p>
+      )}
       {parameterIssues.length > 0 && <div role="alert" className="parameter-group-note">{parameterIssues.map(issue => <p key={`${issue.path}:${issue.code}`}>{issue.message}</p>)}{provider === "cli" && <p>已保留原参数，请修正后再生成。</p>}</div>}
       {typeof model?.metadata?.imageCapabilityNote === "string" && model.metadata.imageCapabilityNote && (
         <p className="parameter-group-note">实测说明：{model.metadata.imageCapabilityNote}</p>
@@ -837,6 +852,7 @@ export function NodeParameterFields({
         )}
         {descriptors.filter(
           descriptor => (provider === "cli" || descriptor.key !== "background") &&
+            (!(nodeType === "image-generation" && usesSecureSeedreamSizePrecedence(model)) || !["width", "height"].includes(descriptor.key)) &&
             (provider === "cli" || descriptor.key !== "mask") && (!tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key)) &&
             (!nativeResolution || (descriptor.key !== nativeResolution.resolution.key && descriptor.key !== nativeResolution.ratio?.key)) &&
             (!unifiedExactSize || descriptor.key !== aspectRatioDescriptor?.key),

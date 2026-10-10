@@ -344,6 +344,14 @@ function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", hea
         const usageQuery = [...parsed.searchParams].every(([key, value]) =>
           ["p", "page", "page_size", "type"].includes(key) ? /^\d+$/u.test(value)
             : key === "request_id" && /^[A-Za-z0-9_-]{1,128}$/u.test(value));
+        // The deployed Sub2API usage screen filters exact models and official
+        // groups. Authenticate those reads without widening endpoints/methods.
+        const scopedUsageQuery = [...parsed.searchParams].every(([key, value]) =>
+          parsed.searchParams.getAll(key).length === 1 && (
+            ["p", "page", "page_size", "type"].includes(key) ? /^\d+$/u.test(value)
+              : key === "request_id" ? /^[A-Za-z0-9_-]{1,128}$/u.test(value)
+              : key === "group_id" ? /^[1-9]\d*$/u.test(value)
+              : key === "model" && value.length > 0 && value.length <= 256 && value === value.trim() && !/[\u0000-\u001f\u007f]/u.test(value)));
         const statsParameters = ["type", "start_timestamp", "end_timestamp"];
         const selfStatsQuery = statsParameters.every(key => parsed.searchParams.getAll(key).length === 1) &&
           [...parsed.searchParams].every(([key, value]) => statsParameters.includes(key) && /^[1-9]\d*$/u.test(value));
@@ -355,7 +363,7 @@ function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", hea
           (kind === "sub2api" && (
             (endpoint === `${base}/api/v1/user/profile` && !parsed.search) ||
             (endpoint === `${base}/api/v1/usage/dashboard/stats` && !parsed.search) ||
-            (endpoint === `${base}/api/v1/usage` && usageQuery)))
+            (endpoint === `${base}/api/v1/usage` && (usageQuery || scopedUsageQuery))))
         );
         authenticatedTarget = !parsed.hash && !parsed.username && !parsed.password && (
           accountRead ||

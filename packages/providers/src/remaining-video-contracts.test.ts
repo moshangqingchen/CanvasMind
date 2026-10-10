@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NormalizedRequest, ProviderAssetInput } from "./contracts.js";
+import type { ModelDescriptor, NormalizedRequest, ProviderAssetInput } from "./contracts.js";
 import { isRemainingVideoModel, normalizeRemainingVideoParameters, remainingVideoModel, remainingVideoModelIds, remainingVideoRequestIssues, remainingVideoRequiresPublicUrls, remainingVideoSupplier, remainingVideoTransport } from "./remaining-video-contracts.js";
 
 const request = (model: string, parameters: Record<string, unknown> = {}, assets: ProviderAssetInput[] = []): NormalizedRequest => ({
@@ -51,6 +51,23 @@ describe("supplier video contracts", () => {
     expect(remainingVideoTransport("miaowu", id)?.submit?.path).toBe("/v1/chat/completions");
     expect(remainingVideoTransport("miaowu", id)?.output?.format).toBe("openai-chat-videos");
     expect(isRemainingVideoModel("miaowu", "video-editing")).toBe(true);
+  });
+
+  it("binds Cyber Afei's current exact 30s directory ID through its declared Chat protocol", () => {
+    const id = "ya-sd25-30s";
+    // Current exact catalog evidence: video output and endpointTypes=[openai].
+    // The 720p/1080p group description does not establish native request fields.
+    const current: ModelDescriptor = { id, name: id, operations: [], outputKinds: ["video"],
+      metadata: { modelFactsSource: "supplier-catalog", outputKindsSource: "declared", catalogCapability: "video", endpointTypes: ["openai"] } };
+    const context = { group: "特价seedance2.0", model: current };
+    expect(remainingVideoModel("cyberafei", id, current, context)).toMatchObject({ id, parameters: [],
+      metadata: { protocol: "openai-chat", endpointPath: "/v1/chat/completions", generationVerified: false } });
+    expect(remainingVideoTransport("cyberafei", id, context)).toMatchObject({
+      submit: { path: "/v1/chat/completions", method: "POST", template: { stream: false } },
+      output: { kind: "video", format: "openai-chat-videos", requireOutput: true } });
+    expect(normalizeRemainingVideoParameters("cyberafei", request(id, { duration: 30, resolution: "1080p", generate_audio: true }), context)).toEqual({});
+    expect(remainingVideoModel("miaowu", id)).toBeUndefined();
+    expect(remainingVideoModel("cyberafei", "ya-sd25-30", current, context)).toBeUndefined();
   });
 
   it("declares Miaowu editing's source video as prompt links without guessed editing parameters", () => {

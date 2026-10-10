@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelDescriptor, ModelParameterDescriptor } from "@super-canvas/providers";
-import { declaredImageOutputDimensions, imageResolutionOptionLabel, isImageRatioParameter, nativeImageResolutionControl } from "./native-image-resolution";
+import { declaredImageOutputDimensions, imageResolutionOptionLabel, isImageRatioParameter, nativeImageResolutionControl, nativeImageRatioOptionLabel } from "./native-image-resolution";
 
 const ratio: ModelParameterDescriptor = { key: "aspect_ratio", label: "画面比例", control: "select", options: [{ label: "1:1", value: "1:1" }] };
 const resolution: ModelParameterDescriptor = { key: "resolution", label: "输出分辨率", control: "select", options: ["1080p", "2K"].map(value => ({ label: value, value })) };
@@ -48,5 +48,22 @@ describe("native image resolution presentation", () => {
       { resolution: "1080p", aspectRatio: "1:1", width: 1080, height: 1080 },
       { resolution: "1080p", aspectRatio: "1:1", width: 1024, height: 1024 },
     ] } }, "1080p", "1:1")).toBeUndefined();
+  });
+
+  it("updates compound ratio labels with declared pixels for the selected tier only", () => {
+    const model: ModelDescriptor = { id: "image", name: "Image", operations: ["image.generate"], metadata: {
+      imageOutputDimensions: [
+        { resolution: "1080p", aspectRatio: "1:1", width: 1080, height: 1080 },
+        { resolution: "2K", aspectRatio: "1:1", width: 1440, height: 1440 },
+      ],
+    } };
+    const option = { label: "1:1", value: "1:1" };
+    expect(nativeImageRatioOptionLabel(model, resolution, "1080p", option)).toBe("标准 · 1:1 · 1080 × 1080");
+    expect(nativeImageRatioOptionLabel(model, resolution, "2K", option)).toBe("2K · 1:1 · 1440 × 1440");
+    expect(nativeImageRatioOptionLabel(model, resolution, "4K", option)).toBe("4K · 1:1");
+    expect(nativeImageRatioOptionLabel(undefined, resolution, "2K", { label: "自动（跟随参考图）", value: "auto" }))
+      .toBe("2K · 自动（跟随参考图）");
+    const legacy = { ...resolution, options: [{ value: "medium", label: "2K" }] };
+    expect(nativeImageRatioOptionLabel(model, legacy, "medium", option)).toBe("2K · 1:1");
   });
 });
