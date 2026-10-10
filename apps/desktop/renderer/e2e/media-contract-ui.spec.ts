@@ -179,9 +179,14 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await count.fill("2");
     await expect(prices).toContainText("本次预计费用 6 CNY");
     await resolution.selectOption("1080p");
-    await expect.poll(() => selectValues(duration)).toEqual(["5", "10"]);
-    await expect(duration).toHaveValue("5");
+    await expect.poll(() => selectValues(duration)).toEqual(["15", "5", "10"]);
+    await expect(duration).toHaveValue("15");
+    await expect(duration).toHaveAttribute("aria-invalid", "true");
+    await expect(duration.locator('option[value="15"]')).toBeDisabled();
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ resolution: "1080p", duration: 15 });
+    await expect(prices).not.toContainText("本次预计费用");
     await duration.selectOption("10");
+    await expect(duration).not.toHaveAttribute("aria-invalid", "true");
     await expect(prices).toContainText("当前组合价格 0.4 CNY / 秒");
     await expect(prices).toContainText("本次预计费用 8 CNY");
     await f.panel.getByLabel("生成声音", { exact: true }).uncheck();
