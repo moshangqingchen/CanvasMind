@@ -95,8 +95,8 @@ for (const zoom of [0.4, 1, 1.74])
     }
     let submitted = 0;
     await page.route("**/api/runs", async (route) => {
-      if (route.request().method() === "POST") submitted++;
-      await route.continue();
+      if (route.request().method() === "POST") { submitted++; await route.abort(); }
+      else await route.continue();
     });
     const response = await request.post("/api/canvas", {
       data: {
@@ -130,6 +130,7 @@ for (const zoom of [0.4, 1, 1.74])
     });
     expect(response.ok()).toBeTruthy();
     const canvas = await response.json();
+    const savedData = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data;
     await page.goto(`/canvas/${canvas.id}`);
     const sidebar = page.getByRole("button", {
       name: "智能体面板",
@@ -197,12 +198,16 @@ for (const zoom of [0.4, 1, 1.74])
     await chooseOpenNativeOption(page, group, "标准");
     await expect(quality).toHaveValue("max");
     await quality.selectOption("low");
+    await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
     await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
     await page.getByRole("option", { name: "图像模型", exact: true }).click();
     await expect(quality).toHaveValue("high");
+    await expect.poll(savedData).toMatchObject({ model: "gpt-image-2", qualityMode: "highest", parameters: { quality: "high" } });
     await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
     await page.getByRole("option", { name: "另一图像模型", exact: true }).click();
-    await expect(quality).toHaveValue("max");
+    // First selection uses the model's highest quality; returning to a model
+    // restores its own explicit choice, including the custom-quality mode.
+    await expect(quality).toHaveValue("low");
     await expect(page.locator('.react-flow__node[data-id="source"]')).not.toHaveClass(/selected/);
     await expect
       .poll(
@@ -215,7 +220,7 @@ for (const zoom of [0.4, 1, 1.74])
       (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.model,
     ).toBe("gpt-image-2.5");
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data)
-      .toMatchObject({ qualityMode: "highest", parameters: { quality: "max" } });
+      .toMatchObject({ qualityMode: "custom", parameters: { quality: "low" } });
     // Escape and Tab must retain native select keyboard behavior without selecting the canvas node.
     await supplier.focus();
     await page.keyboard.press("Alt+ArrowDown");
@@ -232,7 +237,16 @@ for (const zoom of [0.4, 1, 1.74])
       .click();
     await expect(supplier).toHaveValue(connections[2]!.supplierKey);
     await expect(group).toHaveValue("标准");
-    await expect(quality).toHaveValue("max");
+    await expect(quality).toHaveValue("low");
+    await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
+    await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
+    await page.getByRole("option", { name: "图像模型", exact: true }).click();
+    await expect(quality).toHaveValue("high");
+    await expect.poll(savedData).toMatchObject({ model: "gpt-image-2", qualityMode: "highest", parameters: { quality: "high" } });
+    await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
+    await page.getByRole("option", { name: "另一图像模型", exact: true }).click();
+    await expect(quality).toHaveValue("low");
+    await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
     expect(submitted).toBe(0);
   });
 

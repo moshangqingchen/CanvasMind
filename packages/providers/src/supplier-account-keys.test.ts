@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readSupplierAccountKeys } from "./supplier-account-keys.js";
 import { loginSupplierSite } from "./supplier-login.js";
 
-const siteUrl = "https://site.example.com/gateway";
+const siteUrl = "https://site.example.test/gateway";
 const key = "sk-full-secret-for-account-import";
 describe("account key discovery", () => {
   it("paginates Sub2API keys, resolves group IDs, and skips expired or disabled keys", async () => {
@@ -102,11 +102,11 @@ describe("account key discovery", () => {
     expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer login-secret");
     expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
     for (const [url, method] of [
-      [`https://evil.example.com${path}`, "GET"],
+      [`https://evil.example.test${path}`, "GET"],
       [`${siteUrl}${path}`, "DELETE"],
       [`${siteUrl}/api/token/`, "POST"],
       [`${siteUrl}/api/v1/keys`, "POST"],
-      [`${siteUrl}${path}&redirect=https://evil.example.com`, "GET"],
+      [`${siteUrl}${path}&redirect=https://evil.example.test`, "GET"],
     ]) {
       await session.fetch(url!, { method });
       expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
