@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { clickBlankCanvas } from "./canvas-test-actions";
+import { attachedPanelGeometry } from "./attached-panel-geometry";
 
 async function chooseOpenNativeOption(
   page: Page,
@@ -134,14 +135,20 @@ for (const zoom of [0.4, 1, 1.74])
       name: "智能体面板",
       exact: true,
     });
-    if ((await sidebar.getAttribute("aria-expanded")) === "true")
-      await sidebar.click();
     await page
       .getByRole("button", { name: "打开 选择测试 模型与参数", exact: true })
       .click();
+    // Opening the panel selects its node and can open the inspector. Close it
+    // afterwards so 174% has room for the attached panel before real clicks;
+    // scrolling an off-canvas select into view is not a native-popup test.
+    if ((await sidebar.getAttribute("aria-expanded")) === "true")
+      await sidebar.click();
+    await expect(sidebar).toHaveAttribute("aria-expanded", "false");
+    const panel = page.getByRole("dialog", { name: "选择测试 模型与参数", exact: true });
+    await expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError)
+      .toBeLessThanOrEqual(1);
     if (zoom < 0.5) {
       await expect(page.locator(".canvas-zoom-value")).toHaveText("40%");
-      const panel = page.getByRole("dialog", { name: "选择测试 模型与参数", exact: true });
       await expect.poll(async () => {
         const [box, rail, pane] = await Promise.all([
           panel.boundingBox(), page.getByRole("navigation", { name: "创作工具", exact: true }).boundingBox(),
@@ -163,6 +170,10 @@ for (const zoom of [0.4, 1, 1.74])
       name: "选择测试 供应商",
       exact: true,
     });
+    await expect.poll(() => supplier.evaluate(element => {
+      const box = element.getBoundingClientRect();
+      return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === element;
+    }), { message: "供应商控件的真实点击位置应可见且未被遮挡" }).toBe(true);
     await supplier.click();
     await expect
       .poll(() => supplier.evaluate((el) => el.matches(":open")))

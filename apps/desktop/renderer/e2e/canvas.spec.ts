@@ -2055,10 +2055,12 @@ test.describe("超级画布完整验收", () => {
     expect((await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).toEqual(image.position);
     await panel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click({ trial: true });
     // Keep the compact/high-zoom bounds check above, then give the full panel
-    // room below the node so the drag and resize handles are actually exposed.
+    // room beside the node so the drag and resize handles are exposed. Placement
+    // may choose any clear side; wait for the full-width layout after resizing
+    // the viewport instead of reading its previous valid side on the first frame.
     await page.setViewportSize({ width: 1440, height: 1800 });
+    await expect.poll(async () => Math.abs((await panel.boundingBox())!.width - (await card.boundingBox())!.width)).toBeLessThanOrEqual(1);
     await assertAttached();
-    expect((await attachedPanelGeometry(panel)).direction).toBe("below");
     const pinnedBox = await panel.boundingBox();
     const pinnedGeometry = await attachedPanelGeometry(panel);
     expect(pinnedBox!.width).toBeCloseTo((await card.boundingBox())!.width, 0);
@@ -2070,7 +2072,7 @@ test.describe("超级画布完整验收", () => {
     await assertAttached();
     const draggedGeometry = await attachedPanelGeometry(panel);
     expect(draggedGeometry.cardTop).toBeGreaterThan(pinnedGeometry.cardTop);
-    expect(draggedGeometry.direction).toBe("below");
+    expect(draggedGeometry.direction).not.toBe("overlapping");
     expect(draggedGeometry.y).toBeGreaterThan(pinnedGeometry.y);
     expect((await panel.boundingBox())!.width).toBeCloseTo(pinnedBox!.width, 0);
     await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(node => node.id === "e2e-image")!.position).not.toEqual(image.position);

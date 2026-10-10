@@ -77,13 +77,17 @@ test("one passed 4K probe exposes every ratio, preserves auto, and anchors the p
   const open = () => page.getByRole("button", { name: "打开 比例验收 模型与参数", exact: true }).click();
   await open();
   const panel = page.getByRole("dialog", { name: "比例验收 模型与参数" });
-  await expect(panel).toHaveCSS("width", "420px");
+  const size = panel.getByLabel("输出分辨率预设", { exact: true });
+  await expect(size).toHaveValue("3840x2160");
   const inspector = page.getByRole("button", { name: "智能体面板", exact: true });
   if (await inspector.getAttribute("aria-expanded") === "true") await inspector.click();
   await expect(inspector).toHaveAttribute("aria-expanded", "false");
+  // The open inspector legitimately leaves a narrower side placement. Establish
+  // the intended full-canvas baseline before asserting the node-width panel;
+  // toHaveCSS also waits for its ResizeObserver placement update.
+  await expect(panel).toHaveCSS("width", "420px");
   const assertAttached = () => expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
   await assertAttached();
-  const size = panel.getByLabel("输出分辨率预设", { exact: true });
   const options = await size.locator("option").allTextContents();
   expect(options.filter(label => /4K · \d+:\d+/u.test(label))).toHaveLength(11);
   expect(options.some(label => /自动.*提示词.*参考图/u.test(label))).toBe(true);
