@@ -1,0 +1,281 @@
+{
+  "reportType": "post-release-full-check",
+  "reportStartDate": "2026-10-07",
+  "timezone": "America/Los_Angeles",
+  "finishedAtUtc": "2026-10-08T07:07:16.800Z",
+  "finishedAtLocal": "2026-10-08 00:07:16 GMT−7",
+  "baseline": {
+    "version": "0.2.65",
+    "commit": "12b5d0b700f9be6edb27062a9a3b92a1f9591882",
+    "browserPassed": 318
+  },
+  "final": {
+    "version": "0.2.66",
+    "commit": "864b5f8a266a07d7a5bf5d3ef81d59704540c72d",
+    "localBuildId": "sZD7pebvKri9JiXS83L2V",
+    "published": {
+      "tag": "v0.2.66",
+      "commit": "864b5f8a266a07d7a5bf5d3ef81d59704540c72d",
+      "latest": true,
+      "draft": false,
+      "prerelease": false,
+      "publishedAt": "2026-10-08T07:05:19Z",
+      "url": "https://github.com/moshangqingchen/CanvasMind/releases/tag/v0.2.66",
+      "notesMatch": true
+    },
+    "workflows": [
+      {
+        "name": "CI",
+        "id": 37739582481,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37739582481"
+      },
+      {
+        "name": "Windows Desktop Release",
+        "id": 37739582790,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37739582790"
+      }
+    ]
+  },
+  "confirmedFixedIssueCount": 8,
+  "fixedIssues": [
+    "provider-error-secret-redaction",
+    "setup-migration-crash-recovery",
+    "stale-exit-confirmation",
+    "protected-original-preview",
+    "failed-canvas-navigation",
+    "node-creation-before-readiness",
+    "passive-wheel-error",
+    "favicon-404"
+  ],
+  "tests": {
+    "browser": {
+      "distinctTests": 322,
+      "functionalTests": 316,
+      "performanceTests": 6,
+      "passedWithoutRetry": 322,
+      "flaky": 0,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 322,
+      "attemptCount": 322,
+      "retryAttemptCount": 0
+    },
+    "units": {
+      "tests": 3847,
+      "passed": 3847,
+      "failed": 0
+    },
+    "unitPackages": [
+      {
+        "name": "core",
+        "total": 30,
+        "passed": 30,
+        "failed": 0
+      },
+      {
+        "name": "db",
+        "total": 50,
+        "passed": 50,
+        "failed": 0
+      },
+      {
+        "name": "storage",
+        "total": 27,
+        "passed": 27,
+        "failed": 0
+      },
+      {
+        "name": "providers",
+        "total": 1187,
+        "passed": 1187,
+        "failed": 0
+      },
+      {
+        "name": "director",
+        "total": 24,
+        "passed": 24,
+        "failed": 0
+      },
+      {
+        "name": "desktop",
+        "total": 76,
+        "passed": 76,
+        "failed": 0
+      },
+      {
+        "name": "runtime",
+        "total": 363,
+        "passed": 363,
+        "failed": 0
+      },
+      {
+        "name": "renderer",
+        "total": 2090,
+        "passed": 2090,
+        "failed": 0
+      }
+    ],
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "localTargeted": [
+      {
+        "phase": "fixed-final",
+        "total": 19,
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0,
+        "flaky": 0,
+        "retries": 0
+      },
+      {
+        "phase": "weai-repeat",
+        "total": 20,
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0,
+        "flaky": 0,
+        "retries": 0
+      }
+    ],
+    "localPackagedSmoke": {
+      "standardPassed": 27,
+      "normalGpuWindowedPassed": 4
+    },
+    "serverRelease": {
+      "workflowId": 37739582790,
+      "passedJobs": 8,
+      "totalJobs": 8,
+      "desktopPassed": 76,
+      "focusedBrowserPassed": 27,
+      "focusedBrowserRetries": 0,
+      "standardSmokePassed": 27,
+      "normalGpuWindowedPassed": 4,
+      "rendererErrors": 0,
+      "evidenceSummarizedAtUtc": "2026-10-08T07:08:34.283Z",
+      "scope": "Overlaps with main CI; these counts are not added to the 322 browser or 3847 unit totals."
+    },
+    "finalPackageFaults": {
+      "completed": true,
+      "passed": 4,
+      "elapsedSeconds": 13.794
+    },
+    "protectedPreview": {
+      "actualAuthenticatedOriginal": true,
+      "anonymousStatus": 401,
+      "elapsedSeconds": 2.629,
+      "submissions": 0,
+      "verificationWrites": 0,
+      "rendererErrors": 0
+    }
+  },
+  "publicAssets": [
+    {
+      "name": "SuperCanvas-Setup-0.2.66-x64.exe",
+      "bytes": 216571391,
+      "officialDigest": "sha256:e0066debac7a3dddc2fc144ca3c690e896cef810d57884a970388a778b151909",
+      "head": 200
+    },
+    {
+      "name": "SuperCanvas-Setup-0.2.66-x64.exe.blockmap",
+      "bytes": 224422,
+      "officialDigest": "sha256:07ce5a5cd71d5051302943bdf6cca89fd77996a54ebeafd9d91cc67274c12549",
+      "head": 200
+    },
+    {
+      "name": "latest.yml",
+      "bytes": 2236,
+      "officialDigest": "sha256:e30c65cce8d2e1e31990f7bc512425291805d770c47209a2459f0fab94f5b801",
+      "head": 200
+    }
+  ],
+  "publicManifest": {
+    "version": "0.2.66",
+    "installerName": "SuperCanvas-Setup-0.2.66-x64.exe",
+    "bytes": 216571391,
+    "manifestFullHashMatches": true,
+    "blockmapFullHashMatches": true,
+    "releaseNotesMatch": true,
+    "installerRange206": true,
+    "installerFullIndependentHash": "not performed"
+  },
+  "updaterComparator": {
+    "actualDependencyVersion": "6.8.9",
+    "decisions": {
+      "0.2.64": true,
+      "0.2.65": true,
+      "0.2.66": false,
+      "0.2.67": false
+    }
+  },
+  "actualOldClientUpdateUi": {
+    "currentVersion": "0.2.64",
+    "targetVersion": "0.2.66",
+    "succeeded": true,
+    "phase": "available",
+    "downloaded": false,
+    "installed": false,
+    "rendererErrors": 0,
+    "generationPosts": 0,
+    "isolatedCopy": true
+  },
+  "network": {
+    "uniqueUrls": 133,
+    "initial": {
+      "reachable": 107,
+      "spaShell": 19,
+      "anonymous403": 1,
+      "tlsOrNetworkFailure": 2,
+      "upstream503": 3,
+      "nonUiApiRoot404": 1
+    },
+    "fiveTransientFailureRecheck": {
+      "finalHttp200": 5,
+      "sampledAtUtc": "2026-10-08T05:43:27Z–2026-10-08T05:43:35Z",
+      "limits": "SPA HTML only confirms reachability; earlier failures remain in baseline; custom profile URLs not read."
+    }
+  },
+  "stabilityLimits": {
+    "first66BuildId": "we0JQt05rL9C788zlazYo",
+    "sustainedEditingPhasePassed": true,
+    "phaseSeconds": 300.521,
+    "extraEdits": 150,
+    "wholeOriginalReportPassed": false,
+    "wholeSeconds": 320.523,
+    "originalNativeConsoleErrors": 6,
+    "diagnosis": "With page debugger, errors came from empty frame before navigation committed; completed pages retained bridge, IPC, editing and saving. Main-inspector-only home control had no such errors. Different pages/durations make this non-identical A/B; no claim of harmlessness in all scenarios.",
+    "final66FreshFiveMinuteSoakPerformed": false,
+    "longDurationLeakProof": false,
+    "actualMultiplePhysicalDisplayTest": false
+  },
+  "safety": {
+    "paidSupplierGenerationSubmissions": 0,
+    "formalInstalledVersion": "0.2.64",
+    "formalInstallLaunched": false,
+    "formalProfileRead": false,
+    "formalProfileWritten": false,
+    "formalExeUnchanged": true,
+    "formalAsarUnchanged": true,
+    "credentialsWritten": false,
+    "installerFullIndependentPublicHash": false,
+    "producerFullInstallerHashVerified": true
+  },
+  "evidenceRoot": ".codex-temp/post-release-0.2.65-20261007/",
+  "safeEvidence": [
+    "ci/final-864b5f8/browser-counts-summary.json",
+    "ci/final-864b5f8/unit-maintenance-summary.json",
+    "release/final-864b5f8/release-counts-summary.json",
+    "stability/readiness-final66/final-package-identity.json",
+    "toolbar-loading-review/final-summary.json",
+    "network/links/recheck-five-20261008T054335Z.json"
+  ]
+}

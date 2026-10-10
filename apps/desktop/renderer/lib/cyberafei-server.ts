@@ -1,5 +1,6 @@
 import {
   readBoundedModelJson,
+  readModelDenialEvidence,
   scanAlternateSupplier,
 } from "./supplier-scan-utils";
 import { matchesSupplierTemplate } from "./supplier-template-source";
@@ -34,6 +35,9 @@ export interface CyberAfeiKeyScan {
   checkedAt: string;
   modelIds: string[];
   error?: string;
+  /** Actual directory response status, kept separate from the scan classification. */
+  httpStatus?: number;
+  upstreamErrorCode?: string;
 }
 
 export interface CyberAfeiConnectionScan extends CyberAfeiKeyScan {
@@ -51,12 +55,14 @@ interface OpenAIModelsPayload {
 function scanFailure(
   status: Exclude<CyberAfeiModelScanStatus, "live" | "empty">,
   error: string,
+  evidence?: { httpStatus: number; upstreamErrorCode?: string },
 ): CyberAfeiKeyScan {
   return {
     status,
     checkedAt: new Date().toISOString(),
     modelIds: [],
     error,
+    ...evidence,
   };
 }
 
@@ -84,6 +90,7 @@ export async function scanCyberAfeiKeyModels(
       return scanFailure(
         "unauthorized",
         "赛博阿飞拒绝了当前分组 Key，或该 Key 没有模型读取权限",
+        await readModelDenialEvidence(response),
       );
     if (!response.ok)
       return scanFailure(

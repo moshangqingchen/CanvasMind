@@ -7,6 +7,7 @@ import { useSupplierVerificationRevision } from "../lib/use-supplier-verificatio
 import { useSettingsDraft, useSettingsLeaveGuard } from "./settings-draft-guard";
 import { descriptorKinds, groupNameMatches, matchesModelText, supplierGroupMatchesQuery, type ModelKind } from "../lib/supplier-model-browser";
 import { modelInventoryLastSuccessAt, modelInventoryScanStatus } from "../lib/model-inventory-status";
+import { modelInventoryStatusLabel } from "../lib/model-inventory-status-label";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
 import { refreshAllSupplierAccounts, seedSupplierBilling, useSupplierBillingOverview } from "../lib/client-supplier-billing";
 import { billingCompact } from "../lib/supplier-billing-display";
@@ -2395,7 +2396,7 @@ function GroupConnectionEditor({
           画布与智能体按模型能力共用
         </span>
         {connection?.provider && <span>接口：{connection.provider}</span>}
-        <span>{modelStatus === "live" ? "模型列表已确认" : modelStatus === "empty" ? "本次未返回模型" : modelStatus === "unauthorized" ? "Key 鉴权失败" : "模型可用性待确认"}</span>
+        <span>{modelInventoryStatusLabel(modelStatus, connection?.config)}</span>
         {typeof connection?.config.modelScanCheckedAt === "string" && <span>最近尝试：{new Date(connection.config.modelScanCheckedAt).toLocaleString()}</span>}
         {modelInventoryLastSuccessAt(connection?.config ?? {}) && <span>目录成功更新：{new Date(modelInventoryLastSuccessAt(connection?.config ?? {})!).toLocaleString()}</span>}
       </div>

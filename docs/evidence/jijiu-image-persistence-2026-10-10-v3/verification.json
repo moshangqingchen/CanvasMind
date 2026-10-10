@@ -1,0 +1,35 @@
+{
+  "finalBuild": "Ckrib-_CpKBBPgjGCNoYl",
+  "test": "supplier-jijiu-persistence.spec.ts",
+  "status": "passed",
+  "failedTests": [],
+  "port": 3227,
+  "portListeningAfterCompletion": false,
+  "durationSeconds": null,
+  "durationNote": "Original exec response was interrupted before returning a session ID. Passing status and screenshots recovered from Playwright output; elapsed time is unavailable.",
+  "generationRequests": 0,
+  "browserUpstreamRequests": 0,
+  "evidence": [
+    {
+      "name": "jijiu-2k-high-after-fresh-renderer.png",
+      "sha256": "C147C5BA99408A70AAD7945BA72D26B62D81846C7AF5E4F03F06EBD58F6E6263"
+    },
+    {
+      "name": "jijiu-2k-high-after-refresh-switch-reload.png",
+      "sha256": "C147C5BA99408A70AAD7945BA72D26B62D81846C7AF5E4F03F06EBD58F6E6263"
+    },
+    {
+      "name": "jijiu-2k-high-first-reverse-group-switch.png",
+      "sha256": "F9676F6889D7BAB305B669437ACAC6668F899494A044F3D1C62507DE65B5D2D3"
+    },
+    {
+      "name": "jijiu-4k-high-after-fresh-renderer.png",
+      "sha256": "8AF49EB81EFC8C6198EE99F4F46B2F7C3CD72964D9E059E7C081C78B8AAE639E"
+    },
+    {
+      "name": "jijiu-4k-high-after-manual-supplier-refresh.png",
+      "sha256": "8AF49EB81EFC8C6198EE99F4F46B2F7C3CD72964D9E059E7C081C78B8AAE639E"
+    }
+  ],
+  "buildIdentitySource": "Final v3 Next READY notification, independently confirmed by the root agent reading apps/desktop/renderer/.next-desktop/BUILD_ID before the completed test output was collected."
+}

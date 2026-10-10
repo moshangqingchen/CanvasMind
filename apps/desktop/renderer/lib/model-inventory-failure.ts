@@ -13,11 +13,32 @@ const messages = {
   invalid_configuration: "当前连接未配置可用的模型目录接口；原有配置已保留",
 } as const;
 type FailureCode = keyof typeof messages;
-export type ModelInventoryFailure = { code: FailureCode; message: string; httpStatus?: number };
+export type ModelInventoryFailure = { code: FailureCode; message: string; httpStatus?: number; upstreamErrorCode?: ModelDirectoryDenialCode };
+
+const denialMessages = {
+  GROUP_DELETED: "此 API Key 所属分组已删除，请选择当前可用分组；原有配置已保留",
+  GROUP_DISABLED: "此 API Key 所属分组已停用，请在供应商后台检查分组状态；原有配置已保留",
+  GROUP_NOT_ALLOWED: "当前账号不允许使用此 API Key 所属分组，请检查分组权限；原有配置已保留",
+} as const;
+export type ModelDirectoryDenialCode = keyof typeof denialMessages;
+
+/** Retain only reviewed machine codes, never arbitrary error text or credentials. */
+export function modelDirectoryDenialCode(payload: unknown): ModelDirectoryDenialCode | undefined {
+  if (typeof payload === "string")
+    return Object.hasOwn(denialMessages, payload) ? payload as ModelDirectoryDenialCode : undefined;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const root = payload as Record<string, unknown>;
+  const nested = root.error && typeof root.error === "object" && !Array.isArray(root.error) ? root.error as Record<string, unknown> : {};
+  const codes = [...new Set([root.code, nested.code].flatMap(value => {
+    const code = typeof value === "string" ? modelDirectoryDenialCode(value) : undefined;
+    return code ? [code] : [];
+  }))];
+  return codes.length === 1 ? codes[0] : undefined;
+}
 
 /** Never retain upstream bodies, exception messages, credentials or request URLs. */
 export class ModelInventoryReadError extends Error {
-  constructor(readonly code: FailureCode, readonly httpStatus?: number) { super(messages[code]); }
+  constructor(readonly code: FailureCode, readonly httpStatus?: number, readonly upstreamErrorCode?: ModelDirectoryDenialCode) { super(messages[code]); }
 }
 const validHttpStatus = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599;
@@ -55,17 +76,22 @@ export function modelInventoryFailure(error?: unknown, response?: Response): Mod
               : error instanceof ProviderHttpError && error.details.kind === "invalid_response" ? "invalid_response"
                 : response?.headers.get("X-Model-Scan-Status") === "unconfigured" ? "invalid_configuration"
                   : status && status >= 500 ? "directory_unavailable" : "network";
-  return { code, message: messages[code], ...(validHttpStatus(status) ? { httpStatus: status } : {}) };
+  const upstreamErrorCode = ["invalid_credentials", "permission_denied"].includes(code)
+    ? modelDirectoryDenialCode(error instanceof ModelInventoryReadError ? error.upstreamErrorCode
+      : error instanceof ProviderHttpError ? error.details.responseBody : response?.headers.get("X-Model-Scan-Upstream-Error-Code")) : undefined;
+  return { code, message: upstreamErrorCode ? denialMessages[upstreamErrorCode] : messages[code],
+    ...(validHttpStatus(status) ? { httpStatus: status } : {}), ...(upstreamErrorCode ? { upstreamErrorCode } : {}) };
 }
 
 export function modelInventoryFailureHeaders(failure: ModelInventoryFailure): Record<string, string> {
   return { "X-Model-Scan-Error-Code": failure.code,
-    ...(failure.httpStatus ? { "X-Model-Scan-Http-Status": String(failure.httpStatus) } : {}) };
+    ...(failure.httpStatus ? { "X-Model-Scan-Http-Status": String(failure.httpStatus) } : {}),
+    ...(failure.upstreamErrorCode ? { "X-Model-Scan-Upstream-Error-Code": failure.upstreamErrorCode } : {}) };
 }
 
 export function modelInventoryFailureConfig(failure: ModelInventoryFailure) {
   return { modelScanComplete: false, modelScanError: failure.message, modelScanErrorCode: failure.code,
-    modelScanHttpStatus: failure.httpStatus ?? null };
+    modelScanHttpStatus: failure.httpStatus ?? null, modelScanUpstreamErrorCode: failure.upstreamErrorCode ?? null };
 }
 
 /** Saved/manual fallbacks and even 200 unauthorized responses cannot establish removals. */

@@ -1,0 +1,695 @@
+{
+  "schemaVersion": 1,
+  "version": "0.2.76",
+  "sourceCommit": "6b6d9a59c0266babcfb00c917ee0bd4e65c34ac7",
+  "taskDate": "2026-10-08",
+  "timezone": "America/Los_Angeles",
+  "checkedAt": "2026-10-09T05:25:10.949Z",
+  "completed": {
+    "codePushed": true,
+    "mainCI": {
+      "id": 37886612688,
+      "headSha": "6b6d9a59c0266babcfb00c917ee0bd4e65c34ac7",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37886612688"
+    },
+    "releaseWorkflow": {
+      "id": 37886612960,
+      "headSha": "6b6d9a59c0266babcfb00c917ee0bd4e65c34ac7",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37886612960"
+    },
+    "publicRelease": {
+      "tag": "v0.2.76",
+      "sourceCommit": "6b6d9a59c0266babcfb00c917ee0bd4e65c34ac7",
+      "publishedAt": "2026-10-09T05:19:01Z",
+      "url": "https://github.com/moshangqingchen/CanvasMind/releases/tag/v0.2.76",
+      "notesMatch": true
+    },
+    "localInstalledAndOpened": true
+  },
+  "mainCI": {
+    "run": {
+      "id": 37886612688,
+      "headSha": "6b6d9a59c0266babcfb00c917ee0bd4e65c34ac7",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37886612688"
+    },
+    "unit": {
+      "tests": 4194,
+      "passed": 4193,
+      "failed": 0,
+      "skipped": 1,
+      "cancelled": 0,
+      "todo": 0
+    },
+    "browser": {
+      "planned": 345,
+      "passedWithoutRetry": 345,
+      "flaky": 0,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 345,
+      "attemptCount": 345,
+      "retryAttemptCount": 0,
+      "initialFailureCount": 0
+    },
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "todo": 0
+    },
+    "desktop": {
+      "desktopUnit": {
+        "tests": 106,
+        "pass": 106,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0,
+        "todo": 0
+      },
+      "allowedSkippedCases": [],
+      "standardSmokeChecks": 27,
+      "windowedSmokeChecks": 4,
+      "rendererErrorCount": 0
+    },
+    "logs": [
+      {
+        "id": 113677916228,
+        "name": "quality",
+        "bytes": 110518,
+        "sha256": "f1aa283646220af3f962ddcdcbd4e4d45170b9036ed91748da47104604fe8684",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677916318,
+        "name": "Browser (functional-1)",
+        "bytes": 71061,
+        "sha256": "95619bf94b8cde17ef7d040dee41d458904fb1d1d568b2043f3d77794e4fb9bb",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677916350,
+        "name": "Browser (functional-3)",
+        "bytes": 69801,
+        "sha256": "00d889cd1f57e592c0896f8bd131b4a497288191737e1769752da85bbb7dcbdd",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677916354,
+        "name": "Browser (performance)",
+        "bytes": 55760,
+        "sha256": "84d33c9d6ee5ccc6af59428e3bf21aac0628a528051a37163c7dde15004c6b07",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677916371,
+        "name": "desktop",
+        "bytes": 57124,
+        "sha256": "e966c4491d9339d260002c2eefbf3d8a53dbe29655c31e7b8e83261d7581f800",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677916537,
+        "name": "Browser (functional-2)",
+        "bytes": 71191,
+        "sha256": "a2cd1965063270b2a7b2677829d7729031de881e878edfbb78133a381771e0c9",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      }
+    ]
+  },
+  "releaseWorkflow": {
+    "run": {
+      "id": 37886612960,
+      "headSha": "6b6d9a59c0266babcfb00c917ee0bd4e65c34ac7",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37886612960"
+    },
+    "unit": {
+      "tests": 4194,
+      "passed": 4193,
+      "failed": 0,
+      "skipped": 1,
+      "cancelled": 0,
+      "todo": 0
+    },
+    "browser": {
+      "planned": 345,
+      "passedWithoutRetry": 344,
+      "flaky": 1,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 345,
+      "attemptCount": 346,
+      "retryAttemptCount": 1,
+      "initialFailureCount": 1
+    },
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "todo": 0
+    },
+    "desktop": {
+      "desktopUnit": {
+        "tests": 106,
+        "pass": 106,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0,
+        "todo": 0
+      },
+      "allowedSkippedCases": [],
+      "standardSmokeChecks": 27,
+      "windowedSmokeChecks": 4,
+      "rendererErrorCount": 0
+    },
+    "logs": [
+      {
+        "id": 113677916721,
+        "name": "prepare",
+        "bytes": 11120,
+        "sha256": "a5c9a234559623c4283bccd6db490ed2a3d93b6f13383bcffd953ba80cd55eac",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677975454,
+        "name": "checks / quality",
+        "bytes": 111985,
+        "sha256": "6042e9a1504a178ea70c516752d4d28efc7a5cba24dae7306e082971964f1197",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677975507,
+        "name": "checks / desktop",
+        "bytes": 57342,
+        "sha256": "d691a73eea9a35ae2882e12600e48841aad949153ff551c8f969ae0f9d2fb399",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677975510,
+        "name": "checks / Browser (functional-2)",
+        "bytes": 75516,
+        "sha256": "63c2abb114421136d78230a8254b248029edbbec61f0a90221cffb3187977e4d",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677975517,
+        "name": "checks / Browser (performance)",
+        "bytes": 56054,
+        "sha256": "43a85792b7238486222cb183de32fccc09aa632079684a2ced876a4dd81efdc6",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677975571,
+        "name": "checks / Browser (functional-3)",
+        "bytes": 69827,
+        "sha256": "a916814f195fb09b126fb68852f9f7b7cd98c25da669eade35bbe0feb627ab25",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113677975579,
+        "name": "checks / Browser (functional-1)",
+        "bytes": 71254,
+        "sha256": "405ec25df21df14c11556c93ad1e9498fac2999f5539b761dd11fdb6ce40ce0c",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      },
+      {
+        "id": 113680207404,
+        "name": "desktop-release",
+        "bytes": 91258,
+        "sha256": "916a8702a9a41ea3a0f9d2ead7d331a071353333e97753c9bbae483f450c0d7e",
+        "jobAttempt": 1,
+        "observedWorkflowAttempt": 1,
+        "retainedFromEarlierAttempt": false
+      }
+    ],
+    "producer": {
+      "focusedBrowser": {
+        "planned": 36,
+        "passedWithoutRetry": 36,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 36,
+        "attemptCount": 36,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      "focusedUnit": [
+        {
+          "passed": 199,
+          "total": 199
+        },
+        {
+          "passed": 63,
+          "total": 63
+        }
+      ],
+      "desktopUnit": {
+        "tests": 106,
+        "pass": 106,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0,
+        "todo": 0
+      },
+      "allowedSkippedCases": [],
+      "standardSmokeChecks": 27,
+      "windowedSmokeChecks": 4,
+      "rendererErrorCount": 0,
+      "fullInstallerHashValidationByCIProducer": true,
+      "independentFullPublicInstallerDownload": false
+    }
+  },
+  "publicRequestRecovery": [
+    {
+      "method": "HEAD",
+      "stage": "asset-head",
+      "phase": "headers",
+      "attempt": 1,
+      "errorName": "TypeError",
+      "causeCode": "ECONNRESET",
+      "finalVerificationPassed": true
+    },
+    {
+      "method": "GET",
+      "stage": "manifest",
+      "phase": "headers",
+      "attempt": 1,
+      "errorName": "TypeError",
+      "causeCode": "ECONNRESET",
+      "finalVerificationPassed": true
+    }
+  ],
+  "localValidation": {
+    "desktopUnit": {
+      "tests": 106,
+      "pass": 105,
+      "fail": 0,
+      "skipped": 1,
+      "cancelled": 0,
+      "todo": 0
+    },
+    "allowedSkippedCases": [
+      {
+        "test": "symbolic log files cannot redirect writes or rotation outside the log directory",
+        "reason": "Temporary file links unavailable",
+        "knownEnvironmentCondition": "Temporary symbolic file links unavailable"
+      }
+    ],
+    "standardSmokeChecks": 27,
+    "windowedSmokeChecks": 4,
+    "rendererErrorCount": 0,
+    "standardSmokeAttempt": "Separate confirmation after preserved native first failure",
+    "screenshotScope": "Isolated smoke/test profiles; formal UI was not directly screenshot-inspected"
+  },
+  "artifacts": {
+    "localInstaller": {
+      "file": "apps/desktop/release/SuperCanvas-Setup-0.2.76-x64.exe",
+      "bytes": 219096165,
+      "sha256": "a98baea717ad8e2290d5b906e05529d2371264beec8ebfa293607076183c39e6"
+    },
+    "localBuildId": "UN6GjmJJHV94WvVg75Dan",
+    "frozenProductionMetadataFileCount": 19,
+    "frozenFileScope": "Specified production and release metadata inputs, not the entire repository or all smoke/test inputs",
+    "publicAssets": [
+      {
+        "name": "SuperCanvas-Setup-0.2.76-x64.exe",
+        "bytes": 216675329,
+        "officialDigest": "sha256:3bcb3a5013feb5fc5a166ab8173fc74f620dde4a05568dd067326abe2f4ccc35",
+        "publicHeadStatus": 200
+      },
+      {
+        "name": "SuperCanvas-Setup-0.2.76-x64.exe.blockmap",
+        "bytes": 224185,
+        "officialDigest": "sha256:0f98f5f141e24cd6e373664426a295a7ee04db04da101939b167322d66e6bbc0",
+        "publicHeadStatus": 200
+      },
+      {
+        "name": "latest.yml",
+        "bytes": 2256,
+        "officialDigest": "sha256:16bc41eb42b77d6c83e541bad90254d36b69b65210b74c70e36ac6adf3259cb3",
+        "publicHeadStatus": 200
+      }
+    ],
+    "publicManifest": {
+      "version": "0.2.76",
+      "installerName": "SuperCanvas-Setup-0.2.76-x64.exe",
+      "bytes": 216675329,
+      "manifestFullHashMatches": true,
+      "blockmapFullHashMatches": true,
+      "releaseNotesMatch": true,
+      "installerRange206": true,
+      "installerFullIndependentHash": "not performed"
+    },
+    "updater": {
+      "actualDependencyVersion": "6.8.9",
+      "decisions": {
+        "0.2.64": true,
+        "0.2.65": true,
+        "0.2.66": true,
+        "0.2.67": true,
+        "0.2.68": true,
+        "0.2.69": true,
+        "0.2.70": true,
+        "0.2.71": true,
+        "0.2.72": true,
+        "0.2.73": true,
+        "0.2.74": true,
+        "0.2.75": true,
+        "0.2.76": false,
+        "0.2.77": false
+      }
+    },
+    "cloudAndLocalAssumedByteIdentical": false,
+    "observedLocalCloudInstallerDigestEqual": false,
+    "independentFullPublicInstallerHash": false,
+    "publicInstallerSampleBytes": 1024
+  },
+  "installedApplication": {
+    "installedAt": "2026-10-09T05:14:16.6751049+00:00",
+    "checkedAt": "2026-10-09T05:15:52.4852183+00:00",
+    "version": "0.2.76",
+    "buildId": "UN6GjmJJHV94WvVg75Dan",
+    "installerExitCode": 0,
+    "criticalInstalledFilesMatched": 6,
+    "allowLaunch": true,
+    "normalUserLaunches": 1,
+    "windowPresent": true,
+    "windowResponding": true,
+    "backendOwned": true,
+    "localSessionIdentityMatched": true,
+    "localGetStatuses": [
+      {
+        "endpoint": "/api/health",
+        "statusCode": 200
+      },
+      {
+        "endpoint": "/api/projects",
+        "statusCode": 200
+      },
+      {
+        "endpoint": "/api/suppliers",
+        "statusCode": 200
+      }
+    ],
+    "responseBodiesRead": 0,
+    "directProfileWritesByInspector": 0,
+    "processStopsByInspector": 0
+  },
+  "protection": {
+    "checkedAt": "2026-10-09T05:16:00.549Z",
+    "baselineCheckedAt": "2026-10-09T04:52:25.577Z",
+    "closedCheckedAt": "2026-10-09T05:14:16.664Z",
+    "protectedCollectionCount": 13,
+    "stableRead": true,
+    "globalQuiescenceClaimed": false,
+    "protectedDifferenceCount": 0,
+    "informationalDifferenceCount": 0,
+    "databaseHashChanged": false,
+    "counts": {
+      "suppliers": 19,
+      "canvases": 1,
+      "assets": 411,
+      "connections": 146,
+      "runs": 325,
+      "nodeRuns": 325,
+      "revisions": 20,
+      "supplierVerifications": 15,
+      "directorProfiles": 0,
+      "directorSessions": 1,
+      "directorMessages": 3,
+      "directorProposals": 2,
+      "webhookKeys": 0
+    },
+    "retainedTrees": {
+      "storage": {
+        "baselineFiles": 1416,
+        "currentFiles": 1416,
+        "contentHashCompared": true,
+        "missing": 0,
+        "changedBytes": 0,
+        "changedContent": 0,
+        "changedMetadata": 0
+      },
+      "projects": {
+        "baselineFiles": 1,
+        "currentFiles": 1,
+        "contentHashCompared": true,
+        "missing": 0,
+        "changedBytes": 0,
+        "changedContent": 0,
+        "changedMetadata": 0
+      },
+      "backups": {
+        "baselineFiles": 7,
+        "currentFiles": 7,
+        "contentHashCompared": true,
+        "missing": 0,
+        "changedBytes": 0,
+        "changedContent": 0,
+        "changedMetadata": 0
+      },
+      "data\\artifact-recovery": {
+        "baselineFiles": 6,
+        "currentFiles": 6,
+        "contentHashCompared": true,
+        "missing": 0,
+        "changedBytes": 0,
+        "changedContent": 0,
+        "changedMetadata": 0
+      }
+    },
+    "backup": {
+      "checkedAt": "2026-10-09T04:52:28.5134927+00:00",
+      "protectedFileRows": 5,
+      "copiedFileCount": 5,
+      "files": [
+        {
+          "relative": "profile\\data\\super-canvas.json",
+          "exists": true,
+          "bytes": 67196667,
+          "sha256": "9c0b50f67e1f5c97373437901318c26f46bcb1b1e0adaeba194d34b7cb26dacb"
+        },
+        {
+          "relative": "profile\\secrets.bin",
+          "exists": true,
+          "bytes": 156,
+          "sha256": "684aad3cd83b3a522d9276f89ff411d48f71826dc7afd0499a1415fb078b3a21"
+        },
+        {
+          "relative": "profile\\initialized.json",
+          "exists": true,
+          "bytes": 63,
+          "sha256": "89dfdef2934637cf0e02515d47afebaa9a8b2884bf4b40fc9811ad7a9e58e31a"
+        },
+        {
+          "relative": "profile\\reference-channel.bin",
+          "exists": true,
+          "bytes": 282,
+          "sha256": "9a522bfe1430a367175cf059bab9c9a2e04dad6faac2960e887057366c63c45b"
+        },
+        {
+          "relative": "browser\\Local State",
+          "exists": true,
+          "bytes": 490,
+          "sha256": "c2d069292595bc49c96b15cb11280c270c2b49b881f8db8e508375b4e9141192"
+        }
+      ],
+      "wholeDatabaseNewlyEncrypted": false,
+      "restoredBackupTestPerformed": false
+    }
+  },
+  "startupScope": {
+    "checkedAt": "2026-10-09T05:15:35.156Z",
+    "stable": true,
+    "savedPaidCandidates": 0,
+    "scope": "Saved onboarding, verification and workflow recovery candidates at the stated prelaunch observation"
+  },
+  "preservedFailures": {
+    "previous75Producer": {
+      "sourceCommit": "e35082af5e108bfbb585a85b4744a48b30616392",
+      "runId": 37881639159,
+      "jobId": 113664613675,
+      "bytes": 77982,
+      "sha256": "50d6feb3d86728f0860168031d8708f646ebf5c9a23e4c66cd9cdf110dfd129e",
+      "completedChecksBeforeFailure": 22,
+      "startupKeyFailure": true,
+      "rootCauseProvenSoleCause": false
+    },
+    "first76CI": {
+      "sourceCommit": "06d335e8b8ba6c783fc561821477dfec4c3b8e2f",
+      "runId": 37885787768,
+      "providersPassed": 1373,
+      "providersFailed": 1,
+      "testOnlyIsolationCorrection": true,
+      "productCorrectionAfterFirst76Commit": false,
+      "exactDnsShareOfTimeoutMeasured": false
+    },
+    "superseded76Release": {
+      "runId": 37885787986,
+      "sourceCommit": "06d335e8b8ba6c783fc561821477dfec4c3b8e2f",
+      "cancelResponseStatus": 202,
+      "finalConclusion": "cancelled",
+      "unpublishedBeforeRequest": true
+    },
+    "localFirstSmoke": {
+      "driverExitCode": "0xC0000409",
+      "finalReportCreated": false,
+      "causeEstablished": false,
+      "ownedTestCleanupOnly": true,
+      "formalProcessStops": 0
+    }
+  },
+  "evidence": {
+    "ci": {
+      "file": ".codex-temp/release-v0.2.76/github-readonly-final/evidence/6b6d9a59c0266babcfb00c917ee0bd4e65c34ac7/ci/run-37886612688/attempt-1/collection-2026-10-09T05-09-52.632Z-3cd7cd7b-6911-42dd-a5b2-4fa57c757585/workflow-counts-summary-2026-10-09T05-10-05.519Z-ab396dd7-e283-4bb2-8d9d-f29bd0db2627.json",
+      "bytes": 7744,
+      "sha256": "37d81581c7082c55db38d1a27a8f6b774bbd14fbd1e1533585a4a729bd732461"
+    },
+    "release": {
+      "file": ".codex-temp/release-v0.2.76/github-readonly-final/evidence/6b6d9a59c0266babcfb00c917ee0bd4e65c34ac7/release/run-37886612960/attempt-1/collection-2026-10-09T05-20-34.629Z-2c435cd6-ed46-4743-a603-f1e473b7edc3/workflow-counts-summary-2026-10-09T05-21-19.899Z-2a8f30b2-45b9-42ca-b699-1dc17cace0cb.json",
+      "bytes": 9560,
+      "sha256": "7254fac1f7e8fa94de65243b8fc0e70e10bb85537f620cb84483cb97b002829f"
+    },
+    "public": {
+      "file": ".codex-temp/release-v0.2.76-public-prepared/public-v0.2.76-verification-2026-10-09T05-22-47.677Z.json",
+      "bytes": 5887,
+      "sha256": "3c984ea11854dbad2ccb1a4fb14a9bb0b488590e2c28683b5496a547ec5cfaae"
+    },
+    "localBinding": {
+      "file": ".codex-temp/release-v0.2.76/local-artifact-commit-binding-current-safe.json",
+      "bytes": 6498,
+      "sha256": "7b62d88b8d9e485ce7867857b245cc770dbfdf7b9b55cd84c3c7f26e6c0ecaef"
+    },
+    "localUnitLog": {
+      "file": ".codex-temp/release-v0.2.76/desktop-unit.log",
+      "bytes": 10798,
+      "sha256": "220b8f5dbc902904efb984953a98143abed0b3abd3194b3032a957c17ccc6711"
+    },
+    "localSmoke": {
+      "file": ".codex-temp/release-v0.2.76/packaged-smoke-confirm-report.json",
+      "bytes": 10291,
+      "sha256": "7ae8002342a5aff9268f8a623e75c91e1e175f0f5b26b89e00d60f1e349dfc4d"
+    },
+    "localWindowed": {
+      "file": ".codex-temp/release-v0.2.76/windowed-smoke-report.json",
+      "bytes": 5594,
+      "sha256": "7dc6c6ffb1b3940c94d84e0ada46e976898dde7a0ae3cd771ca537a3c17051b5"
+    },
+    "install": {
+      "file": ".codex-temp/release-v0.2.76/install-prepared/install76-20261009T051036789Z.json",
+      "bytes": 3969,
+      "sha256": "4bb7160bfbe0581f40d74d2f0b546d6b5da2d58ec83c933e776e451d386cf7e0"
+    },
+    "runtime": {
+      "file": ".codex-temp/release-v0.2.76/install-prepared/normal-launch76-safe-20261009T051552490Z.json",
+      "bytes": 2322,
+      "sha256": "111917338317cc34ca11d082a63bd73702170fae1c64fbf49d35268f33aa3e4f"
+    },
+    "startupScope": {
+      "file": ".codex-temp/release-v0.2.76/install-prepared/startup-free-scope-safe-2026-10-09T05-15-35-156Z.json",
+      "bytes": 1240,
+      "sha256": "e1a208b27bb985ca8d33ff5c006157edb9c54cf4a8a331d17f912b62df991877"
+    },
+    "closedProtection": {
+      "file": ".codex-temp/release-v0.2.76/install-prepared/closed-protection-2026-10-09T05-14-16-664Z.json",
+      "bytes": 321,
+      "sha256": "16064f61ae4b5168899d989887cff01c8a7e88b3bc3a785a1900f7d3954e768c"
+    },
+    "liveProtection": {
+      "file": ".codex-temp/release-v0.2.76/install-prepared/live-protection-safe-2026-10-09T05-16-00-549Z.json",
+      "bytes": 3505,
+      "sha256": "6095b8b422f3b22dc503a6f4bc8bc4186e920cb78e8d0515f2c0068bbdc25911"
+    },
+    "backup": {
+      "file": ".codex-temp/release-v0.2.76/install-prepared/protected-profile-backup-20261009T045227179Z/backup-receipt.json",
+      "bytes": 1616,
+      "sha256": "a0a63959b0bf25d061a07f300a017c405078404a2aeffc4e92f0f089e26c88db"
+    },
+    "old75ProducerLog": {
+      "file": ".codex-temp/release-v0.2.75/github-readonly-final/evidence/e35082af5e108bfbb585a85b4744a48b30616392/release/run-37881639159/attempt-1/logs/job-113664613675.log",
+      "bytes": 77982,
+      "sha256": "50d6feb3d86728f0860168031d8708f646ebf5c9a23e4c66cd9cdf110dfd129e"
+    },
+    "old76Dns": {
+      "file": ".codex-temp/release-v0.2.76/image-editing-fixture-isolation-20261009T0515Z/fixture-isolation-review-safe.json",
+      "bytes": 3739,
+      "sha256": "f4bde332ff4c33fa157362dbc3209aeddf78ecb1015c98317263ebe03aa124f2"
+    },
+    "old76Cancellation": {
+      "file": ".codex-temp/release-v0.2.76/superseded-release-cancellation-2026-10-09T05-00-49-176Z-f6f9bb86-7ae1-4e18-8200-be181b76a7e6.json",
+      "bytes": 666,
+      "sha256": "7afb38c2a45748e68219507eea654e98a09991e38a95763b7b40f67844f58fd4"
+    },
+    "old76Status": {
+      "file": ".codex-temp/release-v0.2.76/github-readonly-prepared/status/status-2026-10-09T05-01-08.842Z-97ce8dbb-cc4e-4295-909f-f11f5959e1a4.json",
+      "bytes": 38522,
+      "sha256": "ff832bc07b52b3f00b1f64d43770f64f1f9ebba8fe41c88f969fa01365c339a0"
+    },
+    "localNativeFailure": {
+      "file": ".codex-temp/release-v0.2.76/packaged-smoke-first-native-failure-safe.json",
+      "bytes": 269,
+      "sha256": "ccc2ddf1f9bdd517b8f960244cf373119e4eab217271b2b5ceb0eb04f7a788a7"
+    }
+  },
+  "safety": {
+    "generatorNetworkRequests": 0,
+    "generatorCredentialReads": 0,
+    "generatorFormalReads": 0,
+    "generatorFormalWrites": 0,
+    "generationRequestsByReleaseCheckers": 0,
+    "credentialsOrSignedURLsPublished": false
+  },
+  "limits": [
+    "A proven duplicate-instance encryption-state race justified app.exit for non-owners; the historical remote restart failure did not preserve enough key state to prove this was its sole cause.",
+    "Unit planned/pass/skip counts are independent observed values. Known environment skips are not passes; workflow reruns and browser retries remain separate.",
+    "Public installer inspection uses HEAD and a bounded 1024-byte Range sample. Whole-file hashing is the CI producer proof, not an independent public download.",
+    "Local and cloud installers are independent artifacts. Equal or different observed digests are recorded without assuming byte identity.",
+    "Formal runtime validation confirms owned processes/window response and three local GET status codes; response bodies and all formal UI flows were not inspected.",
+    "GET checkers do not directly write profile data, but ordinary application startup and GET handlers may perform lifecycle migrations or catalog refreshes.",
+    "Protected-data equality is the stable comparison at its stated time. Informational changes and later user edits are not silently treated as data loss or claimed unchanged.",
+    "Identity checks for assets/runs/nodeRuns do not compare every private record body. Hashed manifests do not replace recovery backups.",
+    "Repeated local/CI/release subsets are not added as independent coverage. Real paid supplier generation and universal network performance were not verified."
+  ]
+}

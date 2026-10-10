@@ -1,5 +1,6 @@
 import {
   readBoundedModelJson,
+  readModelDenialEvidence,
   scanAlternateSupplier,
 } from "./supplier-scan-utils";
 import { matchesSupplierTemplate } from "./supplier-template-source";
@@ -11,6 +12,7 @@ import {
 import { decryptSecret, providerFetch } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
 import { clearEmptyScanConfirmation } from "./model-scan-confirmation";
+import { modelDirectoryDenialCode } from "./model-inventory-failure";
 import {
   MIKOTO_BASE_URL,
   MIKOTO_PRESET_ID,
@@ -27,6 +29,9 @@ export interface MikotoKeyScan {
   checkedAt: string;
   modelIds: string[];
   error?: string;
+  /** Actual directory response status, kept separate from the scan classification. */
+  httpStatus?: number;
+  upstreamErrorCode?: string;
 }
 
 export interface MikotoConnectionScan extends MikotoKeyScan {
@@ -42,12 +47,14 @@ interface OpenAIModelsPayload {
 function mikotoScanFailure(
   status: Exclude<MikotoModelScanStatus, "live" | "empty">,
   error: string,
+  evidence?: { httpStatus: number; upstreamErrorCode?: string },
 ): MikotoKeyScan {
   return {
     status,
     checkedAt: new Date().toISOString(),
     modelIds: [],
     error,
+    ...evidence,
   };
 }
 
@@ -78,6 +85,7 @@ export async function scanMikotoKeyModels(
       return mikotoScanFailure(
         "unauthorized",
         "MikotoPro 拒绝了当前分组 Key，或该 Key 没有模型读取权限",
+        await readModelDenialEvidence(response),
       );
     if (!response.ok)
       return mikotoScanFailure(
@@ -145,6 +153,10 @@ function cachedMikotoScan(
     status,
     checkedAt,
     modelIds: [...new Set(modelIds)],
+    ...([401, 403].includes(Number(connection.config.modelScanHttpStatus))
+      ? { httpStatus: Number(connection.config.modelScanHttpStatus) } : {}),
+    ...(modelDirectoryDenialCode(connection.config.modelScanUpstreamErrorCode)
+      ? { upstreamErrorCode: modelDirectoryDenialCode(connection.config.modelScanUpstreamErrorCode) } : {}),
   };
 }
 

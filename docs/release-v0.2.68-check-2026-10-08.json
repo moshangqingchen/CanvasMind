@@ -1,0 +1,696 @@
+{
+  "reportType": "release-download-telemetry-verification",
+  "date": "2026-10-08",
+  "timezone": "America/Los_Angeles",
+  "finishedAtUtc": "2026-10-08T10:55:52.406Z",
+  "version": "0.2.68",
+  "finalCommit": "66f370d2c5271bb4d1ef482578fc93a238440134",
+  "publication": {
+    "tag": "v0.2.68",
+    "commit": "66f370d2c5271bb4d1ef482578fc93a238440134",
+    "latest": true,
+    "draft": false,
+    "prerelease": false,
+    "publishedAt": "2026-10-08T10:43:30Z",
+    "url": "https://github.com/moshangqingchen/CanvasMind/releases/tag/v0.2.68",
+    "notesMatch": true
+  },
+  "workflows": [
+    {
+      "name": "CI",
+      "id": 37763424429,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37763424429"
+    },
+    {
+      "name": "Windows Desktop Release",
+      "id": 37763424721,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37763424721"
+    }
+  ],
+  "changes": {
+    "downloadSpeedAndRemainingTime": true,
+    "staleRateAndEtaClearedWhenStalled": true,
+    "modes": [
+      "preparing",
+      "differential",
+      "full",
+      "cached"
+    ],
+    "differentialFallbackResetsProgress": true,
+    "fullTransferStillWaitsForVerification": true,
+    "closedModalKeepsBackgroundDownload": true,
+    "failureFields": [
+      "stage",
+      "category",
+      "code",
+      "statusCode",
+      "retryable"
+    ],
+    "approvedDiagnosticCodeCount": 41,
+    "diagnosticLog": {
+      "format": "whitelisted-jsonl",
+      "filenames": [
+        "update-diagnostics.jsonl",
+        "update-diagnostics.previous.jsonl"
+      ],
+      "maxBytesPerFile": 262144,
+      "maxFiles": 2,
+      "maxPendingRecords": 128,
+      "rawUrlsHeadersCredentialsPathsAndStackRetained": false,
+      "failureDoesNotAffectUpdater": true
+    },
+    "updaterDependencyVersion": "6.8.9",
+    "originalDownloadSourceStrategyVerificationAndInstallationPreserved": true,
+    "networkSpeedImprovementClaimed": false
+  },
+  "mainCi": {
+    "run": {
+      "id": 37763424429,
+      "name": "CI",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "headSha": "66f370d2c5271bb4d1ef482578fc93a238440134",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37763424429"
+    },
+    "units": {
+      "tests": 3871,
+      "passed": 3871,
+      "failed": 0
+    },
+    "unitPackages": [
+      {
+        "name": "core",
+        "total": 30,
+        "passed": 30,
+        "failed": 0
+      },
+      {
+        "name": "db",
+        "total": 50,
+        "passed": 50,
+        "failed": 0
+      },
+      {
+        "name": "storage",
+        "total": 27,
+        "passed": 27,
+        "failed": 0
+      },
+      {
+        "name": "providers",
+        "total": 1187,
+        "passed": 1187,
+        "failed": 0
+      },
+      {
+        "name": "director",
+        "total": 24,
+        "passed": 24,
+        "failed": 0
+      },
+      {
+        "name": "desktop",
+        "total": 97,
+        "passed": 97,
+        "failed": 0
+      },
+      {
+        "name": "runtime",
+        "total": 366,
+        "passed": 366,
+        "failed": 0
+      },
+      {
+        "name": "renderer",
+        "total": 2090,
+        "passed": 2090,
+        "failed": 0
+      }
+    ],
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "browser": {
+      "planned": 325,
+      "passedWithoutRetry": 325,
+      "flaky": 0,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 325,
+      "attemptCount": 325,
+      "retryAttemptCount": 0,
+      "initialFailureCount": 0
+    },
+    "browserJobs": [
+      {
+        "id": 113265140989,
+        "name": "Browser (functional-1)",
+        "planned": 107,
+        "passedWithoutRetry": 107,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 107,
+        "attemptCount": 107,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      {
+        "id": 113265141018,
+        "name": "Browser (functional-2)",
+        "planned": 106,
+        "passedWithoutRetry": 106,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 106,
+        "attemptCount": 106,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      {
+        "id": 113265141049,
+        "name": "Browser (functional-3)",
+        "planned": 106,
+        "passedWithoutRetry": 106,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 106,
+        "attemptCount": 106,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      {
+        "id": 113265141097,
+        "name": "Browser (performance)",
+        "planned": 6,
+        "passedWithoutRetry": 6,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 6,
+        "attemptCount": 6,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0,
+        "performanceMeasurementGroups": 18
+      }
+    ],
+    "desktop": [
+      {
+        "jobId": 113265140982,
+        "desktopUnit": {
+          "tests": 97,
+          "pass": 97,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "allowedSkippedCases": [],
+        "standardSmokeChecks": 27,
+        "windowedSmokeChecks": 4,
+        "windowedPassed": true,
+        "rendererErrorCount": 0,
+        "realVisiblePaint": true,
+        "newRendererPidAfterCrash": true
+      }
+    ]
+  },
+  "releasePrerequisites": {
+    "run": {
+      "id": 37763424721,
+      "name": "Windows Desktop Release",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "headSha": "66f370d2c5271bb4d1ef482578fc93a238440134",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37763424721"
+    },
+    "units": {
+      "tests": 3871,
+      "passed": 3871,
+      "failed": 0
+    },
+    "unitPackages": [
+      {
+        "name": "core",
+        "total": 30,
+        "passed": 30,
+        "failed": 0
+      },
+      {
+        "name": "db",
+        "total": 50,
+        "passed": 50,
+        "failed": 0
+      },
+      {
+        "name": "storage",
+        "total": 27,
+        "passed": 27,
+        "failed": 0
+      },
+      {
+        "name": "providers",
+        "total": 1187,
+        "passed": 1187,
+        "failed": 0
+      },
+      {
+        "name": "director",
+        "total": 24,
+        "passed": 24,
+        "failed": 0
+      },
+      {
+        "name": "desktop",
+        "total": 97,
+        "passed": 97,
+        "failed": 0
+      },
+      {
+        "name": "runtime",
+        "total": 366,
+        "passed": 366,
+        "failed": 0
+      },
+      {
+        "name": "renderer",
+        "total": 2090,
+        "passed": 2090,
+        "failed": 0
+      }
+    ],
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "browser": {
+      "planned": 325,
+      "passedWithoutRetry": 325,
+      "flaky": 0,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 325,
+      "attemptCount": 325,
+      "retryAttemptCount": 0,
+      "initialFailureCount": 0
+    },
+    "browserJobs": [
+      {
+        "id": 113265211810,
+        "name": "checks / Browser (functional-3)",
+        "planned": 106,
+        "passedWithoutRetry": 106,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 106,
+        "attemptCount": 106,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      {
+        "id": 113265211884,
+        "name": "checks / Browser (performance)",
+        "planned": 6,
+        "passedWithoutRetry": 6,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 6,
+        "attemptCount": 6,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0,
+        "performanceMeasurementGroups": 18
+      },
+      {
+        "id": 113265211908,
+        "name": "checks / Browser (functional-1)",
+        "planned": 107,
+        "passedWithoutRetry": 107,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 107,
+        "attemptCount": 107,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      {
+        "id": 113265211911,
+        "name": "checks / Browser (functional-2)",
+        "planned": 106,
+        "passedWithoutRetry": 106,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 106,
+        "attemptCount": 106,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      }
+    ],
+    "desktop": [
+      {
+        "jobId": 113265211847,
+        "desktopUnit": {
+          "tests": 97,
+          "pass": 97,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "allowedSkippedCases": [],
+        "standardSmokeChecks": 27,
+        "windowedSmokeChecks": 4,
+        "windowedPassed": true,
+        "rendererErrorCount": 0,
+        "realVisiblePaint": true,
+        "newRendererPidAfterCrash": true
+      }
+    ]
+  },
+  "installerAcceptance": {
+    "jobId": 113268545981,
+    "focusedBrowser": {
+      "planned": 30,
+      "passedWithoutRetry": 30,
+      "flaky": 0,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 30,
+      "attemptCount": 30,
+      "retryAttemptCount": 0,
+      "initialFailureCount": 0
+    },
+    "focusedUnit": [
+      {
+        "passed": 189,
+        "total": 189
+      },
+      {
+        "passed": 62,
+        "total": 62
+      }
+    ],
+    "desktopUnit": {
+      "tests": 97,
+      "pass": 97,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "allowedSkippedCases": [],
+    "standardSmokeChecks": 27,
+    "windowedSmokeChecks": 4,
+    "windowedPassed": true,
+    "rendererErrorCount": 0,
+    "realVisiblePaint": true,
+    "newRendererPidAfterCrash": true,
+    "installerVersion": "0.2.68",
+    "installerVerificationPassed": true,
+    "fullInstallerHashValidationByCIProducer": true,
+    "independentFullPublicInstallerDownload": false,
+    "requiredStepCount": 9,
+    "publicationStepPassed": true
+  },
+  "local": {
+    "desktopUnits": {
+      "tests": 97,
+      "pass": 96,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "todo": 0,
+      "skip": {
+        "test": "symbolic log files cannot redirect writes or rotation outside the log directory",
+        "reason": "Temporary file links unavailable",
+        "windowsPrivilegeLimitation": true
+      }
+    },
+    "sourceChecks": {
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed"
+    },
+    "browser": {
+      "uniqueTests": 5,
+      "actualExecutions": 5,
+      "retries": 0,
+      "expected": 5,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "durationMs": 7790.523,
+      "channel": "chrome",
+      "workers": 1,
+      "coverage": [
+        "old-payload release announcement and close compatibility",
+        "normal speed/ETA, background close/reopen, full fallback and known diagnostic",
+        "unknown/stalled ETA suppression; completion requires verification; cached apply idle wait",
+        "safe HTTP and real ERR_CHECKSUM_MISMATCH code; malicious URL/code suppression; retry reset",
+        "old failed/unconfirmed check compatibility"
+      ],
+      "isolation": {
+        "externalBaseUrlSet": false,
+        "port": 3228,
+        "setup": "renderer/e2e/global-setup.ts",
+        "temporaryData": "unique supercanvas-e2e-* ephemeral database/projects/storage/recovery",
+        "autoSupplierVerification": "off",
+        "listeningAfterTeardown": false,
+        "formalApplicationOrProfileAccessed": false,
+        "realDownloadOrPaidGenerationRequested": false
+      },
+      "visualReview": [
+        {
+          "viewport": "390x680",
+          "path": "e2e-final/app-update-download-speed--e6961-fallback-on-a-narrow-screen/update-download-speed-narrow.png",
+          "finding": "2.5 MB/s / approximately 12 seconds legible; compact metadata, mode badge and action fit"
+        },
+        {
+          "viewport": "1440x1000",
+          "path": "e2e-final/app-update-download-speed--e6961-fallback-on-a-narrow-screen/update-download-fallback-desktop.png",
+          "finding": "full-package fallback with expanded network / ECONNRESET details legible and no horizontal overflow"
+        }
+      ]
+    },
+    "packagedSmoke": {
+      "standardChecks": 27,
+      "windowedGpuChecks": 4,
+      "rendererErrors": 0,
+      "passed": true
+    }
+  },
+  "packagedControllerIpc": {
+    "status": "passed",
+    "version": "0.2.68",
+    "syntheticTargetVersion": "0.2.69",
+    "targetIsPublishedRelease": false,
+    "checks": [
+      "all Electron known-folder paths isolated before unchanged original packaged main; updater enabled without smoke",
+      "real controller progress reaches actual IPC bridge and production UI with differential mode, 2.5 MB/s and ETA 12 seconds",
+      "real observer captures mocked differential fallback logger, sanitizes URL/token, and publishes fixed diagnostic through controller and IPC into expanded UI",
+      "100% transfer remains downloading with no apply button until synthetic verified-completion event",
+      "bounded structured log contains safe check/mode/fallback/completion events; no external network attempts, generation submissions or installation",
+      "normal Playwright application.close and zero remaining owned copied-app/backend processes",
+      "repository win-unpacked exe/asar remain unchanged"
+    ],
+    "result": {
+      "available": "enabled true, managerAvailable true, current 0.2.68, synthetic latest 0.2.69",
+      "differential": "25%, 2.5 MB/s, 12 seconds; actual IPC and UI agree",
+      "fallback": "full mode, 10%, 512 KB/s, 360 seconds; fixed network category and ECONNRESET agree in controller, IPC, UI and log",
+      "completeBytes": "100% remains downloading and has no apply button",
+      "ready": "only update-downloaded event makes ready/apply visible",
+      "diagnosticLogBytes": 1321,
+      "diagnosticRows": 7,
+      "rawDiagnosticUrlOrSyntheticCredentialPresent": false,
+      "mainExternalNetworkAttempts": 0,
+      "backendExternalNetworkAttempts": 0,
+      "generationPosts": 0,
+      "installCalls": 0,
+      "rendererErrors": 0,
+      "ownedProcessesAfterNormalQuit": 0
+    },
+    "isolation": {
+      "smokeFlagUsed": false,
+      "allKnownFolderPathsRedirectedBeforeOriginalMain": true,
+      "freshOwnedProfileOnly": true,
+      "formalInstalledAppOrProfileAccessed": false,
+      "originalExecutableAndAsarHashesUnchanged": true,
+      "originalMainBodyAndPackageJsonPreservedInCopy": true,
+      "originalArchiveFilesPreserved": 262,
+      "repositoryTrackedSourceStatus": "clean"
+    },
+    "visualReview": [
+      {
+        "path": "packaged-telemetry-final-differential.png",
+        "finding": "Current differential state, 25%, 2.5 MB/s and 12 seconds correctly visible; clean layout"
+      },
+      {
+        "path": "packaged-telemetry-final-fallback.png",
+        "finding": "Full fallback, speed/ETA and expanded safe network/ECONNRESET details correctly visible; no overflow"
+      },
+      {
+        "path": "packaged-telemetry-final-ready.png",
+        "finding": "Ready state and apply button correctly visible after synthetic completion event"
+      }
+    ],
+    "copiedExecutableHashMatchesOriginal": true,
+    "originalAsarHash": "e429a12e190bdfe311bdab16a5dd542d8c18054c3fcf3991682a0c6d9987208b",
+    "copiedAsarHash": "469fbc4e8b79147c25e4faaaccdfc9798e3128e487aa7ec4aac2398b0cbe5033",
+    "copyDifferences": [
+      "Copied ASAR main prepends isolation/mock preamble; original main body unchanged",
+      "Extra copied ASAR preamble and copied resources network guard; original renderer/updater modules unchanged"
+    ],
+    "originalMainBodyPreserved": true,
+    "firstEvidence": {
+      "preserved": true,
+      "controllerIpcUiAssertions": "passed",
+      "note": "First differential native capture contained a stale hidden compositor frame. Final harness warms capture surface and waits for paint; independent final profile/report/images all verified.",
+      "review": "packaged-telemetry-first-visual-review.json"
+    },
+    "scope": "Real packaged DesktopUpdater controller, real NsisUpdater module instance, IPC/preload bridge, production renderer and bounded diagnostics. Four updater transport methods emit synthetic events; no real installer download, cryptographic verification or install is claimed.",
+    "limitations": [
+      "Target 0.2.69 and updater transport/progress/verified-completion are synthetic test events.",
+      "Only the isolated copied ASAR has the mock/isolation preamble and network guard; repository 0.2.68 exe/ASAR remain unchanged.",
+      "This IPC test does not perform real installer download, cryptographic verification, paid generation or installation."
+    ]
+  },
+  "publicAssets": [
+    {
+      "name": "SuperCanvas-Setup-0.2.68-x64.exe",
+      "bytes": 216577995,
+      "officialDigest": "sha256:67a65b452b05e002002a8077aff6427b40c93ce3c0a32f9ae345bf78c386147f",
+      "head": 200
+    },
+    {
+      "name": "SuperCanvas-Setup-0.2.68-x64.exe.blockmap",
+      "bytes": 224431,
+      "officialDigest": "sha256:d8eda8c4e1bb143d7034334a3e0370062d6f0d680d169a0b9b2ff79a1cc65c83",
+      "head": 200
+    },
+    {
+      "name": "latest.yml",
+      "bytes": 1643,
+      "officialDigest": "sha256:5201ed432ec63815911dff220dc4a06398f48470448b85de3393bc84a8170de5",
+      "head": 200
+    }
+  ],
+  "publicManifest": {
+    "version": "0.2.68",
+    "installerName": "SuperCanvas-Setup-0.2.68-x64.exe",
+    "bytes": 216577995,
+    "manifestFullHashMatches": true,
+    "blockmapFullHashMatches": true,
+    "releaseNotesMatch": true,
+    "installerRange206": true,
+    "installerFullIndependentHash": "not performed"
+  },
+  "updaterComparator": {
+    "actualDependencyVersion": "6.8.9",
+    "decisions": {
+      "0.2.64": true,
+      "0.2.65": true,
+      "0.2.66": true,
+      "0.2.67": true,
+      "0.2.68": false,
+      "0.2.69": false
+    }
+  },
+  "publicRequestFailures": [
+    {
+      "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.68/SuperCanvas-Setup-0.2.68-x64.exe",
+      "method": "HEAD",
+      "attempt": 1,
+      "errorName": "TypeError",
+      "causeCode": "ECONNRESET"
+    },
+    {
+      "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.68/SuperCanvas-Setup-0.2.68-x64.exe",
+      "method": "GET",
+      "range": "bytes=0-1023",
+      "attempt": 1,
+      "errorName": "TypeError",
+      "causeCode": "ECONNRESET"
+    },
+    {
+      "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.68/SuperCanvas-Setup-0.2.68-x64.exe",
+      "method": "GET",
+      "range": "bytes=0-1023",
+      "attempt": 2,
+      "errorName": "TypeError",
+      "causeCode": "ECONNRESET"
+    }
+  ],
+  "evidenceAcquisition": {
+    "completeJobLogs": 14,
+    "initialFailures": [
+      {
+        "workflow": "ci",
+        "evidenceFile": "ci/download-failure-1791455665706.json",
+        "stage": "job-113265140685",
+        "errorName": "TypeError",
+        "errorCode": "ECONNRESET"
+      },
+      {
+        "workflow": "release",
+        "evidenceFile": "release/download-failure-1791456291560.json",
+        "stage": "job-113265141620",
+        "errorName": "TypeError",
+        "errorCode": "ECONNRESET"
+      }
+    ],
+    "recoveredByOneRetryPerWorkflow": true
+  },
+  "formalInstallation": {
+    "observedCurrentVersion": "0.2.67",
+    "observation": "read-only metadata by root",
+    "version068InstalledByThisVerification": false,
+    "formalProfileKeysReadByThisVerification": false
+  },
+  "evidence": {
+    "ciSummary": ".codex-temp/release-v0.2.68-ci-review/66f370d2/ci/workflow-counts-summary.json",
+    "releaseSummary": ".codex-temp/release-v0.2.68-ci-review/66f370d2/release/workflow-counts-summary.json",
+    "combinedCiSummary": ".codex-temp/release-v0.2.68-ci-review/66f370d2/final-ci-release-counts-summary.json",
+    "public": ".codex-temp/release-v0.2.68/public-v0.2.68-verification-2026-10-08T10-46-59.518Z.json",
+    "localDesktop": ".codex-temp/update-download-status-20261008/desktop-tests-final.log",
+    "localBrowser": ".codex-temp/update-download-status-20261008/renderer-update-e2e-final-validation.json",
+    "packagedIpc": ".codex-temp/update-download-status-20261008/packaged-telemetry-final-validation.json",
+    "packagedIpcFull": ".codex-temp/update-download-status-20261008/packaged-telemetry-final-report.json",
+    "firstIpcVisualReview": ".codex-temp/update-download-status-20261008/packaged-telemetry-first-visual-review.json",
+    "screenshots": [
+      ".codex-temp/update-download-status-20261008/packaged-telemetry-final-differential.png",
+      ".codex-temp/update-download-status-20261008/packaged-telemetry-final-fallback.png",
+      ".codex-temp/update-download-status-20261008/packaged-telemetry-final-ready.png"
+    ]
+  },
+  "limits": [
+    "Repository unit and browser coverage repeated in release prerequisites and focused subsets is not added to distinct test totals.",
+    "Both workflows and final focused browser tests have zero actual test retries; CI-log acquisition and public HTTP ECONNRESET retries are recorded separately.",
+    "Public installer verification uses HEAD plus exactly 1024 Range bytes; full generated-installer SHA512 verification is proven by the CI producer and does not equal an independent public full download.",
+    "The published update is 0.2.68; 0.2.69 in the isolated packaged IPC test is synthetic.",
+    "This release verification did not install the formal 0.2.68 application or run real paid supplier generation.",
+    "New video group creation and pricing configuration belong to a separate authorized supplier-settings task and are outside this release receipt.",
+    "Short regression and packaged smoke checks do not establish multi-hour stability or eliminate every possible defect."
+  ],
+  "postReleaseLocalReceipt": true,
+  "committedOrPushedAgain": false
+}

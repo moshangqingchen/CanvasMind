@@ -1,0 +1,1120 @@
+{
+  "reportType": "release-video-contract-price-ui-verification",
+  "date": "2026-10-08",
+  "timezone": "America/Los_Angeles",
+  "finishedAtUtc": "2026-10-08T13:22:17.251Z",
+  "version": "0.2.69",
+  "finalCommit": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+  "publication": {
+    "tag": "v0.2.69",
+    "commit": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+    "latest": true,
+    "draft": false,
+    "prerelease": false,
+    "publishedAt": "2026-10-08T13:11:50Z",
+    "url": "https://github.com/moshangqingchen/CanvasMind/releases/tag/v0.2.69",
+    "notesMatch": true
+  },
+  "mainCi": {
+    "run": {
+      "id": 37780506775,
+      "name": "CI",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "headSha": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37780506775"
+    },
+    "collectedAt": "2026-10-08T13:08:57.162Z",
+    "summarizedAt": "2026-10-08T13:09:02.734Z",
+    "browserJobs": [
+      {
+        "id": 113322115186,
+        "name": "Browser (functional-3)",
+        "planned": 106,
+        "passedWithoutRetry": 106,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 106,
+        "attemptCount": 106,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      {
+        "id": 113322115303,
+        "name": "Browser (functional-2)",
+        "planned": 106,
+        "passedWithoutRetry": 105,
+        "flaky": 1,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 106,
+        "attemptCount": 107,
+        "retryAttemptCount": 1,
+        "initialFailureCount": 1
+      },
+      {
+        "id": 113322115307,
+        "name": "Browser (performance)",
+        "planned": 6,
+        "passedWithoutRetry": 6,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 6,
+        "attemptCount": 6,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0,
+        "performanceMeasurementGroups": 18
+      },
+      {
+        "id": 113322115391,
+        "name": "Browser (functional-1)",
+        "planned": 108,
+        "passedWithoutRetry": 108,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 108,
+        "attemptCount": 108,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      }
+    ],
+    "browser": {
+      "planned": 326,
+      "passedWithoutRetry": 325,
+      "flaky": 1,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 326,
+      "attemptCount": 327,
+      "retryAttemptCount": 1,
+      "initialFailureCount": 1
+    },
+    "packages": [
+      {
+        "name": "core",
+        "total": 30,
+        "passed": 30,
+        "failed": 0
+      },
+      {
+        "name": "db",
+        "total": 50,
+        "passed": 50,
+        "failed": 0
+      },
+      {
+        "name": "storage",
+        "total": 27,
+        "passed": 27,
+        "failed": 0
+      },
+      {
+        "name": "providers",
+        "total": 1251,
+        "passed": 1251,
+        "failed": 0
+      },
+      {
+        "name": "director",
+        "total": 24,
+        "passed": 24,
+        "failed": 0
+      },
+      {
+        "name": "desktop",
+        "total": 97,
+        "passed": 97,
+        "failed": 0
+      },
+      {
+        "name": "runtime",
+        "total": 366,
+        "passed": 366,
+        "failed": 0
+      },
+      {
+        "name": "renderer",
+        "total": 2126,
+        "passed": 2126,
+        "failed": 0
+      }
+    ],
+    "unit": {
+      "tests": 3971,
+      "passed": 3971,
+      "failed": 0
+    },
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "desktop": [
+      {
+        "jobId": 113322115125,
+        "desktopUnit": {
+          "tests": 97,
+          "pass": 97,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "allowedSkippedCases": [],
+        "standardSmokeChecks": 27,
+        "windowedSmokeChecks": 4,
+        "windowedPassed": true,
+        "rendererErrorCount": 0,
+        "realVisiblePaint": true,
+        "newRendererPidAfterCrash": true
+      }
+    ],
+    "logs": [
+      {
+        "id": 113322114826,
+        "name": "quality",
+        "file": "job-113322114826.log",
+        "bytes": 111783,
+        "sha256": "9200bfd327b3d2bd519fc2e9d87d4ffa150739b0e4d6a042645da6ee1f85b570"
+      },
+      {
+        "id": 113322115125,
+        "name": "desktop",
+        "file": "job-113322115125.log",
+        "bytes": 51919,
+        "sha256": "46841e3b3b5ca599981927878b9750ef1168783f43d6017b158fc7cbcd6f3a18"
+      },
+      {
+        "id": 113322115186,
+        "name": "Browser (functional-3)",
+        "file": "job-113322115186.log",
+        "bytes": 68366,
+        "sha256": "34fecdd356ee85aa01e0a7caf01f1924b9c90dc3460107a980af77bdf7ec2a92"
+      },
+      {
+        "id": 113322115303,
+        "name": "Browser (functional-2)",
+        "file": "job-113322115303.log",
+        "bytes": 76591,
+        "sha256": "198b69c2e06767e13a25c9849f5ebf840a02ac5c0fe4cf3f3e9a4598103f0ae0"
+      },
+      {
+        "id": 113322115307,
+        "name": "Browser (performance)",
+        "file": "job-113322115307.log",
+        "bytes": 55259,
+        "sha256": "b6ec5ab96807d964e89601f8ade4e34c43f6c46fc4a79c1ac1bff073038a21d5"
+      },
+      {
+        "id": 113322115391,
+        "name": "Browser (functional-1)",
+        "file": "job-113322115391.log",
+        "bytes": 69462,
+        "sha256": "849aa68d7146a1430fa61c90c45fd6acc82da5a5eeb7d7d49ba0a3e980a3e6f2"
+      }
+    ],
+    "safety": {
+      "methods": [
+        "GET"
+      ],
+      "tokenWritten": false,
+      "authenticatedHost": "api.github.com",
+      "anonymousLogTransport": "existing-provider-transport",
+      "signedRedirectURLsWritten": false,
+      "repositoryMutations": 0
+    },
+    "limits": [
+      "Read-only completed workflow log review; no test, generation, rerun, dispatch or release operation started by this reader.",
+      "Browser attempt/retry counts are parsed from each complete job log; workflow success alone does not establish zero retries.",
+      "Repeated prerequisite/subset tests across main CI and release CI are reported separately and are not added to distinct coverage.",
+      "Public release/tag/manifest/asset checks belong to the root agent and are separate from the CI producer installer checksum proof."
+    ]
+  },
+  "releaseCi": {
+    "run": {
+      "id": 37780507180,
+      "name": "Windows Desktop Release",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "headSha": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37780507180"
+    },
+    "collectedAt": "2026-10-08T13:13:57.429Z",
+    "summarizedAt": "2026-10-08T13:14:48.402Z",
+    "browserJobs": [
+      {
+        "id": 113322179835,
+        "name": "checks / Browser (performance)",
+        "planned": 6,
+        "passedWithoutRetry": 6,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 6,
+        "attemptCount": 6,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0,
+        "performanceMeasurementGroups": 18
+      },
+      {
+        "id": 113322179857,
+        "name": "checks / Browser (functional-3)",
+        "planned": 106,
+        "passedWithoutRetry": 106,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 106,
+        "attemptCount": 106,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      {
+        "id": 113322179912,
+        "name": "checks / Browser (functional-1)",
+        "planned": 108,
+        "passedWithoutRetry": 108,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 108,
+        "attemptCount": 108,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      {
+        "id": 113322179970,
+        "name": "checks / Browser (functional-2)",
+        "planned": 106,
+        "passedWithoutRetry": 106,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 106,
+        "attemptCount": 106,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      }
+    ],
+    "browser": {
+      "planned": 326,
+      "passedWithoutRetry": 326,
+      "flaky": 0,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 326,
+      "attemptCount": 326,
+      "retryAttemptCount": 0,
+      "initialFailureCount": 0
+    },
+    "packages": [
+      {
+        "name": "core",
+        "total": 30,
+        "passed": 30,
+        "failed": 0
+      },
+      {
+        "name": "db",
+        "total": 50,
+        "passed": 50,
+        "failed": 0
+      },
+      {
+        "name": "storage",
+        "total": 27,
+        "passed": 27,
+        "failed": 0
+      },
+      {
+        "name": "providers",
+        "total": 1251,
+        "passed": 1251,
+        "failed": 0
+      },
+      {
+        "name": "director",
+        "total": 24,
+        "passed": 24,
+        "failed": 0
+      },
+      {
+        "name": "desktop",
+        "total": 97,
+        "passed": 97,
+        "failed": 0
+      },
+      {
+        "name": "runtime",
+        "total": 366,
+        "passed": 366,
+        "failed": 0
+      },
+      {
+        "name": "renderer",
+        "total": 2126,
+        "passed": 2126,
+        "failed": 0
+      }
+    ],
+    "unit": {
+      "tests": 3971,
+      "passed": 3971,
+      "failed": 0
+    },
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "desktop": [
+      {
+        "jobId": 113322179901,
+        "desktopUnit": {
+          "tests": 97,
+          "pass": 97,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "allowedSkippedCases": [],
+        "standardSmokeChecks": 27,
+        "windowedSmokeChecks": 4,
+        "windowedPassed": true,
+        "rendererErrorCount": 0,
+        "realVisiblePaint": true,
+        "newRendererPidAfterCrash": true
+      }
+    ],
+    "release": {
+      "jobId": 113325310533,
+      "focusedBrowser": {
+        "planned": 30,
+        "passedWithoutRetry": 30,
+        "flaky": 0,
+        "finalFailed": 0,
+        "skipped": 0,
+        "eventuallySuccessful": 30,
+        "attemptCount": 30,
+        "retryAttemptCount": 0,
+        "initialFailureCount": 0
+      },
+      "focusedUnit": [
+        {
+          "passed": 192,
+          "total": 192
+        },
+        {
+          "passed": 62,
+          "total": 62
+        }
+      ],
+      "desktopUnit": {
+        "tests": 97,
+        "pass": 97,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "allowedSkippedCases": [],
+      "standardSmokeChecks": 27,
+      "windowedSmokeChecks": 4,
+      "windowedPassed": true,
+      "rendererErrorCount": 0,
+      "realVisiblePaint": true,
+      "newRendererPidAfterCrash": true,
+      "installerVersion": "0.2.69",
+      "installerVerificationPassed": true,
+      "fullInstallerHashValidationByCIProducer": true,
+      "independentFullPublicInstallerDownload": false,
+      "requiredStepCount": 9,
+      "publicationStepPassed": true
+    },
+    "logs": [
+      {
+        "id": 113322112161,
+        "name": "prepare",
+        "file": "job-113322112161.log",
+        "bytes": 11114,
+        "sha256": "71db8a02245e2ee750f53db6a13cd22d099344ac0d7018a5f11f91fe1737a3dc"
+      },
+      {
+        "id": 113322179835,
+        "name": "checks / Browser (performance)",
+        "file": "job-113322179835.log",
+        "bytes": 55360,
+        "sha256": "e57637172d08f5885d855d127cb01a7ccaa2f5693973abfea18b11b95a7148b6"
+      },
+      {
+        "id": 113322179857,
+        "name": "checks / Browser (functional-3)",
+        "file": "job-113322179857.log",
+        "bytes": 71390,
+        "sha256": "4aab1f0552eb3dbcf8583b420830779eb6b2049646d516478255d5dd5bf15781"
+      },
+      {
+        "id": 113322179901,
+        "name": "checks / desktop",
+        "file": "job-113322179901.log",
+        "bytes": 52289,
+        "sha256": "36dad5d41d0e959fe046585066f7f4da140bdfb18b1dce01ec3badeb18891a01"
+      },
+      {
+        "id": 113322179912,
+        "name": "checks / Browser (functional-1)",
+        "file": "job-113322179912.log",
+        "bytes": 69400,
+        "sha256": "cade6258c2dcd6db224d496218f377991ac9b96fd66b7c5cff1216be03aa2111"
+      },
+      {
+        "id": 113322179935,
+        "name": "checks / quality",
+        "file": "job-113322179935.log",
+        "bytes": 112294,
+        "sha256": "b2a8c20b5a515586ee16987aa5fd592bcbbaa7e500a227af4fc75a20fd243af9"
+      },
+      {
+        "id": 113322179970,
+        "name": "checks / Browser (functional-2)",
+        "file": "job-113322179970.log",
+        "bytes": 69506,
+        "sha256": "e25790f8ded0fd7e1783bc83af5683c26e0314301b4eeef4612aef4997f7de78"
+      },
+      {
+        "id": 113325310533,
+        "name": "desktop-release",
+        "file": "job-113325310533.log",
+        "bytes": 84361,
+        "sha256": "94d26bd3ea7173182baba9978ef6443ff561d66aab7ee9df9bcdc5337614f8e8"
+      }
+    ],
+    "safety": {
+      "methods": [
+        "GET"
+      ],
+      "tokenWritten": false,
+      "authenticatedHost": "api.github.com",
+      "anonymousLogTransport": "existing-provider-transport",
+      "signedRedirectURLsWritten": false,
+      "repositoryMutations": 0
+    },
+    "limits": [
+      "Read-only completed workflow log review; no test, generation, rerun, dispatch or release operation started by this reader.",
+      "Browser attempt/retry counts are parsed from each complete job log; workflow success alone does not establish zero retries.",
+      "Repeated prerequisite/subset tests across main CI and release CI are reported separately and are not added to distinct coverage.",
+      "Public release/tag/manifest/asset checks belong to the root agent and are separate from the CI producer installer checksum proof."
+    ]
+  },
+  "publicVerification": {
+    "version": "0.2.69",
+    "expectedCommit": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+    "startedAt": "2026-10-08T13:19:24.229Z",
+    "checks": {
+      "release": {
+        "tag": "v0.2.69",
+        "commit": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+        "latest": true,
+        "draft": false,
+        "prerelease": false,
+        "publishedAt": "2026-10-08T13:11:50Z",
+        "url": "https://github.com/moshangqingchen/CanvasMind/releases/tag/v0.2.69",
+        "notesMatch": true
+      },
+      "workflows": [
+        {
+          "name": "CI",
+          "id": 37780506775,
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37780506775"
+        },
+        {
+          "name": "Windows Desktop Release",
+          "id": 37780507180,
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37780507180"
+        }
+      ],
+      "assets": [
+        {
+          "name": "SuperCanvas-Setup-0.2.69-x64.exe",
+          "bytes": 216605464,
+          "officialDigest": "sha256:35b36b5cfe0008c324422d08afa2ea722f1ab7aa520602a6c8cebc99833d517d",
+          "head": 200
+        },
+        {
+          "name": "SuperCanvas-Setup-0.2.69-x64.exe.blockmap",
+          "bytes": 224102,
+          "officialDigest": "sha256:350488e2f5d52bd3702011aa33e7ea67ab92d5e85c4957d2a79691d0de6734d4",
+          "head": 200
+        },
+        {
+          "name": "latest.yml",
+          "bytes": 2147,
+          "officialDigest": "sha256:091a54561056d6378942403de905b1df2d7dcbff6b560b3e9ffacb33aeebda0c",
+          "head": 200
+        }
+      ],
+      "manifest": {
+        "version": "0.2.69",
+        "installerName": "SuperCanvas-Setup-0.2.69-x64.exe",
+        "bytes": 216605464,
+        "manifestFullHashMatches": true,
+        "blockmapFullHashMatches": true,
+        "releaseNotesMatch": true,
+        "installerRange206": true,
+        "installerFullIndependentHash": "not performed"
+      },
+      "updater": {
+        "actualDependencyVersion": "6.8.9",
+        "decisions": {
+          "0.2.64": true,
+          "0.2.65": true,
+          "0.2.66": true,
+          "0.2.67": true,
+          "0.2.68": true,
+          "0.2.69": false,
+          "0.2.70": false
+        }
+      }
+    },
+    "requests": [
+      {
+        "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.69/SuperCanvas-Setup-0.2.69-x64.exe",
+        "method": "HEAD",
+        "attempt": 1,
+        "status": 200,
+        "contentLength": "216605464",
+        "contentRange": null,
+        "contentType": "application/octet-stream",
+        "transport": "existing-provider-transport",
+        "bodyCompleted": true
+      },
+      {
+        "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.69/SuperCanvas-Setup-0.2.69-x64.exe.blockmap",
+        "method": "HEAD",
+        "attempt": 1,
+        "status": 200,
+        "contentLength": "224102",
+        "contentRange": null,
+        "contentType": "application/octet-stream",
+        "transport": "existing-provider-transport",
+        "bodyCompleted": true
+      },
+      {
+        "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.69/latest.yml",
+        "method": "HEAD",
+        "attempt": 1,
+        "status": 200,
+        "contentLength": "2147",
+        "contentRange": null,
+        "contentType": "application/octet-stream",
+        "transport": "existing-provider-transport",
+        "bodyCompleted": true
+      },
+      {
+        "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.69/latest.yml",
+        "method": "GET",
+        "attempt": 1,
+        "status": 200,
+        "contentLength": "2147",
+        "contentRange": null,
+        "contentType": "application/octet-stream",
+        "transport": "existing-provider-transport",
+        "bodyCompleted": true,
+        "bytesRead": 2147
+      },
+      {
+        "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.69/SuperCanvas-Setup-0.2.69-x64.exe.blockmap",
+        "method": "GET",
+        "attempt": 1,
+        "status": 200,
+        "contentLength": "224102",
+        "contentRange": null,
+        "contentType": "application/octet-stream",
+        "transport": "existing-provider-transport",
+        "bodyCompleted": true,
+        "bytesRead": 224102
+      },
+      {
+        "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.69/SuperCanvas-Setup-0.2.69-x64.exe",
+        "method": "GET",
+        "attempt": 1,
+        "status": 206,
+        "contentLength": "1024",
+        "contentRange": "bytes 0-1023/216605464",
+        "contentType": "application/octet-stream",
+        "transport": "existing-provider-transport",
+        "bodyCompleted": true,
+        "range": "bytes=0-1023",
+        "bytesRead": 1024
+      }
+    ],
+    "requestFailures": [],
+    "passed": true,
+    "apiTransport": "existing-provider-transport",
+    "apiCredentialHostOnly": "api.github.com",
+    "limits": [
+      "Installer is checked by HEAD and exactly 1024 public Range bytes; a full installer hash is not independently rechecked here.",
+      "CI and local producer-side release verification hash the full produced installer against latest.yml.",
+      "Actual updater dependency comparator is called without an updater instance; no download or installation is requested."
+    ],
+    "finishedAt": "2026-10-08T13:20:37.533Z"
+  },
+  "networkEvidenceCollection": {
+    "finalCiFailures": [
+      {
+        "evidence": ".codex-temp/release-v0.2.69-ci-review/c21b7661/ci/download-failure-1791464876063.json",
+        "stage": "run",
+        "name": "TypeError",
+        "code": "UND_ERR_SOCKET"
+      }
+    ],
+    "earlierPublicFailures": [
+      {
+        "evidence": ".codex-temp/release-v0.2.69/public-v0.2.69-verification-2026-10-08T13-13-55.497Z.json",
+        "startedAt": "2026-10-08T13:13:52.470Z",
+        "finishedAt": "2026-10-08T13:13:55.497Z",
+        "error": {
+          "name": "TypeError",
+          "code": "ECONNRESET",
+          "stage": "release-metadata"
+        }
+      },
+      {
+        "evidence": ".codex-temp/release-v0.2.69/public-v0.2.69-verification-2026-10-08T13-16-47.083Z.json",
+        "startedAt": "2026-10-08T13:14:48.849Z",
+        "finishedAt": "2026-10-08T13:16:47.083Z",
+        "error": {
+          "name": "TimeoutError",
+          "code": null,
+          "stage": "blockmap",
+          "statusCode": 200
+        }
+      }
+    ],
+    "finalPublicRequestFailures": [],
+    "distinctFromTestRetries": true,
+    "testRetryCountComesFromCompleteLogs": true
+  },
+  "browserInitialFailure": {
+    "case": "快捷键弹窗约束 Tab，Escape 关闭后返回入口",
+    "file": "e2e/dialog-interactions.spec.ts",
+    "line": 56,
+    "initialDurationSeconds": 11.5,
+    "retry1DurationSeconds": 1.6,
+    "expectation": "close button focused",
+    "locatorResult": "element not found",
+    "assertionTimeoutMs": 10000,
+    "mainCiDiagnosis": {
+      "recordedAt": "2026-10-08T13:10:55.635Z",
+      "sourceSha": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+      "runId": 37780506775,
+      "jobId": 113322115303,
+      "attempts": [
+        "✘   67 e2e/dialog-interactions.spec.ts:56:1 › 快捷键弹窗约束 Tab，Escape 关闭后返回入口 (11.5s)",
+        "✓   68 e2e/dialog-interactions.spec.ts:56:1 › 快捷键弹窗约束 Tab，Escape 关闭后返回入口 (retry #1) (1.6s)"
+      ],
+      "headings": [],
+      "timeoutSummaries": [],
+      "focusSummaries": [
+        "Error: expect(locator).toBeFocused() failed",
+        "Expected: focused",
+        "Timeout: 10000ms"
+      ],
+      "assertionSummaries": [],
+      "rawStackUrlsHeadersOrArbitraryErrorMessagesIncluded": false
+    },
+    "releasePrerequisiteFirstPassDurationSeconds": 1.2,
+    "boundedProductionRepeat": {
+      "recordedAt": "2026-10-08T13:16:39.7608405Z",
+      "sourceSha": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+      "finalSourceBuild": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69\\desktop-build-miaowu-final.log",
+      "buildId": "t3HcBmlGZdcqqyw1j-mfa",
+      "scope": "One existing real Chrome E2E case repeated five times with retries disabled against the existing production Next build",
+      "case": {
+        "file": "e2e/dialog-interactions.spec.ts",
+        "line": 56,
+        "title": "快捷键弹窗约束 Tab，Escape 关闭后返回入口",
+        "assertions": [
+          "Initial close-button focus",
+          "Tab focus trap",
+          "Shift+Tab focus trap",
+          "Escape closes dialog",
+          "Focus returns to pan-mode trigger"
+        ]
+      },
+      "invocation": {
+        "port": 3241,
+        "browserChannel": "chrome",
+        "repeatEach": 5,
+        "workers": 1,
+        "retries": 0,
+        "timeoutMs": 45000,
+        "expectTimeoutMs": 10000,
+        "globalSetup": "Existing isolated global-setup.ts",
+        "externalBaseUrl": false,
+        "command": "pnpm exec playwright test e2e/dialog-interactions.spec.ts --grep \"快捷键弹窗约束 Tab，Escape 关闭后返回入口\" --repeat-each=5 --workers=1 --retries=0 --reporter=list,json --output=<independent ignored evidence directory>"
+      },
+      "results": {
+        "exitCode": 0,
+        "expected": 5,
+        "unexpected": 0,
+        "skipped": 0,
+        "flaky": 0,
+        "totalDurationMs": 9134.149,
+        "attempts": [
+          {
+            "startTime": "2026-10-08T13:14:11.728Z",
+            "durationMs": 900,
+            "status": "passed",
+            "retry": 0,
+            "errors": []
+          },
+          {
+            "startTime": "2026-10-08T13:14:13.311Z",
+            "durationMs": 892,
+            "status": "passed",
+            "retry": 0,
+            "errors": []
+          },
+          {
+            "startTime": "2026-10-08T13:14:14.881Z",
+            "durationMs": 797,
+            "status": "passed",
+            "retry": 0,
+            "errors": []
+          },
+          {
+            "startTime": "2026-10-08T13:14:16.376Z",
+            "durationMs": 827,
+            "status": "passed",
+            "retry": 0,
+            "errors": []
+          },
+          {
+            "startTime": "2026-10-08T13:14:17.991Z",
+            "durationMs": 770,
+            "status": "passed",
+            "retry": 0,
+            "errors": []
+          }
+        ],
+        "errors": [],
+        "report": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69-ci-review\\c21b7661\\dialog-repeat\\dialog-repeat-report.json",
+        "log": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69-ci-review\\c21b7661\\dialog-repeat\\dialog-repeat-run.log",
+        "screenshots": [],
+        "screenshotPolicy": "Original only-on-failure policy; all five attempts passed, so no local failure screenshots or traces were produced."
+      },
+      "ciFirstFailurePreserved": {
+        "runId": 37780506775,
+        "jobId": 113322115303,
+        "log": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69-ci-review\\c21b7661\\ci\\job-113322115303.log",
+        "safeDiagnosis": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69-ci-review\\c21b7661\\ci\\browser-retry-diagnosis-safe.json",
+        "firstAttemptDurationMsApprox": 11500,
+        "firstAssertionLine": 64,
+        "failure": "Initial toBeFocused(close) timed out because the dialog/button locator found no elements; no Tab assertion had yet run.",
+        "retryOneDurationMsApprox": 1600,
+        "retryOnePassed": true,
+        "originalFlakyCount": 1
+      },
+      "diagnosis": {
+        "confirmed": [
+          "The observed CI failure occurred before Tab or Escape assertions, with no shortcuts dialog element found.",
+          "Local production repeated case passed all existing assertions on all five initial attempts.",
+          "The project menu and pan trigger render during canvas initialization.",
+          "Canvas keyboard listener is registered only when initialization.status is ready.",
+          "The existing test waits for a visible project-menu button, not a ready-gated control, before focusing pan and pressing Shift+/.",
+          "Modal focus initialization uses requestAnimationFrame; the failing CI locator had no dialog rather than a visible unfocused close button."
+        ],
+        "inference": "A test initialization/readiness race is a plausible timing factor: the one-shot shortcut can be sent before the ready-only listener is registered. This has not been established as the unique cause of the CI failure.",
+        "ciTraceInspected": false,
+        "limitation": "CI first-attempt trace/screenshot have not been inspected in this receipt. Passing local bounded repeats and the independently passing Release prerequisite case do not erase the recorded main-CI flaky attempt.",
+        "productionBugConfirmed": false,
+        "changes": "No production or test-source edits; no timeout relaxation, sleeps, retry increase or skipped assertions.",
+        "futureSuggestion": "If further evidence or recurrence warrants a test fix, wait for an existing initialization-ready-gated control before the one-shot shortcut while retaining every original focus/Tab/Escape assertion.",
+        "codeReferences": [
+          "canvas-app.tsx:2547 initial loading state",
+          "canvas-app.tsx:3260 loading reset",
+          "canvas-app.tsx:3401 ready transition after critical canvas and local-draft read",
+          "canvas-app.tsx:6586 ready-only keyboard effect",
+          "canvas-app.tsx:9352 shortcuts button",
+          "canvas-app.tsx:9384 project-menu shell button",
+          "canvas-app.tsx:9798 pan-mode shell button",
+          "dialog-interactions.spec.ts:41 only visible project-menu readiness",
+          "dialog-interactions.spec.ts:61 one-shot Shift+/",
+          "dialog-interactions.spec.ts:64 first focus assertion",
+          "use-dialog-focus.ts:62 requestAnimationFrame initial focus"
+        ]
+      },
+      "safety": {
+        "sourceEdits": 0,
+        "formalApplicationLaunched": false,
+        "formalProfileReads": 0,
+        "formalProfileWrites": 0,
+        "credentialsRead": 0,
+        "realSupplierRequests": 0,
+        "paidGenerationRequests": 0,
+        "allTestApiRequestsIntercepted": true,
+        "isolatedGlobalSetup": true,
+        "ephemeralMemoryStore": true,
+        "temporaryDatabaseStorageProjectsRecoveryReferencePaths": true,
+        "ownedServerTeardown": "Existing globalSetup stops only its spawned process tree before deleting only its validated unique temp root.",
+        "isolatedPortClosed": true,
+        "previousFailureEvidenceOverwritten": false,
+        "sourceHashes": [
+          {
+            "path": "D:\\project development\\超级画布\\apps\\desktop\\renderer\\e2e\\dialog-interactions.spec.ts",
+            "sha256": "d8744ffbc7d1fe3f098992084345bd5561996bfcc00170bb81f69632ff587c75"
+          },
+          {
+            "path": "D:\\project development\\超级画布\\apps\\desktop\\renderer\\components\\canvas-app.tsx",
+            "sha256": "42883312424c1ceb1f20b00aee23ec65dc80a9fe4084d198e0027e94fe04acae"
+          },
+          {
+            "path": "D:\\project development\\超级画布\\apps\\desktop\\renderer\\components\\shortcuts-modal.tsx",
+            "sha256": "191cfba702c0ef552ecc78394e073db72baa0cf6ea7ca550a584a0b3fd2348f7"
+          },
+          {
+            "path": "D:\\project development\\超级画布\\apps\\desktop\\renderer\\components\\use-dialog-focus.ts",
+            "sha256": "ecc06da26420700b4c70ca3aa4f1c7ca5125f5e1f238473fbec23e1299676c48"
+          }
+        ]
+      }
+    },
+    "firstFailureArtifact": {
+      "checkedAt": "2026-10-08T13:17:19.439Z",
+      "sourceSha": "c21b76619b15d440fb2a5edc192feb3e83dbb49b",
+      "runId": 37780506775,
+      "stage": "single-official-artifact-list",
+      "archiveDownloads": 0,
+      "signedUrlsWritten": false,
+      "workflowBrowserArtifactCondition": "failure()",
+      "successfulFlakyJobArtifactNotGuaranteed": true,
+      "statusCode": 200,
+      "totalCount": 1,
+      "matchingArtifacts": [],
+      "traceAvailability": "no matching artifact in the single current official list"
+    },
+    "causeStatus": "not conclusively diagnosed",
+    "possibleFactor": "Read-only code has an initialization-ready keyboard-listener gate; the case waits only for the project menu to be visible. Original trace was unavailable."
+  },
+  "changes": {
+    "exactVideoModelAndAccountGroupSelection": true,
+    "singlePublishedPerSecondPrice": true,
+    "multiplierAppliedOnce": true,
+    "currencyAndBillingUnitPreserved": true,
+    "secureSkillAccountIdJoin": true,
+    "conditionalTokenCnyPerMillion": true,
+    "unknownTokenUsageDoesNotEstimateVideoTotal": true,
+    "nativeCangyuanExactModels": 3,
+    "nativeChuangxiangExactModels": 34,
+    "miaowuExactKeyOnlyPendingModels": 5,
+    "keyPermissionsAndCustomBindingsPreserved": true,
+    "freeCatalogRefreshOnly": true,
+    "inheritsVersion68DownloadSpeedEtaModesAndSanitizedDiagnostics": true,
+    "networkBandwidthImprovementClaimed": false
+  },
+  "local": {
+    "fullUnitsBeforeLastTestOnlyDelta": {
+      "tests": 3971,
+      "passed": 3970,
+      "skipped": 1,
+      "skip": "Windows file-symlink creation privilege; CI actual outcome is recorded per complete log."
+    },
+    "finalProvidersAfterDnsDelta": {
+      "tests": 1251,
+      "passed": 1251
+    },
+    "productionCodeUnchangedByFinalCommit": true,
+    "testOnlyDelta": [
+      "packages/providers/src/supplier-login.test.ts"
+    ],
+    "productionBuildId": "t3HcBmlGZdcqqyw1j-mfa",
+    "browser": {
+      "startTime": "2026-10-08T12:42:52.763Z",
+      "duration": 13132.455,
+      "expected": 5,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "browserRetryAttempts": 0,
+    "browserUi": {
+      "operation": "v0.2.69-final-production-canvas-ui-after-Miaowu-contract-fix",
+      "recordedAt": "2026-10-08T12:44:28.2016476Z",
+      "productionVersion": "0.2.69",
+      "finalSourceBuild": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69\\desktop-build-miaowu-final.log",
+      "productionBuildId": "t3HcBmlGZdcqqyw1j-mfa",
+      "sourceFrozen": true,
+      "sourceEditsDuringE2E": 0,
+      "workingDirectory": "D:\\project development\\超级画布\\apps\\desktop\\renderer",
+      "command": "pnpm exec playwright test e2e/canvas-panel-after-supplier.spec.ts --retries=0 --reporter=list,json --output=\"D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69\\e2e-miaowu-final-results\"",
+      "browser": "installed Google Chrome",
+      "retries": 0,
+      "exitCode": 0,
+      "report": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69\\e2e-miaowu-final-report.json",
+      "stats": {
+        "startTime": "2026-10-08T12:42:52.763Z",
+        "duration": 13132.455,
+        "expected": 5,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "assertions": [
+        "Supplier settings close retains dropdown, model menu, wheel and focus refresh interactions",
+        "Selected current connection remains chosen before switching",
+        "Target supplier chooses the group with the same complete video model ID",
+        "Same-ID image and similar-ID video are not borrowed for video prices",
+        "Saved canvas uses the exact target connection and retains the complete model ID",
+        "Conditional token output quote retains ¥18.2–29/1M tokens and explicit reference-video uncertainty, removes old per-request amount and has no horizontal overflow",
+        "Pointercancel, blur and capture-lost-before-blur clear selection obstruction and preserve subsequent panel actions",
+        "Every case enforces zero paid /api/runs POST attempts and zero pageerrors"
+      ],
+      "screenshots": [
+        {
+          "path": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69\\e2e-miaowu-final-results\\canvas-panel-after-supplie-3599b-较与切换选择完整型号所在分组，不借用相似型号或图片价格\\supplier-exact-video-group.png",
+          "bytes": 578298,
+          "sha256": "AE894E7243B4879A0D4BF0EAF472FD9BAE66B96C1A527CE22778BDC5A699B3C6"
+        },
+        {
+          "path": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69\\e2e-miaowu-final-results\\canvas-panel-after-supplie-3599b-较与切换选择完整型号所在分组，不借用相似型号或图片价格\\supplier-token-conditional-price.png",
+          "bytes": 582893,
+          "sha256": "C819EFF00CFD25ABC14E819805FBF8F52CD412A70C675D16A431DF4AC92A56DE"
+        }
+      ],
+      "visualReview": "Both final screenshots inspected. Exact official-token group/full model ID visible, per-request quote correct. Conditional token summary wraps within the parameter panel and preserves 720p plus reference-video uncertainty. Controls do not overlap and no horizontal overflow; lower content remains in the normal scroll body.",
+      "isolation": {
+        "ephemeralGlobalSetup": true,
+        "externalBaseUrl": false,
+        "formalApplicationStarted": false,
+        "formalProfileAccess": false,
+        "paidGenerationPostAttempts": 0,
+        "pageErrors": 0,
+        "port": 3239,
+        "portClosedAfterTeardown": true
+      },
+      "miaowuSourceValidation": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69\\miaowu-contract-final-validation.json",
+      "miaowuFinalOfflineReplay": "D:\\project development\\超级画布\\.codex-temp\\release-v0.2.69\\miaowu-boundary-fixed-final-report.json",
+      "targetUnitValidation": "6 renderer files / 84 cases passed after final documented-operation narrowing; new renderer case count remains 4",
+      "typecheck": "renderer tsc --noEmit passed",
+      "lint": "three owned renderer files ESLint --max-warnings 0 passed",
+      "preservedPriorUiEvidence": "e2e-final-report.json and renderer-e2e-final-validation.json retained; this report and screenshots are independent final outputs"
+    },
+    "packagedSmokeChecks": 27,
+    "packagedSmokeRendererErrors": 0
+  },
+  "resolvedPreparationFailures": [
+    {
+      "scope": "local full unit first round",
+      "cause": [
+        "The barrel export providerFetch mock did not replace the original loginSupplierSite function internal default providerFetch; access-token fixture login could reach global fetch and real network.",
+        "Mocked HTTP helpers still run endpoint DNS validation. Using instance.example.com can produce DNS work before the injected transport; instance.test preserves the same-host fixture contract without DNS lookup."
+      ],
+      "case": "checks private site login identity after async documentation without blocking $mode changes",
+      "timeoutMs": 5000,
+      "timeoutRelaxed": false,
+      "productionChanged": false,
+      "targetedPassed": 46,
+      "repeatedPassed": 10,
+      "evidence": ".codex-temp/release-v0.2.69/models-isolation-diagnosis-safe.json"
+    },
+    {
+      "scope": "7ffc67a5 superseded release quality",
+      "runId": 37779108396,
+      "jobId": 113317471235,
+      "case": "supplier website access token > rejects an HTTP 200 failed authentication as permission_denied",
+      "timeoutMs": 5000,
+      "cause": "All affected calls already inject mock HTTP fetch. fetchProviderJson still awaits assertSafeProviderEndpoint DNS lookup before that transport; site.example.com was not a reserved .test host and could exceed the case timeout.",
+      "timeoutRelaxed": false,
+      "productionChanged": false,
+      "targetedPassed": 49,
+      "repeatedPassed": 25,
+      "workflowCancelledByRoot": true,
+      "evidence": ".codex-temp/release-v0.2.69/supplier-login-dns-diagnosis-safe.json"
+    }
+  ],
+  "supersededPreparations": [
+    {
+      "commit": "22d48a45c8f004d8884e43b9ee55c086dde4368a",
+      "ciRunId": 37775026533,
+      "releaseRunId": 37775026827,
+      "releaseConclusion": "cancelled",
+      "reason": "Scoped Miaowu automatic-chat video route fix required before publication.",
+      "nativeLogTransportFailures": 2,
+      "providerTransportRecovery": true,
+      "finalReleaseEvidence": false
+    },
+    {
+      "commit": "7ffc67a52db72f2c688c62d4c5bb547e11ed3e39",
+      "ciRunId": 37779107896,
+      "releaseRunId": 37779108396,
+      "ciConclusion": "success",
+      "releaseConclusion": "cancelled",
+      "qualityConclusion": "failure",
+      "reason": "Login unit fixture depended on public DNS; final commit changes only that test isolation.",
+      "finalReleaseEvidence": false
+    }
+  ],
+  "evidence": {
+    "finalPublicVerification": ".codex-temp/release-v0.2.69/public-v0.2.69-verification-2026-10-08T13-20-37.533Z.json",
+    "mainCiSummary": ".codex-temp/release-v0.2.69-ci-review/c21b7661/ci/workflow-counts-summary.json",
+    "releaseSummary": ".codex-temp/release-v0.2.69-ci-review/c21b7661/release/workflow-counts-summary.json",
+    "localUi": ".codex-temp/release-v0.2.69/renderer-e2e-miaowu-final-validation.json",
+    "localFullUnits": ".codex-temp/release-v0.2.69/full-unit-verified-final.log",
+    "finalProvidersUnits": ".codex-temp/release-v0.2.69/providers-unit-dns-final.log",
+    "localPackagedSmoke": ".codex-temp/release-v0.2.69/packaged-smoke-miaowu-final.log",
+    "localIsolationDiagnosis": ".codex-temp/release-v0.2.69/models-isolation-diagnosis-safe.json",
+    "loginDnsDiagnosis": ".codex-temp/release-v0.2.69/supplier-login-dns-diagnosis-safe.json",
+    "miaowuBoundary": ".codex-temp/release-v0.2.69/miaowu-boundary-fixed-final-report.json",
+    "miaowuContract": ".codex-temp/release-v0.2.69/miaowu-contract-final-validation.json",
+    "nativeVideoBoundary": ".codex-temp/supplier-video-groups-20261008/native-video-bridge-final-validation.json",
+    "cangyuanCurrentDocs": ".codex-temp/supplier-video-groups-20261008/cangyuan-native-video-contract-recheck.json",
+    "chuangxiangCurrentPrice": ".codex-temp/supplier-video-groups-20261008/chuangxiang-current-video-pricing-safe.json",
+    "accountGroupReplay": ".codex-temp/supplier-video-groups-20261008/group-identity-replay-validation.json",
+    "secureTokenUnitEvidence": ".codex-temp/supplier-video-groups-20261008/secure-token-pricing-official-evidence-20261008.json",
+    "cancelledFailedPreparation": ".codex-temp/release-v0.2.69-ci-review/7ffc67a5/release/cancelled-history-receipt.json",
+    "dialogRepeat": ".codex-temp/release-v0.2.69-ci-review/c21b7661/dialog-repeat/dialog-repeat-validation.json",
+    "retryArtifacts": ".codex-temp/release-v0.2.69-ci-review/c21b7661/ci/browser-retry-artifact-availability.json",
+    "retryDiagnosis": ".codex-temp/release-v0.2.69-ci-review/c21b7661/ci/browser-retry-diagnosis-safe.json"
+  },
+  "safety": {
+    "readerMethods": [
+      "GET",
+      "HEAD"
+    ],
+    "githubCredentialHostOnly": "api.github.com",
+    "rawCredentialsSignedUrlsHeadersAndStacksWritten": false,
+    "workflowMutationsByReader": 0,
+    "realPaidGenerationRequests": 0,
+    "formalProfileWritesByReleaseReader": 0,
+    "formalInstallationOperations": 0,
+    "anonymousLogTransport": "existing-provider-transport",
+    "independentFullInstallerDownload": false,
+    "publicInstallerRangeBytes": 1024,
+    "fullInstallerHashProof": "Final CI producer reads the full produced installer and compares SHA512/size with latest.yml."
+  },
+  "limits": [
+    "Current Cangyuan three technical JSON documents were reread successfully; Chuangxiang current catalog/prices were reread, but its current technical chunk body was not obtained within bounded network attempts. Existing exact contracts were reused.",
+    "Media submission/poll/extraction checks use synthetic transports; no real paid image/video/music generation was requested.",
+    "Browser and smoke checks are bounded regressions and do not establish multi-hour stability.",
+    "Supplier video-group and Key setup in this same user task is complete; see docs/supplier-video-group-provision-2026-10-08.md. This release reader does not change the formal settings.",
+    "Public HEAD/manifest/blockmap/1024-byte Range verification does not claim an independent full public installer hash.",
+    "This local post-release receipt is untracked and is not committed to retrigger release workflows."
+  ]
+}

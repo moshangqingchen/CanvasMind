@@ -1,6 +1,6 @@
 import { supplierKeyForConnection } from "./supplier-identity";
 import { inventoryChanges } from "./model-availability";
-import { assertCompleteModelInventoryPayload, isCompleteModelInventoryResponse, ModelInventoryReadError, modelInventoryFailure,
+import { assertCompleteModelInventoryPayload, isCompleteModelInventoryResponse, ModelInventoryReadError, modelInventoryFailure, modelDirectoryDenialCode,
   modelInventoryFailureConfig, modelInventoryFailureHeaders, type ModelInventoryFailure } from "./model-inventory-failure";
 import { randomUUID } from "node:crypto";
 import { SupplierConflictError } from "@super-canvas/db";
@@ -69,6 +69,17 @@ function adapterFor(service: RunService, provider: string) {
     adapters?: () => Map<string, unknown>;
   };
   return anyService.adapters?.()?.get(provider);
+}
+
+/** A denied directory stays denied; preserve why it was denied without exposing upstream bodies. */
+function deniedModelsResponse(evidence: { httpStatus?: unknown; errorCode?: unknown; upstreamErrorCode?: unknown }, headers: Record<string, string> = {}): Response {
+  const status = evidence.httpStatus === 401 ? 401
+    : evidence.httpStatus === 403 || evidence.errorCode === "permission_denied" ? 403 : 401;
+  const failure = modelInventoryFailure(new ModelInventoryReadError(
+    status === 403 ? "permission_denied" : "invalid_credentials", status, modelDirectoryDenialCode(evidence.upstreamErrorCode),
+  ));
+  return Response.json({ error: failure.message }, { status,
+    headers: { ...headers, "Cache-Control": "no-store", "X-Model-Scan-Status": "unauthorized", ...modelInventoryFailureHeaders(failure) } });
 }
 
 interface OpenAIModelList {
@@ -195,6 +206,7 @@ async function persistCustomGroupModelScan(
         modelScanComplete: true,
         modelScanError: null,
         modelScanErrorCode: null,
+        modelScanUpstreamErrorCode: null,
         modelScanHttpStatus: null,
         scannedModelIds: modelIds,
         modelScanGroups: modelGroups,
@@ -633,10 +645,7 @@ async function readModels(
       "X-Model-Scan-Checked-At": scan.checkedAt,
     };
     if (scan.status === "unauthorized")
-      return Response.json(
-        { error: scan.error ?? "赛博阿飞分组 Key 无权读取模型" },
-        { status: 401, headers },
-      );
+      return deniedModelsResponse(scan, headers);
     if (scan.status === "unconfigured")
       return Response.json(
         { error: scan.error ?? "赛博阿飞分组尚未配置 Key" },
@@ -664,10 +673,7 @@ async function readModels(
       "X-Model-Scan-Checked-At": scan.checkedAt,
     };
     if (scan.status === "unauthorized")
-      return Response.json(
-        { error: scan.error ?? "辰途分组 Key 无权读取模型" },
-        { status: 401, headers },
-      );
+      return deniedModelsResponse(scan, headers);
     if (scan.status === "unconfigured")
       return Response.json(
         { error: scan.error ?? "辰途分组尚未配置 Key" },
@@ -701,10 +707,7 @@ async function readModels(
       } : {}),
     };
     if (scan.status === "unauthorized")
-      return Response.json(
-        { error: scan.error ?? "喵呜分组 Key 无权读取模型" },
-        { status: 401, headers: scanHeaders },
-      );
+      return deniedModelsResponse(scan, scanHeaders);
     if (scan.status === "failed") {
       const stale = savedConnectorModels(scan.connection ?? connection);
       if (stale.length > 0) return staleModelsResponse(stale, scanHeaders);
@@ -730,17 +733,7 @@ async function readModels(
     // 由下方 openai 适配器的实时列举返回。
     const scan = await scanFriModelConnection(id).catch(() => undefined);
     if (scan?.status === "unauthorized")
-      return Response.json(
-        { error: scan.error ?? "FriModel 分组 Key 无权读取模型" },
-        {
-          status: 401,
-          headers: {
-            "Cache-Control": "no-store",
-            "X-Model-Scan-Status": scan.status,
-            "X-Model-Scan-Checked-At": scan.checkedAt,
-          },
-        },
-      );
+      return deniedModelsResponse(scan, { "X-Model-Scan-Checked-At": scan.checkedAt });
     connection = (await repository.getConnection(id)) ?? connection;
     if (scan?.status === "failed") {
       const stale = savedFriModelSnapshotModels(connection);
@@ -758,17 +751,7 @@ async function readModels(
       "X-Model-Scan-Checked-At": scan.checkedAt,
     };
     if (scan.status === "unauthorized")
-      return Response.json(
-        {
-          error:
-            scan.error ??
-            "MikotoPro 拒绝了当前分组 Key（可能分组已停用），请在官网确认后重新填写",
-        },
-        {
-          status: 401,
-          headers: { "Cache-Control": "no-store", ...mikotoScanHeaders },
-        },
-      );
+      return deniedModelsResponse(scan, mikotoScanHeaders);
     connection = scan.connection ?? connection;
     if (connection.provider === "rest" && (scan.status === "live" || scan.status === "empty")) {
       // The REST adapter lists its saved connector, which may still contain a
@@ -1060,10 +1043,8 @@ async function readModelResponse(
     // including pricing reads and legacy preset inventory fallbacks.
     if (cachedOnly) {
       if (original.config.modelScanStatus === "unauthorized")
-        return withModelInventoryMetadata(Response.json(
-          { error: "当前 Key 鉴权失败，请更新 Key 或重新测试" },
-          { status: 401, headers: { "X-Model-Scan-Status": "unauthorized" } },
-        ), original.config, "saved");
+        return withModelInventoryMetadata(deniedModelsResponse({ httpStatus: original.config.modelScanHttpStatus,
+          errorCode: original.config.modelScanErrorCode, upstreamErrorCode: original.config.modelScanUpstreamErrorCode }), original.config, "saved");
       const snapshot = original.config.modelScanStatus !== "empty" && Array.isArray(original.config.modelCatalogModels)
         ? original.config.modelCatalogModels as unknown as ModelDescriptor[] : [];
       const bound = bindScannedModelProtocols(original, await enrichSupplierModelPrices(original, snapshot, false, false));
@@ -1099,10 +1080,8 @@ async function readModelResponse(
       );
     const requestId = original.config.modelScanRequestId;
     if (!refresh && original.config.modelScanStatus === "unauthorized")
-      return withModelInventoryMetadata(Response.json(
-        { error: "当前 Key 鉴权失败，请更新 Key 或重新测试" },
-        { status: 401, headers: { "X-Model-Scan-Status": "unauthorized" } },
-      ), original.config, "saved");
+      return withModelInventoryMetadata(deniedModelsResponse({ httpStatus: original.config.modelScanHttpStatus,
+        errorCode: original.config.modelScanErrorCode, upstreamErrorCode: original.config.modelScanUpstreamErrorCode }), original.config, "saved");
     if (!refresh && original.config.modelScanStatus === "empty")
       return withModelInventoryMetadata(Response.json([], {
         headers: {
@@ -1258,6 +1237,7 @@ async function readModelResponse(
           modelScanComplete: true,
           modelScanError: null,
           modelScanErrorCode: null,
+          modelScanUpstreamErrorCode: null,
           modelScanHttpStatus: null,
           modelCatalogModels:
             models as unknown as typeof config.modelCatalogModels,

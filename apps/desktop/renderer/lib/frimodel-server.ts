@@ -1,5 +1,6 @@
 import {
   readBoundedModelJson,
+  readModelDenialEvidence,
   scanAlternateSupplier,
 } from "./supplier-scan-utils";
 import { matchesSupplierTemplate } from "./supplier-template-source";
@@ -27,6 +28,9 @@ export interface FriModelKeyScan {
   checkedAt: string;
   modelIds: string[];
   error?: string;
+  /** Actual directory response status, kept separate from the scan classification. */
+  httpStatus?: number;
+  upstreamErrorCode?: string;
 }
 
 export interface FriModelConnectionScan extends FriModelKeyScan {
@@ -40,12 +44,14 @@ interface OpenAIModelsPayload {
 function friModelScanFailure(
   status: Exclude<FriModelModelScanStatus, "live" | "empty">,
   error: string,
+  evidence?: { httpStatus: number; upstreamErrorCode?: string },
 ): FriModelKeyScan {
   return {
     status,
     checkedAt: new Date().toISOString(),
     modelIds: [],
     error,
+    ...evidence,
   };
 }
 
@@ -75,6 +81,7 @@ export async function scanFriModelKeyModels(
       return friModelScanFailure(
         "unauthorized",
         "FriModel 拒绝了当前 API Key，或该 Key 没有模型读取权限",
+        await readModelDenialEvidence(response),
       );
     if (!response.ok)
       return friModelScanFailure(

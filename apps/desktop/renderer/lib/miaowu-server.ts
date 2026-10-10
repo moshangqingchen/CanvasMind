@@ -1,5 +1,6 @@
 import {
   readBoundedModelJson,
+  readModelDenialEvidence,
   scanAlternateSupplier,
 } from "./supplier-scan-utils";
 import { matchesSupplierTemplate } from "./supplier-template-source";
@@ -38,6 +39,9 @@ export interface MiaowuKeyScan {
   checkedAt: string;
   modelIds: string[];
   error?: string;
+  /** Actual base-directory response status; Dream has its own scoped status. */
+  httpStatus?: number;
+  upstreamErrorCode?: string;
   complete?: boolean;
   openaiModelIds?: string[];
   mediaDirectory?: MiaowuMediaDirectory;
@@ -282,12 +286,14 @@ function savedConnectorModelIds(
 function miaowuScanFailure(
   status: Exclude<MiaowuModelScanStatus, "live" | "empty">,
   error: string,
+  evidence?: { httpStatus: number; upstreamErrorCode?: string },
 ): MiaowuKeyScan {
   return {
     status,
     checkedAt: new Date().toISOString(),
     modelIds: [],
     error,
+    ...evidence,
   };
 }
 
@@ -318,6 +324,7 @@ export async function scanMiaowuKeyModels(
       return miaowuScanFailure(
         "unauthorized",
         "喵呜拒绝了当前 API Key（无权限或分组已停用）",
+        await readModelDenialEvidence(response),
       );
     if (!response.ok)
       return miaowuScanFailure(

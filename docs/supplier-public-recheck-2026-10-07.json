@@ -1,0 +1,3259 @@
+{
+  "operation": "official-public-read-only-recheck",
+  "paidRequests": 0,
+  "comparisonReport": "supplier-update-detection-2026-10-07.md",
+  "checkedWindow": "2026-10-07 10:21:59–10:26:21 Asia/Shanghai",
+  "cangyuan": {
+    "uniqueModels": 91,
+    "groups": 13,
+    "latestAnnouncement": {
+      "content": "公告：\n1、音乐模型上线\nlyria-3.5、lyria-3-pro 已开放，0.25 元/条。\nPOST /v1/music 创建，再轮询 GET /v1/music/{task_id}，完成后从 music_url 下载。\n两档都能做纯音乐，也可以带歌词。\n10000提示词+20000字符的歌词。\n时长不一样：\n· lyria-3-pro：整首，最长 184 秒\n· lyria-3.5：整首，大约数分钟，最长大约 5 分钟\nduration 只是提示，成片不会按你填的秒数卡死。\n文档：https://ai.cangyuansuanli.cn/docs/models/lyria-3.5\n\n2、生图gpt-image-2 价格调整 0.019->0.017",
+      "extra": "",
+      "id": 23,
+      "publishDate": "2026-10-06T12:12:35.770Z",
+      "type": "success"
+    },
+    "currency": "CNY",
+    "prices": [
+      {
+        "model_name": "gpt-image-2",
+        "model_price": 0.017,
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ]
+      },
+      {
+        "model_name": "grok-imagine-image",
+        "model_price": 0.039,
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ]
+      },
+      {
+        "model_name": "lyria-3.5",
+        "model_price": 0.25,
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "enable_groups": [
+          "全模型-无claude/gpt",
+          "MUSIC"
+        ]
+      },
+      {
+        "model_name": "gpt-image-2-2k",
+        "model_price": 0.07,
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ]
+      },
+      {
+        "model_name": "lyria-3-pro",
+        "model_price": 0.25,
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "enable_groups": [
+          "MUSIC",
+          "全模型-无claude/gpt"
+        ]
+      },
+      {
+        "model_name": "gpt-image-2-4k",
+        "model_price": 0.08,
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "enable_groups": [
+          "全模型-无claude/gpt",
+          "IMAGE"
+        ]
+      },
+      {
+        "model_name": "grok-imagine-image-2.0",
+        "model_price": 0.039,
+        "billing_mode": "per_request",
+        "request_unit": "image",
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ]
+      },
+      {
+        "model_name": "sd7-seedance-2.0-720p",
+        "model_price": 4.9,
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ]
+      },
+      {
+        "model_name": "gpt-image-2-x",
+        "model_price": 0.015,
+        "billing_mode": "tiered_expr",
+        "billing_expr": "param(\"tier\") == \"4k\" ? tier(\"4k\", n * 0.095) : param(\"tier\") == \"2k\" ? tier(\"2k\", n * 0.075) : param(\"tier\") == \"1k\" ? tier(\"1k\", n * 0.055) : tier(\"web\", n * 0.015)",
+        "request_unit": "image",
+        "enable_groups": [
+          "IMAGE",
+          "全模型-无claude/gpt"
+        ]
+      },
+      {
+        "model_name": "sd7-seedance-2.0-1080p",
+        "model_price": 6.9,
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ]
+      }
+    ],
+    "oldCount": 96,
+    "earlyTodayCount": 91,
+    "interpretation": "No newly dated announcement or new catalog count change after early report. Old pricing/music changes remain visible. -x expression still differs from independent IDs."
+  },
+  "chentu": {
+    "uniqueModels": 63,
+    "groups": 24,
+    "earlyTodayCount": 62,
+    "oldCount": 67,
+    "currency": "CNY according to CUSTOM symbol ￥, exchange rate 1",
+    "firstSeenCandidate": {
+      "model_name": "gemini-nano-banana-2.1",
+      "vendor_id": 4,
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.07,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "稳定gemini生图",
+        "低价gemni生图"
+      ],
+      "supported_endpoint_types": [
+        "gemini",
+        "openai"
+      ]
+    },
+    "candidateReferencePrices": [
+      {
+        "group": "稳定gemini生图",
+        "ratio": 1,
+        "price": 0.07,
+        "unit": "per request"
+      },
+      {
+        "group": "低价gemni生图",
+        "ratio": 0.7143,
+        "price": 0.050001,
+        "unit": "per request"
+      }
+    ],
+    "addedVersusOctober3": [
+      "gemini-nano-banana-2.1"
+    ],
+    "absentVersusOctober3": [
+      "gemini-3-flash",
+      "gemini-3-flash-preview",
+      "gemini-3.5-flash",
+      "gemini-3.7-flash-high",
+      "gemini-3.8-flash-high"
+    ],
+    "latestAnnouncement": {
+      "content": "image2和2.5  0.008\nimage2和2.5超分1，2，4k0.02\nimage2原生4k0.05\n原生image2.5-sunburst0.06，gpt-image-2.5-flare0.06\n全参image2.5和image2，0.12支持透明背景\nad和as混合香蕉20.05Pro0.06\n\nLeo香蕉2无敌稳定0.055\n\nas香蕉20.07，Pro0.08全天稳定\ngrok1.5 0.62一条图片全部0.02一张\n不降智gpt0.18倍率，特惠0.06倍率，\nkiro-claude，0.12倍率",
+      "extra": "",
+      "id": 2,
+      "publishDate": "2026-09-20T03:22:32.099Z",
+      "type": "default"
+    },
+    "keyMediaSha256": "0abf85a28ebe6398774fb6a825161550ba606764971fe36bbfc4a5ff6be9d515",
+    "interpretation": "Two fresh responses at 10:23 and 10:25 both return 63 IDs with same prices/group ratios. Difference only optional pricing_version metadata. Relative to early report count 62, one newly seen catalog item; exact publication time and current Key access not verified. No image-generation endpoint is declared for this new ID."
+  },
+  "chuangxiang": {
+    "groups": 16,
+    "groupModelRecords": 134,
+    "uniqueModels": 85,
+    "groupCounts": [
+      {
+        "group": "grok 0.035x",
+        "count": 3
+      },
+      {
+        "group": "福利组 0.045x",
+        "count": 5
+      },
+      {
+        "group": "kiro-Claude 【高缓存70-80%以上】 0.055x",
+        "count": 11
+      },
+      {
+        "group": "国模分组 0.07x-0.13x",
+        "count": 13
+      },
+      {
+        "group": "grok-Heavy分组 0.08x",
+        "count": 4
+      },
+      {
+        "group": "特惠分组 0.08x",
+        "count": 5
+      },
+      {
+        "group": "Gemini-反重力【按次计费】",
+        "count": 5
+      },
+      {
+        "group": "生图",
+        "count": 19
+      },
+      {
+        "group": "视频",
+        "count": 26
+      },
+      {
+        "group": "gemini 反重力 0.11x",
+        "count": 5
+      },
+      {
+        "group": "备用分组  0.125x",
+        "count": 5
+      },
+      {
+        "group": "pro分组【兜底分组】 0.16",
+        "count": 5
+      },
+      {
+        "group": "gpt-不降智 0.2x",
+        "count": 5
+      },
+      {
+        "group": "claude【kiro-power渠道】 0.25x",
+        "count": 8
+      },
+      {
+        "group": "gpt-官key 0.5x",
+        "count": 5
+      },
+      {
+        "group": "ccmax 0.8x",
+        "count": 10
+      }
+    ],
+    "currency": "CNY public display: image guide link explicitly says 人民币价格 and official frontend formatter emits ¥",
+    "conversion": "Official ModelPlazaView ae(e) computes e * model.effective_rate_multiplier; rate_multiplier_unit_scale=10, focus image/video effective_rate_multiplier=0.1.",
+    "publicPrices": [
+      {
+        "group": "生图",
+        "models": [
+          {
+            "id": "gemini-3-pro-image-preview",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 0.8,
+            "display": 0.08,
+            "tiers": [
+              {
+                "tier": "1K",
+                "raw": 0.8,
+                "display": 0.08
+              },
+              {
+                "tier": "2K",
+                "raw": 1.1,
+                "display": 0.11
+              },
+              {
+                "tier": "4K",
+                "raw": 1.3,
+                "display": 0.13
+              }
+            ]
+          },
+          {
+            "id": "gemini-3.1-flash-image-preview",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 0.8,
+            "display": 0.08,
+            "tiers": [
+              {
+                "tier": "1K",
+                "raw": 0.8,
+                "display": 0.08
+              },
+              {
+                "tier": "2K",
+                "raw": 1.1,
+                "display": 0.11
+              },
+              {
+                "tier": "4K",
+                "raw": 1.3,
+                "display": 0.13
+              }
+            ]
+          },
+          {
+            "id": "gpt-image-2-1k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 0.7,
+            "display": 0.07,
+            "tiers": []
+          },
+          {
+            "id": "gpt-image-2-2k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 0.9,
+            "display": 0.09,
+            "tiers": []
+          },
+          {
+            "id": "gpt-image-2-4k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 1.1,
+            "display": 0.11,
+            "tiers": []
+          },
+          {
+            "id": "gpt-image-2.5-flare-1k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 2.1,
+            "display": 0.21,
+            "tiers": [
+              {
+                "tier": "low / medium / high / auto",
+                "raw": 2.1,
+                "display": 0.21
+              },
+              {
+                "tier": "xhigh / max",
+                "raw": 4.3,
+                "display": 0.43
+              }
+            ]
+          },
+          {
+            "id": "gpt-image-2.5-flare-2k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 2.4,
+            "display": 0.24,
+            "tiers": [
+              {
+                "tier": "low / medium / high / auto",
+                "raw": 2.4,
+                "display": 0.24
+              },
+              {
+                "tier": "xhigh / max",
+                "raw": 4.8,
+                "display": 0.48
+              }
+            ]
+          },
+          {
+            "id": "gpt-image-2.5-flare-4k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 2.7,
+            "display": 0.27,
+            "tiers": [
+              {
+                "tier": "low / medium / high / auto",
+                "raw": 2.7,
+                "display": 0.27
+              },
+              {
+                "tier": "xhigh / max",
+                "raw": 5.3,
+                "display": 0.53
+              }
+            ]
+          },
+          {
+            "id": "gpt-image-2.5-sunburst-1k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 2.4,
+            "display": 0.24,
+            "tiers": [
+              {
+                "tier": "low / medium / high / auto",
+                "raw": 2.4,
+                "display": 0.24
+              },
+              {
+                "tier": "xhigh / max",
+                "raw": 4.8,
+                "display": 0.48
+              }
+            ]
+          },
+          {
+            "id": "gpt-image-2.5-sunburst-2k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 2.7,
+            "display": 0.27,
+            "tiers": [
+              {
+                "tier": "low / medium / high / auto",
+                "raw": 2.7,
+                "display": 0.27
+              },
+              {
+                "tier": "xhigh / max",
+                "raw": 5.3,
+                "display": 0.53
+              }
+            ]
+          },
+          {
+            "id": "gpt-image-2.5-sunburst-4k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 2.9,
+            "display": 0.29,
+            "tiers": [
+              {
+                "tier": "low / medium / high / auto",
+                "raw": 2.9,
+                "display": 0.29
+              },
+              {
+                "tier": "xhigh / max",
+                "raw": 5.9,
+                "display": 0.59
+              }
+            ]
+          },
+          {
+            "id": "midjourney-1k",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": 3.9,
+            "display": 0.39,
+            "tiers": [
+              {
+                "tier": "relax",
+                "raw": 3.9,
+                "display": 0.39
+              },
+              {
+                "tier": "fast",
+                "raw": 5.2,
+                "display": 0.52
+              }
+            ]
+          },
+          {
+            "id": "midjourney-2k",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": 5.2,
+            "display": 0.52,
+            "tiers": [
+              {
+                "tier": "relax",
+                "raw": 5.2,
+                "display": 0.52
+              },
+              {
+                "tier": "fast",
+                "raw": 6.5,
+                "display": 0.65
+              }
+            ]
+          },
+          {
+            "id": "nano-banana-pro-1k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 0.8,
+            "display": 0.08,
+            "tiers": []
+          },
+          {
+            "id": "nano-banana-pro-2k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 1.1,
+            "display": 0.11,
+            "tiers": []
+          },
+          {
+            "id": "nano-banana-pro-4k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 1.3,
+            "display": 0.13,
+            "tiers": []
+          },
+          {
+            "id": "nano-banana2-1k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 0.8,
+            "display": 0.08,
+            "tiers": []
+          },
+          {
+            "id": "nano-banana2-2k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 1.1,
+            "display": 0.11,
+            "tiers": []
+          },
+          {
+            "id": "nano-banana2-4k",
+            "unit": "image",
+            "multiplier": 0.1,
+            "raw": 1.3,
+            "display": 0.13,
+            "tiers": []
+          }
+        ]
+      },
+      {
+        "group": "视频",
+        "models": [
+          {
+            "id": "grok-imagine-video",
+            "unit": "per_second",
+            "multiplier": 0.1,
+            "raw": {
+              "480p": 1.1,
+              "720p": 1.5
+            },
+            "display": {
+              "480p": 0.11,
+              "720p": 0.15
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 1.1,
+                "display": 0.11
+              },
+              {
+                "tier": "720p",
+                "raw": 1.5,
+                "display": 0.15
+              }
+            ]
+          },
+          {
+            "id": "grok-imagine-video-1.5",
+            "unit": "per_second",
+            "multiplier": 0.1,
+            "raw": {
+              "1080p": 4.3,
+              "480p": 1.5,
+              "720p": 2.2
+            },
+            "display": {
+              "1080p": 0.43,
+              "480p": 0.15,
+              "720p": 0.22
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 1.5,
+                "display": 0.15
+              },
+              {
+                "tier": "720p",
+                "raw": 2.2,
+                "display": 0.22
+              },
+              {
+                "tier": "1080p",
+                "raw": 4.3,
+                "display": 0.43
+              }
+            ]
+          },
+          {
+            "id": "happyhorse-1.1",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "1080p": 50.7,
+              "720p": 37.3
+            },
+            "display": {
+              "1080p": 5.07,
+              "720p": 3.73
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 37.3,
+                "display": 3.73
+              },
+              {
+                "tier": "1080p",
+                "raw": 50.7,
+                "display": 5.07
+              }
+            ]
+          },
+          {
+            "id": "kl1-kling-3.0",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "1080p": 81.3,
+              "720p": 61.3
+            },
+            "display": {
+              "1080p": 8.13,
+              "720p": 6.13
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 61.3,
+                "display": 6.13
+              },
+              {
+                "tier": "1080p",
+                "raw": 81.3,
+                "display": 8.13
+              }
+            ]
+          },
+          {
+            "id": "kling-3.0",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 33.3
+            },
+            "display": {
+              "720p": 3.33
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 33.3,
+                "display": 3.33
+              }
+            ]
+          },
+          {
+            "id": "kling-3.0-pro",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 38.7
+            },
+            "display": {
+              "720p": 3.87
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 38.7,
+                "display": 3.87
+              }
+            ]
+          },
+          {
+            "id": "mm2-minimax-h3",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "2k": 186.7,
+              "768p": 132
+            },
+            "display": {
+              "2k": 18.67,
+              "768p": 13.2
+            },
+            "tiers": [
+              {
+                "tier": "768p",
+                "raw": 132,
+                "display": 13.2
+              },
+              {
+                "tier": "2k",
+                "raw": 186.7,
+                "display": 18.67
+              }
+            ]
+          },
+          {
+            "id": "mm2-minimax-h3-max",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "480p": 77.3,
+              "768p": 118.7
+            },
+            "display": {
+              "480p": 7.73,
+              "768p": 11.87
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 77.3,
+                "display": 7.73
+              },
+              {
+                "tier": "768p",
+                "raw": 118.7,
+                "display": 11.87
+              }
+            ]
+          },
+          {
+            "id": "omni-fast",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 8.8
+            },
+            "display": {
+              "720p": 0.88
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 8.8,
+                "display": 0.88
+              }
+            ]
+          },
+          {
+            "id": "omni-fast-no-water",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 10.8
+            },
+            "display": {
+              "720p": 1.08
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 10.8,
+                "display": 1.08
+              }
+            ]
+          },
+          {
+            "id": "omni-v2v",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 11.7
+            },
+            "display": {
+              "720p": 1.17
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 11.7,
+                "display": 1.17
+              }
+            ]
+          },
+          {
+            "id": "omni-v2v-no-water",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 13.3
+            },
+            "display": {
+              "720p": 1.33
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 13.3,
+                "display": 1.33
+              }
+            ]
+          },
+          {
+            "id": "sd10-seedance-2.0",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 52
+            },
+            "display": {
+              "720p": 5.2
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 52,
+                "display": 5.2
+              }
+            ]
+          },
+          {
+            "id": "sd10-seedance-2.0-fast",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 46.7
+            },
+            "display": {
+              "720p": 4.67
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 46.7,
+                "display": 4.67
+              }
+            ]
+          },
+          {
+            "id": "sd10-seedance-2.0-mini",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 38.7
+            },
+            "display": {
+              "720p": 3.87
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 38.7,
+                "display": 3.87
+              }
+            ]
+          },
+          {
+            "id": "sd10-seedance-2.5",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 65.3
+            },
+            "display": {
+              "720p": 6.53
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 65.3,
+                "display": 6.53
+              }
+            ]
+          },
+          {
+            "id": "sd11-seedance-2.0",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "1080p": 252,
+              "480p": 60,
+              "720p": 128
+            },
+            "display": {
+              "1080p": 25.2,
+              "480p": 6,
+              "720p": 12.8
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 60,
+                "display": 6
+              },
+              {
+                "tier": "720p",
+                "raw": 128,
+                "display": 12.8
+              },
+              {
+                "tier": "1080p",
+                "raw": 252,
+                "display": 25.2
+              }
+            ]
+          },
+          {
+            "id": "sd11-seedance-2.0-fast",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "480p": 46.7,
+              "720p": 98.7
+            },
+            "display": {
+              "480p": 4.67,
+              "720p": 9.87
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 46.7,
+                "display": 4.67
+              },
+              {
+                "tier": "720p",
+                "raw": 98.7,
+                "display": 9.87
+              }
+            ]
+          },
+          {
+            "id": "sd11-seedance-2.0-mini",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "480p": 29.3,
+              "720p": 62.7
+            },
+            "display": {
+              "480p": 2.93,
+              "720p": 6.27
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 29.3,
+                "display": 2.93
+              },
+              {
+                "tier": "720p",
+                "raw": 62.7,
+                "display": 6.27
+              }
+            ]
+          },
+          {
+            "id": "sd11-seedance-2.5",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "1080p": 386.7,
+              "480p": 170.7,
+              "720p": 253.3
+            },
+            "display": {
+              "1080p": 38.67,
+              "480p": 17.07,
+              "720p": 25.33
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 170.7,
+                "display": 17.07
+              },
+              {
+                "tier": "720p",
+                "raw": 253.3,
+                "display": 25.33
+              },
+              {
+                "tier": "1080p",
+                "raw": 386.7,
+                "display": 38.67
+              }
+            ]
+          },
+          {
+            "id": "sd13-seedance-2.0",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "1080p": 212.8,
+              "480p": 94.8,
+              "4k": 212.8,
+              "720p": 94.8
+            },
+            "display": {
+              "1080p": 21.28,
+              "480p": 9.48,
+              "4k": 21.28,
+              "720p": 9.48
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 94.8,
+                "display": 9.48
+              },
+              {
+                "tier": "720p",
+                "raw": 94.8,
+                "display": 9.48
+              },
+              {
+                "tier": "1080p",
+                "raw": 212.8,
+                "display": 21.28
+              },
+              {
+                "tier": "4k",
+                "raw": 212.8,
+                "display": 21.28
+              }
+            ]
+          },
+          {
+            "id": "sd13-seedance-2.0-fast",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "480p": 75.6,
+              "720p": 75.6
+            },
+            "display": {
+              "480p": 7.56,
+              "720p": 7.56
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 75.6,
+                "display": 7.56
+              },
+              {
+                "tier": "720p",
+                "raw": 75.6,
+                "display": 7.56
+              }
+            ]
+          },
+          {
+            "id": "sd13-seedance-2.0-mini",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "480p": 22.7,
+              "720p": 48.4
+            },
+            "display": {
+              "480p": 2.27,
+              "720p": 4.84
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 22.7,
+                "display": 2.27
+              },
+              {
+                "tier": "720p",
+                "raw": 48.4,
+                "display": 4.84
+              }
+            ]
+          },
+          {
+            "id": "sd13-seedance-2.5",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "480p": 137.6,
+              "720p": 295.2
+            },
+            "display": {
+              "480p": 13.76,
+              "720p": 29.52
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 137.6,
+                "display": 13.76
+              },
+              {
+                "tier": "720p",
+                "raw": 295.2,
+                "display": 29.52
+              }
+            ]
+          },
+          {
+            "id": "sd14-seedance-2.0",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "720p": 52
+            },
+            "display": {
+              "720p": 5.2
+            },
+            "tiers": [
+              {
+                "tier": "720p",
+                "raw": 52,
+                "display": 5.2
+              }
+            ]
+          },
+          {
+            "id": "wan4-wan3.0",
+            "unit": "per_request",
+            "multiplier": 0.1,
+            "raw": {
+              "1080p": 276,
+              "480p": 69.3,
+              "720p": 137.3
+            },
+            "display": {
+              "1080p": 27.6,
+              "480p": 6.93,
+              "720p": 13.73
+            },
+            "tiers": [
+              {
+                "tier": "480p",
+                "raw": 69.3,
+                "display": 6.93
+              },
+              {
+                "tier": "720p",
+                "raw": 137.3,
+                "display": 13.73
+              },
+              {
+                "tier": "1080p",
+                "raw": 276,
+                "display": 27.6
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "publicVersion": "v0.2.13-custom-usdt-settlement-20261006",
+    "documentResourceLastModifiedBeijing": "2026-10-07 08:10:27",
+    "announcementStatus": 401,
+    "conflicts": [
+      "Image guide Gemini three tiers same price versus current public 1K/2K/4K intervals 0.08/0.11/0.13 CNY per image.",
+      "Video guide lists 32 models versus current public video group 26.",
+      "Public group aggregate/model availability differ; no paid verification."
+    ],
+    "interpretation": "Earlier known raw price decreases and video restrictions remain. No confirmed additional semantic update in past two hours; current price-display correction is evidence clarification rather than a newly dated price change. Old effective multiplier baseline not available, so do not calculate historical CNY percentage from early report raw numbers."
+  },
+  "tk1688": {
+    "total": 680,
+    "returned": 680,
+    "uniqueBase": 74,
+    "perRequestImages": 47,
+    "perTokenText": 633,
+    "fx": 6.8896,
+    "newlyFirstSeen": [],
+    "afterStartCount": 16,
+    "afterEndCount": 15,
+    "afterEndImages": 0,
+    "afterEnd": [
+      {
+        "id": 1054,
+        "alias": "gpt-5.6-terra@s1c361",
+        "base_model": "gpt-5.6-terra",
+        "charge_type": "per_token",
+        "input_price_usd": 0.104506,
+        "output_price_usd": 0.627036,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1052,
+        "alias": "gpt-6-sol@s1c361",
+        "base_model": "gpt-6-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.104506,
+        "output_price_usd": 0.52253,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1051,
+        "alias": "gpt-6.1-sol@s1c361",
+        "base_model": "gpt-6.1-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.104506,
+        "output_price_usd": 0.52253,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:50.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1044,
+        "alias": "grok-4.5@s1c359",
+        "base_model": "grok-4.5",
+        "charge_type": "per_token",
+        "input_price_usd": 0.13934,
+        "output_price_usd": 0.41802,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:29:10.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲,用于学习，不得网络攻击"
+      },
+      {
+        "id": 1043,
+        "alias": "grok-4.6@s1c359",
+        "base_model": "grok-4.6",
+        "charge_type": "per_token",
+        "input_price_usd": 0.13934,
+        "output_price_usd": 0.41802,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:29:10.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲,用于学习，不得网络攻击"
+      },
+      {
+        "id": 1042,
+        "alias": "grok-4.7@s1c359",
+        "base_model": "grok-4.7",
+        "charge_type": "per_token",
+        "input_price_usd": 0.13934,
+        "output_price_usd": 0.41802,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:29:10.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲,用于学习，不得网络攻击"
+      },
+      {
+        "id": 1048,
+        "alias": "gpt-5.6-terra@s1c360",
+        "base_model": "gpt-5.6-terra",
+        "charge_type": "per_token",
+        "input_price_usd": 0.174175,
+        "output_price_usd": 1.04505,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:36:25.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲ChatGPT 满血不降智 破甲"
+      },
+      {
+        "id": 1046,
+        "alias": "gpt-6-sol@s1c360",
+        "base_model": "gpt-6-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.174175,
+        "output_price_usd": 0.870875,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:36:24.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲ChatGPT 满血不降智 破甲"
+      },
+      {
+        "id": 1045,
+        "alias": "gpt-6.1-sol@s1c360",
+        "base_model": "gpt-6.1-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.174175,
+        "output_price_usd": 0.870875,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:36:24.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲ChatGPT 满血不降智 破甲"
+      },
+      {
+        "id": 1056,
+        "alias": "gpt-5.5@s1c361",
+        "base_model": "gpt-5.5",
+        "charge_type": "per_token",
+        "input_price_usd": 0.261263,
+        "output_price_usd": 1.567578,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1055,
+        "alias": "gpt-5.6-sol@s1c361",
+        "base_model": "gpt-5.6-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.261263,
+        "output_price_usd": 1.306315,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1050,
+        "alias": "gpt-5.5@s1c360",
+        "base_model": "gpt-5.5",
+        "charge_type": "per_token",
+        "input_price_usd": 0.435439,
+        "output_price_usd": 2.612634,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:36:25.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲ChatGPT 满血不降智 破甲"
+      },
+      {
+        "id": 1049,
+        "alias": "gpt-5.6-sol@s1c360",
+        "base_model": "gpt-5.6-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.435439,
+        "output_price_usd": 2.177195,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:36:25.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲ChatGPT 满血不降智 破甲"
+      },
+      {
+        "id": 1053,
+        "alias": "gpt-6-astra@s1c361",
+        "base_model": "gpt-6-astra",
+        "charge_type": "per_token",
+        "input_price_usd": 0.522527,
+        "output_price_usd": 2.612635,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1047,
+        "alias": "gpt-6-astra@s1c360",
+        "base_model": "gpt-6-astra",
+        "charge_type": "per_token",
+        "input_price_usd": 0.870878,
+        "output_price_usd": 4.35439,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:36:24.000Z",
+        "lastPriceChangedAt": null,
+        "description": "破甲ChatGPT 满血不降智 破甲"
+      }
+    ],
+    "recentPriceChanges": [],
+    "latest": [
+      {
+        "id": 1054,
+        "alias": "gpt-5.6-terra@s1c361",
+        "base_model": "gpt-5.6-terra",
+        "charge_type": "per_token",
+        "input_price_usd": 0.104506,
+        "output_price_usd": 0.627036,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1052,
+        "alias": "gpt-6-sol@s1c361",
+        "base_model": "gpt-6-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.104506,
+        "output_price_usd": 0.52253,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1056,
+        "alias": "gpt-5.5@s1c361",
+        "base_model": "gpt-5.5",
+        "charge_type": "per_token",
+        "input_price_usd": 0.261263,
+        "output_price_usd": 1.567578,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1055,
+        "alias": "gpt-5.6-sol@s1c361",
+        "base_model": "gpt-5.6-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.261263,
+        "output_price_usd": 1.306315,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      },
+      {
+        "id": 1053,
+        "alias": "gpt-6-astra@s1c361",
+        "base_model": "gpt-6-astra",
+        "charge_type": "per_token",
+        "input_price_usd": 0.522527,
+        "output_price_usd": 2.612635,
+        "channel_alive": true,
+        "createdAt": "2026-10-07T00:50:51.000Z",
+        "lastPriceChangedAt": null,
+        "description": "GPT 普通 破甲"
+      }
+    ],
+    "offline": [
+      {
+        "id": 73,
+        "alias": "deepseek-v4.1-flash@s1c18",
+        "base_model": "deepseek-v4.1-flash",
+        "charge_type": "per_token",
+        "input_price_usd": 0.017857,
+        "output_price_usd": 0.071428,
+        "channel_alive": false,
+        "createdAt": "2026-09-16T09:12:47.000Z",
+        "lastPriceChangedAt": null,
+        "description": "阿里"
+      },
+      {
+        "id": 734,
+        "alias": "gpt-6.1-sol@s1c297",
+        "base_model": "gpt-6.1-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.019159,
+        "output_price_usd": 0.095795,
+        "channel_alive": false,
+        "createdAt": "2026-10-03T08:53:24.000Z",
+        "lastPriceChangedAt": "2026-10-03T13:12:06.000Z",
+        "description": "Plus 首字低 稳定 是否降智要看官方"
+      },
+      {
+        "id": 281,
+        "alias": "gpt-5.6-sol@s1c80",
+        "base_model": "gpt-5.6-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.096763,
+        "output_price_usd": 0.483815,
+        "channel_alive": false,
+        "createdAt": "2026-09-28T04:09:31.000Z",
+        "lastPriceChangedAt": null,
+        "description": "不降智力特惠"
+      },
+      {
+        "id": 15,
+        "alias": "gpt-5.6-sol@s1c9",
+        "base_model": "gpt-5.6-sol",
+        "charge_type": "per_token",
+        "input_price_usd": 0.12504,
+        "output_price_usd": 0.6252,
+        "channel_alive": false,
+        "createdAt": "2026-09-08T09:52:35.000Z",
+        "lastPriceChangedAt": null,
+        "description": "满血pro"
+      }
+    ]
+  },
+  "miaowu": {
+    "count": 21,
+    "imageCount": 7,
+    "videoCount": 14,
+    "groups": {
+      "default": 1
+    },
+    "usable_group": {
+      "default": "默认分组"
+    },
+    "videos": [
+      {
+        "model": "minimax-h3-plus",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 9,
+        "audios_max": 3,
+        "seconds_min": 4,
+        "seconds_max": 15,
+        "sizes": [
+          "480p",
+          "720p"
+        ],
+        "ratios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "21:9",
+          "3:4",
+          "4:3"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "480p",
+            "seconds_max": 15,
+            "price": 0.1142857142857143,
+            "cnyPrice": 0.8
+          },
+          {
+            "size": "720p",
+            "seconds_max": 12,
+            "price": 0.1142857142857143,
+            "cnyPrice": 0.8
+          }
+        ]
+      },
+      {
+        "model": "jimeng-seedance-2.5",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 30,
+        "audios_max": 10,
+        "seconds_min": 4,
+        "seconds_max": 30,
+        "sizes": [
+          "720p",
+          "480p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "21:9",
+          "1:1"
+        ],
+        "unit": "per_second",
+        "prices": [
+          {
+            "size": "720p",
+            "seconds_max": 30,
+            "price": 0.10714285714285714,
+            "cnyPrice": 0.75
+          },
+          {
+            "size": "480p",
+            "seconds_max": 30,
+            "price": 0.08928571428571429,
+            "cnyPrice": 0.625
+          }
+        ]
+      },
+      {
+        "model": "sora-2",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 1,
+        "seconds_options": [
+          "8"
+        ],
+        "sizes": [
+          "720p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "unit": "per_call",
+        "fallbackCnyPrice": 1
+      },
+      {
+        "model": "dola-seedance-2.0-fast",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 9,
+        "audios_max": 3,
+        "seconds_min": 4,
+        "seconds_max": 15,
+        "sizes": [
+          "720p"
+        ],
+        "ratios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "21:9"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "720p",
+            "price": 0.07857142857142858,
+            "cnyPrice": 0.55
+          }
+        ]
+      },
+      {
+        "model": "seedance-2.0-deal",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 9,
+        "audios_max": 3,
+        "seconds_min": 4,
+        "seconds_max": 15,
+        "sizes": [
+          "720p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "21:9",
+          "1:1"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "720p",
+            "price": 0.44642857142857145,
+            "cnyPrice": 3.125
+          }
+        ]
+      },
+      {
+        "model": "doubao-seedance-2.0-fast",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 9,
+        "seconds_min": 5,
+        "seconds_max": 15,
+        "sizes": [
+          "720p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "720p",
+            "price": 0.35714285714285715,
+            "cnyPrice": 2.5
+          }
+        ]
+      },
+      {
+        "model": "seedance-2.0-mini-deal",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 9,
+        "audios_max": 3,
+        "seconds_min": 5,
+        "seconds_max": 15,
+        "sizes": [
+          "480p",
+          "720p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "1:1"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "480p",
+            "seconds_max": 15,
+            "price": 0.05714285714285715,
+            "cnyPrice": 0.4
+          },
+          {
+            "size": "720p",
+            "seconds_max": 12,
+            "price": 0.05714285714285715,
+            "cnyPrice": 0.4
+          }
+        ]
+      },
+      {
+        "model": "seedance-2.5-pro",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 30,
+        "audios_max": 10,
+        "seconds_min": 4,
+        "seconds_max": 30,
+        "sizes": [
+          "480p",
+          "720p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "1:1"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "480p",
+            "price": 0.8571428571428571,
+            "cnyPrice": 6
+          },
+          {
+            "size": "720p",
+            "price": 1.4285714285714286,
+            "cnyPrice": 10
+          }
+        ]
+      },
+      {
+        "model": "dola-seedance-2.5",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 30,
+        "audios_max": 10,
+        "seconds_min": 4,
+        "seconds_max": 30,
+        "sizes": [
+          "720p"
+        ],
+        "ratios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "21:9"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "720p",
+            "price": 0.125,
+            "cnyPrice": 0.875
+          }
+        ]
+      },
+      {
+        "model": "doubao-seedance-2.5",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 9,
+        "seconds_min": 5,
+        "seconds_max": 30,
+        "sizes": [
+          "720p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "720p",
+            "seconds_max": 30,
+            "price": 0.8928571428571429,
+            "cnyPrice": 6.25
+          }
+        ]
+      },
+      {
+        "model": "wan3.0-video",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 10,
+        "videos_max": 5,
+        "audios_max": 5,
+        "seconds_min": 5,
+        "seconds_max": 30,
+        "sizes": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "unit": "per_second",
+        "prices": [
+          {
+            "size": "720p",
+            "price": 0.055714285714285716,
+            "cnyPrice": 0.39
+          },
+          {
+            "size": "1080p",
+            "price": 0.09285714285714286,
+            "cnyPrice": 0.65
+          },
+          {
+            "size": "480p",
+            "price": 0.027857142857142858,
+            "cnyPrice": 0.195
+          }
+        ]
+      },
+      {
+        "model": "wan3.0-vedio-deal",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 10,
+        "audios_max": 5,
+        "seconds_min": 5,
+        "seconds_max": 20,
+        "sizes": [
+          "480p",
+          "720p"
+        ],
+        "ratios": [
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "1:1"
+        ],
+        "unit": "per_call",
+        "prices": [
+          {
+            "size": "720p",
+            "seconds_max": 10,
+            "price": 0.07142857142857142,
+            "cnyPrice": 0.5
+          },
+          {
+            "size": "480p",
+            "seconds_max": 20,
+            "price": 0.07142857142857142,
+            "cnyPrice": 0.5
+          }
+        ]
+      },
+      {
+        "model": "minimax-h3",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 5,
+        "audios_max": 3,
+        "seconds_min": 5,
+        "seconds_max": 15,
+        "sizes": [
+          "720p"
+        ],
+        "ratios": [
+          "9:16",
+          "16:9",
+          "4:3",
+          "3:4",
+          "1:1"
+        ],
+        "unit": "per_second",
+        "prices": [
+          {
+            "size": "720p",
+            "price": 0.008928571428571428,
+            "cnyPrice": 0.0625
+          }
+        ]
+      },
+      {
+        "model": "minimax-h3-max",
+        "group": "default",
+        "ratio": 1,
+        "images_max": 9,
+        "audios_max": 3,
+        "seconds_min": 5,
+        "seconds_max": 15,
+        "sizes": [
+          "720p",
+          "480p"
+        ],
+        "ratios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "21:9"
+        ],
+        "unit": "per_call",
+        "fallbackCnyPrice": 2
+      }
+    ]
+  },
+  "cyberafei": {
+    "currentCount": 79,
+    "baselineCount": 79,
+    "groupCount": 13,
+    "added": [],
+    "absent": [],
+    "memberChanges": [],
+    "priceChanges": [],
+    "keyPrices": [
+      {
+        "model": "gpt-image-2.5-flare",
+        "usdPerRequest": 0.3
+      },
+      {
+        "model": "gpt-image-2.5",
+        "usdPerRequest": 0.15
+      },
+      {
+        "model": "gpt-image-4K",
+        "usdPerRequest": 0.45
+      },
+      {
+        "model": "gpt-image-2.5-sunburst",
+        "usdPerRequest": 0.5
+      },
+      {
+        "model": "gpt-image-2",
+        "usdPerRequest": 0.15
+      },
+      {
+        "model": "gpt-image-2-4K",
+        "usdPerRequest": 0.45
+      },
+      {
+        "model": "gpt-image-2-2K",
+        "usdPerRequest": 0.3
+      }
+    ],
+    "documentComparisons": [
+      {
+        "url": "https://api.3365api.cn/api/pricing",
+        "sha256": "ce55c7776d3ff307eafce163f1b2f4e718c2e706e2a7aaa7c801ef6c2270f564",
+        "baselineSha256": "90e27c6c66387f3e9caa5bf738a981facb5def32f4ebfbf8c889ea5c6339388d",
+        "byteIdentical": false
+      },
+      {
+        "url": "https://api.3365api.cn/api/status",
+        "sha256": "8889e1b1762234cf4b23b44c9772fd0b5a43105d9348cea4a9d825fd7976a241",
+        "baselineSha256": "8889e1b1762234cf4b23b44c9772fd0b5a43105d9348cea4a9d825fd7976a241",
+        "byteIdentical": true
+      },
+      {
+        "url": "https://api.3365api.cn/docs/img2.md",
+        "sha256": "02d960d77b2ba588065c5d26f44efcd300179182f50ba214058a61d702c996f3",
+        "baselineSha256": "02d960d77b2ba588065c5d26f44efcd300179182f50ba214058a61d702c996f3",
+        "byteIdentical": true
+      },
+      {
+        "url": "https://api.3365api.cn/docs/banana.md",
+        "sha256": "eb083c02d7a74f1e19ed39beb333365d73090df1b5c9029fb34bbd9a5f3b0bfb",
+        "baselineSha256": "eb083c02d7a74f1e19ed39beb333365d73090df1b5c9029fb34bbd9a5f3b0bfb",
+        "byteIdentical": true
+      },
+      {
+        "url": "https://api.3365api.cn/docs/sd20.md",
+        "sha256": "b39db0873493a10e2428a45a8930abbdb2f945cc9bbbdc03566aa137d37bae62",
+        "baselineSha256": "b39db0873493a10e2428a45a8930abbdb2f945cc9bbbdc03566aa137d37bae62",
+        "byteIdentical": true
+      },
+      {
+        "url": "https://api.3365api.cn/docs/grok-video.md",
+        "sha256": "c873800da3344bcfa0f8a5c0ae20b4bd77cd7372fc73520b3ec33826c245cc3d",
+        "baselineSha256": "c873800da3344bcfa0f8a5c0ae20b4bd77cd7372fc73520b3ec33826c245cc3d",
+        "byteIdentical": true
+      }
+    ]
+  },
+  "publicReceipts": [
+    {
+      "id": "cangyuan-status",
+      "url": "https://ai.cangyuansuanli.cn/api/status",
+      "fetchedAt": "2026-10-07T02:21:59.931Z",
+      "completedAt": "2026-10-07T02:22:01.281Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:01 GMT",
+      "lastModified": null,
+      "etag": null,
+      "size": 12775,
+      "sha256": "da5b01e372bead0634f5f0bbe895c3541f59507780c6eca0eb93ce28d98a794d"
+    },
+    {
+      "id": "cangyuan-manifest",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/manifest.json",
+      "fetchedAt": "2026-10-07T02:21:59.961Z",
+      "completedAt": "2026-10-07T02:22:01.330Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:01 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "etag": "\"18dbf4dd4572b800-1471c\"",
+      "size": 83740,
+      "sha256": "f6c2c745d2c953f373d853306c80ad29cb88685331feded0ef89af9eddeb6d85"
+    },
+    {
+      "id": "cangyuan-pricing",
+      "url": "https://ai.cangyuansuanli.cn/api/pricing",
+      "fetchedAt": "2026-10-07T02:21:59.960Z",
+      "completedAt": "2026-10-07T02:22:01.516Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:01 GMT",
+      "lastModified": null,
+      "etag": null,
+      "size": 126601,
+      "sha256": "f86d40f023bee5b6973148a1b396139f16cef6580001f12c82bfaf2279b507b3"
+    },
+    {
+      "id": "cangyuan-image",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/image-generation.md",
+      "fetchedAt": "2026-10-07T02:22:01.330Z",
+      "completedAt": "2026-10-07T02:22:02.481Z",
+      "status": 404,
+      "contentType": null,
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:02 GMT",
+      "lastModified": null,
+      "etag": null,
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "id": "cangyuan-video",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/video-generation.md",
+      "fetchedAt": "2026-10-07T02:22:01.516Z",
+      "completedAt": "2026-10-07T02:22:02.490Z",
+      "status": 404,
+      "contentType": null,
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:02 GMT",
+      "lastModified": null,
+      "etag": null,
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "id": "cangyuan-task",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/task-lifecycle.md",
+      "fetchedAt": "2026-10-07T02:22:01.281Z",
+      "completedAt": "2026-10-07T02:22:02.494Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:02 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "etag": "\"18dbf4dd4572b800-4dc\"",
+      "size": 1244,
+      "sha256": "8d3b3fc8da020b960454cb7c4213f9d31d51320e4f529fd9296d16d2a63ceaf8"
+    },
+    {
+      "id": "cangyuan-gpt2x",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-x.json",
+      "fetchedAt": "2026-10-07T02:22:02.481Z",
+      "completedAt": "2026-10-07T02:22:03.074Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:03 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "etag": "\"18dbf4dd4572b800-145f\"",
+      "size": 5215,
+      "sha256": "dc48ccd84eecf9d9b0c0d676f465e23689abae280fa193b49a9c10fa4344590f"
+    },
+    {
+      "id": "cangyuan-flare",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare.json",
+      "fetchedAt": "2026-10-07T02:22:02.494Z",
+      "completedAt": "2026-10-07T02:22:03.093Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:03 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "etag": "\"18dbf4dd4572b800-f2f\"",
+      "size": 3887,
+      "sha256": "42855733fc5aa785cd2cf2a3c1637635b576e209c14b7dcd48e96dc760cec7aa"
+    },
+    {
+      "id": "cangyuan-gpt25x",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-x.json",
+      "fetchedAt": "2026-10-07T02:22:02.490Z",
+      "completedAt": "2026-10-07T02:22:03.736Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:03 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "etag": "\"18dbf4dd4572b800-1935\"",
+      "size": 6453,
+      "sha256": "09e88049a65b3f761e906ccb324fc8f8a3806ab67f907c006260fbd8620ec439"
+    },
+    {
+      "id": "cangyuan-banana",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro.json",
+      "fetchedAt": "2026-10-07T02:22:03.074Z",
+      "completedAt": "2026-10-07T02:22:04.076Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:04 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "etag": "\"18dbf4dd4572b800-be7\"",
+      "size": 3047,
+      "sha256": "e40a05a69e21bd5f0a81c600414c8e876e0f84fd34699158a0cc4645b09ca8e0"
+    },
+    {
+      "id": "cangyuan-seedance",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/doubao-seedance-2-0-260128.json",
+      "fetchedAt": "2026-10-07T02:22:03.736Z",
+      "completedAt": "2026-10-07T02:22:04.205Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:04 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "etag": "\"18dbf4dd4572b800-2e97\"",
+      "size": 11927,
+      "sha256": "b33f160941fdd8f2bd133623ad89b1a93a26bbf790f639eff141deb8c8118587"
+    },
+    {
+      "id": "chentu-status",
+      "url": "https://tu.988236.xyz/api/status",
+      "fetchedAt": "2026-10-07T02:22:04.076Z"
+    },
+    {
+      "id": "chentu-pricing",
+      "url": "https://tu.988236.xyz/api/pricing",
+      "fetchedAt": "2026-10-07T02:22:04.205Z"
+    },
+    {
+      "id": "cangyuan-grok-video",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/grok-imagine-video.json",
+      "fetchedAt": "2026-10-07T02:22:03.093Z",
+      "completedAt": "2026-10-07T02:22:07.642Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:07 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "etag": "\"18dbf4dd4572b800-dd7\"",
+      "size": 3543,
+      "sha256": "5b76b410996e2b3c699ea7428e59b2be0817d60de2121f24d007e8596714b09f"
+    },
+    {
+      "id": "chuangxiang-plaza",
+      "url": "https://vapi.chuangxiangai.asia/api/v1/model-plaza",
+      "fetchedAt": "2026-10-07T02:22:07.222Z",
+      "completedAt": "2026-10-07T02:22:08.053Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:08 GMT",
+      "lastModified": null,
+      "etag": null,
+      "size": 480493,
+      "sha256": "24c449713be339fca008055b31f65a7df9cc3324ff76e5166b5c582eb892356b"
+    },
+    {
+      "id": "chuangxiang-status",
+      "url": "https://vapi.chuangxiangai.asia/api/status",
+      "fetchedAt": "2026-10-07T02:22:07.642Z",
+      "completedAt": "2026-10-07T02:22:08.091Z",
+      "status": 404,
+      "contentType": "text/plain",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:08 GMT",
+      "lastModified": null,
+      "etag": null,
+      "size": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "id": "chuangxiang-image",
+      "url": "https://vapi.chuangxiangai.asia/docs/image",
+      "fetchedAt": "2026-10-07T02:22:08.054Z",
+      "completedAt": "2026-10-07T02:22:08.718Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:08 GMT",
+      "lastModified": null,
+      "etag": null,
+      "size": 685301,
+      "sha256": "4f66b019af3cf8c875f8cca5bfa9f13af4d5b6f0d23779bad572910607d858e9"
+    },
+    {
+      "id": "chentu-media",
+      "url": "https://tu.988236.xyz/docs/api-media.zh-CN.md",
+      "fetchedAt": "2026-10-07T02:22:07.083Z",
+      "completedAt": "2026-10-07T02:22:09.716Z",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:09 GMT",
+      "lastModified": "Sun, 16 Aug 2026 03:58:37 GMT",
+      "etag": "\"6a81356d-9353\"",
+      "size": 37715,
+      "sha256": "0abf85a28ebe6398774fb6a825161550ba606764971fe36bbfc4a5ff6be9d515"
+    },
+    {
+      "id": "chuangxiang-video",
+      "url": "https://vapi.chuangxiangai.asia/docs/video",
+      "fetchedAt": "2026-10-07T02:22:08.091Z",
+      "completedAt": "2026-10-07T02:22:11.523Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "age": null,
+      "date": "Wed, 07 Oct 2026 02:22:08 GMT",
+      "lastModified": null,
+      "etag": null,
+      "size": 685301,
+      "sha256": "f67b68afb482cd243cceb65422d2d4f1b312e45d1bfadc37306b9778f4696f83"
+    },
+    {
+      "id": "chentu-status-retry",
+      "url": "https://tu.988236.xyz/api/status",
+      "fetchedAt": "2026-10-07T02:23:27.483Z",
+      "completedAt": "2026-10-07T02:23:27.996Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:28 GMT",
+      "lastModified": null,
+      "size": 3966,
+      "sha256": "aaa818ef9e5a74b29cb7e30453054f43cc58e2393151534cb3235947addce928"
+    },
+    {
+      "id": "chentu-pricing-retry",
+      "url": "https://tu.988236.xyz/api/pricing",
+      "fetchedAt": "2026-10-07T02:23:27.997Z",
+      "completedAt": "2026-10-07T02:23:28.276Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:28 GMT",
+      "lastModified": null,
+      "size": 22264,
+      "sha256": "47b9c2ff2266b812bf0459ad7ab9bdabf52ed20f49e88c9d4e8b11bf29686d77"
+    },
+    {
+      "id": "chuangxiang-index",
+      "url": "https://vapi.chuangxiangai.asia/ui-price-20260922/assets/index-kHpJkpVG.js",
+      "fetchedAt": "2026-10-07T02:23:28.276Z",
+      "completedAt": "2026-10-07T02:23:28.872Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:28 GMT",
+      "lastModified": "Wed, 07 Oct 2026 00:10:26 GMT",
+      "size": 195533,
+      "sha256": "d72a90a69c9aa4af1a20b1243721242091597b88955dc4e265167367978af709"
+    },
+    {
+      "id": "chuangxiang-chunk-0",
+      "url": "https://vapi.chuangxiangai.asia/ui-price-20260922/assets/ImageApiDocsView-DJIb33Qd.js",
+      "fetchedAt": "2026-10-07T02:23:28.873Z",
+      "completedAt": "2026-10-07T02:23:29.274Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:29 GMT",
+      "lastModified": "Wed, 07 Oct 2026 00:10:27 GMT",
+      "size": 5920,
+      "sha256": "04ef6a3a59b6b5ccecd84dbdf363b4609894b1a2d060f4d09b60e6350f39103c"
+    },
+    {
+      "id": "chuangxiang-chunk-1",
+      "url": "https://vapi.chuangxiangai.asia/ui-price-20260922/assets/VideoApiDocsView-CANlCrC4.js",
+      "fetchedAt": "2026-10-07T02:23:29.275Z",
+      "completedAt": "2026-10-07T02:23:30.171Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:30 GMT",
+      "lastModified": "Wed, 07 Oct 2026 00:10:27 GMT",
+      "size": 15566,
+      "sha256": "c699ef0f50aa2fed38ab33efcd81a950dc4d6cff5d31f137e4ce94a40b7f0ac0"
+    },
+    {
+      "id": "chuangxiang-chunk-2",
+      "url": "https://vapi.chuangxiangai.asia/ui-price-20260922/assets/AnnouncementsView-_YU9gFw-.js",
+      "fetchedAt": "2026-10-07T02:23:30.171Z",
+      "completedAt": "2026-10-07T02:23:30.446Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:30 GMT",
+      "lastModified": "Wed, 07 Oct 2026 02:23:30 GMT",
+      "size": 26892,
+      "sha256": "3c83460c1b967c2516035e5d781cea39deed09afa6d51689fc80223e982e87e6"
+    },
+    {
+      "id": "cangyuan-image-cap",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/image.md",
+      "fetchedAt": "2026-10-07T02:23:30.447Z",
+      "completedAt": "2026-10-07T02:23:31.363Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:31 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "size": 4350,
+      "sha256": "e58541056c2abc3064b8e008b581aab424116d1c287eea31cf3c0bce9d8b087a"
+    },
+    {
+      "id": "cangyuan-video-cap",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/video.md",
+      "fetchedAt": "2026-10-07T02:23:31.363Z",
+      "completedAt": "2026-10-07T02:23:31.826Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:32 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "size": 2548,
+      "sha256": "11914755d6e6e6d3d341bc39ff7c39ac8a436753d3ed7aa08237bf03b062ff2f"
+    },
+    {
+      "id": "cangyuan-music-cap",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/music.md",
+      "fetchedAt": "2026-10-07T02:23:31.826Z",
+      "completedAt": "2026-10-07T02:23:32.158Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:32 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "size": 1071,
+      "sha256": "e3cdd267351b7af7112cba8522faa606f176878f9d7eccc36540d59121ba248d"
+    },
+    {
+      "id": "cangyuan-audio-cap",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/audio.md",
+      "fetchedAt": "2026-10-07T02:23:32.158Z",
+      "completedAt": "2026-10-07T02:23:32.467Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:32 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "size": 395,
+      "sha256": "2782ae42174806f6ddae0c7e8835c14bd3651ee228570fc51d2e75e55d5ac67b"
+    },
+    {
+      "id": "cangyuan-speech-cap",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/speech.md",
+      "fetchedAt": "2026-10-07T02:23:32.467Z",
+      "completedAt": "2026-10-07T02:23:33.567Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:33 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "size": 633,
+      "sha256": "e34a6be9a0479af11340723ed8a37e2b96fe68f8906f78feffef1a9591021c7b"
+    },
+    {
+      "id": "cangyuan-account-cap",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/capabilities/account.md",
+      "fetchedAt": "2026-10-07T02:23:33.567Z",
+      "completedAt": "2026-10-07T02:23:34.988Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:35 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "size": 1164,
+      "sha256": "c6963671025802d7f0a002a3e15eac628236d87087578d68f42349daee24d184"
+    },
+    {
+      "id": "cangyuan-lyria-3.5",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/lyria-3.5.json",
+      "fetchedAt": "2026-10-07T02:23:34.988Z",
+      "completedAt": "2026-10-07T02:23:36.665Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:36 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "size": 4976,
+      "sha256": "41e79a5f5bb576d4a36621c21f4d8881f87edc794da1b70d5fe942405a4b6c20"
+    },
+    {
+      "id": "cangyuan-lyria-3-pro",
+      "url": "https://ai.cangyuansuanli.cn/docs-static/models/lyria-3-pro.json",
+      "fetchedAt": "2026-10-07T02:23:36.665Z",
+      "completedAt": "2026-10-07T02:23:37.167Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "date": "Wed, 07 Oct 2026 02:23:37 GMT",
+      "lastModified": "Tue, 06 Oct 2026 13:48:28 GMT",
+      "size": 5029,
+      "sha256": "67430ac709338f859b79e430ac25e45ef5d98a1cc7d6d75fe0d3f986a08d8ea3"
+    },
+    {
+      "id": "chentu-pricing-confirm",
+      "url": "https://tu.988236.xyz/api/pricing",
+      "fetchedAt": "2026-10-07T02:24:59.498Z",
+      "completedAt": "2026-10-07T02:25:00.092Z",
+      "status": 200,
+      "size": 22179,
+      "sha256": "815d753313cab5c68327d20b3e1106051fa6f4ca4ddbcc7b506051ffd37b514b"
+    },
+    {
+      "id": "chuangxiang-settings-public",
+      "url": "https://vapi.chuangxiangai.asia/api/v1/settings/public",
+      "fetchedAt": "2026-10-07T02:25:00.092Z",
+      "completedAt": "2026-10-07T02:25:01.251Z",
+      "status": 200,
+      "size": 343758,
+      "sha256": "5a1d6cd6237b3b8478228ed1d1cb8902004e1815eea2462d3453d742671c0a49"
+    },
+    {
+      "id": "chuangxiang-announcements",
+      "url": "https://vapi.chuangxiangai.asia/api/v1/announcements",
+      "fetchedAt": "2026-10-07T02:25:01.252Z",
+      "completedAt": "2026-10-07T02:25:01.482Z",
+      "status": 401,
+      "size": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "id": "miaowu-pricing",
+      "url": "https://api.miaowuai.store/api/pricing",
+      "checkedAt": "2026-10-07T02:22:00.784Z",
+      "completedAt": "2026-10-07T02:22:02.683Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "d36a1bed6b7ff073aaa46264424173078b3f6756d1cd889c78a4bb6ae262c7ed"
+    },
+    {
+      "id": "miaowu-status",
+      "url": "https://api.miaowuai.store/api/status",
+      "checkedAt": "2026-10-07T02:22:00.813Z",
+      "completedAt": "2026-10-07T02:22:01.535Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "1b9a9faf5aa89d0cbca6bb231206215a755057f350f568951dfb06d0ef5571ff"
+    },
+    {
+      "id": "miaowu-videos",
+      "url": "https://api.miaowuai.store/docs/openai-videos",
+      "checkedAt": "2026-10-07T02:22:00.814Z",
+      "completedAt": "2026-10-07T02:22:02.685Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "sha256": "66138ab466fdc6bdec0e37d0b1f42281ef8bf5f62a376dab780f56d52cc0180c"
+    },
+    {
+      "id": "miaowu-tasks",
+      "url": "https://api.miaowuai.store/docs/media-tasks",
+      "checkedAt": "2026-10-07T02:22:00.815Z",
+      "completedAt": "2026-10-07T02:22:01.704Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "sha256": "66138ab466fdc6bdec0e37d0b1f42281ef8bf5f62a376dab780f56d52cc0180c"
+    },
+    {
+      "id": "tk1688-status",
+      "url": "https://tk1688.com/api/status",
+      "checkedAt": "2026-10-07T02:22:00.816Z",
+      "completedAt": "2026-10-07T02:22:02.848Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "3f476b4cea05eb17aa981a7fa999aceb0bbf04ac7d12c17f681385d8ff4ecc54"
+    },
+    {
+      "id": "tk1688-listings",
+      "url": "https://tk1688.com/api/marketplace/listings",
+      "checkedAt": "2026-10-07T02:22:00.816Z",
+      "completedAt": "2026-10-07T02:22:03.446Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "b7cf888388c71b6acd9cd4d7601ca69582a944212968814de3cbb84dffd78869"
+    },
+    {
+      "id": "tk1688-docs",
+      "url": "https://tk1688.com/docs",
+      "checkedAt": "2026-10-07T02:22:00.817Z",
+      "completedAt": "2026-10-07T02:22:02.670Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "sha256": "61d17e7bf0bbcae53579f52262c9bdb8cc2c5df9cb8b00a83d2106db4d946904"
+    },
+    {
+      "id": "afei-pricing",
+      "url": "https://api.3365api.cn/api/pricing",
+      "checkedAt": "2026-10-07T02:22:00.817Z",
+      "completedAt": "2026-10-07T02:22:02.122Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "ce55c7776d3ff307eafce163f1b2f4e718c2e706e2a7aaa7c801ef6c2270f564"
+    },
+    {
+      "id": "afei-status",
+      "url": "https://api.3365api.cn/api/status",
+      "checkedAt": "2026-10-07T02:22:00.818Z",
+      "completedAt": "2026-10-07T02:22:02.133Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "8889e1b1762234cf4b23b44c9772fd0b5a43105d9348cea4a9d825fd7976a241"
+    },
+    {
+      "id": "afei-img2",
+      "url": "https://api.3365api.cn/docs/img2.md",
+      "checkedAt": "2026-10-07T02:22:00.818Z",
+      "completedAt": "2026-10-07T02:22:02.772Z",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "sha256": "02d960d77b2ba588065c5d26f44efcd300179182f50ba214058a61d702c996f3"
+    },
+    {
+      "id": "afei-banana",
+      "url": "https://api.3365api.cn/docs/banana.md",
+      "checkedAt": "2026-10-07T02:22:00.819Z",
+      "completedAt": "2026-10-07T02:22:02.138Z",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "sha256": "eb083c02d7a74f1e19ed39beb333365d73090df1b5c9029fb34bbd9a5f3b0bfb"
+    },
+    {
+      "id": "afei-sd20",
+      "url": "https://api.3365api.cn/docs/sd20.md",
+      "checkedAt": "2026-10-07T02:22:00.819Z",
+      "completedAt": "2026-10-07T02:22:02.119Z",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "sha256": "b39db0873493a10e2428a45a8930abbdb2f945cc9bbbdc03566aa137d37bae62"
+    },
+    {
+      "id": "afei-grok-video",
+      "url": "https://api.3365api.cn/docs/grok-video.md",
+      "checkedAt": "2026-10-07T02:22:00.819Z",
+      "completedAt": "2026-10-07T02:22:02.104Z",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "sha256": "c873800da3344bcfa0f8a5c0ae20b4bd77cd7372fc73520b3ec33826c245cc3d"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/api/v1/settings/public",
+      "checkedAt": "2026-10-07T02:22:56.907Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 10479,
+      "sha256": "e4f1431ce8d18b6237b34309641f3a3a9ced8f6be10cddeecc7284dfe4f8dfb8"
+    },
+    {
+      "supplier": "智元api",
+      "url": "https://pool.chaozhiyuanai.com/api/v1/settings/public",
+      "checkedAt": "2026-10-07T02:22:56.879Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 2667,
+      "sha256": "a9cd327ea1028e8d5bc41647f7a4dab41a716b4d560f8b4da9ae120f7a48b4dc"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://platform.frimodel.com/api/status",
+      "checkedAt": "2026-10-07T02:22:56.908Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 3699,
+      "sha256": "5bc2f39e41d5a4e2080ed474ad7b65b004051199ff471641907433c2aa0ba36c"
+    },
+    {
+      "supplier": "智元api",
+      "url": "https://pool.chaozhiyuanai.com/api/v1/model-plaza",
+      "checkedAt": "2026-10-07T02:22:57.706Z",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 51,
+      "sha256": "260ac9e933e7f57f7d3b449661017a51d6277c48f75cad21471ae4e0095fd835"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/api/v1/model-plaza",
+      "checkedAt": "2026-10-07T02:22:57.675Z",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 51,
+      "sha256": "260ac9e933e7f57f7d3b449661017a51d6277c48f75cad21471ae4e0095fd835"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://platform.frimodel.com/api/notice",
+      "checkedAt": "2026-10-07T02:22:58.078Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 39,
+      "sha256": "9307488b1a3c15302d0aec82f00c46b34829e259cf94baf99ff50c06b80628bf"
+    },
+    {
+      "supplier": "智元api",
+      "url": "https://pool.chaozhiyuanai.com/batch-image",
+      "checkedAt": "2026-10-07T02:22:58.261Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": null,
+      "length": 3437,
+      "sha256": "34593668eb8fffcce3056d4472d748166fb9e93ab31d5fd350ba7b7f75af913f"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/image-api-guide.html",
+      "checkedAt": "2026-10-07T02:22:58.449Z",
+      "status": 200,
+      "contentType": "text/html",
+      "lastModified": "Fri, 28 Aug 2026 13:49:50 GMT",
+      "length": 15631,
+      "sha256": "ee6c09a1e13166f87a0627b5617b1a6dc949147db80b0b64e1a1e37961ff54c5"
+    },
+    {
+      "supplier": "智元api",
+      "url": "https://pool.chaozhiyuanai.com/assets/BatchImageGuideView-DUAT1GIF.js",
+      "checkedAt": "2026-10-07T02:22:58.820Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": null,
+      "length": 3437,
+      "sha256": "55b6d58bdd64ce8b74ac115d819d106cdef509e352f32ec18af2debea4d39b49"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://platform.frimodel.com/api/pricing",
+      "checkedAt": "2026-10-07T02:22:58.679Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 91,
+      "sha256": "906f2bbece07ef88cf37a8a2031b98f55913dd0e51389c5db788c172d7a32071"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+      "checkedAt": "2026-10-07T02:22:58.991Z",
+      "status": 200,
+      "contentType": "text/html",
+      "lastModified": "Fri, 28 Aug 2026 13:51:09 GMT",
+      "length": 13712,
+      "sha256": "f2743447e57efcd6ec23cb2dad226134158d1171c0804f7aace271a736c04bd4"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/gemini-image-guide.html",
+      "checkedAt": "2026-10-07T02:22:59.530Z",
+      "status": 200,
+      "contentType": "text/html",
+      "lastModified": "Mon, 13 Jul 2026 02:47:11 GMT",
+      "length": 10144,
+      "sha256": "c53dbbcb15d48cb76d6bc6dd3c55cffe85ea5280180227527887777fe96eef60"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://doc.frimodel.com/9298655m0.md",
+      "checkedAt": "2026-10-07T02:22:59.514Z"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/docs/batch-image",
+      "checkedAt": "2026-10-07T02:23:00.074Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": null,
+      "length": 11251,
+      "sha256": "759489f1a185d9437be59af2eeec41a41b0da23ebde64607c77e39c1f351b5b1"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://doc.frimodel.com/9077234m0.md",
+      "checkedAt": "2026-10-07T02:23:00.403Z"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://asian-acc.we-token.cc/api/status",
+      "checkedAt": "2026-10-07T02:22:59.377Z",
+      "status": 404,
+      "contentType": "text/plain",
+      "lastModified": null,
+      "length": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://asian-acc.we-token.cc/api/notice",
+      "checkedAt": "2026-10-07T02:23:01.709Z",
+      "status": 404,
+      "contentType": "text/plain",
+      "lastModified": null,
+      "length": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://asian-acc.we-token.cc/api/pricing",
+      "checkedAt": "2026-10-07T02:23:02.299Z",
+      "status": 404,
+      "contentType": "text/plain",
+      "lastModified": null,
+      "length": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "supplier": "怪兽ai",
+      "url": "https://api.eaheng.com/api/v1/settings/public",
+      "checkedAt": "2026-10-07T02:23:00.621Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 2543,
+      "sha256": "961a3bbf3cccc5a725d83b890703d36f57acfceaccbba872f248a5c9224b557f"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://docs.we-ai.cc/",
+      "checkedAt": "2026-10-07T02:23:02.923Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": "Tue, 08 Sep 2026 17:31:14 GMT",
+      "length": 23601,
+      "sha256": "0c7694ea6205e276a7eb31f418a4bc0173a6b9869b1f166b102bec6a66f83a95"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://doc.frimodel.com/9285585m0.md",
+      "checkedAt": "2026-10-07T02:23:00.932Z"
+    },
+    {
+      "supplier": "怪兽ai",
+      "url": "https://api.eaheng.com/api/v1/model-plaza",
+      "checkedAt": "2026-10-07T02:23:02.955Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 48,
+      "sha256": "36e1b296d46fa3b4c3ae4716530c36a34c444cbbdeb02b2ab2ab9cb3b44afd2a"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://docs.we-ai.cc/guides/image-generation-service.html",
+      "checkedAt": "2026-10-07T02:23:04.190Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": "Tue, 08 Sep 2026 17:31:25 GMT",
+      "length": 28438,
+      "sha256": "d1878befb5e0bd5d1eb117c820634aa98586c9981c442d1a2a7e0f8ee27ea7ab"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://docs.we-ai.cc/guides/image-generation.html",
+      "checkedAt": "2026-10-07T02:23:04.847Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": "Tue, 08 Sep 2026 17:31:22 GMT",
+      "length": 64231,
+      "sha256": "d1f9db82a070c7097d26faef580fcdd77c824a791bc139615fb98339a0036fec"
+    },
+    {
+      "supplier": "怪兽ai",
+      "url": "https://api.eaheng.com/batch-image",
+      "checkedAt": "2026-10-07T02:23:04.373Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": null,
+      "length": 3332,
+      "sha256": "bcc1ca88b3c136a802ced70f234d957ae57b979db2ae8a4b9ebfed96af55aa30"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://docs.we-ai.cc/guides/gemini-banana-image.html",
+      "checkedAt": "2026-10-07T02:23:05.605Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": "Tue, 08 Sep 2026 17:31:24 GMT",
+      "length": 61676,
+      "sha256": "adf1089d3f565d4b502b4c96b3529ddd40d470073d701f987ebaee3d1f123a99"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://doc.frimodel.com/473749171e0.md",
+      "checkedAt": "2026-10-07T02:23:04.298Z"
+    },
+    {
+      "supplier": "怪兽ai",
+      "url": "https://api.eaheng.com/assets/BatchImageGuideView-DuKkQn8-.js",
+      "checkedAt": "2026-10-07T02:23:05.789Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "lastModified": null,
+      "length": 71416,
+      "sha256": "694359f51526da07a47e34fde5a49ded3fd5147c26cd5cdd782f272b44e4b439"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://docs.we-ai.cc/guides/gemini-openai-compatible.html",
+      "checkedAt": "2026-10-07T02:23:06.236Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": "Tue, 08 Sep 2026 17:31:26 GMT",
+      "length": 55223,
+      "sha256": "048a9347629e8672c575027b210ab5db9f0fa8b267040b86ed17a8f65bff43f3"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://doc.frimodel.com/473749172e0.md",
+      "checkedAt": "2026-10-07T02:23:06.462Z"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://docs.we-ai.cc/guides/video-integration.html",
+      "checkedAt": "2026-10-07T02:23:06.959Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": "Tue, 08 Sep 2026 17:31:28 GMT",
+      "length": 41593,
+      "sha256": "4900c69c862e9b73ae0d953a46f61a934f17bce70532b3a4280a3eff19fe664f"
+    },
+    {
+      "supplier": "基因形象",
+      "url": "https://genimage.pro/api/status",
+      "checkedAt": "2026-10-07T02:23:07.006Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 2808,
+      "sha256": "ae41c3299b160c3f126d1fc6c1af1b8090856164540d8ce573f7ef4cb3d5beef"
+    },
+    {
+      "supplier": "基因形象",
+      "url": "https://genimage.pro/api/notice",
+      "checkedAt": "2026-10-07T02:23:07.794Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 198,
+      "sha256": "4521a955bdc02e506a5d2c1703f39f5c24d1c03d5b275a3f76075aee93570751"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://docs.we-ai.cc/guides/omni-video-integration.html",
+      "checkedAt": "2026-10-07T02:23:07.670Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": "Tue, 08 Sep 2026 17:31:24 GMT",
+      "length": 47099,
+      "sha256": "b44d41bef53fdf1dbfa466c3c6397426d8402c12bde7e869daee4febda07fe55"
+    },
+    {
+      "supplier": "基因形象",
+      "url": "https://genimage.pro/api/pricing",
+      "checkedAt": "2026-10-07T02:23:08.350Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 86,
+      "sha256": "4f505c881b4d7cd5f8233168fa3803f0629ef86853d31ded8d125bb08456220f"
+    },
+    {
+      "supplier": "secure-skill",
+      "url": "https://token.secure-skill.com/api/v1/settings/public",
+      "checkedAt": "2026-10-07T02:23:06.728Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 31459,
+      "sha256": "d36ac6e19a217f506e5c58026e9fde5fd048f2f9ccb9c65b498afe3d3498dfea"
+    },
+    {
+      "supplier": "secure-skill",
+      "url": "https://token.secure-skill.com/api/v1/model-plaza",
+      "checkedAt": "2026-10-07T02:23:10.493Z",
+      "status": 404,
+      "contentType": "text/plain",
+      "lastModified": null,
+      "length": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "supplier": "secure-skill",
+      "url": "https://token.secure-skill.com/docs",
+      "checkedAt": "2026-10-07T02:23:11.205Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": null,
+      "length": 32216,
+      "sha256": "69c6ac4d96a493ac039794a7ebd4c63e892e802796e0c7d03c5ecde0a54c4bfa"
+    },
+    {
+      "supplier": "Synora",
+      "url": "https://synoralink.com/api/v1/settings/public",
+      "checkedAt": "2026-10-07T02:23:09.122Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 1126222,
+      "sha256": "cd2c686c30e7b970dbb961002593cc92a76a1c92e44efbde68caaddd6df62c21"
+    },
+    {
+      "supplier": "Synora",
+      "url": "https://synoralink.com/api/v1/model-plaza",
+      "checkedAt": "2026-10-07T02:23:12.676Z",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 51,
+      "sha256": "260ac9e933e7f57f7d3b449661017a51d6277c48f75cad21471ae4e0095fd835"
+    },
+    {
+      "supplier": "夯炸了",
+      "url": "https://api.hangzhale.com/api/status",
+      "checkedAt": "2026-10-07T02:23:08.365Z"
+    },
+    {
+      "supplier": "夯炸了",
+      "url": "https://api.hangzhale.com/api/notice",
+      "checkedAt": "2026-10-07T02:23:14.234Z",
+      "status": 404,
+      "contentType": "text/plain",
+      "lastModified": null,
+      "length": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "supplier": "Synora",
+      "url": "https://synoralink.com/docs",
+      "checkedAt": "2026-10-07T02:23:13.511Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": null,
+      "length": 1452995,
+      "sha256": "f80e9b9719b05cf0d480d3bd8e0de0d6e7860ef8251a35880119e5862944068a"
+    },
+    {
+      "supplier": "夯炸了",
+      "url": "https://api.hangzhale.com/api/pricing",
+      "checkedAt": "2026-10-07T02:23:15.247Z",
+      "status": 404,
+      "contentType": "text/plain",
+      "lastModified": null,
+      "length": 18,
+      "sha256": "99eb12f2ab3c4866a353e098ffa3cb7a967e617c49b98480394ec5d8ea92b094"
+    },
+    {
+      "supplier": "夯炸了",
+      "url": "https://doc.hangzhale.com/",
+      "checkedAt": "2026-10-07T02:23:15.878Z",
+      "status": 200,
+      "contentType": "text/html",
+      "lastModified": "Thu, 28 May 2026 04:39:42 GMT",
+      "length": 22881,
+      "sha256": "b672034cc2c4985e9d9ffa30806a220a8f9d6b9e1b6a0ffb11312943a328a8f6"
+    },
+    {
+      "supplier": "Synora",
+      "url": "https://synoralink.com/batch-image",
+      "checkedAt": "2026-10-07T02:23:15.553Z",
+      "status": 200,
+      "contentType": "text/html; charset=utf-8",
+      "lastModified": null,
+      "length": 1452995,
+      "sha256": "e6d7a424b662966278c38c72c46ebb2446c15647cbae0d25ba40ae1e4356fa50"
+    },
+    {
+      "supplier": "pDog",
+      "url": "https://ai.whyshy.cn/api/v1/settings/public",
+      "checkedAt": "2026-10-07T02:23:16.828Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 133165,
+      "sha256": "415c35e2f03476482ccfe8fad20c8d9a7c7f35c63129b0c7c8630f012fd9215a"
+    },
+    {
+      "supplier": "pDog",
+      "url": "https://ai.whyshy.cn/api/v1/model-plaza",
+      "checkedAt": "2026-10-07T02:23:18.517Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "lastModified": null,
+      "length": 48,
+      "sha256": "36e1b296d46fa3b4c3ae4716530c36a34c444cbbdeb02b2ab2ab9cb3b44afd2a"
+    },
+    {
+      "supplier": "pDog",
+      "url": "https://ai.whyshy.cn/docs/async-image-api.html",
+      "checkedAt": "2026-10-07T02:23:19.067Z",
+      "status": 200,
+      "contentType": "text/html",
+      "lastModified": "Sat, 05 Sep 2026 06:44:22 GMT",
+      "length": 19044,
+      "sha256": "405b43531ebad5ccccb0580d42d81fcfa2d6db5c257e00e2231d4cb2d37cf3bf"
+    },
+    {
+      "supplier": "pDog",
+      "url": "https://ai.whyshy.cn/docs/gemini-image-api.html",
+      "checkedAt": "2026-10-07T02:23:19.847Z",
+      "status": 200,
+      "contentType": "text/html",
+      "lastModified": "Sat, 05 Sep 2026 06:44:23 GMT",
+      "length": 12725,
+      "sha256": "65286145b690749b0cdfe844c7d39d677868d04b4dbe293830d1c6fe1adf85e9"
+    },
+    {
+      "supplier": "secure-skill",
+      "url": "https://token.secure-skill.com/assets/DocsView-BmEBwyRT.js",
+      "checkedAt": "2026-10-07T02:23:12.414Z"
+    },
+    {
+      "supplier": "智元api",
+      "url": "https://pool.chaozhiyuanai.com/assets/index-xMHQ6xfX.js",
+      "checkedAt": "2026-10-07T02:24:16.435Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 187300,
+      "sha256": "87d85b4e38eaf9fc140f59bba27a5b408a80028e47639988a8ceb66f96c9db49"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/assets/index-FlbN8t-H.js",
+      "checkedAt": "2026-10-07T02:24:17.724Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 186141,
+      "sha256": "b35f632d2a62749c0b75162e2256c6571560b44d28b0acf480b6480901730c4f"
+    },
+    {
+      "supplier": "secure-skill",
+      "url": "https://token.secure-skill.com/assets/index-kQJTogWo.js",
+      "checkedAt": "2026-10-07T02:24:19.114Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 162267,
+      "sha256": "dfa6d047a329c2699b33e947b45cb477f18edbd2eb2ca47d195b940f931b7615"
+    },
+    {
+      "supplier": "Synora",
+      "url": "https://synoralink.com/assets/index-j8W7BWmm.js",
+      "checkedAt": "2026-10-07T02:24:23.523Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 183928,
+      "sha256": "9842b40b9ea3788ebd84b193355ddf900142646934a3378e769b7b4b8bba6803"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://asian-acc.we-token.cc/api/v1/settings/public",
+      "checkedAt": "2026-10-07T02:24:25.221Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "length": 4786,
+      "sha256": "2e1faacf711a71db26577dbc1f703e190aaf7b883ce596c5bc73555043c09ed1"
+    },
+    {
+      "supplier": "夯炸了",
+      "url": "https://api.hangzhale.com/api/v1/settings/public",
+      "checkedAt": "2026-10-07T02:24:26.300Z",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "length": 498694,
+      "sha256": "950d69dd34e6cad583268ff0c86568d8cb1d326ab4caab457e3821ecbb1a9256"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://ai-doc.apifox.cn/9298655m0.md",
+      "checkedAt": "2026-10-07T02:24:28.460Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "length": 115,
+      "sha256": "072387be1dd60f830ed03cf85fc35ad80b9ef84de8d9a66e4a41054539f3f347"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://ai-doc.apifox.cn/9077234m0.md",
+      "checkedAt": "2026-10-07T02:24:30.730Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "length": 4106,
+      "sha256": "22a5d9f3b443cac828bf0452795fac9e680ea04bc0ba4d881f958924b549b6b4"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://ai-doc.apifox.cn/9285585m0.md",
+      "checkedAt": "2026-10-07T02:24:31.542Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "length": 9879,
+      "sha256": "6dd713b7bd4eb1d1c88c07d01345252599f7d30ebd0fbb90ae78a61f9a918df0"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://ai-doc.apifox.cn/473749171e0.md",
+      "checkedAt": "2026-10-07T02:24:32.283Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "length": 4222,
+      "sha256": "82b5feb387304753e3245222f60c09779d0f34c522905db6dfa110934e96c151"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://ai-doc.apifox.cn/473749172e0.md",
+      "checkedAt": "2026-10-07T02:24:33.018Z",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "length": 3402,
+      "sha256": "fe1b43d1191b15a09ec8cd723185544a6e6dbc70fff8baff99c7b62c127281f5"
+    },
+    {
+      "supplier": "智元api",
+      "url": "https://pool.chaozhiyuanai.com/assets/BatchImageGuideView-CpGHznj6.js",
+      "checkedAt": "2026-10-07T02:25:28.010Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 71376,
+      "sha256": "1cda8f6e5cf47c421172c5ffb3907ebd8119ed1f0931177f95edaaca817b4f9e"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/assets/BatchImageGuideView-C2th_eiB.js",
+      "checkedAt": "2026-10-07T02:25:29.685Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 71376,
+      "sha256": "067f02943303d4cf2bf607b55b82bd4686eb3a7ad9ea7a00f2abe4dc5dfb9a1f"
+    },
+    {
+      "supplier": "secure-skill",
+      "url": "https://token.secure-skill.com/assets/DocsView-BmEBwyRT.js",
+      "checkedAt": "2026-10-07T02:25:30.751Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 452399,
+      "sha256": "dcb4fad6f5c97dd156a08484e39e00e6e179f0dde6344f2bcf6b10151972b321"
+    },
+    {
+      "supplier": "Synora",
+      "url": "https://synoralink.com/assets/DocsView-52TR8_SV.js",
+      "checkedAt": "2026-10-07T02:25:48.256Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 39785,
+      "sha256": "7b7f1bd22df5a7d896d9385d0b5416a3b0f2531072b47c085c2925f8e740fb9f"
+    },
+    {
+      "supplier": "Synora",
+      "url": "https://synoralink.com/assets/BatchImageGuideView-D5l3IwMR.js",
+      "checkedAt": "2026-10-07T02:25:50.323Z",
+      "status": 200,
+      "contentType": "text/javascript; charset=utf-8",
+      "length": 71466,
+      "sha256": "7e7370f212cc34fb0d7179c468665aa30adfb946ef205251a45781ed2c4a73f4"
+    },
+    {
+      "supplier": "智元api",
+      "url": "https://pool.chaozhiyuanai.com/api/v1/announcements",
+      "checkedAt": "2026-10-07T02:25:51.644Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "length": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "supplier": "MikotoPro",
+      "url": "https://api.mikoto.vip/api/v1/announcements",
+      "checkedAt": "2026-10-07T02:25:52.416Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "length": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "supplier": "怪兽ai",
+      "url": "https://api.eaheng.com/api/v1/announcements",
+      "checkedAt": "2026-10-07T02:25:53.263Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "length": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "supplier": "secure-skill",
+      "url": "https://token.secure-skill.com/api/v1/announcements",
+      "checkedAt": "2026-10-07T02:25:55.199Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "length": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "supplier": "Synora",
+      "url": "https://synoralink.com/api/v1/announcements",
+      "checkedAt": "2026-10-07T02:25:56.850Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "length": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "supplier": "pDog",
+      "url": "https://ai.whyshy.cn/api/v1/announcements",
+      "checkedAt": "2026-10-07T02:25:58.474Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "length": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "supplier": "We-AI",
+      "url": "https://asian-acc.we-token.cc/api/v1/announcements",
+      "checkedAt": "2026-10-07T02:25:59.242Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "length": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "supplier": "夯炸了",
+      "url": "https://api.hangzhale.com/api/v1/announcements",
+      "checkedAt": "2026-10-07T02:26:00.303Z",
+      "status": 401,
+      "contentType": "application/json; charset=utf-8",
+      "length": 68,
+      "sha256": "6abf9a96f79c7426b94f6772aeb0ce7e5908c6c2c908977917af15d078b49138"
+    },
+    {
+      "supplier": "夯炸了",
+      "url": "https://price.hangzhale.com/",
+      "checkedAt": "2026-10-07T02:28:18.853Z",
+      "status": 200,
+      "contentType": "text/html",
+      "lastModified": "Tue, 25 Aug 2026 09:25:49 GMT",
+      "length": 51398,
+      "sha256": "3a9c93fd0d1458214f997541c8b55e824367537e39af079859aecdfc4bc25226"
+    },
+    {
+      "supplier": "FriModel",
+      "url": "https://api.apifox.com/api/v1/projects/8212767/resources/684080/image-preview",
+      "checkedAt": "2026-10-07T02:28:19.993Z",
+      "status": 200,
+      "contentType": "image/png",
+      "lastModified": "Sun, 09 Aug 2026 18:53:56 GMT",
+      "length": 1474313,
+      "sha256": "95b5d1afcf1e7edce77536e9865d064879a66d7ba7c2394d657eba4a3d84ebf4"
+    },
+    {
+      "supplier": "夯炸了",
+      "url": "https://price.hangzhale.com/api/provider/pricing",
+      "checkedAt": "2026-10-07T02:28:41.724Z",
+      "status": 200,
+      "contentType": "application/json",
+      "length": 52814,
+      "sha256": "d479c1eb3be0620b9ac86ba574fd3fd52f83e7fcea817eedc5e4381f6721cb07"
+    }
+  ],
+  "scopeNotes": [
+    "Contains public facts, declared prices, normalized changes and request metadata only; no credentials, account data, raw pages, or browser profile.",
+    "Morning full public responses were removed earlier; comparison is limited to preserved morning facts and older document baselines.",
+    "Fresh source timestamps, model directory presence and generation success are distinct facts.",
+    "Authentication-required public pages are listed as inaccessible, not as empty catalogs or delisted models."
+  ]
+}

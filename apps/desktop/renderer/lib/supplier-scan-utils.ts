@@ -8,6 +8,7 @@ import {
   ProviderHttpError,
 } from "@super-canvas/providers";
 import { requireServerMasterKey } from "./master-key";
+import { modelDirectoryDenialCode, type ModelDirectoryDenialCode } from "./model-inventory-failure";
 /** Bound the response while reading, before allocating a full JSON payload. */
 export async function readBoundedModelJson(
   response: Response,
@@ -31,6 +32,12 @@ export async function readBoundedModelJson(
     reader.releaseLock();
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+/** Error bodies are read only to identify a reviewed denial code; never retain their text. */
+export async function readModelDenialEvidence(response: Response): Promise<{ httpStatus: number; upstreamErrorCode?: ModelDirectoryDenialCode }> {
+  const upstreamErrorCode = modelDirectoryDenialCode(await readBoundedModelJson(response).catch(() => undefined));
+  return { httpStatus: response.status, ...(upstreamErrorCode ? { upstreamErrorCode } : {}) };
 }
 /** A branded instance pointed elsewhere gets only that instance's inventory, never template prices or transports. */
 export async function scanAlternateSupplier(

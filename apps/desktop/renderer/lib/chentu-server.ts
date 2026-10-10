@@ -1,5 +1,6 @@
 import {
   readBoundedModelJson,
+  readModelDenialEvidence,
   scanAlternateSupplier,
 } from "./supplier-scan-utils";
 import { matchesSupplierTemplate } from "./supplier-template-source";
@@ -42,6 +43,9 @@ export interface ChentuKeyScan {
   checkedAt: string;
   modelIds: string[];
   error?: string;
+  /** Actual directory response status, kept separate from the scan classification. */
+  httpStatus?: number;
+  upstreamErrorCode?: string;
 }
 
 export interface ChentuConnectionScan extends ChentuKeyScan {
@@ -59,12 +63,14 @@ interface OpenAIModelsPayload {
 function scanFailure(
   status: Exclude<ChentuModelScanStatus, "live" | "empty">,
   error: string,
+  evidence?: { httpStatus: number; upstreamErrorCode?: string },
 ): ChentuKeyScan {
   return {
     status,
     checkedAt: new Date().toISOString(),
     modelIds: [],
     error,
+    ...evidence,
   };
 }
 
@@ -96,6 +102,7 @@ export async function scanChentuKeyModels(
       return scanFailure(
         "unauthorized",
         `辰途 /v1/models 返回 HTTP ${response.status}：${reason}`,
+        await readModelDenialEvidence(response),
       );
     }
     if (!response.ok)

@@ -4,6 +4,28 @@ import { assertCompleteModelInventoryPayload, isCompleteModelInventoryResponse, 
   modelInventoryFailure, modelInventoryFailureConfig, modelInventoryFailureHeaders } from "./model-inventory-failure";
 
 describe("model directory completeness and safe failures", () => {
+  it.each(["GROUP_DELETED", "GROUP_DISABLED", "GROUP_NOT_ALLOWED"])("retains reviewed %s through error, headers and config without remote text", upstreamErrorCode => {
+    const error = new ProviderHttpError("private-key-must-not-echo", { kind: "authentication", phase: "connect", retryable: false,
+      submissionMayHaveOccurred: false, status: 403, responseBody: { error: { code: upstreamErrorCode, message: "private-key-must-not-echo" } } });
+    const failure = modelInventoryFailure(error);
+    expect(failure).toMatchObject({ code: "permission_denied", httpStatus: 403, upstreamErrorCode });
+    expect(modelInventoryFailure(undefined, Response.json({}, { status: 403, headers: modelInventoryFailureHeaders(failure) }))).toEqual(failure);
+    expect(modelInventoryFailureConfig(failure).modelScanUpstreamErrorCode).toBe(upstreamErrorCode);
+    expect(JSON.stringify(failure)).not.toContain("private-key");
+  });
+  it.each([
+    { error: { code: "private-key-must-not-echo" } },
+    { code: "GROUP_DELETED", error: { code: "GROUP_DISABLED" } },
+    { error: { message: "GROUP_DELETED private-key-must-not-echo" } },
+  ])("does not copy arbitrary or conflicting upstream codes: %j", responseBody => {
+    const error = new ProviderHttpError("private-key-must-not-echo", { kind: "authentication", phase: "connect", retryable: false,
+      submissionMayHaveOccurred: false, status: 403, responseBody });
+    const failure = modelInventoryFailure(error);
+    expect(failure).toEqual({ code: "permission_denied", httpStatus: 403, message: expect.any(String) });
+    expect(modelInventoryFailureConfig(failure).modelScanUpstreamErrorCode).toBeNull();
+    expect(modelInventoryFailureHeaders(failure)["X-Model-Scan-Upstream-Error-Code"]).toBeUndefined();
+    expect(JSON.stringify(failure)).not.toContain("private-key");
+  });
   it.each([{ code: "INSUFFICIENT_BALANCE", message: "private-token-must-not-echo" },
     { error: { code: "INSUFFICIENT_BALANCE", message: "private-token-must-not-echo" } }])(
     "distinguishes supplier HTTP403 insufficient balance from an invalid Key", responseBody => {

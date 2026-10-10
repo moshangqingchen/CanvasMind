@@ -1,0 +1,562 @@
+{
+  "reportType": "release-and-updater-verification",
+  "date": "2026-10-08",
+  "timezone": "America/Los_Angeles",
+  "finishedAtUtc": "2026-10-08T09:01:48.237Z",
+  "version": "0.2.67",
+  "finalCommit": "6384228abfe6198a6dcb4afe4763089ca55be69c",
+  "implementationCommit": "d694cd337dc1124025af9d28746b420c71d0b609",
+  "publication": {
+    "tag": "v0.2.67",
+    "commit": "6384228abfe6198a6dcb4afe4763089ca55be69c",
+    "latest": true,
+    "draft": false,
+    "prerelease": false,
+    "publishedAt": "2026-10-08T08:39:59Z",
+    "url": "https://github.com/moshangqingchen/CanvasMind/releases/tag/v0.2.67",
+    "notesMatch": true
+  },
+  "workflows": [
+    {
+      "name": "CI",
+      "id": 37749201470,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37749201470"
+    },
+    {
+      "name": "Windows Desktop Release",
+      "id": 37749201828,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37749201828"
+    }
+  ],
+  "changes": {
+    "removedUnusedSourceLines": 3012,
+    "sharedDownloadCallerComponents": 4,
+    "sharedDownloadCallSites": 5,
+    "maximumChainNodesTested": 12000,
+    "supplierBillingContractsUnchanged": true
+  },
+  "mainCi": {
+    "run": {
+      "id": 37749201470,
+      "name": "CI",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "headSha": "6384228abfe6198a6dcb4afe4763089ca55be69c",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37749201470"
+    },
+    "units": {
+      "tests": 3850,
+      "passed": 3850,
+      "failed": 0
+    },
+    "unitPackages": [
+      {
+        "name": "core",
+        "total": 30,
+        "passed": 30,
+        "failed": 0
+      },
+      {
+        "name": "db",
+        "total": 50,
+        "passed": 50,
+        "failed": 0
+      },
+      {
+        "name": "storage",
+        "total": 27,
+        "passed": 27,
+        "failed": 0
+      },
+      {
+        "name": "providers",
+        "total": 1187,
+        "passed": 1187,
+        "failed": 0
+      },
+      {
+        "name": "director",
+        "total": 24,
+        "passed": 24,
+        "failed": 0
+      },
+      {
+        "name": "desktop",
+        "total": 76,
+        "passed": 76,
+        "failed": 0
+      },
+      {
+        "name": "runtime",
+        "total": 366,
+        "passed": 366,
+        "failed": 0
+      },
+      {
+        "name": "renderer",
+        "total": 2090,
+        "passed": 2090,
+        "failed": 0
+      }
+    ],
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "browser": {
+      "planned": 322,
+      "passedWithoutRetry": 322,
+      "flaky": 0,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 322,
+      "attemptCount": 322,
+      "retryAttemptCount": 0,
+      "initialFailureCount": 0
+    },
+    "desktop": [
+      {
+        "jobId": 113218134789,
+        "desktopUnit": {
+          "tests": 76,
+          "pass": 76,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "standardSmokeChecks": 27,
+        "windowedSmokeChecks": 4,
+        "windowedPassed": true,
+        "rendererErrorCount": 0,
+        "realVisiblePaint": true,
+        "newRendererPidAfterCrash": true
+      }
+    ]
+  },
+  "releasePrerequisites": {
+    "run": {
+      "id": 37749201828,
+      "name": "Windows Desktop Release",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "headSha": "6384228abfe6198a6dcb4afe4763089ca55be69c",
+      "url": "https://github.com/moshangqingchen/CanvasMind/actions/runs/37749201828"
+    },
+    "units": {
+      "tests": 3850,
+      "passed": 3850,
+      "failed": 0
+    },
+    "maintenance": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "browser": {
+      "planned": 322,
+      "passedWithoutRetry": 321,
+      "flaky": 1,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 322,
+      "attemptCount": 323,
+      "retryAttemptCount": 1,
+      "initialFailureCount": 1
+    },
+    "desktop": [
+      {
+        "jobId": 113218239910,
+        "desktopUnit": {
+          "tests": 76,
+          "pass": 76,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "standardSmokeChecks": 27,
+        "windowedSmokeChecks": 4,
+        "windowedPassed": true,
+        "rendererErrorCount": 0,
+        "realVisiblePaint": true,
+        "newRendererPidAfterCrash": true
+      }
+    ]
+  },
+  "installerAcceptance": {
+    "jobId": 113221930385,
+    "focusedBrowser": {
+      "planned": 27,
+      "passedWithoutRetry": 27,
+      "flaky": 0,
+      "finalFailed": 0,
+      "skipped": 0,
+      "eventuallySuccessful": 27,
+      "attemptCount": 27,
+      "retryAttemptCount": 0,
+      "initialFailureCount": 0
+    },
+    "focusedUnit": [
+      {
+        "passed": 189,
+        "total": 189
+      },
+      {
+        "passed": 62,
+        "total": 62
+      }
+    ],
+    "desktopUnit": {
+      "tests": 76,
+      "pass": 76,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "standardSmokeChecks": 27,
+    "windowedSmokeChecks": 4,
+    "windowedPassed": true,
+    "rendererErrorCount": 0,
+    "realVisiblePaint": true,
+    "newRendererPidAfterCrash": true,
+    "installerVersion": "0.2.67",
+    "installerVerificationPassed": true,
+    "fullInstallerHashValidationByCIProducer": true,
+    "independentFullPublicInstallerDownload": false,
+    "requiredStepCount": 9,
+    "publicationStepPassed": true
+  },
+  "releaseFlakyCase": {
+    "source": "6384228abfe6198a6dcb4afe4763089ca55be69c",
+    "jobId": 113218240041,
+    "case": "新建默认 We-AI Image 2.5 4K max，刷新和手选保持：context-menu",
+    "firstAttemptSeconds": 45.4,
+    "successfulRetrySeconds": 7.1,
+    "testLocation": "e2e/canvas-weai-image25-default.spec.ts:97:27",
+    "assertion": null,
+    "expected": [],
+    "received": [],
+    "timeoutMs": [
+      45000
+    ],
+    "observedScope": "Polling persistence of the manually selected supplier connection after quality/size edits, not initial new-node creation.",
+    "limitation": "The single retry passing does not establish the original first-attempt cause. Main CI same case passed initially.",
+    "failureClassification": [
+      {
+        "testTimeoutMs": 45000,
+        "operation": null,
+        "testEnded": false,
+        "contextClosed": false,
+        "requestTimeoutMs": null
+      },
+      {
+        "testTimeoutMs": null,
+        "operation": "apiRequestContext.delete",
+        "testEnded": false,
+        "contextClosed": true,
+        "requestTimeoutMs": null
+      }
+    ],
+    "cause": "The first attempt exceeded the whole-test 45-second deadline at the saved-connection polling assertion (line 97). Its final cleanup apiRequestContext.delete then encountered a closed context. Logs alone do not establish why the whole-test deadline was consumed or whether a product persistence issue occurred."
+  },
+  "independentLocalRecheck": {
+    "source": "6384228abfe6198a6dcb4afe4763089ca55be69c",
+    "rendererBuildId": "u_4tOmlhNVgOpiXxGF69V",
+    "summarizedAt": "2026-10-08T08:50:39.638Z",
+    "runner": {
+      "channel": "chrome",
+      "workers": 1,
+      "retries": 0,
+      "repeatEach": 3,
+      "globalTestTimeoutMs": 45000,
+      "expectTimeoutMs": 10000,
+      "service": "isolated next start production renderer, automatic unique system-temp profile with ephemeral repository and fake key",
+      "formalInstalledAppLaunched": false
+    },
+    "stats": {
+      "startTime": "2026-10-08T08:48:34.761Z",
+      "duration": 17889.621,
+      "expected": 3,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "repeat": 1,
+        "status": "passed",
+        "durationMs": 4684,
+        "retry": 0,
+        "trace": "artifacts\\canvas-weai-image25-defaul-9053a-4K-max，刷新和手选保持：context-menu\\trace.zip",
+        "traceSha256": "9c5c8b4d79a6bbc159a5fb5f1e8aff690777ce7f121a3621ca80acd91f2899d2",
+        "network": {
+          "totalSnapshots": 142,
+          "statuses": {
+            "200": 141,
+            "201": 1
+          },
+          "externalHosts": [],
+          "failures": [],
+          "realGenerationPostCount": 0,
+          "canvasSaveRequests": 3,
+          "canvasSaveStatuses": [
+            200,
+            200,
+            200
+          ],
+          "canvasReadRequests": 14,
+          "maximumSaveRequestMs": 17.528,
+          "maximumReadRequestMs": 35.201
+        },
+        "persistence": {
+          "responseStateCount": 17,
+          "sawNewWeAi4KMax": true,
+          "sawManual2KHigh": true,
+          "finalConnectionId": "isolated-manual-supplier",
+          "finalModel": "gpt-image-2",
+          "finalExistingModel": "gpt-image-2.5-flare",
+          "finalExistingParameters": {
+            "size": "2048x2048",
+            "size_tier": "2K",
+            "quality": "high"
+          }
+        }
+      },
+      {
+        "repeat": 2,
+        "status": "passed",
+        "durationMs": 4264,
+        "retry": 0,
+        "trace": "artifacts\\canvas-weai-image25-defaul-9053a-4K-max，刷新和手选保持：context-menu-repeat1\\trace.zip",
+        "traceSha256": "56d2b0b0133b8c41b34f6efc9bdb7cb7679c27b118cd8e0112d5cf3195452427",
+        "network": {
+          "totalSnapshots": 142,
+          "statuses": {
+            "200": 141,
+            "201": 1
+          },
+          "externalHosts": [],
+          "failures": [],
+          "realGenerationPostCount": 0,
+          "canvasSaveRequests": 3,
+          "canvasSaveStatuses": [
+            200,
+            200,
+            200
+          ],
+          "canvasReadRequests": 14,
+          "maximumSaveRequestMs": 16.117,
+          "maximumReadRequestMs": 15.074
+        },
+        "persistence": {
+          "responseStateCount": 17,
+          "sawNewWeAi4KMax": true,
+          "sawManual2KHigh": true,
+          "finalConnectionId": "isolated-manual-supplier",
+          "finalModel": "gpt-image-2",
+          "finalExistingModel": "gpt-image-2.5-flare",
+          "finalExistingParameters": {
+            "size": "2048x2048",
+            "size_tier": "2K",
+            "quality": "high"
+          }
+        }
+      },
+      {
+        "repeat": 3,
+        "status": "passed",
+        "durationMs": 3995,
+        "retry": 0,
+        "trace": "artifacts\\canvas-weai-image25-defaul-9053a-4K-max，刷新和手选保持：context-menu-repeat2\\trace.zip",
+        "traceSha256": "f820a410b1b83f344bbecfdc44f771d197bf1b6719f5b89192e4508294b4121c",
+        "network": {
+          "totalSnapshots": 142,
+          "statuses": {
+            "200": 141,
+            "201": 1
+          },
+          "externalHosts": [],
+          "failures": [],
+          "realGenerationPostCount": 0,
+          "canvasSaveRequests": 3,
+          "canvasSaveStatuses": [
+            200,
+            200,
+            200
+          ],
+          "canvasReadRequests": 14,
+          "maximumSaveRequestMs": 13.356,
+          "maximumReadRequestMs": 14.067
+        },
+        "persistence": {
+          "responseStateCount": 17,
+          "sawNewWeAi4KMax": true,
+          "sawManual2KHigh": true,
+          "finalConnectionId": "isolated-manual-supplier",
+          "finalModel": "gpt-image-2",
+          "finalExistingModel": "gpt-image-2.5-flare",
+          "finalExistingParameters": {
+            "size": "2048x2048",
+            "size_tier": "2K",
+            "quality": "high"
+          }
+        }
+      }
+    ],
+    "initialHarnessFailure": {
+      "path": "../context-menu-local-3-20261008/playwright.log",
+      "classification": "PLAYWRIGHT_BASE_URL empty string made invalid baseURL; no test executed. Truly removed from the second process environment."
+    },
+    "safety": {
+      "formalProfileRead": false,
+      "realKeyRead": false,
+      "realSupplierGenerationCalls": 0,
+      "testSourceChanged": false,
+      "timeoutRelaxed": false
+    },
+    "limits": [
+      "Three local isolated Chrome repetitions do not explain why one Linux CI release prerequisite attempt consumed its 45-second whole-test budget.",
+      "These checks exercise the existing production renderer source/build, not a fresh local v0.2.67 packaged Electron shell; public packaged release validation is separate.",
+      "Original CI first-attempt timeout, its cleanup context-closed error, and the one successful CI retry remain recorded."
+    ],
+    "serverCleanup": {
+      "verifiedAt": "2026-10-08T08:52:22.342Z",
+      "ownedPort": 3256,
+      "remainingListeners": 0,
+      "basis": "Get-NetTCPConnection explicit owned port after global setup teardown returned no listening sockets."
+    }
+  },
+  "publicAssets": [
+    {
+      "name": "SuperCanvas-Setup-0.2.67-x64.exe",
+      "bytes": 216571220,
+      "officialDigest": "sha256:1fd84b57a31643f3e8bc2edaf3a8a568b6d7b60b9065722760406c4a9f5b47d3",
+      "head": 200
+    },
+    {
+      "name": "SuperCanvas-Setup-0.2.67-x64.exe.blockmap",
+      "bytes": 224389,
+      "officialDigest": "sha256:bd0a43bd89397437e8699f112b34271169942d3db5432bebd30df8e486c8af78",
+      "head": 200
+    },
+    {
+      "name": "latest.yml",
+      "bytes": 1838,
+      "officialDigest": "sha256:8e4bca065471fb0f650ab8d98c6006bc7eef17ff20f0aa25a1084687186665a3",
+      "head": 200
+    }
+  ],
+  "publicManifest": {
+    "version": "0.2.67",
+    "installerName": "SuperCanvas-Setup-0.2.67-x64.exe",
+    "bytes": 216571220,
+    "manifestFullHashMatches": true,
+    "blockmapFullHashMatches": true,
+    "releaseNotesMatch": true,
+    "installerRange206": true,
+    "installerFullIndependentHash": "not performed"
+  },
+  "updaterComparator": {
+    "actualDependencyVersion": "6.8.9",
+    "decisions": {
+      "0.2.64": true,
+      "0.2.65": true,
+      "0.2.66": true,
+      "0.2.67": false,
+      "0.2.68": false
+    }
+  },
+  "actualOldClientUi": {
+    "currentVersion": "0.2.64",
+    "targetVersion": "0.2.67",
+    "succeeded": true,
+    "phase": "available",
+    "rendererErrors": 0,
+    "generationPosts": 0,
+    "downloaded": false,
+    "installed": false,
+    "geometry": {
+      "x": 412,
+      "right": 1012,
+      "viewportWidth": 1424,
+      "overflow": 0
+    },
+    "isolatedCopy": true
+  },
+  "safety": {
+    "formalProfileRead": false,
+    "formalProfileWritten": false,
+    "formalInstallLaunched": false,
+    "formalExeUnchanged": true,
+    "formalAsarUnchanged": true,
+    "paidGenerationSubmissions": 0,
+    "credentialsWritten": false
+  },
+  "initialVerificationFailures": [
+    {
+      "operation": "Read-only git ls-remote",
+      "status": "Transient schannel handshake failure; one subsequent read returned the final main SHA",
+      "productTestFailure": false
+    },
+    {
+      "operation": "Public anonymous asset checks",
+      "failedRunsPreserved": [
+        "public-v0.2.67-verification-2026-10-08T08-44-00.396Z.json",
+        "public-v0.2.67-verification-2026-10-08T08-41-46.298Z.json",
+        "public-v0.2.67-verification-2026-10-08T08-41-13.246Z.json"
+      ],
+      "finalRequestFailures": [
+        {
+          "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.67/SuperCanvas-Setup-0.2.67-x64.exe",
+          "method": "HEAD",
+          "attempt": 1,
+          "errorName": "TypeError",
+          "causeCode": "ECONNRESET"
+        },
+        {
+          "url": "https://github.com/moshangqingchen/CanvasMind/releases/download/v0.2.67/SuperCanvas-Setup-0.2.67-x64.exe.blockmap",
+          "method": "HEAD",
+          "attempt": 1,
+          "errorName": "TypeError",
+          "causeCode": "ECONNRESET"
+        }
+      ],
+      "status": "Completed checks passed using the existing provider transport with bounded per-request retries; initial failures retained"
+    },
+    {
+      "operation": "Old client UI initial harness",
+      "coreUpdateUiPassed": true,
+      "wholeInitialRunPassed": false,
+      "error": "electronApplication.waitForEvent: Timeout 30000ms exceeded while waiting for event \"close\"\n    at D:\\project development\\超级画布\\.codex-temp\\release-v0.2.65-ui\\isolated64-update67-ui.cjs:113:32",
+      "status": "Initial quit wait kept the Playwright main inspector connection open; original report/screenshots retained; final harness uses regular application.close(), preserving UI assertions and the 30-second close bound, and passes independently"
+    }
+  ],
+  "evidence": {
+    "public": ".codex-temp/release-v0.2.67/public-v0.2.67-verification-2026-10-08T08-47-26.156Z.json",
+    "ci": ".codex-temp/release-v0.2.67-ci-review/6384228a/ci/workflow-counts-summary.json",
+    "release": ".codex-temp/release-v0.2.67-ci-review/6384228a/release/workflow-counts-summary.json",
+    "oldClient": ".codex-temp/release-v0.2.65-ui/isolated64-stable67-final-update-report.json"
+  },
+  "limits": [
+    "Overlapping CI and release tests are reported separately, not added to distinct coverage.",
+    "CI hashes the full installer; public checks read HEAD and exactly 1024 Range bytes, not an independent full installer download.",
+    "The original old updater/renderer are verified in an isolated client copy; the formal application is not installed or launched.",
+    "No new paid supplier generation, real account capability or cloud deployment verification was performed.",
+    "Short smoke and browser performance tests do not prove multi-hour stability or absence of all bugs."
+  ]
+}
