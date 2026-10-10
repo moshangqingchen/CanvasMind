@@ -188,7 +188,7 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
     const defaults = Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default]));
     const amount = modelPriceAmount(pricing, { ...defaults, ...parameters, resolution: parameters.resolution ?? (tier || defaults.resolution), quality });
     const unit = pricing.billingUnit === "second" || pricing.kind === "per-second" ? "秒" : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
-    if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）") ? "上次 " : ""}${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}`;
+    if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）") ? "上次 " : ""}${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}${pricing.timeMultipliers?.length ? "（上海当前时段价，以提交时刻为准）" : ""}`;
     if (pricing.kind === "token") {
       if (pricing.sourceUrl === "https://token.secure-skill.com/api/v1/pricing/channels" &&
         pricing.tiers?.some(tier => tier.conditions?.some(condition => ["resolution", "has_reference_video"].includes(condition.parameter)))) {
@@ -250,7 +250,7 @@ export function modelEstimatedCost(model: ModelDescriptor | null | undefined, pa
   const duration = Number(values.duration ?? values.duration_seconds ?? values.seconds);
   if (perSecond && (!Number.isFinite(duration) || duration <= 0 || model.metadata?.approximateVideoDurationSeconds || model.metadata?.billingIncludesInputDuration === true)) return undefined;
   const total = Number((amount * count * (perSecond ? duration : 1)).toPrecision(12));
-  return `${total} ${pricing.currency === "credits" ? "额度" : pricing.currency}${pricing.confidence === "exact" ? "" : "（参考）"}`;
+  return `${total} ${pricing.currency === "credits" ? "额度" : pricing.currency}${pricing.confidence === "exact" ? "" : "（参考）"}${pricing.timeMultipliers?.length ? "（上海当前时段价，以提交时刻为准）" : ""}`;
 }
 
 /** Compare only the exact model and supported parameter combination in this connection. */

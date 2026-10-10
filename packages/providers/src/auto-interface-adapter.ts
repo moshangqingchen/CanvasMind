@@ -16,6 +16,7 @@ import { modelSupportsGenerationMedia } from "./model-media.js";
 import { supplierImageParameterIssues } from "./supplier-image-constraints.js";
 import { isJiasuImageConnection, isJiasuImageResult, JiasuImageAdapter } from "./jiasu-images.js";
 import { isJiasuApiUrl, jiasuVideoGroupMismatch } from "./jiasu-video-contract.js";
+import { isJijiuApiUrl, jijiuVideoGroupMismatch } from "./jijiu-video-contract.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
   const value = settings?.autoModelInterfaces;
@@ -42,6 +43,8 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     const config = imageEditingConnection(connection).config;
     if (request.operation.startsWith("video.") && isJiasuApiUrl(connection.baseUrl) && jiasuVideoGroupMismatch(connection.settings))
       throw new Error("当前佳速 Key 绑定的分组与型号分组不一致，请同步正确分组后再生成。");
+    if (request.operation.startsWith("video.") && isJijiuApiUrl(connection.baseUrl) && jijiuVideoGroupMismatch(connection.settings))
+      throw new Error("当前极九 Key 绑定的分组与型号分组不一致，请同步正确分组后再生成。");
     if (["openai", "rest"].includes(connection.provider) && request.operation.startsWith("image.") && isJiasuImageConnection(config, request.model))
       return new JiasuImageAdapter(this.connections, this.options, request.model);
     if ((pdogImageOrigin(connection.baseUrl) || config.supplierKey === "chentu") &&

@@ -88,10 +88,17 @@ for (const width of [980, 1280, 1366, 1440, 1920]) {
       const inspectorToggle = page.getByRole("button", { name: "智能体面板", exact: true });
       if (await inspectorToggle.getAttribute("aria-expanded") === "true") await inspectorToggle.click();
       await expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
-      await expect(panel).toHaveCSS("width", `${nodeWidth}px`);
+      const placement = await attachedPanelGeometry(panel);
+      if (placement.direction === "left" || placement.direction === "right") {
+        // A side panel may use the remaining width, with responsive controls.
+        expect(placement.width / placement.zoom).toBeGreaterThanOrEqual(180);
+        expect(placement.width / placement.zoom).toBeLessThanOrEqual(nodeWidth);
+        if (placement.width / placement.zoom < 240)
+          expect(placement.height / placement.zoom).toBeGreaterThanOrEqual(120);
+      } else await expect(panel).toHaveCSS("width", `${nodeWidth}px`);
       await expect(panel).toHaveCSS("font-size", "13px");
-      // Preserve node scale while flipping or clamping placement when the
-      // viewport cannot fit the panel below its node.
+      // Preserve node scale while using a clear side or scrolling a shorter
+      // panel when the viewport cannot fit it below the node.
       await expect.poll(async () => (await attachedPanelGeometry(panel)).attachmentError).toBeLessThanOrEqual(1);
       await expect(panel.getByRole("button", { name: "关闭模型与参数面板" })).toBeInViewport({ ratio: 1 });
       await expect(panel.getByRole("button", { name: "管理供应商与密钥" })).toBeInViewport({ ratio: 1 });

@@ -26,6 +26,7 @@ import { isMiaowuLegacyVideoBaseConnector, isMiaowuUnverifiedAutoVideoContract, 
 import { getModelParameterDescriptor, validateModelParameters } from "./cli-contracts.js";
 import { chatMediaOutputs } from "./chat-image-output.js";
 import { isJiasuApiUrl, jiasuVideoGroupMismatch } from "./jiasu-video-contract.js";
+import { isJijiuApiUrl, jijiuVideoGroupMismatch } from "./jijiu-video-contract.js";
 import { uploadJiasuMedia } from "./jiasu-media.js";
 
 function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor, assets?: readonly ProviderAssetInput[]): RemainingVideoContext {
@@ -1419,6 +1420,8 @@ export class GenericRestAdapter implements ProviderAdapter {
       const connection = await this.connections.resolve(request.connectionId);
       if (request.operation.startsWith("video.") && isJiasuApiUrl(connection.baseUrl) && jiasuVideoGroupMismatch(connection.settings))
         issues.push({ path: "model", code: "model_group_mismatch", message: "当前佳速 Key 绑定的分组与型号分组不一致，请同步正确分组后再生成。" });
+      if (request.operation.startsWith("video.") && isJijiuApiUrl(connection.baseUrl) && jijiuVideoGroupMismatch(connection.settings))
+        issues.push({ path: "model", code: "model_group_mismatch", message: "当前极九 Key 绑定的分组与型号分组不一致，请同步正确分组后再生成。" });
       issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
       const baseConfig = this.configFrom(connection);
       const catalog = connection.settings?.modelCatalogModels;

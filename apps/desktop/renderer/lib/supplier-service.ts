@@ -101,6 +101,8 @@ export const SupplierModelSchema = z
       agentProtocol: z.string().max(256).optional(),
       modelKind: z.string().max(256).optional(),
       catalogCapability: z.enum(["image", "video", "music", "chat", "text", "audio", "other"]).optional(),
+      endpointTypes: z.array(z.string().trim().min(1).max(256)).max(100).optional(),
+      catalogGenerationDeclarationSource: z.literal("official-category-tag").optional(),
     }).strict().optional(),
   })
   .strict();

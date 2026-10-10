@@ -39,6 +39,9 @@ import {
   imageSizeForTier,
   isPdogImageConnection,
   isJiasuImageConnection,
+  jijiuImageOrigin,
+  isJijiuGptImage,
+  JIJIU_IMAGE_IDS,
   pdogImageSizeForTier,
   GenericRestAdapter,
   cangyuanMusicTransport,
@@ -3053,6 +3056,7 @@ export class RunService {
           secureSkillRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           chuangxiangRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
           chuangxiangMidjourneyRequiresPublicAssets(providerName, connectionConfig, model, operation) ||
+          (providerName === "openai" && operation === "image.edit" && !!model && isJijiuGptImage(connectionConfig ?? {}, model)) ||
           bananaRequiresPublicAssets(providerName, connectionConfig, model))) {
       if (frozenConnection?.cloudGeneration) {
         const savedUrls = nodeRun.inputJson.cloudReferenceUrls;
@@ -3071,7 +3075,7 @@ export class RunService {
       }
     }
     const nativeJiasuImage = ["openai", "rest"].includes(providerName) && operation.startsWith("image.") &&
-      isJiasuImageConnection(connectionConfig, model);
+      (isJiasuImageConnection(connectionConfig, model) || !!jijiuImageOrigin(connectionConfig?.baseUrl) && JIJIU_IMAGE_IDS.includes(model ?? ""));
     let parameters =
       nativeJiasuImage ? { ...rawParameters } : providerName === "weai"
         ? normalizeWeAiParameters(rawParameters, requestedModel, modelGroup)

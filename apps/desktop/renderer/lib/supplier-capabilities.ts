@@ -11,6 +11,7 @@ import type {
 import { canApplyCangyuanCurrentContract, cangyuanCurrentModel } from "@super-canvas/providers/cangyuan-current-models";
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
 import { applyJiasuImageCapabilities } from "@super-canvas/providers/jiasu-image-contract";
+import { applyJijiuImageCapabilities } from "@super-canvas/providers/jijiu-image-contract";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
 import { modelPriceAmount } from "@super-canvas/providers/media-billing";
 import { IMAGE_SIZE_RATIOS, imageSizeForTier, imageSizeOptions } from "@super-canvas/providers/image-size-presets";
@@ -120,7 +121,7 @@ export function effectiveImageCapabilities(input: {
   documentation?: string;
 }): EffectiveImageCapabilities {
   const { supplier, connection, fingerprint } = input;
-  const imageModel = secureSeedreamImageContract(connection, supplierImageMenuContract(connection, applyJiasuImageCapabilities(connection, applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, input.model)))));
+  const imageModel = applyJijiuImageCapabilities(connection, secureSeedreamImageContract(connection, supplierImageMenuContract(connection, applyJiasuImageCapabilities(connection, applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, input.model))))));
   const model = canApplyCangyuanCurrentContract(connection.config, typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl, imageModel.id)
     ? cangyuanCurrentModel(imageModel) : imageModel;
   const policyBaseUrl = typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl;

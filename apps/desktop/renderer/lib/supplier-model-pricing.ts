@@ -138,7 +138,7 @@ function isImportedConditionalCatalogPrice(model: ModelDescriptor): boolean {
     return source.origin === "https://token.secure-skill.com" && source.pathname === "/api/v1/pricing/channels" ||
       source.origin === "https://asian-acc.we-token.cc" && source.pathname === "/api/v1/model-plaza-legacy/models" ||
       ["https://api.eaheng.com", "https://ai.whyshy.cn"].includes(source.origin) && source.pathname === "/api/v1/model-plaza" ||
-      source.origin === "https://api.miaowuai.store" && source.pathname === "/api/pricing" ||
+      ["https://api.miaowuai.store", "https://newapi.jijiucanvas.com"].includes(source.origin) && source.pathname === "/api/pricing" ||
       source.origin === "https://price.hangzhale.com" && source.pathname === "/api/provider/pricing" ||
       source.origin === "https://vapi.chuangxiangai.asia" && source.pathname === "/model-plaza";
   } catch { return false; }
@@ -521,18 +521,28 @@ export function applySupplierCatalogPrices(
       ["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) &&
       (model.pricing || typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel)) &&
       Number.isFinite(priceAt) && Number.isFinite(catalogAt) && priceAt > catalogAt) return model;
-    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete", "miaowuCatalogPricingIncomplete", "chuangxiangCatalogPricingIncomplete", "jiasuCatalogPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
-    const jiasuTokenPlaceholder = catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true &&
+    const jijiuIncomplete = catalogModel?.metadata?.jijiuCatalogPricingIncomplete === true;
+    // An unsupported new billing expression is a partial price read. Retain an
+    // earlier exact quote only for this supplier, full model and same group.
+    if (jijiuIncomplete && /^https:\/\/newapi\.jijiucanvas\.com(?:\/v1)?\/?$/u.test(sourceUrl ?? "") &&
+      model.metadata?.priceSource === "supplier-catalog" && priceGroup === group && model.pricing?.confidence === "exact" &&
+      model.pricing.sourceUrl === "https://newapi.jijiucanvas.com/api/pricing" && typeof model.metadata.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel)) {
+      return { ...model, metadata: { ...catalogInterfaceMetadata(model, catalogModel, catalog, selected?.details?.stale === true),
+        priceLabel: `${model.metadata.priceLabel.replace(/（上次价格）$/u, "")}（上次价格）`, priceStatus: "partial", jijiuCatalogPricingIncomplete: true,
+        priceUnavailableReason: catalogModel?.metadata?.priceUnavailableReason ?? "官方价格条件待确认", priceLastAttemptAt: catalog.checkedAt } };
+    }
+    const incompletePricingFields = ["weaiLegacyPricingIncomplete", "sub2apiPlazaPricingIncomplete", "miaowuCatalogPricingIncomplete", "chuangxiangCatalogPricingIncomplete", "jiasuCatalogPricingIncomplete", "jijiuCatalogPricingIncomplete"].filter(field => catalogModel?.metadata?.[field] === true);
+    const jiasuTokenPlaceholder = (catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true || jijiuIncomplete) &&
       (model.pricing?.kind === "token" || /(?:\/\s*1M|token)/iu.test(String(model.metadata?.priceLabel ?? "")));
     if (incompletePricingFields.length && (!hasOwnPrice(model) || jiasuTokenPlaceholder)) {
       const metadata = { ...catalogInterfaceMetadata(model, catalogModel, catalog, selected?.details?.stale === true) };
       delete metadata.weaiLegacyPricing; delete metadata.sub2apiPlazaPricing; delete metadata.miaowuCatalogPricing;
-      if (catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true) delete metadata.officialCatalogPricing;
+      if (catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true || jijiuIncomplete) delete metadata.officialCatalogPricing;
       const oldLabel = String(model.metadata?.priceLabel ?? "");
       const name = jiasuTokenPlaceholder && oldLabel ? model.name.replace(` · ${oldLabel}`, "").replace(`（${oldLabel}）`, "").replace(`(${oldLabel})`, "") : model.name;
       return { ...model, name, pricing: undefined, metadata: { ...metadata, priceLabel: "价格条件待确认", priceSource: "supplier-catalog",
         priceStatus: "unconfirmed", ...Object.fromEntries(incompletePricingFields.map(field => [field, true])),
-        priceUnavailableReason: catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true ? String(catalogModel.metadata.priceUnavailableReason) : "官方价格条件待确认",
+        priceUnavailableReason: catalogModel?.metadata?.jiasuCatalogPricingIncomplete === true || jijiuIncomplete ? String(catalogModel?.metadata?.priceUnavailableReason ?? "官方价格条件待确认") : "官方价格条件待确认",
         priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt, supplierPriceGroup: group } };
     }
     if (catalogModel?.metadata?.supplierCatalogModelStale === true && !hasOwnPrice(model)) {
@@ -567,13 +577,16 @@ export function applySupplierCatalogPrices(
       catalogModel?.metadata?.weaiLegacyPricing && model.metadata?.weaiLegacyPricingIncomplete === true ||
       catalogModel?.metadata?.miaowuCatalogPricing && model.metadata?.miaowuCatalogPricingIncomplete === true ||
       catalogModel?.metadata?.chuangxiangCatalogPricing && model.metadata?.chuangxiangCatalogPricingIncomplete === true ||
-      catalogModel?.metadata?.officialCatalogPricing && model.metadata?.jiasuCatalogPricingIncomplete === true) {
+      catalogModel?.metadata?.officialCatalogPricing && (model.metadata?.jiasuCatalogPricingIncomplete === true || model.metadata?.jijiuCatalogPricingIncomplete === true)) {
       const metadata = { ...model.metadata };
       if (catalogModel?.metadata?.sub2apiPlazaPricing) delete metadata.sub2apiPlazaPricingIncomplete;
       if (catalogModel?.metadata?.weaiLegacyPricing) delete metadata.weaiLegacyPricingIncomplete;
       if (catalogModel?.metadata?.miaowuCatalogPricing) delete metadata.miaowuCatalogPricingIncomplete;
       if (catalogModel?.metadata?.chuangxiangCatalogPricing) delete metadata.chuangxiangCatalogPricingIncomplete;
       if (catalogModel?.metadata?.jiasuCatalogPricingEvidence) delete metadata.jiasuCatalogPricingIncomplete;
+      if (catalogModel?.metadata?.jijiuCatalogPricingEvidence) {
+        delete metadata.jijiuCatalogPricingIncomplete; delete metadata.priceUnavailableReason;
+      }
       if (metadata.priceUnavailableReason === "官方价格条件待确认") delete metadata.priceUnavailableReason;
       model = { ...model, metadata };
     }
@@ -711,6 +724,7 @@ export function applySupplierCatalogPrices(
         priceLastAttemptAt: catalog.checkedAt,
         supplierPriceGroup: group,
         ...groupIdentityMetadata,
+        ...(catalogModel?.metadata?.jijiuCatalogPricingEvidence ? { jijiuCatalogPricingEvidence: catalogModel.metadata.jijiuCatalogPricingEvidence } : {}),
         ...(missingCurrentVideoQuote ? { priceSourceUrl: priceEvidenceSource,
           priceUnavailableReason: `${catalog.checkedAt} 已查询 ${priceEvidenceSource}：当前分组 ${group} ${fresh
             ? `未提供完整型号 ${model.id} 可解析的计价规则` : `未列出完整型号 ${model.id} 的报价`}` } : {}),
@@ -742,6 +756,9 @@ export function applySupplierCatalogPrices(
 
 /** Only model-scoped lines can supply a documented price. */
 export function applyDocumentedModelPrice(model: ModelDescriptor, document: string | undefined, sourceUrl: string): ModelDescriptor {
+  // A live expression we cannot interpret is not permission to flatten an
+  // older prose/example price from the same site into a fixed request rate.
+  if (model.metadata?.jijiuCatalogPricingIncomplete === true) return model;
   if (model.pricing || (typeof model.metadata?.priceLabel === "string" && !unknownPrice.test(model.metadata.priceLabel) && model.metadata.priceSource !== "generated-result")) return model;
   const scoped = [model.description, model.metadata?.supplierChannelDescription,
     ...((document ?? "").split(/\n/u).filter(line => supplierTextMentionsModel(line, model.id)))].filter(value => typeof value === "string").join("\n");

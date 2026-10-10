@@ -2082,6 +2082,14 @@ circle.canvas-drawing-selection-outline {
 .parameter-dimensions-shortcuts.parameter-native-resolution-shortcuts {
   grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
 }
+.parameter-dimensions-shortcuts.parameter-native-resolution-shortcuts > .parameter-dimensions-shortcut {
+  height: auto;
+  min-height: 30px;
+  padding: 5px 8px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .parameter-native-resolution { gap: 10px; }
 .parameter-native-resolution .parameter-native-ratio-label { margin: 0; }
 .parameter-dimensions-shortcut {

@@ -34,6 +34,8 @@ export interface StructuredModelPricing {
   // With a conditional usage split, omit flat rates: unknown cache counts
   // cannot safely produce a fixed per-request or ordinary-token estimate.
   billingUnit?: "image" | "request" | "second";
+  /** Supplier-declared wall-clock multipliers; intervals are start-inclusive/end-exclusive. */
+  timeMultipliers?: readonly { timeZone: "Asia/Shanghai"; startHour: number; endHour: number; multiplier: number }[];
   sourceUrl?: string;
   checkedAt: string;
   validUntil?: string;

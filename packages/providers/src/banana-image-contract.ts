@@ -1,6 +1,7 @@
 import type { ModelDescriptor } from "./contracts.js";
 import { pdogImageOrigin, PDOG_GEMINI_DOCUMENTATION, PDOG_GEMINI_LEGACY_UNAVAILABLE } from "./pdog-image-contract.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
+import { JIJIU_GEMINI_IMAGE_IDS, JIJIU_IMAGE_DOCS, jijiuImageGroupAllowed } from "./jijiu-image-contract.js";
 type Connection = { provider: string; config: Readonly<Record<string, unknown>> };
 export type BananaRoute = { kind: "native" | "chuangxiang" | "secure-async"; auth: "bearer" | "google"; docs: string; maxInputs: number; model: string; sizes: string[]; ratios: string[]; asyncTextGeneration?: boolean; unavailableReason?: string; maxInputBytes?: number; inputLimitSource?: "adapter"; weaiGroup?: "adobe" | "aistudio"; pdog?: true; chentu?: true; synora?: true; tk1688?: true; monster?: true; mikoto?: true; defaultSize?: string; thinking?: { values: string[]; default: string } };
 export const GEMINI_NANO_BANANA_21_MODEL = "gemini-nano-banana-2.1";
@@ -38,6 +39,11 @@ export function bananaImageRoute(connection: Connection, model: string): BananaR
   if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash ||
       !/^\/(?:v1(?:beta)?\/?)?$/u.test(url.pathname)) return;
   const group = String(connection.config.accountKeyGroup ?? connection.config.modelGroup);
+  if (url.hostname === "newapi.jijiucanvas.com" && (JIJIU_GEMINI_IMAGE_IDS as readonly string[]).includes(model)) {
+    return { kind: "native", auth: "bearer", docs: JIJIU_IMAGE_DOCS, maxInputs: 14, inputLimitSource: "adapter",
+      model, sizes: ["auto", "1K", "2K", "4K"], ratios: [], defaultSize: "auto",
+      ...(jijiuImageGroupAllowed(connection.config, model) ? {} : { unavailableReason: "当前极九 Key 或分组没有此完整图片型号权限" }) };
+  }
   if (connection.provider === "weai" && (!WEAI_HOSTS.has(url.hostname) || !["adobe香蕉", "aistudio香蕉"].includes(group))) return;
   // Chentu converts all-native live groups into a REST preset. The same exact
   // contract must survive that conversion and the later documentation refresh.
@@ -218,6 +224,8 @@ export function applyBananaImageCapabilities(connection: Connection, model: Mode
 
 /** Translate old canvas controls before the generic GPT sizing path can discard the tier. */
 export function normalizeBananaParameters(route: BananaRoute, input: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
+  if (route.docs === JIJIU_IMAGE_DOCS) return { ...input, aspect_ratio: input.aspect_ratio ?? input.aspectRatio ?? input.ratio ?? "auto",
+    image_size: input.image_size ?? input.imageSize ?? input.resolution ?? input.size_tier ?? input.size ?? "auto", n: input.n ?? 1 };
   if (route.mikoto) return { ...input, aspect_ratio: input.aspect_ratio ?? input.aspectRatio ?? "auto",
     image_size: input.image_size ?? input.imageSize ?? input.resolution ?? input.size_tier ?? input.size ?? route.defaultSize, n: input.n ?? 1 };
   if (route.synora || route.tk1688 || route.monster) return { ...input, aspect_ratio: input.aspect_ratio ?? input.aspectRatio ?? "auto",

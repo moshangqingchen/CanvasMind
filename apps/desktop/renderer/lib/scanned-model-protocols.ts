@@ -21,6 +21,7 @@ import {
 } from "@super-canvas/providers";
 import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-contract";
 import { applyJiasuImageCapabilities } from "@super-canvas/providers/jiasu-image-contract";
+import { applyJijiuImageCapabilities } from "@super-canvas/providers/jijiu-image-contract";
 import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
 import { applyHangImageCapabilities } from "@super-canvas/providers/hang-image-contract";
 import { applySupplierImageConstraints } from "@super-canvas/providers/supplier-image-constraints";
@@ -533,13 +534,15 @@ export function bindScannedModelProtocols(
   );
   const currentCangyuan = connection.provider === "rest" && supplierKeyForConnection(connection) === "cangyuan" && matchesSupplierTemplate(connection);
   let models = applySavedModelInterfaces(connection, compatibleModels)
+    .map(model => applyJijiuImageCapabilities(connection, model))
     .map(model => applyBananaImageCapabilities(connection, model))
     .map(model => applyHangImageCapabilities(connection, model))
     .map(model => applyChuangxiangMidjourneyCapabilities(connection, model))
     .map(model => applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, model)))
     .map(model => applyJiasuImageCapabilities(connection, model))
     .map(model => applyChuangxiangCurrentVideoCapabilities(connection, model)).map(withHighestModelQualityDefault)
-    .map(model => applySupplierImageConstraints(connection, model));
+    .map(model => applySupplierImageConstraints(connection, model))
+    .map(model => applyJijiuImageCapabilities(connection, model));
   if (currentCangyuan) {
     for (let i = 0; i < models.length; i++) if (canInherit(models[i]!) &&
       canApplyCangyuanCurrentContract(connection.config, String(connection.config.baseUrl ?? ""), models[i]!.id))
@@ -588,8 +591,8 @@ export function bindScannedModelProtocols(
           groupDescription: String(connection.config.modelGroupDescription ?? connection.config.groupDescription ?? ""),
         }) : undefined;
     if (!documented) return model;
-    const metadata = { ...documented.metadata, canvasRunnable: true };
-    delete (metadata as Record<string, unknown>).canvasUnavailableReason;
+    const metadata = { ...documented.metadata, canvasRunnable: documented.metadata?.jijiuGroupUnavailable !== true };
+    if (metadata.canvasRunnable) delete (metadata as Record<string, unknown>).canvasUnavailableReason;
     return { ...documented, metadata };
   });
   models = models.map(model => guardNativeVideoRunnableContract(connection, model));

@@ -3,7 +3,6 @@ import {
   parseDirectorDecision,
   type DirectorAdapterInput,
   type DirectorConnection,
-  type DirectorDecision,
   type DirectorFinishReason,
   type DirectorProtocol,
   type DirectorSource,
@@ -487,17 +486,6 @@ export async function requestJson(
   } finally {
     clearTimeout(timeout);
     externalSignal?.removeEventListener("abort", abort);
-  }
-}
-
-export function strictDecision(value: unknown): DirectorDecision {
-  try {
-    return parseDirectorDecision(value);
-  } catch {
-    throw new DirectorAdapterError(
-      "invalid_response",
-      "导演模型未按约定返回有效的结构化决策",
-    );
   }
 }
 

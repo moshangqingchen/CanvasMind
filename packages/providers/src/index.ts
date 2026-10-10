@@ -20,6 +20,7 @@ export * from "./auto-interface-adapter.js";
 export * from "./banana-image.js";
 export * from "./pdog-image.js";
 export * from "./jiasu-images.js";
+export * from "./jijiu-image-contract.js";
 export * from "./jiasu-media.js";
 export * from "./catalog-pricing.js";
 export * from "./media-billing.js";

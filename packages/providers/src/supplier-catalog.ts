@@ -3,7 +3,7 @@ import type { FetchImplementation, ModelDescriptor } from "./contracts.js";
 import { catalogPriceLabel, scopedCatalogMediaPricing } from "./catalog-pricing.js";
 import { chuangxiangCatalogPricing, isChuangxiangCatalogSource } from "./chuangxiang-catalog-pricing.js";
 import { parseProviderModelFacts, scanProviderModelCatalog } from "./model-catalog.js";
-import { modelGenerationMediaKinds } from "./model-media.js";
+import { endpointGenerationMediaKinds, modelGenerationMediaKinds } from "./model-media.js";
 import { parseSupplierGroupDetails, type SupplierGroupDetails } from "./supplier-group-details.js";
 import { isTk1688CatalogSource, parseTk1688AccountModelIds, parseTk1688Marketplace, TK1688_MARKETPLACE_URL } from "./tk1688-catalog.js";
 import { secureSkillCatalogPricing, secureSkillCatalogVideoDeclaration } from "./secure-skill-catalog-pricing.js";
@@ -14,6 +14,9 @@ import { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js
 import { HANG_PRICE_URL, isHangCatalogSource, parseHangChatPrices } from "./hang-catalog-pricing.js";
 import { isSynoraLedgerSource, readSynoraLedgerPrices, type SupplierLedgerPrice } from "./supplier-ledger-pricing.js";
 import { isJiasuCatalogSource, jiasuCatalogMediaKind, jiasuCatalogMediaPricing, jiasuCatalogRecord } from "./jiasu-catalog-pricing.js";
+import { isJijiuCatalogSource, jijiuCatalogMediaPricing } from "./jijiu-catalog-pricing.js";
+import { isJijiuApiUrl, jijiuVideoModel } from "./jijiu-video-contract.js";
+import { applyJijiuImageCapabilities } from "./jijiu-image-contract.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
@@ -226,15 +229,22 @@ function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
   if (!item) return undefined;
   const id = text(item.id ?? item.model_name ?? item.model ?? item.name);
   if (!id) return undefined;
-  const endpoints = [
+  const endpointTypes = [
     ...values(item.supported_endpoint_types),
     ...values(item.endpoints),
+    ...values(item.endpointTypes),
+    ...values(record(item.metadata)?.endpointTypes),
     text(item.protocol),
-  ].join(" ");
+  ].filter(Boolean);
+  const endpoints = endpointTypes.join(" ");
   const hint = `${id} ${text(item.type)} ${text(item.capability)} ${endpoints}`;
   const facts = parseProviderModelFacts(item, "supplier-catalog");
-  const explicitCapability = text(item.capability);
+  // These are explicit output categories from the public directory. A tag such as
+  // “视频理解” or a generic multimodal/chat endpoint is not a generation declaration.
+  const taggedKinds = new Set(values(item.tags).flatMap(tag => tag === "图片模型" ? ["image"] : tag === "视频模型" ? ["video"] : tag === "语言模型" ? ["chat"] : []));
+  const explicitCapability = text(item.capability ?? facts.metadata?.catalogCapability) || (taggedKinds.size === 1 ? [...taggedKinds][0]! : "");
   const scanned = scanProviderModelCatalog([{ ...item, id, metadata: { ...record(item.metadata),
+    ...(endpointTypes.length ? { endpointTypes } : {}),
     ...(["image", "video", "music", "chat", "text", "audio", "other"].includes(explicitCapability) ? { catalogCapability: explicitCapability } : {}) } }]).models[0]!;
   const media = modelGenerationMediaKinds(scanned);
   const capability: DiscoveredSupplierModel["capability"] =
@@ -246,18 +256,17 @@ function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
             )
           ? "chat"
           : "other";
+  const endpointMedia = endpointGenerationMediaKinds(endpointTypes);
   const protocol: DiscoveredSupplierModel["protocol"] =
-    /gemini|generatecontent/iu.test(endpoints)
+    capability === "image" && endpointMedia.includes("image") ? "openai-images"
+      : capability === "video" && endpointMedia.includes("video") ? "openai-videos"
+      : /gemini|generatecontent/iu.test(endpoints)
       ? "gemini"
       : /responses/iu.test(endpoints)
         ? "responses"
         : /chat/iu.test(endpoints)
           ? "chat-completions"
-          : /image/iu.test(endpoints)
-            ? "openai-images"
-            : /video/iu.test(endpoints)
-              ? "openai-videos"
-              : "unknown";
+          : "unknown";
   const pricing = record(item.pricing);
   const priceLabel =
     catalogPriceLabel(item) ??
@@ -275,8 +284,10 @@ function modelFrom(value: unknown): DiscoveredSupplierModel | undefined {
     ...facts,
     ...(media.length && !facts.outputKinds ? { outputKinds: scanned.outputKinds } : {}),
     metadata: { ...facts.metadata,
+      ...(endpointTypes.length ? { endpointTypes: [...new Set(endpointTypes)] } : {}),
       ...(media.length && scanned.metadata?.operationsSource === "declared" ? { outputKindsSource: "declared" } : {}),
       ...(["image", "video", "music", "chat", "text", "audio", "other"].includes(explicitCapability) ? { catalogCapability: explicitCapability } : {}),
+      ...(taggedKinds.size === 1 && !text(item.capability ?? facts.metadata?.catalogCapability) ? { catalogGenerationDeclarationSource: "official-category-tag" } : {}),
     },
     ...(priceLabel ? { priceLabel } : {}),
   };
@@ -382,6 +393,23 @@ export function parseSupplierCatalog(
     raw: unknown,
     id: string,
   ) => {
+    if (isJijiuCatalogSource(priceDisplay.supplierSiteUrl) && (model.capability === "image" || model.capability === "video")) {
+      const descriptor: ModelDescriptor = { id: model.id, name: model.name ?? model.id, operations: [], metadata: model.metadata ?? {},
+        ...(model.outputKinds ? { outputKinds: model.outputKinds } : {}) };
+      const documented = model.capability === "video" && isJijiuApiUrl(priceDisplay.supplierSiteUrl)
+        ? jijiuVideoModel(model.id, descriptor, id)
+        : model.capability === "image" ? applyJijiuImageCapabilities({ provider: "openai", config: { baseUrl: priceDisplay.supplierSiteUrl, modelGroup: id } }, descriptor) : undefined;
+      const protocol = documented?.metadata?.protocol === "gemini-generate-content" ? "gemini" as const
+        : documented?.metadata?.protocol === "openai-images" ? "openai-images" as const
+          : documented?.metadata?.protocol === "openai-videos" ? "openai-videos" as const : model.protocol;
+      const native = jijiuCatalogMediaPricing(raw, { supplierSiteUrl: priceDisplay.supplierSiteUrl, group: id,
+        groupMultiplier: Number(ratios?.[id]), checkedAt: priceDisplay.checkedAt, kind: model.capability });
+      return { ...model, ...(documented ? { ...(protocol ? { protocol } : {}), inputKinds: documented.inputKinds, outputKinds: documented.outputKinds, limits: documented.limits } : {}),
+        priceLabel: native?.priceLabel ?? "价格条件待确认", metadata: { ...model.metadata, ...documented?.metadata,
+          ...(native ? { officialCatalogPricing: native.pricing, jijiuCatalogPricingEvidence: native.evidence,
+            officialCatalogPriceGroupVerified: typeof ratios?.[id] === "number" && Number.isFinite(ratios[id]) && Number(ratios[id]) >= 0 }
+            : { jijiuCatalogPricingIncomplete: true, priceUnavailableReason: "官方价格条件或当前分组倍率待确认" }) } };
+    }
     if (isCyberAfeiUnpricedCatalogVideo(priceDisplay.supplierSiteUrl, model.id)) {
       return { ...model, capability: "video" as const, protocol: "unknown" as const, outputKinds: ["video" as const],
         priceLabel: "价格条件待确认", metadata: { ...model.metadata, catalogCapability: "video", outputKindsSource: "declared",

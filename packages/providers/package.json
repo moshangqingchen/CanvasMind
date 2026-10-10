@@ -6,6 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./jijiu-image-contract": {
+      "types": "./src/jijiu-image-contract.ts",
+      "import": "./dist/jijiu-image-contract.js",
+      "default": "./dist/jijiu-image-contract.js"
+    },
     "./hang-image-contract": {
       "types": "./src/hang-image-contract.ts",
       "import": "./dist/hang-image-contract.js",

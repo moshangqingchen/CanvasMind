@@ -4,6 +4,7 @@ import { assertValidResult } from "./contracts.js";
 import { imageEditingConnection, imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
 import { GEMINI_NANO_BANANA_21_MODEL, normalizeBananaParameters, weAiBananaModelUnavailable, type BananaRoute } from "./banana-image-contract.js";
+import { JIJIU_IMAGE_DOCS, jijiuGeminiParameterIssues } from "./jijiu-image-contract.js";
 export * from "./banana-image-contract.js";
 function connector(route: BananaRoute, descriptor: ModelDescriptor): RestConnectorConfig {
   const parameter = (target: string, key: string) => ({ target, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitValues: ["auto"] });
@@ -72,6 +73,7 @@ export class BananaImageAdapter extends GenericRestAdapter {
     if (weAiBananaModelUnavailable(imageEditingConnection(connection), request.model ?? this.route.model))
       issues.push({ path: "model", code: "model_unavailable", message: "当前 We-AI 分组已记录此型号不可用，请重新核对 Key 权限" });
     issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
+    if (this.route.docs === JIJIU_IMAGE_DOCS) issues.push(...jijiuGeminiParameterIssues(request.parameters));
     if (this.route.unavailableReason) issues.push({ path: "model", code: "unsupported_model", message: this.route.unavailableReason });
     if (!this.route.sizes.includes(String(normalized.parameters?.image_size))) issues.push({ path: "parameters.image_size", code: "invalid_image_size", message: `此香蕉模型支持的分辨率为 ${this.route.sizes.join("、")}` });
     const ratio = normalized.parameters?.aspect_ratio;
@@ -99,7 +101,7 @@ export class BananaImageAdapter extends GenericRestAdapter {
     if (this.route.kind === "secure-async" && task.status !== "succeeded" && task.status !== "failed" && task.providerTaskId?.startsWith("rest:sync:"))
       throw new Error("供应商已响应，但未返回香蕉任务编号；不能查询结果，请核对供应商记录，避免重复提交");
     const result: Record<string, unknown> = { ...(task.result as Record<string, unknown>), bananaImage: true };
-    if ((this.route.pdog || this.route.chentu || this.route.synora || this.route.monster || this.route.mikoto || this.route.model === GEMINI_NANO_BANANA_21_MODEL) && task.status === "succeeded" && !bananaNativeOutputs(result)?.length)
+    if ((this.route.pdog || this.route.chentu || this.route.synora || this.route.monster || this.route.mikoto || this.route.docs === JIJIU_IMAGE_DOCS || this.route.model === GEMINI_NANO_BANANA_21_MODEL) && task.status === "succeeded" && !bananaNativeOutputs(result)?.length)
       throw new ProviderHttpError("Gemini 已返回响应但没有图片；请核对供应商记录及响应中的安全限制，避免重复提交。", {
         kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: result.remote,
       });

@@ -72,6 +72,7 @@ import { NodeParameterFields } from "./node-parameter-fields";
 import { parameterDescriptorsForValues } from "../lib/model-parameters";
 import { ModelResolutionShortcuts } from "./model-resolution-shortcuts";
 import { shouldReselectNodeFromConfigPointer } from "../lib/node-config-pointer";
+import { placeNodeConfigPanel } from "../lib/node-config-placement";
 import { PromptEditor } from "./prompt-editor";
 import { AssetPreviewImage } from "./asset-preview-image";
 import { useResultPreviewSize } from "../lib/use-result-preview-size";
@@ -392,7 +393,8 @@ function GenerationNodeBody({
     const canvas = settingsHost.closest<HTMLElement>(".canvas-wrap");
     const rail = settingsHost.closest(".canvas-editor")?.querySelector<HTMLElement>(".editor-rail");
     if (!canvas) return;
-    const viewportTools = [...canvas.querySelectorAll<HTMLElement>(".canvas-toolbar, .react-flow__controls, .react-flow__minimap")];
+    const toolSelector = ".canvas-toolbar, .react-flow__controls, .react-flow__minimap";
+    let viewportTools = [...canvas.querySelectorAll<HTMLElement>(toolSelector)];
     let active = true;
     const place = () => {
       if (!active || !Number.isFinite(settingsZoom) || settingsZoom <= 0) return;
@@ -402,29 +404,22 @@ function GenerationNodeBody({
       const leftBoundary = Math.max(canvasBounds.left + 8,
         railBounds && railBounds.width > 0 && railBounds.height > 0 ? railBounds.right + 8 : 0);
       const rightBoundary = Math.min(canvasBounds.right, window.innerWidth) - 8;
-      const available = rightBoundary - leftBoundary;
-      if (hostBounds.width <= 0 || available <= 0) return;
-      const width = Math.min(hostBounds.width, available);
-      const left = Math.min(Math.max(hostBounds.left, leftBoundary), rightBoundary - width);
-      const topBoundary = Math.max(canvasBounds.top, 0) + 8;
-      let bottomBoundary = Math.min(canvasBounds.bottom, window.innerHeight) - 8;
-      for (const tool of viewportTools) {
-        const bounds = tool.getBoundingClientRect();
-        if (bounds.width > 0 && bounds.height > 0 && bounds.right > left && bounds.left < left + width)
-          bottomBoundary = Math.min(bottomBoundary, bounds.top - 8);
-      }
-      const availableHeight = bottomBoundary - topBoundary;
-      if (availableHeight <= 0) return;
-      const height = Math.min(560 * settingsZoom, availableHeight);
-      const below = hostBounds.bottom + 10 * settingsZoom;
-      const above = hostBounds.top - 10 * settingsZoom - height;
-      const top = below >= topBoundary && below + height <= bottomBoundary ? below
-        : above >= topBoundary && above + height <= bottomBoundary ? above
-        : Math.max(topBoundary, Math.min(below, bottomBoundary - height));
+      if (hostBounds.width <= 0 || rightBoundary <= leftBoundary) return;
+      const placement = placeNodeConfigPanel({
+        node: hostBounds,
+        viewport: {
+          left: leftBoundary, right: rightBoundary,
+          top: Math.max(canvasBounds.top, 0) + 8,
+          bottom: Math.min(canvasBounds.bottom, window.innerHeight) - 8,
+        },
+        obstacles: viewportTools.map(tool => tool.getBoundingClientRect())
+          .filter(bounds => bounds.width > 0 && bounds.height > 0),
+        zoom: settingsZoom,
+      });
       // The portal remains inside the transformed node. Convert only its
       // visual placement to local coordinates; never move or resize the node.
-      const next = { left: (left - hostBounds.left) / settingsZoom, width: width / settingsZoom,
-        top: (top - hostBounds.top) / settingsZoom, maxHeight: availableHeight / settingsZoom };
+      const next = { left: (placement.left - hostBounds.left) / settingsZoom, width: placement.width / settingsZoom,
+        top: (placement.top - hostBounds.top) / settingsZoom, maxHeight: placement.maxHeight / settingsZoom };
       setSettingsPlacement(previous => Math.abs(previous.left - next.left) < .01 &&
         previous.width !== undefined && Math.abs(previous.width - next.width) < .01 &&
         previous.top !== undefined && Math.abs(previous.top - next.top) < .01 &&
@@ -436,8 +431,21 @@ function GenerationNodeBody({
     observer.observe(canvas);
     if (rail) observer.observe(rail);
     for (const tool of viewportTools) observer.observe(tool);
-    const toolPositionObserver = new MutationObserver(place);
-    toolPositionObserver.observe(canvas, { attributes: true, attributeFilter: ["data-compact-tools"] });
+    const toolPositionObserver = new MutationObserver(records => {
+      const toolsChanged = records.some(record => record.type === "childList" &&
+        [...record.addedNodes, ...record.removedNodes].some(node => node instanceof Element &&
+          (node.matches(toolSelector) || node.querySelector(toolSelector))));
+      if (toolsChanged) {
+        const nextTools = [...canvas.querySelectorAll<HTMLElement>(toolSelector)];
+        for (const tool of viewportTools) if (!nextTools.includes(tool)) observer.unobserve(tool);
+        for (const tool of nextTools) if (!viewportTools.includes(tool)) observer.observe(tool);
+        viewportTools = nextTools;
+      }
+      if (toolsChanged || records.some(record => record.type === "attributes" && record.target === canvas)) place();
+    });
+    toolPositionObserver.observe(canvas, {
+      attributes: true, attributeFilter: ["data-compact-tools"], childList: true, subtree: true,
+    });
     window.addEventListener("resize", place);
     return () => {
       active = false;

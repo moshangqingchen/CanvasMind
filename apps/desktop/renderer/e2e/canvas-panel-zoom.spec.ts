@@ -43,7 +43,6 @@ test("参数面板随节点同比缩放，后台扫描保持参数及滚动位�
   const canvas = await created.json();
   await page.goto(`/canvas/${canvas.id}`);
   const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
-  if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();
   await page.getByRole("button", { name: "打开 缩放验收 模型与参数", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "缩放验收 模型与参数", exact: true });
   const tiers = panel.getByRole("group", { name: "自动与输出分辨率快捷档位" });
@@ -51,6 +50,11 @@ test("参数面板随节点同比缩放，后台扫描保持参数及滚动位�
   const body = panel.locator(".node-config-popover-body");
   await expect(tiers).toBeAttached();
   await expect(quality).toHaveValue("max");
+  // The desktop drawer initializes on the first animation frame. Close it
+  // after model controls are ready, before measuring layout or scroll position.
+  if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();
+  await expect(sidebar).toHaveAttribute("aria-expanded", "false");
+  await expect(panel).toHaveCSS("width", "420px");
   await quality.scrollIntoViewIfNeeded();
   const scrollTop = await body.evaluate(element => element.scrollTop);
   const assertStable = async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import type { ProviderConnectionRecord, SupplierRecord } from "@super-canvas/db";
+import { parseSupplierCatalog } from "@super-canvas/providers";
 import { planSupplierAccountImport } from "./supplier-account-import";
 const supplier = {
   id: "s", supplierKey: "custom-s", name: "怪兽ai", apiUrl: "https://site.example.com", siteUrl: "https://site.example.com",
@@ -18,6 +20,27 @@ function connection(patch: Partial<ProviderConnectionRecord> = {}): ProviderConn
     createdAt: "before", updatedAt: "before", ...patch };
 }
 describe("account key import plan", () => {
+  it("imports all nine usable Jijiu media groups as canvas with exact group and full model IDs", () => {
+    const official = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/jijiu-billing-20261010.json", import.meta.url), "utf8"));
+    const catalog = parseSupplierCatalog(official, { supplierSiteUrl: "https://newapi.jijiucanvas.com" });
+    const mediaGroups = catalog.groups.filter(group => Object.hasOwn(official.group_ratio, group.id) && group.models.some(model => ["image", "video"].includes(model.capability)));
+    expect(mediaGroups).toHaveLength(9);
+    const chatGroup = catalog.groups.find(group => group.models.length && group.models.every(model => model.capability === "chat"))!;
+    const selected = [...mediaGroups, chatGroup];
+    const currentSupplier = { ...supplier, name: "极九api", apiUrl: "https://newapi.jijiucanvas.com", siteUrl: "https://newapi.jijiucanvas.com", catalog };
+    const currentKeys = { ...inventory, keys: selected.map((group, index) => ({ id: String(index + 100), group: group.id, apiKey: `offline-fixture-${index}`, name: group.id })) };
+    const plan = planSupplierAccountImport(currentSupplier, [], currentKeys, encrypt, [], { verifyCapabilities: false });
+    expect(plan.connections).toHaveLength(10);
+    for (const [index, group] of selected.entries()) {
+      const connection = plan.connections.find(item => item.config.modelGroup === group.id)!;
+      expect(connection.config).toMatchObject({ accountKeyId: String(index + 100), accountKeyGroup: group.id, modelGroup: group.id,
+        usage: group === chatGroup ? "agent" : "canvas", modelScanStatus: "unscanned", modelScanComplete: false });
+      expect(connection.encryptedSecret).toBe(encrypt(`offline-fixture-${index}`));
+      expect(connection.config.supplierVerificationRequestId).toBeUndefined();
+      expect(plan.catalog.groups.find(item => item.id === group.id)?.models.map(model => model.id)).toEqual(group.models.map(model => model.id));
+    }
+    expect(plan.connections.some(item => item.config.modelGroup === "vip")).toBe(false);
+  });
   it("reconciles only proven saved Keys during a catalog refresh without filling or importing credentials", () => {
     const currentSupplier = { ...supplier, catalog: { groups: [{ id: "New", label: "New", source: "catalog" as const, supplierGroupId: "115", models: [{ id: "gpt-image-2", capability: "image" as const, priceLabel: "0.07/张" }] }] } };
     const saved = connection({ encryptedSecret: encrypt("same-secret"), config: {

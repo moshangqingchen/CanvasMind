@@ -371,8 +371,8 @@ export function scanProviderModelCatalog(
     const documentedVideo = videoSupplier && !hasDeclaredNonVideoOutput ? remainingVideoModel(videoSupplier, id, descriptor, {
       group: options.modelGroup ?? (group === "默认群组" ? undefined : group), groupDescription: options.groupDescription,
     }) : undefined;
-    const videoMetadata = documentedVideo ? { ...documentedVideo.metadata, canvasRunnable: true } : undefined;
-    if (videoMetadata) delete (videoMetadata as Record<string, unknown>).canvasUnavailableReason;
+    const videoMetadata = documentedVideo ? { ...documentedVideo.metadata, canvasRunnable: documentedVideo.metadata?.jijiuGroupUnavailable !== true } : undefined;
+    if (videoMetadata?.canvasRunnable) delete (videoMetadata as Record<string, unknown>).canvasUnavailableReason;
     const current = documentedVideo && videoMetadata ? { ...documentedVideo, metadata: videoMetadata } : descriptor;
     if (!byId.has(id)) byId.set(id, current);
     const memberships = Array.isArray(entry.enable_groups)

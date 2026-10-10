@@ -21,6 +21,7 @@ import { isSecureSkillImageConnection, isSecureSkillImageResult, isSecureSkillSe
 import { isSecureSkillSeedreamResult, SecureSkillSeedreamAdapter } from "./secure-skill-seedream.js";
 import { applyPdogImageCapabilities, isPdogImageConnection, isPdogImageResult, pdogImageOrigin, PdogImageAdapter } from "./pdog-image.js";
 import { applyJiasuImageCapabilities, isJiasuImageConnection, isJiasuImageResult, JiasuImageAdapter } from "./jiasu-images.js";
+import { applyJijiuImageCapabilities, isJijiuGptImage, jijiuGptImageParameters, jijiuGptImageRequestIssues, jijiuImageOrigin } from "./jijiu-image-contract.js";
 import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnection, isChuangxiangMidjourneyResult, ChuangxiangMidjourneyAdapter } from "./chuangxiang-midjourney.js";
 import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
@@ -31,9 +32,12 @@ import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint 
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, weAiBananaModelUnavailable, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
+import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
   assetToBlob,
+  assertSafeProviderEndpoint,
+  ProviderHttpError,
   fetchProviderJson,
   joinUrl,
   mergeHeaders,
@@ -2655,7 +2659,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const source = imageEditingConnection(connection);
     const route = bananaImageRoute(source, model);
     if (!route) return;
-    if (!route.weaiGroup && (this.profile !== "openai" || !route.pdog && !route.chentu && !route.synora && !route.tk1688 && model !== GEMINI_NANO_BANANA_21_MODEL)) return;
+    if (!route.weaiGroup && (this.profile !== "openai" || !route.pdog && !route.chentu && !route.synora && !route.tk1688 && !jijiuImageOrigin(connection.baseUrl) && model !== GEMINI_NANO_BANANA_21_MODEL)) return;
     const descriptor = applyBananaImageCapabilities(source, { id: model, name: model,
       operations: ["image.generate", "image.edit"], metadata: { liveInventory: true } });
     return new BananaImageAdapter(this.connections, route, descriptor, { fetch: this.fetchImpl,
@@ -2887,8 +2891,9 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         scannedModelIds: remoteIds, modelScanStatus: "live" } } : configured;
       const described = applyChuangxiangMidjourneyCapabilities({ ...source, config: { ...source.config,
         scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyChuangxiangCurrentImageCapabilities(source, model));
-      return applyHangImageCapabilities(source, applySupplierImageConstraints(source, applyJiasuImageCapabilities({ ...source, config: { ...source.config,
-        scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyBananaImageCapabilities(source, described))));
+      return applyJijiuImageCapabilities({ ...source, config: { ...source.config, scannedModelIds: remoteIds, modelScanStatus: "live" } },
+        applyHangImageCapabilities(source, applySupplierImageConstraints(source, applyJiasuImageCapabilities({ ...source, config: { ...source.config,
+        scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyBananaImageCapabilities(source, described)))));
     });
   }
 
@@ -2947,6 +2952,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         : this.defaultModel);
     if (resolvedConnection) issues.push(...imageEditingRequestIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
     if (resolvedConnection) issues.push(...supplierImageParameterIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
+    if (resolvedConnection && isJijiuGptImage(imageEditingConnection(resolvedConnection).config, requestedModel)) {
+      issues.push(...jijiuGptImageRequestIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
+      return { valid: issues.length === 0, issues };
+    }
     if (resolvedConnection) {
       const config = imageEditingConnection(resolvedConnection).config;
       if ((pdogImageOrigin(resolvedConnection.baseUrl) || config.supplierKey === "chentu") &&
@@ -3556,6 +3565,22 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const selectedModel =
       request.model ??
       configuredImageModel(connection, this.defaultModel, this.profile);
+    if (isJijiuGptImage(imageEditingConnection(connection).config, selectedModel)) {
+      const origin = jijiuImageOrigin(connection.baseUrl)!;
+      const assets = request.assets?.length && referenceImageHostingEnabled(imageEditingConnection(connection).config)
+        ? await uploadTemporaryReferenceImages(request.assets, this.fetchImpl) : request.assets;
+      for (const asset of assets ?? []) await assertSafeProviderEndpoint(asset.url!);
+      const response = await fetchProviderJson<OpenAIImageResponse>(this.fetchImpl,
+        `${origin}/v1/images/${request.operation === "image.edit" ? "edits" : "generations"}`, {
+          method: "POST", headers: mergeHeaders(connection.headers, { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }),
+          body: JSON.stringify({ model: selectedModel, prompt: request.prompt, ...jijiuGptImageParameters(request.parameters),
+            ...(request.operation === "image.edit" ? { image: assets!.map(asset => asset.url!) } : {}) }),
+        }, { phase: "submit", timeoutMs: configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs"), maxResponseBytes: 128 * 1024 * 1024, idempotent: false });
+      if (!(await this.extractOutputs({ response, protocol: "openai-images" })).length)
+        throw new ProviderHttpError("极九已响应但没有返回图片；请核对原请求记录，避免重复提交。", { kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true });
+      return { providerTaskId: `openai:${request.idempotencyKey}`, id: `openai:${request.idempotencyKey}`, status: "succeeded",
+        result: { response, protocol: "openai-images" } };
+    }
     const baseUrl = (this.profile === "openai" ? hangImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, selectedModel) : undefined) ?? configuredBaseUrl(
       connection,
       this.defaultBaseUrl,

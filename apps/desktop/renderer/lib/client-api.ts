@@ -1,7 +1,7 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { tk1688ConnectionWriteConfig } from "./tk1688-connection-write";
 import { createSharedRequest } from "./shared-request";
-import type { CangyuanAvailabilityItem, CangyuanAvailabilitySnapshot, CangyuanAvailabilityStatus } from "./cangyuan-availability-types";
+import type { CangyuanAvailabilitySnapshot, CangyuanAvailabilityStatus } from "./cangyuan-availability-types";
 export type { CangyuanAvailabilityStatus } from "./cangyuan-availability-types";
 import type {
   AssetView,
@@ -233,37 +233,9 @@ export interface CangyuanMarketplaceGroupView {
   scannedModelCount?: number;
 }
 
-export type CangyuanAvailabilityView = CangyuanAvailabilityItem;
 export type CangyuanAvailabilitySnapshotView = CangyuanAvailabilitySnapshot & {
   source: "live" | "cache" | "stale";
 };
-
-export interface AgentChatMessageView {
-  role: "user" | "assistant";
-  content: string | AgentChatContentPartView[];
-}
-
-export type AgentChatContentPartView =
-  | { type: "text"; text: string }
-  | {
-      type: "image_url";
-      image_url: { url: string; detail?: "auto" | "low" | "high" };
-    }
-  | {
-      type: "input_audio";
-      input_audio: { data: string; format: "wav" | "mp3" | "m4a" | "webm" };
-    };
-
-export interface AgentChatResponseView {
-  message: { role: "assistant"; content: string };
-  model: string;
-  group: string;
-  usage?: {
-    promptTokens?: number;
-    completionTokens?: number;
-    totalTokens?: number;
-  };
-}
 
 export interface ProjectChatMessageView {
   id: string;
@@ -526,35 +498,6 @@ async function fetchCanvasJsonWithRetry<T>(
   throw lastError instanceof Error
     ? lastError
     : new Error("画布服务暂时不可用");
-}
-
-export async function sendAgentChat(input: {
-  canvasId?: string;
-  connectionId: string;
-  model: string;
-  messages: AgentChatMessageView[];
-  reasoningEffort?:
-    "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-  context?: {
-    label: string;
-    prompt?: string;
-    assetKind?: "image" | "video" | "audio";
-  };
-}): Promise<AgentChatResponseView> {
-  const response = await fetch("/api/agent/chat", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const payload = (await response.json().catch(() => null)) as
-    AgentChatResponseView | { error?: string } | null;
-  if (!response.ok)
-    throw new Error(
-      payload && "error" in payload && payload.error
-        ? payload.error
-        : "导演台对话调用失败",
-    );
-  return payload as AgentChatResponseView;
 }
 
 export async function fetchCanvas(canvasId?: string): Promise<CanvasResponse> {

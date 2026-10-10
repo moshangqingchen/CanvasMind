@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   GenericRestAdapter,
   WeAIImageAdapter,
@@ -33,6 +34,51 @@ const scanned = (
 });
 
 describe("scanned model protocol binding", () => {
+  it("binds all seven exact Jijiu images to their documented protocol without guessing pixels or quality", () => {
+    const fixture = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/jijiu-billing-20261010.json", import.meta.url), "utf8")) as {
+      data: Array<{ model_name: string; tags: string; enable_groups: string[] }>;
+    };
+    const rows = fixture.data.filter(row => row.tags === "图片模型");
+    expect(rows).toHaveLength(7);
+    for (const row of rows) for (const group of row.enable_groups) {
+      const model = bindScannedModelProtocols({ provider: "openai", config: { baseUrl: "https://newapi.jijiucanvas.com/v1", modelGroup: group,
+        accountKeyGroup: group, usage: "canvas", modelScanStatus: "live", scannedModelIds: [row.model_name] } }, [scanned(row.model_name)]).models[0]!;
+      expect(model.id).toBe(row.model_name);
+      expect(model.metadata).toMatchObject({ jijiuImageContract: true, canvasRunnable: true, outputKindsSource: "declared", imagePixelBudgetPublished: false,
+        protocol: row.model_name.startsWith("gemini-") ? "gemini-generate-content" : "openai-images" });
+      expect(model.operations).toEqual(["image.generate", "image.edit"]);
+      expect(model.parameters?.some(parameter => ["quality", "output_format", "width", "height"].includes(parameter.key))).toBe(false);
+    }
+  });
+  it("keeps wrong-group Jijiu images and explicitly declared chat outputs unavailable", () => {
+    const connection = { provider: "openai", config: { baseUrl: "https://newapi.jijiucanvas.com", usage: "canvas", modelGroup: "视频SD2.0", accountKeyGroup: "视频SD2.0" } };
+    const image = bindScannedModelProtocols(connection, [scanned("gpt-image-2")]).models[0]!;
+    expect(image.metadata?.canvasRunnable).toBe(false);
+    expect(image.metadata?.canvasUnavailableReason).toContain("分组");
+    const declared: ModelDescriptor = { id: "gpt-image-2", name: "text only", operations: [], outputKinds: ["text"], metadata: { outputKindsSource: "declared", operationsSource: "declared", canvasRunnable: false } };
+    const chat = bindScannedModelProtocols({ ...connection, config: { ...connection.config, modelGroup: "default", accountKeyGroup: "default" } }, [declared]).models[0]!;
+    expect(chat.operations).toEqual([]);
+    expect(chat.outputKinds).toEqual(["text"]);
+    expect(chat.metadata?.canvasRunnable).toBe(false);
+  });
+  it("repairs all 18 exact Jijiu video descriptors but retains the native wrong-group denial", () => {
+    const fixture = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/jijiu-billing-20261010.json", import.meta.url), "utf8")) as {
+      data: Array<{ model_name: string; tags: string; enable_groups: string[] }>;
+    };
+    const rows = fixture.data.filter(row => row.tags === "视频模型");
+    expect(rows).toHaveLength(18);
+    for (const row of rows) {
+      const group = row.enable_groups.find(value => value !== "vip")!;
+      const connection = { provider: "openai", config: { baseUrl: "https://newapi.jijiucanvas.com", modelGroup: group, accountKeyGroup: group } };
+      const unknown = { ...scanned(row.model_name, []), outputKinds: ["text" as const], metadata: { ...scanned(row.model_name).metadata, operationsSource: "inferred", outputKindsSource: "inferred" } };
+      const model = bindScannedModelProtocols(connection, [unknown]).models[0]!;
+      expect(model.metadata, row.model_name).toMatchObject({ canvasRunnable: true, protocol: "openai-videos", endpointPath: "/v1/videos", jijiuVideoContract: true });
+      expect(model.operations, row.model_name).toContain("video.generate");
+      expect(model.parameters?.some(parameter => parameter.key === "duration"), row.model_name).toBe(true);
+      const wrongGroup = bindScannedModelProtocols({ ...connection, config: { ...connection.config, modelGroup: "default", accountKeyGroup: "default" } }, [unknown]).models[0]!;
+      expect(wrongGroup.metadata, row.model_name).toMatchObject({ canvasRunnable: false, jijiuGroupUnavailable: true });
+    }
+  });
   it("applies current exact-group size and quality limits to cached canvas models", () => {
     const cached: ModelDescriptor = { id: "gpt-image-2.5-flare", name: "Cached", operations: ["image.generate", "image.edit"],
       parameters: [{ key: "size", label: "尺寸", control: "dimensions", default: "3840x2160", options: [{ label: "4K", value: "3840x2160" }] }],

@@ -262,6 +262,9 @@ describe("supplier service", () => {
     expect(parse({ metadata: { apiKey: "must-not-store" } })).toBe(false);
     expect(parse({ limits: { maxInputImages: 0 }, metadata: { agentCapabilities: { imageInput: false } } })).toBe(true);
     expect(parse({ capability: "music", outputKinds: ["audio"], metadata: { catalogCapability: "music" } })).toBe(true);
+    expect(parse({ capability: "video", metadata: { endpointTypes: ["openai-video"], catalogGenerationDeclarationSource: "official-category-tag" } })).toBe(true);
+    expect(parse({ metadata: { endpointTypes: ["x".repeat(257)] } })).toBe(false);
+    expect(parse({ metadata: { catalogGenerationDeclarationSource: "unverified" } })).toBe(false);
   });
 
   it.each([

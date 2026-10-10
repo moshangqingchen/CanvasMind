@@ -40,7 +40,7 @@ export function supplierCatalogDisplayPrice(model: SupplierCatalogModel): string
 function displayDescriptor(model: SupplierCatalogModel, keyConfirmed: boolean): ModelDescriptor {
   const metadata = model.metadata ?? {};
   const previousPrice = metadata.supplierCatalogModelStale === true;
-  const pricing = metadata.supplierPriceConflict === true || metadata.sub2apiPlazaPricingIncomplete === true || metadata.weaiLegacyPricingIncomplete === true || metadata.miaowuCatalogPricingIncomplete === true || metadata.chuangxiangCatalogPricingIncomplete === true || metadata.jiasuCatalogPricingIncomplete === true ? undefined : (metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
+  const pricing = metadata.supplierPriceConflict === true || metadata.sub2apiPlazaPricingIncomplete === true || metadata.weaiLegacyPricingIncomplete === true || metadata.miaowuCatalogPricingIncomplete === true || metadata.chuangxiangCatalogPricingIncomplete === true || metadata.jiasuCatalogPricingIncomplete === true || metadata.jijiuCatalogPricingIncomplete === true ? undefined : (metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
     metadata.weaiLegacyPricing ?? metadata.sub2apiPlazaPricing ?? metadata.miaowuCatalogPricing ?? metadata.hangCatalogPricing ?? metadata.officialCatalogPricing) as ModelDescriptor["pricing"];
   return { id: model.id, name: model.name || model.id, operations: [], parameters: [],
     inputKinds: model.inputKinds, outputKinds: model.outputKinds, limits: model.limits,

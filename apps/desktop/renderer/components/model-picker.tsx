@@ -117,15 +117,26 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       const rect = trigger.current?.getBoundingClientRect();
       if (!rect) return;
       const viewport = window.visualViewport;
-      const left = (viewport?.offsetLeft ?? 0) + 12;
-      const top = (viewport?.offsetTop ?? 0) + 12;
-      const right = left + (viewport?.width ?? window.innerWidth) - 24;
-      const bottom = top + (viewport?.height ?? window.innerHeight) - 24;
+      const visualLeft = viewport?.offsetLeft ?? 0;
+      const visualTop = viewport?.offsetTop ?? 0;
+      const inspectorElement = host.current?.closest(".node-config-popover");
+      const canvas = inspectorElement?.closest(".canvas-wrap")?.getBoundingClientRect();
+      const rail = inspectorElement?.closest(".canvas-editor")?.querySelector(".editor-rail")?.getBoundingClientRect();
+      // Top-layer menus must respect the same canvas tools as their inspector,
+      // including when a window resize moves the inspector to the node's side.
+      const left = Math.max(visualLeft + 12, canvas ? canvas.left + 8 : -Infinity,
+        rail && rail.width > 0 && rail.height > 0 ? rail.right + 8 : -Infinity);
+      const top = Math.max(visualTop + 12, canvas ? canvas.top + 8 : -Infinity);
+      const right = Math.min(visualLeft + (viewport?.width ?? window.innerWidth) - 12,
+        canvas ? canvas.right - 8 : Infinity);
+      const bottom = Math.min(visualTop + (viewport?.height ?? window.innerHeight) - 12,
+        canvas ? canvas.bottom - 8 : Infinity);
+      if (right <= left || bottom <= top) return;
       const gap = 8;
       const viewportHeight = bottom - top;
       const below = Math.max(0, bottom - rect.bottom - gap);
       const above = Math.max(0, rect.top - top - gap);
-      const inspector = host.current?.closest(".node-config-popover")?.getBoundingClientRect();
+      const inspector = inspectorElement?.getBoundingClientRect();
       let width = Math.min(Math.max(360, rect.width), right - left);
       const measureHeight = () => {
         // Measure at the final width, including rows hidden by list scrolling.

@@ -164,10 +164,6 @@ export async function projectCardSummary(canvas: CanvasRecord): Promise<ProjectS
   return summary;
 }
 
-export async function canvasForProject(id: string): Promise<CanvasRecord | null> {
-  return repository.getCanvas(id);
-}
-
 export async function ensureProjectDirectory(
   canvas: Pick<CanvasRecord, "title">,
 ): Promise<void> {
@@ -198,20 +194,6 @@ async function archiveAsset(
     bytes: object.bytes,
     source,
   });
-}
-
-export async function archiveAssetForProject(
-  canvasId: string,
-  assetId: string,
-  source: ProjectArchiveSource,
-): Promise<void> {
-  const [canvas, asset] = await Promise.all([
-    repository.getCanvas(canvasId),
-    repository.getAsset(assetId),
-  ]);
-  if (!canvas) throw new Error("项目不存在");
-  if (!asset) throw new Error("素材不存在");
-  await archiveAsset(canvas, asset, source);
 }
 
 export async function archiveExternalAssetsForProject(

@@ -28,6 +28,19 @@ function operationKinds(operations: readonly ProviderOperation[]): GenerationMed
   return [...kinds];
 }
 
+/** Only generation-specific endpoint declarations prove media output, never chat protocols. */
+export function endpointGenerationMediaKinds(endpointTypes: unknown): GenerationMediaKind[] {
+  if (!Array.isArray(endpointTypes)) return [];
+  const kinds = new Set<GenerationMediaKind>();
+  for (const endpoint of endpointTypes) {
+    if (typeof endpoint !== "string") continue;
+    const value = endpoint.trim().toLowerCase();
+    if (/^(?:image-generation|image-edit|openai-images?|\/(?:v1\/)?images\/(?:generations|edits))$/u.test(value)) kinds.add("image");
+    if (/^(?:video-generation|openai-videos?|\/(?:v1\/)?(?:videos|video\/generations))$/u.test(value)) kinds.add("video");
+  }
+  return [...kinds];
+}
+
 /** Share one output classification across scans, saved catalogs, node pickers and preflight. */
 export function modelGenerationMediaKinds(model: MediaModel): GenerationMediaKind[] {
   const metadata = model.metadata ?? {};
@@ -47,6 +60,8 @@ export function modelGenerationMediaKinds(model: MediaModel): GenerationMediaKin
   if (capability === "image" || capability === "video" || capability === "music") return [capability];
   if (["chat", "text", "audio", "speech", "tts", "embedding", "rerank", "other"].includes(capability)) return capability === "audio" && music ? ["music"] : [];
   if (operations.length && !inferredOperations) return operations;
+  const endpointKinds = endpointGenerationMediaKinds(metadata.endpointTypes);
+  if (endpointKinds.length) return endpointKinds;
   return named;
 }
 

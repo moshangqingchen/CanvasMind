@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { modelGenerationMediaKinds, inferGenerationMediaKinds } from "./model-media.js";
+import { scanProviderModelCatalog } from "./model-catalog.js";
 
 describe("strict output media classification", () => {
+  it("recognizes declared generation endpoints for exact opaque and Chinese IDs", () => {
+    const models = scanProviderModelCatalog([
+      { id: "SD2.0fast稳定903A", supported_endpoint_types: ["openai", "openai-video"] },
+      { id: "MinimaxH3", supported_endpoint_types: ["openai-video"] },
+      { id: "opaque-image", supported_endpoint_types: ["image-generation", "openai", "gemini"] },
+      { id: "opaque-mixed", endpoints: ["/v1/images/edits", "/v1/videos"] },
+    ]).models;
+    expect(models.map(modelGenerationMediaKinds)).toEqual([["video"], ["video"], ["image"], ["image", "video"]]);
+    expect(models[0]?.operations).toContain("video.generate");
+    expect(models[2]?.operations).toContain("image.generate");
+    expect(models.map(model => model.id)).toEqual(["SD2.0fast稳定903A", "MinimaxH3", "opaque-image", "opaque-mixed"]);
+  });
+  it("does not treat chat endpoints or multimodal inputs as media output", () => {
+    const models = scanProviderModelCatalog([
+      { id: "opaque", input_modalities: ["image", "video"], supported_endpoint_types: ["openai", "gemini", "openai-response"] },
+      { id: "qwen-vl-image-chat", supported_endpoint_types: ["chat", "image-understanding", "video-captioning"] },
+      { id: "opaque-text", output_modalities: ["text"], supported_endpoint_types: ["image-generation", "openai-video"] },
+      { id: "opaque-chat", capability: "chat", supported_endpoint_types: ["openai-video"] },
+      { id: "opaque-declared", operations: [], supported_endpoint_types: ["openai-video"] },
+    ]).models;
+    expect(models.map(modelGenerationMediaKinds)).toEqual([[], [], [], [], []]);
+    expect(models.every(model => model.operations.length === 0)).toBe(true);
+  });
   it.each(["image-understanding-pro", "qwen-vl-image-chat", "video-captioner", "suno-lyrics", "flux-embedding", "gpt-4-vision-preview"])("does not use visual or music-looking input/text IDs as generation: %s", id => {
     expect(inferGenerationMediaKinds(id)).toEqual([]);
   });

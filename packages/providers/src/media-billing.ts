@@ -85,7 +85,7 @@ export function mediaExpressionPricing(expression: unknown, options: {
   return undefined;
 }
 
-export function modelPriceAmount(pricing: StructuredModelPricing, parameters: Readonly<Record<string, unknown>>): number | undefined {
+function untimedModelPriceAmount(pricing: StructuredModelPricing, parameters: Readonly<Record<string, unknown>>): number | undefined {
   if (pricing.tiers?.some(tier => tier.conditions || tier.otherwise)) {
     for (const tier of pricing.tiers) {
       if (tier.otherwise) return tier.price;
@@ -101,6 +101,23 @@ export function modelPriceAmount(pricing: StructuredModelPricing, parameters: Re
   const matches = pricing.tiers?.filter(tier => tier.dimension === "fixed" ||
     (tier.dimension && parameters[tier.dimension] !== undefined && String(tier.value).toLowerCase() === String(parameters[tier.dimension]).toLowerCase()));
   return matches?.length === 1 ? matches[0]!.price : pricing.unitAmount;
+}
+
+export function modelPriceAmount(pricing: StructuredModelPricing, parameters: Readonly<Record<string, unknown>>, at = new Date()): number | undefined {
+  const amount = untimedModelPriceAmount(pricing, parameters);
+  if (amount === undefined || pricing.timeMultipliers === undefined) return amount;
+  if (!Array.isArray(pricing.timeMultipliers) || !Number.isFinite(at.getTime()) || pricing.timeMultipliers.length > 8) return undefined;
+  // Asia/Shanghai uses UTC+8; the clock is supplied by the caller, never request parameters.
+  const hour = new Date(at.getTime() + 8 * 60 * 60 * 1000).getUTCHours();
+  let multiplier = 1;
+  for (const window of pricing.timeMultipliers) {
+    if (!window || typeof window !== "object" || window.timeZone !== "Asia/Shanghai" || !Number.isInteger(window.startHour) || !Number.isInteger(window.endHour) ||
+      window.startHour < 0 || window.startHour >= window.endHour || window.endHour > 24 ||
+      !Number.isFinite(window.multiplier) || window.multiplier < 0) return undefined;
+    if (hour >= window.startHour && hour < window.endHour) multiplier *= window.multiplier;
+  }
+  const result = Number((amount * multiplier).toPrecision(12));
+  return Number.isFinite(result) ? result : undefined;
 }
 
 export function mediaPricingLabel(pricing: StructuredModelPricing): string {
