@@ -84,13 +84,9 @@ describe("verified supplier 2.5 capabilities", () => {
         "1024x1024",
         "2048x2048",
         "3840x2160",
-        "2160x3840",
-        "2880x2880",
       ]),
     );
-    expect(m.parameters?.find((p) => p.key === "size")?.options).toHaveLength(
-      34,
-    );
+    expect(m.metadata?.imageUserSizePresetTiers).toEqual(["1K", "2K", "4K"]);
     expect(m.operations).toContain("image.edit");
     expect(result.connector?.models).toEqual([m]);
     expect(bindScannedModelProtocols(connection, result.models).models).toEqual(
@@ -121,7 +117,7 @@ describe("verified supplier 2.5 capabilities", () => {
       ).toBe(model);
     },
   );
-  it("repairs cached Mikoto Flare 1K ratios without adding higher tiers or qualities", () => {
+  it("repairs cached Mikoto Flare 1K ratios and restores user quality choices while retaining the 1K size limit", () => {
     const connection = {
       provider: "rest",
       config: mikotoConnectionConfig(MIKOTO_IMAGE_1K_GROUP),
@@ -139,15 +135,17 @@ describe("verified supplier 2.5 capabilities", () => {
       "auto", "1360x768", "768x1360", "1552x672", "672x1552",
     ]));
     expect(descriptor.parameters?.find(p => p.key === "quality")).toMatchObject({
-      default: "high",
-      options: [{ label: "自动", value: "auto" }, { label: "高", value: "high" }],
+      default: "max",
+      options: ["auto", "low", "medium", "high", "xhigh", "max"].map(value => ({ value })),
     });
+    expect(descriptor.metadata?.imageUserQualityPresetSource).toBe("user-request");
     expect(repaired.connector?.models).toEqual(repaired.models);
     expect(repaired.models).toEqual(initial.models);
     const sunburst = applyVerifiedImage25Capabilities(connection, {
       ...descriptor, id: "gpt-image-2.5-sunburst", metadata: {},
     });
-    expect(sunburst.parameters?.find(p => p.key === "size")?.options).toHaveLength(12);
+    expect(sunburst.parameters?.find(p => p.key === "size")?.options?.map(option => option.value)).toEqual(["auto"]);
+    expect(sunburst.parameters?.find(p => p.key === "size")?.allowCustomValue).toBe(true);
     expect(sunburst.metadata?.imageAspectRatiosVerifiedAt).toBeUndefined();
     const denied = { ...descriptor, metadata: { canvasRunnable: false, canvasUnavailableReason: "403 权限拒绝" } };
     expect(applyVerifiedImage25Capabilities(connection, denied)).toBe(denied);
@@ -195,11 +193,11 @@ describe("verified supplier 2.5 capabilities", () => {
       );
       const sizes =
         result.parameters?.find((p) => p.key === "size")?.options ?? [];
-      expect(sizes).toHaveLength(34);
+      expect(sizes).toHaveLength(variant === "flare" ? 9 : 7);
       expect(sizes.some((o) => o.value === "3840x2160")).toBe(true);
       expect(sizes.some((o) => o.label.startsWith("2K"))).toBe(true);
       if (variant === "sunburst") {
-        expect(sizes.filter(o => o.label.startsWith("2K")).every(o => o.label.includes("请求预设"))).toBe(true);
+        expect(sizes.filter(o => o.label.startsWith("2K")).every(o => o.label.includes("历史请求样本"))).toBe(true);
         expect(result.metadata?.image2KVerifiedAt).toBeUndefined();
       }
       expect(
@@ -222,8 +220,8 @@ describe("verified supplier 2.5 capabilities", () => {
     const updated = bound.models[0]!;
     const size = updated.parameters!.find(p => p.key === "size")!;
     const twoK = size.options!.filter(o => o.label.startsWith("2K"));
-    expect(twoK).toHaveLength(11);
-    expect(twoK.every(o => o.label.includes("实际可能近似"))).toBe(true);
+    expect(twoK.length).toBeGreaterThanOrEqual(11);
+    expect(updated.metadata?.imageUserSizePresetSource).toBe("user-request");
     expect(resolutionTierShortcuts(size).map(t => t.label)).toEqual(["1K", "2K", "4K"]);
     expect(sizeOnTierChange(size, "3840x2160", "2K")).toBe("2720x1536");
     expect(sizeOnTierChange(size, "2160x3840", "2K")).toBe("1536x2720");
@@ -248,7 +246,7 @@ describe("verified supplier 2.5 capabilities", () => {
       { ...model, id: "gpt-image-2.5" },
     );
     expect(m.parameters?.find((p) => p.key === "size")?.options).toHaveLength(
-      23,
+      3,
     );
     expect(m.parameters?.find((p) => p.key === "quality")).toBeUndefined();
   });

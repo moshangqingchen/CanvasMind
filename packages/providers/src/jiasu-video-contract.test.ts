@@ -6,6 +6,7 @@ import { scanProviderModelCatalog } from "./model-catalog.js";
 import { isJiasuApiUrl, jiasuVideoModel, jiasuVideoModelIds, jiasuVideoRequestIssues, normalizeJiasuVideoParameters, jiasuVideoTransport } from "./jiasu-video-contract.js";
 import { remainingVideoSupplier, remainingVideoModel, restoreRemainingVideoModel } from "./remaining-video-contracts.js";
 import { GenericRestAdapter } from "./rest.js";
+import { jiasuCatalogRecord } from "./jiasu-catalog-pricing.js";
 
 const image: ProviderAssetInput = { id: "image", kind: "image", mimeType: "image/png", url: "https://media.example/image.png" };
 const video: ProviderAssetInput = { id: "video", kind: "video", mimeType: "video/mp4", url: "https://media.example/video.mp4", durationSeconds: 6 };
@@ -24,6 +25,33 @@ function fixture(modelId = "sd-2.0-J2", responses: Response[] = [], extra: Recor
 }
 
 describe("Jiasu exact video supplier contract", () => {
+  it("forwards additional fields only from this exact model's published schema with their original values", async () => {
+    const id = "future-jiasu-video", model = jiasuVideoModel(id, { id, name: id, operations: [], metadata: { jiasuCatalogRecord: jiasuCatalogRecord({ model_name: id,
+      supported_endpoint_types: ["openai-video"], api_parameters: [{ name: "fps", type: "integer", enum: [24, 30], default: 24 },
+        { name: "quality", type: "enum", range: "standard, high" }, { name: "generate_audio", type: "boolean", default: false },
+        { name: "metadata", type: "object" }, { name: "reference_ids", type: "array", maxItems: 2 }] }) } })!;
+    expect(model.parameters?.find(parameter => parameter.key === "fps")).toMatchObject({ valueType: "integer", control: "select", default: 24,
+      options: [{ label: "24", value: 24 }, { label: "30", value: 30 }] });
+    const parameters = { duration: 42, aspect_ratio: "21:9", resolution: "provider-custom", fps: 30, quality: "high", generate_audio: true,
+      metadata: { label: "keep-exact-input" }, reference_ids: ["first-id", "second-id"] }, original = structuredClone(parameters);
+    for (const direct of [false, true]) {
+      const f = fixture(id, [Response.json({ id: "only-mocked-schema-task", status: "queued" })],
+        { modelGroup: "vip", connector: { ...jiasuVideoTransport(model), models: [model], restrictModels: true } }, model);
+      const adapter = direct ? new GenericRestAdapter(f.resolver, { fetch: f.fetcher }) : f.adapter;
+      const entered = request(id, parameters);
+      expect(await adapter.validate(entered)).toEqual({ valid: true, issues: [] });
+      await adapter.submit(entered);
+      expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: "Ocean sunrise", duration: 42, ratio: "21:9", resolution: "provider-custom",
+        fps: 30, quality: "high", generate_audio: true, metadata: original.metadata, reference_ids: original.reference_ids });
+      expect(parameters).toEqual(original);
+      expect(f.fetcher).toHaveBeenCalledOnce();
+    }
+    for (const bad of [{ fps: 25 }, { generate_audio: "yes" }, { metadata: "wrong-type" }, { reference_ids: [1, 2, 3] }, { undeclared: "never-forward" }, { fps: null }])
+      expect(jiasuVideoRequestIssues(request(id, bad), model).length).toBeGreaterThan(0);
+    expect(normalizeJiasuVideoParameters(request(id, { fps: null }), model).fps).toBeNull();
+    const other = jiasuVideoModel("seedance2.5-全参真人")!;
+    expect(jiasuVideoRequestIssues(request(other.id, { fps: 30 }), other)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.fps" })]));
+  });
   it("scopes the transport to the documented origin and API prefix", () => {
     expect(remainingVideoSupplier("https://ai.jiasuapi.com/v1")).toBe("jiasu");
     for (const value of ["https://other.example/v1", "https://ai.jiasuapi.com/proxy/v1", "http://ai.jiasuapi.com/v1", "https://ai.jiasuapi.com/v1?key=secret", "https://user@ai.jiasuapi.com/v1"]) expect(isJiasuApiUrl(value)).toBe(false);
@@ -77,20 +105,22 @@ describe("Jiasu exact video supplier contract", () => {
       expect(JSON.parse(String(submitted.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: "Ocean sunrise", ratio: "16:9", resolution: "720p" });
       expect(submitted.fetcher).toHaveBeenCalledTimes(1);
       const anotherGroup = jiasuVideoModel(id, model, "another-group")!;
-      expect(anotherGroup.parameters?.find(parameter => parameter.key === "resolution")?.options).toEqual([]);
+      expect(anotherGroup.parameters?.find(parameter => parameter.key === "resolution")).toMatchObject({ control: "text", allowCustomValue: true,
+        options: [{ label: "720p（API 示例）", value: "720p" }] });
       expect(anotherGroup.metadata?.jiasuResolutionEvidence).toBeUndefined();
     }
     expect(jiasuVideoModel("doubao-seedance-2-0-fast-260128", undefined, "vip")?.metadata?.jiasuResolutionEvidence).toBeUndefined();
   });
 
-  it("preserves unconfirmed saved values but rejects them before either adapter can send a request", async () => {
+  it("preserves user resolutions while retaining the user-defined duration bounds", async () => {
     const id = "seedance2.5-全参真人", model = jiasuVideoModel(id, undefined, "vip")!;
     expect(model.metadata).toMatchObject({ durationRangeSource: "user-fallback", durationRangeUnverified: false, resolutionRangeUnverified: true });
     const duration = model.parameters?.find(parameter => parameter.key === "duration");
     expect(duration).toMatchObject({ control: "number", valueType: "integer" });
     expect(duration).toMatchObject({ min: 1, max: 30 });
     expect(duration).not.toHaveProperty("default");
-    expect(model.parameters?.find(parameter => parameter.key === "resolution")).toMatchObject({ control: "select", options: [] });
+    expect(model.parameters?.find(parameter => parameter.key === "resolution")).toMatchObject({ control: "text", allowCustomValue: true,
+      options: [{ label: "720p（API 示例）", value: "720p" }] });
     const f = fixture(id, [], { modelGroup: "vip", connector: { ...jiasuVideoTransport(), models: [model], restrictModels: true } }, model);
     const direct = new GenericRestAdapter(f.resolver, { fetch: f.fetcher });
     for (const adapter of [f.adapter, direct]) {
@@ -98,14 +128,17 @@ describe("Jiasu exact video supplier contract", () => {
         const input = request(id, parameters), before = structuredClone(input);
         expect(normalizeJiasuVideoParameters(input, model)).toMatchObject({ duration: parameters.duration ?? parameters.seconds, resolution: parameters.resolution });
         const result = await adapter.validate(input);
-        expect(result.issues).toEqual(expect.arrayContaining([
-          expect.objectContaining({ path: "parameters.duration", message: expect.stringContaining("整数秒数") }),
-          expect.objectContaining({ path: "parameters.resolution", message: expect.stringContaining("恢复供应商默认") }),
-        ]));
-        await expect(adapter.submit(input)).rejects.toThrow("恢复供应商默认");
+        expect(result.issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration", message: expect.stringContaining("整数秒数") })]));
+        expect(result.issues.some(issue => issue.path === "parameters.resolution")).toBe(false);
+        await expect(adapter.submit(input)).rejects.toThrow("整数秒数");
         expect(input).toEqual(before);
       }
       expect(await adapter.validate(request(id))).toEqual({ valid: true, issues: [] });
+      for (const resolution of ["720p", "1080p", "supplier-native-custom"]) {
+        const input = request(id, { duration: 23, resolution });
+        expect(await adapter.validate(input)).toEqual({ valid: true, issues: [] });
+        expect(normalizeJiasuVideoParameters(input, model)).toMatchObject({ duration: 23, resolution });
+      }
     }
     expect(normalizeJiasuVideoParameters(request(id), model)).toEqual({ ratio: "16:9" });
     expect(f.fetcher).not.toHaveBeenCalled();
@@ -140,36 +173,41 @@ describe("Jiasu exact video supplier contract", () => {
     expect(jiasuVideoRequestIssues(request(id, { duration: 6 }), enumerated)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
     const defaults = jiasuVideoModel(id, current([{ name: "duration", default: "8" }, { name: "resolution", default: "1080p" }]))!;
     expect(defaults.metadata).toMatchObject({ durationRangeSource: "user-fallback", durationRangeUnverified: false, resolutionRangeUnverified: true, videoParameterConfirmedDefaults: { duration: 8, resolution: "1080p" } });
-    expect(defaults.parameters?.find(parameter => parameter.key === "resolution")?.options).toEqual([{ label: "1080p（供应商默认）", value: "1080p" }]);
+    expect(defaults.parameters?.find(parameter => parameter.key === "resolution")?.options).toEqual([{ label: "720p（API 示例）", value: "720p" }, { label: "1080p（供应商默认）", value: "1080p" }]);
     expect(normalizeJiasuVideoParameters(request(id), defaults)).toEqual({ duration: 8, ratio: "16:9", resolution: "1080p" });
     expect(jiasuVideoRequestIssues(request(id), defaults)).toEqual([]);
-    expect(jiasuVideoRequestIssues(request(id, { duration: 9, resolution: "720p" }), defaults)).toEqual([expect.objectContaining({ path: "parameters.resolution" })]);
+    expect(jiasuVideoRequestIssues(request(id, { duration: 9, resolution: "720p" }), defaults)).toEqual([]);
   });
 
-  it("uses proven defaults through actual adapters while blocking every other unknown-range value offline", async () => {
+  it("uses proven defaults and forwards user-entered open resolutions through both adapters", async () => {
     const id = "seedance2.5-全参真人";
     const model = jiasuVideoModel(id, { id, name: id, operations: [], metadata: {
       jiasuCatalogRecord: { apiParameters: [{ name: "duration", default: "8" }, { name: "resolution", default: "1080p" }] },
     } }, "vip")!;
     for (const direct of [false, true]) {
-      const f = fixture(id, [Response.json({ id: "offline_confirmed_default", status: "queued" })],
+      const f = fixture(id, [Response.json({ id: "offline_confirmed_default", status: "queued" }), Response.json({ id: "offline_user_resolution", status: "queued" })],
         { modelGroup: "vip", connector: { ...jiasuVideoTransport(), models: [model], restrictModels: true } }, model);
       const adapter = direct ? new GenericRestAdapter(f.resolver, { fetch: f.fetcher }) : f.adapter;
       for (const parameters of [{}, { duration: 8, resolution: "1080p" }, { seconds: 8, resolution: "1080p" }])
         expect(await adapter.validate(request(id, parameters))).toEqual({ valid: true, issues: [] });
-      for (const parameters of [{ duration: 38 }, { resolution: "720p" }]) {
+      for (const parameters of [{ duration: 38 }]) {
         expect((await adapter.validate(request(id, parameters))).valid).toBe(false);
-        await expect(adapter.submit(request(id, parameters))).rejects.toThrow(/整数秒数|恢复供应商默认/u);
+        await expect(adapter.submit(request(id, parameters))).rejects.toThrow("整数秒数");
       }
       expect(f.fetcher).not.toHaveBeenCalled();
       await adapter.submit(request(id));
       expect(f.fetcher).toHaveBeenCalledOnce();
       expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ duration: 8, resolution: "1080p" });
+      const entered = request(id, { duration: 17, resolution: "supplier-custom" });
+      await adapter.submit(entered);
+      expect(f.fetcher).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(String(f.fetcher.mock.calls[1]?.[1]?.body))).toMatchObject({ duration: 17, resolution: "supplier-custom" });
+      expect(entered.parameters).toEqual({ duration: 17, resolution: "supplier-custom" });
     }
     const refreshed = jiasuVideoModel(id, { ...model, metadata: { ...model.metadata, jiasuCatalogRecord: { apiParameters: [] } } }, "vip")!;
     expect(refreshed.metadata).not.toHaveProperty("videoParameterConfirmedDefaults");
     expect(normalizeJiasuVideoParameters(request(id), refreshed)).toEqual({ ratio: "16:9" });
-    expect(jiasuVideoRequestIssues(request(id, { duration: 8, resolution: "1080p" }), refreshed)).toEqual([expect.objectContaining({ path: "parameters.resolution" })]);
+    expect(jiasuVideoRequestIssues(request(id, { duration: 8, resolution: "1080p" }), refreshed)).toEqual([]);
   });
 
   it("blocks observed sd-2.5-J2 480p failure in vip while retaining official ranges and prices", async () => {

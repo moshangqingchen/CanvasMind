@@ -22,27 +22,57 @@ function fixture(supplier: RemainingVideoSupplier, baseUrl: string, id: string, 
   return { model, adapter, fetcher, request };
 }
 
-describe("unconfirmed video resolution fields", () => {
-  it.each(cases)("rejects stale resolution before HTTP for $supplier / $id while allowing omission", async entry => {
+describe("documented video fields without exhaustive resolution enums", () => {
+  it.each(cases)("sends entered values through $supplier / $id's documented wire fields", async entry => {
     const f = fixture(entry.supplier, entry.baseUrl, entry.id);
     expect(f.model.metadata?.resolutionRangeUnverified).toBe(true);
     expect(f.model.parameters?.find(parameter => parameter.key === "resolution")?.default).toBeUndefined();
-    for (const resolution of ["720p", "4K", "invented"]) {
-      const input = f.request({ resolution });
-      expect(await f.adapter.validate(input)).toMatchObject({ valid: false, issues: expect.arrayContaining([expect.objectContaining({ path: "parameters.resolution" })]) });
-      await expect(f.adapter.submit(input)).rejects.toThrow();
-      expect(input.parameters).toEqual({ resolution });
+    if (entry.supplier === "cyberafei") expect(f.model.metadata?.videoResolutionValueMode).toBe("derived-size");
+    else expect(f.model.parameters?.find(parameter => parameter.key === "resolution")?.allowCustomValue).toBe(true);
+    for (const resolution of entry.supplier === "cyberafei" ? ["720p"] : ["720p", "4K", "supplier-custom-value"]) {
+      const parameters = { resolution, ...(entry.supplier === "cyberafei" ? { size: "1280x720" } : {}) };
+      const input = f.request(parameters);
+      expect(await f.adapter.validate(input)).toMatchObject({ valid: true });
+      await f.adapter.submit(input);
+      expect(input.parameters).toEqual(parameters);
+      const body = f.fetcher.mock.calls.at(-1)?.[1]?.body;
+      if (entry.supplier === "cyberafei") {
+        expect((body as FormData).get("size")).toBe("1280x720");
+        expect((body as FormData).has("resolution")).toBe(false);
+      } else if (entry.supplier === "mikoto") {
+        expect((body as FormData).get("resolution_name")).toBe(resolution);
+      } else {
+        expect(JSON.parse(String(body)).resolution).toBe(resolution);
+      }
+    }
+    expect(await f.adapter.validate(f.request({}))).toMatchObject({ valid: true });
+    f.fetcher.mockClear();
+    for (const resolution of [720, false, "\u0000bad"]) {
+      expect(await f.adapter.validate(f.request({ resolution }))).toMatchObject({ valid: false, issues: expect.arrayContaining([expect.objectContaining({ path: "parameters.resolution" })]) });
     }
     expect(f.fetcher).not.toHaveBeenCalled();
-    expect(await f.adapter.validate(f.request({}))).toMatchObject({ valid: true });
   });
 
-  it.each(["cyberafei", "miaowu"] as const)("keeps a future %s OpenAI Video alias's unconfirmed resolution guarded", async supplier => {
+  it("rejects an unmapped Cyber resolution or conflicting size without replacing saved dimensions", async () => {
+    const f = fixture("cyberafei", "https://api.3365api.cn", "veo3.1");
+    for (const parameters of [{ resolution: "4K", size: "1280x720" }, { resolution: "1080p", aspect_ratio: "16:9", size: "1280x720" }]) {
+      const input = f.request(parameters);
+      expect(await f.adapter.validate(input)).toMatchObject({ valid: false });
+      expect(input.parameters).toEqual(parameters);
+    }
+    expect(f.fetcher).not.toHaveBeenCalled();
+    await f.adapter.submit(f.request({ size: "2560x1440" }));
+    const body = f.fetcher.mock.calls.at(-1)?.[1]?.body as FormData;
+    expect(body.get("size")).toBe("2560x1440");
+    expect(body.has("resolution")).toBe(false);
+  });
+
+  it.each(["cyberafei", "miaowu"] as const)("uses the declared %s OpenAI Video contract for a future directory alias", async supplier => {
     const id = "future-documented-video", baseUrl = supplier === "cyberafei" ? "https://api.3365api.cn" : "https://api.miaowuai.store";
     const current: ModelDescriptor = { id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: { endpointTypes: ["openai-video"] } };
     const f = fixture(supplier, baseUrl, id, current);
     expect(f.model.metadata?.resolutionRangeUnverified).toBe(true);
-    expect(await f.adapter.validate(f.request({ resolution: "720p" }))).toMatchObject({ valid: false });
+    expect(await f.adapter.validate(f.request({ resolution: "720p", ...(supplier === "cyberafei" ? { size: "1280x720" } : {}) }))).toMatchObject({ valid: true });
     expect(await f.adapter.validate(f.request({}))).toMatchObject({ valid: true });
     expect(f.fetcher).not.toHaveBeenCalled();
   });

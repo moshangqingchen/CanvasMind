@@ -39,9 +39,11 @@ describe("current Cyber Afei conditional ledger prices", () => {
   ] as const;
   it.each(quotes)("uses every exact published resolution rate and the group ratio once for $id", quote => {
     const catalog = cyberAfeiCatalogFromPricing({ group_ratio: { [group]: .5 }, data: [{ model_name: quote.id, description: quote.description,
-      quota_type: 1, model_price: Object.values(quote.amounts)[0], enable_groups: [group], supported_endpoint_types: ["openai", "openai-video"] }] });
+      quota_type: 1, model_price: Object.values(quote.amounts)[0], enable_groups: [group],
+      supported_endpoint_types: quote.id.includes("banana") ? ["openai"] : ["openai-video"] }] });
     const model = catalog.groups[group]?.find(model => model.id === quote.id);
     if (!model) throw new Error(`Expected catalog model ${quote.id}`);
+    expect(model.outputKinds).toContain(quote.id.includes("banana") ? "image" : "video");
     const pricing = model.pricing!;
     expect(pricing).toMatchObject({ kind: "tiered", currency: "USD", billingUnit: quote.unit, confidence: "exact" });
     expect(pricing.unitAmount).toBeUndefined();
@@ -49,11 +51,36 @@ describe("current Cyber Afei conditional ledger prices", () => {
     expect(pricing.tiers).toHaveLength(Object.keys(quote.amounts).length);
     for (const [resolution, amount] of Object.entries(quote.amounts)) {
       expect(modelPriceAmount(pricing, { resolution })).toBe(amount * .5);
-      // These fixtures publish rates, not a model-specific duration contract.
-      // The exact unit quote remains usable; a made-up 10-second request must
-      // not become a confirmed task estimate just because its price is known.
-      expect(modelEstimatedCost(model, { resolution, duration: 10 })).toBeUndefined();
+      // The tariff is exact; a selected estimate also needs a supported wire mapping.
+      // Video's native size contract only maps 720p/1080p with these ratios.
+      const total = Number((amount * .5 * (quote.unit === "second" ? 10 : 1)).toPrecision(12));
+      if (quote.id.includes("banana")) expect(modelEstimatedCost(model, { resolution })).toBe(`${total} USD`);
+      else if (quote.id === "seedance2.5") {
+        // Its own two tariff labels do not establish a pixel conversion table.
+        // Give independent size and preserve the user's matching ratio.
+        expect(modelEstimatedCost(model, { resolution, size: "1002x668", aspect_ratio: "3:2", duration: 10 })).toBe(`${total} USD`);
+        expect(modelEstimatedCost(model, { resolution, aspect_ratio: "16:9", duration: 10 })).toBeUndefined();
+      }
+      else if (["720p", "1080p"].includes(resolution)) {
+        expect(modelEstimatedCost(model, { resolution, aspect_ratio: "16:9", duration: 10 })).toBe(`${total} USD`);
+        expect(modelEstimatedCost(model, { resolution, size: resolution === "720p" ? "1280x720" : "1920x1080", duration: 10 })).toBe(`${total} USD`);
+        expect(modelEstimatedCost(model, { resolution, duration: 10 })).toBeUndefined();
+        expect(modelEstimatedCost(model, { resolution, aspect_ratio: "1:1", duration: 10 })).toBeUndefined();
+      } else expect(modelEstimatedCost(model, { resolution, aspect_ratio: "16:9", duration: 10 })).toBeUndefined();
       expect(model.metadata?.priceLabel).toContain(`${resolution} $${amount * .5}/${quote.unit === "second" ? "秒" : "请求"}`);
+    }
+    expect(modelPriceAmount(pricing, { resolution: "unpriced-resolution" })).toBeUndefined();
+    expect(modelEstimatedCost(model, { resolution: "unpriced-resolution", duration: 10 })).toBeUndefined();
+    if (!quote.id.includes("banana")) {
+      expect(model.metadata).toMatchObject(quote.id === "seedance2.5"
+        ? { videoResolutionAllowsCustom: true, videoResolutionValueMode: "application-price-tier", videoPriceResolutionTiers: ["480p", "720p"] }
+        : { videoResolutionAllowsCustom: false, videoResolutionValueMode: "derived-size" });
+      expect(model.parameters?.find(parameter => parameter.key === "resolution")?.default).toBeUndefined();
+      expect(modelEstimatedCost(model, { size: "4096x2160", duration: 10 })).toBeUndefined();
+      expect(modelEstimatedCost(model, { resolution: "1080p", aspect_ratio: "16:9", size: "1280x720", duration: 10 })).toBeUndefined();
+    }
+    if (quote.unit === "second" && "720p" in quote.amounts) {
+      expect(modelEstimatedCost(model, { resolution: "720p", aspect_ratio: "16:9" })).toBeUndefined();
     }
     expect(catalog.marketplaceGroups[0]?.models.find(model => model.id === quote.id)?.priceLabel).toBe(model.metadata?.priceLabel);
   });
@@ -89,12 +116,24 @@ describe("current Cyber Afei conditional ledger prices", () => {
     for (const [mode, prices] of Object.entries({ generate: { "720p": 8.25, "1080p": 15, "4K": 21 }, edit: { "720p": 10.5, "1080p": 15, "4K": 21 } })) {
       for (const [resolution, price] of Object.entries(prices)) {
         expect(modelPriceAmount(model.pricing!, { mode, resolution })).toBe(price * .5);
-        expect(modelEstimatedCost(model, { mode, resolution, duration: 10 })).toBeUndefined();
+        const parameters = { mode, resolution, aspect_ratio: "16:9", duration: 10, has_reference_video: mode === "edit" };
+        if (mode === "generate" && resolution !== "4K") {
+          expect(modelEstimatedCost(model, parameters)).toBe(`${price * .5} USD`);
+          expect(modelEstimatedCost(model, { mode, resolution, size: resolution === "720p" ? "1280x720" : "1920x1080", duration: 10 })).toBe(`${price * .5} USD`);
+        }
+        // Source-video edits use Chat's core fields, so their resolution tariff
+        // remains directory data rather than an estimate for an unsent field.
+        else expect(modelEstimatedCost(model, parameters)).toBeUndefined();
       }
     }
     expect(modelPriceAmount(model.pricing!, {})).toBeUndefined();
     expect(modelPriceAmount(model.pricing!, { resolution: "720p" })).toBeUndefined();
     expect(modelPriceAmount(model.pricing!, { mode: "edit" })).toBeUndefined();
+    expect(modelEstimatedCost(model, { mode: "edit", resolution: "unpriced-resolution", duration: 10 })).toBeUndefined();
+    expect(modelEstimatedCost(model, { mode: "unpriced-mode", resolution: "720p", duration: 10 })).toBeUndefined();
+    expect(modelEstimatedCost(model, { resolution: "720p", duration: 10 })).toBeUndefined();
+    expect(modelEstimatedCost(model, { mode: "edit", duration: 10 })).toBeUndefined();
+    expect(modelEstimatedCost(model, { mode: "generate", resolution: "720p", aspect_ratio: "16:9", size: "1920x1080", duration: 10 })).toBeUndefined();
     expect(model.metadata?.priceLabel).toContain("生成 720p $4.125/请求");
     expect(model.metadata?.priceLabel).toContain("编辑 720p $5.25/请求");
     expect(resolveCyberAfeiScannedGroup(catalog, group, ["omni-flash"], { capabilityBlocks: [
@@ -685,9 +724,7 @@ describe("cyberafei catalog", () => {
     expect(imageSize).toMatchObject({
       control: "dimensions",
       default: "3840x2160",
-      min: 16,
-      max: 3840,
-      step: 16,
+      step: 1,
     });
     expect(imageSize?.options).toHaveLength(22);
     expect(imageSize?.options).toEqual(
@@ -787,9 +824,7 @@ describe("cyberafei catalog", () => {
     ).toMatchObject({
       control: "dimensions",
       default: "3840x2160",
-      min: 16,
-      max: 3840,
-      step: 16,
+      step: 1,
     });
     expect(
       image2Alias4K?.parameters?.find((parameter) => parameter.key === "size")

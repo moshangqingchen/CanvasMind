@@ -326,6 +326,14 @@ function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", hea
       ...(base === "https://tk1688.com" && kind === "newapi" ? ["/api/user/models"] : []),
       "/api/v1/model-plaza",
       "/api/v1/groups/available",
+      // These deployed AvailableChannelsView clients read this exact endpoint.
+      // Keep website credentials bounded to those official origins and GETs.
+      ...((kind === "sub2api" || (kind === "newapi" && base === "https://tu.988236.xyz")) && [
+        "https://asian-acc.we-token.cc", "https://api.mikoto.vip", "https://api.eaheng.com", "https://tu.988236.xyz",
+        "https://api.hangzhale.com", "https://synoralink.com", "https://vapi.chuangxiangai.asia",
+      ].includes(base)
+        ? ["/api/v1/channels/available"] : []),
+      ...(kind === "sub2api" && base === "https://vapi.chuangxiangai.asia" ? ["/api/v1/channels/media-pricing"] : []),
       ...(base === "https://synoralink.com" && kind === "sub2api" ? ["/api/v1/announcements"] : []),
     ].map((path) => `${base}${path}`),
   );

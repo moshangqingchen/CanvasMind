@@ -13,14 +13,14 @@ const unconfirmed: { supplier: RemainingVideoSupplier; baseUrl: string; ids: str
 ];
 const cases = unconfirmed.flatMap(entry => entry.ids.map(id => ({ ...entry, id })));
 
-describe("unknown native video duration ranges", () => {
-  it.each(cases)("blocks saved custom duration for $supplier / $id before HTTP and never invents a default", async entry => {
+describe("documented native duration fields without exhaustive ranges", () => {
+  it.each(cases)("preserves typed $supplier / $id durations and never invents a default", async entry => {
     const context = { group: entry.group }, model = remainingVideoModel(entry.supplier, entry.id, undefined, context)!;
     const duration = model.parameters!.find(parameter => parameter.key === "duration")!;
     expect(duration.default).toBeUndefined();
     expect(duration.required).toBe(Boolean(entry.required));
     expect(model.metadata?.durationRangeUnverified).toBe(true);
-    const fetcher = vi.fn<typeof fetch>(async () => { throw new Error("Unexpected HTTP call in offline validation"); });
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ id: "offline-task", status: "queued" }));
     const adapter = new AutoInterfaceAdapter(new StaticConnectionResolver([{ id: "offline", provider: "openai", apiKey: "offline-only", baseUrl: entry.baseUrl,
       settings: { modelCatalogModels: [model], modelScanStatus: "live", scannedModelIds: [entry.id], modelGroup: entry.group } }]),
     {} as ProviderAdapter, { fetch: fetcher });
@@ -28,9 +28,24 @@ describe("unknown native video duration ranges", () => {
       prompt: "offline fixture", idempotencyKey: "never-submit", parameters });
     for (const parameters of [{ duration: 38 }, { duration: 1_000_000 }, { seconds: 38 }]) {
       const input = request(parameters);
-      expect(await adapter.validate(input)).toMatchObject({ valid: false, issues: expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]) });
-      await expect(adapter.submit(input)).rejects.toThrow();
+      if (entry.required) {
+        expect(await adapter.validate(input)).toMatchObject({ valid: false, issues: expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]) });
+        await expect(adapter.submit(input)).rejects.toThrow();
+      } else {
+        expect(duration.allowCustomValue).toBe(true);
+        expect(await adapter.validate(input)).toMatchObject({ valid: true });
+        await adapter.submit(input);
+        const field = ["cyberafei", "mikoto"].includes(entry.supplier) ? "seconds" : "duration";
+        const value = parameters.duration ?? parameters.seconds;
+        const body = fetcher.mock.calls.at(-1)?.[1]?.body;
+        if (body instanceof FormData) expect(body.get(field)).toBe(String(value));
+        else expect(JSON.parse(String(body))[field]).toBe(value);
+      }
       expect(input.parameters).toEqual(parameters);
+    }
+    fetcher.mockClear();
+    for (const duration of [0, -1, 2.5, "5"]) {
+      expect((await adapter.validate(request({ duration }))).valid).toBe(false);
     }
     expect(fetcher).not.toHaveBeenCalled();
     const omitted = request({}), normalized = normalizeRemainingVideoParameters(entry.supplier, omitted, context);

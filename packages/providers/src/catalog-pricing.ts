@@ -41,7 +41,14 @@ export function scopedCatalogMediaPricing(value: unknown, options: {
   }
   const cyberSeconds = ["minimax-h3", "seedance2.0", "seedance2.5"].includes(id);
   const cyberRequests = ["nano-banana-pro", "nano-banana2", "veo3.1", "veo3.1-fast", "veo3.1-lite"].includes(id);
-  if (origin !== "https://api.3365api.cn" || options.group !== "图片视频模型综合分组" ||
+  // This exact public row lists both groups and states its own resolution/second
+  // rates. Do not turn its quota_type=1 placeholder into a per-request rate in
+  // the special group, or borrow the membership/rates of another model row.
+  const cyberGroup = id === "seedance2.5"
+    ? ["图片视频模型综合分组", "特价seedance2.0"].includes(options.group) &&
+      Array.isArray(row.enable_groups) && row.enable_groups.includes(options.group)
+    : options.group === "图片视频模型综合分组";
+  if (origin !== "https://api.3365api.cn" || !cyberGroup ||
     (!cyberSeconds && !cyberRequests) || row.quota_type !== 1 || typeof row.description !== "string") return undefined;
   const quote = row.description.trim().split(/[。；;]/u).filter(Boolean).at(-1)?.trim();
   const unit = /额度\/(秒|次)$/u.exec(quote ?? "")?.[1];

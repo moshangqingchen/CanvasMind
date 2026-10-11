@@ -50,8 +50,14 @@ describe("scanned model protocol binding", () => {
       expect(model.parameters?.some(parameter => ["output_format", "width", "height"].includes(parameter.key))).toBe(false);
       const quality = model.parameters?.find(parameter => parameter.key === "quality");
       if (row.model_name === "gpt-image-2-2K/4K") {
-        expect(quality?.options?.map(option => option.value)).toEqual(["auto", "high"]);
+        expect(quality?.options?.map(option => option.value)).toEqual(["auto", "low", "medium", "high"]);
         expect(model.parameters?.find(parameter => parameter.key === "size")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
+      } else if (row.model_name.startsWith("gpt-image-2.5")) {
+        expect(quality?.default).toBe("max");
+        expect(quality?.options?.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+      } else if (row.model_name === "gpt-image-2") {
+        expect(quality?.default).toBe("high");
+        expect(quality?.options?.map(option => option.value)).toEqual(["auto", "low", "medium", "high"]);
       } else expect(quality).toBeUndefined();
     }
   });
@@ -209,19 +215,19 @@ describe("scanned model protocol binding", () => {
       parameters: [{ key: "quality", label: "质量", control: "select", default: "max", options: [{ value: "max", label: "max" }] }], metadata: { canvasRunnable: true } };
     const repaired = bindScannedModelProtocols(connection, [cached]).models[0]!;
     expect(repaired.parameters?.find(parameter => parameter.key === "quality")).toMatchObject({ default: "high", options: [
-      { value: "low", label: "low" }, { value: "medium", label: "medium" }, { value: "high", label: "high" },
+      { value: "auto" }, { value: "low" }, { value: "medium" }, { value: "high" },
     ] });
     expect(repaired.parameters?.find(parameter => parameter.key === "n")).toMatchObject({ min: 1, max: 1 });
     expect(repaired.parameters?.find(parameter => parameter.key === "size")?.options).toContainEqual({ value: "2048x1152", label: "2K · 16:9 · 2048x1152" });
     expect(cached.parameters?.[0]?.default).toBe("max");
   });
-  it("keeps pDog Image2.5 at the user's max candidate without claiming supplier verification", () => {
+  it("adds user-requested pDog upscaling Image2.5 max without borrowing native-group paid evidence", () => {
     const connection = { provider: "openai", config: { baseUrl: "https://ai.whyshy.cn", modelGroup: "1K2K4K(超分组)", usage: "canvas" } };
     const model: ModelDescriptor = { id: "gpt-image-2.5-flare", name: "Image2.5", operations: ["image.generate"], metadata: { canvasRunnable: true } };
     const result = bindScannedModelProtocols(connection, [model]).models[0]!;
     expect(result.parameters?.find(parameter => parameter.key === "quality")?.default).toBe("max");
     expect(result.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
-    expect(result.metadata?.qualitySupport).toBe("assumed");
+    expect(result.metadata).toMatchObject({ qualitySupport: "declared", pdogQualityVerified: false, imageUserQualityPresetSource: "user-request" });
   });
   it.each([
     ["https://genimage.pro/v1", "geminiResponseUrl"],
@@ -241,7 +247,12 @@ describe("scanned model protocol binding", () => {
     expect(bound.models[0]).toEqual(expectedGpt);
     const banana = bound.models[1]!;
     expect(banana.operations).toEqual(["image.generate", "image.edit"]);
-    expect(banana.parameters?.map(p => p.key)).toEqual(["aspect_ratio", "image_size", "n"]);
+    expect(banana.parameters?.map(p => p.key)).toEqual(baseUrl === "https://asian-acc.we-token.cc/v1"
+      ? ["image_size", "aspect_ratio", "n"] : ["aspect_ratio", "image_size", "n"]);
+    if (baseUrl === "https://asian-acc.we-token.cc/v1") {
+      expect(banana.parameters?.find(parameter => parameter.key === "image_size")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
+      expect(banana.parameters?.find(parameter => parameter.key === "aspect_ratio")?.options).toHaveLength(15);
+    }
     expect(parametersWithDefaults(banana.parameters!, { size: "auto", size_tier: "2K", quality: "max" })).toEqual({ aspect_ratio: "auto", image_size: "2K", n: 1 });
     expect(parametersWithDefaults(banana.parameters!, { size: "3072x2048", quality: "high" })).toEqual({ aspect_ratio: "3:2", image_size: "2K", n: 1 });
     expect(parametersWithDefaults(banana.parameters!, { image_size: "1K", size_tier: "4K", aspect_ratio: "9:16" })).toEqual({ aspect_ratio: "9:16", image_size: "1K", n: 1 });
@@ -259,26 +270,33 @@ describe("scanned model protocol binding", () => {
     expect(result.connector?.models?.map(model => model.id)).toEqual(["gpt-image-new"]);
     expect(connection.config.protocol).toBe("responses");
   });
-  it("binds Genimage's declared sizes and highest-quality probe without replacing group prices", () => {
+  it("binds Genimage's declared native tiers and application quality preference without replacing group prices", () => {
     const input: ModelDescriptor = { id: "gpt-image-2.5-flare", name: "Flare", operations: ["image.generate"],
       metadata: { canvasRunnable: true }, pricing: { kind: "per-request", unitAmount: 0.08, currency: "USD", confidence: "exact", checkedAt: "2026-09-22" } };
     const result = bindScannedModelProtocols({ provider: "openai", config: {
       baseUrl: "https://genimage.pro/v1", modelGroup: "geminiResponseUrl", usage: "canvas",
     } }, [input]).models[0]!;
-    expect(result.parameters?.find(p => p.key === "size")?.options).toHaveLength(34);
+    expect(result.parameters?.find(p => p.key === "size")?.options?.map(option => option.value)).toEqual(expect.arrayContaining(["auto", "1K", "2K", "4K", "2880x2880", "3840x2160"]));
+    expect(result.metadata?.imageUserSizePresetSource).toBe("user-request");
+    expect(result.parameters?.find(p => p.key === "size")?.allowCustomValue).toBe(true);
+    expect(result.metadata?.imageSupplierQualityDefault).toBeNull();
     expect(result.parameters?.find(p => p.key === "quality")?.default).toBe("max");
     expect(result.pricing).toEqual(input.pricing);
     expect(result.operations).toEqual(["image.generate"]);
     expect(result.metadata?.imageTestedQualities).toBeUndefined();
   });
-  it("keeps a newly scanned model's own size and quality when binding family transport", () => {
+  it("retains scanned size values as source data while restoring unprohibited presets when binding family transport", () => {
     const parameters = [{ key: "size", label: "2K", control: "select" as const, options: [{ label: "2K", value: "2048x2048" }] }];
     const connection = { provider: "rest", config: { connector: {
       submit: { path: "/images", method: "POST", mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }] },
       models: [{ id: "gpt-image-old", name: "Old", operations: ["image.generate"], parameters: [{ key: "size", label: "1K", control: "text", default: "1024x1024" }] }],
     } } };
     const result = bindScannedModelProtocols(connection, [{ ...scanned("gpt-image-new", ["image.generate"]), parameters, limits: { maxInputImages: 3 } }]);
-    expect(result.models[0]?.parameters).toEqual(parameters);
+    expect(result.models[0]?.parameters?.find(parameter => parameter.key === "size"))
+      .toMatchObject({ label: "2K", control: "dimensions", allowCustomValue: true });
+    expect(result.models[0]?.metadata?.imageUserSizeSourceOptions).toEqual(parameters[0]!.options);
+    expect(result.models[0]?.parameters?.find(parameter => parameter.key === "size")?.options?.map(option => option.value))
+      .toEqual(expect.arrayContaining(["2048x2048", "2880x2880"]));
     expect(result.models[0]?.limits).toEqual({ maxInputImages: 3 });
   });
   it("restores an exact model's native endpoint without requiring model-in-body inheritance", () => {

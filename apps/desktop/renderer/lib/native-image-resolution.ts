@@ -26,7 +26,7 @@ export function nativeImageResolutionControl(
   descriptors: readonly ModelParameterDescriptor[],
   model?: Pick<ModelDescriptor, "metadata"> | null,
 ): { resolution: ModelParameterDescriptor; ratio?: ModelParameterDescriptor } | undefined {
-  const nativeKey = model?.metadata?.imageNativeResolutionParameter;
+  const nativeKey = model?.metadata?.imageNativeResolutionParameter ?? model?.metadata?.imageResolutionTierParameter;
   const declaredResolution = descriptors.find(descriptor => descriptor.key === nativeKey && descriptor.control === "select" && descriptor.options?.length);
   const resolution = declaredResolution ?? descriptors.find(descriptor => {
     if (descriptor.control !== "select" || !descriptor.options?.length) return false;
@@ -45,7 +45,8 @@ export function nativeImageResolutionControl(
       ratio: descriptors.find(descriptor => isImageRatioParameter(descriptor) && descriptor.control === "select") };
   }
   if (!resolution) return undefined;
-  return { resolution, ratio: descriptors.find(descriptor => isImageRatioParameter(descriptor) && descriptor.control === "select") };
+  return { resolution, ratio: descriptors.find(descriptor => isImageRatioParameter(descriptor) && (descriptor.control === "select" ||
+    model?.metadata?.mikotoImageContract === true && model.metadata.imageResolutionTierParameter === "size_tier" && descriptor.control === "text")) };
 }
 
 /** Never infer image pixels from a tier name or a video resolution. */

@@ -40,7 +40,7 @@ describe("provider error presentation", () => {
       submissionMayHaveOccurred: false, responseBody: { error: { code: 'unsupported_parameter',
         message: 'See https://provider.example/docs/model?id=42 for supported resolution' } },
     });
-    expect(presentProviderError(error, { provider: "rest" })).toMatchObject({ code: 'unsupported_parameter',
+    expect(presentProviderError(error, { provider: "rest" })).toMatchObject({ code: 'unsupported_parameter', source: "provider_response",
       providerMessage: 'See https://provider.example/docs/model?id=42 for supported resolution' });
   });
 
@@ -61,6 +61,7 @@ describe("provider error presentation", () => {
     });
     const presentation = presentProviderError(error, { provider: "openai" });
     expect(presentation.type).toBe("连接准备失败");
+    expect(presentation).not.toHaveProperty("source");
     expect(presentation.message).toContain("尚未向供应商提交请求");
   });
 

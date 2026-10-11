@@ -146,9 +146,10 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     await page.keyboard.press("Escape");
     const quote = panel.getByLabel("当前供应商报价", { exact: true });
     const groups = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
-    const quality = panel.getByLabel("质量（quality，可选）", { exact: true });
+    const quality = panel.getByLabel("质量", { exact: true });
     await quality.selectOption("low");
-    await expect(quote).toContainText("0.04 USD / 次（参考）");
+    await expect(quote).toContainText("质量=low · 0.04 USD / 次");
+    await expect(quote).toContainText("（目录快照）");
     await expect(nodeModel).toContainText("LOW $0.04/次");
     await expect.poll(() => reads.get(connections[0]!.id) ?? 0).toBeGreaterThan(0);
     const beforeReads = reads.get(connections[0]!.id) ?? 0;
@@ -171,17 +172,19 @@ test("WeAI 后台补全当前精确分组报价，保留完整型号、质量档
     expect(sourceBounds).not.toBeNull();
     // Hit-test the left edge without navigating to the real supplier site.
     await source.click({ trial: true, position: { x: 2, y: sourceBounds!.height / 2 } });
-    await expect(details).toContainText("LOW $0.03/次");
+    await expect(details).toContainText("质量=low · 0.03 USD / 次");
+    await expect(details).toContainText(/本次预计费用\s*0\.15 USD/u);
     await page.screenshot({ path: info.outputPath("weai-current-exact-group-price.png") });
 
     await groups.selectOption(WEAI_ADOBE_TOKEN_GROUP);
-    await expect(quote).toContainText("按实际用量计费，详见价格说明");
+    await expect(quote).toContainText("输入 3.5 USD / 1M tokens");
+    await expect(quote).toContainText("图片输出 21 USD / 1M tokens");
     await expect(quote).not.toContainText("0.15 USD / 次");
     await expect(details).not.toContainText("本次预计费用");
-    await expect(details).toContainText("文本输入 $3.5/1M tokens（USD 额度）");
-    await expect(details).toContainText("文本输出 $7/1M tokens（USD 额度）");
-    await expect(details).toContainText("图像输出 $21/1M tokens（USD 额度）");
-    await expect(details).not.toContainText("图像输出 $30/1M tokens");
+    await expect(details).toContainText("输入 3.5 USD / 1M tokens");
+    await expect(details).toContainText("输出 7 USD / 1M tokens");
+    await expect(details).toContainText("图片输出 21 USD / 1M tokens");
+    await expect(details).not.toContainText("图片输出 30 USD / 1M tokens");
     await expect(details.getByRole("link", { name: "查看价格来源", exact: true })).toHaveAttribute("href", `${origin}/api/v1/model-plaza-legacy/models?group_id=101`);
     await expect(nodeModel).not.toContainText("$0.04");
     await expect(nodeModel).not.toContainText("$0.07");

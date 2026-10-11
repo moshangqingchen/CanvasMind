@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { Copy, FileImage, X } from "lucide-react";
 import type { AssetView, CanvasNodeData, RunSnapshot } from "./types";
 import { localizeRunError } from "../lib/error-localization";
+import { runErrorTechnicalTitle } from "../lib/run-error-diagnostics";
 import { FailureDiagnosis } from "./failure-diagnosis";
 import { taskConnectionLabel, taskOutcomeLabel } from "../lib/task-evidence";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
@@ -290,7 +291,7 @@ export function ResultInformation({
                     <h4>{status === "cancelled" ? "取消信息" : "错误详情"}</h4>
                     <FailureDiagnosis error={error} status={status} providerTaskStatus={details.taskEvidence?.status} recoveryAction={runNode?.recoveryAction ?? data.generatedRecoveryAction} />
                     <details>
-                      <summary>技术详情与上游原文</summary>
+                      <summary>{runErrorTechnicalTitle(error)}</summary>
                       <pre>{error ? JSON.stringify(error, null, 2) : "该任务未记录原始错误"}</pre>
                     </details>
                     <button type="button" className="button" onClick={() => {

@@ -49,7 +49,7 @@ export function applyJijiuImageCapabilities(connection: ImageEditingConnection, 
     imagePixelBudgetPublished: false, imageOutputEncodingDeclared: false, imageNativeQualityOptions: true,
     imageParameterContractNote: gemini ? "官网声明 1K / 2K / 4K；未公布逐比例像素、自定义宽高、质量与编码规则，实际像素以原图为准。"
       : highTierGpt ? "官网声明 1K / 2K / 4K；按用户要求使用原生档位与最高质量 high。4K/high 已有一次原图样本；未公布逐比例像素和自定义宽高，实际像素以原图为准。"
-      : "官网未公布逐比例像素、自定义宽高、质量与编码规则。保留上游默认尺寸；1024 × 1024 仅为官方请求示例，不能推导其他档位像素。",
+      : "size 使用供应商声明的 WIDTHxHEIGHT 字符串；1024 × 1024 是官方请求示例。未公布完整像素范围，输入交由当前型号与分组处理，实际像素以原图为准。",
     supportsImageEdit: true, supportsReferenceImages: true, parameterControlsUnavailable: false,
     documentationUrl: JIJIU_IMAGE_DOCS, protocolEvidence: "supplier-documentation", parameterSource: "supplier-documentation-and-exact-model-card",
     generationVerified: false, contractCheckedAt: "2026-10-10" };
@@ -78,7 +78,7 @@ export function applyJijiuImageCapabilities(connection: ImageEditingConnection, 
       { key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: "auto", options: [{ value: "auto", label: "自动（以原图为准）" }] },
       { key: "n", label: "生成张数", control: "number", valueType: "integer", default: 1, min: 1, max: 1 },
     ] : [
-      { key: "size", label: "输出尺寸", control: "select", valueType: "string", default: "auto", options: [
+      { key: "size", label: "输出尺寸", control: highTierGpt ? "select" : "text", valueType: "string", default: "auto", ...(!highTierGpt ? { allowCustomValue: true } : {}), options: [
         { value: "auto", label: "自动 · 比例与像素由供应商决定" },
         ...(highTierGpt ? tiers.map(value => ({ value, label: value })) : [{ value: "1024x1024", label: "1K · 1:1 · 1024 × 1024（官方示例）" }])], description: String(metadata.imageParameterContractNote) },
       ...(highTierGpt ? [{ key: "quality", label: "质量", control: "select" as const, valueType: "string" as const, default: "auto",
@@ -92,7 +92,7 @@ export function jijiuGptImageParameters(input: Readonly<Record<string, unknown>>
   const highTier = model === JIJIU_HIGH_TIER_GPT_IMAGE;
   const size = highTier ? GPT_TIER_KEYS.map(key => input[key]).find(value => value !== undefined) : input.size;
   return { n: input.n ?? 1, ...(size !== undefined && size !== "auto" ? { size } : {}),
-    ...(highTier && input.quality !== undefined && input.quality !== "auto" ? { quality: input.quality } : {}) };
+    ...(input.quality !== undefined && input.quality !== "auto" ? { quality: input.quality } : {}) };
 }
 export function jijiuGptImageRequestIssues(connection: ImageEditingConnection, request: NormalizedRequest): ValidationIssue[] {
   const issues: ValidationIssue[] = [], input = request.parameters ?? {}, id = request.model ?? "";
@@ -110,12 +110,15 @@ export function jijiuGptImageRequestIssues(connection: ImageEditingConnection, r
     if (new Set(sizes).size > 1) add("parameters.size", "conflicting_resolution", "已保存的分辨率字段冲突，请明确选择档位");
     for (const key of GPT_TIER_KEYS) if (input[key] !== undefined && !["auto", ...JIJIU_GPT_NATIVE_TIERS].includes(input[key] as string))
       add(`parameters.${key}`, "invalid_resolution", "请选择此完整型号的自动、1K、2K 或 4K 档位；不把档位换算为未经公布的像素");
-    if (input.quality !== undefined && !["auto", "high"].includes(input.quality as string))
-      add("parameters.quality", "invalid_quality", "最高质量使用 high，请选择自动或最高；不发送未知 max");
-  } else if (input.size !== undefined && input.size !== "auto" && input.size !== "1024x1024")
-    add("parameters.size", "undocumented_size", "此型号未公布该像素组合，请选择供应商默认尺寸或已列出的官方示例");
+  } else if (input.size !== undefined && input.size !== "auto" && (typeof input.size !== "string" || !/^\d+x\d+$/u.test(input.size) || !input.size.split("x").every(value => Number.isSafeInteger(Number(value)) && Number(value) > 0)))
+    add("parameters.size", "invalid_size", "输出尺寸必须为正整数 WIDTHxHEIGHT，例如 1024x1024");
+  const qualityOptions = id.startsWith("gpt-image-2.5") ? ["auto", "low", "medium", "high", "xhigh", "max"] : ["auto", "low", "medium", "high"];
+  if (input.quality !== undefined && !qualityOptions.includes(input.quality as string))
+    add("parameters.quality", "invalid_quality", `质量使用 ${qualityOptions.join("、")}`);
+  if (!highTier && input.size_tier !== undefined && !(JIJIU_GPT_NATIVE_TIERS as readonly string[]).includes(String(input.size_tier)))
+    add("parameters.size_tier", "invalid_resolution", "尺寸预设档位使用 1K、2K 或 4K");
   for (const key of ["output_format", "output_compression", "width", "height", "aspect_ratio", "aspectRatio", "ratio", "response_format", "background",
-    ...(!highTier ? ["quality", "resolution", "image_size", "imageSize", "size_tier"] : [])])
+    ...(!highTier ? ["resolution", "image_size", "imageSize"] : [])])
     if (input[key] !== undefined && input[key] !== "auto") add(`parameters.${key}`, "undocumented_parameter", "极九当前完整型号未公布此参数组合；已保存的值不会静默替换");
   const assets = request.assets ?? [];
   if (request.operation === "image.edit" && !assets.length) add("assets", "reference_required", "图片编辑需要参考图");

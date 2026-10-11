@@ -5,6 +5,7 @@ import { miaowuCatalogFromPricing, miaowuConnectorForModels, miaowuModelsForGrou
 import { applyMiaowuImageSchema, parseMiaowuImageSchema, type MiaowuImageSchemaReceipt } from "./miaowu-image-schema";
 
 const fixture = JSON.parse(readFileSync(new URL("./miaowu-image-20261009.fixture.json", import.meta.url), "utf8"));
+const currentFixture = JSON.parse(readFileSync(new URL("./miaowu-image-20261010.fixture.json", import.meta.url), "utf8"));
 const imageIds = Object.keys(fixture.schemas);
 function receipt(id: string): MiaowuImageSchemaReceipt {
   return { id, sourceUrl: `https://api.miaowuai.store/v1/dream/model_schema?model=${encodeURIComponent(id)}`,
@@ -19,6 +20,26 @@ function adapterFor(model: ModelDescriptor, fetcher: typeof fetch) {
 }
 
 describe("exact Miaowu image schemas", () => {
+  it.each(Object.keys(currentFixture.schemas))("reads the current exact image schema %s, including automatic Midjourney reference routes", id => {
+    const payload = currentFixture.schemas[id];
+    const contract = parseMiaowuImageSchema(id, payload);
+    const fields = payload.request_schema.properties.params.properties;
+    expect(contract.resolutions).toEqual(fields.size.enum);
+    expect(contract.ratios).toEqual(fields.ratio.enum);
+    expect(contract.maxInputImages).toBe(fields.image_urls.maxItems);
+    for (const row of payload.pricing_display.groups.default.rules) {
+      expect(contract.pricingDisplay?.groups.default?.rules).toContainEqual({ resolution: row.size, price: row.price });
+    }
+    if (id.startsWith("midjourney-")) {
+      expect(fields.mode).toBeUndefined();
+      expect(contract.modes).toEqual(["text-to-image", "image-to-image"]);
+      const other = structuredClone(payload); other.id = "other-single-route";
+      expect(() => parseMiaowuImageSchema(other.id, other)).toThrow("图片模式");
+      const requiredMode = structuredClone(payload); requiredMode.request_schema.properties.params.required.push("mode");
+      expect(() => parseMiaowuImageSchema(id, requiredMode)).toThrow("图片模式");
+    }
+  });
+
   it("connects the current 21 exact public IDs and applies all seven own image contracts and already-converted prices", () => {
     const catalog = publicModels();
     expect(catalog).toHaveLength(21);

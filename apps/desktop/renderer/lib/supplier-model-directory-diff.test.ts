@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSupplierCatalog, type ModelDescriptor } from "@super-canvas/providers";
+import { parseSupplierCatalog, parseSupplierPricingChannels, type ModelDescriptor } from "@super-canvas/providers";
 import { readFileSync } from "node:fs";
 import type { ProviderConnectionView } from "./client-api";
 import type { SupplierCatalogModel, SupplierRecord } from "./client-suppliers";
@@ -17,6 +17,38 @@ const keyModels: ModelDescriptor[] = Array.from({ length: 15 }, (_, i) => ({ id:
 const publicModels = [...Array.from({ length: 10 }, (_, i) => catalogModel(`video-${i}`)), ...Array.from({ length: 8 }, (_, i) => catalogModel(`official-video-${i}`))];
 
 describe("public media directory differences", () => {
+  it("displays Secure Muse's official contract and price while keeping public-only rows outside Key options", () => {
+    const groups = parseSupplierPricingChannels({ data: [{ name: "muse", platforms: [{ platform: "muse",
+      groups: [{ id: 57, name: "muse-video", rate_multiplier: 1 }], supported_models: [{ name: "muse-video",
+        pricing: { billing_mode: "per_second", per_request_price: 0.03, intervals: [] } }] }] }] }, "CNY",
+    { supplierSiteUrl: "https://token.secure-skill.com" });
+    const source = supplier(groups[0]!.models as SupplierCatalogModel[]);
+    source.catalog.groups[0]!.id = "muse-video";
+    const bound = { ...connection, config: { ...connection.config, modelGroup: "muse-video" } };
+    const model = catalogPickerDirectory(bound, [source], [], "video-generation", true)!.models[0]!;
+    expect(model.operations).toEqual([]);
+    expect(model.parameters).toEqual(expect.arrayContaining([expect.objectContaining({ key: "duration", min: 1, max: 30, default: 6 })]));
+    expect(model.pricing).toMatchObject({ currency: "CNY", unitAmount: 0.03, billingUnit: "second" });
+    expect(model.metadata).toMatchObject({ publicCatalogOnly: true, canvasRunnable: false, parameterControlsUnavailable: true });
+  });
+  it("displays exact Jiasu public parameter data without granting Key operations or controls", () => {
+    const model: SupplierCatalogModel = { id: "wan3", capability: "video", outputKinds: ["video"],
+      priceLabel: "0.16 CNY / 秒", metadata: { jiasuCatalogRecord: {
+        supportedEndpointTypes: ["openai-video"], description: "最多4张图片",
+        apiParameters: [{ name: "duration", range: "4-12", default: "6" },
+          { name: "resolution", range: "720p,1080p", default: "720p" },
+          { name: "ratio", range: "16:9,9:16", default: "16:9" }],
+      } } };
+    const directory = catalogPickerDirectory(connection, [supplier([model])], [], "video-generation", true)!;
+    expect(directory.models[0]).toMatchObject({ operations: [], metadata: {
+      publicCatalogOnly: true, canvasRunnable: false, parameterControlsUnavailable: true,
+    } });
+    expect(directory.models[0]!.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "duration", min: 4, max: 12, default: 6 }),
+      expect.objectContaining({ key: "resolution", options: [{ label: "720p", value: "720p" }, { label: "1080p", value: "1080p" }] }),
+    ]));
+    expect(directory.models[0]!.limits?.maxInputImages).toBe(4);
+  });
   it("shows all eleven Miaowu native videos including Dola and Jimeng with their own rule prices and no Key grant", () => {
     const payload = JSON.parse(readFileSync(new URL("./miaowu-catalog-20261008.fixture.json", import.meta.url), "utf8"));
     const groups = parseSupplierCatalog(payload, { supplierSiteUrl: "https://api.miaowuai.store", currency: "CNY", multiplier: 7, checkedAt: "2026-10-08T22:37:14Z" }).groups;

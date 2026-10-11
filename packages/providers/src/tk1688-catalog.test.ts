@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isTk1688CatalogSource, normalizeTk1688CnyModel, parseTk1688AccountModelIds, parseTk1688Marketplace, tk1688DescriptionFacts } from "./tk1688-catalog.js";
+import { applyUserImageSizePresets } from "./image-size-presets.js";
 
 const base = "gpt-image-2.5-sunburst";
 const sku = (suffix: string, description: string, extra = {}) => ({ id: 1, base_model: base, alias: `${base}@${suffix}`,
@@ -28,17 +29,50 @@ describe("词元模型广场 contracts", () => {
     expect(tk1688DescriptionFacts("搞就完了").resolutions).toEqual([]);
     expect(tk1688DescriptionFacts("支持1000RPM").resolutions).toEqual([]);
   });
-  it("honors exact Adobe 4K/noN while preserving the exact merchant alias", () => {
+  it("keeps Adobe's native 4K example as a reference and honors noN without fixing user pixels", () => {
     const parsed = parseTk1688Marketplace(market(sku("s47c261", "Adobe支持原生4K(3840*2160)，不支持N。")), status);
     const model = parsed.models.find(model => model.id.endsWith("@s47c261"))!;
     expect(model).toMatchObject({ id: `${base}@s47c261`, limits: { maxOutputImages: 1 },
-      metadata: { tk1688FixedSize: "3840x2160", tk1688OmitN: true, fixedOutputCount: 1,
+      metadata: { tk1688ReferenceSize: "3840x2160", tk1688SupportedResolutions: ["4K"], tk1688OmitN: true, fixedOutputCount: 1,
         tk1688RetailPriceIncludesMarkup: true, tk1688PlatformMarkupPercent: 20 } });
-    expect(model.parameters?.find(parameter => parameter.key === "size")?.options).toEqual([{ label: "原生 3840 × 2160", value: "3840x2160" }]);
+    expect(model.metadata?.tk1688FixedSize).toBeUndefined();
+    expect(model.parameters?.find(parameter => parameter.key === "size")?.control).toBe("dimensions");
+    expect(applyUserImageSizePresets(model).metadata?.imageUserSizePresetTiers).toEqual(["1K", "2K", "4K"]);
     expect(model.parameters?.some(parameter => parameter.key === "n")).toBe(false);
     expect(model.pricing).toMatchObject({ kind: "per-request", currency: "CNY", billingUnit: "request", unitAmount: 0.206688 });
     expect(model.metadata?.priceLabel).toBe("¥0.206688/次");
     expect(model.metadata?.tk1688OriginalPricing).toMatchObject({ currency: "USD", unitAmount: 0.03 });
+  });
+  it.each(["固定3840x2160", "仅支持3840*2160", "尺寸固定为3840 × 2160"])("retains genuinely fixed pixels: %s", description => {
+    const model = parseTk1688Marketplace(market(sku("s47c261", description))).models[1]!;
+    expect(model.metadata?.tk1688FixedSize).toBe("3840x2160");
+    expect(model.parameters?.find(parameter => parameter.key === "size")?.options?.map(option => option.value)).toEqual(["3840x2160"]);
+    expect(applyUserImageSizePresets(model).metadata?.imageUserSizePresets).toBeUndefined();
+  });
+  it.each(["仅支持4K", "源头原生/限4K", "支持4K，不支持1K/2K"])("retains an explicit tier restriction independently of pixels: %s", description => {
+    const parsed = parseTk1688Marketplace(market(sku("s47c261", description), sku("s1c23", "支持1K/2K/4K")));
+    for (const model of [parsed.models[1]!]) {
+      expect(model.metadata?.tk1688FixedSize).toBeUndefined();
+      const projected = applyUserImageSizePresets(model);
+      expect(projected.metadata?.imageUserSizePresetTiers).toEqual(["4K"]);
+      expect(projected.metadata?.imageUserSizeSourceOptions).toEqual([{ value: "auto", label: "自动" }]);
+      expect(projected.parameters?.find(parameter => parameter.key === "size")?.options?.every(option => option.value === "auto" || option.label.startsWith("4K ·"))).toBe(true);
+      expect(applyUserImageSizePresets(normalizeTk1688CnyModel({ ...projected, metadata: { ...projected.metadata,
+        imageUserSizeSourceOptions: [{ value: "auto", label: "自动" }, { value: "1024x1024", label: "默认示例" }] } })))
+        .toEqual(applyUserImageSizePresets(normalizeTk1688CnyModel(projected)));
+    }
+    expect(applyUserImageSizePresets(parsed.models[0]!).metadata?.imageUserSizePresetTiers).toEqual(["1K", "2K", "4K"]);
+  });
+  it("repairs old inferred fixed-size snapshots idempotently without mutating supplier evidence", () => {
+    const model = parseTk1688Marketplace(market(sku("s47c261", "Adobe支持原生4K(3840*2160)，不支持N。"))).models[1]!;
+    const legacy = { ...model, parameters: [{ key: "size", label: "size", control: "select" as const, valueType: "string" as const,
+      default: "3840x2160", options: [{ value: "3840x2160", label: "原生" }] }], metadata: { ...model.metadata, tk1688FixedSize: "3840x2160" } };
+    const repaired = normalizeTk1688CnyModel(legacy);
+    expect(repaired.metadata.tk1688FixedSize).toBeUndefined();
+    expect(repaired.metadata.tk1688SupportedResolutions).toEqual(["4K"]);
+    expect(applyUserImageSizePresets(repaired).metadata?.imageUserSizePresetTiers).toEqual(["1K", "2K", "4K"]);
+    expect(normalizeTk1688CnyModel(repaired)).toEqual(repaired);
+    expect(legacy.metadata.tk1688FixedSize).toBe("3840x2160");
   });
   it("uses the safe smart-route intersection and never inherits a merchant's fixed pixels", () => {
     const parsed = parseTk1688Marketplace(market(sku("s47c261", "Adobe支持原生4K(3840*2160)，不支持N。"),
@@ -46,11 +80,11 @@ describe("词元模型广场 contracts", () => {
     const smart = parsed.models.find(model => model.id === base)!;
     expect(smart.metadata).toMatchObject({ tk1688SupportedResolutions: ["4K"], tk1688OmitN: true });
     expect(smart.metadata?.tk1688FixedSize).toBeUndefined();
-    expect(smart.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto", "4K"]);
+    expect(smart.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
     const conflicting = parseTk1688Marketplace(market(sku("s47c261", "Adobe支持原生4K(3840*2160)，不支持N。"),
       sku("s46c264", "源头原生/1K /2K"), sku("s1c77", "搞就完了"))).models[0]!;
     expect(conflicting.metadata?.tk1688SupportedResolutions).toEqual([]);
-    expect(conflicting.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto"]);
+    expect(conflicting.parameters?.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
     expect(conflicting.pricing).toBeUndefined();
   });
   it("joins Key-family permissions, authenticated account aliases and live SKUs", () => {

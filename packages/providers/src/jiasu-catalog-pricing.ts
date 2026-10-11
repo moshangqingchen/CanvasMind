@@ -1,5 +1,6 @@
 import type { StructuredModelPricing, StructuredPriceTier } from "./contracts.js";
 import { mediaPricingLabel } from "./media-billing.js";
+import { jiasuVideoApiExampleContract, type JiasuVideoApiExampleContract } from "./jiasu-api-example-contract.js";
 
 export const JIASU_PRICING_URL = "https://ai.jiasuapi.com/api/pricing";
 type Row = Record<string, unknown>;
@@ -31,6 +32,7 @@ export function jiasuCatalogMediaKind(value: unknown, siteUrl: string | undefine
 /** Retain the public schema, never account/session fields, for dynamic contracts. */
 export function jiasuCatalogRecord(value: unknown): {
   apiParameters: Row[]; description: string; supportedEndpointTypes: string[]; billingUsageSchema?: Row;
+  apiExampleContract?: JiasuVideoApiExampleContract;
 } {
   const row = record(value);
   let parameters: unknown = row?.api_parameters;
@@ -41,11 +43,15 @@ export function jiasuCatalogRecord(value: unknown): {
     const parameter = record(value);
     if (!parameter || !text(parameter.name)) return [];
     return [Object.fromEntries(Object.entries(parameter).filter(([key, value]) =>
-      ["name", "type", "required", "default", "range", "description"].includes(key) &&
-      ["string", "number", "boolean"].includes(typeof value)))];
+      ["name", "type", "required", "default", "range", "description", "min", "minimum", "max", "maximum", "step", "minItems", "maxItems"].includes(key) &&
+      ["string", "number", "boolean"].includes(typeof value) || key === "enum" && Array.isArray(value) && value.length <= 64 &&
+      value.every(item => ["string", "number", "boolean"].includes(typeof item))))];
   }) : [];
+  const example = Array.isArray(row?.supported_endpoint_types) && row.supported_endpoint_types.includes("openai-video") && typeof row.model_name === "string"
+    ? jiasuVideoApiExampleContract(row.model_name) : undefined;
   return { apiParameters, description: typeof row?.description === "string" ? row.description.slice(0, 8192) : "",
     supportedEndpointTypes: Array.isArray(row?.supported_endpoint_types) ? row.supported_endpoint_types.map(text).filter(Boolean).slice(0, 16) : [],
+    ...(example ? { apiExampleContract: example } : {}),
     ...(record(row?.billing_usage_schema) ? { billingUsageSchema: record(row?.billing_usage_schema)! } : {}) };
 }
 

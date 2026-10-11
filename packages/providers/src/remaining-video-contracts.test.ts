@@ -11,6 +11,25 @@ const asset = (kind: "image" | "video" | "audio", n = 1, role?: ProviderAssetInp
 const targets = (supplier: Parameters<typeof remainingVideoTransport>[0], id: string, group?: string) => remainingVideoTransport(supplier, id, { group })?.submit?.mappings?.map(mapping => mapping.target);
 
 describe("supplier video contracts", () => {
+  it("declares native ratio aliases and preserves matching user fields without replacing them", () => {
+    const id = "videos-standard", model = remainingVideoModel("frimodel", id)!;
+    expect(model.metadata?.videoParameterAliases).toEqual({ duration: ["seconds"], aspect_ratio: ["ratio"] });
+    for (const ratioParameters of [{ ratio: "9:16" }, { aspect_ratio: "9:16" }, { ratio: "9:16", aspect_ratio: "9:16" }]) {
+      const parameters = Object.freeze({ duration: 8, resolution: "720p", ...ratioParameters });
+      const input = request(id, parameters), snapshot = structuredClone(input);
+      expect(normalizeRemainingVideoParameters("frimodel", input)).toMatchObject({ duration: 8, resolution: "720p", ratio: "9:16" });
+      expect(remainingVideoRequestIssues("frimodel", input)).toEqual([]);
+      expect(input).toEqual(snapshot);
+    }
+  });
+
+  it("rejects conflicting ratio aliases instead of quietly preferring a new default", () => {
+    const input = request("videos-standard", { duration: 8, resolution: "720p", aspect_ratio: "16:9", ratio: "9:16" });
+    const snapshot = structuredClone(input);
+    expect(remainingVideoRequestIssues("frimodel", input)).toContainEqual(expect.objectContaining({ path: "parameters.aspect_ratio", code: "invalid_parameter" }));
+    expect(input).toEqual(snapshot);
+  });
+
   it.each(["seedance-2.0-720p", "seedance-2.0-v4"])("replaces a cached unknown-duration warning with %s's documented range", id => {
     const current: ModelDescriptor = { id, name: id, operations: ["video.generate"],
       parameters: [{ key: "duration", label: "时长", control: "number", valueType: "integer", min: 1 }],

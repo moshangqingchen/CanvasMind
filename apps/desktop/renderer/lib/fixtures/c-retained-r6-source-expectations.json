@@ -1,0 +1,3887 @@
+{
+  "source": {
+    "kind": "completed C actual38/image100 source proof v4, independent whole UI suite had unrelated old failures and is not claimed passed here",
+    "proofPath": ".codex-temp/supplier-full-document-recheck-20261010/audit-c/c-six-r6-root-final-source-proof-v4-safe.json",
+    "proofSha256": "da7058e75a179bb8ef41928a2dba9e3da042b20ede31a3765ca251a7dbca5714",
+    "immutableLiteralFixturePath": "apps/desktop/renderer/lib/fixtures/c-six-r6-actual-connections.json.gz",
+    "immutableLiteralFixtureSha256": "b8025c47d9eddcb95cf20dc0c01aa39bde2d3d95eb4e28a7549de34693b1f012",
+    "originalFixturePath": "apps/desktop/renderer/lib/fixtures/c-retained-price-actual-remaining-five-v2.json",
+    "originalFixtureSha256": "5f8b03dd6d39aceb0fd75c818593048ee26488f3082d789d0cdefdaaea3f3c3b"
+  },
+  "documentedImageMetadataFields": [
+    "imageNativeParameterContract",
+    "imageNativeResolutionOptions",
+    "imagePixelBudgetPublished",
+    "imageNativeResolutionParameter",
+    "imageSupportedResolutions",
+    "imageRequestResolutions",
+    "imageResolutionMode",
+    "contractCheckedAt",
+    "imageParameterContractNote",
+    "imageInputFormatsSource",
+    "imageSizeFieldContract",
+    "imageContractParameterCoverage",
+    "imageApplicationResolutionDefault",
+    "bananaInputLimitSource"
+  ],
+  "rows": [
+    {
+      "connectionId": "f17ecda2-d0a3-469b-a019-21566dd568b8",
+      "origin": "https://genimage.pro",
+      "group": "gptResponseBase64",
+      "fullModelId": "gpt-image-2",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "输出分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ],
+          "description": "官网完整型号声明 1K、2K、4K；size 按档位或用户输入字符串发送。逐比例像素、自定义范围与步长未公布，W/H 不作跨渠道换算，实际像素以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例偏好",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            }
+          ],
+          "description": "应用比例偏好，通过用户明确 W/H 的 size 表达；供应商没有声明独立比例字段或档位比例像素表。已保存值保留，档位与非自动比例同时选择时请输入对应 W/H。"
+        },
+        {
+          "key": "quality",
+          "label": "质量",
+          "control": "text",
+          "valueType": "string",
+          "default": "high",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "high",
+              "label": "高（high）"
+            }
+          ],
+          "description": "max / high 是应用初选及用户偏好；当前官网未公布此完整型号的完整质量枚举或默认值。按输入发送，auto 省略。"
+        },
+        {
+          "key": "background",
+          "label": "背景",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "opaque",
+              "label": "不透明"
+            }
+          ],
+          "description": "供应商明确说明此型号不支持透明背景。"
+        },
+        {
+          "key": "n",
+          "label": "数量",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "step": 1,
+          "description": "应用初选 1。此完整型号的数量上限与多张计价条件未公布；通用适配器数量校验不当作供应商声明。"
+        },
+        {
+          "key": "response_format",
+          "label": "返回方式",
+          "control": "select",
+          "valueType": "string",
+          "default": "b64_json",
+          "options": [
+            {
+              "value": "b64_json",
+              "label": "图片数据（Base64）"
+            },
+            {
+              "value": "url",
+              "label": "图片链接（URL）"
+            }
+          ],
+          "description": "接口声明的返回格式；分组可能固定返回方式，以实际响应为准。"
+        }
+      ],
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "size",
+        "imageSupportedResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels"
+      },
+      "expectedAbsent": [
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17ecda2-d0a3-469b-a019-21566dd568b8",
+      "origin": "https://genimage.pro",
+      "group": "gptResponseBase64",
+      "fullModelId": "gpt-image-2.5-flare",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "输出分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ],
+          "description": "官网完整型号声明 1K、2K、4K；size 按档位或用户输入字符串发送。逐比例像素、自定义范围与步长未公布，W/H 不作跨渠道换算，实际像素以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例偏好",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            }
+          ],
+          "description": "应用比例偏好，通过用户明确 W/H 的 size 表达；供应商没有声明独立比例字段或档位比例像素表。已保存值保留，档位与非自动比例同时选择时请输入对应 W/H。"
+        },
+        {
+          "key": "quality",
+          "label": "质量",
+          "control": "text",
+          "valueType": "string",
+          "default": "max",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "max",
+              "label": "最高（max）"
+            }
+          ],
+          "description": "max / high 是应用初选及用户偏好；当前官网未公布此完整型号的完整质量枚举或默认值。按输入发送，auto 省略。"
+        },
+        {
+          "key": "background",
+          "label": "背景",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "opaque",
+              "label": "不透明"
+            },
+            {
+              "value": "transparent",
+              "label": "透明（供应商声明）"
+            }
+          ],
+          "description": "供应商声明支持透明背景；透明输出请选择 PNG 或 WebP。"
+        },
+        {
+          "key": "n",
+          "label": "数量",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "step": 1,
+          "description": "应用初选 1。此完整型号的数量上限与多张计价条件未公布；通用适配器数量校验不当作供应商声明。"
+        },
+        {
+          "key": "response_format",
+          "label": "返回方式",
+          "control": "select",
+          "valueType": "string",
+          "default": "b64_json",
+          "options": [
+            {
+              "value": "b64_json",
+              "label": "图片数据（Base64）"
+            },
+            {
+              "value": "url",
+              "label": "图片链接（URL）"
+            }
+          ],
+          "description": "接口声明的返回格式；分组可能固定返回方式，以实际响应为准。"
+        }
+      ],
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "size",
+        "imageSupportedResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels"
+      },
+      "expectedAbsent": [
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17ecda2-d0a3-469b-a019-21566dd568b8",
+      "origin": "https://genimage.pro",
+      "group": "gptResponseBase64",
+      "fullModelId": "gpt-image-2.5-sunburst",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "输出分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ],
+          "description": "官网完整型号声明 1K、2K、4K；size 按档位或用户输入字符串发送。逐比例像素、自定义范围与步长未公布，W/H 不作跨渠道换算，实际像素以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例偏好",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            }
+          ],
+          "description": "应用比例偏好，通过用户明确 W/H 的 size 表达；供应商没有声明独立比例字段或档位比例像素表。已保存值保留，档位与非自动比例同时选择时请输入对应 W/H。"
+        },
+        {
+          "key": "quality",
+          "label": "质量",
+          "control": "text",
+          "valueType": "string",
+          "default": "max",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "max",
+              "label": "最高（max）"
+            }
+          ],
+          "description": "max / high 是应用初选及用户偏好；当前官网未公布此完整型号的完整质量枚举或默认值。按输入发送，auto 省略。"
+        },
+        {
+          "key": "background",
+          "label": "背景",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "opaque",
+              "label": "不透明"
+            },
+            {
+              "value": "transparent",
+              "label": "透明（供应商声明）"
+            }
+          ],
+          "description": "供应商声明支持透明背景；透明输出请选择 PNG 或 WebP。"
+        },
+        {
+          "key": "n",
+          "label": "数量",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "step": 1,
+          "description": "应用初选 1。此完整型号的数量上限与多张计价条件未公布；通用适配器数量校验不当作供应商声明。"
+        },
+        {
+          "key": "response_format",
+          "label": "返回方式",
+          "control": "select",
+          "valueType": "string",
+          "default": "b64_json",
+          "options": [
+            {
+              "value": "b64_json",
+              "label": "图片数据（Base64）"
+            },
+            {
+              "value": "url",
+              "label": "图片链接（URL）"
+            }
+          ],
+          "description": "接口声明的返回格式；分组可能固定返回方式，以实际响应为准。"
+        }
+      ],
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "size",
+        "imageSupportedResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels"
+      },
+      "expectedAbsent": [
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2-1k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸 / 比例",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ],
+          "description": "供应商 size 字段接受比例或 WIDTHxHEIGHT；完整型号固定档位。未公布该 GPT Image 2 型号的像素范围、对齐或逐比例固定像素，不套用 2.5 的限制。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "low",
+              "label": "low"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "high",
+              "label": "high"
+            },
+            {
+              "value": "xhigh",
+              "label": "xhigh"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "创想 GPT Image 2 声明 low/medium/high/xhigh/max，同分辨率同价，以该完整型号广场为准。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageSupportedResolutions": [
+          "1K"
+        ]
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2-2k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸 / 比例",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ],
+          "description": "供应商 size 字段接受比例或 WIDTHxHEIGHT；完整型号固定档位。未公布该 GPT Image 2 型号的像素范围、对齐或逐比例固定像素，不套用 2.5 的限制。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "low",
+              "label": "low"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "high",
+              "label": "high"
+            },
+            {
+              "value": "xhigh",
+              "label": "xhigh"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "创想 GPT Image 2 声明 low/medium/high/xhigh/max，同分辨率同价，以该完整型号广场为准。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageSupportedResolutions": [
+          "2K"
+        ]
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2-4k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸 / 比例",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ],
+          "description": "供应商 size 字段接受比例或 WIDTHxHEIGHT；完整型号固定档位。未公布该 GPT Image 2 型号的像素范围、对齐或逐比例固定像素，不套用 2.5 的限制。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "low",
+              "label": "low"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "high",
+              "label": "high"
+            },
+            {
+              "value": "xhigh",
+              "label": "xhigh"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "创想 GPT Image 2 声明 low/medium/high/xhigh/max，同分辨率同价，以该完整型号广场为准。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageSupportedResolutions": [
+          "4K"
+        ]
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-flare-1k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "min": 16,
+          "max": 3840,
+          "step": 16,
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略，供应商请求方图）"
+            },
+            {
+              "value": "1024x1024",
+              "label": "1K · 1:1 · 1024 × 1024"
+            },
+            {
+              "value": "1280x720",
+              "label": "1K · 16:9 · 1280 × 720"
+            },
+            {
+              "value": "720x1280",
+              "label": "1K · 9:16 · 720 × 1280"
+            }
+          ],
+          "description": "宽高须为16的倍数、均不超过3840，长短边比例≤3:1，总像素655360–8294400；像素预算须符合完整型号档位。供应商目标尺寸可能被上游调整，实际输出以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "供应商仅接受 medium/max，省略时默认 medium，两档同价。应用初选 max；已保存的用户选值保留，提交前校验。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": true,
+        "imageSupportedResolutions": [
+          "1K"
+        ],
+        "imageResolutionMode": "fixed-model-tier"
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-flare-2k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "min": 16,
+          "max": 3840,
+          "step": 16,
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略，供应商请求方图）"
+            },
+            {
+              "value": "2048x2048",
+              "label": "2K · 1:1 · 2048 × 2048"
+            },
+            {
+              "value": "2560x1440",
+              "label": "2K · 16:9 · 2560 × 1440"
+            },
+            {
+              "value": "1440x2560",
+              "label": "2K · 9:16 · 1440 × 2560"
+            }
+          ],
+          "description": "宽高须为16的倍数、均不超过3840，长短边比例≤3:1，总像素655360–8294400；像素预算须符合完整型号档位。供应商目标尺寸可能被上游调整，实际输出以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "供应商仅接受 medium/max，省略时默认 medium，两档同价。应用初选 max；已保存的用户选值保留，提交前校验。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": true,
+        "imageSupportedResolutions": [
+          "2K"
+        ],
+        "imageResolutionMode": "fixed-model-tier"
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-flare-4k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "min": 16,
+          "max": 3840,
+          "step": 16,
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略，供应商请求方图）"
+            },
+            {
+              "value": "2880x2880",
+              "label": "4K · 1:1 · 2880 × 2880"
+            },
+            {
+              "value": "3840x2160",
+              "label": "4K · 16:9 · 3840 × 2160"
+            },
+            {
+              "value": "2160x3840",
+              "label": "4K · 9:16 · 2160 × 3840"
+            }
+          ],
+          "description": "宽高须为16的倍数、均不超过3840，长短边比例≤3:1，总像素655360–8294400；像素预算须符合完整型号档位。供应商目标尺寸可能被上游调整，实际输出以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "供应商仅接受 medium/max，省略时默认 medium，两档同价。应用初选 max；已保存的用户选值保留，提交前校验。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": true,
+        "imageSupportedResolutions": [
+          "4K"
+        ],
+        "imageResolutionMode": "fixed-model-tier"
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-sunburst-1k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "min": 16,
+          "max": 3840,
+          "step": 16,
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略，供应商请求方图）"
+            },
+            {
+              "value": "1024x1024",
+              "label": "1K · 1:1 · 1024 × 1024"
+            },
+            {
+              "value": "1280x720",
+              "label": "1K · 16:9 · 1280 × 720"
+            },
+            {
+              "value": "720x1280",
+              "label": "1K · 9:16 · 720 × 1280"
+            }
+          ],
+          "description": "宽高须为16的倍数、均不超过3840，长短边比例≤3:1，总像素655360–8294400；像素预算须符合完整型号档位。供应商目标尺寸可能被上游调整，实际输出以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "供应商仅接受 medium/max，省略时默认 medium，两档同价。应用初选 max；已保存的用户选值保留，提交前校验。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": true,
+        "imageSupportedResolutions": [
+          "1K"
+        ],
+        "imageResolutionMode": "fixed-model-tier"
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-sunburst-2k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "min": 16,
+          "max": 3840,
+          "step": 16,
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略，供应商请求方图）"
+            },
+            {
+              "value": "2048x2048",
+              "label": "2K · 1:1 · 2048 × 2048"
+            },
+            {
+              "value": "2560x1440",
+              "label": "2K · 16:9 · 2560 × 1440"
+            },
+            {
+              "value": "1440x2560",
+              "label": "2K · 9:16 · 1440 × 2560"
+            }
+          ],
+          "description": "宽高须为16的倍数、均不超过3840，长短边比例≤3:1，总像素655360–8294400；像素预算须符合完整型号档位。供应商目标尺寸可能被上游调整，实际输出以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "供应商仅接受 medium/max，省略时默认 medium，两档同价。应用初选 max；已保存的用户选值保留，提交前校验。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": true,
+        "imageSupportedResolutions": [
+          "2K"
+        ],
+        "imageResolutionMode": "fixed-model-tier"
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-sunburst-4k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "请求尺寸",
+          "control": "dimensions",
+          "valueType": "string",
+          "default": "auto",
+          "min": 16,
+          "max": 3840,
+          "step": 16,
+          "allowCustomValue": true,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略，供应商请求方图）"
+            },
+            {
+              "value": "2880x2880",
+              "label": "4K · 1:1 · 2880 × 2880"
+            },
+            {
+              "value": "3840x2160",
+              "label": "4K · 16:9 · 3840 × 2160"
+            },
+            {
+              "value": "2160x3840",
+              "label": "4K · 9:16 · 2160 × 3840"
+            }
+          ],
+          "description": "宽高须为16的倍数、均不超过3840，长短边比例≤3:1，总像素655360–8294400；像素预算须符合完整型号档位。供应商目标尺寸可能被上游调整，实际输出以原图为准。"
+        },
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "quality",
+          "label": "请求质量",
+          "control": "select",
+          "valueType": "string",
+          "default": "max",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（省略）"
+            },
+            {
+              "value": "medium",
+              "label": "medium"
+            },
+            {
+              "value": "max",
+              "label": "max"
+            }
+          ],
+          "description": "供应商仅接受 medium/max，省略时默认 medium，两档同价。应用初选 max；已保存的用户选值保留，提交前校验。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxInputImages": 9,
+        "maxOutputImages": 1
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": true,
+        "imageSupportedResolutions": [
+          "4K"
+        ],
+        "imageResolutionMode": "fixed-model-tier"
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "nano-banana2-1k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "1K",
+          "options": [
+            {
+              "value": "1K",
+              "label": "1K"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "maxInputImages": 9
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "1K"
+        ],
+        "imageRequestResolutions": [
+          "1K"
+        ],
+        "imageResolutionMode": "fixed-model-tier-and-ratio",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。"
+      },
+      "expectedAbsent": [
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "nano-banana2-2k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "2K",
+          "options": [
+            {
+              "value": "2K",
+              "label": "2K"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "maxInputImages": 9
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "2K"
+        ],
+        "imageRequestResolutions": [
+          "2K"
+        ],
+        "imageResolutionMode": "fixed-model-tier-and-ratio",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。"
+      },
+      "expectedAbsent": [
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "nano-banana2-4k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "4K",
+          "options": [
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "maxInputImages": 9
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "4K"
+        ],
+        "imageResolutionMode": "fixed-model-tier-and-ratio",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。"
+      },
+      "expectedAbsent": [
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "nano-banana-pro-1k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "1K",
+          "options": [
+            {
+              "value": "1K",
+              "label": "1K"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "maxInputImages": 9
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "1K"
+        ],
+        "imageRequestResolutions": [
+          "1K"
+        ],
+        "imageResolutionMode": "fixed-model-tier-and-ratio",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。"
+      },
+      "expectedAbsent": [
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "nano-banana-pro-2k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "2K",
+          "options": [
+            {
+              "value": "2K",
+              "label": "2K"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "maxInputImages": 9
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "2K"
+        ],
+        "imageRequestResolutions": [
+          "2K"
+        ],
+        "imageResolutionMode": "fixed-model-tier-and-ratio",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。"
+      },
+      "expectedAbsent": [
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "nano-banana-pro-4k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "4K",
+          "options": [
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "maxInputImages": 9
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "4K"
+        ],
+        "imageResolutionMode": "fixed-model-tier-and-ratio",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。"
+      },
+      "expectedAbsent": [
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gemini-3-pro-image-preview",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "4K",
+          "options": [
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "maxInputImages": 9
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。"
+      },
+      "expectedAbsent": [
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "gemini-3.1-flash-image-preview",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "4K",
+          "options": [
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ],
+        "maxInputImages": 9
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。"
+      },
+      "expectedAbsent": [
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "midjourney-1k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（不指定比例）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "speed",
+          "label": "生成速度",
+          "control": "select",
+          "valueType": "string",
+          "default": "relax",
+          "options": [
+            {
+              "value": "relax",
+              "label": "Relax"
+            },
+            {
+              "value": "fast",
+              "label": "Fast"
+            }
+          ]
+        },
+        {
+          "key": "reference",
+          "label": "参考图片模式",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（有参考图时使用普通参考）"
+            },
+            {
+              "value": "image",
+              "label": "普通参考"
+            },
+            {
+              "value": "style",
+              "label": "风格参考"
+            },
+            {
+              "value": "edit",
+              "label": "图片编辑（最多四张）"
+            },
+            {
+              "value": "moodboard",
+              "label": "情绪板"
+            },
+            {
+              "value": "editor",
+              "label": "局部编辑（一张原图，可加蒙版）"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成任务数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1,
+          "description": "一次任务返回四张图片，按一次任务收费。"
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 4
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageSupportedResolutions": [
+          "1K"
+        ],
+        "imageResolutionMode": "fixed-model-tier-and-ratio"
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "生图",
+      "fullModelId": "midjourney-2k",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "size",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（不指定比例）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            }
+          ]
+        },
+        {
+          "key": "speed",
+          "label": "生成速度",
+          "control": "select",
+          "valueType": "string",
+          "default": "relax",
+          "options": [
+            {
+              "value": "relax",
+              "label": "Relax"
+            },
+            {
+              "value": "fast",
+              "label": "Fast"
+            }
+          ]
+        },
+        {
+          "key": "reference",
+          "label": "参考图片模式",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（有参考图时使用普通参考）"
+            },
+            {
+              "value": "image",
+              "label": "普通参考"
+            },
+            {
+              "value": "style",
+              "label": "风格参考"
+            },
+            {
+              "value": "edit",
+              "label": "图片编辑（最多四张）"
+            },
+            {
+              "value": "moodboard",
+              "label": "情绪板"
+            },
+            {
+              "value": "editor",
+              "label": "局部编辑（一张原图，可加蒙版）"
+            }
+          ]
+        },
+        {
+          "key": "n",
+          "label": "生成任务数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1,
+          "description": "一次任务返回四张图片，按一次任务收费。"
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 4
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageSupportedResolutions": [
+          "2K"
+        ],
+        "imageResolutionMode": "fixed-model-tier-and-ratio"
+      },
+      "expectedAbsent": [
+        "imageNativeResolutionParameter",
+        "imageRequestResolutions",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "origin": "https://genimage.pro",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-nano-banana-2.1",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "aspectRatio 是供应商原生字符串字段；保存的比例按原值发送，不猜最接近比例或像素。"
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "模型默认（不指定档位）"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "本完整型号未列档位；imageSize 为开放字符串字段。默认省略，用户输入按原值发送，不借用兄弟型号档位。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ]
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [],
+        "imageRequestResolutions": [],
+        "imageResolutionMode": "native-variable-pixels",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "按完整型号目录及所关联开放字符串 schema；没有逐比例像素、范围或步长声明。",
+        "imageInputFormatsSource": "adapter",
+        "imageSizeFieldContract": "open-size",
+        "imageContractParameterCoverage": "exact-full-id-description-and-linked-native-schema",
+        "imageApplicationResolutionDefault": "auto",
+        "bananaInputLimitSource": "adapter"
+      },
+      "expectedAbsent": []
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "origin": "https://genimage.pro",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-3.1-flash-image-preview",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "4:5",
+              "label": "4:5"
+            },
+            {
+              "value": "5:4",
+              "label": "5:4"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            },
+            {
+              "value": "1:8",
+              "label": "1:8"
+            },
+            {
+              "value": "8:1",
+              "label": "8:1"
+            },
+            {
+              "value": "1:4",
+              "label": "1:4"
+            },
+            {
+              "value": "4:1",
+              "label": "4:1"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "aspectRatio 是供应商原生字符串字段；保存的比例按原值发送，不猜最接近比例或像素。"
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "4K",
+          "options": [
+            {
+              "value": "auto",
+              "label": "模型默认（不指定档位）"
+            },
+            {
+              "value": "512",
+              "label": "512"
+            },
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ],
+          "allowCustomValue": false,
+          "description": "本完整型号目录列出这些档位，原生 imageSize 字符串原值发送；档位不等于固定像素尺寸。应用初选最高 4K，供应商默认独立。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ]
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "512",
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "512",
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "按完整型号目录及所关联开放字符串 schema；没有逐比例像素、范围或步长声明。",
+        "imageInputFormatsSource": "adapter",
+        "imageSizeFieldContract": "declared-tiers",
+        "imageContractParameterCoverage": "exact-full-id-description-and-linked-native-schema",
+        "imageApplicationResolutionDefault": "4K",
+        "bananaInputLimitSource": "adapter"
+      },
+      "expectedAbsent": []
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "origin": "https://genimage.pro",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-3.1-flash-lite-image",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "aspectRatio 是供应商原生字符串字段；保存的比例按原值发送，不猜最接近比例或像素。"
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "模型默认（不指定档位）"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "本完整型号未列档位；imageSize 为开放字符串字段。默认省略，用户输入按原值发送，不借用兄弟型号档位。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ]
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [],
+        "imageRequestResolutions": [],
+        "imageResolutionMode": "native-variable-pixels",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "按完整型号目录及所关联开放字符串 schema；没有逐比例像素、范围或步长声明。",
+        "imageInputFormatsSource": "adapter",
+        "imageSizeFieldContract": "open-size",
+        "imageContractParameterCoverage": "exact-full-id-description-and-linked-native-schema",
+        "imageApplicationResolutionDefault": "auto",
+        "bananaInputLimitSource": "adapter"
+      },
+      "expectedAbsent": []
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "origin": "https://genimage.pro",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-3-pro-image-preview",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "4:5",
+              "label": "4:5"
+            },
+            {
+              "value": "5:4",
+              "label": "5:4"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "aspectRatio 是供应商原生字符串字段；保存的比例按原值发送，不猜最接近比例或像素。"
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "4K",
+          "options": [
+            {
+              "value": "auto",
+              "label": "模型默认（不指定档位）"
+            },
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ],
+          "allowCustomValue": false,
+          "description": "本完整型号目录列出这些档位，原生 imageSize 字符串原值发送；档位不等于固定像素尺寸。应用初选最高 4K，供应商默认独立。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ]
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "按完整型号目录及所关联开放字符串 schema；没有逐比例像素、范围或步长声明。",
+        "imageInputFormatsSource": "adapter",
+        "imageSizeFieldContract": "declared-tiers",
+        "imageContractParameterCoverage": "exact-full-id-description-and-linked-native-schema",
+        "imageApplicationResolutionDefault": "4K",
+        "bananaInputLimitSource": "adapter"
+      },
+      "expectedAbsent": []
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "origin": "https://genimage.pro",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-2.5-flash-image",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "aspectRatio 是供应商原生字符串字段；保存的比例按原值发送，不猜最接近比例或像素。"
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "模型默认（不指定档位）"
+            }
+          ],
+          "allowCustomValue": false,
+          "description": "本完整型号文档不接受分辨率档位；自动时省略 imageSize。旧显式档位保留显示，提交前需改选自动，比例另按原字段发送。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ]
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [],
+        "imageRequestResolutions": [],
+        "imageResolutionMode": "provider-decided",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "按完整型号目录及所关联开放字符串 schema；没有逐比例像素、范围或步长声明。",
+        "imageInputFormatsSource": "adapter",
+        "imageSizeFieldContract": "omit-size",
+        "imageContractParameterCoverage": "exact-full-id-description-and-linked-native-schema",
+        "imageApplicationResolutionDefault": "auto",
+        "bananaInputLimitSource": "adapter"
+      },
+      "expectedAbsent": []
+    },
+    {
+      "connectionId": "f17ebb89-66f5-4ddc-a537-6bf6e256a536",
+      "origin": "https://genimage.pro",
+      "group": "香蕉逆向-fal",
+      "fullModelId": "gemini-3.1-flash-image-preview",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "4:5",
+              "label": "4:5"
+            },
+            {
+              "value": "5:4",
+              "label": "5:4"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            },
+            {
+              "value": "1:8",
+              "label": "1:8"
+            },
+            {
+              "value": "8:1",
+              "label": "8:1"
+            },
+            {
+              "value": "1:4",
+              "label": "1:4"
+            },
+            {
+              "value": "4:1",
+              "label": "4:1"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "aspectRatio 是供应商原生字符串字段；保存的比例按原值发送，不猜最接近比例或像素。"
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "4K",
+          "options": [
+            {
+              "value": "auto",
+              "label": "模型默认（不指定档位）"
+            },
+            {
+              "value": "512",
+              "label": "512"
+            },
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ],
+          "allowCustomValue": false,
+          "description": "本完整型号目录列出这些档位，原生 imageSize 字符串原值发送；档位不等于固定像素尺寸。应用初选最高 4K，供应商默认独立。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ]
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "512",
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "512",
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "按完整型号目录及所关联开放字符串 schema；没有逐比例像素、范围或步长声明。",
+        "imageInputFormatsSource": "adapter",
+        "imageSizeFieldContract": "declared-tiers",
+        "imageContractParameterCoverage": "exact-full-id-description-and-linked-native-schema",
+        "imageApplicationResolutionDefault": "4K",
+        "bananaInputLimitSource": "adapter"
+      },
+      "expectedAbsent": []
+    },
+    {
+      "connectionId": "f17ebb89-66f5-4ddc-a537-6bf6e256a536",
+      "origin": "https://genimage.pro",
+      "group": "香蕉逆向-fal",
+      "fullModelId": "gemini-3-pro-image-preview",
+      "imageContract": true,
+      "parameters": [
+        {
+          "key": "aspect_ratio",
+          "label": "画面比例",
+          "control": "select",
+          "valueType": "string",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（提示词优先，其次参考图）"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "4:5",
+              "label": "4:5"
+            },
+            {
+              "value": "5:4",
+              "label": "5:4"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            }
+          ],
+          "allowCustomValue": true,
+          "description": "aspectRatio 是供应商原生字符串字段；保存的比例按原值发送，不猜最接近比例或像素。"
+        },
+        {
+          "key": "image_size",
+          "label": "分辨率",
+          "control": "select",
+          "valueType": "string",
+          "default": "4K",
+          "options": [
+            {
+              "value": "auto",
+              "label": "模型默认（不指定档位）"
+            },
+            {
+              "value": "1K",
+              "label": "1K"
+            },
+            {
+              "value": "2K",
+              "label": "2K"
+            },
+            {
+              "value": "4K",
+              "label": "4K"
+            }
+          ],
+          "allowCustomValue": false,
+          "description": "本完整型号目录列出这些档位，原生 imageSize 字符串原值发送；档位不等于固定像素尺寸。应用初选最高 4K，供应商默认独立。"
+        },
+        {
+          "key": "n",
+          "label": "生成张数",
+          "control": "number",
+          "valueType": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 1
+        }
+      ],
+      "limits": {
+        "maxOutputImages": 1,
+        "supportedMimeTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ]
+      },
+      "metadata": {
+        "imageNativeParameterContract": true,
+        "imageNativeResolutionOptions": true,
+        "imagePixelBudgetPublished": false,
+        "imageNativeResolutionParameter": "image_size",
+        "imageSupportedResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageRequestResolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "imageResolutionMode": "native-variable-pixels",
+        "contractCheckedAt": "2026-10-10",
+        "imageParameterContractNote": "按完整型号目录及所关联开放字符串 schema；没有逐比例像素、范围或步长声明。",
+        "imageInputFormatsSource": "adapter",
+        "imageSizeFieldContract": "declared-tiers",
+        "imageContractParameterCoverage": "exact-full-id-description-and-linked-native-schema",
+        "imageApplicationResolutionDefault": "4K",
+        "bananaInputLimitSource": "adapter"
+      },
+      "expectedAbsent": []
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "codex-auto-review",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-5.5",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-5.6-sol",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-5.6-terra",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-6",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-6-astra",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-6-luna",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-6-sol",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "origin": "https://vapi.chuangxiangai.asia",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-6.1-sol",
+      "imageContract": false,
+      "limits": {},
+      "metadata": {},
+      "expectedAbsent": [
+        "imageNativeParameterContract",
+        "imageNativeResolutionOptions",
+        "imagePixelBudgetPublished",
+        "imageNativeResolutionParameter",
+        "imageSupportedResolutions",
+        "imageRequestResolutions",
+        "imageResolutionMode",
+        "contractCheckedAt",
+        "imageParameterContractNote",
+        "imageInputFormatsSource",
+        "imageSizeFieldContract",
+        "imageContractParameterCoverage",
+        "imageApplicationResolutionDefault",
+        "bananaInputLimitSource"
+      ]
+    }
+  ]
+}

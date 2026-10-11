@@ -154,7 +154,7 @@ describe("Secure Skill declared media units and resolution prices", () => {
   });
 
   it("restricts additional video-directory declarations to the exact official host, platform and full model ID", () => {
-    for (const [platform, modelId] of [["flow2", "omni"], ["newtoken-sd", "video-2.0-fast"], ["newtoken-sd", "video-2.0-pro"]]) {
+    for (const [platform, modelId] of [["flow2", "omni"], ["newtoken-sd", "video-2.0-fast"], ["newtoken-sd", "video-2.0-pro"], ["muse", "muse-video"]]) {
       expect(secureSkillCatalogVideoDeclaration(modelId, platform, options.supplierSiteUrl)).toBe(true);
       expect(secureSkillCatalogVideoDeclaration(`${modelId}-preview`, platform, options.supplierSiteUrl)).toBe(false);
       expect(secureSkillCatalogVideoDeclaration(modelId, "unknown", options.supplierSiteUrl)).toBe(false);

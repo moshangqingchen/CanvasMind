@@ -1,6 +1,6 @@
 import type { ModelDescriptor, ModelParameterDescriptor } from "./contracts.js";
-import { imageSizeOptions, type ImageSizeTier } from "./image-size-presets.js";
-import { imageQualityPresetsAfterSuccess, IMAGE_QUALITY_PRESET_DESCRIPTION } from "./image-quality-presets.js";
+import type { ImageSizeTier } from "./image-size-presets.js";
+import { applyCOpenImageCapabilities } from "./c-open-image-contract.js";
 
 export interface MonsterImageEvidence {
   tiers: readonly ImageSizeTier[];
@@ -107,6 +107,7 @@ export function monsterImageEvidence(
 ): MonsterImageEvidence | undefined {
   if (
     config.usage === "agent" ||
+    config.manualProtocol === true ||
     config.usage === "disabled" ||
     config.supplierArchived === true
   )
@@ -136,13 +137,16 @@ export function applyMonsterImageCapabilities(
 ): ModelDescriptor {
   if (
     connection.provider !== "openai" ||
+    model.metadata?.source === "manual" || model.metadata?.source === "paid-test" || model.metadata?.protocolEvidence === "paid-test" ||
     model.metadata?.canvasRunnable === false ||
     !model.operations.includes("image.generate")
   )
     return model;
   const verified = monsterImageEvidence(connection.config, model.id);
-  if (!verified) return model;
-  const qualityPresets = imageQualityPresetsAfterSuccess(model.id, verified.qualities);
+  if (!verified) return applyCOpenImageCapabilities(connection, model);
+  const metadata = { ...model.metadata };
+  for (const key of ["imageOutputDimensions", "imageOutputReferenceDimensions", "imageResolutionProfiles", "imageCustomDimensionRules", "imageFixedResolution", "imageNativeResolutionParameter"])
+    delete metadata[key];
   const labels: Record<string, string> = {
     auto: "自动",
     low: "低",
@@ -157,33 +161,24 @@ export function applyMonsterImageCapabilities(
     control: "dimensions",
     valueType: "string",
     default: "auto",
-    min: 16,
-    max: 3840,
-    step: 16,
-    options: imageSizeOptions(verified.tiers).map((option) => ({
-      ...option,
-      label:
-        option.value === "auto" ||
-        verified.testedSizes.includes(String(option.value))
-          ? option.label
-          : `${option.label}（比例预设）`,
-    })),
+    allowCustomValue: true,
+    options: [{ value: "auto", label: "自动（供应商决定）" }, ...verified.testedSizes.map(value => ({
+      value, label: `历史请求 · ${value.replace("x", " × ")}`,
+    }))],
     description:
-      "K 档位与比例一起选择；标为比例预设的组合未逐项实测。所列像素是请求值，渠道可能调整实际输出。自动比例优先提示词，其次参考图。",
+      "所列尺寸仅为本分组、完整型号的历史请求样本，不是逐比例像素表或自定义范围；宽高按输入发送，实际输出见原图。",
   };
   const quality: ModelParameterDescriptor = {
     key: "quality",
     label: "请求质量",
     control: "select",
     valueType: "string",
-    default: verified.qualities.includes("high")
-      ? "high"
-      : (verified.qualities[0] ?? "auto"),
-    options: qualityPresets ?? verified.qualities.map((value) => ({
+    default: verified.qualities.at(-1) ?? "auto",
+    options: verified.qualities.map((value) => ({
       value,
       label: `${labels[value] ?? value}（${value}）`,
     })),
-    description: qualityPresets ? IMAGE_QUALITY_PRESET_DESCRIPTION : verified.note,
+    description: verified.note,
   };
   return {
     ...model,
@@ -195,7 +190,14 @@ export function applyMonsterImageCapabilities(
       ),
     ],
     metadata: {
-      ...model.metadata,
+      ...metadata,
+      imageNativeParameterContract: true,
+      imageNativeResolutionOptions: true,
+      imageResolutionMode: "historical-request-samples-and-open-size",
+      imageTierSource: "historical-request-output-sample",
+      imageApproximateResolutions: /3584×2016/u.test(verified.note) ? ["4K"] : [],
+      imagePixelBudgetPublished: false,
+      imageRequestSizeSamples: [...verified.testedSizes],
       imageCapabilitiesVerifiedAt: "2026-09-20",
       imageNativeQualityOptions: true,
       imageTestedQualities: [...verified.qualities],

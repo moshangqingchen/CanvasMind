@@ -7,7 +7,7 @@ import type {
   StructuredModelPricing,
 } from "@super-canvas/providers";
 import { mediaPricingLabel } from "@super-canvas/providers/media-billing";
-import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
+import { remainingVideoModel, remainingVideoTransport, type RemainingVideoContext } from "@super-canvas/providers/remaining-video-contracts";
 import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
 import { inferGenerationMediaKinds } from "@super-canvas/providers/model-media";
 import { providerPriceUnit } from "./provider-pricing-unit";
@@ -609,7 +609,7 @@ function image2VerifiedSizeOptions(
   });
 }
 
-function image2Parameters(id: string): ModelParameterDescriptor[] {
+export function cyberAfeiImage2Parameters(id: string): ModelParameterDescriptor[] {
   const defaultOutputSize = image2DefaultOutputSize(id);
   const tested2KSizes = image2VerifiedSizeOptions(
     id,
@@ -660,9 +660,8 @@ function image2Parameters(id: string): ModelParameterDescriptor[] {
       options: sizeOptions,
       ...(flexible4K
         ? {
-            min: 16,
-            max: 3840,
-            step: 16,
+            step: 1,
+            allowCustomValue: true,
             placeholder: "宽 x 高",
           }
         : {}),
@@ -842,7 +841,7 @@ function grokParameters(): ModelParameterDescriptor[] {
   ];
 }
 
-function descriptorFor(record: PricingRecord): ModelDescriptor | null {
+function descriptorFor(record: PricingRecord, context?: RemainingVideoContext): ModelDescriptor | null {
   if (typeof record.model_name !== "string" || !record.model_name.trim())
     return null;
   const id = record.model_name.trim();
@@ -853,7 +852,7 @@ function descriptorFor(record: PricingRecord): ModelDescriptor | null {
     ...(declaredVideo ? { outputKinds: ["video"] } : {}),
     metadata: { endpointTypes: endpoints, operationsSource: "inferred", outputKindsSource: declaredVideo ? "declared" : "inferred",
       ...(declaredVideo || inferGenerationMediaKinds(id).includes("video") ? { catalogCapability: "video" } : {}) } };
-  const documentedVideo = remainingVideoModel("cyberafei", id, catalogModel);
+  const documentedVideo = remainingVideoModel("cyberafei", id, context?.model ?? catalogModel, context);
   if (documentedVideo) return documentedVideo;
   if (!isSupportedCanvasModel(id)) return currentImageDescriptor(record, id);
   if (isImage2Model(id)) {
@@ -913,7 +912,7 @@ function descriptorFor(record: PricingRecord): ModelDescriptor | null {
           : {}),
         docsPath: "/docs/#/README",
       },
-      parameters: image2Parameters(id),
+      parameters: cyberAfeiImage2Parameters(id),
       limits: {
         maxInputImages: supportsImage2Reference(id)
           ? IMAGE2_MAX_INPUT_IMAGES
@@ -1038,10 +1037,10 @@ function currentImageDescriptor(record: PricingRecord, id: string): ModelDescrip
 }
 
 /** Only complete documented IDs are repaired; callers must retain current Key visibility and permission checks. */
-export function cyberAfeiDocumentedModel(id: string, evidence?: { endpointTypes?: readonly string[]; description?: string }): ModelDescriptor | null {
+export function cyberAfeiDocumentedModel(id: string, evidence?: { endpointTypes?: readonly string[]; description?: string }, context?: RemainingVideoContext): ModelDescriptor | null {
   return descriptorFor({ model_name: id,
     supported_endpoint_types: evidence?.endpointTypes ?? CURRENT_IMAGE_ENDPOINTS[id] ?? [],
-    ...(evidence?.description ? { description: evidence.description } : {}) });
+    ...(evidence?.description ? { description: evidence.description } : {}) }, context);
 }
 
 function marketplaceModel(
@@ -1332,11 +1331,12 @@ function grokOverride(): RestModelConnectorOverride {
 
 export function cyberAfeiConnectorForModels(
   models: readonly ModelDescriptor[],
+  context?: RemainingVideoContext,
 ): RestConnectorConfig {
   const modelOverrides: Record<string, RestModelConnectorOverride> = {};
   for (const model of models) {
     const currentImage = currentImageOverride(model);
-    const documentedVideo = remainingVideoTransport("cyberafei", model.id, { model });
+    const documentedVideo = remainingVideoTransport("cyberafei", model.id, { ...context, model });
     if (currentImage) modelOverrides[model.id] = currentImage;
     else if (documentedVideo) modelOverrides[model.id] = documentedVideo;
     else if (supportsImage2Reference(model.id))
@@ -1413,10 +1413,10 @@ export function cyberAfeiCatalogFromPricing(
       }
       if (descriptor) {
         const models = groups[group] ?? [];
-        if (!models.some((model) => model.id === descriptor.id))
-          models.push(
-            descriptorWithPricing(descriptor, record, group, ratio, checkedAt),
-          );
+        if (!models.some((model) => model.id === descriptor.id)) {
+          const priced = descriptorWithPricing(descriptor, record, group, ratio, checkedAt);
+          models.push(remainingVideoModel("cyberafei", priced.id, priced, { baseUrl: "https://api.3365api.cn", group, model: priced }) ?? priced);
+        }
         groups[group] = models;
       }
     }
@@ -1650,8 +1650,8 @@ export function cyberAfeiDefaultModelForGroup(
 }
 
 export function cyberAfeiConnectorForGroup(
-  _group: string,
+  group: string,
   models: readonly ModelDescriptor[],
 ): RestConnectorConfig {
-  return cyberAfeiConnectorForModels(models);
+  return cyberAfeiConnectorForModels(models, { baseUrl: "https://api.3365api.cn", group });
 }

@@ -32,11 +32,12 @@ describe("supplier image menu contract survives capability enrichment", () => {
     const { enrich, adapter, connection } = fixture("https://tu.988236.xyz/v1", "grok生图", model);
     const current = enrich().model;
     const controls = parameterDescriptorsForValues("image-generation", "openai", current, {}, "image.generate");
-    expect(controls.map(control => control.key)).toEqual(["response_format"]);
+    expect(controls.map(control => control.key)).toEqual(["size_tier", "response_format"]);
     const parameters = parametersWithDefaults(controls, {});
-    expect(parameters).toEqual({ response_format: "url" });
+    expect(parameters).toEqual({ size_tier: "auto", response_format: "url" });
     expect(current.metadata?.imageParameterContract).toBe("keyed-size-schema-unavailable");
-    expect(current.metadata?.imageSupportedResolutions).toEqual([]);
+    expect(current.metadata?.imageSupportedResolutions).toEqual(["1K", "2K"]);
+    expect(controls[0]?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K"]);
     expect((await adapter.validate({ idempotencyKey: "offline-grok", connectionId: "fixture", model: id, operation: "image.generate", prompt: "test", parameters })).valid).toBe(true);
     const saved = { size: "1792x1024", quality: "medium", aspect_ratio: "16:9" };
     expect(normalizedParametersForModel("image-generation", "openai", current, saved)).toMatchObject(saved);
@@ -56,14 +57,15 @@ describe("supplier image menu contract survives capability enrichment", () => {
     expect(normalizedParametersForModel("image-generation", "rest", current, saved)).toEqual(saved);
     expect(current.metadata?.imageParameterContractNote).toContain("由上游决定");
   });
-  it.each(["flare", "sunburst"])("keeps Fri base %s high and documented sizes after sparse scans and rereads", async variant => {
+  it.each(["flare", "sunburst"])("keeps Fri base %s quality open and size source-specific after sparse scans and rereads", async variant => {
     const model = sparse(`gpt-image-2.5-${variant}`);
     for (const group of ["openai_official", "openai_official_外接", "openai_official_外接2"]) {
       const { enrich, adapter } = fixture("https://api.frimodel.com/v1", group, model);
       const current = enrich().model;
       const quality = current.parameters!.find(parameter => parameter.key === "quality")!;
-      expect(quality.options?.map(option => option.value)).toEqual(["auto", "low", "medium", "high"]);
-      expect(quality.default).toBe("high");
+      expect(quality.options?.map(option => option.value)).toEqual(["auto", "max"]);
+      expect(quality.control).toBe("text");
+      expect(quality.default).toBe("max");
       expect(enrich(current).model.parameters).toEqual(current.parameters);
       expect(parametersWithDefaults(current.parameters!, { size: "2048x2048", quality: "medium" })).toMatchObject({ size: "2048x2048", quality: "medium" });
       for (const operation of model.operations) for (const value of quality.options!) {
@@ -106,7 +108,7 @@ describe("supplier image menu contract survives capability enrichment", () => {
   it("does not transfer controls to other origins, full IDs, providers or remove permission rejection", () => {
     const model = { ...sparse("gpt-image-2.5-flare"), metadata: { canvasRunnable: false, canvasUnavailableReason: "403" } };
     for (const [provider, baseUrl, id] of [["openai", "https://other.example/v1", model.id], ["rest", "https://api.frimodel.com/v1", model.id],
-      ["openai", "https://api.frimodel.com/v1", `${model.id}-adobe`], ["openai", "https://api.frimodel.com/other", model.id]]) {
+      ["openai", "https://api.frimodel.com/v1", `${model.id}-adobe-unknown`], ["openai", "https://api.frimodel.com/other", model.id]]) {
       const original = { ...model, id };
       expect(supplierImageMenuContract({ provider, config: { baseUrl } }, original)).toBe(original);
     }

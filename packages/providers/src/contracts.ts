@@ -55,6 +55,7 @@ export interface ModelParameterCondition {
 export interface ModelParameterConstraint {
   when: readonly ModelParameterCondition[];
   options?: readonly ModelParameterOption[];
+  allowCustomValue?: boolean;
   min?: number;
   max?: number;
   required?: boolean;
@@ -75,6 +76,8 @@ export interface ModelParameterDescriptor {
   max?: number;
   step?: number;
   options?: readonly ModelParameterOption[];
+  /** Options are examples/suggestions; the supplier accepts other typed values. */
+  allowCustomValue?: boolean;
   operations?: readonly ProviderOperation[];
   placeholder?: string;
   description?: string;

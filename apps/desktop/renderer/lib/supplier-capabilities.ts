@@ -13,14 +13,16 @@ import { applyPdogImageCapabilities } from "@super-canvas/providers/pdog-image-c
 import { applyJiasuImageCapabilities } from "@super-canvas/providers/jiasu-image-contract";
 import { applyJijiuImageCapabilities } from "@super-canvas/providers/jijiu-image-contract";
 import { applyChuangxiangCurrentImageCapabilities } from "@super-canvas/providers/chuangxiang-image-contract";
+import { applyChuangxiangMidjourneyCapabilities } from "@super-canvas/providers/chuangxiang-midjourney-contract";
 import { modelPriceAmount } from "@super-canvas/providers/media-billing";
-import { IMAGE_SIZE_RATIOS, imageSizeForTier, imageSizeOptions } from "@super-canvas/providers/image-size-presets";
 import { parseSupplierGroupDetails } from "@super-canvas/providers/supplier-group-details";
 import { withHighestQualityDefault } from "./model-quality";
 import { imageQualityPresetsForHighest } from "@super-canvas/providers/image-quality-presets";
+import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import { isTk1688ApiUrl, tk1688ImagePolicyModelId } from "@super-canvas/providers/tk1688-model-policy";
 import { supplierImageMenuContract } from "./supplier-image-menu-contract";
 import { secureSeedreamImageContract } from "./secure-seedream-image-contract";
+import { applySupplierImageConstraints } from "@super-canvas/providers/supplier-image-constraints";
 
 export const RESOLUTIONS: ImageResolutionTier[] = ["1K", "2K", "4K"];
 export const EVIDENCE_LABELS = {
@@ -121,9 +123,26 @@ export function effectiveImageCapabilities(input: {
   documentation?: string;
 }): EffectiveImageCapabilities {
   const { supplier, connection, fingerprint } = input;
-  const imageModel = applyJijiuImageCapabilities(connection, secureSeedreamImageContract(connection, supplierImageMenuContract(connection, applyJiasuImageCapabilities(connection, applyPdogImageCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, input.model))))));
-  const model = canApplyCangyuanCurrentContract(connection.config, typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl, imageModel.id)
-    ? cangyuanCurrentModel(imageModel) : imageModel;
+  if (connection.config.manualProtocol === true || input.model.metadata?.source === "manual" ||
+      input.model.metadata?.source === "paid-test" || input.model.metadata?.protocolEvidence === "paid-test") {
+    const model = input.model, parameters = model.parameters ?? [];
+    const size = parameters.find(parameter => ["size", "image_size", "resolution", "size_tier"].includes(parameter.key));
+    const quality = parameters.find(parameter => parameter.key === "quality"), ratio = parameters.find(parameter => parameter.key === "aspect_ratio");
+    const evidence = [...(input.priorEvidence ?? [])];
+    return { model, evidence, tiers: [], probeTiers: [], quality: quality?.default === undefined ? undefined : String(quality.default),
+      qualityOptions: quality?.options?.map(option => String(option.value)) ?? [], qualityKey: quality?.key,
+      sizeKey: size?.key, sizeIsTier: Boolean(size?.options?.some(option => /^[124]K$/iu.test(String(option.value)))),
+      ratioKey: ratio?.key, ratio: String(ratio?.default ?? "auto"), needsQualityProbe: false };
+  }
+  const imageModel = applyJijiuImageCapabilities(connection, secureSeedreamImageContract(connection, supplierImageMenuContract(connection, applyJiasuImageCapabilities(connection, applyPdogImageCapabilities(connection, applyChuangxiangMidjourneyCapabilities(connection, applyChuangxiangCurrentImageCapabilities(connection, input.model)))))));
+  const constrained = applySupplierImageConstraints(connection, imageModel);
+  // Cached API enrichment also receives bare or old descriptors. Reapply the
+  // exact Mikoto group contract before historical quality/size expansion.
+  const mikotoContract = constrained !== imageModel && constrained.metadata?.mikotoImageContract === true;
+  const currentImageModel = mikotoContract ? constrained : imageModel;
+  const sourceModel = typeof connection.config.baseUrl === "string" && isTk1688ApiUrl(connection.config.baseUrl) && currentImageModel.metadata?.tk1688Catalog === true ? normalizeTk1688CnyModel(currentImageModel) : currentImageModel;
+  const model = canApplyCangyuanCurrentContract(connection.config, typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl, sourceModel.id)
+    ? cangyuanCurrentModel(sourceModel) : sourceModel;
   const policyBaseUrl = typeof connection.config.baseUrl === "string" ? connection.config.baseUrl : supplier.apiUrl;
   const tk1688 = isTk1688ApiUrl(policyBaseUrl);
   const policyModelId = tk1688ImagePolicyModelId(model.id, policyBaseUrl);
@@ -158,17 +177,21 @@ export function effectiveImageCapabilities(input: {
       needsQualityProbe: false,
     };
   }
-  if (model.metadata?.imageNativeParameterContract === true) {
-    const resolutions = RESOLUTIONS.filter(tier => Array.isArray(model.metadata?.imageSupportedResolutions) && model.metadata.imageSupportedResolutions.includes(tier));
+  if (model.metadata?.imageNativeParameterContract === true || mikotoContract) {
+    const declaredResolutions = mikotoContract ? model.metadata?.imageResolutionTiers : model.metadata?.imageSupportedResolutions;
+    const resolutions = RESOLUTIONS.filter(tier => Array.isArray(declaredResolutions) && declaredResolutions.includes(tier));
     const parameters = model.parameters ?? [];
     const size = parameters.find(parameter => parameter.key === model.metadata?.imageNativeResolutionParameter) ?? parameters.find(parameter => parameter.key === "size");
     const ratio = parameters.find(parameter => parameter.key === "aspect_ratio");
     const quality = parameters.find(parameter => parameter.key === "quality");
     const evidence: ImageCapabilityEvidence[] = resolutions.map(resolution => ({
       id: `${connection.id}:${model.id}:${resolution}`, supplierId: supplier.id, sourceId: supplier.state?.sourceId ?? "legacy", connectionId: connection.id, group,
-      modelId: model.id, operation: "image.generate", kind: "documentation", sourceUrl: String(model.metadata?.documentationUrl ?? supplier.siteUrl),
-      checkedAt: String(model.metadata?.contractCheckedAt ?? supplier.scannedAt ?? supplier.updatedAt), fingerprint, status: "declared", resolution,
-      excerpt: "该供应商完整型号的官方档位；像素表或预算未公开时保留具体资料缺项，不生成通用尺寸。",
+      modelId: model.id, operation: "image.generate",
+      kind: model.metadata?.imageTierSource === "historical-request-output-sample" ? "test" : "documentation",
+      sourceUrl: String(model.metadata?.imageTierSource === "historical-request-output-sample" ? model.metadata.imageCapabilitiesVerificationSource ?? "" : model.metadata?.documentationUrl ?? supplier.siteUrl),
+      checkedAt: String(model.metadata?.imageTierSource === "historical-request-output-sample" ? model.metadata.imageCapabilitiesVerifiedAt ?? "" : model.metadata?.contractCheckedAt ?? supplier.scannedAt ?? supplier.updatedAt), fingerprint,
+      status: model.metadata?.imageTierSource === "historical-request-output-sample" ? Array.isArray(model.metadata.imageApproximateResolutions) && model.metadata.imageApproximateResolutions.includes(resolution) ? "approximate" : "verified" : "declared", resolution,
+      excerpt: model.metadata?.imageTierSource === "historical-request-output-sample" ? `该完整型号历史请求/输出样本的应用档位分类；仅覆盖记录中的尺寸与质量，不作为供应商完整像素/档位枚举。${String(model.metadata.imageCapabilityNote ?? "")}` : "该供应商完整型号的官方档位；像素表或预算未公开时保留具体资料缺项，不生成通用尺寸。",
     }));
     const history = (input.tests ?? []).filter(test => test.connectionId === connection.id && test.modelId === model.id && test.fingerprint === fingerprint &&
       !["cancelled", "superseded"].includes(test.status)).map(currentResolutionEvidence);
@@ -374,7 +397,7 @@ export function effectiveImageCapabilities(input: {
         : /低质量/u.test(qualityText)
           ? "low"
           : undefined);
-  if (qualityMention) quality = qualityMention;
+  if (qualityMention && (!nativeQualityOptions || options.some(option => String(option.value) === qualityMention))) quality = qualityMention;
   // Existing exact-channel documentation and paid evidence retain their provenance.
   const legacyEvidence = Object.entries(model.metadata ?? {}).find(
     ([key, value]) =>
@@ -643,79 +666,33 @@ export function effectiveImageCapabilities(input: {
   const updated = parameters.filter(
     (p) => p.key !== sizeKey && p.key !== qualityKey && (!providerDecidedResolution || p !== rawSize),
   );
-  if (sizeKey && tiers.length) {
-    const sizeOptions = tiers.flatMap((item) => {
-      const declaredOptions =
-        rawSize?.options?.filter((o) =>
-          new RegExp(`\\b${item.tier}\\b`, "iu").test(o.label),
-        ) ?? [];
-      const prefix = item.status === "approximate" ? "近似 " : "";
-      if (sizeIsTier) {
-        const declared = rawSize?.options?.find(option => String(option.value).toUpperCase() === item.tier);
-        return [{ label: `${prefix}${item.tier}`, value: declared?.value ?? item.tier }];
-      }
-      const completeRatios = IMAGE_SIZE_RATIOS.every(ratio => declaredOptions.some(option => option.label.match(/\d+:\d+/u)?.[0] === ratio));
-      if (completeRatios && declaredOptions.length && (item.status === "declared" || requestTiers.has(item.tier)))
-        return declaredOptions;
-      const verifiedCase = tests.find(
-        (test) => test.resolution === item.tier && test.status === "succeeded",
-      );
-      const request =
-        verifiedCase &&
-        sizeKey &&
-        typeof verifiedCase.parameters[sizeKey] === "string"
-          ? String(verifiedCase.parameters[sizeKey])
-          : imageSizeForTier(item.tier, ratio);
-      if (!sizeIsTier) {
-        // Every exposed tier offers every ratio, including declared/default
-        // tiers. Preserve documented/tested pixels without fabricating evidence.
-        const presets = imageSizeOptions([item.tier], rawSize?.max ?? 3840).slice(1);
-        return presets.map((preset) => {
-          const presetRatio = preset.label.match(/\d+:\d+/u)?.[0];
-          const declared = declaredOptions.find(option => option.label.match(/\d+:\d+/u)?.[0] === presetRatio);
-          const value = presetRatio === verifiedCase?.ratio ? request : declared?.value ?? preset.value;
-          return {
-            label: `${prefix}${item.tier} · ${presetRatio} · ${String(value).replace("x", " × ")}${item.status === "assumed" && (pendingTiers.has(item.tier) || defaultProbeTier === item.tier) ? "（待核验）" : ""}`,
-            value,
-          };
-        });
-      }
-      return [
-        {
-          label: `${prefix}${item.tier} · ${ratio} · ${item.width ? `${item.width} × ${item.height}` : request.replace("x", " × ")}（${EVIDENCE_LABELS[item.status]}）`,
-          value: sizeIsTier ? item.tier : request,
-        },
-      ];
-    });
-    const autoOption = rawSize?.options?.find(option => option.value === "auto");
-    if (!sizeIsTier)
-      sizeOptions.unshift(autoOption ?? { label: "自动（提示词优先，其次参考图）", value: "auto" });
-    else if (nativeResolutionKey)
-      sizeOptions.unshift(...(rawSize?.options ?? []).filter(option => !/^[124]k$/iu.test(String(option.value))));
+  if (sizeKey && (rawSize || tests.some(test => typeof test.parameters[sizeKey] === "string"))) {
+    // Keep the supplier's exact table. A tier declaration or one successful
+    // request does not define pixels for every aspect ratio.
+    const sizeOptions = [...(rawSize?.options ?? [])];
+    if (!sizeIsTier) for (const test of tests) {
+      const value = test.parameters[sizeKey];
+      if (test.status !== "succeeded" || typeof value !== "string" || !/^\d+x\d+$/u.test(value) ||
+          sizeOptions.some(option => option.value === value)) continue;
+      sizeOptions.push({ value, label: `${test.resolution} · ${value.replace("x", " × ")}（历史请求；实际 ${test.actualWidth ?? "—"} × ${test.actualHeight ?? "—"}）` });
+    }
     updated.unshift({
       ...rawSize,
       key: sizeKey,
-      label: "分辨率",
-      control: sizeIsTier ? "select" : "dimensions",
+      label: rawSize?.label ?? "输出尺寸",
+      control: rawSize?.control ?? "dimensions",
       valueType: "string",
-      default: rawSize?.default ?? sizeOptions[0]?.value,
-      options: sizeOptions,
-      description: "可选档位开放全部比例预设和自动；自动比例优先提示词，其次参考图。实际图片尺寸与实测范围见核验记录。",
+      ...(rawSize?.default === undefined ? {} : { default: rawSize.default }),
+      ...(sizeOptions.length ? { options: sizeOptions } : {}),
+      description: rawSize?.description ?? "按当前完整型号的 size 原值发送；历史样本不代表完整尺寸枚举。",
     });
   }
-  if (rawRatio && tiers.length && (sizeIsTier || rawRatio.options?.some(option => /^\d+:\d+$/u.test(String(option.value))))) {
-    const index = updated.findIndex(parameter => parameter.key === rawRatio.key);
-    const expanded = {
-      ...rawRatio,
-      options: [
-        rawRatio.options?.find(option => option.value === "auto") ?? { label: "自动（提示词优先，其次参考图）", value: "auto" },
-        ...IMAGE_SIZE_RATIOS.map(value => rawRatio.options?.find(option => option.value === value) ?? { label: value, value }),
-        ...(rawRatio.options ?? []).filter(option => option.value !== "auto" && !IMAGE_SIZE_RATIOS.some(ratio => ratio === option.value)),
-      ],
-    };
-    if (index >= 0) updated[index] = expanded;
-    else updated.push(expanded);
-  }
+  // Scheduling a pixel verification requires an actual same-model request
+  // size. Missing mappings stay missing instead of generating generic pixels.
+  probeTiers.splice(0, probeTiers.length, ...probeTiers.filter(tier => !sizeIsTier &&
+    updated.find(parameter => parameter.key === sizeKey)?.options?.some(option =>
+      /^\d+x\d+$/u.test(String(option.value)) && new RegExp(`\\b${tier}\\b`, "iu").test(option.label) &&
+      option.label.match(/\d+:\d+/u)?.[0] === ratio)));
   if (qualityKey && quality)
     updated.push({
       ...rawQuality,
@@ -756,6 +733,13 @@ export function effectiveImageCapabilities(input: {
       metadata: {
         ...model.metadata,
         ...(fixedQualityValue ? { fixedQuality: fixedQualityValue } : {}),
+        // User presets may extend incomplete examples, but must retain an
+        // exact-key rejection's explicit legal enum and rejected values.
+        ...(legalQualities?.length ? { imageQualityOptionsCompleteEnum: true } : {}),
+        ...(rejectedQualities.size ? { imageRejectedQualities: [...new Set([
+          ...(Array.isArray(model.metadata?.imageRejectedQualities) ? model.metadata.imageRejectedQualities : []),
+          ...rejectedQualities,
+        ])].filter((value): value is string => typeof value === "string") } : {}),
         imageCapabilityEvidence: evidence,
         imageResolutionOrigins: resolutionOrigins,
         imageCapabilityPolicy: 2,
@@ -793,8 +777,8 @@ export function verificationParameters(
     : new RegExp(`\\b${tier}\\b`, "iu").test(option.label) && option.label.match(/\d+:\d+/u)?.[0] === capabilities.ratio);
   const fixedSize = capabilities.model.metadata?.tk1688FixedSize;
   const selectedSize = typeof fixedSize === "string" && /^\d+x\d+$/u.test(fixedSize) ? fixedSize
-    : option?.value ?? (capabilities.model.metadata?.imageNativeParameterContract === true ? undefined : capabilities.sizeIsTier ? tier : imageSizeForTier(tier, capabilities.ratio, descriptor?.max));
-  const size = /^\d+x\d+$/u.test(String(selectedSize)) ? String(selectedSize) : capabilities.model.metadata?.imageNativeParameterContract === true ? "0x0" : imageSizeForTier(tier, capabilities.ratio);
+    : option?.value;
+  const size = /^\d+x\d+$/u.test(String(selectedSize)) ? String(selectedSize) : "0x0";
   const [width, height] = size.split("x").map(Number);
   const parameters: Record<string, string | number | boolean> = capabilities.model.metadata?.tk1688OmitN === true ? {} : { n: 1 };
   if (capabilities.sizeKey && selectedSize !== undefined)

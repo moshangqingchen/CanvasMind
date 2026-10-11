@@ -313,6 +313,7 @@ describe("public run snapshots", () => {
             code: "invalid_request",
             api: "OpenAI Images API",
             statusCode: 400,
+            source: "provider_response",
             providerMessage: "Unsupported size; token=provider-secret",
             docsUrl:
               "https://platform.openai.com/docs/guides/error-codes/api-errors",
@@ -350,6 +351,7 @@ describe("public run snapshots", () => {
             code: "invalid_request",
             api: "OpenAI Images API",
             statusCode: 400,
+            source: "provider_response",
             providerMessage: "Unsupported size; token=[redacted]",
             docsUrl:
               "https://platform.openai.com/docs/guides/error-codes/api-errors",
@@ -411,6 +413,24 @@ describe("public run snapshots", () => {
       charge: { status: "charged", amount: 0.125, currency: "CNY", source: "provider_response" },
     });
     expect(JSON.stringify(snapshot)).not.toContain("private");
+  });
+
+  it("publishes bounded local validation reasons and keeps their origin through the public API", () => {
+    const input = recoverySnapshot();
+    const snapshot = publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!, errorJson: {
+      message: "请求未提交：输出分辨率不支持当前值", source: "local_validation",
+      localMessage: "输出分辨率不支持当前值; token=private-secret", phase: "submit",
+      submissionMayHaveOccurred: false, charge: { status: "not_charged", source: "not_submitted" },
+    } }] });
+    expect(snapshot?.nodes[0]?.errorJson).toMatchObject({ source: "local_validation",
+      localMessage: "输出分辨率不支持当前值; token=[redacted]", submissionMayHaveOccurred: false });
+    expect(snapshot?.nodes[0]?.errorJson).not.toHaveProperty("providerMessage");
+    expect(JSON.stringify(snapshot)).not.toContain("private-secret");
+    const malformed = publicRunSnapshot({ ...input, nodes: [{ ...input.nodes[0]!, errorJson: {
+      message: "校验失败", source: "private-secret", localMessage: "x".repeat(3_000),
+    } }] });
+    expect(malformed?.nodes[0]?.errorJson).not.toHaveProperty("source");
+    expect(malformed?.nodes[0]?.errorJson?.localMessage).toHaveLength(2_048);
   });
 
   it.each([

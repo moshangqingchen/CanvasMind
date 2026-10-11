@@ -26,13 +26,44 @@ import { isMiaowuLegacyVideoBaseConnector, isMiaowuUnverifiedAutoVideoContract, 
 import { getModelParameterDescriptor, validateModelParameters } from "./cli-contracts.js";
 import { chatMediaOutputs } from "./chat-image-output.js";
 import { isJiasuApiUrl, jiasuVideoGroupMismatch } from "./jiasu-video-contract.js";
-import { isJijiuApiUrl, jijiuVideoGroupMismatch } from "./jijiu-video-contract.js";
+import { isJijiuApiUrl, jijiuVideoGroupMismatch, isJijiuWanVideoModel, jijiuVideoTransport } from "./jijiu-video-contract.js";
+import { prepareJijiuWanFiles } from "./jijiu-wan-files.server.js";
 import { uploadJiasuMedia } from "./jiasu-media.js";
+import { isMikotoGptImage } from "./mikoto-image-contract.js";
+import { supplierImageParameterIssues } from "./supplier-image-constraints.js";
+import { applyUserImageSizePresets, resolveUserImageSizeParameters } from "./image-size-presets.js";
 
-function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor, assets?: readonly ProviderAssetInput[]): RemainingVideoContext {
+/** Existing native rules apply to exact current automatic group5/16 inventories. */
+function usesMikotoSavedImageParameterContract(connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>, request: NormalizedRequest): boolean {
+  const settings = connection.settings ?? {};
+  const groupId = String(settings.accountKeyGroupId);
+  const groupName = String(settings.accountKeyGroup ?? settings.modelGroup);
+  if (!request.operation.startsWith("image.") || !["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(request.model ?? "") ||
+      settings.preset !== "mikoto-pro" || settings.supplierKey !== "mikoto" || settings.customGroup === true ||
+      !((groupId === "5" && groupName === "生图（1k）") || (groupId === "16" && groupName === "生图（2k4k 中质量）")) ||
+      !Array.isArray(settings.scannedModelIds) || !settings.scannedModelIds.includes(request.model) ||
+      !isMikotoGptImage(imageEditingConnection(connection), "gpt-image-2")) return false;
+  const manual = (settings.autoModelInterfaces as Record<string, unknown> | undefined)?.[request.model!];
+  if (manual) return false;
+  const models = settings.modelCatalogModels;
+  const model = Array.isArray(models) ? (models as ModelDescriptor[]).find(m => m.id === request.model) : undefined;
+  return model?.metadata?.source !== "manual" && model?.metadata?.protocolEvidence !== "paid-test";
+}
+/** Only the saved automatic group5 exact2.5 contract uses app ratio/tier fields. */
+function usesMikotoOneKCanvasPreferences(connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>, request: NormalizedRequest): boolean {
+  return usesMikotoSavedImageParameterContract(connection, request) && String(connection.settings?.accountKeyGroupId) === "5" &&
+    ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(request.model ?? "");
+}
+function mikotoSizeOnlyRequest(request: NormalizedRequest): NormalizedRequest {
+  const parameters = { ...request.parameters };
+  for (const key of ["size_tier", "aspect_ratio", "aspectRatio", "ratio"]) delete parameters[key];
+  return { ...request, parameters };
+}
+
+function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor, assets?: readonly ProviderAssetInput[], baseUrl?: unknown): RemainingVideoContext {
   const group = settings?.accountKeyGroup ?? settings?.modelGroup ?? settings?.group ?? settings?.supplierGroupId;
   const description = settings?.supplierGroupDescription ?? settings?.groupDescription;
-  return { ...(typeof group === "string" ? { group } : {}), ...(typeof description === "string" ? { groupDescription: description } : {}), ...(model ? { model } : {}), ...(assets ? { assets } : {}) };
+  return { baseUrl, manualProtocol: settings?.manualProtocol, ...(typeof group === "string" ? { group } : {}), ...(typeof description === "string" ? { groupDescription: description } : {}), ...(model ? { model } : {}), ...(assets ? { assets } : {}) };
 }
 /** Current Miaowu core routes replace only automatic directory mappings. */
 export function preservesMiaowuExplicitVideoContract(config: Readonly<Record<string, unknown>>, model: ModelDescriptor | undefined, operation?: ProviderOperation): boolean {
@@ -65,6 +96,7 @@ import {
   assetToBlob,
   fetchProviderJson,
   fetchProviderBytes,
+  fetchProviderTaskContent,
   mergeHeaders,
   providerFetch,
   providerSubmitTransportActive,
@@ -1011,6 +1043,8 @@ function withNearestSupportedAspectRatio(
   request: NormalizedRequest,
   config: RestConnectorConfig,
 ): NormalizedRequest {
+  // Video controls and saved supplier inputs must reach validation unchanged.
+  if (request.operation.startsWith("video.")) return request;
   const requested = request.parameters?.["aspect_ratio"];
   const requestedRatio = numericAspectRatio(requested);
   if (requestedRatio === undefined) return request;
@@ -1023,6 +1057,7 @@ function withNearestSupportedAspectRatio(
       (!parameter.operations ||
         parameter.operations.includes(request.operation)),
   );
+  if (descriptor?.allowCustomValue === true) return request;
   const candidates = (descriptor?.options ?? []).flatMap((option) => {
     const ratio = numericAspectRatio(option.value);
     return typeof option.value === "string" && ratio !== undefined
@@ -1123,7 +1158,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     if (["rest", "openai"].includes(connection.provider) && isChuangxiangVideoConnection(imageEditingConnection(connection).config, model))
       return { ...applyOverride(selected, chuangxiangVideoTransport()), assetsRequirePublicUrls: true };
     const remainingSupplier = remainingVideoSupplier(connection.baseUrl);
-    const videoContext = remainingVideoContext(connection.settings, base.models?.find(m => m.id === model), assets);
+    const videoContext = remainingVideoContext(connection.settings, base.models?.find(m => m.id === model), assets, connection.baseUrl);
     if (!this.fixedConfig && remainingSupplier && isRemainingVideoModel(remainingSupplier, model, videoContext) &&
         !preservesMiaowuExplicitVideoContract(imageEditingConnection(connection).config, videoContext.model, operation))
       return { ...applyOverride(selected, remainingVideoTransport(remainingSupplier, model!, videoContext)), assetsRequirePublicUrls: remainingVideoRequiresPublicUrls(remainingSupplier, model!, videoContext) };
@@ -1403,7 +1438,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     const connection = await this.connections.resolve(connectionId);
     const config = this.configFrom(connection);
     return (config.models ?? []).map((model) =>
-      withCanonicalModelFields({ ...model }, connection.provider),
+      withCanonicalModelFields(applyUserImageSizePresets({ ...model }), connection.provider),
     );
   }
 
@@ -1418,6 +1453,15 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     try {
       const connection = await this.connections.resolve(request.connectionId);
+      if (!this.fixedConfig && request.operation.startsWith("image.") && connection.settings?.manualProtocol !== true) {
+        const catalog = connection.settings?.modelCatalogModels;
+        const model = this.configFrom(connection).models?.find(candidate => candidate.id === request.model) ??
+          (Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(candidate => candidate?.id === request.model) : undefined);
+        request = { ...request, parameters: resolveUserImageSizeParameters(model, request.parameters) };
+      }
+      const mikotoCanvasPreferences = !this.fixedConfig && usesMikotoOneKCanvasPreferences(connection, request);
+      if (!this.fixedConfig && usesMikotoSavedImageParameterContract(connection, request))
+        issues.push(...supplierImageParameterIssues(imageEditingConnection(connection), { ...request, model: request.model! }));
       if (request.operation.startsWith("video.") && isJiasuApiUrl(connection.baseUrl) && jiasuVideoGroupMismatch(connection.settings))
         issues.push({ path: "model", code: "model_group_mismatch", message: "当前佳速 Key 绑定的分组与型号分组不一致，请同步正确分组后再生成。" });
       if (request.operation.startsWith("video.") && isJijiuApiUrl(connection.baseUrl) && jijiuVideoGroupMismatch(connection.settings))
@@ -1429,7 +1473,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       const miaowuModel = selectedModel ?? baseConfig.models?.find(model => model.id === request.model);
       const cangyuanVideo = !this.fixedConfig && isCangyuanVideoRequest(request.model, connection.baseUrl);
       const remainingSupplier = !this.fixedConfig && !preservesMiaowuExplicitVideoContract(imageEditingConnection(connection).config, miaowuModel, request.operation) ? remainingVideoSupplier(connection.baseUrl) : undefined;
-      const videoContext = remainingVideoContext(connection.settings, baseConfig.models?.find(m => m.id === request.model), request.assets);
+      const videoContext = remainingVideoContext(connection.settings, baseConfig.models?.find(m => m.id === request.model), request.assets, connection.baseUrl);
       const remainingVideo = remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext);
       if (request.operation.startsWith("video.") && !remainingVideo && isMiaowuUnverifiedAutoVideoContract(imageEditingConnection(connection).config, miaowuModel, baseConfig, request.operation))
         issues.push({ path: "model", code: "interface_unavailable", message: `${MIAOWU_VIDEO_CONTRACT_PENDING_REASON}，当前生成尚未提交` });
@@ -1746,7 +1790,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         : videoRequest ? { ...request, parameters: normalizeChuangxiangVideoParameters(request) }
         : cangyuanVideo ? { ...request, parameters: normalizeCangyuanVideoParameters(request) }
         : remainingVideo ? { ...request, parameters: normalizeRemainingVideoParameters(remainingSupplier!, request, videoContext) } : request;
-      const body = await this.buildBody(config.submit, preflightRequest, undefined);
+      const body = await this.buildBody(config.submit, mikotoCanvasPreferences ? mikotoSizeOnlyRequest(preflightRequest) : preflightRequest, undefined);
       const method = config.submit.method ?? (body === undefined ? "GET" : "POST");
       const bodyMode = config.submit.bodyMode ?? (method === "GET" || method === "DELETE" ? "none" : "json");
       this.transparentSubmitBody(connection, request, this.resolveUrl(connection.baseUrl, config.submit.path, config), method, bodyMode, body);
@@ -1766,6 +1810,12 @@ export class GenericRestAdapter implements ProviderAdapter {
   public async submit(request: NormalizedRequest): Promise<ProviderTask> {
     assertValidResult(await this.validate(request));
     const connection = await this.connections.resolve(request.connectionId);
+    if (!this.fixedConfig && request.operation.startsWith("image.") && connection.settings?.manualProtocol !== true) {
+      const catalog = connection.settings?.modelCatalogModels;
+      const model = this.configFrom(connection).models?.find(candidate => candidate.id === request.model) ??
+        (Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(candidate => candidate?.id === request.model) : undefined);
+      request = { ...request, parameters: resolveUserImageSizeParameters(model, request.parameters) };
+    }
     let config = this.configFrom(
       connection,
       request.model,
@@ -1795,6 +1845,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     let outboundRequest = withNearestSupportedAspectRatio({ ...request,
       parameters: normalizeImageEditingParameters(editingConnection, request.model ?? "", request.parameters) }, config);
+    if (!this.fixedConfig && usesMikotoOneKCanvasPreferences(connection, request)) outboundRequest = mikotoSizeOnlyRequest(outboundRequest);
     if (!this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl)) {
       outboundRequest = withCangyuanMusicRequestParameters(request);
       config = { ...config, ...cangyuanMusicTransport(outboundRequest.parameters?.audio_format, request.model) };
@@ -1815,8 +1866,12 @@ export class GenericRestAdapter implements ProviderAdapter {
     if (videoRequest) outboundRequest = { ...outboundRequest, parameters: normalizeChuangxiangVideoParameters(outboundRequest) };
     if (!this.fixedConfig && isCangyuanVideoRequest(request.model, connection.baseUrl)) outboundRequest = { ...outboundRequest, parameters: normalizeCangyuanVideoParameters(outboundRequest) };
     const remainingSupplier = !this.fixedConfig && !preservesMiaowuExplicitVideoContract(imageEditingConnection(connection).config, config.models?.find(model => model.id === request.model), request.operation) ? remainingVideoSupplier(connection.baseUrl) : undefined;
-    const videoContext = remainingVideoContext(connection.settings, config.models?.find(m => m.id === request.model), outboundRequest.assets);
+    const videoContext = remainingVideoContext(connection.settings, config.models?.find(m => m.id === request.model), outboundRequest.assets, connection.baseUrl);
     if (remainingSupplier && isRemainingVideoModel(remainingSupplier, request.model, videoContext)) outboundRequest = { ...outboundRequest, parameters: normalizeRemainingVideoParameters(remainingSupplier, outboundRequest, videoContext) };
+    if (remainingSupplier === "jijiu" && isJijiuWanVideoModel(request.model)) {
+      outboundRequest = await prepareJijiuWanFiles(outboundRequest, this.fetchImpl);
+      config = { ...config, ...jijiuVideoTransport(request.model, outboundRequest), assetsRequirePublicUrls: false };
+    }
     let videoOutputParameters: Record<string, unknown> | undefined;
     const received = await this.execute(
       connection,
@@ -2043,7 +2098,9 @@ export class GenericRestAdapter implements ProviderAdapter {
     };
     const compatibilityFallbackPaths =
       config.output.kind === "video"
-        ? ["$.video_url", "$.metadata.video_url", "$.metadata.url"]
+        // Saved task contracts can predate a supplier's nested video receipt.
+        // Keep all declared/legacy paths ahead of this compatibility fallback.
+        ? ["$.video_url", "$.metadata.video_url", "$.metadata.url", "$.video.url"]
         : [];
     const candidates = [
       config.output.path,
@@ -2162,8 +2219,20 @@ export class GenericRestAdapter implements ProviderAdapter {
     const download = async (url: string): Promise<RemoteArtifact> => {
       if (!matchesContent(url)) throw new Error("REST task content URL does not match the completed task");
       const headers = this.headers(connection, config, { path: content.path, method: "GET", bodyMode: "none" });
-      const downloaded = await fetchProviderBytes((input, init) => this.fetchImpl(input, { ...init, method: "GET", headers }), url,
+      const jijiuPaths = [`/v1/videos/${encodeURIComponent(taskId)}/content`, `/v1/tasks/${encodeURIComponent(taskId)}/artifacts/video/content`];
+      const jijiuContent = config.output.kind === "video" && isJijiuApiUrl(baseUrl) && jijiuPaths.includes(new URL(url).pathname);
+      // Jijiu returns an authenticated 302 to its public file CDN. Read that
+      // one response manually; never follow it with the provider's headers.
+      const fetchContent = jijiuContent ? fetchProviderTaskContent : fetchProviderBytes;
+      const downloaded = await fetchContent((input, init) => this.fetchImpl(input, { ...init, method: "GET", headers }), url,
         { phase: "archive", timeoutMs: this.requestTimeoutMs, maxResponseBytes: config.output.kind === "image" ? 64 * 1024 * 1024 : 200 * 1024 * 1024 });
+      if ("redirectUrl" in downloaded) {
+        const target = new URL(downloaded.redirectUrl);
+        if (target.origin === new URL(baseUrl).origin && !jijiuPaths.includes(target.pathname))
+          throw new Error("REST task content redirect does not match the completed task");
+        return { kind: config.output.kind, url: downloaded.redirectUrl,
+          ...(config.output.defaultMimeType ? { mimeType: config.output.defaultMimeType } : {}) };
+      }
       if (!downloaded.data.length) throw new Error("REST task content was empty");
       return { kind: config.output.kind, data: downloaded.data,
         ...((downloaded.mimeType ?? config.output.defaultMimeType) ? { mimeType: downloaded.mimeType ?? config.output.defaultMimeType } : {}) };

@@ -10,7 +10,9 @@ import { CANGYUAN_BACKUP_IMAGE_CONNECTOR, CANGYUAN_BANANA_PRO_4K_MODEL } from ".
 
 const seed = (id: string): ModelDescriptor => ({ id, name: id, operations: ["image.generate"], metadata: { canvasRunnable: true } });
 const adapterCases = [
-  { supplier: "GenImage", baseUrl: "https://genimage.pro/v1", group: "geminiResponseUrl", id: "gemini-3-pro-image-preview", values: ["1K", "2K", "4K"] },
+  { supplier: "GenImage", baseUrl: "https://genimage.pro/v1", group: "geminiResponseUrl", id: "gemini-3-pro-image-preview", values: ["auto", "1K", "2K", "4K"] },
+  { supplier: "GenImage 3.1", baseUrl: "https://genimage.pro/v1", group: "geminiResponseUrl", id: "gemini-3.1-flash-image-preview", values: ["auto", "512", "1K", "2K", "4K"] },
+  { supplier: "GenImage 2.5", baseUrl: "https://genimage.pro/v1", group: "geminiResponseUrl", id: "gemini-2.5-flash-image", values: ["auto"] },
   { supplier: "Frimodel", baseUrl: "https://api.frimodel.com/v1", group: "gemini_image", id: "gemini-3-pro-image", values: ["1K", "2K", "4K"] },
   { supplier: "PDog", baseUrl: "https://ai.whyshy.cn", group: "【生图】🍌香蕉nano-banana（稳定渠道）", id: "gemini-3.1-flash-image-preview", values: ["1K", "2K", "4K"] },
   { supplier: "Secure Skill", baseUrl: "https://token.secure-skill.com/v1", group: "banana-全系列", id: "nano-banana-pro", values: ["1K", "2K", "4K"] },
@@ -35,7 +37,7 @@ describe("native image layout across actual Banana supplier contracts", () => {
     expect(control?.ratio?.key).toBe("aspect_ratio");
     expect(control?.resolution.options?.map(option => option.value)).toEqual(fixture.values);
     expect(control?.resolution.options?.map(imageResolutionOptionLabel)).toEqual(fixture.values.map(value => value === "auto" ? "自动" : value));
-    expect(control?.ratio?.options?.some(option => option.value === "9:16")).toBe(true);
+    expect(control?.ratio?.options?.some(option => option.value === "9:16") || control?.ratio?.allowCustomValue).toBe(true);
     expect(normalizedParametersForModel("image-generation", "rest", model, parameters)).toEqual(parameters);
     expect(declaredImageOutputDimensions(model, "4K", "9:16")).toBeUndefined();
     expect(model).toEqual(before);

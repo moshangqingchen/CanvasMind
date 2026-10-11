@@ -85,7 +85,7 @@ describe("exact image editing capabilities", () => {
     expect(getImageEditingCapabilities(connection("api.frimodel.com"), "gpt-image-2-high").mask).toBe(null);
     for (const family of ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])
       for (const tier of ["1k", "2k", "4k"])
-        expect(getImageEditingCapabilities(connection("vapi.chuangxiangai.asia", "生图"), `${family}-${tier}`).mask).toBe("url");
+        expect(getImageEditingCapabilities(connection("vapi.chuangxiangai.asia", "生图"), `${family}-${tier}`).mask).toBe(family === "gpt-image-2" ? "url" : null);
   });
 
   it("requires one PNG mask and an original on image.edit", () => {
@@ -167,7 +167,7 @@ describe("actual transparent and mask transport", () => {
   it("sends Chuangxiang HTTPS mask outside the nine-reference budget", async () => {
     const f = fixture("vapi.chuangxiangai.asia", "生图");
     const originals = Array.from({ length: 9 }, (_, i) => ({ ...original, id: `ref${i}`, url: `https://assets.example/${i}.png` }));
-    await f.adapter.submit({ ...edit, model: "gpt-image-2.5-flare-4k", assets: [...originals, mask] });
+    await f.adapter.submit({ ...edit, model: "gpt-image-2-4k", assets: [...originals, mask] });
     expect(String(f.fetch.mock.calls[0]![0])).toBe("https://vapi.chuangxiangai.asia/v1/images/edits");
     expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toMatchObject({ images: originals.map(a => a.url), mask: mask.url });
   });

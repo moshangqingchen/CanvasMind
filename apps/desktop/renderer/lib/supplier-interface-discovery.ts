@@ -59,7 +59,7 @@ function nativeContract(connection: Connection, model: ModelDescriptor): ModelDe
     const endpoints = model.metadata?.endpointTypes;
     const descriptor = cyberAfeiDocumentedModel(model.id, Array.isArray(endpoints) && endpoints.length ? {
       endpointTypes: endpoints.filter((value): value is string => typeof value === "string"),
-    } : undefined);
+    } : undefined, { baseUrl: connection.config.baseUrl, manualProtocol: connection.config.manualProtocol, group: String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? ""), model });
     if (descriptor && (!declaredOutput || modelGenerationMediaKinds(model).join("+") === modelGenerationMediaKinds(descriptor).join("+"))) {
       const metadata: Record<string, unknown> = { ...model.metadata, ...descriptor.metadata, canvasRunnable: true };
       delete metadata.canvasUnavailableReason;
@@ -73,6 +73,8 @@ function nativeContract(connection: Connection, model: ModelDescriptor): ModelDe
       connection.config.supplierArchived !== true && !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
       (!Array.isArray(connection.config.scannedModelIds) || connection.config.scannedModelIds.includes(model.id))) {
     const descriptor = remainingVideoModel(remainingSupplier, model.id, model, {
+      baseUrl: connection.config.baseUrl,
+      manualProtocol: connection.config.manualProtocol,
       group: String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? ""),
       groupDescription: String(connection.config.supplierGroupDescription ?? connection.config.groupDescription ?? ""),
     });

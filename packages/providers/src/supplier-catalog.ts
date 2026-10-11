@@ -14,9 +14,12 @@ import { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js
 import { HANG_PRICE_URL, isHangCatalogSource, parseHangChatPrices } from "./hang-catalog-pricing.js";
 import { isSynoraLedgerSource, readSynoraLedgerPrices, type SupplierLedgerPrice } from "./supplier-ledger-pricing.js";
 import { isJiasuCatalogSource, jiasuCatalogMediaKind, jiasuCatalogMediaPricing, jiasuCatalogRecord } from "./jiasu-catalog-pricing.js";
+import { jiasuVideoApiExampleContract, readJiasuVideoApiExampleTemplate } from "./jiasu-api-examples.js";
+import { latestJiasuVideoApiExampleContract, type JiasuVideoApiExampleContract } from "./jiasu-api-example-contract.js";
 import { isJijiuCatalogSource, jijiuCatalogMediaPricing } from "./jijiu-catalog-pricing.js";
 import { isJijiuApiUrl, jijiuVideoModel } from "./jijiu-video-contract.js";
 import { applyJijiuImageCapabilities } from "./jijiu-image-contract.js";
+import { normalizeCangyuanAudioCatalogModel } from "./cangyuan-audio-catalog.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
@@ -321,7 +324,7 @@ export function parseSupplierCatalog(
       group.models.length < 3000 &&
       !group.models.some((item) => item.id === model.id)
     )
-      group.models.push(model);
+      group.models.push(normalizeCangyuanAudioCatalogModel(model, priceDisplay.supplierSiteUrl, id));
     byGroup.set(key, group);
   };
   if (Array.isArray(nestedGroups)) {
@@ -393,6 +396,7 @@ export function parseSupplierCatalog(
     raw: unknown,
     id: string,
   ) => {
+    model = normalizeCangyuanAudioCatalogModel(model, priceDisplay.supplierSiteUrl, id, raw);
     if (isJijiuCatalogSource(priceDisplay.supplierSiteUrl) && (model.capability === "image" || model.capability === "video")) {
       const descriptor: ModelDescriptor = { id: model.id, name: model.name ?? model.id, operations: [], metadata: model.metadata ?? {},
         ...(model.outputKinds ? { outputKinds: model.outputKinds } : {}) };
@@ -516,7 +520,7 @@ export function supplierModelUrls(apiUrl: string): string[] {
 
 /** The separate model-price page groups models under channels and platforms. */
 export function parseSupplierPricingChannels(payload: unknown, currency?: string,
-  source: { supplierSiteUrl?: string; checkedAt?: string } = {}): DiscoveredSupplierGroup[] {
+  source: { supplierSiteUrl?: string; checkedAt?: string; sourceUrl?: string } = {}): DiscoveredSupplierGroup[] {
   const root = record(payload);
   if (root?.success === false || (typeof root?.code === "number" && ![0, 200].includes(root.code))) return [];
   const channels = Array.isArray(root?.data) ? root.data : record(root?.data)?.channels;
@@ -554,13 +558,27 @@ export function parseSupplierPricingChannels(payload: unknown, currency?: string
           const intervals = Array.isArray(pricing?.intervals) ? pricing.intervals.map(record).filter(item => item && typeof item.per_request_price === "number") : [];
           const secure = secureSkillCatalogPricing(row, { supplierSiteUrl: source.supplierSiteUrl ?? "", multiplier, group: rawGroup,
             ...(source.checkedAt ? { checkedAt: source.checkedAt } : {}) });
-          const priceLabel = secure?.priceLabel ?? (intervals.length
+          // AvailableChannelsView's image popup formats per_request_price
+          // directly as USD (scale=1), without its token group multiplier.
+          // This convention belongs to this exact deployed Mikoto endpoint.
+          const channelImagePrice = source.supplierSiteUrl === "https://api.mikoto.vip" &&
+            source.sourceUrl === "https://api.mikoto.vip/api/v1/channels/available" && pricing?.billing_mode === "image" &&
+            rawGroup.peak_rate_enabled !== true && !intervals.length && typeof pricing.per_request_price === "number" &&
+            Number.isFinite(pricing.per_request_price) && pricing.per_request_price >= 0 ? pricing.per_request_price : undefined;
+          const priceLabel = channelImagePrice !== undefined
+            ? catalogPriceLabel(row, { currency: "USD", multiplier: 1 }) : secure?.priceLabel ?? (intervals.length
             ? intervals.map(tier => `${text(tier!.tier_label)} ${catalogPriceLabel({ pricing: { ...pricing, per_request_price: tier!.per_request_price } }, { ...(currency ? { currency } : {}), multiplier }) ?? ""}`).join(" · ")
             : catalogPriceLabel(row, { ...(currency ? { currency } : {}), multiplier }));
           const incoming = { ...model, ...(priceLabel ? { priceLabel } : {}), metadata: { ...model.metadata,
             supplierChannelDescription: typeof channel.description === "string" ? channel.description.slice(0, 8000) : "",
             priceSource: "supplier-price-page",
             supplierPriceChannel: text(channel.name),
+            supplierPricePlatform: text(platform.platform),
+            ...(source.sourceUrl ? { supplierPriceSourceUrl: source.sourceUrl } : {}),
+            ...(source.checkedAt ? { supplierPriceCheckedAt: source.checkedAt } : {}),
+            ...(channelImagePrice !== undefined ? { officialCatalogPricing: { kind: "per-image", currency: "USD", billingUnit: "image",
+              unitAmount: channelImagePrice, sourceUrl: source.sourceUrl!, checkedAt: source.checkedAt ?? "", confidence: "exact" },
+              officialCatalogPriceGroupVerified: !!officialId, supplierChannelPriceDisplayMultiplier: 1 } : {}),
             ...(secure ? { secureSkillCatalogPricing: secure.pricing } : {}),
           } };
           const index = group.models.findIndex(item => item.id === model.id);
@@ -581,6 +599,9 @@ export async function discoverSupplierCatalog(
     kind?: SupplierSiteKind;
     token?: string;
     signal?: AbortSignal;
+    /** Internal refresh receipt. Reused evidence retains its actual read time. */
+    refreshId?: string;
+    reusedJiasuApiExamples?: readonly { groupId: string; supplierGroupId?: string; contract: JiasuVideoApiExampleContract }[];
   },
   fetchImpl: FetchImplementation = providerFetch,
 ): Promise<SupplierCatalogDiscovery> {
@@ -704,6 +725,7 @@ export async function discoverSupplierCatalog(
     });
   };
   const pricePage = async (groups: DiscoveredSupplierGroup[]) => {
+    let fallbackPriceSource: string | undefined;
     if (isHangCatalogSource(siteUrl)) {
       // This host is linked by the supplier's own pricing page. Never pass
       // account headers/cookies to the independent public price service.
@@ -720,26 +742,47 @@ export async function discoverSupplierCatalog(
         if (index < 0) group.models.push(priced); else group.models[index] = { ...group.models[index]!, ...priced };
         merged.set(row.group, group);
       }
-      return { groups: distinctGroupNames([...merged.values()]), complete: response.status === 200 && parsed.complete };
+      groups = distinctGroupNames([...merged.values()]);
+      if (response.status === 200 && parsed.complete) return { groups, complete: true, legacyRequired: false };
+      fallbackPriceSource = `${siteUrl}/api/v1/channels/available`;
     }
-    const response = await probe(`${siteUrl}/api/v1/pricing/channels`, siteHeaders("sub2api"));
-    const payload = record(response.payload);
-    const channels = Array.isArray(payload?.data) ? payload.data : record(payload?.data)?.channels;
     // A missing/blocked page cannot establish an empty price catalogue. Only
     // the real channel envelope (including a genuinely empty array) can do so.
-    const complete = response.status === 200 && !!payload && payload.success !== false && !payload.error &&
-      !(typeof payload.code === "number" && ![0, 200].includes(payload.code)) && Array.isArray(channels) &&
-      channels.every(value => {
-        const channel = record(value);
-        return !!channel && Array.isArray(channel.platforms) && channel.platforms.every(value => {
-          const platform = record(value);
-          return !!platform && Array.isArray(platform.groups) && Array.isArray(platform.supported_models);
+    const channelPageComplete = (response: { status: number; payload?: unknown }) => {
+      const payload = record(response.payload);
+      const channels = Array.isArray(payload?.data) ? payload.data : record(payload?.data)?.channels;
+      return response.status === 200 && !!payload && payload.success !== false && !payload.error &&
+        !(typeof payload.code === "number" && ![0, 200].includes(payload.code)) && Array.isArray(channels) &&
+        channels.every(value => {
+          const channel = record(value);
+          return !!channel && Array.isArray(channel.platforms) && channel.platforms.every(value => {
+            const platform = record(value);
+            return !!platform && Array.isArray(platform.groups) && Array.isArray(platform.supported_models);
+          });
         });
-      });
+    };
+    let sourceUrl = fallbackPriceSource ?? `${siteUrl}/api/v1/pricing/channels`;
+    let response = await probe(sourceUrl, siteHeaders("sub2api"));
+    let complete = channelPageComplete(response);
+    if (!complete && !fallbackPriceSource && ["https://asian-acc.we-token.cc", "https://api.mikoto.vip", "https://api.eaheng.com", "https://tu.988236.xyz",
+      "https://api.hangzhale.com", "https://synoralink.com", "https://vapi.chuangxiangai.asia"].includes(siteUrl)) {
+      // These sites expose channel prices in their deployed available-channel
+      // screen even when the newer model plaza is disabled. Preserve the old
+      // price entry and We-AI legacy fallback if this account read also fails.
+      sourceUrl = `${siteUrl}/api/v1/channels/available`;
+      response = await probe(sourceUrl, siteHeaders("sub2api"));
+      complete = channelPageComplete(response);
+    }
     // Secure Skill's current price page explicitly displays CNY (see the
     // 2026-09-23 price/usage audit); this is a currency convention, not a price.
     const currency = new URL(siteUrl).hostname === "token.secure-skill.com" ? "CNY" : undefined;
-    const prices = complete ? parseSupplierPricingChannels(response.payload, currency, { supplierSiteUrl: siteUrl, checkedAt }) : [];
+    const prices = complete ? parseSupplierPricingChannels(response.payload, currency, { supplierSiteUrl: siteUrl, checkedAt, sourceUrl }) : [];
+    // Reading one channel list does not establish empty models/prices for
+    // other account groups omitted by that independent screen.
+    if (complete && sourceUrl.endsWith("/api/v1/channels/available")) {
+      const covered = new Set(prices.map(groupIdentity));
+      complete = groups.every(group => covered.has(groupIdentity(group)));
+    }
     const merged = new Map(groups.map(group => [groupIdentity(group), group]));
     for (const price of prices) {
       const key = groupIdentity(price);
@@ -747,7 +790,10 @@ export async function discoverSupplierCatalog(
       if (!previous) { merged.set(key, price); continue; }
       merged.set(key, mergeCatalogGroups(previous, price));
     }
-    return { groups: distinctGroupNames([...merged.values()]), complete };
+    // We-AI's independent legacy page contains model prices even when this
+    // available-channel screen returns a successful, genuinely empty array.
+    const legacyRequired = siteUrl === "https://asian-acc.we-token.cc" && sourceUrl.endsWith("/api/v1/channels/available");
+    return { groups: distinctGroupNames([...merged.values()]), complete, legacyRequired };
   };
   const fallbackGroups = async (
     platform: "newapi" | "sub2api",
@@ -768,7 +814,7 @@ export async function discoverSupplierCatalog(
     }
     const priced = await pricePage(result.groups);
     const accountComplete = available?.status === "live" || available?.status === "empty";
-    if (!priced.complete && isWeAiLegacyCatalogSource(siteUrl)) {
+    if ((!priced.complete || priced.legacyRequired) && isWeAiLegacyCatalogSource(siteUrl)) {
       const legacy = await readWeAiLegacyCatalog(siteUrl, fetchImpl, siteHeaders("sub2api"), input.signal);
       const merged = new Map(priced.groups.map(group => [groupIdentity(group), group]));
       for (const evidence of legacy.groups) {
@@ -816,6 +862,30 @@ export async function discoverSupplierCatalog(
   };
   const supplementGroups = async (parsed: ReturnType<typeof parseSupplierCatalog>, platform: "newapi" | "sub2api",
     currentPrice?: { payload: unknown; options: Parameters<typeof parseSupplierCatalog>[1] }) => {
+    if (platform === "newapi" && isJiasuCatalogSource(siteUrl)) {
+      const reusable = (input.refreshId ? input.reusedJiasuApiExamples ?? [] : []).filter(row =>
+        latestJiasuVideoApiExampleContract(row.contract.modelId, row.contract)?.sourceStatus === "live");
+      const endpoint = record(record(record(currentPrice?.payload)?.supported_endpoint)?.["openai-video"]);
+      const matchingReuse = (group: DiscoveredSupplierGroup, modelId: string) => reusable.find(row => row.contract.modelId === modelId &&
+        row.contract.submitPath === endpoint?.path && row.contract.submitMethod === endpoint.method && (row.supplierGroupId !== undefined
+          ? row.supplierGroupId === group.supplierGroupId : group.supplierGroupId === undefined && row.groupId === group.id))?.contract;
+      const allCovered = reusable.length > 0 && parsed.groups.some(group => group.models.some(model => model.capability === "video")) &&
+        parsed.groups.every(group => group.models.every(model => model.capability !== "video" || matchingReuse(group, model.id)));
+      const template = allCovered ? undefined : await readJiasuVideoApiExampleTemplate(fetchImpl, checkedAt, input.signal);
+      parsed = { ...parsed, groups: parsed.groups.map(group => ({ ...group, models: group.models.map(model => {
+        if (model.capability !== "video") return model;
+        const reused = matchingReuse(group, model.id);
+        const currentContract = template && typeof endpoint?.path === "string" && typeof endpoint.method === "string"
+          ? jiasuVideoApiExampleContract(model.id, template, { path: endpoint.path, method: endpoint.method }) : undefined;
+        const contract = latestJiasuVideoApiExampleContract(model.id, reused, currentContract);
+        return { ...model, metadata: { ...model.metadata,
+          jiasuApiExampleScanStatus: contract && (allCovered || currentContract) ? "live" : "partial",
+          jiasuApiExampleCheckedAt: allCovered && contract ? contract.checkedAt : checkedAt,
+          ...(input.refreshId ? { jiasuApiExampleRefreshId: input.refreshId } : {}),
+          ...(contract ? { jiasuApiExampleContract: contract,
+            jiasuCatalogRecord: { ...record(model.metadata?.jiasuCatalogRecord), apiExampleContract: contract } } : {}) } };
+      }) })) };
+    }
     if (platform === "sub2api") parsed = { ...parsed, groups: (await pricePage(parsed.groups)).groups };
     const available = await keyGroups(platform);
     if (available?.status === "live" || available?.status === "empty") {

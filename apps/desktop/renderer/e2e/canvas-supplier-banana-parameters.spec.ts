@@ -23,13 +23,13 @@ const cyber = cyberAfeiCatalogFromPricing({ data: [{ model_name: "gemini-3.1-fla
 type Fixture = { supplier: string; model: ModelDescriptor; key: string; ratioKey: string; values: string[]; labels: string[]; pixels?: boolean; referencePixels?: Record<string, readonly [number, number]> };
 const fixtures: Fixture[] = [
   { supplier: "GenImage", model: banana("https://genimage.pro/v1", "geminiResponseUrl", "gemini-3-pro-image-preview"),
-    key: "image_size", ratioKey: "aspect_ratio", values: ["1K", "2K", "4K"], labels: ["1K", "2K", "4K"] },
+    key: "image_size", ratioKey: "aspect_ratio", values: ["auto", "1K", "2K", "4K"], labels: ["自动", "1K", "2K", "4K"], pixels: true },
   { supplier: "PDog", model: banana("https://ai.whyshy.cn", "【生图】🍌香蕉nano-banana（稳定渠道）", "gemini-3.1-flash-image-preview"),
     key: "image_size", ratioKey: "aspect_ratio", values: ["1K", "2K", "4K"], labels: ["1K", "2K", "4K"] },
   { supplier: "Secure Skill Lite", model: banana("https://token.secure-skill.com/v1", "banana-全系列", "nano-banana-2-lite"),
     key: "image_size", ratioKey: "aspect_ratio", values: ["1K"], labels: ["1K"] },
   { supplier: "We-AI compatible", model: weAIModelDescriptors("gemini-3-pro-image", true, WEAI_GEMINI_MODEL_GROUP, "gemini-openai-compatible")[0]!,
-    key: "size", ratioKey: "aspect_ratio", values: ["auto", "1K", "2K", "4K"], labels: ["自动", "1K", "2K", "4K"] },
+    key: "size", ratioKey: "aspect_ratio", values: ["auto", "1K", "2K", "4K"], labels: ["自动", "1K", "2K", "4K"], pixels: true },
   { supplier: "Cangyuan Nano 2.1", model: cangyuanCurrentModel(seed("gemini-nano-banana-2.1")),
     // This supplier's current schema explicitly accepts auto as its native 1K default.
     key: "quality", ratioKey: "aspect_ratio", values: ["1k", "2k", "4k", "auto"], labels: ["1K", "2K", "4K", "自动"], pixels: true,
@@ -156,7 +156,7 @@ for (const fixture of fixtures) test(`${fixture.supplier} 的 Banana 档位保�
 
 test("精确尺寸枚举显示统一档位与只读像素，保持原始 size 并保存恢复", async ({ page, request }, testInfo) => {
   const model: ModelDescriptor = { id: "isolated-exact-size", name: "精确尺寸枚举验收", operations: ["image.generate"],
-    outputKinds: ["image"], metadata: { canvasRunnable: true, qualitySupport: "provider-decided" }, parameters: [{
+    outputKinds: ["image"], metadata: { canvasRunnable: true, qualitySupport: "provider-decided", imageSizeOptionsCompleteEnum: true }, parameters: [{
       key: "size", label: "精确尺寸", control: "select", valueType: "string", required: true, default: "auto",
       options: [
         { label: "自动", value: "auto" },

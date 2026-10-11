@@ -1,7 +1,6 @@
 "use client";
-import { cleanModelDisplayName, modelPriceSummary } from "../lib/model-display";
-import { EVIDENCE_LABELS } from "../lib/supplier-capabilities";
-import type { ImageCapabilityEvidence } from "@super-canvas/db";
+import { cleanModelDisplayName } from "../lib/model-display";
+import { modelPickerInventoryFact, modelPickerPriceData, modelPickerPriceLabelData } from "../lib/model-picker-data";
 import { SupplierVerificationPanel } from "./supplier-verification-panel";
 import { useSupplierVerificationRevision } from "../lib/use-supplier-verification-revision";
 import { useSettingsDraft, useSettingsLeaveGuard } from "./settings-draft-guard";
@@ -77,7 +76,7 @@ import {
 } from "../lib/client-suppliers";
 import { supplierConnectionDraft } from "../lib/supplier-connection-draft";
 import "./supplier-manager.css";
-import { inventoryModels, modelAvailability } from "../lib/model-availability";
+import { inventoryModels } from "../lib/model-availability";
 import { buildSupplierRefreshResult, recordSupplierRefreshResult, refreshAllSuppliers, refreshSupplier, supplierRefreshStatus, subscribeSupplierRefresh, type SupplierRefreshProgress, type SupplierRefreshResult } from "../lib/refresh-suppliers";
 import { SupplierRefreshDetails, SupplierRefreshIndicator } from "./supplier-refresh-details";
 import { supplierCatalogDisplayPrice, supplierModelDirectoryDiff } from "../lib/supplier-model-directory-diff";
@@ -135,8 +134,8 @@ function catalogStatus(record?: SupplierRecord): string {
   if (record.scanStatus === "empty") return "未发现公开目录";
   if (record.scanErrorCode === "rate_limited") return "站点限流，稍后重试";
   if (record.scanErrorCode === "verification_required") return "站点需要验证";
-  if (record.scanErrorCode === "unsupported_platform") return "平台类型待确认";
-  if (record.scanStatus === "unauthorized") return "站点登录待确认";
+  if (record.scanErrorCode === "unsupported_platform") return "平台类型：—";
+  if (record.scanStatus === "unauthorized") return "站点认证失败";
   return "扫描未完成";
 }
 
@@ -691,7 +690,7 @@ export function SupplierManager({
             <p className="sm-muted">分开核对目录、模型、接口与账号账务。查看每家详情可定位失败项目与本次变化；刷新只读取资料。</p>
             {!refresh.running && <p className="sm-muted">本次处理 {refresh.completed || supplierRefreshResults.length} 家，以下保留 {supplierRefreshResults.length} 家最近结果；读取时间见详情。</p>}
             <div className="sm-refresh-overview" aria-label="刷新结果统计">
-              {([["updated", "已更新"], ["partial", "待确认"], ["failed", "刷新失败"]] as const).map(([status, label]) => <div key={status} data-status={status}>
+              {([["updated", "已更新"], ["partial", "已取得部分数据"], ["failed", "刷新失败"]] as const).map(([status, label]) => <div key={status} data-status={status}>
                 <SupplierRefreshIndicator status={status} label={label} /><strong>{supplierRefreshResults.filter(result => result.status === status).length}</strong>
               </div>)}
             </div>
@@ -1955,7 +1954,7 @@ function SupplierGroup({
       {group.details && <section className="sm-group-details" aria-label={`${group.id} 分组说明`}>
         <div className="sm-group-details-heading">
           <strong>分组说明</strong>
-          <small>来源：{group.details.source === "key-groups" ? "密钥分组页" : "模型广场"}{group.details.stale ? " · 上次读取，本次未确认" : ""}</small>
+          <small>来源：{group.details.source === "key-groups" ? "密钥分组页" : "模型广场"}{group.details.stale ? " · 上次读取记录" : ""}</small>
         </div>
         {group.details.description && <p className="sm-group-description">{group.details.description}</p>}
         <div className="sm-group-facts">
@@ -1972,7 +1971,7 @@ function SupplierGroup({
               (group.details!.exclusiveResolutions && !group.details!.supportedResolutions?.includes(price.resolution));
             return <div key={price.resolution} className={unsupported ? "is-unsupported" : ""}>
               <strong>{price.resolution}</strong><span>{price.amount}</span>
-              <small>{unsupported ? "说明不支持，标价不代表可用" : group.details!.supportedResolutions?.includes(price.resolution) ? "分组说明支持" : "仅有标价，支持范围待确认"}</small>
+              <small>{unsupported ? "分组说明排除项" : group.details!.supportedResolutions?.includes(price.resolution) ? "分组说明列出项" : "分组标价项"}</small>
             </div>;
           })}</div>
           <p>保留后台原始标价；充值优惠和量大优惠见分组原文。</p>
@@ -2329,6 +2328,7 @@ function GroupConnectionEditor({
   ).map(normalizeTk1688CnyModel);
   const visibleCatalog = group.models;
   const realScan = modelStatus === "live" || modelStatus === "empty";
+  const completeDirectoryComparison = realScan && connection?.config.modelScanComplete !== false;
   const directoryDiff = supplierModelDirectoryDiff(actualModels, visibleCatalog);
   const returnedIds = new Set(actualModels.map(model => model.id));
   const modelCount = realScan ? supplierModelCount(actualModels) : "0";
@@ -2427,7 +2427,7 @@ function GroupConnectionEditor({
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           模型清单{" "}
           <span>
-            {realScan ? `Key 结果 ${modelCount}` : "Key 未验证"}
+            {realScan ? `Key 结果 ${modelCount}` : "本次 Key 目录：—"}
             {manualModels.length ? ` · 手动 ${manualModels.length}` : ""}
           </span>
         </button>
@@ -2454,7 +2454,7 @@ function GroupConnectionEditor({
         </div>
       </div>
       {group.source !== "manual" && <p className="sm-model-freshness" aria-label="官网与 Key 目录对照">
-        官网目录 {directoryDiff.catalogCount} · Key {realScan ? directoryDiff.keyCount : "目录待确认"} · 双方 {realScan ? directoryDiff.sharedCount : "待确认"} · 官网额外 {realScan ? directoryDiff.catalogOnlyIds.length : "待对照"}（仅目录）
+        官网目录 {directoryDiff.catalogCount} · Key {realScan ? directoryDiff.keyCount : "—"} · 双方 {realScan ? directoryDiff.sharedCount : "—"} · 官网额外 {realScan ? directoryDiff.catalogOnlyIds.length : "—"}（仅目录）
       </p>}
       {addingModel && (
         <div className="sm-manual-model-form">
@@ -2542,7 +2542,7 @@ function GroupConnectionEditor({
         <div className="sm-model-lists" data-source={modelSource}>
           <p className="sm-model-freshness">
             {modelInventoryLastSuccessAt(connection?.config ?? {}) ? `目录成功更新于 ${new Date(modelInventoryLastSuccessAt(connection?.config ?? {})!).toLocaleString("zh-CN")}` : "尚无目录成功更新时间"}
-            {!realScan && actualModels.length > 0 ? " · 展示上次结果，本次未确认" : " · 目录返回与实际生成核验分别记录"}
+            {!realScan && actualModels.length > 0 ? " · 上次目录记录" : " · 目录返回与实际生成核验分别记录"}
           </p>
           <div className="sm-model-filters">
             <label>模型来源 <select aria-label={`${group.id} 模型来源`} value={modelSource} onChange={event => setModelSource(event.target.value)}><option value="actual">Key 模型（{supplierModelCount(actualModels)}）</option><option value="catalog">目录参考（{supplierModelCount(visibleCatalog)}）</option><option value="missing">未再返回（{supplierModelCount(inventoryModels(connection?.config.modelRemovedModels))}）</option><option value="manual">手动添加（{manualModels.length}）</option></select></label>
@@ -2552,6 +2552,7 @@ function GroupConnectionEditor({
           </div>
           <ModelList
             key={`actual:${searchQuery}:${kindFilter}:${stateFilter}`}
+            source="actual"
             active={modelSource === "actual"} searchQuery={searchQuery} kindFilter={kindFilter} stateFilter={stateFilter}
             title="Key 实际读取"
             badge={
@@ -2560,8 +2561,8 @@ function GroupConnectionEditor({
                   ? "成功 · 空列表"
                   : "已读取"
                 : actualModels.length
-                  ? "上次结果 · 本次未确认"
-                  : "未验证"
+                  ? "上次目录记录"
+                  : "本次目录：—"
             }
             models={actualModels.map((model) => ({
               id: model.id,
@@ -2572,14 +2573,10 @@ function GroupConnectionEditor({
               kinds: descriptorKinds(model),
               runnable: modelStatus === "live" && model.metadata?.canvasRunnable !== false && model.operations.length > 0,
               verified: typeof model.metadata?.imageCapabilitiesVerifiedAt === "string",
-              priceLabel: model.metadata?.tk1688Catalog === true && model.pricing?.kind === "token" && typeof model.metadata.priceLabel === "string"
-                ? model.metadata.priceLabel
-                : `${modelPriceSummary(model, {})}${model.pricing ? " · 默认参数" : ""}`,
-              resolutionLabel: Array.isArray(model.metadata?.imageCapabilityEvidence) ? (model.metadata.imageCapabilityEvidence as ImageCapabilityEvidence[]).filter(item => item.resolution && !["unsupported"].includes(item.status)).map(item => `${item.resolution} · ${EVIDENCE_LABELS[item.status]}`).join(" / ") : typeof model.metadata?.imageVerifiedResolutionLabel === "string" ? model.metadata.imageVerifiedResolutionLabel : typeof model.metadata?.supplierGroupResolutionLabel === "string" ? model.metadata.supplierGroupResolutionLabel : undefined,
-              qualityLabel: typeof model.metadata?.imageAcceptedQualityLabel === "string" ? model.metadata.imageAcceptedQualityLabel : undefined,
+              priceLabel: modelPickerPriceData(model),
               interfaceLabel: typeof model.metadata?.autoInterfaceLabel === "string" ? model.metadata.autoInterfaceLabel : undefined,
               interfaceSource: typeof model.metadata?.documentationUrl === "string" && /^https:\/\//u.test(model.metadata.documentationUrl) ? model.metadata.documentationUrl : undefined,
-              availability: modelAvailability(model, modelStatus),
+              availability: modelPickerInventoryFact(model, modelStatus, typeof connection?.config.modelScanComplete === "boolean" ? connection.config.modelScanComplete : undefined),
               added: Array.isArray(connection?.config.modelAddedIds) && connection.config.modelAddedIds.includes(model.id),
             }))}
             empty={
@@ -2590,29 +2587,38 @@ function GroupConnectionEditor({
           />
           <ModelList
             key={`missing:${searchQuery}:${kindFilter}:${stateFilter}`}
+            source="missing"
             active={modelSource === "missing"} searchQuery={searchQuery} kindFilter={kindFilter} stateFilter={stateFilter}
-            title="上次可用，本次未再返回"
-            badge="保留记录 · 不再作为可用模型"
-            models={inventoryModels(connection?.config.modelRemovedModels).map(model => ({ ...model, capability: "other", availability: { label: "未再返回", tone: "error", detail: "最近一次成功扫描未返回此模型，可能已下架或当前 Key 已无权限" } }))}
+            title="历史差异记录"
+            badge="保留上次记录"
+            models={inventoryModels(connection?.config.modelRemovedModels).map(model => ({
+              ...model, capability: "other", availability: {
+                label: `本次返回：${realScan && returnedIds.has(model.id) ? "1" : realScan && connection?.config.modelScanComplete === true ? "0" : "—"}`,
+                tone: "unknown",
+                detail: `历史目录差异保留记录。当前扫描状态：${modelStatus}；完整目录：${connection?.config.modelScanComplete ?? "—"}。`,
+              },
+            }))}
             empty=""
           />
             <ModelList
               key={`catalog:${searchQuery}:${kindFilter}:${stateFilter}`}
+              source="catalog"
               active={modelSource === "catalog"} searchQuery={searchQuery} kindFilter={kindFilter} stateFilter={stateFilter}
               title={group.source === "manual" ? "手动目录" : "站点目录"}
-              badge="目录参考 · 未验证 Key"
+              badge="官网目录"
               models={visibleCatalog.map(model => ({ ...model, runnable: false, verified: false, availability: {
-                label: group.status === "missing" ? "分组未再返回" : !realScan ? "Key 目录待确认" : returnedIds.has(model.id) ? "Key 已返回" : "官网已列出 · 当前 Key 未返回",
+                label: group.status === "missing" ? "分组本次返回：0" : !completeDirectoryComparison ? "本次 Key 目录：—" : returnedIds.has(model.id) ? "Key 返回：1" : "当前 Key 返回：0",
                 tone: "unknown", detail: "官网目录与当前 Key 返回结果分别记录；目录缺失不等于无权限，实际调用仍需对应协议。",
               } }))}
               empty="目录未提供对应模型。"
             />
           <ModelList
             key={`manual:${searchQuery}:${kindFilter}:${stateFilter}`}
+            source="manual"
             active={modelSource === "manual"} searchQuery={searchQuery} kindFilter={kindFilter} stateFilter={stateFilter}
             title="手动添加"
-            badge="未验证"
-            models={manualModels.map(model => ({ ...model, availability: { label: "未验证", tone: "unknown", detail: "手动添加的模型尚未通过 Key 扫描确认" } }))}
+            badge="手动记录"
+            models={manualModels.map(model => ({ ...model, availability: { label: "手动记录", tone: "unknown", detail: "来源：用户手动添加的完整型号 ID。" } }))}
             empty="没有手动模型。扫描不到时可填写准确模型 ID。"
           />
           {connection && (
@@ -2662,7 +2668,6 @@ type SupplierModelListItem = SupplierCatalogModel & {
   verified?: boolean;
   availability?: { label: string; tone: string; detail: string };
   added?: boolean;
-  resolutionLabel?: string;
   qualityLabel?: string;
   interfaceLabel?: string;
   interfaceSource?: string;
@@ -2691,12 +2696,11 @@ function SupplierModelRow({ model, route = false }: { model: SupplierModelListIt
           {(model.kinds ?? (model.capability === "other" ? [] : [model.capability])).map(kind => CAPABILITY_LABELS[kind]).join(" / ")}
         </span>
         {model.protocol && model.protocol !== "unknown" && <small>{PROTOCOL_LABELS[model.protocol]}</small>}
-        {model.resolutionLabel && <small>{model.resolutionLabel}</small>}
         {model.qualityLabel && <small title={model.availability?.detail}>{model.qualityLabel}</small>}
         {model.interfaceLabel && <small>{model.interfaceLabel}{model.interfaceSource && <> · <a href={model.interfaceSource} target="_blank" rel="noreferrer">接口说明</a></>}</small>}
         {model.availability && <details className="sm-model-evidence"><summary>查看依据</summary><p>{model.availability.detail}</p></details>}
       </div>
-      <div className="sm-model-price">{supplierCatalogDisplayPrice(model)}</div>
+      <div className="sm-model-price">{modelPickerPriceLabelData(supplierCatalogDisplayPrice(model))}</div>
       {routeSummary && <p className="sm-model-route-summary">{routeSummary}</p>}
     </div>
   );
@@ -2739,12 +2743,14 @@ function Tk1688ModelCard({
 }
 
 function ModelList({
+  source,
   title,
   badge,
   models,
   empty,
   active, searchQuery, kindFilter, stateFilter,
 }: {
+  source: "actual" | "missing" | "catalog" | "manual";
   title: string;
   badge: string;
   models: readonly SupplierModelListItem[];
@@ -2766,7 +2772,7 @@ function ModelList({
   const rows = groups.length ? ordinaryRows.slice(Math.max(0, start - filteredGroups.length), Math.max(0, start + 50 - filteredGroups.length)) : filtered.slice(start, start + 50);
   const familyRows = filteredGroups.slice(start, start + 50);
   return (
-    <section className="sm-model-section" data-source={title === "Key 实际读取" ? "actual" : title === "上次可用，本次未再返回" ? "missing" : title === "手动添加" ? "manual" : "catalog"}>
+    <section className="sm-model-section" data-source={source}>
       <div className="sm-model-section-title">
         <strong>{title}</strong>
         <span>{groups.length ? `${supplierModelCount(filtered, true)}${filtered.length === models.length ? "" : `（全部 ${supplierModelCount(models)}）`}` : filtered.length === models.length ? `${models.length} 个` : `${filtered.length} / ${models.length} 个`}</span>

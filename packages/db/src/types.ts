@@ -274,6 +274,16 @@ export interface SupplierState {
   sourceId: string;
   fingerprint: string;
   scanId?: string;
+  /** One-time local agent-media supplementation. Retain across deletion/edit so
+   * later scans respect the user's consumer choice; never stores credentials. */
+  agentMediaImports?: Array<{
+    sourceId: string;
+    groupId: string;
+    supplierGroupId?: string;
+    sourceConnectionId: string;
+    connectionId: string;
+    createdAt: string;
+  }>;
   generationTransport?: "local" | "cloudflare";
   billing?: SupplierBillingSnapshot;
   /** Server-only website login, encrypted with MASTER_KEY and scoped to this source. */

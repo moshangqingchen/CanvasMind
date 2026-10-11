@@ -60,9 +60,9 @@ export class BananaImageAdapter extends GenericRestAdapter {
     const normalized = this.normalized(request);
     const result = await super.validate(normalized);
     const issues = [...result.issues];
-    if (this.route.synora || this.route.tk1688 || this.route.monster || this.route.mikoto) for (const key of Object.keys(request.parameters ?? {}))
-      if (!["aspect_ratio", "aspectRatio", "image_size", "imageSize", "resolution", "size_tier", "size", "n"].includes(key))
-        issues.push({ path: `parameters.${key}`, code: "unpublished_supplier_parameter", message: `${this.route.synora ? "Synora" : this.route.monster ? "怪兽 C1" : this.route.mikoto ? "Mikoto Gemini" : "词元 vip"} 当前分组未公布 ${key} 图片参数，无法确认该请求的合法组合` });
+    if (this.route.synora || this.route.tk1688 || this.route.monster || this.route.mikoto || this.route.genimage) for (const key of Object.keys(request.parameters ?? {}))
+      if (!["aspect_ratio", "aspectRatio", ...(this.route.genimage ? ["ratio"] : []), "image_size", "imageSize", "resolution", "size_tier", "size", "n"].includes(key))
+        issues.push({ path: `parameters.${key}`, code: "unpublished_supplier_parameter", message: `${this.route.synora ? "Synora" : this.route.monster ? "怪兽 C1" : this.route.mikoto ? "Mikoto Gemini" : this.route.genimage ? "基因 Gemini" : "词元 vip"} 当前分组未公布 ${key} 图片参数，无法确认该请求的合法组合` });
     if (this.route.thinking && request.parameters &&
       (Object.hasOwn(request.parameters, "thinking_level") || Object.hasOwn(request.parameters, "thinkingLevel"))) {
       const selected = request.parameters.thinking_level ?? request.parameters.thinkingLevel;
@@ -75,9 +75,22 @@ export class BananaImageAdapter extends GenericRestAdapter {
     issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
     if (this.route.docs === JIJIU_IMAGE_DOCS) issues.push(...jijiuGeminiParameterIssues(request.parameters));
     if (this.route.unavailableReason) issues.push({ path: "model", code: "unsupported_model", message: this.route.unavailableReason });
-    if (!this.route.sizes.includes(String(normalized.parameters?.image_size))) issues.push({ path: "parameters.image_size", code: "invalid_image_size", message: `此香蕉模型支持的分辨率为 ${this.route.sizes.join("、")}` });
+    if (this.route.genimage) {
+      const values = ["image_size", "imageSize", "resolution", "size_tier", "size"].flatMap(key => request.parameters?.[key] === undefined ? [] : [{ key, value: request.parameters[key] }]);
+      if (values.some(({ value }) => typeof value !== "string" || !value.trim()))
+        issues.push({ path: "parameters.image_size", code: "invalid_image_size", message: "基因 imageSize 必须是非空字符串；旧输入保留，请修改后提交。" });
+      if (new Set(values.filter(({ value }) => value !== "auto").map(({ value }) => value)).size > 1)
+        issues.push({ path: "parameters.image_size", code: "conflicting_image_size", message: "已保存的分辨率别名值冲突，请统一 image_size / imageSize / resolution / size。" });
+      if (this.route.genimage === "omit-size" && values.some(({ value }) => value !== "auto"))
+        issues.push({ path: "parameters.image_size", code: "unrepresentable_image_size", message: "此基因 Gemini 2.5 完整型号不接受分辨率档位；原选择已保留，请改选自动。比例仍按 aspectRatio 原值发送。" });
+      else if (this.route.genimage === "declared-tiers" && !this.route.sizes.includes(String(normalized.parameters?.image_size)))
+        issues.push({ path: "parameters.image_size", code: "invalid_image_size", message: `基因此完整型号分辨率为 ${this.route.sizes.join("、")}；旧值保留，请修改。` });
+      const ratios = ["aspect_ratio", "aspectRatio", "ratio"].flatMap(key => request.parameters?.[key] === undefined ? [] : [request.parameters[key]]);
+      if (ratios.some(value => typeof value !== "string" || !value.trim()) || new Set(ratios).size > 1)
+        issues.push({ path: "parameters.aspect_ratio", code: "conflicting_aspect_ratio", message: "基因 aspectRatio 必须是非空字符串，比例别名值需一致；原选择已保留。" });
+    } else if (!this.route.sizes.includes(String(normalized.parameters?.image_size))) issues.push({ path: "parameters.image_size", code: "invalid_image_size", message: `此香蕉模型支持的分辨率为 ${this.route.sizes.join("、")}` });
     const ratio = normalized.parameters?.aspect_ratio;
-    if (ratio !== "auto" && !this.route.ratios.includes(String(ratio))) issues.push({ path: "parameters.aspect_ratio", code: "invalid_aspect_ratio", message: "请选择此香蕉模型提供的画面比例" });
+    if (!this.route.genimage && ratio !== "auto" && !this.route.ratios.includes(String(ratio))) issues.push({ path: "parameters.aspect_ratio", code: "invalid_aspect_ratio", message: "请选择此香蕉模型提供的画面比例" });
     if (normalized.parameters?.n !== 1) issues.push({ path: "parameters.n", code: "invalid_count", message: "此香蕉接口每次生成一张图片" });
     if (request.operation === "image.edit" && !request.assets?.length) issues.push({ path: "assets", code: "reference_required", message: "改图需要连接或添加参考图片" });
     if (request.operation === "image.generate" && request.assets?.length) issues.push({ path: "assets", code: "reference_operation", message: "带参考图片的任务应使用图片编辑操作" });

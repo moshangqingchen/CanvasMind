@@ -3,7 +3,8 @@ import type { FetchImplementation, ModelDescriptor, NormalizedRequest } from "./
 import { StaticConnectionResolver } from "./credentials.js";
 import { createDefaultProviderRegistry } from "./registry.js";
 import { OpenAIImageAdapter } from "./openai.js";
-import { applyPdogImageCapabilities, pdogImageOrigin, PDOG_GPT_IMAGE_SIZES, PDOG_GEMINI_LEGACY_UNAVAILABLE } from "./pdog-image.js";
+import { applyPdogImageCapabilities, pdogImageOrigin, pdogImageSizeForTier, pdogImageQualityOptions, PDOG_GPT_IMAGE_SIZES, PDOG_GEMINI_LEGACY_UNAVAILABLE } from "./pdog-image.js";
+import { VERIFIED_TRANSPARENT_IMAGES } from "./transparent-image-evidence.js";
 import { applyBananaImageCapabilities, bananaImageRoute } from "./banana-image.js";
 import { presentProviderError } from "./error-presentation.js";
 
@@ -21,6 +22,10 @@ function fixture(options: { baseUrl?: string; model?: string; settings?: Record<
 }
 
 describe("PDog documented GPT Images contract", () => {
+  it.each([{ manualProtocol: true }, { metadata: { source: "manual" } }, { metadata: { protocolEvidence: "paid-test" } }, { metadata: { source: "paid-test" } }])("preserves an explicit or measured descriptor: %j", marker => {
+    const saved: ModelDescriptor = { id: model, name: "custom", operations: ["image.generate"], parameters: [{ key: "size", label: "custom", control: "text", default: "custom" }], ...(marker.metadata ? { metadata: marker.metadata } : {}) };
+    expect(applyPdogImageCapabilities({ provider: "openai", config: { baseUrl: "https://ai.whyshy.cn", ...(marker.manualProtocol ? { manualProtocol: true } : {}) } }, saved)).toBe(saved);
+  });
   it.each(["https://ai.whyshy.cn", "https://ai.whyshy.cn/v1/"])("uses the full async path from %s and restores the original task", async baseUrl => {
     let queries = 0;
     const f = fixture({ baseUrl, fetch: async (_url, init) => init?.method === "POST"
@@ -76,7 +81,7 @@ describe("PDog documented GPT Images contract", () => {
     expect(f.fetch).toHaveBeenCalledOnce();
   });
 
-  it.each([{ quality: "ultra" }, { n: 2 }, { size: "4096x4096" }, { response_format: "other" }])("rejects unsupported controls before submitting: %j", async invalid => {
+  it.each([{ quality: "ultra" }, { n: 2 }, { size: "0x4096" }, { response_format: "other" }])("rejects unsupported controls before submitting: %j", async invalid => {
     const f = fixture();
     const candidate = { ...request, parameters: { ...request.parameters, ...invalid } };
     expect((await f.adapter.validate(candidate)).valid).toBe(false);
@@ -84,25 +89,29 @@ describe("PDog documented GPT Images contract", () => {
     expect(f.fetch).not.toHaveBeenCalled();
   });
 
-  it("retains all eleven proportions and omits auto optional fields", async () => {
+  it("lists only source sizes, preserves independent tiers and omits auto optional fields", async () => {
     const f = fixture();
     await f.adapter.submit({ ...request, parameters: { size: "auto", quality: "auto", n: 1 } });
     expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toEqual({ model, prompt: request.prompt, n: 1 });
     const descriptor = applyPdogImageCapabilities({ provider: "openai", config: { baseUrl: "https://ai.whyshy.cn" } }, { id: model, name: model, operations: ["image.generate"] });
-    expect(descriptor.parameters?.find(p => p.key === "quality")).toMatchObject({ default: "max", options: ["auto", "low", "medium", "high", "xhigh", "max"].map(value => ({ value, label: value })) });
-    expect(descriptor.metadata).toMatchObject({ qualitySupport: "assumed", pdogQualityDocumented: false, pdogQualityVerified: false });
-    expect(descriptor.parameters?.find(p => p.key === "size")?.options).toHaveLength(34);
+    expect(descriptor.parameters?.find(p => p.key === "quality")).toMatchObject({ default: "high", options: ["low", "medium", "high"].map(value => ({ value, label: value })) });
+    expect(descriptor.metadata).toMatchObject({ qualitySupport: "declared", pdogQualityDocumented: true, pdogQualityVerified: false });
+    expect(descriptor.parameters?.find(p => p.key === "size")?.options).toHaveLength(20);
+    expect(descriptor.metadata).toMatchObject({ imageNativeParameterContract: true, imageResolutionTierParameter: "size_tier" });
+    expect(descriptor.parameters?.find(p => p.key === "size_tier")?.options?.map(o => o.value)).toEqual(["auto", "1K", "2K", "4K"]);
     for (const size of PDOG_GPT_IMAGE_SIZES) expect(descriptor.parameters?.find(p => p.key === "size")?.options).toContainEqual(expect.objectContaining({ value: size.value }));
     expect((await f.adapter.validate({ ...request, parameters: { size: "3200x2560", quality: "high", n: 1 } })).valid).toBe(true);
   });
 
-  it.each(["gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("preserves cached max quality and submits max for %s", async selected => {
+  it.each(["gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("retains and submits the user's max quality request for %s", async selected => {
     const f = fixture({ model: selected });
     const cached = { id: selected, name: selected, operations: ["image.generate"] as const,
       parameters: [{ key: "quality", label: "质量", control: "select" as const, default: "max", options: [{ value: "max", label: "max" }] }] };
     const descriptor = applyPdogImageCapabilities({ provider: "openai", config: { baseUrl: "https://ai.whyshy.cn" } }, cached);
-    expect(descriptor.parameters?.find(parameter => parameter.key === "quality")?.default).toBe("max");
-    await f.adapter.submit({ ...request, model: selected, parameters: { ...request.parameters, quality: "max" } });
+    expect(descriptor.parameters?.find(parameter => parameter.key === "quality")?.default).toBe("high");
+    const oldParameters = { ...request.parameters, quality: "max" };
+    await f.adapter.submit({ ...request, model: selected, parameters: oldParameters });
+    expect(oldParameters.quality).toBe("max");
     expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).quality).toBe("max");
     expect(f.fetch).toHaveBeenCalledOnce();
   });
@@ -120,20 +129,109 @@ describe("PDog documented GPT Images contract", () => {
     expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).quality).toBe("high");
   });
 
+  it.each(VERIFIED_TRANSPARENT_IMAGES.filter(row => row.hostname === "ai.whyshy.cn"))(
+    "reuses accepted max for the exact historical $group / $model, including normal generation and edits", async evidence => {
+      const settings = { modelGroup: evidence.group, accountKeyGroup: evidence.group };
+      const f = fixture({ model: evidence.model, settings });
+      const connection = { provider: "openai", config: { baseUrl: "https://ai.whyshy.cn/v1", ...settings } };
+      const descriptor = applyPdogImageCapabilities(connection, { id: evidence.model, name: evidence.model, operations: ["image.generate"] });
+      expect(descriptor.parameters?.find(p => p.key === "quality")).toMatchObject({ default: "max", options: ["low", "medium", "high", "max"].map(value => ({ value, label: value })) });
+      expect(descriptor.metadata).toMatchObject({ pdogQualityVerified: true, pdogMeasuredQuality: { fullModelId: evidence.model, group: evidence.group, checkedAt: evidence.checkedAt, request: evidence.request } });
+      const parameters = { ...evidence.request, background: "opaque" };
+      for (const operation of ["image.generate", "image.edit"] as const) {
+        await f.adapter.submit({ ...request, model: evidence.model, operation, parameters,
+          ...(operation === "image.edit" ? { assets: [{ id: "reference", kind: "image" as const, mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }] } : {}) });
+        const body = f.fetch.mock.calls.at(-1)![1]?.body;
+        expect(body instanceof FormData ? body.get("quality") : JSON.parse(String(body)).quality).toBe("max");
+      }
+      expect(parameters).toEqual({ ...evidence.request, background: "opaque" });
+      expect(f.fetch).toHaveBeenCalledTimes(2);
+      for (const config of [{ ...connection.config, modelGroup: "【生图】image2/2.5-1K", accountKeyGroup: "【生图】image2/2.5-1K" },
+        { ...connection.config, modelGroup: evidence.group, accountKeyGroup: "different" },
+        { ...connection.config, baseUrl: "https://ai.whyshy.cn/custom" }, { ...connection.config, baseUrl: "https://example.com" },
+        { ...connection.config, manualProtocol: true }])
+        expect(pdogImageQualityOptions(evidence.model, config)).toEqual(["low", "medium", "high"]);
+      expect(pdogImageQualityOptions("gpt-image-2", connection.config)).toEqual(["low", "medium", "high"]);
+      const changedGroup = applyPdogImageCapabilities({ ...connection, config: { ...connection.config, modelGroup: "生图1K", accountKeyGroup: "生图1K" } }, descriptor);
+      expect(changedGroup.metadata?.pdogMeasuredQuality).toBeUndefined();
+      expect(changedGroup.parameters?.find(p => p.key === "quality")?.default).toBe("high");
+    },
+  );
+
   it("locks 4K when only the ratio is automatic", async () => {
     const f = fixture();
     await f.adapter.submit({ ...request, parameters: { size: "auto", size_tier: "4K", aspect_ratio: "auto", quality: "high", n: 1 } });
     expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toMatchObject({ size: "2880x2880" });
   });
 
-  it("preserves a ratio resolved by automatic prompt/reference selection without a selected tier", async () => {
+  it("requires W/H when the selected ratio has no published default 1K pixels", async () => {
     const f = fixture();
-    await f.adapter.submit({ ...request, parameters: { size: "auto", aspect_ratio: "16:9", quality: "high", n: 1 } });
+    await expect(f.adapter.submit({ ...request, parameters: { size: "auto", aspect_ratio: "16:9", quality: "high", n: 1 } })).rejects.toThrow("填写独立 W/H");
+    expect(f.fetch).not.toHaveBeenCalled();
+    await f.adapter.submit({ ...request, parameters: { size: "auto", size_tier: "2K", aspect_ratio: "16:9", quality: "high", n: 1 } });
     const body = JSON.parse(String(f.fetch.mock.calls[0]![1]?.body));
-    const [width, height] = String(body.size).split("x").map(Number);
-    expect(width! / height!).toBeCloseTo(16 / 9, 1);
+    expect(body.size).toBe("2048x1152");
     expect(body).not.toHaveProperty("aspect_ratio");
     expect(f.fetch).toHaveBeenCalledOnce();
+  });
+
+  it.each(["1K", "2K", "4K"] as const)("does not invent a %s 5:4 mapping", async tier => {
+    expect(pdogImageSizeForTier(tier, "5:4")).toBeUndefined();
+    const f = fixture();
+    const parameters = { size: "auto", size_tier: tier, aspect_ratio: "5:4", quality: "high" };
+    await expect(f.adapter.submit({ ...request, parameters })).rejects.toThrow("填写独立 W/H");
+    expect(parameters).toEqual({ size: "auto", size_tier: tier, aspect_ratio: "5:4", quality: "high" });
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["4096x4096", "1001x801", "5000x1000"])("sends open custom size %s without borrowed bounds", async size => {
+    const f = fixture();
+    await f.adapter.submit({ ...request, parameters: { size, quality: "high", n: 1 } });
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toMatchObject({ size, quality: "high" });
+    expect(f.fetch).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { size: "2048x896", aspect_ratio: "21:9" },
+    { size: "896x2048", aspect_ratio: "9:21" },
+  ])("sends PDog's exact rounded official 2K pair unchanged: %j", async published => {
+    const f = fixture();
+    const parameters = { ...published, size_tier: "2K", quality: "high", n: 1 };
+    await f.adapter.submit({ ...request, parameters });
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toEqual({ model, prompt: request.prompt, size: published.size, quality: "high", n: 1 });
+    expect(parameters).toEqual({ ...published, size_tier: "2K", quality: "high", n: 1 });
+    f.fetch.mockClear();
+    const [width, height] = published.size.split("x").map(Number);
+    await f.adapter.submit({ ...request, parameters: { width, height, size_tier: "2K", aspect_ratio: published.aspect_ratio, quality: "high", n: 1 } });
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toEqual({ model, prompt: request.prompt, size: published.size, quality: "high", n: 1 });
+    expect(f.fetch).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { size: "2048x896", aspect_ratio: "3:2" },
+    { size: "2050x896", aspect_ratio: "21:9" },
+  ])("does not generalize the published rounded pair to wrong ratios or custom W/H: %j", async parameters => {
+    const f = fixture();
+    await expect(f.adapter.submit({ ...request, parameters: { ...parameters, quality: "high", n: 1 } })).rejects.toThrow("比例偏好不同");
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
+  it("maps independent W/H and preserves ratio, while rejecting conflicting saved constraints", async () => {
+    const f = fixture();
+    const parameters = { width: 1001, height: 801, size_tier: "4K", aspect_ratio: "5:4", quality: "high" };
+    await f.adapter.submit({ ...request, parameters });
+    expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toEqual({ model, prompt: request.prompt, size: "1001x801", quality: "high", n: 1 });
+    expect(parameters).toEqual({ width: 1001, height: 801, size_tier: "4K", aspect_ratio: "5:4", quality: "high" });
+    f.fetch.mockClear();
+    await expect(f.adapter.submit({ ...request, parameters: { size: "1024x1024", aspect_ratio: "16:9" } })).rejects.toThrow("比例偏好不同");
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
+  it("honors an exact group's 1K declaration without borrowing the common guide's 4K", () => {
+    const descriptor = applyPdogImageCapabilities({ provider: "openai", config: { baseUrl: "https://ai.whyshy.cn", modelGroup: "生图1K" } }, { id: model, name: model, operations: ["image.generate"] });
+    expect(descriptor.parameters?.find(p => p.key === "size_tier")?.options?.map(o => o.value)).toEqual(["auto", "1K"]);
+    expect(descriptor.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(["auto", "1024x1024"]);
+    expect(descriptor.metadata?.imageSupportedResolutions).toEqual(["1K"]);
   });
 
   it("keeps server failures and unknown submissions without a second generation", async () => {

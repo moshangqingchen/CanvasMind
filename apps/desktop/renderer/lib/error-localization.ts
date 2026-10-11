@@ -10,6 +10,8 @@ export interface LocalizedRunError {
   code?: string;
   api?: string;
   statusCode?: number;
+  source?: ProviderErrorPresentation["source"];
+  localMessage?: string;
   providerMessage?: string;
   docsUrl?: string;
   actionUrl?: string;
@@ -155,6 +157,9 @@ function structuredError(value: unknown): LocalizedRunError | null {
       ? record.statusCode
       : undefined;
   const providerMessage = safeText(record.providerMessage);
+  const localMessage = safeText(record.localMessage);
+  const source = ["local_validation", "provider_response"].includes(String(record.source))
+    ? record.source as LocalizedRunError["source"] : undefined;
   const docsUrl = safeHttpsUrl(record.docsUrl);
   const actionUrl = safeHttpsUrl(record.actionUrl);
   const actionLabel = safeText(record.actionLabel);
@@ -171,6 +176,8 @@ function structuredError(value: unknown): LocalizedRunError | null {
     ...(code ? { code } : {}),
     ...(api ? { api } : {}),
     ...(statusCode === undefined ? {} : { statusCode }),
+    ...(source ? { source } : {}),
+    ...(localMessage ? { localMessage } : {}),
     ...(providerMessage ? { providerMessage } : {}),
     ...(docsUrl ? { docsUrl } : {}),
     ...(actionUrl ? { actionUrl } : {}),
@@ -238,6 +245,16 @@ export function localizeRunError(
 ): LocalizedRunError | null {
   let error = structuredError(value);
   if (!error) return null;
+
+  // This exact prefix was emitted by our validator in older snapshots, which
+  // incorrectly stored the local reason in providerMessage. HTTP errors retain
+  // their response evidence even if their wording happens to use the prefix.
+  if (error.source === "local_validation" ||
+      (!error.source && error.statusCode === undefined && error.message.startsWith("请求未提交："))) {
+    const { providerMessage, ...local } = error;
+    error = { ...local, source: "local_validation",
+      ...(error.localMessage || providerMessage ? { localMessage: error.localMessage ?? providerMessage } : {}) };
+  }
 
   if (
     context.provider === "weai" &&

@@ -6,6 +6,7 @@ import type { CanvasNode } from "../components/types";
 import type { ProviderConnectionView } from "./client-api";
 import { NativeImageResolutionFields } from "../components/native-image-resolution-fields";
 import { setParameterValueWithSizeExclusivity } from "../components/node-parameter-fields";
+import { validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import {
   coerceParameterInput,
   isExactSizeParameterDescriptor,
@@ -58,7 +59,7 @@ describe("Jiasu saved video parameters", () => {
     expect(restored).toEqual(snapshot);
     expect(jiasuVideoRequestIssues({ idempotencyKey: "saved-video-request", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
       prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip").map(issue => issue.path)).toEqual([
-        ...(model.metadata?.durationRangeUnverified ? ["parameters.duration"] : []), "parameters.resolution",
+        "parameters.resolution",
       ]);
   });
 
@@ -77,12 +78,12 @@ describe("Jiasu saved video parameters", () => {
     else expect(empty.duration).toBe(30);
   });
 
-  it("keeps the existing explicit model switch path from inheriting unsupported values", () => {
+  it("uses an explicit resolution enum on model switch while preserving a typed ratio", () => {
     const model = descriptor("doubao-seedance-2-0-260128");
     const changed = parametersWithDefaults(parameterDescriptorsFor("video-generation", "openai", model), {
       duration: 5, resolution: "480p", aspect_ratio: "2:1", face: { enabled: true, mode: "light" },
     });
-    expect(changed).toEqual({ duration: 5, resolution: "720p", aspect_ratio: "16:9" });
+    expect(changed).toEqual({ duration: 5, resolution: "720p", aspect_ratio: "2:1" });
     expect(normalizedParametersForModel("video-generation", "openai", model, changed)).toEqual(changed);
   });
 
@@ -94,12 +95,12 @@ describe("Jiasu saved video parameters", () => {
     });
     expect(normalized.data.parameters).toEqual({ seconds: 5, duration: 5, ratio: "9:16", aspect_ratio: "9:16", resolution: "720p" });
     expect(jiasuVideoRequestIssues({ idempotencyKey: "video-alias-request", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
-      prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip").map(issue => issue.path)).toEqual(model.metadata?.durationRangeUnverified ? ["parameters.duration"] : []);
+      prompt: "静止镜头", parameters: normalized.data.parameters }, model, "vip")).toEqual([]);
     const conflict = normalizedParametersForModel("video-generation", "openai", model, { duration: 5, seconds: 6, aspect_ratio: "16:9", ratio: "9:16" });
     expect(conflict).toMatchObject({ duration: 5, seconds: 6, aspect_ratio: "16:9", ratio: "9:16" });
     expect(jiasuVideoRequestIssues({ idempotencyKey: "video-alias-conflict", connectionId: "jiasu-parameters", operation: "video.generate", model: id,
       prompt: "静止镜头", parameters: conflict }, model, "vip").map(issue => issue.path)).toEqual([
-        "parameters.duration", "parameters.aspect_ratio", ...(model.metadata?.durationRangeUnverified ? ["parameters.duration"] : []),
+        "parameters.duration", "parameters.aspect_ratio",
       ]);
   });
 
@@ -119,7 +120,7 @@ describe("Jiasu saved video parameters", () => {
     expect(setParameterValueWithSizeExclusivity(saved, "duration", 7, { ...context, model: { metadata: {} } })).toHaveProperty("seconds", 6);
   });
 
-  it("keeps invalid history under the user's Seedance fallback until an explicit edit, without relaxing resolution", () => {
+  it("keeps invalid Seedance fallback history until an explicit edit and permits the documented resolution field", () => {
     const model = descriptor("seedance2.5-全参真人");
     expect(model.metadata).toMatchObject({ durationRangeSource: "user-fallback", durationRangeUnverified: false, resolutionRangeUnverified: true });
     expect(model.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 1, max: 30, step: 1 });
@@ -132,8 +133,79 @@ describe("Jiasu saved video parameters", () => {
     expect(edited).not.toHaveProperty("seconds");
     const issues = (parameters: Record<string, unknown>) => jiasuVideoRequestIssues({ idempotencyKey: "user-fallback-no-http", connectionId: "jiasu-parameters",
       operation: "video.generate", model: model.id, prompt: "本地参数验证", parameters }, model, "vip");
-    expect(issues(edited).map(issue => issue.path)).toEqual(["parameters.resolution"]);
+    expect(issues(edited)).toEqual([]);
     expect(issues(setParameterValue(edited, "resolution", undefined, model))).toEqual([]);
+  });
+});
+
+describe("supplier video selections survive directory changes", () => {
+  it("retains fractional video input for integer validation instead of changing the requested duration", () => {
+    const descriptor = { key: "duration", label: "时长", control: "number" as const, valueType: "integer" as const, min: 4, max: 15 };
+    const entered = coerceParameterInput(descriptor, "3.8", "video-generation");
+    expect(entered).toBe(3.8);
+    const model: ModelDescriptor = { id: "integer-duration-fixture", name: "integer duration", operations: ["video.generate"],
+      metadata: { clampNumericParameters: true }, parameters: [descriptor] };
+    const saved = normalizedParametersForModel("video-generation", "rest", model, { duration: entered });
+    expect(saved).toEqual({ duration: 3.8 });
+    expect(validateModelParameters(model, saved).valid).toBe(false);
+  });
+
+  it("does not inject generic defaults while the saved video model is absent from a transient catalog", () => {
+    const saved = { duration: 8, resolution: "720p", aspect_ratio: "9:16", materials: [{ name: "保留素材" }] };
+    expect(normalizedParametersForModel("video-generation", "rest", undefined, saved)).toEqual(saved);
+    expect(normalizedParametersForModel("video-generation", "rest", null, saved)).toEqual(saved);
+  });
+
+  it("shows a documented native ratio alias without masking it with a default", () => {
+    const model = remainingVideoModel("frimodel", "videos-standard")!;
+    const saved = { ratio: "9:16", duration: 5, resolution: "720p" };
+    const normalized = normalizedParametersForModel("video-generation", "rest", model, saved);
+    expect(normalized).toMatchObject({ ...saved, aspect_ratio: "9:16" });
+    expect(saved).toEqual({ ratio: "9:16", duration: 5, resolution: "720p" });
+    expect(setParameterValue(normalized, "aspect_ratio", "16:9", model)).not.toHaveProperty("ratio");
+  });
+  // These are isolated contracts that exercise shared preservation logic, not
+  // claims that different suppliers publish the same capabilities.
+  it.each(["jiasu", "secure", "chentu", "cangyuan"])("keeps %s saved values, nested inputs and invalid combinations on refresh/restart", supplier => {
+    const original: ModelDescriptor = { id: `${supplier}-saved-contract-fixture`, name: "Offline parameter contract", operations: ["video.generate"],
+      metadata: { supplier, videoContractCheckedAt: "2026-10-10", clampNumericParameters: true },
+      parameters: [
+        { key: "duration", label: "时长", control: "number", valueType: "integer", min: 4, max: 15, step: 1, default: 5 },
+        { key: "resolution", label: "分辨率", control: "select", options: [{ label: "720p", value: "720p" }], default: "720p" },
+        { key: "fps", label: "帧率", control: "number", valueType: "integer", min: 24, max: 30, default: 24 },
+      ] };
+    const saved = Object.freeze({ duration: 38, resolution: "1080p", fps: 60,
+      images: [{ url: "https://example.invalid/first.png", type: "first_frame", name: "首帧" }],
+      face: { enabled: true, mode: "light" } });
+    const normalized = normalizedParametersForModel("video-generation", "rest", original, saved);
+    expect(normalized).toEqual(saved);
+    expect(validateModelParameters(original, normalized).valid).toBe(false);
+    const refreshed = { ...original, parameters: original.parameters!.map(parameter => parameter.key === "resolution"
+      ? { ...parameter, default: "480p", options: [{ value: "480p", label: "480p" }] } : parameter) };
+    const restarted = JSON.parse(JSON.stringify(normalized)) as Record<string, unknown>;
+    expect(normalizedParametersForModel("video-generation", "rest", refreshed, restarted)).toEqual(saved);
+    expect(saved).toEqual(restarted);
+    expect(setParameterValue(normalized, "duration", 12, original)).toEqual({ ...saved, duration: 12 });
+  });
+
+  it("accepts typed values outside API suggestions while preserving real enum/range validation", () => {
+    const model: ModelDescriptor = { id: "example-values-fixture", name: "API example", operations: ["video.generate"],
+      metadata: { durationRangeUnverified: true, resolutionRangeUnverified: true, videoResolutionAllowsCustom: true },
+      parameters: [
+        { key: "resolution", label: "分辨率", control: "text", valueType: "string", allowCustomValue: true,
+          options: [{ label: "720p（API 示例）", value: "720p" }] },
+        { key: "duration", label: "时长", control: "number", valueType: "integer", allowCustomValue: true,
+          min: 1, step: 1, options: [{ label: "5 秒（API 示例）", value: 5 }] },
+      ] };
+    const selected = { duration: 38, resolution: "1440p" };
+    const normalized = normalizedParametersForModel("video-generation", "rest", model, selected);
+    expect(normalized).toEqual(selected);
+    expect(validateModelParameters(model, normalized).valid).toBe(true);
+    const bounded = { ...model, parameters: model.parameters!.map(parameter => parameter.key === "duration" ? { ...parameter, max: 30 } : parameter) };
+    expect(normalizedParametersForModel("video-generation", "rest", bounded, selected)).toEqual(selected);
+    expect(validateModelParameters(bounded, selected).issues).toContainEqual(expect.objectContaining({ path: "parameters.duration", code: "max" }));
+    const enumerated = { ...model, parameters: model.parameters!.map(parameter => ({ ...parameter, allowCustomValue: false })) };
+    expect(validateModelParameters(enumerated, selected).valid).toBe(false);
   });
 });
 
@@ -157,7 +229,7 @@ describe("native supplier video duration aliases", () => {
     const manual = { ...native, metadata: { ...native.metadata, source: "manual" } };
     expect(modelParameterAliases(manual)).toEqual([]);
     const dual = { ...native, parameters: [...native.parameters!, { key: "seconds", label: "Independent seconds", control: "number" as const }] };
-    expect(modelParameterAliases(dual)).toEqual([]);
+    expect(modelParameterAliases(dual)).toEqual([["aspect_ratio", ["ratio"]]]);
     expect(setParameterValue({ duration: 5, seconds: 6 }, "duration", 7, dual)).toEqual({ duration: 7, seconds: 6 });
   });
 });
@@ -335,7 +407,7 @@ describe("model parameter helpers", () => {
     ).toEqual(["fps"]);
   });
 
-  it("does not invent controls when a video model marks them unavailable", () => {
+  it("does not invent controls or delete saved values when a video model marks controls unavailable", () => {
     const model: ModelDescriptor = {
       id: "unparameterized-video",
       name: "Unparameterized Video",
@@ -353,7 +425,7 @@ describe("model parameter helpers", () => {
         aspect_ratio: "16:9",
         resolution: "2k",
       }),
-    ).toEqual({});
+    ).toEqual({ duration: 26, aspect_ratio: "16:9", resolution: "2k" });
   });
 
   it("shows image count only when the model declares a multi-image limit", () => {
@@ -831,6 +903,6 @@ describe("model parameter helpers", () => {
     const fields = parameterDescriptorsForValues("video-generation", "rest", model, { resolution: "1080p", instrumental: true });
     expect(fields.find(d => d.key === "duration")).toMatchObject({default:8,options:[{label:"8 秒",value:8}]});
     expect(fields.some(d => d.key === "lyrics")).toBe(false);
-    expect(normalizedParametersForModel("video-generation", "rest", model, {resolution:"1080p",duration:5,instrumental:true,lyrics:"old"})).toEqual({resolution:"1080p",duration:5,instrumental:true});
+    expect(normalizedParametersForModel("video-generation", "rest", model, {resolution:"1080p",duration:5,instrumental:true,lyrics:"old"})).toEqual({resolution:"1080p",duration:5,instrumental:true,lyrics:"old"});
   });
 });

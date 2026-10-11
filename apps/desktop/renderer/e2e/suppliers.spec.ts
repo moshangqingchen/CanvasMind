@@ -415,13 +415,15 @@ test("刷新全部供应商同步分组和模型，显示新增与未再返回�
     record.catalog.groups[0]!.label = "VIP 新名称";
     record.catalog.groups.push({ id: "new-group", label: "新增组", source: "catalog", status: "available", models: [] });
     const connection = api.connections()[0]!;
-    connection.config = { ...connection.config, modelScanCheckedAt: record.scannedAt,
+    connection.config = { ...connection.config, modelScanCheckedAt: record.scannedAt, modelScanComplete: true,
       modelCatalogModels: [{ id: "new-image", name: "New Image", operations: ["image.generate"] }],
       scannedModelIds: ["new-image"], modelAddedIds: ["new-image"], modelRemovedModels: [{ id: "old-image", name: "Old Image" }] };
     await route.fulfill({ json: record });
   });
   await page.route("**/api/providers/connection-fixture/models?**", route => route.fulfill({
-    json: api.connections()[0]!.config.modelCatalogModels || [], headers: { "X-Model-Scan-Status": "live" },
+    json: api.connections()[0]!.config.modelCatalogModels || [], headers: {
+      "X-Model-Scan-Status": "live", "X-Model-Scan-Complete": String(api.connections()[0]!.config.modelScanComplete !== false),
+    },
   }));
   await openSettings(page);
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
@@ -432,10 +434,16 @@ test("刷新全部供应商同步分组和模型，显示新增与未再返回�
   const group = dialog.locator(".sm-group-card").filter({ has: page.getByRole("heading", { name: "vip", exact: true }) });
   await expect(group.getByRole("button", { name: /模型清单/u })).toHaveAttribute("aria-expanded", "true");
   const added = group.locator(".sm-model-item").filter({ hasText: "new-image" });
-  await expect(added.getByText("目录已确认", { exact: true })).toBeVisible();
+  await expect(added.getByText("Key 目录", { exact: true })).toBeVisible();
   await expect(added.getByText("新增", { exact: true })).toBeVisible();
   await group.getByLabel("vip 模型来源", { exact: true }).selectOption("missing");
-  await expect(group.locator(".sm-model-item").filter({ hasText: "old-image" }).getByText("未再返回", { exact: true })).toBeVisible();
+  const old = group.locator(".sm-model-item").filter({ hasText: "old-image" });
+  await expect(old.getByText("本次返回：0", { exact: true })).toBeVisible();
+  // A later partial read retains the old difference, but cannot turn it into
+  // a zero count for the current directory.
+  api.connections()[0]!.config.modelScanComplete = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("supplier-catalog-upgraded")));
+  await expect(old.getByText("本次返回：—", { exact: true })).toBeVisible();
   expect(scans).toBe(1);
   expect(api.writes).toEqual([]);
   expect(api.connections()[0]!.apiKeySet).toBe(true);
@@ -526,9 +534,9 @@ test("单家刷新独立于其他供应商，详情列出分组模型接口价�
   await opener.click();
   const details = page.getByRole("dialog", { name: "供应商刷新详情" });
   await expect(details.getByRole("heading", { name: "测试供应商", exact: true })).toBeVisible();
-  await expect(details.getByRole("region", { name: "刷新概况" })).toContainText("部分待确认");
-  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("1 个模型接口待确认");
-  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("站点尚未提供完整的图片接口资料。");
+  await expect(details.getByRole("region", { name: "刷新概况" })).toContainText("局部数据");
+  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("1 个模型的接口字段");
+  await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("协议：—；提交接口：—；参数字段：—；操作：image.generate");
   const groupChanges = details.getByRole("region", { name: "分组变化详情" });
   await expect(groupChanges.getByText("新公开组", { exact: true })).toBeVisible();
   await expect(groupChanges.getByText("旧公开组", { exact: true })).toBeVisible();
@@ -538,11 +546,11 @@ test("单家刷新独立于其他供应商，详情列出分组模型接口价�
   await expect(connectionDetails.getByText("未再返回的模型（1）", { exact: true })).toBeVisible();
   await expect(connectionDetails.getByText("价格变化（1）", { exact: true })).toBeVisible();
   await expect(connectionDetails.getByText(/0\.10 USD → 0\.20 USD/u)).toBeVisible();
-  await connectionDetails.locator("summary").filter({ hasText: "接口待确认的模型" }).click();
-  await expect(connectionDetails.getByText(/尚未提供完整/u)).toBeVisible();
-  await connectionDetails.locator("summary").filter({ hasText: "价格待确认的模型" }).click();
-  await expect(connectionDetails.getByText(/供应商未公布价格/u)).toBeVisible();
-  await expect(details.getByRole("region", { name: "待处理事项" })).not.toContainText("供应商未公布价格");
+  await connectionDetails.locator("summary").filter({ hasText: "接口字段（" }).click();
+  await expect(connectionDetails.getByText("协议：—；提交接口：—；参数字段：—；操作：image.generate", { exact: true })).toBeVisible();
+  await connectionDetails.locator("summary").filter({ hasText: "价格记录（" }).click();
+  await expect(connectionDetails.getByText("报价：—", { exact: true })).toBeVisible();
+  await expect(details.getByRole("region", { name: "待处理事项" })).not.toContainText("报价：—");
   await page.keyboard.press("Escape");
   await expect(details).toHaveCount(0);
   await expect(opener).toBeFocused();
@@ -596,7 +604,7 @@ test("全部刷新每家可查看独立失败项目，保留旧模型与已保�
   await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("模型接口暂不可用，请稍后重试。");
   await expect(details.getByRole("region", { name: "连接与模型详情" })).toContainText("HTTP 502");
   await expect(details.getByRole("region", { name: "待处理事项" })).toContainText("1 个模型价格读取未完成");
-  await details.getByRole("region", { name: "连接与模型详情" }).locator("summary").filter({ hasText: "价格待确认的模型" }).click();
+  await details.getByRole("region", { name: "连接与模型详情" }).locator("summary").filter({ hasText: "价格记录（" }).click();
   await expect(details.getByRole("region", { name: "连接与模型详情" }).getByText(/本次价格读取失败/u)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(firstOpener).toBeFocused();
@@ -797,7 +805,13 @@ test("读取密钥分组说明，区分分辨率限制和后台标价，并保�
   await expect(details).toContainText("1张0.015，量大1分，仅支持1K2K，不支持4K。充值1刀1毛");
   await expect(details).toContainText("仅支持 1K / 2K；不支持 4K");
   await details.getByText("后台分辨率标价（额度/张）", {exact:true}).click();
-  await expect(details.getByText("说明不支持，标价不代表可用", {exact:true})).toBeVisible();
+  const priceRows = details.locator(".sm-group-price-tiers > div");
+  await expect(priceRows).toHaveCount(3);
+  for (const resolution of ["1K", "2K", "4K"]) {
+    const row = priceRows.filter({ has: page.getByText(resolution, { exact: true }) });
+    await expect(row.locator("span")).toHaveText("0.15");
+    await expect(row.locator("small")).toHaveText(resolution === "4K" ? "分组说明排除项" : "分组说明列出项");
+  }
   await page.reload();
   await page.getByRole("button", {name:"供应商与模型",exact:true}).click();
   await expect(details).toContainText("仅支持 1K / 2K；不支持 4K");

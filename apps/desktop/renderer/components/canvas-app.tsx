@@ -32,6 +32,7 @@ import { trackCanvasSave, waitForCanvasSaves } from "../lib/canvas-save-barrier"
 import { flushPendingEditorEdits } from "../lib/pending-editor-edits";
 import { registerDesktopSave } from "../lib/desktop-client";
 import { useSupplierVerificationRevision } from "../lib/use-supplier-verification-revision";
+import { isGenimageNativeImageContractModel } from "./node-parameter-fields";
 import {
   useCallback,
   useEffect,
@@ -295,7 +296,7 @@ import { CanvasCommandMenu, type CanvasCommand } from "./canvas-command-menu";
 import { DrawingLayer } from "./drawing-layer";
 import { parametersForResolutionModelChange } from "../lib/model-resolution-family";
 import { refreshSupplierAccountAfterRun } from "../lib/client-supplier-billing";
-import { comparableModelPrice } from "../lib/model-display";
+import { modelPickerPriceData } from "../lib/model-picker-data";
 import { ProjectImportModal } from "./project-import-modal";
 import { ShortcutsModal } from "./shortcuts-modal";
 import { AppUpdateModal } from "./app-update-modal";
@@ -1153,6 +1154,8 @@ function sameRunError(
     left.code === right.code &&
     left.api === right.api &&
     left.statusCode === right.statusCode &&
+    left.source === right.source &&
+    left.localMessage === right.localMessage &&
     left.providerMessage === right.providerMessage &&
     left.docsUrl === right.docsUrl &&
     left.actionUrl === right.actionUrl &&
@@ -1689,7 +1692,7 @@ export function modelDiscoveryMigrationPatch(
   const preserved = (data.inputs ?? []).filter((input) => connectedInputIds.has(input.id) && !normalizedInputs?.some((next) => next.id === input.id));
   if (preserved.length) normalizedInputs = [...(normalizedInputs ?? []), ...preserved];
   if (data.model === model.id && data.provider === provider) {
-    if (provider !== "cli" && data.qualityMode === "highest") {
+    if (provider !== "cli" && data.qualityMode === "highest" && model.metadata?.mikotoImageContract !== true) {
       const parameters = { ...data.parameters };
       for (const descriptor of parameterDescriptorsFor(nodeType, provider, model)) {
         if (/^(quality|image_quality|output_quality)$/u.test(descriptor.key) && descriptor.default !== undefined)
@@ -1699,7 +1702,9 @@ export function modelDiscoveryMigrationPatch(
     }
     if (nodeType === "image-generation" && model.metadata?.bananaProtocolVersion === 1) {
       const current = (data.parameters as Readonly<Record<string, unknown>> | undefined) ?? {};
-      const parameters = parametersWithDefaults(parameterDescriptorsFor(nodeType, provider, model), current);
+      const parameters = isGenimageNativeImageContractModel(model)
+        ? normalizedParametersForModel(nodeType, provider, model, current)
+        : parametersWithDefaults(parameterDescriptorsFor(nodeType, provider, model), current);
       if (!parameterValuesEqual(current, parameters)) return { inputs: normalizedInputs, parameters };
     }
     return generationInputsEqual(data.inputs, normalizedInputs)
@@ -1990,7 +1995,7 @@ export function normalizeGenerationNodeForRun(
     const singleOutput =
       supplier === "frimodel" ||
       supplier === "cyberafei" ||
-      supplier === "mikoto" ||
+      (supplier === "mikoto" && model?.metadata?.mikotoImageContract !== true) ||
       (supplier === "chentu" && !isChentuOfficialImageGroup(group));
     if (singleOutput) delete normalized.n;
   }
@@ -4977,15 +4982,24 @@ function CanvasShell({
     return true;
   }, [showToast]);
 
-  const pasteCopiedNodes = useCallback((): boolean => {
-    const clipboard = nodeClipboardRef.current;
+  const pasteCopiedNodes = useCallback((options?: {
+    clipboard: { nodes: CanvasNode[]; edges: CanvasEdge[] };
+    targetNodeId: string;
+    incomingEdges: CanvasEdge[];
+  }): boolean => {
+    const clipboard = options?.clipboard ?? nodeClipboardRef.current;
     if (!clipboard || clipboard.nodes.length === 0) return false;
     const state = useCanvasStore.getState();
-    const targetNodes = state.nodes.filter((node) => node.selected);
+    const targetNodes = state.nodes.filter((node) => options
+      ? node.id === options.targetNodeId
+      : node.selected);
     if (targetNodes.length === 0) {
       showToast("请先选择一个节点作为粘贴位置", "error");
       return false;
     }
+    // Editor flushes update the store before React can refresh graphRef.
+    // Undo must retain those edits and remove only the new copy.
+    graphRef.current = { nodes: state.nodes, edges: state.edges };
     checkpoint(true);
     const copiedBounds = nodeGroupBounds(clipboard.nodes);
     const targetBounds = nodeGroupBounds(targetNodes);
@@ -5059,9 +5073,18 @@ function CanvasShell({
       ),
       ...pastedNodes,
     ];
+    const copiedInputEdges = filterEdgesToKnownPorts(nextNodes,
+      structuredClone(options?.incomingEdges ?? []).map((edge) => ({
+        ...edge,
+        id: `edge-${crypto.randomUUID()}`,
+        target: idMap.get(edge.target)!,
+        selected: false,
+      })),
+    );
     const nextEdges = syncGeneratedResultEdges(nextNodes, [
       ...state.edges,
       ...pastedEdges,
+      ...copiedInputEdges,
     ]);
     useCanvasStore.setState({
       nodes: nextNodes,
@@ -5087,6 +5110,28 @@ function CanvasShell({
     nodeClipboardRef.current = preserved;
     return duplicated;
   }, [copySelectedNodes, pasteCopiedNodes]);
+
+  const duplicateNodeWithMaterials = useCallback((nodeId: string): boolean => {
+    flushPendingEditorEdits();
+    const state = useCanvasStore.getState();
+    const source = state.nodes.find((node) => node.id === nodeId);
+    if (!source) return false;
+    const copy = copyableCanvasNode(source);
+    if (!copy) {
+      showToast("未完成的生成结果不能复制，请先核对或删除该结果", "error");
+      return false;
+    }
+    return pasteCopiedNodes({
+      clipboard: { nodes: [copy], edges: [] },
+      targetNodeId: nodeId,
+      incomingEdges: source.data.generatedResult ? [] : state.edges.filter((edge) => {
+        const ports = edge as CanvasEdge & { targetPort?: string | null; targetInput?: string | null };
+        return edge.target === nodeId && edge.source !== nodeId &&
+          (edge.targetHandle ?? ports.targetPort ?? ports.targetInput) !== "generated" &&
+          !edge.id.startsWith(GENERATED_RESULT_EDGE_PREFIX);
+      }),
+    });
+  }, [pasteCopiedNodes, showToast]);
 
   const selectAllNodes = useCallback((): boolean => {
     const state = useCanvasStore.getState();
@@ -7491,7 +7536,7 @@ function CanvasShell({
                 group: providerConnectionGroup(connection),
                 available: connectionIsConfigured(connection) && Boolean(generationType && connectionSupportsNodeType(connection, generationType, models)),
                 supplierId: typeof connection.config.supplierId === "string" ? connection.config.supplierId : undefined,
-                modelQuote: comparableModelPrice(compatibleModels, node.data.model, node.data.parameters ?? {}),
+                modelQuote: modelPickerPriceData(compatibleModels.find(model => model.id === node.data.model)),
                 modelMatch: compatibleModels.some(model => model.id === node.data.model && !modelCanvasUnavailableReason(model)),
                 unavailableReason: connection.provider === "cli" && !cliConnectionReady(connection) ? `${cliStatusLabel(connection)}，请在个人 AI 网站设置中接入` : generationType && !connectionSupportsNodeType(connection, generationType, models) ? `当前分组未声明${generationType === "image-generation" ? "图片" : "视频"}型号` : undefined,
               };
@@ -10323,6 +10368,17 @@ function CanvasShell({
               >
                 <Copy size={13} /> 复制
                 <span className="menu-hint">Ctrl+C</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  const id = nodeMenu.nodeId;
+                  setNodeMenu(null);
+                  duplicateNodeWithMaterials(id);
+                }}
+              >
+                <CopyPlus size={13} /> 复制（包含素材）
               </button>
               <button
                 type="button"

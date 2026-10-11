@@ -1,0 +1,34 @@
+{
+  "source": {
+    "url": "https://api.3365api.cn/api/pricing",
+    "checkedAt": "2026-10-11T03:36:35.347Z",
+    "responseSha256": "c441466253e1d919d36f95977ecb94de89bd8b8ade68f564a9ad05010c269c51",
+    "scope": "Exact public row and both of its own memberships; no Key or paid generation"
+  },
+  "row": {
+    "model_name": "seedance2.5",
+    "description": "Seedance 2.5 视频生成，按时长计费。480p 2.625额度/秒，720p 4.725额度/秒。",
+    "tags": "视频生成,异步,Seedance,480p,720p,按秒计费",
+    "quota_type": 1,
+    "model_ratio": 0,
+    "model_price": 2.625,
+    "owner_by": "",
+    "completion_ratio": 0,
+    "enable_groups": [
+      "图片视频模型综合分组",
+      "特价seedance2.0"
+    ],
+    "supported_endpoint_types": [
+      "openai",
+      "openai-video"
+    ]
+  },
+  "group_ratio": {
+    "图片视频模型综合分组": 1,
+    "特价seedance2.0": 1
+  },
+  "usable_group": {
+    "图片视频模型综合分组": "grok，gemini，sd2.0生图和视频   均支持4k生图和1080p视频  充值1:5",
+    "特价seedance2.0": "0.3一秒,720p，支持720p，1080p，文档有示例    充值1:5"
+  }
+}

@@ -20,7 +20,9 @@ import {
   SupplierLoginError,
   readSupplierAccountKeys,
   isTk1688CatalogSource,
+  isJiasuApiUrl,
   normalizeTk1688CnyModel,
+  normalizeCangyuanAudioCatalogModel,
   type SupplierAccountKeys,
 } from "@super-canvas/providers";
 import { z } from "zod";
@@ -28,6 +30,7 @@ import { repository } from "./server";
 import { supplierKeyForConnection } from "./supplier-identity";
 import { requireServerMasterKey } from "./master-key";
 import { planSupplierAccountImport } from "./supplier-account-import";
+import { planSupplierAgentMediaImport, type SupplierMediaScanReceipt } from "./supplier-media-import";
 import { isScannedSupplierGroup } from "./supplier-group-source";
 import { openSupplierSiteSession } from "./supplier-site-session";
 import { supplierBillingForDisplay } from "./supplier-billing-display";
@@ -197,8 +200,9 @@ export function publicSupplierRecord(supplier: SupplierRecord) {
   if (state.billing) state.billing = supplierBillingForDisplay(supplier, state.billing);
   return {
     ...supplier,
-    ...(tk1688 ? { catalog: { ...supplier.catalog, groups: supplier.catalog.groups.map(group => ({ ...group,
-      models: group.models.map(normalizeTk1688CnyModel) })) } } : {}),
+    catalog: { ...supplier.catalog, groups: supplier.catalog.groups.map(group => ({ ...group,
+      models: group.models.map(model => normalizeCangyuanAudioCatalogModel(tk1688 ? normalizeTk1688CnyModel(model) : model,
+        supplier.siteUrl || supplier.apiUrl, group.source === "manual" ? undefined : group.id)) })) },
     ...(supplier.state ? { state } : {}),
     ...(siteLogin
       ? { siteLogin: siteLogin.authMode === "access-token"
@@ -756,6 +760,7 @@ export async function scanSupplierRecord(
   expectedRevision?: number,
   options: { verifyCapabilities?: boolean; catalogOnly?: boolean } = {},
 ): Promise<SupplierRecord> {
+  const scanStartedAt = new Date().toISOString();
   const ctx = await context(id, expectedRevision);
   if (token && !ctx.supplier.siteUrl)
     throw new SupplierServiceError("使用临时站点令牌时请明确填写站点地址");
@@ -768,6 +773,9 @@ export async function scanSupplierRecord(
     supplier,
     (await repository.listConnections()).filter((c) => owns(supplier, c)),
   );
+  // Keep the original consumer choices across account synchronization. A user
+  // edit/deletion during catalog reads must not become the new import baseline.
+  const mediaInitialConnections = [...initialConnections];
   let result: Awaited<ReturnType<typeof discoverSupplierCatalog>>;
   let accountKeys: SupplierAccountKeys | undefined;
   let scanFailure: Pick<SupplierRecord, "scanErrorCode" | "scanRetryable"> = {};
@@ -778,6 +786,7 @@ export async function scanSupplierRecord(
         siteUrl: supplier.siteUrl,
         apiUrl: supplier.apiUrl,
         kind: session?.kind ?? supplier.kind,
+        ...(isJiasuApiUrl(supplier.apiUrl) && isJiasuApiUrl(supplier.siteUrl) ? { refreshId: scanId } : {}),
         ...(session ? {} : { token }),
       },
       session?.fetch,
@@ -888,8 +897,13 @@ export async function scanSupplierRecord(
     }
     initialConnections = currentConnections(supplier,
       (await repository.listConnections()).filter(connection => owns(supplier, connection)));
+    // A newly imported local agent may also acquire media on its first Key
+    // read. Existing records retain their original frozen identity above.
+    mediaInitialConnections.push(...initialConnections.filter(connection =>
+      !current.connections.some(existing => existing.id === connection.id)));
   }
   let connectionFailure = false;
+  const mediaReceipts: SupplierMediaScanReceipt[] = [];
   for (const connection of options.catalogOnly ? [] : initialConnections) {
     if (
       !connection.encryptedSecret ||
@@ -904,13 +918,21 @@ export async function scanSupplierRecord(
         new Request(
           `http://localhost/api/providers/${encodeURIComponent(connection.id)}/models?refresh=1`,
         ),
-        { params: Promise.resolve({ id: connection.id }), supplierRefreshId: scanId },
+        { params: Promise.resolve({ id: connection.id }), supplierRefreshId: scanId,
+          ...(isJiasuApiUrl(supplier.apiUrl) && isJiasuApiUrl(supplier.siteUrl) ? { jiasuApiExampleContext: {
+            supplierId: supplier.id, sourceId: supplier.state!.sourceId, refreshId: scanId, catalog: result,
+          } } : {}) },
       );
       if (
         !response.ok ||
         ["stale", "failed", "unauthorized"].includes(response.headers.get("X-Model-Scan-Status") ?? "")
       )
         connectionFailure = true;
+      if (connection.config.usage === "agent" && response.ok && response.headers.get("X-Model-Scan-Status") === "live" &&
+        response.headers.get("X-Model-Scan-Complete") === "true" && response.headers.get("X-Model-Scan-Source") === "live") {
+        const after = await repository.getConnection(connection.id);
+        if (after) mediaReceipts.push({ before: connection, after });
+      }
     } catch {
       connectionFailure = true;
     }
@@ -946,8 +968,16 @@ export async function scanSupplierRecord(
         : undefined),
   };
   // Missing entries stay solely in the collapsed history, never the current count.
+  const mediaPlan = options.catalogOnly ? undefined : planSupplierAgentMediaImport(next, latest.connections, accountKeys, mediaReceipts, {
+    startedAt: scanStartedAt, initialConnections: mediaInitialConnections,
+    matchesKey: (connection, apiKey) => {
+      try { return Boolean(connection.encryptedSecret) && decryptSecret(connection.encryptedSecret!, requireServerMasterKey()) === apiKey; }
+      catch { return false; }
+    },
+  });
+  if (mediaPlan?.addedIds.length) next.state = { ...next.state!, agentMediaImports: mediaPlan.imports };
   try {
-    return await commit(latest, next, options.catalogOnly ? [] : undefined);
+    return await commit(latest, next, options.catalogOnly ? [] : mediaPlan!.connections);
   } catch (error) {
     if (error instanceof SupplierConflictError)
       return (await getSupplierRecord(id))!;

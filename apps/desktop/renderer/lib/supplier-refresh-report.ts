@@ -4,7 +4,7 @@ import type { ProviderConnectionView } from "./client-api";
 import { supplierOwnsConnection, type SupplierRecord } from "./client-suppliers";
 import { modelInventoryLastSuccessAt, modelInventoryScanStatus } from "./model-inventory-status";
 import { inventoryModels } from "./model-availability";
-import { modelPriceSummary } from "./model-display";
+import { modelPickerPriceData } from "./model-picker-data";
 
 export interface SupplierModelChange { id: string; name: string; before: string; after: string }
 export interface SupplierConnectionRefreshResult {
@@ -61,7 +61,12 @@ function interfaceLabel(model: ModelDescriptor): string {
   const parts = [metadata?.protocol, metadata?.autoInterfacePath,
     ...(Array.isArray(metadata?.endpointTypes) ? metadata.endpointTypes : []),
     ...(model.operations ?? [])].filter((value): value is string => typeof value === "string" && Boolean(value));
-  return [...new Set(parts)].sort().join(" · ") || "接口待确认";
+  return [...new Set(parts)].sort().join(" · ") || "—";
+}
+function interfaceFacts(model: ModelDescriptor): string {
+  const fact = (values: readonly unknown[]) => [...new Set(values.filter((value): value is string =>
+    typeof value === "string" && Boolean(value.trim())).map(value => safeRefreshMessage(value, "—")))].join(" / ") || "—";
+  return `协议：${fact([model.metadata?.protocol])}；提交接口：${fact([model.metadata?.autoInterfacePath, model.metadata?.endpointPath])}；参数字段：${fact((model.parameters ?? []).map(parameter => parameter.key))}；操作：${fact(model.operations ?? [])}`;
 }
 function interfaceIdentity(model: ModelDescriptor, connection: ProviderConnectionView | undefined): string {
   const canonical = (value: unknown): unknown => {
@@ -98,18 +103,7 @@ function priceIdentity(model: ModelDescriptor): string {
   return JSON.stringify(canonical(model.pricing ?? observed ?? fallback));
 }
 function priceChangeLabel(model: ModelDescriptor): string {
-  const pricing = model.pricing;
-  if (pricing?.kind === "token" && pricing.tiers?.some(tier => tier.conditions?.length)) return modelPriceSummary(model, {});
-  if (pricing?.kind === "token") return [
-    pricing.inputPerMillion !== undefined ? `输入 ${pricing.inputPerMillion} ${pricing.currency}/百万 Token` : "",
-    pricing.outputPerMillion !== undefined ? `输出 ${pricing.outputPerMillion} ${pricing.currency}/百万 Token` : "",
-    pricing.imageOutputPerMillion !== undefined ? `图片输出 ${pricing.imageOutputPerMillion} ${pricing.currency}/百万 Token` : "",
-  ].filter(Boolean).join(" · ") || "按用量计费，价格待确认";
-  if (pricing?.kind === "tiered" && pricing.tiers?.length) {
-    const unit = pricing.billingUnit === "second" ? "秒" : pricing.billingUnit === "request" ? "请求" : "张";
-    return pricing.tiers.map(tier => `${tier.label || tier.id}${tier.conditions?.length ? `（${tier.conditions.map(condition => `${condition.parameter}${condition.operator === "contains" ? "包含" : "="}${condition.value}`).join(tier.conditionMode === "any" ? " 或 " : "，")}）` : ""} ${tier.price} ${pricing.currency}/${unit}`).join("；");
-  }
-  return modelPriceSummary(model, {});
+  return modelPickerPriceData(model);
 }
 
 /** Compare this attempt's successful inventories; cumulative removed-model history is not a diff. */
@@ -174,9 +168,9 @@ export function buildSupplierRefreshResult(
     const currentIds = new Set(actualModels.map(model => model.id));
     const changesAllowed = confirmed && !options.snapshotOnly;
     const fallback = status === "unconfigured" ? "尚未配置分组 API Key，请配置后读取模型。" :
-      status === "empty" ? "本次请求成功，供应商返回空模型列表。" : status === "updated" ? "本次已读取分组可用模型与接口资料。" :
+      status === "empty" ? "本次请求成功，供应商返回模型：0。" : status === "updated" ? `本次 Key 目录返回模型：${actualModels.length}。` :
         scanStatus === "unauthorized" ? "分组 Key 鉴权失败，请检查有效期和分组权限。" :
-          status === "unconfirmed" ? "本次尚未获得新的确认结果，保留已有模型与配置。" : "模型读取失败，保留上次成功结果；请检查网络或供应商接口。";
+          status === "unconfirmed" ? "本次 Key 目录：—；保留已有模型与配置。" : "模型读取失败，保留上次成功结果；请检查网络或供应商接口。";
     const httpStatus = connection.config.modelScanHttpStatus;
     const message = safeRefreshMessage(status === "failed" ? connection.config.modelScanError : undefined, fallback);
     return {
@@ -189,20 +183,20 @@ export function buildSupplierRefreshResult(
       modelRemovedModels: changesAllowed && connection.config.modelScanComplete !== false ? [...oldInventory.values()].filter(model => !currentIds.has(model.id)) : [],
       interfaceChanges: changesAllowed ? actualModels.flatMap(model => {
         const old = oldModels.get(model.id);
-        const previous = old ? interfaceLabel(old) : "尚未发现";
+        const previous = old ? interfaceLabel(old) : "—";
         const next = interfaceLabel(model);
         const changed = !old || interfaceIdentity(old, prior.get(connection.id)) !== interfaceIdentity(model, connection);
         return changed ? [{ id: model.id, name: model.name ?? model.id, before: previous,
           after: previous === next ? `${next}（参数、查询或结果定义已更新）` : next }] : [];
       }) : [],
       modelIssues: actualModels.flatMap(model => model.metadata?.canvasRunnable === false || model.metadata?.autoInterfaceStatus === "incomplete"
-        ? [{ id: model.id, name: model.name ?? model.id, message: safeRefreshMessage(model.metadata?.canvasUnavailableReason, "此模型的调用接口尚未确认，请查看模型说明。") }] : []),
+        ? [{ id: model.id, name: model.name ?? model.id, message: interfaceFacts(model) }] : []),
       priceIssues: actualModels.flatMap(model => {
         const status = String(model.metadata?.priceStatus ?? "");
         if (!["failed", "unauthorized", "partial", "unpublished"].includes(status)) return [];
-        const reason = status === "unauthorized" ? "价格读取缺少站点权限" : status === "partial" ? "价格目录未完整读取" : status === "failed" ? "本次价格读取失败" : "供应商未公布价格";
+        const reason = status === "unauthorized" ? "价格读取缺少站点权限" : status === "partial" ? "价格目录局部返回" : status === "failed" ? "本次价格读取失败" : "报价";
         return [{ id: model.id, name: model.name ?? model.id, failed: status !== "unpublished",
-          message: `${reason}；${safeRefreshMessage(model.metadata?.priceLabel, "价格待确认")}` }];
+          message: `${reason}：${safeRefreshMessage(modelPickerPriceData(model), "—")}` }];
       }),
       priceChanges: changesAllowed ? actualModels.flatMap(model => {
         const old = oldModels.get(model.id);
@@ -226,19 +220,21 @@ export function buildSupplierRefreshResult(
   const keySync = syncFresh ? { status: sync.status, imported: sync.imported, preserved: sync.preserved, skipped: sync.skipped,
     message: safeRefreshMessage(sync.error, `补充 ${sync.imported} 个 Key，保留 ${sync.preserved} 个已有 Key，跳过 ${sync.skipped} 项。`) } : undefined;
   const billing = after.state?.billing?.sourceId === after.state?.sourceId ? after.state?.billing : undefined;
-  const interfacePending = connections.some(connection => connection.modelIssues?.length);
-  const priceReadFailed = connections.some(connection => ["updated", "empty"].includes(connection.status) && connection.priceIssues?.some(issue => issue.failed));
+  const interfacePending = connections.reduce((count, connection) => count + (connection.modelIssues?.length ?? 0), 0);
+  const priceReadFailed = connections.reduce((count, connection) => count + (["updated", "empty"].includes(connection.status)
+    ? connection.priceIssues?.filter(issue => issue.failed).length ?? 0 : 0), 0);
   const billingIncomplete = options.snapshotOnly && billing && (["failed", "partial"].includes(billing.status) || billing.todayStatus === "failed");
   const incomplete = !directoryOk || after.scanComplete === false || Boolean(after.scanError) || pending > 0 || interfacePending || priceReadFailed || billingIncomplete ||
     (syncFresh && sync.status !== "live");
   const added = connections.reduce((sum, item) => sum + item.modelAddedIds.length, 0);
   const removed = connections.reduce((sum, item) => sum + item.modelRemovedModels.length, 0);
+  const removalCount = pending || owned.some(connection => connection.config.modelScanComplete === false) ? "—" : removed;
   return {
     id: after.id, name: after.name, checkedAt, sourceId: after.state?.sourceId, snapshotOnly: options.snapshotOnly === true,
     status: incomplete ? (confirmed || directoryOk ? "partial" : "failed") : "updated",
-    message: `${directoryOk ? `分组新增 ${groupChanges.added.length}、未再返回 ${groupChanges.missing.length}、更名 ${groupChanges.renamed.length}` : "目录未确认，保留原分组"}；Key 已确认 ${confirmed}/${keyed.length}；模型新增 ${added}、未再返回 ${removed}${pending ? `；${pending} 项待处理` : ""}${interfacePending ? "；部分接口待确认" : ""}${priceReadFailed ? "；部分价格未读取" : ""}`,
+    message: `${directoryOk ? `分组新增 ${groupChanges.added.length}、未再返回 ${after.scanComplete === true ? groupChanges.missing.length : "—"}、更名 ${groupChanges.renamed.length}` : "本次目录：—；保留原分组"}；Key 目录读取 ${confirmed}/${keyed.length}；模型新增 ${added}、未再返回 ${removalCount}${pending ? `；无本次目录数据的连接 ${pending}` : ""}${interfacePending ? `；接口字段记录 ${interfacePending} 个模型` : ""}${priceReadFailed ? `；价格读取异常 ${priceReadFailed} 个模型` : ""}`,
     directory: { status: directoryOk ? "updated" : ["failed", "unauthorized"].includes(after.scanStatus) ? "failed" : "unconfirmed",
-      message: safeRefreshMessage(after.scanError, directoryOk ? after.scanComplete === true ? "已读取完整目录，可核对新增、更名和未再返回的分组。" : "目录已读取；分组完整性尚未确认，保留未返回的历史分组。" : "目录读取未完成，保留上次结果。"), checkedAt: after.scannedAt },
+      message: safeRefreshMessage(after.scanError, directoryOk ? `本次目录返回分组：${newGroups.length}；完整目录：${after.scanComplete === undefined ? "—" : String(after.scanComplete)}。${after.scanComplete === true ? "" : "保留未返回的历史分组。"}` : "本次目录：—；保留上次结果。"), checkedAt: after.scannedAt },
     connections, groupChanges, keySync, billing,
   };
 }

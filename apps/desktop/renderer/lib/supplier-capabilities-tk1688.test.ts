@@ -25,7 +25,9 @@ describe("Tk1688 image parameter controls", () => {
       expect(result.qualityOptions).toEqual(["low", "medium", "high"]);
       const controls = parameterDescriptorsFor("image-generation", "openai", result.model);
       expect(controls.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).toEqual(["low", "medium", "high"]);
-      expect(controls.some(parameter => parameter.key === "size")).toBe(true);
+      // A bare Key ID has no merchant size declaration. Do not revive the
+      // generic provider's pixel table merely from its Image 2 family name.
+      expect(controls.some(parameter => parameter.key === "size")).toBe(false);
       expect(result.model.metadata?.qualitySupport).toBe("assumed");
       expect(result.evidence.some(evidence => evidence.status === "verified")).toBe(false);
     },
@@ -81,27 +83,33 @@ describe("Tk1688 marketplace controls take precedence over generic presets", () 
     return capabilities(id, "https://api.tk1688.com/v1", model);
   };
 
-  it("shows the merchant's fixed 4K size and removes old batch parameters", () => {
+  it("keeps native 4K as supplier evidence while opening pixel inputs and removing batch controls", () => {
     const result = get("gpt-image-2.5-sunburst@s47c261");
     const controls = parameterDescriptorsFor("image-generation", "openai", result.model);
-    expect(controls.find(parameter => parameter.key === "size")?.options?.map(option => option.value)).toEqual(["3840x2160"]);
+    expect(controls.find(parameter => parameter.key === "size")?.control).toBe("dimensions");
+    expect(result.model.metadata?.tk1688FixedSize).toBeUndefined();
+    expect(result.model.metadata?.tk1688ReferenceSize).toBe("3840x2160");
     expect(controls.some(parameter => parameter.key === "n")).toBe(false);
-    expect(controls.some(parameter => parameter.key === "resolution" || parameter.key === "aspect_ratio")).toBe(false);
+    expect(controls.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
     const normalized = normalizedParametersForModel("image-generation", "openai", result.model, { n: 2 });
-    expect(normalized.size).toBe("3840x2160");
-    expect(normalized).not.toHaveProperty("n");
+    expect(normalized.size).toBe("auto");
+    // Keep a previously saved user value visible; the exact merchant request
+    // mapper omits N rather than silently modifying the saved node parameter.
+    expect(normalized.n).toBe(2);
     const planned = verificationParameters(result, "4K");
-    expect(planned).toMatchObject({ width: 3840, height: 2160, parameters: { size: "3840x2160" } });
+    expect(planned).toMatchObject({ width: 0, height: 0 });
+    expect(planned.parameters).not.toHaveProperty("size");
     expect(planned.parameters).not.toHaveProperty("n");
     expect(result.probeTiers).toEqual([]);
     expect(result.evidence).toContainEqual(expect.objectContaining({ resolution: "4K", status: "declared", checkedAt: "market-now" }));
     expect(result.evidence.some(evidence => evidence.status === "verified")).toBe(false);
   });
 
-  it("keeps only the current merchant's declared K tiers and official common controls", () => {
+  it("offers requested tiers while retaining the merchant's original declarations", () => {
     const result = get("gpt-image-2.5-sunburst@s46c265");
     const controls = parameterDescriptorsFor("image-generation", "openai", result.model);
-    expect(controls.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K"]);
+    expect(controls.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
+    expect(result.model.metadata?.tk1688SupportedResolutions).toEqual(["1K", "2K"]);
     expect(controls.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).toEqual(["auto", "high", "medium", "low"]);
     expect(controls.find(parameter => parameter.key === "n")?.max).toBe(4);
     expect(controls.find(parameter => parameter.key === "response_format")?.options?.map(option => option.value)).toEqual(["url", "b64_json"]);
@@ -109,15 +117,24 @@ describe("Tk1688 marketplace controls take precedence over generic presets", () 
     expect(result.probeTiers).toEqual([]);
   });
 
-  it("never expands unknown or smart-route resolution into a generic 4K menu", () => {
+  it("keeps requested tier controls separate from unknown supplier pixel declarations", () => {
     for (const id of ["gpt-image-2@s12c29", "gpt-image-2.5-sunburst"]) {
       const result = get(id);
       const controls = parameterDescriptorsFor("image-generation", "openai", result.model);
-      expect(controls.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto"]);
-      expect(controls.some(parameter => parameter.key === "size")).toBe(false);
+      expect(controls.find(parameter => parameter.key === "resolution")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
+      const size = controls.find(parameter => parameter.key === "size");
+      expect(size?.control).toBe("dimensions");
+      expect(size?.options?.map(option => option.value)).toEqual(["auto", "1024x1024", "1536x1024", "1024x1536"]);
+      expect(size?.options?.some(option => /\b[124]K\b/u.test(option.label))).toBe(false);
+      expect(size).not.toHaveProperty("min");
+      expect(size).not.toHaveProperty("max");
+      expect(size).not.toHaveProperty("step");
       expect(controls.find(parameter => parameter.key === "quality")?.options?.some(option => option.value === "max" || option.value === "xhigh")).toBe(false);
       expect(result.tiers).toEqual([]);
       expect(result.probeTiers).toEqual([]);
+      expect(normalizedParametersForModel("image-generation", "openai", result.model,
+        { size: "5000x4000", aspect_ratio: "5:4", resolution: "auto", quality: "high" }))
+        .toMatchObject({ size: "5000x4000", aspect_ratio: "5:4", resolution: "auto", quality: "high" });
     }
     expect(parameterDescriptorsFor("image-generation", "openai", get("gpt-image-2.5-sunburst").model).some(parameter => parameter.key === "n")).toBe(false);
   });

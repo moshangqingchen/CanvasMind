@@ -1,0 +1,247 @@
+{
+  "checkedAt": "2026-10-11T01:35:41.740Z",
+  "templateExcerpt": "if(\"openai-video\"===t){let t,n,s,o,r,l,d,c,u,p;return t=`${a.baseUrl}${a.endpointPath}`,n=`${a.baseUrl}/v1/videos/tasks`,s=\"@角色1和@角色2在@场景1中聊天，@角色1音频是@角色1的音色\",o=[{url:\"https://m.jiasuapi.com/example/char1.png\",name:\"角色1\"},{url:\"https://m.jiasuapi.com/example/char2.png\",name:\"角色2\"},{url:\"https://m.jiasuapi.com/example/scene1.png\",name:\"场景1\"}],r=[{url:\"https://m.jiasuapi.com/example/voice1.mp3\",name:\"角色1的音色\"}],l=JSON.stringify({model:a.modelName,prompt:s,duration:5,ratio:\"16:9\",resolution:\"720p\",images:o,audios:r},null,2),d=o.map(e=>`        {\"url\": \"${e.url}\", \"name\": \"${e.name}\"},`).join(\"\\n\"),c=r.map(e=>`        {\"url\": \"${e.url}\", \"name\": \"${e.name}\"},`).join(\"\\n\"),u=o.map(e=>`    { url: '${e.url}', name: '${e.name}' },`).join(\"\\n\"),p=r.map(e=>`    { url: '${e.url}', name: '${e.name}' },`).join(\"\\n\"),\"curl\"===e?`# 1. 创建任务\ncurl ${t} \\\\\n  -H \"Authorization: Bearer $${a.apiKeyEnv}\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '${l.replace(/\\n/g,\"\\n     \")}'\n\n# 2. 轮询任务状态（每 3 秒）\ncurl ${n}/$TASK_ID \\\\\n  -H \"Authorization: Bearer $${a.apiKeyEnv}\"`",
+  "sourceReceipt": {
+    "sourceUrl": "https://ai.jiasuapi.com/static/js/index.723048e8ea.js",
+    "checkedAt": "2026-10-11T01:35:41.740Z",
+    "httpStatus": 200,
+    "bodyBytes": 5015629,
+    "bodySha256": "8834f058ca4c354cc01f2356800571465b4ab79fbee582e143d5d6934a5e54de"
+  },
+  "supported_endpoint": {
+    "image-generation": {
+      "path": "/v1/images/generations",
+      "method": "POST"
+    },
+    "openai-video": {
+      "path": "/v1/video/generations",
+      "method": "POST"
+    }
+  },
+  "data": [
+    {
+      "model_name": "seedance2.0-933-2-SVIP",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "seedance2.0-933-SVIP",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "sd-2.0-mini-503-J3",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "sd-2.0-mini-J1",
+      "description": "9图片 0视频 3音频  480P 最长 15 秒、720P 最长 12 秒，",
+      "api_parameters": "[{\"name\":\"model\",\"type\":\"string\",\"required\":true,\"description\":\"视频模型 ID\"},{\"name\":\"prompt\",\"type\":\"string\",\"required\":true,\"description\":\"想要生成视频的文字描述\"},{\"name\":\"duration\",\"type\":\"integer\",\"required\":true,\"default\":\"15\",\"range\":\"4-15\",\"description\":\"视频时长（秒）。客户端未传时长时使用此默认值。\"},{\"name\":\"ratio\",\"type\":\"enum\",\"required\":true,\"default\":\"16:9\",\"range\":\"16:9, 9:16, 1:1\",\"description\":\"输出宽高比\"},{\"name\":\"resolution\",\"type\":\"enum\",\"required\":true,\"default\":\"720p\",\"range\":\"480p, 720p\",\"description\":\"输出分辨率预设。启用视频计费时，客户端未传分辨率则使用此默认值。\"},{\"name\":\"images\",\"type\":\"array\",\"description\":\"参考图：URL 或 {url,name?}。不传 name→图片N；传了 name→用于 @引用\"},{\"name\":\"videos\",\"type\":\"array\",\"description\":\"参考视频：URL 或 {url,name?}。不传 name→视频N；传了则用该 name\"},{\"name\":\"audios\",\"type\":\"array\",\"description\":\"参考音频：URL 或 {url,name?}。不传 name→音频N；传了则用该 name\"},{\"name\":\"materials\",\"type\":\"array\",\"description\":\"可选 materials[{type,url,name?}]，命名规则同上\"}]",
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "MiniMax-H3-jx",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "sd-2.0-fast-813-J3",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "wan3",
+      "description": "WAN3 720P-1080；按秒计费 ；时长：15-30 秒；参考：最多 10 图 / 5 视频 / 5 音频。",
+      "api_parameters": "[{\"name\":\"model\",\"type\":\"string\",\"required\":true,\"description\":\"视频模型 ID\"},{\"name\":\"prompt\",\"type\":\"string\",\"required\":true,\"description\":\"想要生成视频的文字描述\"},{\"name\":\"duration\",\"type\":\"integer\",\"required\":true,\"default\":\"30\",\"range\":\"15-30\",\"description\":\"视频时长（秒）。客户端未传时长时使用此默认值。\"},{\"name\":\"ratio\",\"type\":\"enum\",\"default\":\"16:9\",\"range\":\"16:9, 9:16, 1:1\",\"description\":\"输出宽高比\"},{\"name\":\"resolution\",\"type\":\"enum\",\"default\":\"720p\",\"range\":\"720p, 1080p\",\"description\":\"输出分辨率预设。启用视频计费时，客户端未传分辨率则使用此默认值。\"},{\"name\":\"images\",\"type\":\"array\",\"description\":\"参考图：URL 或 {url,name?}。不传 name→图片N；传了 name→用于 @引用\"},{\"name\":\"videos\",\"type\":\"array\",\"description\":\"参考视频：URL 或 {url,name?}。不传 name→视频N；传了则用该 name\"},{\"name\":\"audios\",\"type\":\"array\",\"description\":\"参考音频：URL 或 {url,name?}。不传 name→音频N；传了则用该 name\"},{\"name\":\"materials\",\"type\":\"array\",\"description\":\"可选 materials[{type,url,name?}]，命名规则同上\"}]",
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "dola-sd-2.0",
+      "description": "dola   9图 0视频  3音频   卡脸卡品牌",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "ov-seedance-2.5-480p-nv",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "sd-2.0-933-720-fast-原生真人",
+      "description": "seedance-2.0-fast  文生视频 / 图片参考生视频 · 4-15秒 ·720p · 最多支持9张图3视频3音频，原生真人",
+      "api_parameters": "[{\"name\":\"model\",\"type\":\"string\",\"required\":true,\"description\":\"视频模型 ID\"},{\"name\":\"prompt\",\"type\":\"string\",\"required\":true,\"description\":\"想要生成视频的文字描述\"},{\"name\":\"duration\",\"type\":\"integer\",\"default\":\"5\",\"range\":\"4-15\",\"description\":\"视频时长（秒）。客户端未传时长时使用此默认值。\"},{\"name\":\"ratio\",\"type\":\"enum\",\"default\":\"16:9\",\"range\":\"16:9, 9:16, 1:1\",\"description\":\"输出宽高比\"},{\"name\":\"resolution\",\"type\":\"enum\",\"range\":\"720p\",\"description\":\"输出分辨率预设\"},{\"name\":\"images\",\"type\":\"array\",\"description\":\"参考图：URL 或 {url,name?}。不传 name→图片N；传了 name→用于 @引用\"},{\"name\":\"videos\",\"type\":\"array\",\"description\":\"参考视频：URL 或 {url,name?}。不传 name→视频N；传了则用该 name\"},{\"name\":\"audios\",\"type\":\"array\",\"description\":\"参考音频：URL 或 {url,name?}。不传 name→音频N；传了则用该 name\"},{\"name\":\"materials\",\"type\":\"array\",\"description\":\"可选 materials[{type,url,name?}]，命名规则同上\"}]",
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "sd-2.0-fast-J4",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "seedance-933-111",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "dola-sd-2.5",
+      "description": "dola   30图 0视频  10音频   卡脸卡品牌",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "sd-2.5-J2",
+      "description": "30图10视频 10音频  原生过真人 720P 支持5-30秒\n",
+      "api_parameters": "[{\"name\":\"model\",\"type\":\"string\",\"required\":true,\"description\":\"视频模型 ID\"},{\"name\":\"prompt\",\"type\":\"string\",\"required\":true,\"description\":\"想要生成视频的文字描述\"},{\"name\":\"duration\",\"type\":\"integer\",\"default\":\"30\",\"range\":\"5-30\",\"description\":\"视频时长（秒）。客户端未传时长时使用此默认值。\"},{\"name\":\"ratio\",\"type\":\"enum\",\"default\":\"16:9\",\"range\":\"16:9, 9:16, 1:1\",\"description\":\"输出宽高比\"},{\"name\":\"resolution\",\"type\":\"enum\",\"default\":\"720p\",\"range\":\"480p, 720p, 1080p\",\"description\":\"输出分辨率预设。启用视频计费时，客户端未传分辨率则使用此默认值。\"},{\"name\":\"images\",\"type\":\"array\",\"description\":\"参考图：URL 或 {url,name?}。不传 name→图片N；传了 name→用于 @引用\"},{\"name\":\"videos\",\"type\":\"array\",\"description\":\"参考视频：URL 或 {url,name?}。不传 name→视频N；传了则用该 name\"},{\"name\":\"audios\",\"type\":\"array\",\"description\":\"参考音频：URL 或 {url,name?}。不传 name→音频N；传了则用该 name\"},{\"name\":\"materials\",\"type\":\"array\",\"description\":\"可选 materials[{type,url,name?}]，命名规则同上\"}]",
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "sd-2.0-J4",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "AIGV-WAN3-1080P",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "seedance2.0-mini-A",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "seedance2.0-933-V-SVIP",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "AIGV-WAN3-720P",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "seedance2.0-720-满血真人",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "Seedance2.0-933-X-SVIP",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "sd-2.0-fast-803-J3",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "seedance2.5-全参真人",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "seedance2.0-满血",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "minimax-h3",
+      "description": "9图3视频3音频，原生过真人；\n视频需要传视频duration_seconds",
+      "api_parameters": "[{\"name\":\"model\",\"type\":\"string\",\"required\":true,\"description\":\"视频模型 ID\"},{\"name\":\"prompt\",\"type\":\"string\",\"required\":true,\"description\":\"想要生成视频的文字描述\"},{\"name\":\"duration\",\"type\":\"integer\",\"required\":true,\"default\":\"15\",\"range\":\"4-15\",\"description\":\"视频时长（秒），4–15 的整数。客户端未传时长时使用此默认值。\"},{\"name\":\"ratio\",\"type\":\"enum\",\"required\":true,\"default\":\"16:9\",\"range\":\"9:16, 1:1, 3:4, 4:3, 16:9\",\"description\":\"输出宽高比\"},{\"name\":\"resolution\",\"type\":\"enum\",\"required\":true,\"default\":\"2k\",\"range\":\"2k\",\"description\":\"输出分辨率预设。启用视频计费时，客户端未传分辨率则使用此默认值。\"},{\"name\":\"images\",\"type\":\"array\",\"description\":\"参考图：URL 或 {url,name?}。不传 name→图片N；传了 name→用于 @引用\"},{\"name\":\"videos\",\"type\":\"array\",\"description\":\"参考视频：URL 或 [{url, duration_seconds?, mime?}]。duration_seconds 为该参考视频时长（秒），不传按 5 秒；最多 3 个，多条合计不超过 15 秒；图片+视频+音频合计最多 10 个；超限或时长非法时网关在提交前拒绝（HTTP 400），不扣费。示例：[\\\"https://m.jiasuapi.com/media/by-hash/example-ref.mp4\\\"] 或 [{\\\"url\\\":\\\"https://m.jiasuapi.com/media/by-hash/example-ref.mp4\\\",\\\"duration_seconds\\\":10}]\"},{\"name\":\"audios\",\"type\":\"array\",\"description\":\"参考音频：URL 或 {url,name?}。不传 name→音频N；传了则用该 name\"},{\"name\":\"materials\",\"type\":\"array\",\"description\":\"可选 materials[{type,url,name?}]，命名规则同上\"}]",
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "grok-1.5",
+      "description": "按次收费。最多7图 3-15秒,720p\n",
+      "api_parameters": "[{\"name\":\"model\",\"type\":\"string\",\"required\":true,\"description\":\"视频模型 ID\"},{\"name\":\"prompt\",\"type\":\"string\",\"required\":true,\"description\":\"想要生成视频的文字描述\"},{\"name\":\"duration\",\"type\":\"integer\",\"default\":\"5\",\"range\":\"3-15\",\"description\":\"视频时长（秒）。客户端未传时长时使用此默认值。\"},{\"name\":\"ratio\",\"type\":\"enum\",\"default\":\"16:9\",\"range\":\"16:9, 9:16, 1:1\",\"description\":\"输出宽高比\"},{\"name\":\"resolution\",\"type\":\"enum\",\"default\":\"720p\",\"range\":\"720p\",\"description\":\"输出分辨率预设。启用视频计费时，客户端未传分辨率则使用此默认值。\"},{\"name\":\"images\",\"type\":\"array\",\"description\":\"参考图：URL 或 {url,name?}。不传 name→图片N；传了 name→用于 @引用\"},{\"name\":\"materials\",\"type\":\"array\",\"description\":\"可选 materials[{type,url,name?}]，命名规则同上\"}]",
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "seedance2.0-933-V-111",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    },
+    {
+      "model_name": "ov-seedance-2.5-720p-nv",
+      "description": "",
+      "api_parameters": null,
+      "supported_endpoint_types": [
+        "openai-video"
+      ]
+    }
+  ]
+}

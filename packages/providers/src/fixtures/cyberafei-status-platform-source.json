@@ -1,0 +1,18 @@
+{
+  "source": {
+    "url": "https://api.3365api.cn/api/status",
+    "checkedAt": "2026-10-11T03:36:35.178Z",
+    "http": 200,
+    "responseSha256": "77fbd674ad6268e4fef9aa7a368fc42533662429585008bee3c7b90f26ad1c6a",
+    "scope": "Own public status response, exact platform detection keys only; credentials and login responses in the regression are entirely synthetic."
+  },
+  "responseSubset": {
+    "success": true,
+    "message": "",
+    "data": {
+      "system_name": "赛博阿飞 API",
+      "quota_per_unit": 500000,
+      "HeaderNavModules": "{\"home\":true,\"console\":true,\"pricing\":{\"enabled\":true,\"requireAuth\":false},\"rankings\":{\"enabled\":false,\"requireAuth\":false},\"docs\":true,\"about\":false}"
+    }
+  }
+}

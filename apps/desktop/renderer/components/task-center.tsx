@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { fetchRuns } from "../lib/client-api";
 import { localizeRunError } from "../lib/error-localization";
+import { runErrorTechnicalTitle } from "../lib/run-error-diagnostics";
 import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
 import { TaskEvidence } from "./task-evidence";
 import { FailureDiagnosis } from "./failure-diagnosis";
@@ -373,7 +374,7 @@ export function RunHistoryModal({
                                     </a>
                                   ) : null}
                                   <details>
-                                    <summary>技术详情与上游原文</summary>
+                                    <summary>{runErrorTechnicalTitle(localized)}</summary>
                                     <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(localized, null, 2)}</pre>
                                     <button type="button" className="button ghost small" onClick={(event) => {
                                       const button = event.currentTarget;

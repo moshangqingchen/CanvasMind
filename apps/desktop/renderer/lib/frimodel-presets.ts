@@ -34,19 +34,45 @@ const FRIMODEL_EDIT_SIZE_OPTIONS = [
   { label: "1K · 1:1 · 1024 × 1024", value: "1024x1024" },
   { label: "1K · 2:3 · 1024 × 1536", value: "1024x1536" },
   { label: "1K · 3:2 · 1536 × 1024", value: "1536x1024" },
+  { label: "1K · 3:4 · 768 × 1024", value: "768x1024" },
+  { label: "1K · 4:3 · 1024 × 768", value: "1024x768" },
+  { label: "1K · 4:5 · 768 × 960", value: "768x960" },
+  { label: "1K · 5:4 · 960 × 768", value: "960x768" },
   { label: "1K · 9:16 · 1088 × 1920", value: "1088x1920" },
   { label: "1K · 16:9 · 1920 × 1088", value: "1920x1088" },
+  { label: "1K · 21:9 · 1920 × 816", value: "1920x816" },
+  { label: "1K · 9:21 · 816 × 1920", value: "816x1920" },
   { label: "2K · 1:1 · 2048 × 2048", value: "2048x2048" },
+  { label: "2K · 1:2 · 1024 × 2048", value: "1024x2048" },
+  { label: "2K · 2:1 · 2048 × 1024", value: "2048x1024" },
+  { label: "2K · 1:3 · 672 × 2016", value: "672x2016" },
+  { label: "2K · 3:1 · 2016 × 672", value: "2016x672" },
   { label: "2K · 2:3 · 2048 × 3072", value: "2048x3072" },
   { label: "2K · 3:2 · 3072 × 2048", value: "3072x2048" },
+  { label: "2K · 3:4 · 2048 × 2736", value: "2048x2736" },
+  { label: "2K · 4:3 · 2736 × 2048", value: "2736x2048" },
+  { label: "2K · 4:5 · 1600 × 2000", value: "1600x2000" },
+  { label: "2K · 5:4 · 2000 × 1600", value: "2000x1600" },
   { label: "2K · 9:16 · 1440 × 2560", value: "1440x2560" },
   { label: "2K · 16:9 · 2560 × 1440", value: "2560x1440" },
+  { label: "2K · 21:9 · 2560 × 1104", value: "2560x1104" },
+  { label: "2K · 9:21 · 1104 × 2560", value: "1104x2560" },
   { label: "4K · 1:1 · 2880 × 2880", value: "2880x2880" },
+  { label: "4K · 1:2 · 1920 × 3840", value: "1920x3840" },
+  { label: "4K · 2:1 · 3840 × 1920", value: "3840x1920" },
+  { label: "4K · 1:3 · 1280 × 3840", value: "1280x3840" },
+  { label: "4K · 3:1 · 3840 × 1280", value: "3840x1280" },
   { label: "4K · 2:3 · 2352 × 3520", value: "2352x3520" },
   { label: "4K · 3:2 · 3520 × 2352", value: "3520x2352" },
+  { label: "4K · 3:4 · 2480 × 3312", value: "2480x3312" },
+  { label: "4K · 4:3 · 3312 × 2480", value: "3312x2480" },
+  { label: "4K · 4:5 · 2560 × 3200", value: "2560x3200" },
+  { label: "4K · 5:4 · 3200 × 2560", value: "3200x2560" },
   { label: "4K · 9:16 · 2160 × 3840", value: "2160x3840" },
   { label: "4K · 16:9 · 3840 × 2160", value: "3840x2160" },
-] as const;
+  { label: "4K · 21:9 · 3840 × 1648", value: "3840x1648" },
+  { label: "4K · 9:21 · 1648 × 3840", value: "1648x3840" },
+];
 
 const FRIMODEL_EDIT_PARAMETERS: readonly ModelParameterDescriptor[] = [
   {
@@ -108,14 +134,15 @@ export function friModelFallbackImageDescriptor(
     id, name: `${id}（FriModel）`, operations: ["image.generate", "image.edit"],
     metadata: { supplier: "frimodel", liveInventory: true, pendingLiveScan: true, ...(group ? { modelGroup: group } : {}) },
   });
-  if (!id || !friModelSupportsImageEdit(id)) return undefined;
+  if (!id || (!friModelSupportsImageEdit(id) && id !== "gpt-image-2.5")) return undefined;
+  const hasOwnImage2PixelTable = /^gpt-image-2(?:-(?:low|medium|high))?$/iu.test(id);
   const fixedQuality = /^gpt-image-2-(low|medium|high)$/iu.exec(id)?.[1]?.toLowerCase();
   return {
     id,
     name: `${id}（FriModel）`,
     description:
       "FriModel OpenAI Images 图片模型；支持 /v1/images/generations 与 /v1/images/edits。",
-    operations: ["image.generate", "image.edit"],
+    operations: id === "gpt-image-2.5" ? ["image.generate"] : ["image.generate", "image.edit"],
     inputKinds: ["text", "image"],
     outputKinds: ["image"],
     parameters: FRIMODEL_EDIT_PARAMETERS.map((parameter) =>
@@ -137,6 +164,10 @@ export function friModelFallbackImageDescriptor(
               options: imageQualityPresetsAfterSuccess(id.toLowerCase(), ["max"]),
               description: IMAGE_QUALITY_PRESET_DESCRIPTION,
             }
+          : parameter.key === "quality" && /^gpt-image-2\.5(?:-(?:flare|sunburst))?$/iu.test(id)
+          ? { ...parameter, control: "text", allowCustomValue: true, default: "max", options: [{ value: "auto", label: "自动" }, { value: "max", label: "最高质量偏好（max）" }], description: "max 为用户最高质量偏好；当前完整型号未公布质量完整枚举，按开放 quality 字符串原值发送，保留已保存值。" }
+          : parameter.key === "size" && !hasOwnImage2PixelTable
+          ? { ...parameter, min: undefined, max: undefined, step: 1, allowCustomValue: true, options: [{ value: "auto", label: "自动" }], description: "此完整型号 size 为开放 W/H；未公布该完整型号逐比例像素映射，不借用 GPT Image 2 指南表。" }
           : parameter,
     ),
     limits: {
@@ -145,9 +176,13 @@ export function friModelFallbackImageDescriptor(
     },
     metadata: {
       protocol: "frimodel-images",
+      imageNativeParameterContract: true,
+      imageOpenSizePreferences: true,
+      imageSupportedResolutions: /^gpt-image-2(?:-(?:low|medium|high))?$/iu.test(id) ? ["1K", "2K", "4K"] : [],
+      documentationUrl: "https://ai-doc.apifox.cn/9349794m0.md",
       liveInventory: true,
       pendingLiveScan: true,
-      supportsImageEdit: true,
+      supportsImageEdit: id !== "gpt-image-2.5",
       referenceEditEndpoint: "/v1/images/edits",
       fixedOutputCount: 1,
       ...(group ? { modelGroup: group } : {}),

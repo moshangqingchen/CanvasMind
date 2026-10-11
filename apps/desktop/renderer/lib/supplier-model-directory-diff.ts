@@ -1,4 +1,5 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { remainingVideoModel } from "@super-canvas/providers/remaining-video-contracts";
 import { modelSupportsGenerationMedia } from "@super-canvas/providers/model-media";
 import type { ProviderConnectionView } from "./client-api";
 import { supplierOwnsConnection, type SupplierCatalogModel, type SupplierRecord } from "./client-suppliers";
@@ -37,12 +38,12 @@ export function supplierCatalogDisplayPrice(model: SupplierCatalogModel): string
     ? `${label.replace(/（上次价格）$/u, "")}（上次价格）` : label;
 }
 
-function displayDescriptor(model: SupplierCatalogModel, keyConfirmed: boolean): ModelDescriptor {
+function displayDescriptor(model: SupplierCatalogModel, keyConfirmed: boolean, group: string): ModelDescriptor {
   const metadata = model.metadata ?? {};
   const previousPrice = metadata.supplierCatalogModelStale === true;
   const pricing = metadata.supplierPriceConflict === true || metadata.sub2apiPlazaPricingIncomplete === true || metadata.weaiLegacyPricingIncomplete === true || metadata.miaowuCatalogPricingIncomplete === true || metadata.chuangxiangCatalogPricingIncomplete === true || metadata.jiasuCatalogPricingIncomplete === true || metadata.jijiuCatalogPricingIncomplete === true ? undefined : (metadata.secureSkillCatalogPricing ?? metadata.chuangxiangCatalogPricing ?? metadata.tk1688Pricing ??
     metadata.weaiLegacyPricing ?? metadata.sub2apiPlazaPricing ?? metadata.miaowuCatalogPricing ?? metadata.hangCatalogPricing ?? metadata.officialCatalogPricing) as ModelDescriptor["pricing"];
-  return { id: model.id, name: model.name || model.id, operations: [], parameters: [],
+  const descriptor: ModelDescriptor = { id: model.id, name: model.name || model.id, operations: [], parameters: [],
     inputKinds: model.inputKinds, outputKinds: model.outputKinds, limits: model.limits,
     pricing,
     metadata: { ...metadata, catalogCapability: model.capability,
@@ -50,6 +51,15 @@ function displayDescriptor(model: SupplierCatalogModel, keyConfirmed: boolean): 
       ...(previousPrice ? { priceStatus: "partial", priceCheckedAt: pricing?.checkedAt || metadata.supplierCatalogPriceCheckedAt } : {}),
       canvasRunnable: false, canvasUnavailableReason: keyConfirmed ? CATALOG_ONLY_MODEL_REASON : CATALOG_UNCONFIRMED_MODEL_REASON,
       publicCatalogOnly: true, parameterControlsUnavailable: true, imageCapabilitiesVerifiedAt: undefined } };
+  // The public record has this supplier's exact parameter schema. Use its
+  // existing contract parser for display while preserving the Key boundary.
+  const declared = model.capability === "video" && (metadata.jiasuCatalogRecord || metadata.jiasuApiParameters)
+    ? remainingVideoModel("jiasu", model.id, descriptor, { group })
+    : model.capability === "video" && model.id === "muse-video" && metadata.supplierPricePlatform === "muse" &&
+        metadata.catalogGenerationDeclarationSource === "official-price-page"
+      ? remainingVideoModel("secure", model.id, descriptor, { group }) : undefined;
+  return declared ? { ...descriptor, parameters: declared.parameters, limits: declared.limits,
+    inputKinds: declared.inputKinds, metadata: { ...declared.metadata, ...descriptor.metadata } } : descriptor;
 }
 
 /** A display sidecar only. Public rows never become runtime options or Key permissions. */
@@ -70,7 +80,7 @@ export function catalogPickerDirectory(connection: ProviderConnectionView | unde
   const group = currentGroups.length === 1 ? currentGroups[0] : groups.length === 1 ? groups[0] : undefined;
   if (!group || group.source === "manual" || group.status === "missing") return undefined;
   const kind = nodeType === "image-generation" ? "image" : nodeType === "video-generation" ? "video" : "music";
-  const catalog = group.models.map(model => displayDescriptor(model, keyConfirmed)).filter(model => modelSupportsGenerationMedia(model, kind));
+  const catalog = group.models.map(model => displayDescriptor(model, keyConfirmed, group.id)).filter(model => modelSupportsGenerationMedia(model, kind));
   const key = keyModels.filter(model => modelSupportsGenerationMedia(model, kind));
   const diff = supplierModelDirectoryDiff(key, catalog);
   const missing = new Set(diff.catalogOnlyIds);

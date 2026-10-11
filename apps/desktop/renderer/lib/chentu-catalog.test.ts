@@ -411,27 +411,10 @@ describe("chentu catalog", () => {
     expect(freeSize).toMatchObject({
       control: "dimensions",
       default: "auto",
-      min: 16,
-      max: 8192,
-      step: 16,
+      step: 1,
     });
-    expect(freeSize?.options?.[0]).toEqual({
-      label: "自动（提示词优先，其次参考图）",
-      value: "auto",
-    });
-    expect(
-      freeSize?.options?.filter((option) => option.label.startsWith("1K ·")),
-    ).toHaveLength(16);
-    expect(
-      freeSize?.options?.filter((option) => option.label.startsWith("2K ·")),
-    ).toHaveLength(9);
-    expect(
-      freeSize?.options?.filter((option) => option.label.startsWith("4K ·")),
-    ).toHaveLength(9);
-    expect(freeSize?.options).toContainEqual({
-      label: "4K · 16:9 · 3840 × 2160",
-      value: "3840x2160",
-    });
+    expect(freeSize?.options).toEqual([{ label: "自动", value: "auto" }]);
+    expect(freeSize?.min).toBeUndefined(); expect(freeSize?.max).toBeUndefined();
 
     const oneKSize = adobeModels
       .find((model) => model.id === "gpt-image-2-1k")
@@ -481,19 +464,10 @@ describe("chentu catalog", () => {
     expect(size).toMatchObject({
       control: "dimensions",
       default: "auto",
-      min: 16,
-      max: 8192,
-      step: 16,
+      step: 1,
     });
-    expect(
-      size?.options?.filter((option) => option.label.startsWith("1K ·")),
-    ).toHaveLength(16);
-    expect(
-      size?.options?.filter((option) => option.label.startsWith("2K ·")),
-    ).toHaveLength(9);
-    expect(
-      size?.options?.filter((option) => option.label.startsWith("4K ·")),
-    ).toHaveLength(9);
+    expect(size?.options).toEqual([{ label: "自动", value: "auto" }]);
+    expect(size?.min).toBeUndefined(); expect(size?.max).toBeUndefined();
     expect(chentuFallbackImageDescriptor("not-a-chentu-image-model")).toBe(
       undefined,
     );

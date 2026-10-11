@@ -72,7 +72,11 @@ describe("FriModel marketplace presets", () => {
       "quality",
       "output_format",
     ]);
-    expect(descriptor?.parameters?.[0]?.options).toEqual(
+    expect(descriptor?.parameters?.[0]).toMatchObject({ control: "dimensions", step: 1, allowCustomValue: true });
+    expect(descriptor?.parameters?.[0]?.options?.map(option => option.value)).toEqual(["auto"]);
+    expect(descriptor?.parameters?.[0]?.min).toBeUndefined();
+    expect(descriptor?.parameters?.[0]?.max).toBeUndefined();
+    expect(friModelFallbackImageDescriptor("gpt-image-2")?.parameters?.[0]?.options).toEqual(
       expect.arrayContaining([
         { label: "1K · 1:1 · 1024 × 1024", value: "1024x1024" },
         { label: "2K · 16:9 · 2560 × 1440", value: "2560x1440" },
@@ -107,13 +111,14 @@ describe("FriModel marketplace presets", () => {
     expect(quality?.description).toContain("未逐档实测");
   });
 
-  it.each(["flare", "sunburst"])("keeps official %s editable without Adobe max presets", (variant) => {
+  it.each(["flare", "sunburst"])("keeps official %s quality open with the user's highest preference", (variant) => {
     const model = `gpt-image-2.5-${variant}`;
     expect(friModelSupportsImageEdit(model)).toBe(true);
     const descriptor = friModelFallbackImageDescriptor(model, "openai_official");
     expect(descriptor?.operations).toContain("image.edit");
     expect(descriptor?.metadata?.modelGroup).toBe("openai_official");
-    expect(descriptor?.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).not.toContain("max");
+    expect(descriptor?.parameters?.find(parameter => parameter.key === "quality")).toMatchObject({ control: "text", allowCustomValue: true, default: "max" });
+    expect(descriptor?.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).toEqual(["auto", "max"]);
     expect(friModelSupportsImageEdit(`${model}-unknown`)).toBe(false);
   });
 });

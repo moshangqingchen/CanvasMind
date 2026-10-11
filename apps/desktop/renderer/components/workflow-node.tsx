@@ -50,12 +50,14 @@ import {
   downloadAssetPreferLocal,
 } from "../lib/asset-download";
 import { localizeRunError } from "../lib/error-localization";
+import { runErrorDiagnostic, runErrorTechnicalTitle } from "../lib/run-error-diagnostics";
 import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
 import { TaskEvidence } from "./task-evidence";
 import { FailureDiagnosis } from "./failure-diagnosis";
 import { ReadableName, ResultInformation, ResultToolbar, WaitElapsed } from "./result-information";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
-import { cleanModelDisplayName, modelPriceSummary } from "../lib/model-display";
+import { cleanModelDisplayName } from "../lib/model-display";
+import { modelPickerPriceData } from "../lib/model-picker-data";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
 import { useSupplierBillingOverview } from "../lib/client-supplier-billing";
 import { billingCompact } from "../lib/supplier-billing-display";
@@ -738,7 +740,7 @@ function GenerationNodeBody({
                   const candidate = choosePickerConnection(connectionOptions, currentConnection, supplier);
                   return (
                   <option key={supplier} value={supplier}>
-                    {label} · {supplier === currentSupplier ? modelPriceSummary(selectedModel, priceParameters) : candidate?.modelQuote ?? "选取后报价"} · {billingCompact(billingAccounts.find(account => account.id === candidate?.supplierId)?.billing)}
+                    {label} · {supplier === currentSupplier ? modelPickerPriceData(selectedModel) : candidate?.modelQuote ?? "—"} · {billingCompact(billingAccounts.find(account => account.id === candidate?.supplierId)?.billing)}
                   </option>
                 ); })}
               </select>
@@ -773,7 +775,7 @@ function GenerationNodeBody({
               </select>
             </label>}
           </div>
-          <small className="node-config-supplier-quote" aria-label="当前供应商报价">{currentConnectionOption?.supplierLabel ?? "供应商"} · {modelPriceSummary(selectedModel, priceParameters)} · {billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing)}</small>
+          <small className="node-config-supplier-quote" aria-label="当前供应商报价">{currentConnectionOption?.supplierLabel ?? "供应商"} · {modelPickerPriceData(selectedModel)} · {billingCompact(billingAccounts.find(account => account.id === currentConnectionOption?.supplierId)?.billing)}</small>
         </div>
         <div className="node-config-model-field node-config-model-header">
           <span>模型</span>
@@ -899,7 +901,7 @@ function GenerationNodeBody({
             <strong>
               {modelName}
             </strong>
-            <small title={connectionName}>{connectionName.replace(/\s*·\s*画布$/u, "")} · {summary || "API 默认参数"} · {modelPriceSummary(selectedModel, priceParameters)}</small>
+            <small title={connectionName}>{connectionName.replace(/\s*·\s*画布$/u, "")} · {summary || "API 默认参数"} · {modelPickerPriceData(selectedModel)}</small>
           </span>
         </button>
         <button
@@ -1013,6 +1015,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
     providerTaskStatus: data.generatedDetails?.taskEvidence?.status,
   }) as RunErrorDetails | null;
   const generatedError = generatedErrorDetails?.message ?? null;
+  const generatedErrorDiagnostic = runErrorDiagnostic(generatedErrorDetails);
   const generatedProvenance = generatedResult
     ? generatedResultProvenance(data)
     : null;
@@ -1387,7 +1390,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                       {generatedNeedsAttention && data.generatedProvider === "cli" && data.onCancelTask ? <button type="button" className="generated-result-retry nodrag nopan" disabled={cancelling} title="停止本地跟踪后，请到网站核对任务是否完成" onClick={async event => { event.stopPropagation(); setCancelling(true); try { await data.onCancelTask?.(); } finally { setCancelling(false); } }}>{cancelling ? "正在处理" : "停止跟踪"}</button> : null}
                       {generatedFailed ? <small>可先查看详情排查原因，再重新生成。</small> : null}
                       <details className="result-error-details nodrag nopan" onClick={(event) => event.stopPropagation()}>
-                      <summary>技术详情与上游原文</summary>
+                      <summary>{runErrorTechnicalTitle(generatedErrorDetails)}</summary>
                       <p>{generatedError}</p>
                       <button type="button" className="result-info-button" onClick={(event) => {
                         const button = event.currentTarget;
@@ -1414,18 +1417,16 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                         </small>
                       ) : null}
                       {generatedErrorDetails?.statusCode ||
-                      generatedErrorDetails?.providerMessage ? (
+                      generatedErrorDiagnostic ? (
                         <small className="generated-result-error-upstream">
-                          {generatedErrorDetails.statusCode
+                          {generatedErrorDetails?.statusCode
                             ? `HTTP ${generatedErrorDetails.statusCode}`
                             : null}
-                          {generatedErrorDetails.statusCode &&
-                          generatedErrorDetails.providerMessage
+                          {generatedErrorDetails?.statusCode &&
+                          generatedErrorDiagnostic
                             ? " · "
                             : null}
-                          {generatedErrorDetails.providerMessage
-                            ? `上游：${generatedErrorDetails.providerMessage}`
-                            : null}
+                          {generatedErrorDiagnostic}
                         </small>
                       ) : null}
                       {generatedErrorDetails?.actionUrl ? (

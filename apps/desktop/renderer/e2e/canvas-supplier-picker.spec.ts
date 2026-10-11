@@ -27,7 +27,7 @@ for (const zoom of [0.4, 1, 1.74])
   test(`供应商与群组实际点击切换并保存（${Math.round(zoom * 100)}% 缩放）`, async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const models = [
       {
         id: "gpt-image-2",
@@ -200,6 +200,11 @@ for (const zoom of [0.4, 1, 1.74])
     await quality.selectOption("low");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2.5", qualityMode: "custom", parameters: { quality: "low" } });
     await page.getByRole("combobox", { name: "选择测试 模型", exact: true }).click();
+    const modelOptions = page.getByRole("listbox", { name: "选择测试 模型 可选模型", exact: true });
+    await expect(modelOptions).toContainText("ID: gpt-image-2");
+    await expect(modelOptions).not.toContainText(/档位：|比例：|尺寸：|质量：/u);
+    await expect(modelOptions.locator('[id$="-parameters"]')).toHaveCount(0);
+    if (zoom === 1) await page.screenshot({ path: testInfo.outputPath("compact-model-menu-with-parameter-controls.png") });
     await page.getByRole("option", { name: "图像模型", exact: true }).click();
     await expect(quality).toHaveValue("high");
     await expect.poll(savedData).toMatchObject({ model: "gpt-image-2", qualityMode: "highest", parameters: { quality: "high" } });

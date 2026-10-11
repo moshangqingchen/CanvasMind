@@ -5,7 +5,17 @@ import { chuangxiangCatalogPricing } from "../../../../packages/providers/src/ch
 import { applyChuangxiangMidjourneyCapabilities } from "@super-canvas/providers/chuangxiang-midjourney-contract";
 
 describe("appendPriceLabelOnce", () => {
-  it("quotes user-authorized Seedance fallback durations without inferring missing resolution support", () => {
+  it("keeps Jijiu's resolution tariffs without choosing a tier for server-classified custom pixels", () => {
+    const model: ModelDescriptor = { id: "jijiu-size-price-fixture", name: "supplier-classified pixels", operations: ["video.generate"],
+      metadata: { jijiuVideoContract: true }, pricing: { kind: "per-request", currency: "CNY", checkedAt: "now", confidence: "exact",
+        tiers: [{ id: "720", label: "720p", conditions: [{ parameter: "resolution", operator: "equals", value: "720p" }], price: 1 },
+          { id: "1080", label: "1080p", conditions: [{ parameter: "resolution", operator: "equals", value: "1080p" }], price: 2 }] } };
+    expect(modelEstimatedCost(model, { resolution: "720p" })).toBe("1 CNY");
+    expect(modelEstimatedCost(model, { resolution: "720p", size: "2560x1440" })).toBeUndefined();
+    expect(modelPriceSummary(model, { resolution: "720p", size: "2560x1440" })).toContain("1080p");
+    expect(modelEstimatedCost({ ...model, pricing: { kind: "per-request", currency: "CNY", checkedAt: "now", confidence: "exact", unitAmount: 1 } }, { size: "2560x1440" })).toBe("1 CNY");
+  });
+  it("quotes user-authorized Seedance fallback durations with the documented typed resolution field", () => {
     const model = remainingVideoModel("jiasu", "seedance2.5-全参真人", {
       id: "seedance2.5-全参真人", name: "seedance2.5-全参真人", operations: ["video.generate"],
       pricing: { kind: "per-request", unitAmount: 1.1, currency: "CNY", checkedAt: "now", confidence: "exact" },
@@ -14,9 +24,23 @@ describe("appendPriceLabelOnce", () => {
     for (const duration of [1, 29, 30]) {
       expect(modelEstimatedCost(model, { duration })).toBe("1.1 CNY");
       expect(modelEstimatedCost(model, { seconds: duration })).toBe("1.1 CNY");
-      expect(modelEstimatedCost(model, { duration, resolution: "720p" })).toBeUndefined();
+      expect(modelEstimatedCost(model, { duration, resolution: "720p" })).toBe("1.1 CNY");
     }
     for (const duration of [0, 31, 38]) expect(modelEstimatedCost(model, { duration })).toBeUndefined();
+  });
+  it("quotes typed API example fields without converting suggestions into enum limits", () => {
+    const model: ModelDescriptor = { id: "api-example-price-fixture", name: "API example price", operations: ["video.generate"],
+      metadata: { durationRangeUnverified: true, resolutionRangeUnverified: true, videoResolutionAllowsCustom: true },
+      parameters: [
+        { key: "duration", label: "时长", control: "number", valueType: "integer", allowCustomValue: true, min: 1,
+          options: [{ value: 5, label: "5 秒（API 示例）" }] },
+        { key: "resolution", label: "分辨率", control: "text", valueType: "string", allowCustomValue: true,
+          options: [{ value: "720p", label: "720p（API 示例）" }] },
+      ], pricing: { kind: "per-request", unitAmount: 1.1, currency: "CNY", checkedAt: "now", confidence: "exact" } };
+    const selected = { duration: 38, resolution: "1440p" };
+    expect(modelPriceSummary(model, selected)).toBe("1.1 CNY / 次");
+    expect(modelEstimatedCost(model, selected)).toBe("1.1 CNY");
+    expect(modelEstimatedCost({ ...model, parameters: model.parameters!.map(parameter => parameter.key === "duration" ? { ...parameter, max: 30 } : parameter) }, selected)).toBeUndefined();
   });
   it("does not present an invalid saved video duration as a priced, supported combination", () => {
     const model: ModelDescriptor = { id: "bounded-video", name: "Bounded", operations: ["video.generate"],

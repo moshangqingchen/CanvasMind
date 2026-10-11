@@ -19,6 +19,8 @@ import { isJiasuApiUrl, jiasuVideoGroupMismatch } from "./jiasu-video-contract.j
 import { isJijiuApiUrl, jijiuVideoGroupMismatch } from "./jijiu-video-contract.js";
 import { isJijiuGptImage, jijiuGptImageRequestIssues } from "./jijiu-image-contract.js";
 import { OpenAIImageAdapter } from "./openai.js";
+import { isGenimageImageConnection } from "./genimage-image-capabilities.js";
+import { cOpenImageRoute } from "./c-open-image-contract.js";
 import { validateModelParameters } from "./cli-contracts.js";
 
 export function savedModelInterfaces(settings: Readonly<Record<string, unknown>> | undefined): Record<string, DocumentedModelInterface> {
@@ -30,6 +32,8 @@ export function savedModelInterfaces(settings: Readonly<Record<string, unknown>>
 const marked = (result: unknown) => result && typeof result === "object" && "autoInterface" in result && result.autoInterface === true;
 const jijiuImagesResult = (result: unknown) => result && typeof result === "object" &&
   "autoInterfaceTransport" in result && result.autoInterfaceTransport === "jijiu-native-images";
+const genimageImagesResult = (result: unknown) => result && typeof result === "object" &&
+  "autoInterfaceTransport" in result && ["genimage-native-images", "c-open-native-images"].includes(String(result.autoInterfaceTransport));
 const explicitImageContract = (model: ModelDescriptor | undefined) => ["manual", "paid-test"].includes(String(model?.metadata?.source)) || model?.metadata?.protocolEvidence === "paid-test";
 function mark(task: ProviderTask): ProviderTask {
   return { ...task, result: { ...(task.result as Record<string, unknown>), autoInterface: true } };
@@ -39,10 +43,14 @@ function mark(task: ProviderTask): ProviderTask {
 export class AutoInterfaceAdapter implements ProviderAdapter {
   private readonly rest: GenericRestAdapter;
   private readonly jijiuImages: OpenAIImageAdapter;
+  private readonly genimageImages: OpenAIImageAdapter;
+  private readonly cOpenImages: OpenAIImageAdapter;
   constructor(private readonly connections: ProviderConnectionResolver, private readonly fallback: ProviderAdapter,
     private readonly options: GenericRestAdapterOptions = {}) {
     this.rest = new GenericRestAdapter(connections, options);
     this.jijiuImages = new OpenAIImageAdapter(connections, options);
+    this.genimageImages = new OpenAIImageAdapter(connections, options);
+    this.cOpenImages = new OpenAIImageAdapter(connections, options);
   }
 
   private async selected(request: NormalizedRequest): Promise<ProviderAdapter> {
@@ -64,6 +72,24 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     const catalog = connection.settings?.modelCatalogModels;
     let current = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === request.model) : undefined;
     const binding = savedModelInterfaces(connection.settings)[request.model];
+    if (connection.provider === "openai" && request.operation.startsWith("image.") && cOpenImageRoute(config, request.model) &&
+        !explicitImageContract(current) && !explicitImageContract(binding?.model)) {
+      const ids = connection.settings?.scannedModelIds;
+      if (["empty", "unauthorized"].includes(String(config.modelScanStatus)) || current?.metadata?.canvasRunnable === false ||
+          (Array.isArray(ids) && !ids.includes(request.model))) throw new Error("当前 Key 或官方分组没有此完整图片型号的可用权限");
+      return this.cOpenImages;
+    }
+    if (connection.provider === "openai" && request.operation.startsWith("image.") &&
+        isGenimageImageConnection(config, request.model) && !explicitImageContract(current) && !explicitImageContract(binding?.model)) {
+      // Generic automatically discovered templates predate the site's current
+      // tier strings and can omit response_format or replace size with pixels.
+      // Exact supplier fields take precedence while Key permissions still apply.
+      const ids = connection.settings?.scannedModelIds;
+      if (["empty", "unauthorized"].includes(String(config.modelScanStatus)) || current?.metadata?.canvasRunnable === false ||
+          (Array.isArray(ids) && !ids.includes(request.model)))
+        throw new Error("当前基因形象 Key 或分组没有此完整图片型号的可用权限");
+      return this.genimageImages;
+    }
     if (["openai", "rest"].includes(connection.provider) && request.operation.startsWith("image.") && isJijiuGptImage(config, request.model)) {
       // An automatic OpenAPI binding can predate the exact supplier contract:
       // its auto-only schema or body template must not reject/drop size/quality.
@@ -90,7 +116,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     const supplier = remainingVideoSupplier(connection.baseUrl);
     const group = connection.settings?.accountKeyGroup ?? connection.settings?.modelGroup ?? connection.settings?.group ?? connection.settings?.supplierGroupId;
     const description = connection.settings?.supplierGroupDescription ?? connection.settings?.groupDescription;
-    const context: RemainingVideoContext = { group: typeof group === "string" ? group : "",
+    const context: RemainingVideoContext = { baseUrl: connection.baseUrl, manualProtocol: connection.settings?.manualProtocol, group: typeof group === "string" ? group : "",
       groupDescription: typeof description === "string" ? description : "", ...(current ? { model: current } : {}), assets: request.assets };
     if (request.operation.startsWith("video.") && !preservesMiaowuExplicitVideoContract(config, current, request.operation)) current = restoreRemainingVideoModel(supplier, request.model, current, connection.settings, context) ?? current;
     if (["openai", "weai"].includes(connection.provider) && (request.operation.startsWith("video.") || request.operation === "music.generate")) {
@@ -215,13 +241,18 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     const task = await adapter.submit(request);
     if (adapter === this.jijiuImages) return { ...mark(task), result: { ...(task.result as Record<string, unknown>),
       autoInterface: true, autoInterfaceTransport: "jijiu-native-images" } };
+    if (adapter === this.genimageImages) return { ...mark(task), result: { ...(task.result as Record<string, unknown>),
+      autoInterface: true, autoInterfaceTransport: "genimage-native-images" } };
+    if (adapter === this.cOpenImages) return { ...mark(task), result: { ...(task.result as Record<string, unknown>),
+      autoInterface: true, autoInterfaceTransport: "c-open-native-images" } };
     return adapter === this.fallback ? task : mark(task);
   }
   async poll(task: ProviderTask) {
-    if (jijiuImagesResult(task.result)) {
+    if (jijiuImagesResult(task.result) || genimageImagesResult(task.result)) {
       // Images returns synchronously. Recovery decodes the persisted response,
       // without reselecting an edited binding, polling or resubmitting a task.
-      if (!(await this.jijiuImages.extractOutputs(task.result)).length) throw new Error("极九图片原响应中没有可恢复的图片，请核对原请求，不能自动重发");
+      const adapter = genimageImagesResult(task.result) ? this.genimageImages : this.jijiuImages;
+      if (!(await adapter.extractOutputs(task.result)).length) throw new Error("图片原响应中没有可恢复的图片，请核对原请求，不能自动重发");
       return { ...task, status: "succeeded" as const };
     }
     if (isJiasuImageResult(task.result)) return new JiasuImageAdapter(this.connections, this.options).poll(task);
@@ -236,7 +267,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
     return this.fallback.poll(task);
   }
   async cancel(task: ProviderTask) {
-    if (jijiuImagesResult(task.result)) return;
+    if (jijiuImagesResult(task.result) || genimageImagesResult(task.result)) return;
     if (marked(task.result)) return this.rest.cancel(task);
     return this.fallback.cancel?.(task);
   }
@@ -246,6 +277,7 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
   }
   extractOutputs(result: unknown) {
     if (jijiuImagesResult(result)) return this.jijiuImages.extractOutputs(result);
+    if (genimageImagesResult(result)) return this.genimageImages.extractOutputs(result);
     if (isJiasuImageResult(result)) return new JiasuImageAdapter(this.connections, this.options).extractOutputs(result);
     const banana = bananaNativeOutputs(result);
     if (banana) return Promise.resolve(banana);

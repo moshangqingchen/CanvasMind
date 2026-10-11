@@ -77,15 +77,36 @@ function begin(ids?: readonly string[]): Promise<void> {
     // overview with the full list captured before network IO.
     const currentSuppliers = await fetchSuppliers();
     seedSupplierBilling(currentSuppliers);
+    const updatedConnectionIds = new Set<string>();
+    const previousConnections = new Map(priorConnections.map(connection => [connection.id, connection]));
+    for (const [index, before] of suppliers.entries()) {
+      const after = outcomes[index]?.after;
+      const current = currentSuppliers.find(supplier => supplier.id === before.id && supplier.state?.visibility !== "deleted");
+      // A deleted/replaced source cannot make an old scan authoritative. Read
+      // the final saved state even after a request failure: a partial write or
+      // a newly denied Key must still invalidate an open canvas's old options.
+      if (!current || current.state?.sourceId !== before.state?.sourceId ||
+          after && current.state?.sourceId !== after.state?.sourceId) continue;
+      const directoryChanged = JSON.stringify([before.catalog, before.scanStatus, before.scanComplete, before.scannedAt, before.scanLastSuccessAt, before.scanError]) !==
+        JSON.stringify([current.catalog, current.scanStatus, current.scanComplete, current.scannedAt, current.scanLastSuccessAt, current.scanError]);
+      for (const connection of finalConnections.filter(connection => supplierOwnsConnection(current, connection))) {
+        invalidateModelCache(connection.id);
+        // Scan status/completeness belongs to the snapshot too; comparing only
+        // model IDs and prices would swallow a successful confirmation update.
+        if (directoryChanged || JSON.stringify(previousConnections.get(connection.id)) !== JSON.stringify(connection))
+          updatedConnectionIds.add(connection.id);
+      }
+    }
     const reports = suppliers.map((before, index): SupplierRefreshResult => {
       const after = outcomes[index]?.after;
       if (!after) return { ...buildSupplierRefreshResult(before, before, priorConnections, priorConnections), status: "failed",
         message: "刷新未完成，已保留配置；请检查网络或本地服务后重试。",
         directory: { status: "failed", message: "本次请求未完成，已有目录与分组保留。" } };
-      finalConnections.filter(connection => supplierOwnsConnection(after, connection)).forEach(connection => invalidateModelCache(connection.id));
       return buildSupplierRefreshResult(before, after, priorConnections, finalConnections);
     });
     reports.forEach(publishResult);
+    if (updatedConnectionIds.size && typeof window !== "undefined")
+      window.dispatchEvent(new CustomEvent("supplier-catalog-upgraded", { detail: { updatedConnectionIds: [...updatedConnectionIds] } }));
     cursor = 0;
     await Promise.all(Array.from({ length: Math.min(2, suppliers.length) }, async () => {
       while (cursor < suppliers.length) {

@@ -21,10 +21,11 @@ describe("FriModel current official Image 2.5 edit contract", () => {
     }]), { fetch });
     const descriptor = (await adapter.listModels("official")).find(item => item.id === model);
     expect(descriptor).toMatchObject({ id: model, operations: ["image.generate", "image.edit"], metadata: { modelGroup: group, supportsImageEdit: true } });
-    expect(descriptor?.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).not.toContain("max");
+    expect(descriptor?.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value)).toContain("max");
     const request: NormalizedRequest = {
       connectionId: "official", operation: "image.edit", model, prompt: "Keep the subject and replace the background.",
       idempotencyKey: `fixture-${encodeURIComponent(group)}-${model}`,
+      parameters: { quality: "max" },
       assets: [{ id: "reference", kind: "image", mimeType: "image/png", filename: "reference.png", data: new Uint8Array([137, 80, 78, 71]) }],
     };
     expect(await adapter.validate(request)).toEqual({ valid: true, issues: [] });
@@ -39,7 +40,7 @@ describe("FriModel current official Image 2.5 edit contract", () => {
     expect(body.get("prompt")).toBe(request.prompt);
     expect(body.get("image")).toBeInstanceOf(File);
     expect(new Headers(init?.headers).get("content-type")).toBeNull();
-    expect(body.get("quality")).not.toBe("max");
+    expect(body.get("quality")).toBe("max");
     expect(Buffer.from((await adapter.extractOutputs(task.result))[0]!.data!).toString()).toBe("edited-image");
   });
 });

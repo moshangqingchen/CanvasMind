@@ -71,8 +71,15 @@ export function parseMiaowuImageSchema(id: string, payload: unknown): MiaowuImag
   const known = ["mode", "prompt", "size", "ratio", "image_urls", "video_urls", "audio_urls"];
   if (Object.keys(fields).some(key => !known.includes(key))) throw new Error("免费图片 schema 含尚未接入的参数");
   const mode = object(fields.mode), prompt = object(fields.prompt), size = object(fields.size), ratio = object(fields.ratio);
-  const modes = enumStrings(mode?.enum), resolutions = enumStrings(size?.enum), ratios = enumStrings(ratio?.enum);
-  if (mode?.type !== "string" || prompt?.type !== "string" || size?.type !== "string" || ratio?.type !== "string" ||
+  // These exact current Midjourney schemas describe one automatic image route:
+  // mode is absent, prompt is required, and optional image_urls are references.
+  // The supplier guide permits omitting mode for a single route; /v1/images
+  // selects text/reference generation without sending an invented mode field.
+  const automaticMidjourney = ["midjourney-mj-v8.2", "midjourney-niji-v7"].includes(id) && mode === undefined &&
+    !Object.hasOwn(fields, "mode") && Array.isArray(params?.required) && !params.required.includes("mode");
+  const modes = automaticMidjourney ? ["text-to-image", "image-to-image"] : enumStrings(mode?.enum);
+  const resolutions = enumStrings(size?.enum), ratios = enumStrings(ratio?.enum);
+  if (!automaticMidjourney && mode?.type !== "string" || prompt?.type !== "string" || size?.type !== "string" || ratio?.type !== "string" ||
       !modes || modes.some(value => !["text-to-image", "image-to-image"].includes(value)) || !resolutions || !ratios) {
     throw new Error("免费 schema 缺少明确的图片模式、分辨率或比例定义");
   }

@@ -1,0 +1,2781 @@
+{
+  "source": {
+    "path": ".codex-temp/supplier-full-document-recheck-r4-20261010/mikoto-030-raw-contract-safe-v3.json",
+    "sha256": "7adb4619f78e747a422e9b86bcaf5e0c13b1b20f87c87139ae62f1a1cc7a7f9f",
+    "sourceDatabaseSha256": "c7f7d10b9b270c992c08115b6efc169516c2479bd7fdc68e981c3b40c6e2dc62",
+    "scope": "Exact immutable literal-URL safe-v3 projection; corrected prior exporter normalization; credentials opaque"
+  },
+  "connection": {
+    "id": "f17ec01c-9316-452e-af8f-91879d2f04ba",
+    "name": "MikotoPro · 生图（原生4k · 画布",
+    "provider": "rest",
+    "encryptedSecret": "[opaque fixture marker]",
+    "config": {
+      "preset": "mikoto-pro",
+      "supplierKey": "mikoto",
+      "usage": "canvas",
+      "modelGroup": "生图（2k4k 中质量）",
+      "baseUrl": "https://api.mikoto.vip",
+      "defaultModel": "gpt-image-2",
+      "connector": {
+        "auth": {
+          "type": "bearer"
+        },
+        "allowedHosts": [
+          "api.mikoto.vip"
+        ],
+        "assetsRequirePublicUrls": true,
+        "restrictModels": true,
+        "models": [
+          {
+            "id": "gpt-image-2",
+            "name": "GPT Image 2（原生4K · $0.08/张）",
+            "description": "MikotoPro 生图（原生4k）分组；按文档仅展示原生 4K 尺寸并默认高画质。",
+            "operations": [
+              "image.generate",
+              "image.edit"
+            ],
+            "inputKinds": [
+              "text",
+              "image",
+              "image[]"
+            ],
+            "outputKinds": [
+              "image"
+            ],
+            "isDefault": true,
+            "metadata": {
+              "fixedOutputCount": 1,
+              "modality": "image",
+              "pricingCapturedAt": "2026-08-13",
+              "tested4KHighAt": "2026-08-13",
+              "canvasRunnable": true,
+              "supplierGroupDescription": "2.0跟2.5都有 0.07一张 只能中质量",
+              "supplierGroupResolutionLabel": "说明支持 2K / 4K",
+              "imageResolutionOrigins": {},
+              "supplierGroupInfoSource": "key-groups",
+              "supplierGroupInfoStale": false,
+              "supplierGroupCheckedAt": "2026-10-11T04:48:27.246Z",
+              "protocol": "openai-images",
+              "imageCapabilitiesSource": "supplier-group-and-api-docs",
+              "imageCapabilitiesCheckedAt": "2026-09-21",
+              "imageCapabilitiesDocumentation": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+              "mikotoImageContract": true,
+              "imageNativeParameterContract": true,
+              "imageSizeSource": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+              "imageSizeSourceKind": "supplier-examples",
+              "imageEditingSource": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+              "supplierChannelDescription": "支持原生4k高质量，一次0.07"
+            },
+            "pricing": {
+              "kind": "per-image",
+              "currency": "USD",
+              "unitAmount": 0.08,
+              "sourceUrl": "https://api.mikoto.vip",
+              "checkedAt": "2026-08-13T00:00:00.000Z",
+              "confidence": "snapshot"
+            },
+            "parameters": [
+              {
+                "key": "size",
+                "label": "输出尺寸",
+                "control": "dimensions",
+                "valueType": "string",
+                "default": "auto",
+                "step": 1,
+                "options": [
+                  {
+                    "label": "自动",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "2K · 1:1 · 1440 × 1440",
+                    "value": "1440x1440"
+                  },
+                  {
+                    "label": "2K · 16:9 · 2560 × 1440",
+                    "value": "2560x1440"
+                  },
+                  {
+                    "label": "2K · 9:16 · 1152 × 2048",
+                    "value": "1152x2048"
+                  },
+                  {
+                    "label": "2K · 4:3 · 1920 × 1440",
+                    "value": "1920x1440"
+                  },
+                  {
+                    "label": "2K · 3:4 · 1440 × 1920",
+                    "value": "1440x1920"
+                  },
+                  {
+                    "label": "2K · 3:2 · 2160 × 1440",
+                    "value": "2160x1440"
+                  },
+                  {
+                    "label": "2K · 2:3 · 1440 × 2160",
+                    "value": "1440x2160"
+                  },
+                  {
+                    "label": "2K · 21:9 · 2560 × 1097",
+                    "value": "2560x1097"
+                  },
+                  {
+                    "label": "4K · 1:1 · 2160 × 2160",
+                    "value": "2160x2160"
+                  },
+                  {
+                    "label": "4K · 16:9 · 3840 × 2160",
+                    "value": "3840x2160"
+                  },
+                  {
+                    "label": "4K · 9:16 · 2160 × 3840",
+                    "value": "2160x3840"
+                  },
+                  {
+                    "label": "4K · 4:3 · 2880 × 2160",
+                    "value": "2880x2160"
+                  },
+                  {
+                    "label": "4K · 3:4 · 2160 × 2880",
+                    "value": "2160x2880"
+                  },
+                  {
+                    "label": "4K · 3:2 · 3240 × 2160",
+                    "value": "3240x2160"
+                  },
+                  {
+                    "label": "4K · 2:3 · 2160 × 3240",
+                    "value": "2160x3240"
+                  },
+                  {
+                    "label": "4K · 21:9 · 3840 × 1646",
+                    "value": "3840x1646"
+                  }
+                ],
+                "description": "官网常用尺寸示例；自定义正整数宽高及比例按原值发送，供应商未公布宽高范围或对齐要求。size 不使用 2K / 4K 档位字符串。",
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ],
+                "allowCustomValue": true
+              },
+              {
+                "key": "quality",
+                "label": "质量",
+                "control": "select",
+                "valueType": "string",
+                "default": "medium",
+                "options": [
+                  {
+                    "label": "中",
+                    "value": "medium"
+                  }
+                ],
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ],
+                "description": "当前官方分组规定的质量档位；旧画布的其他质量值需重新选择。"
+              },
+              {
+                "key": "response_format",
+                "label": "结果返回方式",
+                "control": "select",
+                "valueType": "string",
+                "options": [
+                  {
+                    "label": "图片链接",
+                    "value": "url"
+                  },
+                  {
+                    "label": "Base64",
+                    "value": "b64_json"
+                  }
+                ],
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ]
+              }
+            ],
+            "limits": {
+              "supportedMimeTypes": [
+                "image/jpeg",
+                "image/png",
+                "image/webp"
+              ]
+            },
+            "provider": "rest",
+            "capabilities": [
+              "image.generate",
+              "image.edit"
+            ]
+          }
+        ],
+        "pollIntervalMs": 4000,
+        "submit": {
+          "path": "/v1/images/generations/async",
+          "method": "POST",
+          "bodyMode": "json",
+          "template": {
+            "n": 1,
+            "response_format": "url"
+          },
+          "mappings": [
+            {
+              "target": "/model",
+              "source": {
+                "kind": "request",
+                "path": "$.model"
+              }
+            },
+            {
+              "target": "/prompt",
+              "source": {
+                "kind": "request",
+                "path": "$.prompt"
+              }
+            },
+            {
+              "target": "/size",
+              "source": {
+                "kind": "request",
+                "path": "$.parameters.size"
+              },
+              "omitIfUndefined": true
+            },
+            {
+              "target": "/quality",
+              "source": {
+                "kind": "request",
+                "path": "$.parameters.quality"
+              },
+              "omitIfUndefined": true
+            },
+            {
+              "target": "/aspect_ratio",
+              "source": {
+                "kind": "request",
+                "path": "$.parameters.aspect_ratio"
+              },
+              "omitIfUndefined": true
+            }
+          ],
+          "response": {
+            "taskIdPath": "$.task_id",
+            "statusPath": "$.status",
+            "errorPath": "$.error.message"
+          }
+        },
+        "poll": {
+          "path": "/v1/images/tasks/{taskId}",
+          "method": "GET",
+          "bodyMode": "none",
+          "response": {
+            "statusPath": "$.status",
+            "errorPath": "$.error.message",
+            "progressPath": "$.progress"
+          }
+        },
+        "output": {
+          "path": "$.result.data",
+          "kind": "image",
+          "urlPath": "url",
+          "base64Path": "b64_json",
+          "defaultMimeType": "image/png"
+        },
+        "statusMap": {
+          "queued": "queued",
+          "pending": "queued",
+          "running": "running",
+          "processing": "running",
+          "success": "succeeded",
+          "completed": "succeeded",
+          "failed": "failed",
+          "error": "failed",
+          "cancelled": "cancelled",
+          "canceled": "cancelled",
+          "expired": "failed"
+        },
+        "operationOverrides": {
+          "image.edit": {
+            "submit": {
+              "path": "/v1/images/edits/async",
+              "method": "POST",
+              "bodyMode": "multipart",
+              "template": {
+                "n": 1,
+                "response_format": "url"
+              },
+              "mappings": [
+                {
+                  "target": "/model",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.model"
+                  }
+                },
+                {
+                  "target": "/prompt",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.prompt"
+                  }
+                },
+                {
+                  "target": "/size",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.parameters.size"
+                  },
+                  "omitIfUndefined": true
+                },
+                {
+                  "target": "/quality",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.parameters.quality"
+                  },
+                  "omitIfUndefined": true
+                },
+                {
+                  "target": "/aspect_ratio",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.parameters.aspect_ratio"
+                  },
+                  "omitIfUndefined": true
+                },
+                {
+                  "target": "/image",
+                  "source": {
+                    "kind": "assets",
+                    "assetKind": "image"
+                  },
+                  "omitIfEmpty": true
+                }
+              ],
+              "response": {
+                "taskIdPath": "$.task_id",
+                "statusPath": "$.status",
+                "errorPath": "$.error.message"
+              }
+            }
+          }
+        },
+        "modelOverrides": {}
+      },
+      "catalogCapturedAt": "2026-08-28",
+      "customGroup": false,
+      "supplierId": "supplier-85a8c80adddefe307e2fc6fa",
+      "supplierSourceId": "f17ed5f5-9b8f-47d9-a621-0bbe4bfb9e15",
+      "modelScanRequestId": "f17eec80-4077-4ba7-ad9d-a27c3699a2cc",
+      "modelScanStatus": "live",
+      "modelScanCheckedAt": "2026-10-11T04:48:35.707Z",
+      "scannedModelIds": [
+        "codex-auto-review",
+        "gpt-5.2",
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-openai-compact",
+        "gpt-5.5",
+        "gpt-5.5-openai-compact",
+        "gpt-5.6",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-sol-openai-compact",
+        "gpt-5.6-terra",
+        "gpt-5.6-terra-openai-compact",
+        "gpt-6",
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-image-2"
+      ],
+      "unavailableModels": [],
+      "unknownModels": [
+        "codex-auto-review",
+        "gpt-5.2",
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-openai-compact",
+        "gpt-5.5",
+        "gpt-5.5-openai-compact",
+        "gpt-5.6",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-sol-openai-compact",
+        "gpt-5.6-terra",
+        "gpt-5.6-terra-openai-compact",
+        "gpt-6",
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-6.1-sol"
+      ],
+      "modelProtocolTemplate": {
+        "auth": {
+          "type": "bearer"
+        },
+        "allowedHosts": [
+          "api.mikoto.vip"
+        ],
+        "assetsRequirePublicUrls": true,
+        "restrictModels": true,
+        "models": [
+          {
+            "id": "gpt-image-2",
+            "name": "GPT Image 2（原生4K · $0.08/张）",
+            "description": "MikotoPro 生图（原生4k）分组；按文档仅展示原生 4K 尺寸并默认高画质。",
+            "operations": [
+              "image.generate",
+              "image.edit"
+            ],
+            "inputKinds": [
+              "text",
+              "image",
+              "image[]"
+            ],
+            "outputKinds": [
+              "image"
+            ],
+            "isDefault": true,
+            "metadata": {
+              "fixedOutputCount": 1,
+              "modality": "image",
+              "pricingCapturedAt": "2026-08-13",
+              "tested4KHighAt": "2026-08-13",
+              "canvasRunnable": true,
+              "supplierGroupDescription": "2.0跟2.5都有 0.07一张 只能中质量",
+              "supplierGroupResolutionLabel": "说明支持 2K / 4K",
+              "imageResolutionOrigins": {},
+              "supplierGroupInfoSource": "key-groups",
+              "supplierGroupInfoStale": false,
+              "supplierGroupCheckedAt": "2026-10-11T02:17:13.246Z",
+              "protocol": "openai-images",
+              "imageCapabilitiesSource": "supplier-group-and-api-docs",
+              "imageCapabilitiesCheckedAt": "2026-09-21",
+              "imageCapabilitiesDocumentation": "https://api.mikoto.vip/openai-image-4k-2k-guide.html"
+            },
+            "pricing": {
+              "kind": "per-image",
+              "currency": "USD",
+              "unitAmount": 0.08,
+              "sourceUrl": "https://api.mikoto.vip",
+              "checkedAt": "2026-08-13T00:00:00.000Z",
+              "confidence": "snapshot"
+            },
+            "parameters": [
+              {
+                "key": "size",
+                "label": "输出尺寸",
+                "control": "dimensions",
+                "valueType": "string",
+                "default": "auto",
+                "min": 256,
+                "max": 3840,
+                "step": 1,
+                "options": [
+                  {
+                    "label": "自动",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "2K 方图 · 1440×1440",
+                    "value": "1440x1440"
+                  },
+                  {
+                    "label": "2K 横图 · 2560×1440",
+                    "value": "2560x1440"
+                  },
+                  {
+                    "label": "2K 竖图 · 1152×2048",
+                    "value": "1152x2048"
+                  },
+                  {
+                    "label": "2K 4:3 · 1920×1440",
+                    "value": "1920x1440"
+                  },
+                  {
+                    "label": "2K 3:4 · 1440×1920",
+                    "value": "1440x1920"
+                  },
+                  {
+                    "label": "2K 3:2 · 2160×1440",
+                    "value": "2160x1440"
+                  },
+                  {
+                    "label": "2K 2:3 · 1440×2160",
+                    "value": "1440x2160"
+                  },
+                  {
+                    "label": "2K 21:9 · 2560×1097",
+                    "value": "2560x1097"
+                  },
+                  {
+                    "label": "4K 方图 · 2160×2160",
+                    "value": "2160x2160"
+                  },
+                  {
+                    "label": "4K 横图 · 3840×2160",
+                    "value": "3840x2160"
+                  },
+                  {
+                    "label": "4K 竖图 · 2160×3840",
+                    "value": "2160x3840"
+                  },
+                  {
+                    "label": "4K 4:3 · 2880×2160",
+                    "value": "2880x2160"
+                  },
+                  {
+                    "label": "4K 3:4 · 2160×2880",
+                    "value": "2160x2880"
+                  },
+                  {
+                    "label": "4K 3:2 · 3240×2160",
+                    "value": "3240x2160"
+                  },
+                  {
+                    "label": "4K 2:3 · 2160×3240",
+                    "value": "2160x3240"
+                  },
+                  {
+                    "label": "4K 21:9 · 3840×1646",
+                    "value": "3840x1646"
+                  }
+                ],
+                "description": "当前分组声明支持 2K、4K；按 Mikoto 接口文档发送真实宽高。比例预设来自文档，实际尺寸以返回图片为准。",
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ]
+              },
+              {
+                "key": "quality",
+                "label": "质量",
+                "control": "select",
+                "valueType": "string",
+                "default": "medium",
+                "options": [
+                  {
+                    "label": "中",
+                    "value": "medium"
+                  }
+                ],
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ],
+                "description": "当前分组说明仅支持中质量，不提供高质量选项。"
+              }
+            ],
+            "limits": {
+              "supportedMimeTypes": [
+                "image/jpeg",
+                "image/png",
+                "image/webp"
+              ]
+            },
+            "provider": "rest",
+            "capabilities": [
+              "image.generate",
+              "image.edit"
+            ]
+          },
+          {
+            "id": "gpt-image-2.5-flare",
+            "name": "gpt-image-2.5-flare",
+            "provider": "rest",
+            "operations": [
+              "image.generate",
+              "image.edit"
+            ],
+            "inputKinds": [
+              "text",
+              "image"
+            ],
+            "outputKinds": [
+              "image"
+            ],
+            "parameters": [
+              {
+                "key": "size",
+                "label": "输出分辨率",
+                "control": "dimensions",
+                "valueType": "string",
+                "default": "auto",
+                "min": 16,
+                "max": 3840,
+                "step": 16,
+                "options": [
+                  {
+                    "label": "自动（提示词比例优先，其次参考图）",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "1K · 1:1 · 1024 × 1024",
+                    "value": "1024x1024"
+                  },
+                  {
+                    "label": "1K · 16:9 · 1360 × 768",
+                    "value": "1360x768"
+                  },
+                  {
+                    "label": "1K · 9:16 · 768 × 1360",
+                    "value": "768x1360"
+                  },
+                  {
+                    "label": "1K · 4:3 · 1184 × 880",
+                    "value": "1184x880"
+                  },
+                  {
+                    "label": "1K · 3:4 · 880 × 1184",
+                    "value": "880x1184"
+                  },
+                  {
+                    "label": "1K · 3:2 · 1248 × 832",
+                    "value": "1248x832"
+                  },
+                  {
+                    "label": "1K · 2:3 · 832 × 1248",
+                    "value": "832x1248"
+                  },
+                  {
+                    "label": "1K · 5:4 · 1136 × 912",
+                    "value": "1136x912"
+                  },
+                  {
+                    "label": "1K · 4:5 · 912 × 1136",
+                    "value": "912x1136"
+                  },
+                  {
+                    "label": "1K · 21:9 · 1552 × 672",
+                    "value": "1552x672"
+                  },
+                  {
+                    "label": "1K · 9:21 · 672 × 1552",
+                    "value": "672x1552"
+                  },
+                  {
+                    "label": "2K · 1:1 · 2048 × 2048",
+                    "value": "2048x2048"
+                  },
+                  {
+                    "label": "2K · 16:9 · 2720 × 1536",
+                    "value": "2720x1536"
+                  },
+                  {
+                    "label": "2K · 9:16 · 1536 × 2720",
+                    "value": "1536x2720"
+                  },
+                  {
+                    "label": "2K · 4:3 · 2352 × 1776",
+                    "value": "2352x1776"
+                  },
+                  {
+                    "label": "2K · 3:4 · 1776 × 2352",
+                    "value": "1776x2352"
+                  },
+                  {
+                    "label": "2K · 3:2 · 2496 × 1680",
+                    "value": "2496x1680"
+                  },
+                  {
+                    "label": "2K · 2:3 · 1680 × 2496",
+                    "value": "1680x2496"
+                  },
+                  {
+                    "label": "2K · 5:4 · 2288 × 1824",
+                    "value": "2288x1824"
+                  },
+                  {
+                    "label": "2K · 4:5 · 1824 × 2288",
+                    "value": "1824x2288"
+                  },
+                  {
+                    "label": "2K · 21:9 · 3120 × 1344",
+                    "value": "3120x1344"
+                  },
+                  {
+                    "label": "2K · 9:21 · 1344 × 3120",
+                    "value": "1344x3120"
+                  },
+                  {
+                    "label": "4K · 1:1 · 2880 × 2880",
+                    "value": "2880x2880"
+                  },
+                  {
+                    "label": "4K · 16:9 · 3840 × 2160",
+                    "value": "3840x2160"
+                  },
+                  {
+                    "label": "4K · 9:16 · 2160 × 3840",
+                    "value": "2160x3840"
+                  },
+                  {
+                    "label": "4K · 4:3 · 3312 × 2496",
+                    "value": "3312x2496"
+                  },
+                  {
+                    "label": "4K · 3:4 · 2496 × 3312",
+                    "value": "2496x3312"
+                  },
+                  {
+                    "label": "4K · 3:2 · 3520 × 2352",
+                    "value": "3520x2352"
+                  },
+                  {
+                    "label": "4K · 2:3 · 2352 × 3520",
+                    "value": "2352x3520"
+                  },
+                  {
+                    "label": "4K · 5:4 · 3216 × 2576",
+                    "value": "3216x2576"
+                  },
+                  {
+                    "label": "4K · 4:5 · 2576 × 3216",
+                    "value": "2576x3216"
+                  },
+                  {
+                    "label": "4K · 21:9 · 3840 × 1648",
+                    "value": "3840x1648"
+                  },
+                  {
+                    "label": "4K · 9:21 · 1648 × 3840",
+                    "value": "1648x3840"
+                  }
+                ],
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ],
+                "description": "按所选档位适配比例与尺寸；自动比例优先提示词，其次参考图。宽高按 16 像素对齐。"
+              },
+              {
+                "key": "quality",
+                "label": "质量",
+                "control": "select",
+                "valueType": "string",
+                "default": "max",
+                "options": [
+                  {
+                    "label": "自动（auto）",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "低（low）",
+                    "value": "low"
+                  },
+                  {
+                    "label": "中（medium）",
+                    "value": "medium"
+                  },
+                  {
+                    "label": "高（high）",
+                    "value": "high"
+                  },
+                  {
+                    "label": "超高（xhigh）",
+                    "value": "xhigh"
+                  },
+                  {
+                    "label": "最高（max）",
+                    "value": "max"
+                  }
+                ],
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ],
+                "description": "最高档已通过，开放同型号全部质量选项；其余选项未逐档实测。"
+              }
+            ],
+            "limits": {
+              "supportedMimeTypes": [
+                "image/jpeg",
+                "image/png",
+                "image/webp"
+              ]
+            },
+            "description": "由当前供应商 API 实时返回的模型。",
+            "metadata": {
+              "fixedOutputCount": 1,
+              "modality": "image",
+              "pricingCapturedAt": "2026-08-13",
+              "tested4KHighAt": "2026-08-13",
+              "priceLabel": "价格未公布",
+              "canvasRunnable": true,
+              "protocolSourceModel": "gpt-image-2",
+              "supportsImageEdit": true,
+              "image25VerifiedAt": "2026-09-10",
+              "image25VerificationSource": "docs/image25-provider-verification.md",
+              "priceSource": "supplier-catalog",
+              "priceStatus": "unpublished",
+              "priceCheckedAt": "2026-10-04T08:47:51.275Z",
+              "modelFactsSource": "model-api",
+              "inputKindsSource": "inferred",
+              "outputKindsSource": "inferred",
+              "catalogGroup": "默认群组",
+              "priceLastAttemptAt": "2026-10-04T08:47:51.275Z"
+            },
+            "capabilities": [
+              "image.generate",
+              "image.edit"
+            ],
+            "isDefault": false
+          },
+          {
+            "id": "gpt-image-2.5-sunburst",
+            "name": "gpt-image-2.5-sunburst",
+            "operations": [
+              "image.generate",
+              "image.edit"
+            ],
+            "inputKinds": [
+              "text",
+              "image",
+              "image[]"
+            ],
+            "outputKinds": [
+              "image"
+            ],
+            "parameters": [
+              {
+                "key": "size",
+                "label": "输出尺寸",
+                "control": "dimensions",
+                "valueType": "string",
+                "default": "auto",
+                "min": 256,
+                "max": 3840,
+                "step": 1,
+                "options": [
+                  {
+                    "label": "自动",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "1K 方图 · 1024×1024",
+                    "value": "1024x1024"
+                  },
+                  {
+                    "label": "2K 方图 · 1440×1440",
+                    "value": "1440x1440"
+                  },
+                  {
+                    "label": "2K 横图 · 2560×1440",
+                    "value": "2560x1440"
+                  },
+                  {
+                    "label": "2K 竖图 · 1152×2048",
+                    "value": "1152x2048"
+                  },
+                  {
+                    "label": "2K 4:3 · 1920×1440",
+                    "value": "1920x1440"
+                  },
+                  {
+                    "label": "2K 3:4 · 1440×1920",
+                    "value": "1440x1920"
+                  },
+                  {
+                    "label": "2K 3:2 · 2160×1440",
+                    "value": "2160x1440"
+                  },
+                  {
+                    "label": "2K 2:3 · 1440×2160",
+                    "value": "1440x2160"
+                  },
+                  {
+                    "label": "2K 21:9 · 2560×1097",
+                    "value": "2560x1097"
+                  },
+                  {
+                    "label": "4K 方图 · 2160×2160",
+                    "value": "2160x2160"
+                  },
+                  {
+                    "label": "4K 横图 · 3840×2160",
+                    "value": "3840x2160"
+                  },
+                  {
+                    "label": "4K 竖图 · 2160×3840",
+                    "value": "2160x3840"
+                  },
+                  {
+                    "label": "4K 4:3 · 2880×2160",
+                    "value": "2880x2160"
+                  },
+                  {
+                    "label": "4K 3:4 · 2160×2880",
+                    "value": "2160x2880"
+                  },
+                  {
+                    "label": "4K 3:2 · 3240×2160",
+                    "value": "3240x2160"
+                  },
+                  {
+                    "label": "4K 2:3 · 2160×3240",
+                    "value": "2160x3240"
+                  },
+                  {
+                    "label": "4K 21:9 · 3840×1646",
+                    "value": "3840x1646"
+                  }
+                ],
+                "description": "MikotoPro 生图（原生4k）分组；支持文档所列 1K、2K、4K 尺寸，默认高画质。",
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ]
+              },
+              {
+                "key": "quality",
+                "label": "画质",
+                "control": "select",
+                "valueType": "string",
+                "default": "high",
+                "options": [
+                  {
+                    "label": "自动",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "高",
+                    "value": "high"
+                  }
+                ],
+                "operations": [
+                  "image.generate",
+                  "image.edit"
+                ]
+              }
+            ],
+            "limits": {
+              "supportedMimeTypes": [
+                "image/jpeg",
+                "image/png",
+                "image/webp"
+              ]
+            },
+            "isDefault": false,
+            "description": "当前 Key 扫描到的模型，使用当前分组的调用协议。",
+            "metadata": {
+              "fixedOutputCount": 1,
+              "modality": "image",
+              "pricingCapturedAt": "2026-08-13",
+              "tested4KHighAt": "2026-08-13",
+              "canvasRunnable": true,
+              "modelFactsSource": "model-api",
+              "inputKindsSource": "inferred",
+              "outputKindsSource": "inferred",
+              "catalogGroup": "默认群组",
+              "priceLabel": "价格未公布",
+              "priceSource": "supplier-catalog",
+              "priceStatus": "unpublished",
+              "priceCheckedAt": "2026-10-04T08:47:51.275Z",
+              "protocolSourceModel": "gpt-image-2",
+              "priceLastAttemptAt": "2026-10-04T08:47:51.275Z"
+            }
+          }
+        ],
+        "pollIntervalMs": 4000,
+        "submit": {
+          "path": "/v1/images/generations/async",
+          "method": "POST",
+          "bodyMode": "json",
+          "template": {
+            "n": 1,
+            "response_format": "url"
+          },
+          "mappings": [
+            {
+              "target": "/model",
+              "source": {
+                "kind": "request",
+                "path": "$.model"
+              }
+            },
+            {
+              "target": "/prompt",
+              "source": {
+                "kind": "request",
+                "path": "$.prompt"
+              }
+            },
+            {
+              "target": "/size",
+              "source": {
+                "kind": "request",
+                "path": "$.parameters.size"
+              },
+              "omitIfUndefined": true
+            },
+            {
+              "target": "/quality",
+              "source": {
+                "kind": "request",
+                "path": "$.parameters.quality"
+              },
+              "omitIfUndefined": true
+            },
+            {
+              "target": "/aspect_ratio",
+              "source": {
+                "kind": "request",
+                "path": "$.parameters.aspect_ratio"
+              },
+              "omitIfUndefined": true
+            }
+          ],
+          "response": {
+            "taskIdPath": "$.task_id",
+            "statusPath": "$.status",
+            "errorPath": "$.error.message"
+          }
+        },
+        "poll": {
+          "path": "/v1/images/tasks/{taskId}",
+          "method": "GET",
+          "bodyMode": "none",
+          "response": {
+            "statusPath": "$.status",
+            "errorPath": "$.error.message",
+            "progressPath": "$.progress"
+          }
+        },
+        "output": {
+          "path": "$.result.data",
+          "kind": "image",
+          "urlPath": "url",
+          "base64Path": "b64_json",
+          "defaultMimeType": "image/png"
+        },
+        "statusMap": {
+          "queued": "queued",
+          "pending": "queued",
+          "running": "running",
+          "processing": "running",
+          "success": "succeeded",
+          "completed": "succeeded",
+          "failed": "failed",
+          "error": "failed",
+          "cancelled": "cancelled",
+          "canceled": "cancelled",
+          "expired": "failed"
+        },
+        "operationOverrides": {
+          "image.edit": {
+            "submit": {
+              "path": "/v1/images/edits/async",
+              "method": "POST",
+              "bodyMode": "multipart",
+              "template": {
+                "n": 1,
+                "response_format": "url"
+              },
+              "mappings": [
+                {
+                  "target": "/model",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.model"
+                  }
+                },
+                {
+                  "target": "/prompt",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.prompt"
+                  }
+                },
+                {
+                  "target": "/size",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.parameters.size"
+                  },
+                  "omitIfUndefined": true
+                },
+                {
+                  "target": "/quality",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.parameters.quality"
+                  },
+                  "omitIfUndefined": true
+                },
+                {
+                  "target": "/aspect_ratio",
+                  "source": {
+                    "kind": "request",
+                    "path": "$.parameters.aspect_ratio"
+                  },
+                  "omitIfUndefined": true
+                },
+                {
+                  "target": "/image",
+                  "source": {
+                    "kind": "assets",
+                    "assetKind": "image"
+                  },
+                  "omitIfEmpty": true
+                }
+              ],
+              "response": {
+                "taskIdPath": "$.task_id",
+                "statusPath": "$.status",
+                "errorPath": "$.error.message"
+              }
+            }
+          }
+        },
+        "modelOverrides": {}
+      },
+      "modelCatalogModels": [
+        {
+          "id": "codex-auto-review",
+          "name": "codex-auto-review",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.407Z",
+              "status": "incomplete",
+              "reason": "已查渠道资料，仍缺少思考档位及明确的官方型号映射",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "supplier-document",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.2",
+          "name": "gpt-5.2",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.408Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.2",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.3-codex",
+          "name": "gpt-5.3-codex",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.408Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.3-codex",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.3-codex-spark",
+          "name": "gpt-5.3-codex-spark",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.408Z",
+              "status": "incomplete",
+              "reason": "已查渠道资料，仍缺少思考档位及明确的官方型号映射",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "supplier-document",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.4",
+          "name": "gpt-5.4",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.408Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.4",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "name": "gpt-5.4-mini",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.409Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.4-mini",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.4-openai-compact",
+          "name": "gpt-5.4-openai-compact",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.409Z",
+              "status": "incomplete",
+              "reason": "已查渠道资料，仍缺少思考档位及明确的官方型号映射",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "supplier-document",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.409Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.5",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.5-openai-compact",
+          "name": "gpt-5.5-openai-compact",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.409Z",
+              "status": "incomplete",
+              "reason": "已查渠道资料，仍缺少思考档位及明确的官方型号映射",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "supplier-document",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.6",
+          "name": "gpt-5.6",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.409Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.6",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "name": "gpt-5.6-luna",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.409Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.6-luna",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.410Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.6-sol",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.6-sol-openai-compact",
+          "name": "gpt-5.6-sol-openai-compact",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.410Z",
+              "status": "incomplete",
+              "reason": "已查渠道资料，仍缺少思考档位及明确的官方型号映射",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "supplier-document",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "name": "gpt-5.6-terra",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.410Z",
+              "status": "complete",
+              "officialModelId": "gpt-5.6-terra",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-5.6-terra-openai-compact",
+          "name": "gpt-5.6-terra-openai-compact",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.410Z",
+              "status": "incomplete",
+              "reason": "已查渠道资料，仍缺少思考档位及明确的官方型号映射",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "supplier-document",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-6",
+          "name": "gpt-6",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "modelFactsSource": "model-api",
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.410Z",
+              "status": "incomplete",
+              "reason": "已查渠道资料，仍缺少思考档位及明确的官方型号映射",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "supplier-document",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-6-astra",
+          "name": "gpt-6-astra",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "modelFactsSource": "model-api",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.411Z",
+              "status": "complete",
+              "officialModelId": "gpt-6-astra",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-6-luna",
+          "name": "gpt-6-luna",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "modelFactsSource": "model-api",
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.411Z",
+              "status": "complete",
+              "officialModelId": "gpt-6-luna",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-6-sol",
+          "name": "gpt-6-sol",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "modelFactsSource": "model-api",
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.411Z",
+              "status": "complete",
+              "officialModelId": "gpt-6-sol",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "name": "gpt-6.1-sol",
+          "description": "由当前供应商 API 实时返回；画布协议尚未验证。",
+          "operations": [],
+          "inputKinds": [
+            "text"
+          ],
+          "outputKinds": [
+            "text"
+          ],
+          "isDefault": false,
+          "metadata": {
+            "modelFactsSource": "model-api",
+            "inputKindsSource": "inferred",
+            "outputKindsSource": "inferred",
+            "canvasRunnable": false,
+            "canvasUnavailableReason": "尚未验证该模型的画布调用协议",
+            "catalogGroup": "默认群组",
+            "priceLabel": "价格未公布",
+            "priceSource": "supplier-catalog",
+            "priceStatus": "partial",
+            "priceCheckedAt": "2026-10-11T04:48:27.246Z",
+            "agentCapabilities": {},
+            "agentDiscovery": {
+              "fingerprint": "e3fbfae5816dd3fe640335921a5dc7f5ea041211c81942414ff58fe9ad9c4ece",
+              "checkedAt": "2026-10-11T04:48:35.411Z",
+              "status": "complete",
+              "officialModelId": "gpt-6.1-sol",
+              "sourceUrl": "https://api.mikoto.vip",
+              "mappingSource": "exact-model-id",
+              "mappingCandidates": []
+            },
+            "priceLastAttemptAt": "2026-10-11T04:48:27.246Z",
+            "supplierPriceGroup": "生图（2k4k 中质量）",
+            "supplierPriceGroupId": "16"
+          },
+          "limits": {}
+        },
+        {
+          "id": "gpt-image-2",
+          "name": "GPT Image 2（原生4K · $0.08/张）",
+          "description": "MikotoPro 生图（原生4k）分组；按文档仅展示原生 4K 尺寸并默认高画质。",
+          "operations": [
+            "image.generate",
+            "image.edit"
+          ],
+          "inputKinds": [
+            "text",
+            "image",
+            "image[]"
+          ],
+          "outputKinds": [
+            "image"
+          ],
+          "isDefault": true,
+          "metadata": {
+            "fixedOutputCount": 1,
+            "modality": "image",
+            "pricingCapturedAt": "2026-08-13",
+            "tested4KHighAt": "2026-08-13",
+            "canvasRunnable": true,
+            "supplierGroupDescription": "2.0跟2.5都有 0.07一张 只能中质量",
+            "supplierGroupResolutionLabel": "说明支持 2K / 4K",
+            "imageResolutionOrigins": {},
+            "supplierGroupInfoSource": "key-groups",
+            "supplierGroupInfoStale": false,
+            "supplierGroupCheckedAt": "2026-10-11T04:48:27.246Z",
+            "protocol": "openai-images",
+            "imageCapabilitiesSource": "supplier-group-and-api-docs",
+            "imageCapabilitiesCheckedAt": "2026-09-21",
+            "imageCapabilitiesDocumentation": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+            "mikotoImageContract": true,
+            "imageNativeParameterContract": true,
+            "imageSizeSource": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+            "imageSizeSourceKind": "supplier-examples",
+            "imageEditingSource": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+            "supplierChannelDescription": "支持原生4k高质量，一次0.07"
+          },
+          "pricing": {
+            "kind": "per-image",
+            "currency": "USD",
+            "unitAmount": 0.08,
+            "sourceUrl": "https://api.mikoto.vip",
+            "checkedAt": "2026-08-13T00:00:00.000Z",
+            "confidence": "snapshot"
+          },
+          "parameters": [
+            {
+              "key": "size",
+              "label": "输出尺寸",
+              "control": "dimensions",
+              "valueType": "string",
+              "default": "auto",
+              "step": 1,
+              "options": [
+                {
+                  "label": "自动",
+                  "value": "auto"
+                },
+                {
+                  "label": "2K · 1:1 · 1440 × 1440",
+                  "value": "1440x1440"
+                },
+                {
+                  "label": "2K · 16:9 · 2560 × 1440",
+                  "value": "2560x1440"
+                },
+                {
+                  "label": "2K · 9:16 · 1152 × 2048",
+                  "value": "1152x2048"
+                },
+                {
+                  "label": "2K · 4:3 · 1920 × 1440",
+                  "value": "1920x1440"
+                },
+                {
+                  "label": "2K · 3:4 · 1440 × 1920",
+                  "value": "1440x1920"
+                },
+                {
+                  "label": "2K · 3:2 · 2160 × 1440",
+                  "value": "2160x1440"
+                },
+                {
+                  "label": "2K · 2:3 · 1440 × 2160",
+                  "value": "1440x2160"
+                },
+                {
+                  "label": "2K · 21:9 · 2560 × 1097",
+                  "value": "2560x1097"
+                },
+                {
+                  "label": "4K · 1:1 · 2160 × 2160",
+                  "value": "2160x2160"
+                },
+                {
+                  "label": "4K · 16:9 · 3840 × 2160",
+                  "value": "3840x2160"
+                },
+                {
+                  "label": "4K · 9:16 · 2160 × 3840",
+                  "value": "2160x3840"
+                },
+                {
+                  "label": "4K · 4:3 · 2880 × 2160",
+                  "value": "2880x2160"
+                },
+                {
+                  "label": "4K · 3:4 · 2160 × 2880",
+                  "value": "2160x2880"
+                },
+                {
+                  "label": "4K · 3:2 · 3240 × 2160",
+                  "value": "3240x2160"
+                },
+                {
+                  "label": "4K · 2:3 · 2160 × 3240",
+                  "value": "2160x3240"
+                },
+                {
+                  "label": "4K · 21:9 · 3840 × 1646",
+                  "value": "3840x1646"
+                }
+              ],
+              "description": "官网常用尺寸示例；自定义正整数宽高及比例按原值发送，供应商未公布宽高范围或对齐要求。size 不使用 2K / 4K 档位字符串。",
+              "operations": [
+                "image.generate",
+                "image.edit"
+              ],
+              "allowCustomValue": true
+            },
+            {
+              "key": "quality",
+              "label": "质量",
+              "control": "select",
+              "valueType": "string",
+              "default": "medium",
+              "options": [
+                {
+                  "label": "中",
+                  "value": "medium"
+                }
+              ],
+              "operations": [
+                "image.generate",
+                "image.edit"
+              ],
+              "description": "当前官方分组规定的质量档位；旧画布的其他质量值需重新选择。"
+            },
+            {
+              "key": "response_format",
+              "label": "结果返回方式",
+              "control": "select",
+              "valueType": "string",
+              "options": [
+                {
+                  "label": "图片链接",
+                  "value": "url"
+                },
+                {
+                  "label": "Base64",
+                  "value": "b64_json"
+                }
+              ],
+              "operations": [
+                "image.generate",
+                "image.edit"
+              ]
+            }
+          ],
+          "limits": {
+            "supportedMimeTypes": [
+              "image/jpeg",
+              "image/png",
+              "image/webp"
+            ]
+          },
+          "provider": "rest",
+          "capabilities": [
+            "image.generate",
+            "image.edit"
+          ]
+        }
+      ],
+      "modelCatalogSource": "live",
+      "modelAddedIds": [],
+      "modelRemovedModels": [
+        {
+          "id": "gpt-4o-audio-preview",
+          "name": "gpt-4o-audio-preview"
+        },
+        {
+          "id": "gpt-4o-realtime-preview",
+          "name": "gpt-4o-realtime-preview"
+        },
+        {
+          "id": "gpt-5.2-2025-12-11",
+          "name": "gpt-5.2-2025-12-11"
+        },
+        {
+          "id": "gpt-5.2-chat-latest",
+          "name": "gpt-5.2-chat-latest"
+        },
+        {
+          "id": "gpt-5.2-pro",
+          "name": "gpt-5.2-pro"
+        },
+        {
+          "id": "gpt-5.2-pro-2025-12-11",
+          "name": "gpt-5.2-pro-2025-12-11"
+        },
+        {
+          "id": "gpt-5.4-2026-03-05",
+          "name": "gpt-5.4-2026-03-05"
+        },
+        {
+          "id": "gpt-image-2.5-flare",
+          "name": "gpt-image-2.5-flare"
+        },
+        {
+          "id": "gpt-image-2.5-sunburst",
+          "name": "gpt-image-2.5-sunburst"
+        },
+        {
+          "id": "gpt-reserve",
+          "name": "gpt-reserve"
+        }
+      ],
+      "modelScanLastSuccessAt": "2026-10-11T04:48:35.707Z",
+      "modelScanAttemptStatus": "live",
+      "autoModelInterfaces": {},
+      "modelScanComplete": true,
+      "modelScanError": null,
+      "modelScanErrorCode": null,
+      "modelScanHttpStatus": null,
+      "catalogUpgradeIdentity": "afe8b12a2f40557c4f97ff000dee5bc4e52876ef0a35f496331b86e8f1c610c4",
+      "catalogUpgradeAttemptRevision": "2026-10-10-jijiu-native-tier-parameters-v12",
+      "catalogUpgradeAttemptedAt": "2026-10-10T08:51:27.186Z",
+      "accountKeyId": "4775",
+      "supplierName": "MikotoPro",
+      "accountKeyGroupId": "16",
+      "accountKeyGroup": "生图（2k4k 中质量）",
+      "modelScanUpstreamErrorCode": null
+    },
+    "createdAt": "2026-09-10T04:01:40.459Z",
+    "updatedAt": "2026-10-11T04:48:54.083Z"
+  },
+  "supplier": {
+    "id": "supplier-85a8c80adddefe307e2fc6fa",
+    "supplierKey": "mikoto",
+    "name": "MikotoPro",
+    "apiUrl": "https://api.mikoto.vip",
+    "siteUrl": "https://api.mikoto.vip",
+    "kind": "auto",
+    "catalog": {
+      "groups": [
+        {
+          "id": "生图（1k）",
+          "label": "生图（1k）",
+          "source": "catalog",
+          "models": [
+            {
+              "id": "gpt-image-2",
+              "name": "gpt-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "metadata": {
+                "modelFactsSource": "supplier-catalog",
+                "inputKindsSource": "inferred",
+                "outputKindsSource": "inferred",
+                "supplierChannelDescription": "按次计费，只能1k，一张0.02",
+                "priceSource": "supplier-price-page",
+                "supplierPriceChannel": "生图（1k）",
+                "supplierPricePlatform": "openai",
+                "supplierPriceSourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                "supplierPriceCheckedAt": "2026-10-11T04:48:13.488Z",
+                "officialCatalogPricing": {
+                  "kind": "per-image",
+                  "currency": "USD",
+                  "billingUnit": "image",
+                  "unitAmount": 0.02,
+                  "sourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                  "checkedAt": "2026-10-11T04:48:13.488Z",
+                  "confidence": "exact"
+                },
+                "officialCatalogPriceGroupVerified": true,
+                "supplierChannelPriceDisplayMultiplier": 1
+              },
+              "outputKinds": [
+                "image"
+              ],
+              "priceLabel": "$0.02/张"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "name": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "metadata": {
+                "modelFactsSource": "supplier-catalog",
+                "inputKindsSource": "inferred",
+                "outputKindsSource": "inferred",
+                "supplierChannelDescription": "按次计费，只能1k，一张0.02",
+                "priceSource": "supplier-price-page",
+                "supplierPriceChannel": "生图（1k）",
+                "supplierPricePlatform": "openai",
+                "supplierPriceSourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                "supplierPriceCheckedAt": "2026-10-11T04:48:13.488Z",
+                "officialCatalogPricing": {
+                  "kind": "per-image",
+                  "currency": "USD",
+                  "billingUnit": "image",
+                  "unitAmount": 0.02,
+                  "sourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                  "checkedAt": "2026-10-11T04:48:13.488Z",
+                  "confidence": "exact"
+                },
+                "officialCatalogPriceGroupVerified": true,
+                "supplierChannelPriceDisplayMultiplier": 1
+              },
+              "outputKinds": [
+                "image"
+              ],
+              "priceLabel": "$0.02/张"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "name": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "unknown",
+              "metadata": {
+                "modelFactsSource": "supplier-catalog",
+                "inputKindsSource": "inferred",
+                "outputKindsSource": "inferred",
+                "supplierChannelDescription": "按次计费，只能1k，一张0.02",
+                "priceSource": "supplier-price-page",
+                "supplierPriceChannel": "生图（1k）",
+                "supplierPricePlatform": "openai",
+                "supplierPriceSourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                "supplierPriceCheckedAt": "2026-10-11T04:48:13.488Z",
+                "officialCatalogPricing": {
+                  "kind": "per-image",
+                  "currency": "USD",
+                  "billingUnit": "image",
+                  "unitAmount": 0.02,
+                  "sourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                  "checkedAt": "2026-10-11T04:48:13.488Z",
+                  "confidence": "exact"
+                },
+                "officialCatalogPriceGroupVerified": true,
+                "supplierChannelPriceDisplayMultiplier": 1
+              },
+              "outputKinds": [
+                "image"
+              ],
+              "priceLabel": "$0.02/张"
+            }
+          ],
+          "supplierGroupId": "5",
+          "details": {
+            "source": "key-groups",
+            "description": "1k 0.02\n量大同行稳定有量0.01",
+            "supportedResolutions": [
+              "1K"
+            ],
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.02
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.02
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.02
+              }
+            ],
+            "rateMultiplier": 1
+          },
+          "status": "available"
+        },
+        {
+          "id": "生图（原生4k",
+          "label": "生图（原生4k",
+          "source": "catalog",
+          "models": [],
+          "details": {
+            "source": "key-groups",
+            "stale": true
+          },
+          "status": "available"
+        },
+        {
+          "id": "codex 特价",
+          "label": "codex 特价",
+          "source": "catalog",
+          "models": [],
+          "supplierGroupId": "3",
+          "details": {
+            "source": "key-groups",
+            "rateMultiplier": 0.1
+          },
+          "status": "available"
+        },
+        {
+          "id": "codex 稳定",
+          "label": "codex 稳定",
+          "source": "catalog",
+          "models": [],
+          "supplierGroupId": "2",
+          "details": {
+            "source": "key-groups",
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.05
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.05
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.05
+              }
+            ],
+            "rateMultiplier": 0.18
+          },
+          "status": "available"
+        },
+        {
+          "id": "Kling视频",
+          "label": "Kling视频",
+          "source": "catalog",
+          "models": [],
+          "status": "missing",
+          "details": {
+            "source": "model-plaza",
+            "stale": true
+          }
+        },
+        {
+          "id": "codex 优选",
+          "label": "codex 优选",
+          "source": "catalog",
+          "models": [],
+          "supplierGroupId": "32",
+          "details": {
+            "source": "key-groups",
+            "description": "不降智 可测醍醐",
+            "rateMultiplier": 0.25
+          },
+          "status": "available"
+        },
+        {
+          "id": "grok生图",
+          "label": "grok生图",
+          "source": "catalog",
+          "models": [],
+          "details": {
+            "source": "key-groups",
+            "description": "0.02一张",
+            "referencePrice": "0.02一张",
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.02
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.02
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.02
+              }
+            ],
+            "rateMultiplier": 0.1,
+            "imageRateMultiplier": 1,
+            "stale": true
+          },
+          "status": "available",
+          "supplierGroupId": "37"
+        },
+        {
+          "id": "香蕉2 1k2k",
+          "label": "香蕉2 1k2k",
+          "source": "catalog",
+          "models": [],
+          "details": {
+            "source": "key-groups",
+            "description": "全部0.06",
+            "supportedResolutions": [
+              "1K",
+              "2K"
+            ],
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.06
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.06
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.06
+              }
+            ],
+            "rateMultiplier": 1,
+            "imageRateMultiplier": 1,
+            "stale": true
+          },
+          "status": "missing"
+        },
+        {
+          "id": "香蕉pro 1k2k",
+          "label": "香蕉pro 1k2k",
+          "source": "catalog",
+          "models": [],
+          "details": {
+            "source": "key-groups",
+            "description": "全部0.09",
+            "supportedResolutions": [
+              "1K",
+              "2K"
+            ],
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.09
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.09
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.09
+              }
+            ],
+            "rateMultiplier": 1,
+            "imageRateMultiplier": 1,
+            "stale": true
+          },
+          "status": "missing"
+        },
+        {
+          "id": "gemini-2.5-flash-image",
+          "label": "gemini-2.5-flash-image",
+          "source": "catalog",
+          "models": [],
+          "status": "missing",
+          "details": {
+            "source": "model-plaza",
+            "stale": true
+          }
+        },
+        {
+          "id": "香蕉2.5flash无4k",
+          "label": "香蕉2.5flash无4k",
+          "source": "catalog",
+          "models": [],
+          "status": "missing",
+          "details": {
+            "source": "model-plaza",
+            "stale": true
+          }
+        },
+        {
+          "id": "生图（2k4k 中质量）",
+          "label": "生图（2k4k 中质量）",
+          "source": "catalog",
+          "models": [
+            {
+              "id": "gpt-image-2",
+              "name": "gpt-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "metadata": {
+                "modelFactsSource": "supplier-catalog",
+                "inputKindsSource": "inferred",
+                "outputKindsSource": "inferred",
+                "supplierChannelDescription": "支持原生4k高质量，一次0.07",
+                "priceSource": "supplier-price-page",
+                "supplierPriceChannel": "生图（2k4k中质量）",
+                "supplierPricePlatform": "openai",
+                "supplierPriceSourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                "supplierPriceCheckedAt": "2026-10-11T04:48:13.488Z",
+                "officialCatalogPricing": {
+                  "kind": "per-image",
+                  "currency": "USD",
+                  "billingUnit": "image",
+                  "unitAmount": 0.08,
+                  "sourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                  "checkedAt": "2026-10-11T04:48:13.488Z",
+                  "confidence": "exact"
+                },
+                "officialCatalogPriceGroupVerified": true,
+                "supplierChannelPriceDisplayMultiplier": 1
+              },
+              "outputKinds": [
+                "image"
+              ],
+              "priceLabel": "$0.08/张"
+            }
+          ],
+          "supplierGroupId": "16",
+          "details": {
+            "source": "key-groups",
+            "description": "2.0跟2.5都有 0.07一张 只能中质量",
+            "referencePrice": "2.0跟2.5都有 0.07一张 只能中质量",
+            "supportedResolutions": [
+              "2K",
+              "4K"
+            ],
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.07
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.07
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.07
+              }
+            ],
+            "rateMultiplier": 0.18,
+            "imageRateMultiplier": 1
+          },
+          "status": "available"
+        },
+        {
+          "id": "生图（2k4k 高质量）",
+          "label": "生图（2k4k 高质量）",
+          "source": "catalog",
+          "models": [
+            {
+              "id": "gpt-image-2",
+              "name": "gpt-image-2",
+              "capability": "image",
+              "protocol": "unknown",
+              "metadata": {
+                "modelFactsSource": "supplier-catalog",
+                "inputKindsSource": "inferred",
+                "outputKindsSource": "inferred",
+                "supplierChannelDescription": "2.0 0.1一张 高质量\n2.5-flare 0.12一张 五档质量\n2.5-sunburst 0.12一张 五档质量",
+                "priceSource": "supplier-price-page",
+                "supplierPriceChannel": "生图（2k4k高质量）",
+                "supplierPricePlatform": "openai",
+                "supplierPriceSourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                "supplierPriceCheckedAt": "2026-10-11T04:48:13.488Z",
+                "officialCatalogPricing": {
+                  "kind": "per-image",
+                  "currency": "USD",
+                  "billingUnit": "image",
+                  "unitAmount": 0.1,
+                  "sourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                  "checkedAt": "2026-10-11T04:48:13.488Z",
+                  "confidence": "exact"
+                },
+                "officialCatalogPriceGroupVerified": true,
+                "supplierChannelPriceDisplayMultiplier": 1
+              },
+              "outputKinds": [
+                "image"
+              ],
+              "priceLabel": "$0.1/张"
+            },
+            {
+              "id": "gpt-image-2.5-flare",
+              "name": "gpt-image-2.5-flare",
+              "capability": "image",
+              "protocol": "unknown",
+              "metadata": {
+                "modelFactsSource": "supplier-catalog",
+                "inputKindsSource": "inferred",
+                "outputKindsSource": "inferred",
+                "supplierChannelDescription": "2.0 0.1一张 高质量\n2.5-flare 0.12一张 五档质量\n2.5-sunburst 0.12一张 五档质量",
+                "priceSource": "supplier-price-page",
+                "supplierPriceChannel": "生图（2k4k高质量）",
+                "supplierPricePlatform": "openai",
+                "supplierPriceSourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                "supplierPriceCheckedAt": "2026-10-11T04:48:13.488Z",
+                "officialCatalogPricing": {
+                  "kind": "per-image",
+                  "currency": "USD",
+                  "billingUnit": "image",
+                  "unitAmount": 0.12,
+                  "sourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                  "checkedAt": "2026-10-11T04:48:13.488Z",
+                  "confidence": "exact"
+                },
+                "officialCatalogPriceGroupVerified": true,
+                "supplierChannelPriceDisplayMultiplier": 1
+              },
+              "outputKinds": [
+                "image"
+              ],
+              "priceLabel": "$0.12/张"
+            },
+            {
+              "id": "gpt-image-2.5-sunburst",
+              "name": "gpt-image-2.5-sunburst",
+              "capability": "image",
+              "protocol": "unknown",
+              "metadata": {
+                "modelFactsSource": "supplier-catalog",
+                "inputKindsSource": "inferred",
+                "outputKindsSource": "inferred",
+                "supplierChannelDescription": "2.0 0.1一张 高质量\n2.5-flare 0.12一张 五档质量\n2.5-sunburst 0.12一张 五档质量",
+                "priceSource": "supplier-price-page",
+                "supplierPriceChannel": "生图（2k4k高质量）",
+                "supplierPricePlatform": "openai",
+                "supplierPriceSourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                "supplierPriceCheckedAt": "2026-10-11T04:48:13.488Z",
+                "officialCatalogPricing": {
+                  "kind": "per-image",
+                  "currency": "USD",
+                  "billingUnit": "image",
+                  "unitAmount": 0.12,
+                  "sourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+                  "checkedAt": "2026-10-11T04:48:13.488Z",
+                  "confidence": "exact"
+                },
+                "officialCatalogPriceGroupVerified": true,
+                "supplierChannelPriceDisplayMultiplier": 1
+              },
+              "outputKinds": [
+                "image"
+              ],
+              "priceLabel": "$0.12/张"
+            }
+          ],
+          "supplierGroupId": "39",
+          "details": {
+            "source": "key-groups",
+            "description": "image2 0.1一张 能高质量\nimage2.5 flare 0.12一张 支持五档质量\nimage2.5 sub 0.12一张 支持五档质量",
+            "referencePrice": "image2 0.1一张 能高质量；image2.5 flare 0.12一张 支持五档质量；image2.5 sub 0.12一张 支持五档质量",
+            "supportedResolutions": [
+              "2K",
+              "4K"
+            ],
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.1
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.1
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.1
+              }
+            ],
+            "rateMultiplier": 0.18,
+            "imageRateMultiplier": 1
+          },
+          "status": "available"
+        },
+        {
+          "id": "Seedance 视频",
+          "label": "Seedance 视频",
+          "source": "catalog",
+          "models": [],
+          "details": {
+            "source": "key-groups",
+            "stale": true
+          },
+          "status": "available",
+          "supplierGroupId": "34"
+        },
+        {
+          "id": "gemini生图",
+          "label": "gemini生图",
+          "source": "catalog",
+          "models": [],
+          "supplierGroupId": "28",
+          "details": {
+            "source": "key-groups",
+            "description": "gemini-3.1-flash-image-preview 0.065/张\ngemini-3-pro-image-preview 0.085/张\nnano-banana-2.1 0.065/张\n1k2k4k一个价",
+            "referencePrice": "gemini-3.1-flash-image-preview 0.065/张；gemini-3-pro-image-preview 0.085/张；nano-banana-2.1 0.065/张",
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.065
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.065
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.065
+              }
+            ],
+            "rateMultiplier": 1,
+            "imageRateMultiplier": 1
+          },
+          "status": "available"
+        },
+        {
+          "id": "grok heavy",
+          "label": "grok heavy",
+          "source": "catalog",
+          "models": [],
+          "details": {
+            "source": "key-groups",
+            "description": "图片 0.02一张\n视频 0.18/s",
+            "referencePrice": "图片 0.02一张",
+            "imagePrices": [
+              {
+                "resolution": "1K",
+                "amount": 0.02
+              },
+              {
+                "resolution": "2K",
+                "amount": 0.02
+              },
+              {
+                "resolution": "4K",
+                "amount": 0.02
+              }
+            ],
+            "rateMultiplier": 0.1,
+            "imageRateMultiplier": 1,
+            "stale": true
+          },
+          "status": "available",
+          "supplierGroupId": "40"
+        }
+      ]
+    },
+    "scanStatus": "live",
+    "createdAt": "2026-09-09T09:32:36.456Z",
+    "updatedAt": "2026-10-11T04:48:54.083Z",
+    "state": {
+      "version": 1,
+      "revision": 189,
+      "visibility": "visible",
+      "sourceId": "f17ed5f5-9b8f-47d9-a621-0bbe4bfb9e15",
+      "fingerprint": "8ae2a4cf5604f1ebf761245c1a4724eb27796d0bdc89e6d4cd6ef67ca41187c9"
+    },
+    "scanError": "账号分组已读取，但模型价格目录暂不可完整读取；保留历史报价，请稍后重试",
+    "scannedAt": "2026-10-11T04:48:13.488Z",
+    "scanLastSuccessAt": "2026-10-08T11:31:30.390Z",
+    "scanComplete": false
+  }
+}

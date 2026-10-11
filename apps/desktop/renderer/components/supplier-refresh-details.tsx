@@ -9,8 +9,8 @@ import styles from "./supplier-refresh-details.module.css";
 
 type RefreshStatus = "updated" | "partial" | "failed" | "empty" | "unconfigured" | "unconfirmed" | "idle";
 const STATUS_LABELS: Record<RefreshStatus, string> = {
-  updated: "已更新", partial: "部分待确认", failed: "刷新失败", empty: "已确认 · 无模型",
-  unconfigured: "未配置 Key", unconfirmed: "待确认", idle: "尚未刷新",
+  updated: "已更新", partial: "局部数据", failed: "刷新失败", empty: "返回模型：0",
+  unconfigured: "未配置 Key", unconfirmed: "本次数据：—", idle: "尚未刷新",
 };
 
 export function SupplierRefreshIndicator({ status = "idle", running = false, label }: {
@@ -49,7 +49,7 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
     ...(result?.directory && result.directory.status !== "updated" ? [{ name: "供应商目录", message: result.directory.message }] : []),
     ...connections.filter(item => !["updated", "empty"].includes(item.status)).map(item => ({ name: item.name, message: item.message })),
     ...connections.flatMap(item => item.modelIssues?.length ? [{
-      name: `${item.name} · 接口`, message: `${item.modelIssues.length} 个模型接口待确认。${item.modelIssues[0]!.message}`,
+      name: `${item.name} · 接口`, message: `${item.modelIssues.length} 个模型的接口字段。${item.modelIssues[0]!.message}`,
     }] : []),
     ...connections.flatMap(item => {
       const failedPrices = item.priceIssues?.filter(model => model.failed) ?? [];
@@ -78,14 +78,14 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
           <small>{result?.checkedAt ? `最近读取：${checkedLabel(result.checkedAt)}` : "尚未取得刷新记录"}</small>
           {result?.snapshotOnly && <p className={styles.note}>仅展示已保存状态；刷新后可查看本次变化。</p>}
           <div className={styles.metrics}>
-            <div><span>连接已确认</span><strong>{confirmed}<small> / {connections.length}</small></strong></div>
+            <div><span>目录读取成功</span><strong>{confirmed}<small> / {connections.length}</small></strong></div>
             <div><span>分组变化</span><strong>{changesAvailable ? groupChangeCount : "—"}</strong></div>
             <div><span>模型新增 / 未再返回</span><strong>{changesAvailable ? <>{added}<small> / {missing}</small></> : "—"}</strong></div>
             <div><span>接口 / 价格变化</span><strong>{changesAvailable ? <>{interfaces}<small> / {prices}</small></> : "—"}</strong></div>
           </div>
         </section>
         {issues.length > 0 && <section className={styles.issues} aria-label="待处理事项">
-          <h3><CircleAlert size={17} />需要检查（{issues.length}）</h3>
+          <h3><CircleAlert size={17} />读取详情（{issues.length}）</h3>
           <ul>{issues.map((issue, index) => <li key={`${issue.name}:${index}`}><strong>{issue.name}</strong><p>{issue.message}</p></li>)}</ul>
         </section>}
         {result?.directory && <section className={styles.section} aria-label="目录读取结果">
@@ -123,12 +123,12 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
             <p>{item.message}</p>
             {(item.checkedAt || item.lastSuccessAt) && <small>{item.checkedAt ? `最近尝试：${checkedLabel(item.checkedAt)}` : ""}{item.lastSuccessAt ? ` · 上次成功：${checkedLabel(item.lastSuccessAt)}` : ""}</small>}
             {!!item.modelIssues?.length && <details className={styles.modelIssues}>
-              <summary><SupplierRefreshIndicator status="unconfirmed" label={`接口待确认的模型（${item.modelIssues.length}）`} /></summary>
+              <summary><SupplierRefreshIndicator status="unconfirmed" label={`接口字段（${item.modelIssues.length} 个模型）`} /></summary>
               <ul>{item.modelIssues.map(model => <li key={model.id}><strong>{model.name}</strong><code>{model.id}</code><p>{model.message}</p></li>)}</ul>
             </details>}
             {!!item.priceIssues?.length && <details className={styles.modelIssues}>
               <summary><SupplierRefreshIndicator status={item.priceIssues.some(model => model.failed) ? "partial" : "unconfirmed"}
-                label={`价格待确认的模型（${item.priceIssues.length}）`} /></summary>
+                label={`价格记录（${item.priceIssues.length} 个模型）`} /></summary>
               <ul>{item.priceIssues.map(model => <li key={model.id}><strong>{model.name}</strong><code>{model.id}</code><p>{model.message}</p></li>)}</ul>
             </details>}
             {item.modelAddedIds.length + item.modelRemovedModels.length + item.interfaceChanges.length + item.priceChanges.length > 0 && <div className={styles.modelChanges}>

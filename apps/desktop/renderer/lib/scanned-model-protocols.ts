@@ -34,6 +34,8 @@ import { isChentuNativeGeminiModel, chentuNativeGeminiDescriptor, chentuNativeGe
 import { cyberAfeiDocumentedModel, cyberAfeiConnectorForModels } from "./cyberafei-catalog";
 import { supplierKeyForConnection } from "./supplier-identity";
 import { matchesSupplierTemplate } from "./supplier-template-source";
+import { supplierImageMenuContract } from "./supplier-image-menu-contract";
+import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { applyVerifiedImage25Capabilities } from "./verified-image25-capabilities";
 import { applyMonsterImageCapabilities } from "@super-canvas/providers/monster-image-capabilities";
 import { applyChuangxiangImageCapabilities } from "@super-canvas/providers/chuangxiang-image-capabilities";
@@ -139,7 +141,7 @@ function knownChentuVideoContract(connection: Connection, model: ModelDescriptor
   if (remainingVideoSupplier(connection.config.baseUrl) !== "chentu" || capability(model) !== "video") return true;
   if (remainingVideoModel("chentu", model.id)) return true;
   const metadata = model.metadata ?? {};
-  return Boolean(model.parameters?.length && (metadata.source === "manual" || metadata.operationsSource === "declared" ||
+  return Boolean(model.parameters?.length && (metadata.source === "manual" || metadata.source === "paid-test" || metadata.operationsSource === "declared" ||
     metadata.autoInterfaceStatus === "connected" || metadata.protocolEvidence === "paid-test"));
 }
 
@@ -325,12 +327,13 @@ function bindExistingModelProtocols(
         !["empty", "unauthorized"].includes(String(connection.config.modelScanStatus)) &&
         (model.metadata?.canvasRunnable !== false || Array.isArray(connection.config.scannedModelIds) && connection.config.scannedModelIds.includes(model.id))) {
       const endpoints = model.metadata?.endpointTypes;
+      const cyberContext = { baseUrl: connection.config.baseUrl, manualProtocol: connection.config.manualProtocol, group: String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? ""), model };
       const documented = cyberAfeiDocumentedModel(model.id, Array.isArray(endpoints) && endpoints.length ? {
         endpointTypes: endpoints.filter((value): value is string => typeof value === "string"),
         ...(model.description ? { description: model.description } : {}),
-      } : undefined);
+      } : undefined, cyberContext);
       if (documented && (!hasDeclaredOutput(model) || capability(model) === capability(documented))) {
-        const transport = cyberAfeiConnectorForModels([documented]).modelOverrides?.[model.id];
+        const transport = cyberAfeiConnectorForModels([documented], cyberContext).modelOverrides?.[model.id];
         if (transport) connector.modelOverrides = { ...connector.modelOverrides, [model.id]: transport };
         const metadata: Record<string, unknown> = { ...model.metadata, ...documented.metadata, canvasRunnable: true };
         delete metadata.canvasUnavailableReason;
@@ -490,6 +493,8 @@ export function bindScannedModelProtocols(
     if (explicitMiaowu && model.metadata?.autoInterfaceStatus === "incomplete") return model;
     const supplier = remainingVideoSupplier(connection.config.baseUrl);
     const documented = supplier && remainingVideoModel(supplier, model.id, model, {
+      baseUrl: connection.config.baseUrl,
+      manualProtocol: connection.config.manualProtocol,
       group: String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? ""),
       groupDescription: String(connection.config.supplierGroupDescription ?? connection.config.groupDescription ?? ""),
     });
@@ -542,7 +547,8 @@ export function bindScannedModelProtocols(
     .map(model => applyJiasuImageCapabilities(connection, model))
     .map(model => applyChuangxiangCurrentVideoCapabilities(connection, model)).map(withHighestModelQualityDefault)
     .map(model => applySupplierImageConstraints(connection, model))
-    .map(model => applyJijiuImageCapabilities(connection, model));
+    .map(model => applyJijiuImageCapabilities(connection, model))
+    .map(model => supplierImageMenuContract(connection, model));
   if (currentCangyuan) {
     for (let i = 0; i < models.length; i++) if (canInherit(models[i]!) &&
       canApplyCangyuanCurrentContract(connection.config, String(connection.config.baseUrl ?? ""), models[i]!.id))
@@ -587,6 +593,8 @@ export function bindScannedModelProtocols(
     };
     const documented = remainingSupplier && canInherit(model) && (!hasDeclaredOutput(model) || capability(model) === "video")
       ? remainingVideoModel(remainingSupplier, model.id, model, {
+          baseUrl: connection.config.baseUrl,
+          manualProtocol: connection.config.manualProtocol,
           group: String(connection.config.modelGroup ?? connection.config.group ?? ""),
           groupDescription: String(connection.config.modelGroupDescription ?? connection.config.groupDescription ?? ""),
         }) : undefined;
@@ -620,6 +628,7 @@ export function bindScannedModelProtocols(
     models: connector.models?.filter(model => !miaowuPending.has(model.id)),
     modelOverrides: Object.fromEntries(Object.entries(connector.modelOverrides ?? {}).filter(([id]) => !miaowuPending.has(id))),
   });
+  models = models.map(applyUserImageSizePresets);
   return {
     ...bound,
     models,

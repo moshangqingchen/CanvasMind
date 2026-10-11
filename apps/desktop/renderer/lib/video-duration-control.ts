@@ -42,6 +42,9 @@ export function videoDurationControl(
     const options = descriptor.options ?? [];
     return options.length ? { kind: "select", options } : unavailable();
   }
+  // The documented field accepts typed values but does not declare an
+  // exhaustive range. Keep its number editor and let the supplier validate it.
+  if (descriptor.allowCustomValue) return;
   // Number-control options can be suggestions or special automatic sentinels,
   // rather than an exhaustive enum. Keep their original editing semantics.
   if (descriptor.control !== "number" || descriptor.options?.length) return unavailable();

@@ -6,6 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./c-open-image-contract": {
+      "types": "./src/c-open-image-contract.ts",
+      "import": "./dist/c-open-image-contract.js",
+      "default": "./dist/c-open-image-contract.js"
+    },
     "./jijiu-image-contract": {
       "types": "./src/jijiu-image-contract.ts",
       "import": "./dist/jijiu-image-contract.js",
@@ -40,6 +45,11 @@
       "types": "./src/remaining-video-contracts.ts",
       "import": "./dist/remaining-video-contracts.js",
       "default": "./dist/remaining-video-contracts.js"
+    },
+    "./cyberafei-seedance25-video-contract": {
+      "types": "./src/cyberafei-seedance25-video-contract.ts",
+      "import": "./dist/cyberafei-seedance25-video-contract.js",
+      "default": "./dist/cyberafei-seedance25-video-contract.js"
     },
     "./model-media": {
       "types": "./src/model-media.ts",
@@ -155,6 +165,11 @@
       "types": "./src/pdog-image-contract.ts",
       "import": "./dist/pdog-image-contract.js",
       "default": "./dist/pdog-image-contract.js"
+    },
+    "./secure-skill-image-contract": {
+      "types": "./src/secure-skill-image-contract.ts",
+      "import": "./dist/secure-skill-image-contract.js",
+      "default": "./dist/secure-skill-image-contract.js"
     },
     "./chuangxiang-image-contract": {
       "types": "./src/chuangxiang-image-contract.ts",

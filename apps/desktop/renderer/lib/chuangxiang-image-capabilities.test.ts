@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
-import { parametersWithDefaults } from "./model-parameters";
+import { normalizedParametersForModel } from "./model-parameters";
 import { resolutionTierShortcuts } from "../components/node-parameter-fields";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { SupplierVerificationCase } from "@super-canvas/db";
@@ -21,7 +21,7 @@ const model: ModelDescriptor = {
 };
 
 describe("Chuangxiang canvas controls", () => {
-  it("keeps 2K request presets after a decoded undersized result, but respects API parameter rejections", () => {
+  it("retains original undersized samples without creating a per-tier pixel table", () => {
     const bound = bindScannedModelProtocols(connection, [{ ...model, id: "gpt-image-2.5-yf" }]).models[0]!;
     const sample: SupplierVerificationCase = {
       id: "sample", requestId: "request", supplierId: "cx", sourceId: "cx", connectionId: "cx-image",
@@ -35,27 +35,40 @@ describe("Chuangxiang canvas controls", () => {
       connection: { ...connection, id: "cx-image" }, model: { ...descriptor, metadata: { ...descriptor.metadata, imageApproximateResolutions: [] } }, fingerprint: "fixture", tests: [test],
     });
     const result = evaluate(sample);
-    expect(result.tiers.map(t => t.tier)).toEqual(["1K", "2K", "4K"]);
-    expect(result.tiers.find(t => t.tier === "2K")?.status).toBe("approximate");
-    expect(result.model.parameters!.find(p => p.key === "size")!.options!.filter(o => o.label.startsWith("2K"))).toHaveLength(11);
-    expect(result.evidence.find(e => e.resolution === "2K")?.excerpt).toContain("实际 1672×941");
+    expect(result.tiers.map(t => t.tier)).toEqual(["1K"]);
+    expect(result.model.metadata?.imageApproximateResolutions).toEqual([]);
+    const size = result.model.parameters!.find(p => p.key === "size")!;
+    expect(size.allowCustomValue).toBe(true);
+    expect(size.options!.map(o => o.value)).toContain("3840x2160");
+    expect(result.model.metadata?.imageUserSizePresetSource).toBe("user-request");
+    expect(size.options!.filter(o => o.label.startsWith("2K")).length).toBeGreaterThan(0);
+    expect(size.min).toBeUndefined();
+    expect(size.max).toBeUndefined();
+    expect(size.step).toBeUndefined();
+    expect(result.evidence[0]?.kind).toBe("test");
+    expect(result.evidence[0]?.checkedAt).toBe("2026-09-21");
     expect(sample.status).toBe("unsupported");
-    expect(evaluate({ ...sample, actualWidth: undefined, actualHeight: undefined }).tiers.map(t => t.tier)).not.toContain("2K");
+    expect(evaluate({ ...sample, actualWidth: undefined, actualHeight: undefined }).model.parameters).toEqual(result.model.parameters);
     const belowLimit = { ...sample, actualWidth: 1440, actualHeight: 810 };
-    expect(evaluate(belowLimit).tiers.find(t => t.tier === "2K")?.status).toBe("assumed");
-    expect(evaluate(belowLimit, { ...bound, metadata: { ...bound.metadata, imageUnsupportedResolutions: ["2K"] } }).tiers.map(t => t.tier)).not.toContain("2K");
+    expect(evaluate(belowLimit).model.parameters).toEqual(result.model.parameters);
+    expect(evaluate(belowLimit, { ...bound, metadata: { ...bound.metadata, imageUnsupportedResolutions: ["2K"] } }).model.parameters).toEqual(result.model.parameters);
   });
-  it("retains every request tier and all ratios through supplier capability merging without marking unverified 4K as passed", () => {
+  it("keeps full-model historical request values and open W/H through capability merging", () => {
     const bound = bindScannedModelProtocols(connection, [{ ...model, id: "gpt-image-2.5-yf" }]).models[0]!;
     const result = effectiveImageCapabilities({
       supplier: { id: "cx", name: "创想AI", supplierKey: "custom", apiUrl: connection.config.baseUrl, siteUrl: connection.config.baseUrl, kind: "newapi", catalog: { groups: [{ id: "生图", label: "生图", models: [] }] }, scanStatus: "live", createdAt: "now", updatedAt: "now" },
       connection: { ...connection, id: "cx-image" }, model: bound, fingerprint: "fixture",
     });
-    expect(result.tiers.map(t => t.tier)).toEqual(["1K", "2K", "4K"]);
-    expect(result.tiers.find(t => t.tier === "4K")?.status).toBe("assumed");
+    expect(result.tiers.map(t => t.tier)).toEqual(["1K"]);
+    expect(result.tiers.find(t => t.tier === "4K")).toBeUndefined();
     const options = result.model.parameters!.find(p => p.key === "size")!.options!;
     expect(options.some(o => o.value === "auto")).toBe(true);
-    for (const tier of ["1K", "2K", "4K"]) expect(options.filter(o => o.label.startsWith(tier))).toHaveLength(11);
+    expect(options.some(o => o.value === "2048x2048")).toBe(true);
+    expect(result.model.metadata?.imageUserSizeSourceOptions).toEqual(expect.arrayContaining([expect.objectContaining({ value: "2048x2048", label: expect.stringContaining("服务错误") })]));
+    expect(options.some(o => o.value === "3840x2160")).toBe(true);
+    expect(result.model.metadata?.imageRequestResolutions).toEqual(["1K", "2K", "4K"]);
+    expect(result.model.metadata?.imageTierSource).toBe("historical-request-output-sample");
+    expect(result.model.metadata?.imageResolutionProfiles).toBeUndefined();
     expect(result.model.pricing?.unitAmount).toBe(0.08);
   });
   it("updates cached model controls without overwriting saved node values", () => {
@@ -65,6 +78,8 @@ describe("Chuangxiang canvas controls", () => {
         result.parameters!.find((p) => p.key === "size")!,
       ).map((t) => t.label),
     ).toEqual(["1K", "2K", "4K"]);
+    expect(result.metadata?.imageSupportedResolutions).toEqual(["1K", "2K", "4K"]);
+    expect(result.parameters!.find(p => p.key === "size")!.allowCustomValue).toBe(true);
     expect(
       result
         .parameters!.find((p) => p.key === "quality")!
@@ -74,7 +89,7 @@ describe("Chuangxiang canvas controls", () => {
       "max",
     );
     expect(
-      parametersWithDefaults(result.parameters!, {
+      normalizedParametersForModel("image-generation", "openai", result, {
         quality: "high",
         size: "auto",
         size_tier: "2K",
@@ -92,7 +107,10 @@ describe("Chuangxiang canvas controls", () => {
       resolutionTierShortcuts(
         sunburst.parameters!.find((p) => p.key === "size")!,
       ).map((t) => t.label),
-    ).toContain("4K");
+    ).toEqual(["1K", "2K", "4K"]);
+    expect(sunburst.parameters!.find(p => p.key === "size")!.options!.map(o => o.value)).toContain("3840x2160");
+    expect(sunburst.parameters!.find(p => p.key === "size")!.allowCustomValue).toBe(true);
+    expect(sunburst.metadata?.imageRequestResolutions).toContain("4K");
     expect(sunburst.metadata?.imageSupportedResolutions).not.toContain("4K");
     expect(sunburst.metadata?.imageUnsupportedResolutions).toEqual([]);
     expect(

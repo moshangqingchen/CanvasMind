@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
-import { parametersWithDefaults } from "./model-parameters";
+import { normalizedParametersForModel } from "./model-parameters";
 import {
   resolutionTierShortcuts,
   sizeOnTierChange,
@@ -32,12 +32,21 @@ describe("Monster scanned model controls", () => {
       };
       const result = bindScannedModelProtocols(connection, [model]).models[0]!;
       const descriptor = result.parameters!.find((p) => p.key === "size")!;
-      expect(resolutionTierShortcuts(descriptor).map((s) => s.label)).toEqual(
-        tiers,
-      );
-      expect(sizeOnTierChange(descriptor, "768x1360", "2K")).toBe("1536x2720");
+      // The dated samples classify observed tiers; they do not define all
+      // ratios or permit replacing an explicit user size with generic pixels.
+      expect(result.metadata?.imageSupportedResolutions).toEqual(tiers);
+      expect(resolutionTierShortcuts(descriptor).map((s) => s.label)).toEqual(tiers);
+      expect(sizeOnTierChange(descriptor, "768x1360", "2K", { ratio: "9:16" })).toBe("1536x2720");
+      expect(descriptor.allowCustomValue).toBe(true);
+      expect(descriptor.min).toBeUndefined();
+      expect(descriptor.max).toBeUndefined();
+      expect(descriptor.step).toBeUndefined();
+      expect(descriptor.options!.map(o => o.value)).toContain("1536x2720");
+      expect(result.metadata?.imageUserSizePresetSource).toBe("user-request");
+      expect(result.metadata?.imageResolutionProfiles).toBeUndefined();
+      expect(result.parameters!.find(p => p.key === "quality")!.default).toBe("max");
       expect(
-        parametersWithDefaults(result.parameters!, {
+        normalizedParametersForModel("image-generation", "openai", result, {
           size: "auto",
           size_tier: "2K",
           quality: "medium",

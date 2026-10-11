@@ -4,18 +4,20 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { ChevronDown } from "lucide-react";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { ImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
-import { cleanModelDisplayName, modelPriceSummary } from "../lib/model-display";
+import { cleanModelDisplayName, modelPickerPriceSummary } from "../lib/model-display";
 import { modelCanvasUnavailableReason } from "../lib/graph-ui";
 import { filterPickerModels, MODEL_PICKER_PAGE_SIZE, readRecentModels, RECENT_MODELS_KEY, rememberModel,
   type ModelKindFilter, type ModelStatusFilter } from "../lib/model-picker";
 import styles from "./model-picker.module.css";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary } from "../lib/tk1688-model-display";
 import type { CatalogPickerDirectory } from "../lib/supplier-model-directory-diff";
+import { modelPickerDirectoryFact } from "../lib/model-picker-data";
 
 type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
 
-function ModelIdentity({ model, parameters, capabilities, price = false, detailsId, route = false }: { model: ModelDescriptor; parameters: Record<string, unknown>; capabilities?: ImageEditingCapabilities; price?: boolean; detailsId?: string; route?: boolean }) {
+function ModelIdentity({ model, parameters, capabilities, price = false, selected = true, detailsId, route = false, keyConfirmed = false }: { model: ModelDescriptor; parameters: Record<string, unknown>; capabilities?: ImageEditingCapabilities; price?: boolean; selected?: boolean; detailsId?: string; route?: boolean; keyConfirmed?: boolean }) {
   const family = tk1688ModelFamily(model);
+  const directory = modelPickerDirectoryFact(model, keyConfirmed);
   return <span className={styles.identity}>
     <span className={styles.heading}>
       <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{family ? route ? tk1688RouteLabel(model) : family : cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
@@ -27,7 +29,8 @@ function ModelIdentity({ model, parameters, capabilities, price = false, details
     {family && !route && <span id={detailsId ? `${detailsId}-route` : undefined} className={styles.route}>{tk1688RouteLabel(model)}</span>}
     <span id={detailsId ? `${detailsId}-id` : undefined} className={styles.id} title={model.id}>ID: {model.id}</span>
     {route && <span id={detailsId ? `${detailsId}-summary` : undefined} className={styles.summary}>{tk1688RouteSummary(model)}</span>}
-    {price && <span id={detailsId ? `${detailsId}-price` : undefined} className={styles.price}>{modelPriceSummary(model, parameters)}</span>}
+    {price && <span id={detailsId ? `${detailsId}-price` : undefined} className={styles.price}>{modelPickerPriceSummary(model, parameters, selected)}</span>}
+    {directory && <span id={detailsId ? `${detailsId}-directory` : undefined} className={styles.summary}>{directory}</span>}
   </span>;
 }
 
@@ -223,7 +226,7 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
       {selected ? <ModelIdentity model={selected} parameters={parameters} capabilities={capabilities[selected.id]} detailsId={`${listId}-selected`} /> : <span>{value || "自动模型"}</span>}
       {selected && badge?.(selected)}<ChevronDown size={15} />
     </button>
-    {value && !selected && <p className={styles.note} role="status">保留当前模型 {value}：{loading ? "正在扫描模型…" : failed ? "模型扫描失败，暂不可用" : authoritative ? "当前扫描不可用" : "目录未确认"}。请选择后才会更换。</p>}
+    {value && !selected && <p className={styles.note} role="status">保留当前模型 {value}：{loading ? "正在扫描模型…" : failed ? "本次模型扫描失败" : authoritative ? "本次目录返回：0 条匹配" : "本次目录响应：—"}。请选择后才会更换。</p>}
     {open && <div ref={menu} popover="manual" className={`node-model-select-options ${styles.menu}`}
       style={{ position: "fixed", inset: "auto", margin: 0, display: "flex" }}>
       {grouped && <div className={styles.routingHeading}>
@@ -242,20 +245,20 @@ export function ModelPicker({ id, label, connectionId, models, value, onChange, 
         </select>
       </div>
       {catalogDirectory && <p className={styles.directorySummary} role="status" aria-label="官网与 Key 目录对照">
-        <span>官网目录 {catalogDirectory.catalogCount}</span><span>Key {catalogDirectory.keyConfirmed ? catalogDirectory.keyCount : "目录待确认"}</span>
-        <span>双方 {catalogDirectory.keyConfirmed ? catalogDirectory.sharedCount : "待确认"}</span>
-        <span>官网额外 {catalogDirectory.keyConfirmed ? catalogDirectory.catalogOnlyIds.length : "待对照"}（仅目录）</span>
+        <span>官网目录 {catalogDirectory.catalogCount}</span><span>Key {catalogDirectory.keyConfirmed ? catalogDirectory.keyCount : "—"}</span>
+        <span>双方 {catalogDirectory.keyConfirmed ? catalogDirectory.sharedCount : "—"}</span>
+        <span>官网额外 {catalogDirectory.keyConfirmed ? catalogDirectory.catalogOnlyIds.length : "—"}（仅目录）</span>
         {catalogDirectory.catalogStale && <span>官网目录为上次记录</span>}
       </p>}
       <div ref={list} id={listId} className={styles.list} role="listbox" aria-label={`${label} 可选模型`}>
         {visible.map((option, offset) => <button key={option.id} id={`${listId}-${pageStart + offset}`} type="button" role="option"
           aria-label={option.label} aria-selected={option.family ? tk1688ModelFamily(selected ?? { id: value }) === option.family : value === option.id} aria-disabled={Boolean(option.reason)} aria-setsize={options.length} aria-posinset={pageStart + offset + 1}
-          aria-describedby={option.model ? `${listId}-${pageStart + offset}-id ${listId}-${pageStart + offset}-price${family ? ` ${listId}-${pageStart + offset}-summary` : ""}${option.reason ? ` ${listId}-${pageStart + offset}-reason` : ""}${capabilities[option.model.id]?.transparent || capabilities[option.model.id]?.mask ? ` ${listId}-${pageStart + offset}-capabilities` : ""}` : undefined}
+          aria-describedby={option.model ? `${listId}-${pageStart + offset}-id ${listId}-${pageStart + offset}-price${family ? ` ${listId}-${pageStart + offset}-summary` : ""}${option.model.metadata?.publicCatalogOnly === true ? ` ${listId}-${pageStart + offset}-directory` : ""}${capabilities[option.model.id]?.transparent || capabilities[option.model.id]?.mask ? ` ${listId}-${pageStart + offset}-capabilities` : ""}` : undefined}
           className={styles.option} data-index={pageStart + offset} data-active={activeIndex === pageStart + offset || undefined} data-catalog-only={option.model?.metadata?.publicCatalogOnly === true || undefined}
-          title={option.family ? "查看此模型的自动路由与商家渠道" : option.reason ? `不可运行：${option.reason}` : option.id || "使用连接默认模型"} tabIndex={-1}
+          title={option.family ? "查看此模型的自动路由与商家渠道" : option.id || "使用连接默认模型"} tabIndex={-1}
           onMouseDown={event => event.preventDefault()} onClick={() => activate(option)}>
           {option.family ? <span className={styles.identity}><strong>{option.label}</strong><span className={styles.summary}>{option.merchants} 条商家渠道 · 查看线路与报价</span></span>
-            : option.model ? <span className={styles.identity}><ModelIdentity model={option.model} parameters={parameters} capabilities={capabilities[option.model.id]} detailsId={`${listId}-${pageStart + offset}`} price route={Boolean(family)} />{option.reason && <small id={`${listId}-${pageStart + offset}-reason`}>不可运行：{option.reason}</small>}</span> : <span>{option.label}</span>}
+            : option.model ? <ModelIdentity model={option.model} parameters={parameters} capabilities={capabilities[option.model.id]} detailsId={`${listId}-${pageStart + offset}`} price selected={option.id === value} route={Boolean(family)} keyConfirmed={catalogDirectory?.keyConfirmed} /> : <span>{option.label}</span>}
           {option.model && badge?.(option.model)}
         </button>)}
         {!options.length && <p className={styles.note}>没有符合筛选条件的{family ? "线路" : "模型"}。可清空搜索或调整筛选。</p>}

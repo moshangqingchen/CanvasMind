@@ -92,10 +92,10 @@ describe("Jiasu full-model image contracts", () => {
     { model: "gpt-image-2.5-1k", parameters: { size: "1K" } },
     { model: "gpt-image-2.5-1k", parameters: { resolution: "4K" } },
     { model: "gpt-image-2.5-1k", parameters: { ratio: "21:9" } },
-    { model: "gpt-image-2.5-1k", parameters: { quality: "high" } },
+    { model: "gpt-image-2.5-1k", parameters: { quality: "unrecognized" } },
     { model: "gpt-image-2.5-sunburst-1k", parameters: { output_format: "png" } },
     { model: "gpt-image-2-4k", parameters: { quality: "high" } },
-    { model: "gpt-image-2-4k", parameters: { size: "3840x2160" } },
+    { model: "gpt-image-2-4k", parameters: { size: "3840x0" } },
     { model: "gpt-image-2-2k", parameters: { resolution: "2K" } },
     { model: "gpt-image-2-high", parameters: { quality: "max" } },
     { model: "gpt-image-2-1k", parameters: { n: 2 } },
@@ -111,6 +111,21 @@ describe("Jiasu full-model image contracts", () => {
     const fetch = vi.fn<FetchImplementation>(async () => queued());
     const adapter = new JiasuImageAdapter(resolver(), { fetch });
     await expect(adapter.submit({ ...request, ...changed })).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("uses a missing card's user pixels while still enforcing an explicitly retained size enum", async () => {
+    const model = "gpt-image-2-4k", parameters = { size: "3200x2560", size_tier: "4K", quality: "medium" };
+    const fetch = vi.fn<FetchImplementation>(async () => queued());
+    await new JiasuImageAdapter(resolver(), { fetch }).submit({ ...request, model, parameters });
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toMatchObject({ model, size: "3200x2560", quality: "medium" });
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).not.toHaveProperty("size_tier");
+    fetch.mockClear();
+    const source = { id: model, name: model, operations: ["image.generate"], metadata: {
+      jiasuCatalogRecord: { apiParameters: [{ name: "size", range: "4096x4096,4096x2304,2304x4096" }] },
+    } };
+    await expect(new JiasuImageAdapter(resolver({ modelCatalogModels: [source] }), { fetch }).submit({ ...request, model, parameters }))
+      .rejects.toThrow();
     expect(fetch).not.toHaveBeenCalled();
   });
   it.each(["aspect_ratio", "aspectRatio"])("preserves a saved legal %s alias in the actual request", async key => {

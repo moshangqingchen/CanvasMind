@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupplierRecord, SupplierVerificationCase } from "@super-canvas/db";
 import { OpenAIImageAdapter, StaticConnectionResolver, type ModelDescriptor } from "@super-canvas/providers";
+import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { effectiveImageCapabilities, verificationParameters } from "./supplier-capabilities";
 
 const group = "生图（2k4k 高质量）";
@@ -25,7 +26,10 @@ describe("Mikoto Image 2.5 quality declarations", () => {
       const result = get(model);
       expect(result.model.parameters?.find(p => p.key === "quality")).toMatchObject({ default: "max", options: values.map(value => ({ value })) });
       expect(result.qualityOptions?.filter(value => value !== "auto")).toEqual(values.slice(1));
-      expect(verificationParameters(result, "4K").parameters).toMatchObject({ quality: "max", size: "3840x2160" });
+      const planned = verificationParameters(result, "4K");
+      expect(planned).toMatchObject({ width: 0, height: 0, parameters: { quality: "max" } });
+      expect(planned.parameters.size).toBeUndefined();
+      expect(result.probeTiers).not.toContain("4K");
       expect(result.evidence.some(item => item.kind === "test" || item.status === "verified")).toBe(false);
       expect(get(result.model).model.parameters).toEqual(result.model.parameters);
     }
@@ -52,6 +56,9 @@ describe("Mikoto Image 2.5 quality declarations", () => {
     const denied = get(model, { documentation: "不支持 max；不支持 low" });
     expect(denied.quality).toBe("xhigh");
     expect(denied.model.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["medium", "high", "xhigh"]);
+    const restoredDenied = applyUserImageSizePresets(denied.model).parameters?.find(p => p.key === "quality")?.options?.map(o => o.value);
+    expect(restoredDenied).not.toContain("low");
+    expect(restoredDenied).not.toContain("max");
     const rejection: SupplierVerificationCase = {
       id: "rejected", requestId: "request", supplierId: supplier.id, sourceId: "source", connectionId: connection.id,
       group, modelId: model.id, provider: "openai", fingerprint: "f", dedupeKey: "d", resolution: "4K", ratio: "16:9",
@@ -62,6 +69,8 @@ describe("Mikoto Image 2.5 quality declarations", () => {
     expect(restricted.quality).toBe("high");
     expect(restricted.qualityOptions).toEqual(["medium", "high"]);
     expect(restricted.model.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["medium", "high"]);
+    expect(applyUserImageSizePresets(restricted.model).parameters?.find(p => p.key === "quality")?.options?.map(o => o.value))
+      .toEqual(["medium", "high"]);
     expect(get(model, { tests: [{ ...rejection, connectionId: "another-key" }] }).quality).toBe("max");
   });
   it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("forwards every restored quality to the mocked %s request", async id => {

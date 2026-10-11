@@ -9,7 +9,7 @@ const UPGRADED_HOSTS = new Set([
   "api.miaowuai.store", "vapi.chuangxiangai.asia", "api.tk1688.com", "tk1688.com", "ai.tk1688.com",
   "pool.chaozhiyuanai.com", "asian-acc.we-token.cc", "us-la.we-token.cc", "sub2api.we-token.cc", "video.we-token.cc", "api.3365api.cn",
   "api.eaheng.com", "token.secure-skill.com", "genimage.pro", "api.hangzhale.com", "synoralink.com", "ai.whyshy.cn",
-  "newapi.jijiucanvas.com",
+  "newapi.jijiucanvas.com", "ai.jiasuapi.com",
 ]);
 type Repository = Pick<MemoryRepository, "listConnections" | "listSuppliers" | "getConnection" | "saveConnection">;
 export interface CatalogUpgradeStatus {

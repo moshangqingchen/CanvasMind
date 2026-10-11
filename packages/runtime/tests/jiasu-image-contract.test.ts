@@ -22,11 +22,12 @@ class JiasuRunService extends RunService {
     return new Map([["openai", registry.get("openai")], ["rest", registry.get("rest")]]);
   }
 }
-async function fixture(model: string, parameters: JsonObject, provider = "openai") {
+async function fixture(model: string, parameters: JsonObject, provider = "openai", sizeRange?: string) {
   const repository = new MemoryRepository();
   const storage = new MemoryStorage();
   const config = { baseUrl, usage: "canvas", defaultModel: model, modelGroup: "vip", accountKeyGroup: "vip", modelScanStatus: "live", scannedModelIds: [model] };
-  const descriptor = applyJiasuImageCapabilities({ provider, config }, { id: model, name: model, operations: ["image.generate", "image.edit"] });
+  const descriptor = applyJiasuImageCapabilities({ provider, config }, { id: model, name: model, operations: ["image.generate", "image.edit"],
+    ...(sizeRange ? { metadata: { jiasuCatalogRecord: { apiParameters: [{ name: "size", range: sizeRange }] } } } : {}) });
   await repository.saveConnection({ id: "jiasu", name: "Jiasu fixture", provider, encryptedSecret: encryptSecret("original-fixture-key", masterKey), config: { ...config, modelCatalogModels: [descriptor] } as JsonObject });
   await repository.saveCanvas({ id: "canvas", title: "Jiasu fixture", graph: { schemaVersion: 1, nodes: [{ id: "image", type: "workflow", data: {
     nodeType: "image-generation", provider, connectionId: "jiasu", model, parts: [{ type: "text", text: "16:9 landscape fixture" }], parameters,
@@ -63,7 +64,6 @@ describe("Jiasu exact image contracts through the execution runtime", () => {
     expect(Buffer.from((await f.storage.get(assets[0]!.storageKey))!.bytes)).toEqual(Buffer.from(png, "base64"));
   });
   it.each([
-    { model: "gpt-image-2-1k", parameters: { size: "1024x1024", quality: "medium", size_tier: "4K" }, provider: "openai" },
     { model: "gpt-image-2.5-1k", parameters: { resolution: "1K", ratio: "1:1", size_tier: "4K" }, provider: "openai" },
     { model: "gpt-image-2.5-1k", parameters: { resolution: "1K", ratio: "1:1", aspect_ratio: "9:16" }, provider: "openai" },
     { model: "gpt-image-2.5-1k", parameters: { image_size: "4K" }, provider: "openai" },
@@ -78,6 +78,27 @@ describe("Jiasu exact image contracts through the execution runtime", () => {
     expect(fetch).not.toHaveBeenCalled();
     const saved = await f.repository.getCanvas("canvas");
     expect((saved!.graph.nodes[0]!.data as JsonObject).parameters).toEqual(example.parameters);
+  });
+  it.each(["openai", "rest"])("sends explicit user pixels through %s when the old fallback has no complete card enum", async provider => {
+    const parameters = { size: "3200x2560", quality: "medium", size_tier: "4K" };
+    const f = await fixture("gpt-image-2-4k", parameters, provider);
+    const fetch = completedFetch();
+    const service = new JiasuRunService(fetch, { ...f, executionMode: "inline" });
+    const run = await service.createRun({ canvasId: "canvas", clientRequestId: "user-pixels", scope: "all" });
+    await finished(service, run.id, "succeeded");
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toMatchObject({ size: "3200x2560", quality: "medium" });
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).not.toHaveProperty("size_tier");
+    expect(((await f.repository.getCanvas("canvas"))!.graph.nodes[0]!.data as JsonObject).parameters).toEqual(parameters);
+  });
+  it("still rejects a saved application tier against an explicitly retained official size enum", async () => {
+    const parameters = { size: "1024x1024", quality: "medium", size_tier: "4K" };
+    const f = await fixture("gpt-image-2-1k", parameters, "openai", "1024x1024, 1536x1024, 1024x1536");
+    const fetch = completedFetch();
+    const service = new JiasuRunService(fetch, { ...f, executionMode: "inline" });
+    const run = await service.createRun({ canvasId: "canvas", clientRequestId: "retained-size-enum", scope: "all" });
+    await finished(service, run.id, "failed");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(((await f.repository.getCanvas("canvas"))!.graph.nodes[0]!.data as JsonObject).parameters).toEqual(parameters);
   });
   it("preserves native auto sizing without inferring pixels or ratio from the prompt", async () => {
     const f = await fixture("gpt-image-2-4k", { size: "auto", quality: "auto" });

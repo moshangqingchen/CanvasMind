@@ -111,7 +111,13 @@ async function assertPriceSource(panel: ReturnType<Page["getByRole"]>, model: Mo
   const price = panel.getByLabel("当前参数价格", { exact: true });
   const details = price.locator("details").filter({ hasText: "价格与参数依据" });
   if (!await details.evaluate(element => (element as HTMLDetailsElement).open)) await price.getByText("价格与参数依据", { exact: true }).click();
-  await expect(price).toContainText(String(model.metadata?.priceLabel));
+  const tariff = model.pricing;
+  expect(tariff, `${model.id} 的官方价格记录`).toBeDefined();
+  const unit = tariff!.billingUnit === "second" ? "秒" : "次";
+  const rates = tariff!.tiers?.map(tier => tier.price) ?? [tariff!.unitAmount];
+  expect(rates.length).toBeGreaterThan(0);
+  for (const amount of rates) await expect(price).toContainText(`${amount} ${tariff!.currency} / ${unit}`);
+  for (const tier of tariff!.tiers ?? []) if (tier.value !== undefined) await expect(price).toContainText(String(tier.value));
   await expect(price.getByRole("link", { name: "查看价格来源", exact: true })).toHaveAttribute("href", `${origin}/api/pricing`);
 }
 
@@ -130,21 +136,34 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
         await expect(option).toHaveAttribute("aria-disabled", "false");
         await option.click(); await expect(f.picker).toContainText(model.id); seen.add(model.id);
         if (kind === "image") {
-          if (model.id === "gpt-image-2-2K/4K") {
+          if (model.id.startsWith("gpt-image-2")) {
             const quality = f.panel.getByLabel("质量", { exact: true });
-            await expect(quality.locator('option:not([value=""])')).toHaveText(["自动（供应商默认）", "最高"]);
+            expect(await quality.locator('option:not([value=""])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(model.id.startsWith("gpt-image-2.5") ? ["auto", "low", "medium", "high", "xhigh", "max"] : ["auto", "low", "medium", "high"]);
             await quality.selectOption("high");
           } else await expect(f.panel.getByLabel("质量", { exact: true })).toHaveCount(0);
           await expect(f.panel.getByLabel("输出格式", { exact: true })).toHaveCount(0);
-          await expect(f.panel.locator('input[aria-label="图片宽度"]:not([readonly]),input[aria-label="图片高度"]:not([readonly])')).toHaveCount(0);
+          const openPixelSize = ["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst"].includes(model.id);
+          const editableDimensions = f.panel.locator('input[aria-label="图片宽度"]:not([readonly]),input[aria-label="图片高度"]:not([readonly])');
+          await expect(editableDimensions).toHaveCount(openPixelSize ? 2 : 0);
+          if (openPixelSize) {
+            // The supplier declares an open WIDTHxHEIGHT size string. Its
+            // example is not an exhaustive range, alignment or native K tier.
+            const width = f.panel.getByRole("spinbutton", { name: "图片宽度", exact: true });
+            const height = f.panel.getByRole("spinbutton", { name: "图片高度", exact: true });
+            await expect(width).not.toHaveAttribute("max", /.+/u);
+            await expect(height).not.toHaveAttribute("max", /.+/u);
+            await expect(width).not.toHaveAttribute("step", "16");
+            await width.fill("1024"); await height.fill("1024"); await height.blur();
+            await expect.poll(async () => (await f.saved()).parameters.size).toBe("1024x1024");
+          }
           const size = model.parameters!.find(parameter => ["size", "image_size"].includes(parameter.key))!;
           const tiers = f.panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });
-          await expect(tiers.getByRole("button")).toHaveText(size.options!.map(option => option.value === "auto" ? "自动" : option.label));
+          await expect(tiers.getByRole("button")).toHaveText(openPixelSize ? ["自动", "1K", "2K", "4K"] : size.options!.map(option => option.value === "auto" ? "自动" : option.label));
           await expect.poll(() => tiers.getByRole("button").evaluateAll(buttons => Math.max(0, ...buttons.flatMap(button => [
             button.scrollHeight - button.clientHeight, button.scrollWidth - button.clientWidth,
           ])))).toBeLessThanOrEqual(1);
           for (const choice of size.options!) {
-            const button = tiers.getByRole("button", { name: choice.value === "auto" ? "自动" : choice.label, exact: true });
+            const button = tiers.getByRole("button", { name: choice.value === "auto" ? "自动" : openPixelSize ? "1K" : choice.label, exact: true });
             await button.click(); await expect(button).toHaveAttribute("aria-pressed", "true");
           }
           await tiers.getByRole("button", { name: "自动", exact: true }).click();
@@ -159,8 +178,11 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
           const duration = model.parameters!.find(parameter => parameter.key === "duration")!;
           if (duration.control === "select") {
             const select = f.panel.getByRole("combobox", { name: "视频时长", exact: true });
-            await expect(select.locator('option:not([value=""])')).toHaveText(["30 秒"]);
-            await expect(select).toHaveValue("30");
+            const values = duration.options!.map(option => String(option.value));
+            expect(await select.locator('option:not([value=""]):not([disabled])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(values);
+            const selected = String(duration.default ?? duration.options![0]!.value);
+            await select.selectOption(selected); await expect(select).toHaveValue(selected);
+            await expect.poll(async () => (await f.saved()).parameters.duration).toBe(Number(selected));
           } else {
             const slider = f.panel.getByRole("slider", { name: "视频时长", exact: true });
             await expect(slider).toHaveAttribute("min", String(duration.min)); await expect(slider).toHaveAttribute("max", String(duration.max));
@@ -168,17 +190,27 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
             if (await repair.count()) await repair.click();
             await slider.press("Home"); await expect(slider).toHaveValue(String(duration.min));
           }
-          const resolution = f.panel.getByRole("combobox", { name: "输出分辨率", exact: true });
-          const expected = model.parameters!.find(parameter => parameter.key === "resolution")?.options?.map(option => String(option.value)) ?? [];
+          const resolutionDescriptor = model.parameters!.find(parameter => parameter.key === "resolution")!;
+          const expected = resolutionDescriptor.options?.map(option => String(option.value)) ?? [];
           // An invalid saved value remains visible but cannot become a new
           // selectable supplier option. Explicitly choose the documented/default
           // value before checking the next model and its price.
-          expect(await resolution.locator('option:not([value=""]):not([disabled])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(expected);
-          for (const saved of await resolution.locator('option[disabled]').all()) await expect(saved).toContainText("已保存");
-          await resolution.selectOption(expected[0] ?? "");
-          await expect(resolution.locator('option[disabled]')).toHaveCount(0);
+          if (resolutionDescriptor.control === "text") {
+            // A declared string with no enum remains editable. Leave it blank
+            // for the supplier default rather than fabricate a select option.
+            expect(resolutionDescriptor.allowCustomValue).toBe(true);
+            const resolution = f.panel.getByRole("textbox", { name: "输出分辨率", exact: true });
+            await resolution.fill(String(resolutionDescriptor.default ?? "")); await resolution.blur();
+            await expect(resolution).toHaveValue(String(resolutionDescriptor.default ?? ""));
+          } else {
+            const resolution = f.panel.getByRole("combobox", { name: "输出分辨率", exact: true });
+            expect(await resolution.locator('option:not([value=""]):not([disabled])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(expected);
+            for (const saved of await resolution.locator('option[disabled]').all()) await expect(saved).toContainText("已保存");
+            await resolution.selectOption(expected[0] ?? "");
+            await expect(resolution.locator('option[disabled]')).toHaveCount(0);
+          }
           const price = f.panel.getByLabel("当前参数价格", { exact: true });
-          const summary = price.locator(":scope > span").filter({ hasText: "当前组合价格" }).locator("strong");
+          const summary = price.locator(":scope > span").filter({ hasText: "型号报价" }).locator("strong");
           const estimate = price.locator(":scope > span").filter({ hasText: "本次预计费用" }).locator("strong");
           // Independent official examples test real parameter-to-price rendering,
           // in addition to the full directory/source evidence checked below.
@@ -191,7 +223,7 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
             "MinimaxH3特价版": ["0.8 CNY / 次", "0.8 CNY"],
           };
           if (examples[model.id]) {
-            await expect(summary).toHaveText(examples[model.id]![0]);
+            await expect(summary).toContainText(examples[model.id]![0]);
             await expect(estimate).toHaveText(examples[model.id]![1]);
           }
           if (["稳定seedance-2.5全参E", "wan3.0-video", "wan3.0-video-prime"].includes(model.id)) await expect(estimate).toHaveCount(0);
@@ -221,7 +253,7 @@ test("极九高档GPT的原生K档与独立最高质量保存、刷新和切组�
   try {
     await f.choose(modelId);
     await expect(tiers.getByRole("button")).toHaveText(["自动", "1K", "2K", "4K"]);
-    expect(await quality.locator('option:not([value=""])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(["auto", "high"]);
+    expect(await quality.locator('option:not([value=""])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(["auto", "low", "medium", "high"]);
     const notes = f.panel.locator(".parameter-contract-details");
     await expect(notes).toHaveCount(1);
     await expect(notes).not.toHaveAttribute("open", "");
@@ -235,7 +267,7 @@ test("极九高档GPT的原生K档与独立最高质量保存、刷新和切组�
       await expect(f.panel.getByRole("textbox", { name: "图片高度", exact: true })).toHaveValue("");
     }
     const price = f.panel.getByLabel("当前参数价格", { exact: true });
-    await expect(price.locator(":scope > span").filter({ hasText: "当前组合价格" }).locator("strong")).toHaveText("0.1 CNY / 次");
+    await expect(price.locator(":scope > span").filter({ hasText: "型号报价" }).locator("strong")).toHaveText("按次 · 0.1 CNY / 次");
     await expect(price.locator(":scope > span").filter({ hasText: "本次预计费用" }).locator("strong")).toHaveText("0.1 CNY");
     await quality.scrollIntoViewIfNeeded();
     await f.panel.screenshot({ path: testInfo.outputPath("jijiu-gpt-4k-high-controls.png") });
@@ -281,7 +313,9 @@ test("极九固定30、4–29与mini4–10切换保存，错误分组型号不�
   try {
     await f.menu(); await expect(f.summary).toContainText("Key 6");
     const wrong = f.option("稳定seedance-2.5参图参音F");
-    await expect(wrong).toHaveAttribute("aria-disabled", "true"); await expect(wrong).toContainText("分组");
+    await expect(wrong).toHaveAttribute("aria-disabled", "true");
+    await expect(wrong).not.toContainText("时长：");
+    await expect(wrong).not.toContainText("不支持");
     await f.choose("SD2.0mini稳定903C");
     const slider = f.panel.getByRole("slider", { name: "视频时长", exact: true });
     await slider.press("End"); await expect(slider).toHaveValue("10");
@@ -315,7 +349,7 @@ test("极九视频比例快捷选择、自定义原值与供应商默认保存�
     await expect(f.panel.getByRole("slider", { name: "视频时长", exact: true })).toHaveAttribute("min", "4");
     await expect(f.panel.getByRole("slider", { name: "视频时长", exact: true })).toHaveAttribute("max", "30");
     await expect(f.panel.getByRole("combobox", { name: "输出分辨率", exact: true })).toHaveValue("720p");
-    await expect(f.panel.getByLabel("当前参数价格", { exact: true }).locator(":scope > span").filter({ hasText: "当前组合价格" }).locator("strong")).toHaveText("1.5 CNY / 次");
+    await expect(f.panel.getByLabel("当前参数价格", { exact: true }).locator(":scope > span").filter({ hasText: "型号报价" }).locator("strong")).toHaveText("1.5 CNY / 次");
     await expect(ratio.locator("option")).toHaveText(["供应商默认", "16:9（横屏）", "9:16（竖屏）", "1:1（方形）", "自定义"]);
     await expect(ratio).toHaveValue("__custom_ratio__"); await expect(custom).toHaveValue("3:2");
     expect((await f.saved()).parameters.aspect_ratio).toBe("3:2");
@@ -350,7 +384,7 @@ test("极九视频比例快捷选择、自定义原值与供应商默认保存�
 test("极九目录内容相同时完成状态仍更新，切换与页面刷新保持确认", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, "video", "视频SD2.0", { incomplete: true });
   try {
-    await f.menu(); await expect(f.summary).toContainText("Key 目录待确认");
+    await f.menu(); await expect(f.summary).toContainText("Key —");
     await f.finishScan();
     await expect(f.summary).toContainText("Key 5"); await expect(f.summary).toContainText("双方 5");
     await expect.poll(() => f.responses.length).toBeGreaterThan(1);

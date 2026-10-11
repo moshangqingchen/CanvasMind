@@ -2,7 +2,9 @@ import type {
   ModelDescriptor,
   ModelParameterDescriptor,
   ModelParameterOption,
+  ValidationIssue,
 } from "./contracts.js";
+import { imageSizePresetMatchesRatio } from "./image-size-presets.js";
 
 export type { ModelDescriptor } from "./contracts.js";
 
@@ -30,61 +32,105 @@ const GEMINI_MODELS = new Set([
   "gemini-3-pro-image-preview", "gemini-3.0-pro-image", "gemini-3.0-pro-image-preview", "gemini-3.1-flash-image-preview",
 ]);
 
+/** GPT2 guide chapter 6; examples are selectable samples, not a full enum.
+ * https://docs.we-ai.cc/guides/image-generation.html (2026-10-10 body SHA f1acf5a70376785b0b257efad0043f71e1f836c52f7f4c75a58dcc2a0105816c).
+ */
+const WEAI_GPT2_EXAMPLE_SIZES = [
+  ["1K · 1:1 · 1024 × 1024", "1024x1024"],
+  ["示例 · 1536 × 1024（非 1K 档）", "1536x1024"],
+  ["示例 · 1024 × 1536（非 1K 档）", "1024x1536"],
+  ["2K · 1:1 · 2048 × 2048", "2048x2048"],
+  ["2K · 16:9 · 2048 × 1152", "2048x1152"],
+  ["4K · 16:9 · 3840 × 2160", "3840x2160"],
+  ["4K · 9:16 · 2160 × 3840", "2160x3840"],
+].map(([label, value]) => ({ label: label!, value: value! }));
+export function weAIImageDimensionParameters(model: string): ModelParameterDescriptor[] {
+  const gpt2 = /^gpt-image-2(?:-(?:low|medium|high))?$/u.test(model);
+  return [
+    { key: "aspect_ratio", label: "画面比例偏好", control: "text", valueType: "string", default: "auto",
+      placeholder: "auto / WIDTH:HEIGHT", description: "应用比例偏好；通过独立 W/H 表达，请求只发送 size。", operations: IMAGE_OPERATIONS },
+    { key: "size", label: "输出尺寸（size）", control: "dimensions", valueType: "string", default: "auto", step: gpt2 ? 16 : 1,
+      ...(gpt2 ? { min: 16, max: 3840 } : {}),
+      options: [{ label: "自动", value: "auto" }, ...(gpt2 ? WEAI_GPT2_EXAMPLE_SIZES : [])],
+      description: gpt2 ? "GPT Image 2 指南：16 像素对齐、最长边 3840、比例不超过 3:1、总像素 655360–8294400；所列为文档示例，可输入合法 W/H。"
+        : "此完整型号 size 为开放尺寸输入；未套用 GPT Image 2 的像素表、范围或步长。", operations: IMAGE_OPERATIONS },
+  ];
+}
+
+/** Application preferences are compared to actual size, never invented as wire fields. */
+export function imageSizePreferenceIssues(parameters: Readonly<Record<string, unknown>> | undefined): ValidationIssue[] {
+  const ratio = [parameters?.aspect_ratio, parameters?.aspectRatio, parameters?.ratio].find(value => value !== undefined && value !== "" && value !== "auto");
+  if (ratio === undefined) {
+    if (/^[124]k$/iu.test(String(parameters?.size_tier ?? "")) && !/^\d+x\d+$/iu.test(String(parameters?.size ?? "")))
+      return [{ path: "parameters.size", code: "image_size_mapping_required", message: "所选档位请填写独立 W/H；档位偏好保留，接口只发送 size 原值。" }];
+    return [];
+  }
+  const match = typeof ratio === "string" ? /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/u.exec(ratio.trim()) : null;
+  const size = typeof parameters?.size === "string" ? /^(\d+)x(\d+)$/iu.exec(parameters.size.trim()) : null;
+  if (!match || Number(match[1]) <= 0 || Number(match[2]) <= 0) return [{ path: "parameters.aspect_ratio", code: "invalid_aspect_ratio", message: "请保留比例偏好并填写正数 WIDTH:HEIGHT。" }];
+  if (!size || Number(size[1]) <= 0 || Number(size[2]) <= 0) return [{ path: "parameters.size", code: "image_size_mapping_required", message: "当前比例请填写独立 W/H；请求使用 size 原值，比例和档位偏好保留。" }];
+  if (!imageSizePresetMatchesRatio(parameters?.size, ratio) && Math.abs(Number(size[1]) / Number(size[2]) / (Number(match[1]) / Number(match[2])) - 1) > 0.005)
+    return [{ path: "parameters.aspect_ratio", code: "image_size_ratio_conflict", message: "比例偏好与 W/H 不一致，请确认；原比例、尺寸和档位保留。" }];
+  return [];
+}
+
+export function applyWeAIImageDimensionContract(connection: { provider: string; config: Readonly<Record<string, unknown>> }, model: ModelDescriptor): ModelDescriptor {
+  if (!["openai", "weai"].includes(connection.provider) || connection.config.manualProtocol === true ||
+      ["agent", "disabled"].includes(String(connection.config.usage)) || connection.config.supplierArchived === true ||
+      model.metadata?.source === "manual" || model.metadata?.source === "paid-test" || model.metadata?.protocolEvidence === "paid-test" ||
+      !model.operations.some(operation => operation.startsWith("image."))) return model;
+  try {
+    const url = new URL(String(connection.config.baseUrl ?? ""));
+    if (url.protocol !== "https:" || url.hostname !== "asian-acc.we-token.cc" || url.port || url.username || url.password || url.search || url.hash || !/^(?:\/v1)?\/?$/u.test(url.pathname)) return model;
+  } catch { return model; }
+  const stable = connection.config.accountKeyGroupId == null ? undefined : String(connection.config.accountKeyGroupId);
+  const names: Record<string, string> = { "6": WEAI_CODEX_TOKEN_MODEL_GROUP, "24": WEAI_ADOBE_TOKEN_MODEL_GROUP,
+    "19": WEAI_AZURE_MODEL_GROUP, "23": WEAI_ADOBE_PER_REQUEST_MODEL_GROUP, "30": WEAI_ADOBE_URL_MODEL_GROUP,
+    "35": "生图-openai-adobe-image2.5专属", "12": "adobe香蕉", "33": "aistudio香蕉" };
+  const selectedGroup = String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "");
+  if (stable !== undefined && !Object.hasOwn(names, stable) || connection.provider === "weai" && stable === undefined && !Object.values(names).includes(selectedGroup)) return model;
+  const group = stable === undefined ? selectedGroup : names[stable]!;
+  const nativeBanana = ["adobe香蕉", "aistudio香蕉"].includes(group) &&
+    (GEMINI_MODELS.has(model.id) || group === "aistudio香蕉" && model.id === "gemini-nano-banana-2.1");
+  if (nativeBanana) {
+    // This supplier's native guide publishes no 512 tier or pixel matrix.
+    // Adobe accepts the Pro 3.0 aliases; aistudio does not.
+    if (group === "aistudio香蕉" && model.id.includes("3.0-pro")) return model;
+    const broad = group === "adobe香蕉" || model.id === "gemini-nano-banana-2.1";
+    const ratios = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", ...(broad ? ["1:4", "4:1", "1:8", "8:1"] : [])];
+    const currentResolution = model.parameters?.find(parameter => parameter.key === "image_size");
+    const dimensions: ModelParameterDescriptor[] = [
+      { key: "image_size", label: "输出分辨率", control: "select", valueType: "string", default: currentResolution?.default ?? (group === "adobe香蕉" ? "2K" : "1K"),
+        options: [{ value: "auto", label: "自动（省略 imageSize）" }, ...["1K", "2K", "4K"].map(value => ({ value, label: value }))], operations: IMAGE_OPERATIONS,
+        description: "供应商原生 generationConfig.imageConfig.imageSize 字段；档位不是固定像素，不借其它供应商的 512 或尺寸表。" },
+      { key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: "auto", options: [{ value: "auto", label: "自动" }, ...ratios.map(value => ({ value, label: value }))], operations: IMAGE_OPERATIONS,
+        description: "供应商原生 generationConfig.imageConfig.aspectRatio 字段；按当前官方分组和完整型号的比例列表发送。" },
+      { ...GEMINI_COUNT_PARAMETER },
+    ];
+    return { ...model, parameters: [...dimensions, ...(model.parameters ?? []).filter(parameter => !["size", "size_tier", "resolution", "image_size", "aspect_ratio", "n"].includes(parameter.key))],
+      limits: { ...model.limits, maxInputImages: 14, maxOutputImages: 1 },
+      metadata: { ...model.metadata, imageNativeParameterContract: true, imageNativeResolutionParameter: "image_size", imageNativeResolutionOptions: true,
+        imageSupportedResolutions: ["1K", "2K", "4K"], imageSizeContract: "weai-exact-group-native-gemini", imageSupplierResolutionDefault: group === "adobe香蕉" ? "2K" : "1K",
+        imageInputMaxBytes: 20 * 1024 * 1024, imageOutputEncodingContract: "inlineData.mimeType-original", imageContractGroupId: stable ?? null,
+        documentationUrl: "https://docs.we-ai.cc/guides/gemini-banana-image.html" } };
+  }
+  if (!/^gpt-image-(?:1(?:\.5)?|2(?:\.5-(?:flare|sunburst)|-(?:low|medium|high))?)$/u.test(model.id)) return model;
+  const dimensions = weAIImageDimensionParameters(model.id);
+  const codexQuality = group === WEAI_CODEX_TOKEN_MODEL_GROUP && ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(model.id);
+  const quality = model.id.includes("2.5") && (codexQuality || group === "生图-openai-adobe-image2.5专属" || model.parameters?.some(parameter => parameter.key === "quality"))
+    ? { key: "quality", label: "请求质量", control: "text" as const, valueType: "string" as const, default: "max", allowCustomValue: true,
+        options: [{ value: "auto", label: "自动" }, { value: "max", label: "最高（应用偏好）" }],
+        description: "本完整型号未公布完整 quality 枚举；max 为应用最高偏好，已保存原值按质量字段发送。", operations: IMAGE_OPERATIONS }
+    : codexQuality ? OPTIONAL_QUALITY : undefined;
+  return { ...model, parameters: [...dimensions, ...(quality ? [quality] : []), ...(model.parameters ?? []).filter(parameter => !["size", "aspect_ratio", ...(quality ? ["quality"] : [])].includes(parameter.key))],
+    metadata: { ...model.metadata, imageNativeParameterContract: true, imageOpenSizePreferences: true,
+      imageSupportedResolutions: /^gpt-image-2(?:-(?:low|medium|high))?$/u.test(model.id) ? ["1K", "2K", "4K"] : [],
+      imageContractGroupId: stable ?? null, ...(quality ? { imageNativeQualityOptions: true,
+        imageApplicationQualityDefault: quality.default, imageSupplierQualityDefault: null,
+        imageQualityFieldSource: "https://docs.we-ai.cc/guides/image-generation-service.html", imageQualityEnumPublished: !model.id.includes("2.5") } : {}),
+      documentationUrl: "https://docs.we-ai.cc/guides/image-generation.html", imageSizeContract: "weai-full-model-document-size" } };
+}
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
-  {
-    key: "aspect_ratio",
-    label: "画面比例",
-    control: "select",
-    valueType: "string",
-    default: "auto",
-    options: [
-      { label: "自动（优先提示词，其次参考图）", value: "auto" },
-      { label: "方形 1:1", value: "1:1" },
-      { label: "横向 16:9", value: "16:9" },
-      { label: "竖向 9:16", value: "9:16" },
-      { label: "横向 4:3", value: "4:3" },
-      { label: "竖向 3:4", value: "3:4" },
-      { label: "横向 3:2", value: "3:2" },
-      { label: "竖向 2:3", value: "2:3" },
-    ],
-    description: "自动模式优先读取提示词中的比例；未指定时跟随第一张参考图",
-    operations: IMAGE_OPERATIONS,
-  },
-  {
-    key: "size",
-    label: "输出分辨率（size）",
-    control: "dimensions",
-    valueType: "string",
-    default: "auto",
-    min: 16,
-    max: 3840,
-    step: 16,
-    options: [
-      { label: "自动（提示词优先，其次参考图）", value: "auto" },
-      { label: "1K 方图 · 1024 × 1024", value: "1024x1024" },
-      {
-        label: "常用横图 · 1536 × 1024（非 1K 档）",
-        value: "1536x1024",
-      },
-      {
-        label: "常用竖图 · 1024 × 1536（非 1K 档）",
-        value: "1024x1536",
-      },
-      { label: "2K 方图 · 2048 × 2048", value: "2048x2048" },
-      { label: "2K 横图 16:9 · 2048 × 1152", value: "2048x1152" },
-      { label: "4K 方图 1:1 · 2160 × 2160", value: "2160x2160" },
-      { label: "4K 横图 16:9 · 3840 × 2160", value: "3840x2160" },
-      { label: "4K 竖图 9:16 · 2160 × 3840", value: "2160x3840" },
-      { label: "4K 横图 4:3 · 2880 × 2160", value: "2880x2160" },
-      { label: "4K 竖图 3:4 · 2160 × 2880", value: "2160x2880" },
-      { label: "4K 横图 3:2 · 3264 × 2176", value: "3264x2176" },
-      { label: "4K 竖图 2:3 · 2176 × 3264", value: "2176x3264" },
-      { label: "4K 超宽 21:9 · 3840 × 1648", value: "3840x1648" },
-    ],
-    description:
-      "自动模式由模型优先按提示词决定尺寸，其次参考图；手动选择时作为 Images API 的 size 参数发送",
-    operations: IMAGE_OPERATIONS,
-  },
   {
     key: "n",
     label: "生成张数",
@@ -268,9 +314,6 @@ function parametersForModel(
             label: "自动（提示词优先，其次参考图）",
             value: "auto",
           },
-          ...(protocol === "gemini-generate-content"
-            ? [{ label: "512 px", value: "512" }]
-            : []),
           ...["1K", "2K", "4K"].map((value) => ({ label: value, value })),
         ],
         description:
@@ -285,14 +328,18 @@ function parametersForModel(
     group === WEAI_ADOBE_TOKEN_MODEL_GROUP ||
     group === WEAI_AZURE_MODEL_GROUP ||
     group === WEAI_ADOBE_URL_MODEL_GROUP;
+  const codexQuality = group === WEAI_CODEX_TOKEN_MODEL_GROUP && ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(model);
+  const openQuality: ModelParameterDescriptor = { key: "quality", label: "请求质量", control: "text", valueType: "string", default: "max", allowCustomValue: true,
+    options: [{ value: "auto", label: "自动" }, { value: "max", label: "最高（应用偏好）" }],
+    description: "本完整型号未公布完整 quality 枚举；max 为应用最高偏好，按用户原值发送。", operations: IMAGE_OPERATIONS };
   const supportsUrlResponse = group === WEAI_ADOBE_PER_REQUEST_MODEL_GROUP && model !== "gpt-image-2";
   // Adobe per-request supports response_format: url, but We-AI only documents
   // output_format/output_compression for the other compatible image routes.
   const supportsOutput = supportsQuality;
-  return IMAGE_PARAMETERS.flatMap((parameter) => {
+  return [...weAIImageDimensionParameters(model), ...IMAGE_PARAMETERS].flatMap((parameter) => {
     if (parameter.key !== "n") return [parameter];
     return [
-      ...(supportsQuality ? [OPTIONAL_QUALITY] : []),
+      ...(supportsQuality || codexQuality ? [codexQuality && model.includes("2.5") ? openQuality : OPTIONAL_QUALITY] : []),
       ...(supportsOutput ? OUTPUT_PARAMETERS : []),
       ...(supportsUrlResponse ? [RESPONSE_FORMAT] : []),
       {
@@ -332,6 +379,10 @@ function baseDescriptor(
       supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"],
     },
     metadata: {
+      imageNativeParameterContract: true,
+      imageOpenSizePreferences: !gemini,
+      imageSupportedResolutions: gemini || /^gpt-image-2(?:-(?:low|medium|high))?$/u.test(id) ? ["1K", "2K", "4K"] : [],
+      documentationUrl: "https://docs.we-ai.cc/guides/image-generation.html",
       ...(max === 1 ? { fixedOutputCount: 1 } : {}),
       ...(quality ? { fixedQuality: quality } : {}),
       ...(gemini ? { protocol } : {}),

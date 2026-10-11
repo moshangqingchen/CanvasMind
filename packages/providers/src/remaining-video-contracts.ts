@@ -1,13 +1,17 @@
-import { isJijiuApiUrl, isJijiuVideoModel, jijiuVideoModelIds, jijiuVideoModel, jijiuVideoTransport, normalizeJijiuVideoParameters, jijiuVideoRequestIssues, jijiuVideoGroupMismatch, JIJIU_VIDEO_DOCS } from "./jijiu-video-contract.js";
+import { isJijiuApiUrl, isJijiuVideoModel, isJijiuWanVideoModel, jijiuVideoModelIds, jijiuVideoModel, jijiuVideoTransport, normalizeJijiuVideoParameters, jijiuVideoRequestIssues, jijiuVideoGroupMismatch, JIJIU_VIDEO_DOCS } from "./jijiu-video-contract.js";
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ProviderAssetInput, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride } from "./rest.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
 import { seedanceDurationFallback, seedanceDurationFallbackDescription, seedanceDurationFallbackMetadata, type SeedanceDurationFallback } from "./seedance-duration-fallback.js";
 import { isJiasuApiUrl, isJiasuVideoModel, jiasuVideoModelIds, jiasuVideoModel, jiasuVideoTransport, normalizeJiasuVideoParameters, jiasuVideoRequestIssues, jiasuVideoGroupMismatch, JIASU_VIDEO_DOCS } from "./jiasu-video-contract.js";
+import { SECURE_MUSE_MODEL_ID, SECURE_MUSE_DOCS, isSecureMuseVideoModel, secureMuseVideoModel, secureMuseVideoTransport, normalizeSecureMuseVideoParameters, secureMuseVideoRequestIssues } from "./secure-muse-video-contract.js";
+import { isCyberafeiSeedance25PriceSizeContract, cyberafeiSeedance25SizePreferenceIssues, cyberafeiSeedance25OwnPriceTiers } from "./cyberafei-seedance25-video-contract.js";
 
 /** Exact supplier contracts re-read from public official documents on 2026-10-07. */
 export type RemainingVideoSupplier = "chentu" | "frimodel" | "weai" | "secure" | "cyberafei" | "miaowu" | "mikoto" | "hangzhale" | "jiasu" | "jijiu";
 export interface RemainingVideoContext {
+  baseUrl?: unknown;
+  manualProtocol?: unknown;
   group?: string | undefined;
   groupDescription?: string | undefined;
   model?: ModelDescriptor | undefined;
@@ -44,6 +48,8 @@ interface VideoContract {
   openResolution?: boolean;
   multipartFrames?: boolean;
   multipartReference?: boolean;
+  applicationPriceTiers?: readonly string[];
+  applicationPriceTierSource?: Record<string, unknown>;
   chatVideo?: boolean;
   videoReferenceEncoding?: "prompt-urls";
   sourceVideoChat?: boolean;
@@ -51,6 +57,10 @@ interface VideoContract {
 }
 const triple = ["16:9", "9:16", "1:1"] as const;
 const portrait = ["16:9", "9:16"] as const;
+const openAiVideoSizeMappings: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "720p": { "16:9": "1280x720", "9:16": "720x1280" },
+  "1080p": { "16:9": "1920x1080", "9:16": "1080x1920" },
+};
 const chentuDocs = "https://tu.988236.xyz/docs/";
 const contracts: Record<RemainingVideoSupplier, Record<string, VideoContract>> = { chentu: {}, frimodel: {}, weai: {}, secure: {}, cyberafei: {}, miaowu: {}, mikoto: {}, hangzhale: {}, jiasu: {}, jijiu: {} };
 const put = (s: RemainingVideoSupplier, ids: readonly string[], c: VideoContract) => { for (const id of ids) contracts[s][id] = { ...c }; };
@@ -293,6 +303,8 @@ function directoryContractFor(supplier: RemainingVideoSupplier, id: string, cont
 }
 
 function supplierContractFor(supplier: RemainingVideoSupplier, id: string, context: RemainingVideoContext = {}): VideoContract | undefined {
+  if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return isSecureMuseVideoModel(id, context.group ?? String(context.model?.metadata?.modelGroup ?? ""))
+    ? { resolutions: ["720p"], ratios: portrait, directoryContract: true, docs: SECURE_MUSE_DOCS } : undefined;
   if (supplier === "jijiu") return isJijiuVideoModel(id, context.model) ? { resolutions: [], ratios: [], directoryContract: true, docs: JIJIU_VIDEO_DOCS } : undefined;
   if (supplier === "jiasu") return isJiasuVideoModel(id, context.model) ? { resolutions: [], ratios: [], directoryContract: true, docs: JIASU_VIDEO_DOCS } : undefined;
   if (supplier === "miaowu" && (["manual", "paid-test"].includes(String(context.model?.metadata?.source)) || context.model?.metadata?.protocolEvidence === "paid-test" || ["pricing.video_api", "dream.video_schema"].includes(String(context.model?.metadata?.parameterSource)))) return undefined;
@@ -302,6 +314,11 @@ function supplierContractFor(supplier: RemainingVideoSupplier, id: string, conte
     videos: undefined, videoField: "video_urls", requiresVideo: true, httpsOnly: true, videoReferenceEncoding: "prompt-urls",
     ...(c.billingUnit ? { billingUnit: c.billingUnit } : {}), docs: c.docs, ...(c.note ? { note: c.note } : {}) };
   const group = context.group ?? String(context.model?.metadata?.modelGroup ?? "");
+  if (supplier === "cyberafei" && isCyberafeiSeedance25PriceSizeContract(context.baseUrl, group, id, context.model)) {
+    if (context.manualProtocol === true) return undefined;
+    const own = cyberafeiSeedance25OwnPriceTiers(context.model, group);
+    return { ...c, applicationPriceTiers: own.tiers, applicationPriceTierSource: own.source };
+  }
   if (supplier !== "secure") return c;
   const description = context.groupDescription ?? String(context.model?.metadata?.groupDescription ?? context.model?.metadata?.supplierGroupDescription ?? "");
   if (c.flow && !/flow/iu.test(`${group} ${description}`)) return undefined;
@@ -344,9 +361,11 @@ export function remainingVideoSupplier(baseUrl: unknown): RemainingVideoSupplier
     return host === "tu.988236.xyz" ? "chentu" : ["api.frimodel.com", "platform.frimodel.com"].includes(host) ? "frimodel" : host === "video.we-token.cc" ? "weai" : host === "token.secure-skill.com" ? "secure" : host === "api.3365api.cn" ? "cyberafei" : host === "api.miaowuai.store" ? "miaowu" : host === "api.mikoto.vip" ? "mikoto" : host === "api.hangzhale.com" ? "hangzhale" : undefined;
   } catch { return undefined; }
 }
-export const remainingVideoModelIds = (supplier: RemainingVideoSupplier): string[] => supplier === "jijiu" ? jijiuVideoModelIds() : supplier === "jiasu" ? jiasuVideoModelIds() : Object.keys(contracts[supplier]);
+export const remainingVideoModelIds = (supplier: RemainingVideoSupplier): string[] => supplier === "jijiu" ? jijiuVideoModelIds() : supplier === "jiasu" ? jiasuVideoModelIds() : supplier === "secure" ? [...Object.keys(contracts[supplier]), SECURE_MUSE_MODEL_ID] : Object.keys(contracts[supplier]);
 export const isRemainingVideoModel = (supplier: RemainingVideoSupplier | undefined, id: string | undefined, context?: RemainingVideoContext): boolean => Boolean(supplier && id && contractFor(supplier, id, context));
 export const remainingVideoRequiresPublicUrls = (supplier: RemainingVideoSupplier, id: string, context?: RemainingVideoContext): boolean => {
+  if (supplier === "jijiu" && isJijiuWanVideoModel(id)) return false;
+  if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return false;
   const c = contractFor(supplier, id, context);
   return !c?.multipartFrames && !c?.multipartReference;
 };
@@ -383,6 +402,7 @@ function defaultDuration(c: VideoContract): number | undefined {
   return !c.durationOptional && hasDurationRange(c) ? Math.min(c.max!, Math.max(c.min!, 5)) : undefined;
 }
 export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string, current?: ModelDescriptor, context?: RemainingVideoContext): ModelDescriptor | undefined {
+  if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return contractFor(supplier, id, { model: current, ...context }) ? secureMuseVideoModel(current ?? context?.model) : undefined;
   if (supplier === "jijiu") return jijiuVideoModel(id, current ?? context?.model, context?.group);
   if (supplier === "jiasu") return jiasuVideoModel(id, current ?? context?.model, context?.group);
   const c = contractFor(supplier, id, { model: current, ...context }); if (!c) return undefined;
@@ -397,13 +417,36 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
   else if (!c.chatVideo && !c.omitDuration) metadata.durationRangeUnverified = true;
   if (c.resolutions.length) delete metadata.resolutionRangeUnverified;
   else if (c.openResolution) metadata.resolutionRangeUnverified = true;
+  if (c.openResolution) metadata.videoResolutionAllowsCustom = !c.multipartReference;
+  else delete metadata.videoResolutionAllowsCustom;
+  if (c.applicationPriceTiers) {
+    metadata.videoResolutionValueMode = "application-price-tier";
+    metadata.videoResolutionAllowsCustom = true;
+    metadata.videoPriceResolutionTiers = [...c.applicationPriceTiers];
+    metadata.videoPriceResolutionSource = c.applicationPriceTierSource;
+    delete metadata.videoDerivedSizeMappings;
+  } else if (c.multipartReference) {
+    metadata.videoResolutionValueMode = "derived-size";
+    metadata.videoDerivedSizeMappings = openAiVideoSizeMappings;
+  } else {
+    delete metadata.videoResolutionValueMode;
+    delete metadata.videoDerivedSizeMappings;
+  }
   const initialDuration = defaultDuration(c);
   const parameters: ModelParameterDescriptor[] = [{ key: "duration", label: "视频时长", control: c.durations ? "select" : "number", valueType: "integer", required: !c.durationOptional,
+    ...(!durationRangeConfirmed && c.directoryContract && c.durationOptional ? { allowCustomValue: true } : {}),
     ...(initialDuration !== undefined ? { default: initialDuration } : {}), ...(c.durations ? { options: c.durations.map(value => ({ label: `${value} 秒`, value })) } : { min: c.min ?? 1, ...(c.max ? { max: c.max } : {}), step: 1 }),
     ...(c.durationFallback ? { description: seedanceDurationFallbackDescription(c.durationFallback) } : c.note ? { description: c.note } : {}) },
     ...(!c.omitRatio ? [{ key: "aspect_ratio", label: "画面比例", control: c.freeRatio || !c.ratios.length ? "text" as const : "select" as const, valueType: "string" as const,
-      ...(c.ratios.length ? { default: c.defaultRatio ?? c.ratios[0]!, options: c.ratios.map(value => ({ label: value, value })) } : { description: "比例以当前 Key 能力接口为准；留空使用供应商默认值。" }) }] : []),
-    ...(c.openResolution ? [{ key: "resolution", label: "输出分辨率", control: "text" as const, valueType: "string" as const, description: "供应商尚未公布此完整型号的可选分辨率；留空使用上游默认。" }] : c.resolutions.length ? [{ key: "resolution", label: "输出分辨率", control: "select" as const, valueType: "string" as const, default: c.defaultResolution ?? (c.resolutions.includes("720p") ? "720p" : c.resolutions[0]!), required: supplier !== "weai", options: c.resolutions.map(value => ({ label: value, value })),
+      ...(c.ratios.length ? { default: c.defaultRatio ?? c.ratios[0]!, options: c.ratios.map(value => ({ label: value, value })) }
+        : { description: c.applicationPriceTiers ? "应用比例偏好，由独立 size 的 W/H 表达；不发送 aspect_ratio，不自动修改像素。留空沿供应商 size 行为。" : "比例以当前 Key 能力接口为准；留空使用供应商默认值。" }) }] : []),
+    ...(c.applicationPriceTiers ? [{ key: "resolution", label: "计价分辨率档位", control: "select" as const, valueType: "string" as const, allowCustomValue: true,
+      options: c.applicationPriceTiers.map(value => ({ label: value, value })),
+      description: "该完整型号说明列出的按秒计价条件；不等于输出已实测。接口只发送独立 size，请填写 W/H；不发送 resolution，不补造档位像素。旧值保留，未列档位报价留空。" }]
+    : c.multipartReference ? [{ key: "resolution", label: "尺寸换算档位", control: "select" as const, valueType: "string" as const,
+      options: Object.keys(openAiVideoSizeMappings).map(value => ({ label: value, value })),
+      description: "接口使用 size 像素字段；此档位仅按 16:9 / 9:16 换算像素。自定义 size 时清除此档位，或填写一致的像素尺寸。" }]
+    : c.openResolution ? [{ key: "resolution", label: "输出分辨率", control: "text" as const, valueType: "string" as const, allowCustomValue: true, description: "分辨率字符串按输入发送；留空使用供应商默认值。目录范围：—。" }] : c.resolutions.length ? [{ key: "resolution", label: "输出分辨率", control: "select" as const, valueType: "string" as const, default: c.defaultResolution ?? (c.resolutions.includes("720p") ? "720p" : c.resolutions[0]!), required: supplier !== "weai", options: c.resolutions.map(value => ({ label: value, value })),
       ...(supplier === "weai" || c.omitResolution ? { description: "输出档位由完整模型名固定；不会额外发送 resolution。" } : {}) }] : []),
     ...(c.outputAudio ? [{ key: "generate_audio", label: "生成声音", control: "toggle" as const, valueType: "boolean" as const, default: true }] : []), ...(c.extraParameters ?? [])];
   return { ...current, id, name: current?.name ?? id, operations: c.requiresImage ? ["video.image-to-video"] : c.requiresVideo ? ["video.generate"] : ["video.generate", "video.image-to-video"],
@@ -420,6 +463,7 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
       videoReferenceImageLimit: c.images, videoReferenceVideoLimit: c.videos, videoReferenceAudioLimit: c.audios,
       supportsFirstLastFrames: Boolean(c.frames), videoSupportsFirstLastFrames: Boolean(c.frames), allowFrameMediaMix: Boolean(c.allowFrameMediaMix), videoSupportedResolutions: [...c.resolutions],
       ...(c.billingUnit ? { billingUnit: c.billingUnit, billingLabel: c.billingUnit === "second" ? "按秒计费" : "按次计费" } : {}),
+      videoParameterAliases: { ...(!c.omitDuration ? { duration: ["seconds"] } : {}), ...(!c.omitRatio ? { aspect_ratio: ["ratio"] } : {}) },
       videoDurationValues: c.durations ? [...c.durations] : undefined, videoMinDuration: c.min, videoMaxDuration: c.max, videoContractNote: c.note } };
 }
 
@@ -436,6 +480,7 @@ export function isRemainingVideoPublicHttpsUrl(value: unknown): value is string 
 const imageRoles = (assets: readonly ProviderAssetInput[], role: "firstFrame" | "lastFrame") => assets.filter(a => a.kind === "image" && a.role === role).map(a => a.url);
 /** Produces only documented wire fields and keeps the user's asset order. */
 export function normalizeRemainingVideoParameters(supplier: RemainingVideoSupplier, request: NormalizedRequest, context?: RemainingVideoContext): Record<string, unknown> {
+  if (supplier === "secure" && request.model === SECURE_MUSE_MODEL_ID && contractFor(supplier, request.model, context)) return normalizeSecureMuseVideoParameters(request);
   if (supplier === "jijiu") return normalizeJijiuVideoParameters(request);
   if (supplier === "jiasu") return normalizeJiasuVideoParameters(request, context?.model, context?.group);
   const c = contractFor(supplier, request.model ?? "", { ...context, assets: request.assets }); if (!c) return { ...request.parameters };
@@ -447,7 +492,7 @@ export function normalizeRemainingVideoParameters(supplier: RemainingVideoSuppli
   }
   if (!c.omitRatio) p[c.ratioField ?? "aspect_ratio"] = original.aspect_ratio ?? original.ratio ?? c.defaultRatio ?? c.ratios[0];
   if (supplier !== "weai" && !c.omitResolution && c.resolutions.length) p.resolution = original.resolution ?? c.defaultResolution ?? (c.resolutions.includes("720p") ? "720p" : c.resolutions[0]);
-  if (c.openResolution && typeof original.resolution === "string" && original.resolution.trim()) p.resolution = original.resolution.trim();
+  if (c.openResolution && typeof original.resolution === "string" && original.resolution.trim()) p.resolution = original.resolution;
   const byKind = (kind: "image" | "video" | "audio") => assets.filter(a => a.kind === kind && (!a.role || a.role === "reference")).map(a => a.url);
   for (const [kind, field] of [["image", c.imageField], ["video", c.videoField], ["audio", c.audioField]] as const) {
     if (!field || supplier === "secure" && (request.model?.startsWith("wan3.") || request.model?.startsWith("grok-") && kind === "audio")) continue;
@@ -518,11 +563,13 @@ export function normalizeRemainingVideoParameters(supplier: RemainingVideoSuppli
     } else p["image[]"] = images;
   }
   if (c.multipartReference) p.input_reference = assets.find(asset => asset.kind === "image") ?? original.input_reference;
+  if (c.applicationPriceTiers) { delete p.resolution; delete p.aspect_ratio; delete p.ratio; }
   return p;
 }
 export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: string, context?: RemainingVideoContext): RestModelConnectorOverride | undefined {
-  if (supplier === "jijiu") return isJijiuVideoModel(id, context?.model) ? jijiuVideoTransport() : undefined;
-  if (supplier === "jiasu") return isJiasuVideoModel(id, context?.model) ? jiasuVideoTransport() : undefined;
+  if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return contractFor(supplier, id, context) ? secureMuseVideoTransport() : undefined;
+  if (supplier === "jijiu") return isJijiuVideoModel(id, context?.model) ? jijiuVideoTransport(id) : undefined;
+  if (supplier === "jiasu") return isJiasuVideoModel(id, context?.model) ? jiasuVideoTransport(context?.model) : undefined;
   const c = contractFor(supplier, id, context); if (!c) return undefined;
   if (c.chatVideo) return { submit: { path: "/v1/chat/completions", method: "POST", bodyMode: "json", template: { stream: false }, idempotent: false,
     mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }, { target: "/messages", source: { kind: "openaiMessages", ...(c.videoReferenceEncoding ? { videoReferenceEncoding: c.videoReferenceEncoding } : {}) } }] },
@@ -532,7 +579,7 @@ export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: st
     return { submit: { path: "/v1/videos", method: "POST", bodyMode: "multipart", idempotent: false,
       mappings: [{ target: "/model", source: { kind: "request", path: "$.model" } }, { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
         { target: "/seconds", source: { kind: "request", path: "$.parameters.seconds" }, coerce: "string", omitIfUndefined: true },
-        { target: "/size", source: { kind: "videoDimensions", resolutionPath: "$.parameters.resolution", aspectRatioPath: "$.parameters.aspect_ratio" }, omitIfUndefined: true },
+        ...(!c.applicationPriceTiers ? [{ target: "/size", source: { kind: "videoDimensions" as const, resolutionPath: "$.parameters.resolution", aspectRatioPath: "$.parameters.aspect_ratio" }, omitIfUndefined: true }] : []),
         { target: "/size", source: { kind: "request", path: "$.parameters.size" }, omitIfUndefined: true },
         { target: "/input_reference", source: { kind: "request", path: "$.parameters.input_reference" }, omitIfUndefined: true }], response },
       poll: { path: "/v1/videos/{taskId}", method: "GET", bodyMode: "none", response }, pollIntervalMs: 4000,
@@ -568,12 +615,13 @@ export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: st
       ...(c.flow || c.pollPath === "/v1/videos/tasks/{taskId}" ? {} : { contentFallback: { path: c.contentPath ?? "/v1/videos/{taskId}/content" } }) } };
 }
 export function remainingVideoRequestIssues(supplier: RemainingVideoSupplier, request: NormalizedRequest, context?: RemainingVideoContext): ValidationIssue[] {
+  if (supplier === "secure" && request.model === SECURE_MUSE_MODEL_ID && contractFor(supplier, request.model, context)) return secureMuseVideoRequestIssues(request);
   if (supplier === "jijiu") return jijiuVideoRequestIssues(request, context?.model, context?.group);
   if (supplier === "jiasu") return jiasuVideoRequestIssues(request, context?.model, context?.group);
   const c = contractFor(supplier, request.model ?? "", { ...context, assets: request.assets }); if (!c) return [];
   const p = normalizeRemainingVideoParameters(supplier, request, context), issues: ValidationIssue[] = [], add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
   const seconds = c.omitDuration ? request.parameters?.duration ?? c.durations?.[0] : p[c.secondsField ?? "duration"];
-  if (!c.chatVideo && !c.omitDuration && !hasDurationRange(c)) {
+  if (!c.chatVideo && !c.omitDuration && !hasDurationRange(c) && !(c.directoryContract && c.durationOptional)) {
     if (seconds !== undefined && seconds !== c.defaultDuration)
       add("parameters.duration", "当前供应商未确认此型号的时长范围，不能提交自定义时长；请使用已公布的供应商默认值或补全此分组的时长合同。");
     else if (seconds === undefined && !c.durationOptional)
@@ -584,15 +632,23 @@ export function remainingVideoRequestIssues(supplier: RemainingVideoSupplier, re
   if (!c.omitRatio && !c.freeRatio && c.ratios.length && !c.ratios.includes(String(ratio))) add("parameters.aspect_ratio", `此型号比例仅支持 ${c.ratios.join(" / ")}。`);
   if (c.freeRatio && !/^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/u.test(String(ratio))) add("parameters.aspect_ratio", "画面比例必须为正数宽高比，例如 16:9。");
   const resolution = request.parameters?.resolution ?? p.resolution;
-  if (c.openResolution && !c.resolutions.length && request.parameters?.resolution !== undefined)
-    add("parameters.resolution", "当前供应商尚未确认此完整型号的可选分辨率，请选择供应商默认；已保存的自定义分辨率不会提交。");
+  if (c.openResolution && resolution !== undefined && (typeof resolution !== "string" || !resolution.trim() || resolution.length > 128 || /[\u0000-\u001f\u007f]/u.test(resolution)))
+    add("parameters.resolution", "输出分辨率必须是非空字符串。");
   const size = request.parameters?.size;
   if ((c.multipartReference || c.multipartFrames) && size !== undefined &&
       (typeof size !== "string" || !/^\d+x\d+$/u.test(size) || !size.split("x").every(value => Number.isSafeInteger(Number(value)) && Number(value) > 0)))
     add("parameters.size", "输出像素尺寸必须为正整数宽x高，例如 1280x720；具体范围以当前供应商型号为准。");
-  if (c.multipartReference && resolution !== undefined && !request.parameters?.size && !(["720p", "1080p"].includes(String(resolution)) && ["16:9", "9:16"].includes(String(ratio)))) add("parameters.size", "此分辨率与画幅请填写供应商接受的输出像素尺寸，不能静默替换为默认尺寸。");
+  if (c.applicationPriceTiers) issues.push(...cyberafeiSeedance25SizePreferenceIssues(request.parameters ?? {}));
+  if (c.multipartReference && !c.applicationPriceTiers && resolution !== undefined) {
+    const mappings = typeof resolution === "string" ? openAiVideoSizeMappings[resolution] : undefined;
+    const mapped = typeof ratio === "string" ? mappings?.[ratio]
+      : typeof size === "string" && Object.values(mappings ?? {}).includes(size) ? size : undefined;
+    if (!mapped) add("parameters.resolution", "此接口使用 size 像素字段；请清除无法换算的档位，并按供应商规则填写 size，不能静默替换尺寸。");
+    else if (size !== undefined && size !== mapped) add("parameters.size", "size 与尺寸换算档位、比例不一致；请修改为一致值，或清除换算档位后使用自定义 size。");
+  }
   if (resolution !== undefined && c.resolutions.length && !c.resolutions.includes(String(resolution))) add("parameters.resolution", `此型号分辨率仅支持 ${c.resolutions.join(" / ")}。`);
   if (request.parameters?.duration !== undefined && request.parameters.seconds !== undefined && request.parameters.duration !== request.parameters.seconds) add("parameters.duration", "duration 与 seconds 不能冲突。");
+  if (!c.omitRatio && request.parameters?.aspect_ratio !== undefined && request.parameters.ratio !== undefined && request.parameters.aspect_ratio !== request.parameters.ratio) add("parameters.aspect_ratio", "aspect_ratio 与 ratio 不能冲突。");
   const assets = request.assets ?? [], counts = { image: 0, video: 0, audio: 0 };
   const content = array(request.parameters?.content).filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
   for (const [kind, limit, field] of [["image", c.images, c.imageField], ["video", c.videos, c.videoField], ["audio", c.audios, c.audioField]] as const) {

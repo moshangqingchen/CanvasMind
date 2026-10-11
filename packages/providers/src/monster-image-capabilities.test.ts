@@ -144,7 +144,7 @@ describe("Monster image capabilities from paid generation evidence", () => {
       ),
     ).toBeDefined();
   });
-  it("adds only verified tiers and labels untested ratio presets without widening operations", () => {
+  it("keeps historical samples without deriving a ratio matrix or pixel bounds", () => {
     const result = applyMonsterImageCapabilities(
       { provider: "openai", config },
       model,
@@ -155,7 +155,10 @@ describe("Monster image capabilities from paid generation evidence", () => {
     expect(
       size?.options?.find((o) => o.value === "2048x2048")?.label,
     ).not.toContain("预设");
-    expect(size?.options?.some((o) => o.label.includes("比例预设"))).toBe(true);
+    expect(size?.options?.some((o) => o.label.includes("比例预设"))).toBe(false);
+    expect(size?.options?.map(o => o.value)).toEqual(["auto", ...monsterImageEvidence(config, model.id)!.testedSizes]);
+    expect(size).toMatchObject({ allowCustomValue: true });
+    expect(size?.min).toBeUndefined(); expect(size?.max).toBeUndefined(); expect(size?.step).toBeUndefined();
     expect(result.operations).toEqual(["image.generate"]);
     expect(result.metadata?.priceLabel).toBe("1张0.015");
     expect(result.metadata?.imageCapabilityNote).toContain("不支持 4K");
@@ -327,6 +330,12 @@ describe("Monster image capabilities from paid generation evidence", () => {
       size: "3840x2160",
       quality: "max",
     });
+    // B3's successful tall 2K request and unpublished custom boundaries must
+    // not be rejected by a guessed 2048² budget, 16 alignment or 3840 edge cap.
+    for (const size of ["1536x2720", "2497x3313", "4097x2101"]) {
+      await adapter.submit({ ...request, parameters: { size, quality: "max", n: 1 } });
+      expect(JSON.parse(String((fetchMock.mock.calls.at(-1) as unknown as [unknown, RequestInit])[1].body))).toMatchObject({ size, quality: "max" });
+    }
     expect(offlineNetwork.lookup).toHaveBeenCalled();
   });
 });

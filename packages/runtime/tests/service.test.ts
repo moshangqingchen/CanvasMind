@@ -1623,9 +1623,14 @@ describe("RunService", () => {
       message: "请求未提交：GPT Image 2 does not support image.edit",
       type: "请求参数错误",
       code: "unsupported_operation",
+      source: "local_validation",
+      localMessage: "GPT Image 2 does not support image.edit",
+      phase: "submit",
+      submissionMayHaveOccurred: false,
       failureCategory: "invalid_request",
       charge: { status: "not_charged", source: "not_submitted" },
     });
+    expect(imageRun?.errorJson).not.toHaveProperty("providerMessage");
   });
 
   it("executes and archives a complete image-to-video graph", async () => {
@@ -2863,7 +2868,7 @@ describe("RunService", () => {
       prompt: "生成 16:9 海报",
       tier: "4K",
       size: "auto",
-      expected: "",
+      expected: "3840x2160",
       twoKOnly: true,
     },
     {
@@ -3118,11 +3123,7 @@ describe("RunService", () => {
         clientRequestId: "image25-run",
         scope: "all",
       });
-      if (twoKOnly && size === "auto") {
-        expect((await waitForRun(service, run.id)).run.status).toBe("failed");
-        expect(submitted).toBeUndefined();
-        return;
-      }
+      // A historical 2K sample list is not an explicit ban on the user's 4K preset.
       expect((await waitForRun(service, run.id)).run.status).toBe("succeeded");
       expect(submitted).toMatchObject({ size: expected });
       expect(submitted).not.toHaveProperty("size_tier");
@@ -3419,9 +3420,11 @@ describe("RunService", () => {
   });
 
   it.each([
-    { prompt: "跟随参考图生成海报", ratio: "9:16", size: "4K" },
-    { prompt: "生成 16:9 横图，沿用参考图风格", ratio: "16:9", size: "2K" },
-  ])("sends saved Banana tiers and connected reference bytes through the native API: $prompt", async ({ prompt, ratio, size }) => {
+    { prompt: "跟随参考图生成海报", ratio: "9:16", size: "4K", legacyQuality: undefined },
+    { prompt: "生成 16:9 横图，沿用参考图风格", ratio: "16:9", size: "2K", legacyQuality: undefined },
+    { prompt: "跟随参考图生成海报", ratio: "9:16", size: "4K", legacyQuality: "max" },
+    { prompt: "生成 16:9 横图，沿用参考图风格", ratio: "16:9", size: "2K", legacyQuality: "max" },
+  ])("preserves saved Banana tiers, ratios and reference bytes ($legacyQuality): $prompt", async ({ prompt, ratio, size, legacyQuality }) => {
     const repository = await testRepository();
     const storage = new MemoryStorage();
     const canvas = await repository.ensureDefaultCanvas();
@@ -3430,16 +3433,32 @@ describe("RunService", () => {
     await storage.put("banana-ref.png", bytes, "image/png");
     await repository.saveAsset({ id: "banana-ref", name: "参考图", kind: "image", mimeType: "image/png", size: bytes.length, storageKey: "banana-ref.png", metadata: {} });
     const config = { baseUrl: "https://genimage.pro/v1", defaultModel: model, modelCatalogModels: [{ id: model, name: model, operations: ["image.generate"], metadata: { canvasRunnable: true } }] };
+    // Gen's Gemini contract owns native imageSize/aspectRatio. An old Images
+    // quality value stays saved, but cannot silently disappear on this wire.
+    const savedParameters = { size: "auto", size_tier: size, aspect_ratio: ratio,
+      ...(legacyQuality ? { quality: legacyQuality } : {}) };
     await repository.saveConnection({ id: "banana", name: "Banana", provider: "openai", encryptedSecret: null, config });
     await repository.saveCanvas({ id: canvas.id, graph: { schemaVersion: 1, nodes: [
       { id: "asset", type: "workflow", data: { nodeType: "asset-input", assetId: "banana-ref", assetKind: "image", mediaAspectRatio: 9 / 16, outputs: [port("asset", "image")] } },
-      { id: "image", type: "workflow", data: { nodeType: "image-generation", provider: "openai", connectionId: "banana", model, parts: [{ type: "text", text: prompt }], parameters: { size: "auto", size_tier: size, quality: "max" }, inputs: [port("references", "image[]")], outputs: [port("image", "image")] } },
+      { id: "image", type: "workflow", data: { nodeType: "image-generation", provider: "openai", connectionId: "banana", model, parts: [{ type: "text", text: prompt }], parameters: savedParameters, inputs: [port("references", "image[]")], outputs: [port("image", "image")] } },
     ], edges: [{ id: "ref", source: "asset", sourceHandle: "asset", target: "image", targetHandle: "references" }] } });
     const fetch = vi.fn(async () => Response.json({ candidates: [{ content: { parts: [{ text: "result" }, { inlineData: { mimeType: "image/png", data: Buffer.from(bytes).toString("base64") } }] } }] }));
     const adapter = createDefaultProviderRegistry(new StaticConnectionResolver([{ id: "banana", provider: "openai", baseUrl: config.baseUrl, apiKey: "fixture-key", settings: config }]), { fetch }).get("openai");
     const service = new AdapterRunService(adapter, repository, storage, "inline", "openai");
     const run = await service.createRun({ canvasId: canvas.id, clientRequestId: "banana-native-reference", scope: "all" });
-    expect((await waitForRun(service, run.id)).run.status).toBe("succeeded");
+    const snapshot = await waitForRun(service, run.id);
+    expect((await repository.getCanvas(canvas.id))?.graph.nodes.find(node => node.id === "image")?.data.parameters).toEqual(savedParameters);
+    if (legacyQuality) {
+      expect(snapshot.run.status).toBe("failed");
+      expect(snapshot.nodes.find(node => node.nodeId === "image")?.errorJson).toMatchObject({
+        code: "unpublished_supplier_parameter", source: "local_validation", phase: "submit",
+        charge: { status: "not_charged", source: "not_submitted" }, submissionMayHaveOccurred: false,
+      });
+      expect(snapshot.nodes.find(node => node.nodeId === "image")?.errorJson?.message).toContain("quality");
+      expect(fetch).not.toHaveBeenCalled();
+      return;
+    }
+    expect(snapshot.run.status, JSON.stringify(snapshot.nodes.map(node => node.errorJson))).toBe("succeeded");
     expect(fetch).toHaveBeenCalledOnce();
     const call = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(call[0])).toBe(`https://genimage.pro/v1beta/models/${model}:generateContent`);

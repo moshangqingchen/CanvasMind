@@ -3,10 +3,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parseSupplierCatalog, type ModelDescriptor, type SupplierCatalogDiscovery } from "@super-canvas/providers";
-import { applyJijiuImageCapabilities } from "@super-canvas/providers/jijiu-image-contract";
+import { applyJijiuImageCapabilities, jijiuGptImageParameters, jijiuGptImageRequestIssues } from "@super-canvas/providers/jijiu-image-contract";
+import { validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import { NodeParameterFields } from "../components/node-parameter-fields";
 import { modelEstimatedCost, modelPriceSummary } from "./model-display";
-import { normalizedParametersForModel } from "./model-parameters";
+import { normalizedParametersForModel, parametersWithDefaults, setParameterValue } from "./model-parameters";
 import { applySupplierCatalogPrices } from "./supplier-model-pricing";
 
 vi.mock("./supplier-service", () => ({ getSupplierRecord: vi.fn(async () => null) }));
@@ -42,6 +43,61 @@ describe("Jijiu exact high-tier image controls (offline)", () => {
     expect(html).not.toMatch(/2048|4096|16 倍数|value="max"/u);
   });
 
+  it.each(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst"])("keeps %s's declared size string editable without turning its example into a pixel enum", modelId => {
+    for (const group of ["default", "图片-GPT-image-2/2.5-1K"]) {
+      const model = descriptor(modelId, group);
+      const size = model.parameters?.find(parameter => parameter.key === "size");
+      expect(size).toMatchObject({ control: "text", valueType: "string", allowCustomValue: true });
+      expect(size?.options?.map(option => option.value)).toEqual(["auto", "1024x1024"]);
+      expect(size).not.toHaveProperty("min");
+      expect(size).not.toHaveProperty("max");
+      const selected = Object.freeze({ size: "1536x1024", n: 1 });
+      const html = render(model, selected);
+      const width = html.match(/<input\b[^>]*aria-label="图片宽度"[^>]*>/u)?.[0];
+      const height = html.match(/<input\b[^>]*aria-label="图片高度"[^>]*>/u)?.[0];
+      expect(width).toContain('type="number"');
+      expect(width).toContain('value="1536"');
+      expect(height).toContain('value="1024"');
+      expect(width).not.toMatch(/readOnly|disabled|max=/u);
+      expect(height).not.toMatch(/readOnly|disabled|max=/u);
+      expect(html.match(/aria-label="图片宽度"/gu)).toHaveLength(1);
+      expect(html.match(/aria-label="图片高度"/gu)).toHaveLength(1);
+      expect(html).toContain("自定义尺寸（W × H）");
+      expect(html).toContain("1024 × 1024（官方示例）");
+      expect(html).not.toMatch(/>2K<\/button>|>4K<\/button>|16 倍数/u);
+
+      expect(validateModelParameters(model, selected, "image.generate")).toEqual({ valid: true, issues: [] });
+      expect(jijiuGptImageRequestIssues({ provider: "openai", config: { baseUrl: `${source}/v1`, modelGroup: group, accountKeyGroup: group } }, {
+        model: modelId, operation: "image.generate", connectionId: "jijiu-size-field", idempotencyKey: "offline-size-field",
+        prompt: "Offline contract check", parameters: selected,
+      })).toEqual([]);
+      expect(parametersWithDefaults(model.parameters!, selected, true)).toEqual(selected);
+      const refreshed = normalizedParametersForModel("image-generation", "openai", descriptor(modelId, group), selected);
+      expect(refreshed).toEqual(selected);
+      const restored = JSON.parse(JSON.stringify(refreshed)) as typeof selected;
+      expect(normalizedParametersForModel("image-generation", "openai", model, restored)).toEqual(selected);
+      expect(jijiuGptImageParameters(restored, modelId)).toEqual(selected);
+      expect(setParameterValue(restored, "size", "1024x1536", model)).toEqual({ n: 1, size: "1024x1536" });
+      expect(selected).toEqual({ size: "1536x1024", n: 1 });
+    }
+  });
+
+  it("keeps the 2K/4K declared model separate from the ordinary WIDTHxHEIGHT contract", () => {
+    const model = descriptor();
+    const size = model.parameters?.find(parameter => parameter.key === "size");
+    expect(size).toMatchObject({ control: "select", options: [
+      { value: "auto", label: "自动 · 比例与像素由供应商决定" },
+      ...["1K", "2K", "4K"].map(value => ({ value, label: value })),
+    ] });
+    expect(size?.allowCustomValue).not.toBe(true);
+    const html = render(model, { size: "4K", quality: "high", n: 1 });
+    expect(html).toContain('aria-pressed="true">4K</button>');
+    expect(html.match(/readOnly="" placeholder="以原图为准"[^>]*value=""/gu)).toHaveLength(2);
+    expect(validateModelParameters(model, { size: "1536x1024", quality: "high", n: 1 }, "image.generate").valid).toBe(false);
+    expect(normalizedParametersForModel("image-generation", "openai", model, { size: "4K", quality: "high", n: 1 }))
+      .toMatchObject({ size: "4K", quality: "high" });
+  });
+
   it("keeps the two source notes in one closed, neutral disclosure after the controls", () => {
     const html = render(descriptor());
     expect(html.match(/<details class="parameter-contract-details"/gu)).toHaveLength(1);
@@ -61,7 +117,8 @@ describe("Jijiu exact high-tier image controls (offline)", () => {
     const generic = render({ ...descriptor(), metadata: { ...descriptor().metadata, jijiuImageContract: false } });
     expect(generic).not.toContain("parameter-contract-details");
     const invalid = render(descriptor(), { size: "4096x4096", quality: "max", n: 1 });
-    expect(invalid).toContain("当前目录未确认此档位");
+    expect(invalid).toContain("当前档位：4096x4096 · 目录档位：自动 / 1K / 2K / 4K");
+    expect(invalid).not.toMatch(/未确认|不支持|不可运行/u);
     expect(invalid).toContain("4096x4096");
     expect(invalid).toContain('value="max" selected=""');
   });

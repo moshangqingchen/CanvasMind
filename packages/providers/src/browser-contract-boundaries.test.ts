@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { expect, it } from "vitest";
 
-it.each(["cangyuan-current-models", "hang-image-contract"])("keeps %s UI inspection independent of server transports", entry => {
+it.each(["cangyuan-current-models", "hang-image-contract", "jiasu-video-contract", "jiasu-catalog-pricing", "jiasu-api-example-contract",
+  "jijiu-video-contract", "jijiu-image-contract", "jijiu-catalog-pricing", "remaining-video-contracts", "supplier-image-constraints", "mikoto-image-contract", "genimage-image-capabilities", "cyberafei-seedance25-video-contract"])("keeps %s UI inspection independent of server transports", entry => {
   const seen = new Set<string>();
   const serverDependencies: string[] = [];
   function inspect(url: URL, chain: string[]) {

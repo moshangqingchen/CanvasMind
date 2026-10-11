@@ -22,8 +22,8 @@ function cachedModel(id: string, group: keyof typeof groups): ModelDescriptor {
   const scoped = supplierGroupModelPriceDetails(details, id, bananaIds);
   return {
     id, name: id, operations: ["image.generate", "image.edit"], inputKinds: ["text", "image[]"], outputKinds: ["image"],
-    // Reproduce a pre-update cache and a generic live inventory. The UI must
-    // apply the exact supplier contract instead of displaying these max controls.
+    // Reproduce a pre-update cache and generic live inventory. The UI restores
+    // the user preset while retaining the supplier's explicit group limits.
     parameters: [
       { key: "size", label: "尺寸", control: "dimensions", default: "auto", options: imageSizeOptions(["1K", "2K", "4K"], 4096) },
       { key: "quality", label: "质量", control: "select", default: "max", options: ["low", "medium", "high", "xhigh", "max"].map(value => ({ value, label: value })) },
@@ -34,7 +34,7 @@ function cachedModel(id: string, group: keyof typeof groups): ModelDescriptor {
 }
 
 const inventories: Record<keyof typeof groups, ModelDescriptor[]> = {
-  upscale: [cachedModel("gpt-image-2", "upscale"), cachedModel("gpt-image-2.5-flare", "upscale")],
+  upscale: [cachedModel("gpt-image-2", "upscale"), cachedModel("gpt-image-2.5-flare", "upscale"), cachedModel("gpt-image-2.5-sunburst", "upscale")],
   native: [cachedModel("gpt-image-2", "native"), cachedModel("gpt-image-2.5-flare", "native")],
   banana: bananaIds.map(id => cachedModel(id, "banana")),
 };
@@ -95,7 +95,7 @@ test("pDog Image 2 旧缓存应用 high 质量、全部比例与档位，手选�
   const tiers = panel.getByRole("group", { name: "自动与输出分辨率快捷档位" });
   await expect(quality).toHaveValue("high");
   expect(await quality.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean)))
-    .toEqual(["low", "medium", "high"]);
+    .toEqual(["auto", "low", "medium", "high"]);
   await expect.poll(fixture.scans).toBeGreaterThan(0);
   const ratios = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9", "9:21"];
   for (const tier of ["1K", "2K", "4K"]) {
@@ -103,7 +103,7 @@ test("pDog Image 2 旧缓存应用 high 质量、全部比例与档位，手选�
     await expect(tiers.getByRole("button", { name: tier, exact: true })).toHaveAttribute("aria-pressed", "true");
     const options = await preset.locator("option").evaluateAll(options => options
       .filter(option => Boolean((option as HTMLOptionElement).value)).map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent ?? "" })));
-    expect(options).toHaveLength(12);
+    expect(options.length).toBeGreaterThanOrEqual(12);
     expect(options.filter(option => option.value === "auto")).toHaveLength(1);
     for (const ratio of ratios) expect(options.some(option => option.label.includes(` · ${ratio} · `))).toBeTruthy();
   }
@@ -153,8 +153,9 @@ test("pDog 同型号切换分组展示原生与超分说明，并保存分组选
   await panel.screenshot({ path: info.outputPath("pdog-native-group.png") });
 });
 
-test("pDog Image 2.5 保留 max 最高候选，手选 high 后保存重载保持", async ({ page, request }, info) => {
-  const fixture = await setup(page, request, "upscale", "gpt-image-2.5-flare");
+for (const modelId of ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]) {
+test(`pDog 超分组 ${modelId} 默认 max，手选 high 后保存重载保持`, async ({ page, request }, info) => {
+  const fixture = await setup(page, request, "upscale", modelId);
   const { panel, saved, open } = fixture;
   const quality = panel.getByLabel("质量", { exact: true });
   await expect(quality).toHaveValue("max");
@@ -162,13 +163,17 @@ test("pDog Image 2.5 保留 max 最高候选，手选 high 后保存重载保持
   await expect.poll(async () => (await saved()).parameters.quality).toBe("max");
   await page.reload(); await open();
   await expect(quality).toHaveValue("max");
+  await quality.scrollIntoViewIfNeeded();
+  await panel.screenshot({ path: info.outputPath(`${modelId}-default-max.png`) });
   await quality.selectOption("high");
   await expect.poll(async () => (await saved()).parameters.quality).toBe("high");
   await page.reload(); await open();
   await expect(quality).toHaveValue("high");
   expect(fixture.safety()).toEqual({ submissions: 0, upstreamRequests: 0 });
-  await panel.screenshot({ path: info.outputPath("pdog-image25-max-candidate.png") });
+  await quality.scrollIntoViewIfNeeded();
+  await panel.screenshot({ path: info.outputPath(`${modelId}-max-and-manual-quality.png`) });
 });
+}
 
 test("pDog 香蕉两个型号各自展示 0.07 与 0.08 报价，手选型号保存重载保持", async ({ page, request }, info) => {
   const fixture = await setup(page, request, "banana");

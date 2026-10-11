@@ -3,6 +3,7 @@ import { StaticConnectionResolver } from "./credentials.js";
 import { createDefaultProviderRegistry } from "./registry.js";
 import { isSecureSkillImageConnection } from "./secure-skill-image.js";
 import type { NormalizedRequest, ProviderTask } from "./contracts.js";
+import { applySecureSkillImageCapabilities, SECURE_SKILL_IMAGE_PIXELS, secureSkillImageParameterIssues } from "./secure-skill-image-contract.js";
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const pending = () => response({ code: "success", data: { task_id: "img-test", status: "PENDING" } });
@@ -13,7 +14,7 @@ const makeAdapter = (fetcher: typeof fetch, baseUrl = "https://token.secure-skil
   }]), { fetch: fetcher }).get("openai");
 const request: NormalizedRequest = {
   connectionId: "secure", model: "gpt-image-2.5-flare", operation: "image.edit", prompt: "Keep the reference subject",
-  idempotencyKey: "paid-once", parameters: { size: "3840x2160", quality: "max" },
+  idempotencyKey: "paid-once", parameters: { size: "1024x1024", quality: "max" },
   assets: [{ id: "reference", kind: "image", mimeType: "image/png", url: "https://assets.example.com/reference.png", data: new Uint8Array([1, 2, 3]) }],
 };
 
@@ -30,7 +31,7 @@ describe("Secure Skill GPT Images protocol", () => {
     expect(url).toBe("https://token.secure-skill.com/v1/images/async/generations");
     expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-key");
-    expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: request.prompt, size: "3840x2160", ...(model === "gpt-image-2" ? {} : { quality }), response_format: "url",
+    expect(JSON.parse(String(init?.body))).toEqual({ model, prompt: request.prompt, size: "1024x1024", ...(model === "gpt-image-2" ? {} : { quality }), response_format: "url",
       image: ["https://assets.example.com/reference.png", "https://assets.example.com/second.jpg"], ...(model === "gpt-image-2" ? { background: "opaque" } : {}) });
   });
 
@@ -122,9 +123,66 @@ describe("Secure Skill GPT Images protocol", () => {
   it("blocks saved 4K selections only in the documented Image 2.5 1K group before submitting", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const adapter = makeAdapter(fetcher, "https://token.secure-skill.com", { modelGroup: "gpt-image-2.5" });
-    await expect(adapter.submit(request)).rejects.toThrow("仅支持官方 1K");
+    await expect(adapter.submit({ ...request, parameters: { size: "3840x2160", quality: "max" } })).rejects.toThrow("仅支持官方 1K");
     expect(fetcher).not.toHaveBeenCalled();
     expect(await adapter.validate({ ...request, parameters: { size: "1536x1024", quality: "max" } })).toMatchObject({ valid: true });
-    expect(await makeAdapter(fetcher, "https://token.secure-skill.com", { modelGroup: "image2.5特价" }).validate(request)).toMatchObject({ valid: true });
+    expect(await makeAdapter(fetcher, "https://token.secure-skill.com", { modelGroup: "image2.5特价" }).validate({ ...request, parameters: { size: "3840x2160", quality: "max" } })).toMatchObject({ valid: true });
+  });
+  it.each(["512x512", "256x3840", "3840x256", "3840x3840", "1920x1088"])("sends official GPT2 custom %s without borrowed area or ratio caps", async size => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pending()), adapter = makeAdapter(fetcher);
+    const input = { ...request, model: "gpt-image-2", operation: "image.generate" as const, assets: [], parameters: { size, quality: "high" } };
+    expect(await adapter.validate(input)).toMatchObject({ valid: true });
+    await adapter.submit(input);
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toMatchObject({ size });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).not.toHaveProperty("quality");
+  });
+  it.each(["1920x1080", "240x240", "3856x1024"])("keeps the actual Secure GPT2 edge/alignment restriction for %s", async size => {
+    const fetcher = vi.fn<typeof fetch>(), adapter = makeAdapter(fetcher);
+    await expect(adapter.submit({ ...request, model: "gpt-image-2", parameters: { size } })).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("passes image_size and aspect_ratio as the supplier's native JSON fields", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pending());
+    await makeAdapter(fetcher).submit({ ...request, model: "gpt-image-2", parameters: { image_size: "2K", aspect_ratio: "5:4", quality: "high" } });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toMatchObject({ image_size: "2K", aspect_ratio: "5:4" });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).not.toHaveProperty("size");
+  });
+  it("labels auto as independent native fields and preserves saved 2K 16:9 JSON input", async () => {
+    const config = { baseUrl: "https://token.secure-skill.com", modelGroup: "image-2-1k", accountKeyGroup: "image-2-1k" };
+    const model = applySecureSkillImageCapabilities({ provider: "openai", config }, {
+      id: "gpt-image-2", name: "GPT2", operations: ["image.generate"], parameters: [],
+    });
+    const size = model.parameters?.find(row => row.key === "size");
+    expect(size?.default).toBe("auto");
+    expect(size?.options?.find(row => row.value === "auto")?.label).toBe("按独立档位与比例（未指定时供应商默认）");
+    expect(size?.options?.find(row => row.value === "auto")?.label).not.toContain("1:1");
+    expect(size?.description).toContain("两字段均未指定时供应商默认 2K·1:1");
+    const parameters = { size: "auto", image_size: "2K", aspect_ratio: "16:9", n: 1 };
+    const original = structuredClone(parameters), fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pending());
+    await makeAdapter(fetcher, config.baseUrl, config).submit({ ...request, model: "gpt-image-2", operation: "image.generate", assets: [], parameters });
+    expect(parameters).toEqual(original);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ response_format: "url", model: "gpt-image-2",
+      prompt: request.prompt, image_size: "2K", aspect_ratio: "16:9", n: 1, background: "opaque" });
+  });
+  it("retains only the complete official matrix and does not expand manual contracts", () => {
+    const config = { baseUrl: "https://token.secure-skill.com", modelGroup: "adobe-image2-mid" };
+    const descriptor = { id: "gpt-image-2", name: "GPT2", operations: ["image.generate" as const], parameters: [] };
+    const model = applySecureSkillImageCapabilities({ provider: "openai", config }, descriptor);
+    expect(SECURE_SKILL_IMAGE_PIXELS).toHaveLength(13);
+    expect(model.parameters?.find(row => row.key === "size")?.options).toHaveLength(40);
+    expect(model.parameters?.find(row => row.key === "size")).toMatchObject({ min: 256, max: 3840, step: 16 });
+    expect(model.parameters?.some(row => row.key === "quality")).toBe(false);
+    expect(applySecureSkillImageCapabilities({ provider: "openai", config: { ...config, manualProtocol: true } }, descriptor)).toEqual(descriptor);
+    expect(secureSkillImageParameterIssues(config, "gpt-image-2", { size: "256x3840" })).toEqual([]);
+  });
+  it("uses stable group49 identity before its potentially reused display name", () => {
+    const config = { baseUrl: "https://token.secure-skill.com", modelGroup: "image2.5特价" };
+    const parameters = { size: "3840x2160", quality: "max" };
+    expect(secureSkillImageParameterIssues({ ...config, accountKeyGroupId: "49" }, "gpt-image-2.5-flare", parameters)).toEqual([]);
+    expect(secureSkillImageParameterIssues({ ...config, accountKeyGroupId: "44" }, "gpt-image-2.5-flare", parameters)).not.toEqual([]);
+    expect(secureSkillImageParameterIssues(config, "gpt-image-2.5-flare", parameters)).toEqual([]);
+    expect(isSecureSkillImageConnection({ ...config, manualProtocol: true }, "gpt-image-2")).toBe(false);
+    expect(isSecureSkillImageConnection({ ...config, modelCatalogModels: [{ id: "gpt-image-2", metadata: { protocolEvidence: "paid-test" } }] }, "gpt-image-2")).toBe(false);
   });
 });

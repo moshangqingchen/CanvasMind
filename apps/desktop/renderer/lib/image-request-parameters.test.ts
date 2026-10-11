@@ -1,4 +1,5 @@
 import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { imageSizeOptions, type ModelDescriptor } from "@super-canvas/providers";
 import type { ProviderConnectionView } from "./client-api";
@@ -6,6 +7,8 @@ import type { CanvasNode } from "../components/types";
 import { withCurrentImageRequestParameters } from "./image-request-parameters";
 import { normalizedParametersForModel, parameterDescriptorsFor, parameterValueForModel, setParameterValue } from "./model-parameters";
 import { jijiuGptImageRequestIssues, jijiuGptImageParameters } from "@super-canvas/providers/jijiu-image-contract";
+import { NodeParameterFields, isGenimageNativeImageContractModel, undeclaredGenimageNativeImageParameterKeys, resolutionTierForValue, resolutionTierShortcuts } from "../components/node-parameter-fields";
+import { applyBananaImageCapabilities } from "@super-canvas/providers/banana-image-contract";
 
 const cached: ModelDescriptor = { id: "gpt-image-2", name: "Cached pDog GPT", operations: ["image.generate", "image.edit"],
   parameters: [
@@ -25,6 +28,55 @@ describe("current image contracts in saved canvas catalogs", () => {
   let canvasModule: Pick<typeof import("../components/canvas-app"), "configureNewGenerationNode" | "modelDiscoveryMigrationPatch" | "normalizeGenerationNodeForRun">;
   beforeAll(async () => { vi.stubGlobal("React", React); canvasModule = await import("../components/canvas-app"); });
   afterAll(() => vi.unstubAllGlobals());
+
+  it.each(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "gemini-2.5-flash-image", "gemini-3.1-flash-lite-image", "gemini-nano-banana-2.1"])("preserves every Gen native saved field through same-model discovery for %s", id => {
+    const raw: ModelDescriptor = { id, name: id, operations: ["image.generate", "image.edit"] };
+    const model = applyBananaImageCapabilities({ provider: "openai", config: { baseUrl: "https://genimage.pro/v1" } }, raw);
+    const current = { quality: "max", output_format: "png", size: "auto", size_tier: "2K", resolution: "4K", aspectRatio: "16:9", ratio: "4:3", n: 1 };
+    const data = { ...source().data, model: id, provider: "openai", connectionId: "gen-native", parameters: current };
+    const patch = canvasModule.modelDiscoveryMigrationPatch("image-generation", data, "openai", model);
+    const next = { ...data, ...patch };
+    expect(next.parameters).toMatchObject(current);
+    expect(canvasModule.modelDiscoveryMigrationPatch("image-generation", next, "openai", model)?.parameters).toBeUndefined();
+    expect(undeclaredGenimageNativeImageParameterKeys(model, next.parameters!)).toEqual(["quality", "output_format"]);
+    expect(current).toEqual({ quality: "max", output_format: "png", size: "auto", size_tier: "2K", resolution: "4K", aspectRatio: "16:9", ratio: "4:3", n: 1 });
+    expect(isGenimageNativeImageContractModel(applyBananaImageCapabilities({ provider: "openai", config: { baseUrl: "https://other.invalid/v1" } }, raw))).toBe(false);
+    for (const metadata of [{ source: "manual" }, { source: "paid-test" }, { protocolEvidence: "paid-test" }])
+      expect(isGenimageNativeImageContractModel({ ...model, metadata: { ...model.metadata, ...metadata } })).toBe(false);
+    expect(isGenimageNativeImageContractModel({ ...model, id: "gemini-unknown-image" })).toBe(false);
+    expect(isGenimageNativeImageContractModel({ ...model, metadata: { ...model.metadata, imageContractParameterCoverage: undefined } })).toBe(false);
+  });
+
+  it("shows Gen unknown native fields for explicit clearing even with advanced UI hidden", () => {
+    const model = applyBananaImageCapabilities({ provider: "openai", config: { baseUrl: "https://genimage.pro/v1" } },
+      { id: "gemini-3-pro-image-preview", name: "Gen Pro", operations: ["image.generate", "image.edit"] });
+    const current = { quality: "max", output_format: "auto", image_size: "4K", size_tier: "2K", aspectRatio: "16:9", n: 1 };
+    const onChange = vi.fn();
+    const html = renderToStaticMarkup(React.createElement(NodeParameterFields, { nodeId: "gen-native", nodeType: "image-generation", provider: "openai", model,
+      parameters: current, onChange, showAdvanced: false, operation: "image.generate" }));
+    expect(html).toContain("清除 quality"); expect(html).toContain("清除 output_format");
+    expect(html).not.toContain("清除 size_tier"); expect(html).not.toContain("清除 aspectRatio");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(undeclaredGenimageNativeImageParameterKeys(model, { quality: "", image_size: "4K" })).toEqual(["quality"]);
+    expect(current.quality).toBe("max"); expect(current.size_tier).toBe("2K");
+  });
+
+  it.each(["3240x2160", "3840x1646", "2560x1097", "1440x1440"])("retains Mikoto source pixels %s and invalid saved quality through refresh and run", size => {
+    const mikoto = { ...connection, id: "mikoto-image", config: { baseUrl: "https://api.mikoto.vip/v1", supplierKey: "mikoto",
+      modelGroup: "生图（2k4k 中质量）", usage: "canvas", defaultModel: cached.id, modelCatalogModels: [cached] } };
+    const model = withCurrentImageRequestParameters(mikoto, [cached])[0]!;
+    const descriptor = model.parameters!.find(p => p.key === "size")!;
+    expect(descriptor.step).toBe(1);
+    expect(resolutionTierForValue(resolutionTierShortcuts(descriptor), size)).toBe(["1440x1440", "2560x1097"].includes(size) ? "2K" : "4K");
+    const saved = { size, quality: "max", response_format: "b64_json", n: 2 };
+    expect(normalizedParametersForModel("image-generation", "openai", model, saved)).toMatchObject(saved);
+    const restored = { ...source(), data: { ...source().data, connectionId: mikoto.id, parameters: saved } } as CanvasNode;
+    expect(canvasModule.modelDiscoveryMigrationPatch("image-generation", restored.data, "openai", model)?.parameters).toBeUndefined();
+    const normalized = canvasModule.normalizeGenerationNodeForRun(restored, [mikoto], { connectionId: mikoto.id, items: [cached], authoritative: true });
+    expect(normalized.data.parameters).toMatchObject(saved);
+    expect(model.metadata?.priceLabel).toBe(cached.metadata?.priceLabel);
+    expect(model.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["medium"]);
+  });
 
   it.each(["2K", "4K"])("restores Jijiu %s/high from an auto-only saved catalog through refresh and run", size => {
     const legacy: ModelDescriptor = { id: "gpt-image-2-2K/4K", name: "极九 GPT Image 2 2K/4K", operations: ["image.generate", "image.edit"],
@@ -70,8 +122,13 @@ describe("current image contracts in saved canvas catalogs", () => {
     const model = withCurrentImageRequestParameters(connection, [cached])[0]!;
     const quality = model.parameters!.find(parameter => parameter.key === "quality")!;
     expect(quality.default).toBe("high");
-    expect(quality.options!.map(option => option.value)).toEqual(["low", "medium", "high"]);
-    expect(model.parameters!.find(parameter => parameter.key === "size")!.options).toHaveLength(34);
+    expect(quality.options!.map(option => option.value)).toEqual(["auto", "low", "medium", "high"]);
+    const size = model.parameters!.find(parameter => parameter.key === "size")!;
+    expect(size.options?.map(option => option.value)).toEqual(expect.arrayContaining(["1360x768", "2880x2880", "3840x2160"]));
+    expect(model.metadata?.imageUserSizePresetSource).toBe("user-request");
+    expect(size).toMatchObject({ control: "dimensions", valueType: "string" });
+    expect(size.min).toBeUndefined(); expect(size.max).toBeUndefined();
+    expect(normalizedParametersForModel("image-generation", "openai", model, { size: "2051x2049" }).size).toBe("2051x2049");
     expect(model.metadata?.priceLabel).toBe(cached.metadata?.priceLabel);
     expect(cached).toEqual(snapshot);
   });
@@ -92,11 +149,11 @@ describe("current image contracts in saved canvas catalogs", () => {
       .toEqual({ quality: "high", size: "2160x3840", size_tier: "4K" });
   });
 
-  it("normalizes the run against the contract even when the latest scan has a generic schema", () => {
+  it("preserves the saved explicit quality during run normalization when the latest schema is generic", () => {
     const node = source();
     expect(canvasModule.normalizeGenerationNodeForRun(node, [connection], {
       connectionId: connection.id, items: [cached], authoritative: true,
-    }).data.parameters).toMatchObject({ quality: "high", size: "2160x3840", size_tier: "4K" });
+    }).data.parameters).toMatchObject({ quality: "max", size: "2160x3840", size_tier: "4K" });
   });
 
   it("preserves a manual low quality and exact 2K ratio through discovery and run normalization", () => {
@@ -110,21 +167,22 @@ describe("current image contracts in saved canvas catalogs", () => {
     }).data.parameters).toMatchObject({ quality: "low", size: "2048x896", size_tier: "2K" });
   });
 
-  it("leaves other endpoints and an explicitly denied pDog model untouched", () => {
+  it("restores user shortcuts across endpoints without changing a denied model's availability", () => {
     const other = { ...connection, config: { ...connection.config, baseUrl: "https://another.invalid/v1" } };
-    expect(withCurrentImageRequestParameters(other, [cached])[0]).toBe(cached);
+    expect(withCurrentImageRequestParameters(other, [cached])[0]?.metadata).toMatchObject({ ...cached.metadata, imageUserSizePresetSource: "user-request" });
     const denied = { ...cached, metadata: { ...cached.metadata, canvasRunnable: false, canvasUnavailableReason: "403" } };
-    expect(withCurrentImageRequestParameters(connection, [denied])[0]).toBe(denied);
+    expect(withCurrentImageRequestParameters(connection, [denied])[0]?.metadata).toMatchObject(denied.metadata);
   });
 
-  it("keeps Image 2.5 max as a highest candidate without claiming a paid verification", () => {
-    const image25 = { ...cached, id: "gpt-image-2.5-flare" };
+  it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("restores the user's max quality for upscaling %s without claiming a paid verification", id => {
+    const image25 = { ...cached, id };
     const configured = { ...connection, config: { ...connection.config, defaultModel: image25.id, modelCatalogModels: [image25] } };
     const model = withCurrentImageRequestParameters(configured, [image25])[0]!;
     const quality = model.parameters!.find(parameter => parameter.key === "quality")!;
     expect(quality.default).toBe("max");
-    expect(quality.options!.some(option => option.value === "max")).toBe(true);
-    expect(model.metadata).toMatchObject({ qualitySupport: "assumed", pdogQualityDocumented: false, pdogQualityVerified: false });
+    expect(quality.options!.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    expect(model.metadata).toMatchObject({ qualitySupport: "declared", pdogQualityDocumented: true, pdogQualityVerified: false });
+    expect(model.metadata?.imageUserQualityPresetSource).toBe("user-request");
     expect(model.metadata?.image25VerifiedAt).toBeUndefined();
     const node = source();
     node.data.model = image25.id;

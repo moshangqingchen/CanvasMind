@@ -2,8 +2,6 @@ import { expect, test } from "@playwright/test";
 import { cangyuanCurrentModel } from "@super-canvas/providers";
 import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 
-// Current supplier documents declare 21:9 but do not declare 9:21.
-const ratios = ["auto", "1:1", "16:9", "9:16", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "21:9"];
 
 for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
   test(`${id} 原生计费档、全部比例和手选质量保存恢复`, async ({ page, request }, testInfo) => {
@@ -39,25 +37,29 @@ for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
     const tier = panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });
     const ratio = panel.getByLabel("画面比例", { exact: true });
     const quality = panel.getByLabel("质量", { exact: true });
-    await expect(quality).toHaveValue("max");
-    const expectedQualities = id === "gpt-image-2.5-x" ? ["auto", "low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "xhigh", "max"];
+    const highest = id === "gpt-image-2.5-x" ? "max" : "high";
+    await expect(quality).toHaveValue(highest);
+    await expect(ratio).toHaveCount(0);
+    const preset = panel.getByRole("combobox", { name: "输出分辨率预设", exact: true });
+    await expect(panel.getByLabel("清晰度 / 计费档位", { exact: true })).toHaveCount(0);
+    const expectedQualities = id === "gpt-image-2.5-x" ? ["auto", "low", "medium", "high", "xhigh", "max"] : ["auto", "low", "medium", "high"];
     expect(await quality.locator("option").evaluateAll(items => items.map(item => (item as HTMLOptionElement).value).filter(Boolean))).toEqual(expectedQualities);
     for (const value of ["1k", "2k", "4k"]) {
       const choice = tier.getByRole("button", { name: value.toUpperCase(), exact: true });
       await choice.click();
       await expect(choice).toHaveAttribute("aria-pressed", "true");
-      expect(await ratio.locator("option").evaluateAll(items => items.map(item => (item as HTMLOptionElement).value).filter(Boolean))).toEqual(ratios);
-      await ratio.selectOption("21:9");
+      const pixels = { "1k": "1552x672", "2k": "3120x1344", "4k": "3840x1648" }[value]!;
+      await preset.selectOption(pixels);
       await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters)
-        .toMatchObject({ tier: value, aspect_ratio: "21:9", quality: "max" });
+        .toMatchObject({ tier: value, size_tier: value.toUpperCase(), size: pixels, quality: highest });
     }
     await quality.selectOption("low");
     if (id === "gpt-image-2.5-x") await panel.getByLabel("产品线", { exact: true }).selectOption("flare");
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters)
-      .toMatchObject({ tier: "4k", aspect_ratio: "21:9", quality: "low", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}) });
+      .toMatchObject({ tier: "4k", size: "3840x1648", quality: "low", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}) });
     await page.reload(); await open();
     await expect(tier.getByRole("button", { name: "4K", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(ratio).toHaveValue("21:9");
+    await expect(preset).toHaveValue("3840x1648");
     await expect(quality).toHaveValue("low");
     if (id === "gpt-image-2.5-x") await expect(panel.getByLabel("产品线", { exact: true })).toHaveValue("flare");
     const width = panel.getByLabel("图片宽度", { exact: true });
@@ -70,8 +72,7 @@ for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
     await expect(width).not.toHaveAttribute("max");
     await expect(panel.getByRole("checkbox", { name: /16 倍数/u })).toHaveCount(0);
     const customSize = panel.locator(".parameter-dimensions").filter({ has: page.getByLabel("图片宽度", { exact: true }) });
-    await expect(customSize).toContainText("自定义宽高");
-    await expect(customSize).toContainText("官网未公布逐比例像素表、宽高步长或数值预算");
+    await expect(customSize).toContainText("比例与尺寸（W × H）");
     // Preserve explicit integer pixels without inventing a 16px constraint or
     // claiming the supplier's unpublished tier budget accepts this combination.
     await width.fill("1111");
@@ -85,12 +86,15 @@ for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
     await page.reload(); await open();
     await expect(width).toHaveValue("1111");
     await expect(height).toHaveValue("777");
-    await expect(ratio).toHaveValue("");
-    await ratio.selectOption("21:9");
-    await expect.poll(savedParameters).toMatchObject({ tier: "4k", aspect_ratio: "21:9", quality: "low" });
-    await expect.poll(async () => (await savedParameters()).size).toBeUndefined();
+    await width.fill("1024"); await height.fill("1024"); await height.press("Tab");
+    await expect.poll(savedParameters).toMatchObject({ tier: "4k", size_tier: "4K", size: "1024x1024", quality: "low" });
+    await preset.selectOption("3840x1648");
+    await expect.poll(savedParameters).toMatchObject({ tier: "4k", size: "3840x1648", quality: "low" });
+    await tier.getByRole("button", { name: "自动", exact: true }).click();
+    await expect.poll(savedParameters).toMatchObject({ tier: "web", size: "auto" });
     await expect(width).toHaveValue("");
     await expect(height).toHaveValue("");
+    await expect(quality).toHaveCount(0);
     expect(submissions).toBe(0);
     await panel.screenshot({ path: testInfo.outputPath("cangyuan-current-parameters.png") });
   });

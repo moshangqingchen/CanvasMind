@@ -87,7 +87,11 @@ describe("user-authorized Seedance duration fallback", () => {
     expect(incompatible.metadata?.durationRangeUnverified).toBe(true);
     expect(incompatible.metadata).not.toHaveProperty("durationRangeSource");
     expect(jiasuVideoRequestIssues(request(id, {}), incompatible)).toEqual([]);
-    expect(jiasuVideoRequestIssues(request(id, { duration: 29 }), incompatible)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    expect(incompatible.parameters?.[0]).toMatchObject({ control: "number", allowCustomValue: true, default: 40 });
+    expect(incompatible.parameters?.[0]).not.toHaveProperty("max");
+    expect(jiasuVideoRequestIssues(request(id, { duration: 29 }), incompatible)).toEqual([]);
+    expect(jiasuVideoRequestIssues(request(id, { duration: 40 }), incompatible)).toEqual([]);
+    expect(jiasuVideoRequestIssues(request(id, { duration: 3.5 }), incompatible)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
     const other = { id: "official-other-video", name: "other", operations: [], metadata: { endpointTypes: ["openai-video"] } };
     expect(jiasuVideoModel(other.id, other)?.metadata?.durationRangeUnverified).toBe(true);
     expect(jiasuVideoModel(other.id, other)?.metadata).not.toHaveProperty("durationRangeSource");

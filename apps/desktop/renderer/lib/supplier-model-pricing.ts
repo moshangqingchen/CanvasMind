@@ -8,6 +8,8 @@ import {
   type ModelDescriptor,
   type SupplierCatalogDiscovery,
   parseProviderModelFacts,
+  isJiasuApiUrl,
+  latestJiasuVideoApiExampleContract,
 } from "@super-canvas/providers";
 import { isCyberAfeiUnpricedCatalogVideo } from "@super-canvas/providers/cyberafei-catalog-evidence";
 import { modelGenerationMediaKinds } from "@super-canvas/providers/model-media";
@@ -28,7 +30,13 @@ const cache = new Map<
   CatalogCacheEntry
 >();
 const refreshCache = new Map<string, CatalogCacheEntry>();
-export interface SupplierPriceReadOptions { refreshId?: string }
+export interface JiasuSupplierExampleContext {
+  supplierId: string;
+  sourceId: string;
+  refreshId: string;
+  catalog: SupplierCatalogDiscovery;
+}
+export interface SupplierPriceReadOptions { refreshId?: string; jiasuApiExampleContext?: JiasuSupplierExampleContext }
 const hasOwnPrice = (model: ModelDescriptor) =>
   !["supplier-catalog", "supplier-group", "generated-result", "supplier-document"].includes(String(model.metadata?.priceSource)) &&
   (Boolean(model.pricing) ||
@@ -65,6 +73,30 @@ function friSnapshotPriceLabel(model: ModelDescriptor, group: string, catalog: S
     } catch { return undefined; }
   } else if (model.metadata?.priceSource !== undefined) return undefined;
   return equivalent === expected ? label : undefined;
+}
+
+/** Replace the known automatic preset quote, never a user or billed quote. */
+function canReplaceMikotoAutomaticSnapshot(model: ModelDescriptor,
+  catalogModel: SupplierCatalogDiscovery["groups"][number]["models"][number] | undefined,
+  selected: SupplierCatalogDiscovery["groups"][number] | undefined, catalog: SupplierCatalogDiscovery,
+  sourceUrl: string | undefined, officialGroupId: string | undefined): boolean {
+  if (model.id !== "gpt-image-2" || officialGroupId !== "16" || selected?.supplierGroupId !== "16" ||
+    selected.source !== "catalog" || catalog.status !== "live" || selected.details?.stale === true ||
+    catalogModel?.id !== model.id || catalogModel.metadata?.supplierCatalogModelStale === true ||
+    catalogModel.metadata?.supplierPriceConflict === true || catalogModel.metadata?.officialCatalogPriceGroupVerified !== true ||
+    model.metadata?.priceSource !== undefined || model.metadata?.source === "manual" || model.metadata?.protocolEvidence === "paid-test" ||
+    model.metadata?.measuredPrice || model.metadata?.pricingCapturedAt !== "2026-08-13" || model.metadata?.tested4KHighAt !== "2026-08-13" ||
+    model.pricing?.confidence !== "snapshot" || model.pricing.kind !== "per-image" || model.pricing.currency !== "USD" ||
+    model.pricing.unitAmount !== .08 || model.pricing.checkedAt !== "2026-08-13T00:00:00.000Z" || model.pricing.tiers?.length) return false;
+  const next = catalogModel.metadata.officialCatalogPricing as ModelDescriptor["pricing"];
+  if (next?.kind !== "per-image" || next.currency !== "USD" || next.billingUnit !== "image" || next.confidence !== "exact" ||
+    !Number.isFinite(next.unitAmount) || next.unitAmount! < 0 || next.sourceUrl !== "https://api.mikoto.vip/api/v1/channels/available") return false;
+  try {
+    return [sourceUrl, model.pricing.sourceUrl].every(value => {
+      const url = new URL(value ?? "");
+      return url.origin === "https://api.mikoto.vip" && !url.username && !url.password && !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname);
+    });
+  } catch { return false; }
 }
 
 function isWeAiCatalogSite(sourceUrl: string | undefined): boolean {
@@ -365,6 +397,45 @@ async function applyMeasuredSupplierPrices(
   });
 }
 
+function jiasuExampleMetadata(model: ModelDescriptor, catalogModel: SupplierCatalogDiscovery["groups"][number]["models"][number] | undefined,
+  catalog: SupplierCatalogDiscovery, groupStale: boolean, sourceUrl?: string): NonNullable<ModelDescriptor["metadata"]> {
+  const metadata = { ...model.metadata };
+  if (!isJiasuApiUrl(sourceUrl) || !catalogModel || catalogModel.id !== model.id || groupStale ||
+    ["failed", "unauthorized"].includes(catalog.status) || ["manual", "paid-test"].includes(String(metadata.source)) || metadata.protocolEvidence === "paid-test") return metadata;
+  const row = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const previous = row(metadata.jiasuCatalogRecord), incoming = row(catalogModel.metadata?.jiasuCatalogRecord);
+  const oldExample = latestJiasuVideoApiExampleContract(model.id, metadata.jiasuApiExampleContract, previous.apiExampleContract);
+  const newExample = latestJiasuVideoApiExampleContract(model.id, catalogModel.metadata?.jiasuApiExampleContract, incoming.apiExampleContract);
+  const selected = latestJiasuVideoApiExampleContract(model.id, oldExample, newExample);
+  const oldRecordAt = Date.parse(String(metadata.jiasuCatalogCheckedAt ?? ""));
+  const newRecordAt = Date.parse(String(catalogModel.metadata?.jiasuCatalogCheckedAt ?? catalog.checkedAt));
+  if (catalogModel.metadata?.jiasuCatalogRecord && (!Number.isFinite(oldRecordAt) || Number.isFinite(newRecordAt) && newRecordAt >= oldRecordAt)) {
+    for (const field of ["jiasuApiParameters", "jiasuCatalogDescription", "jiasuCatalogCheckedAt"])
+      if (catalogModel.metadata?.[field] !== undefined) metadata[field] = catalogModel.metadata[field];
+    const safeRecord = { ...previous, ...incoming };
+    if (selected) safeRecord.apiExampleContract = selected;
+    else delete safeRecord.apiExampleContract;
+    metadata.jiasuCatalogRecord = safeRecord;
+  }
+  if (selected) {
+    metadata.jiasuApiExampleContract = selected;
+    metadata.jiasuCatalogRecord = { ...row(metadata.jiasuCatalogRecord), apiExampleContract: selected };
+  }
+  // The latest failed attempt retains the actual previous live body/date.
+  const previousAt = Date.parse(String(metadata.jiasuApiExampleCheckedAt ?? oldExample?.checkedAt ?? ""));
+  const incomingAt = Date.parse(String(catalogModel.metadata?.jiasuApiExampleCheckedAt ?? ""));
+  if (Number.isFinite(incomingAt) && (!Number.isFinite(previousAt) || incomingAt >= previousAt)) {
+    const status = catalogModel.metadata?.jiasuApiExampleScanStatus;
+    if (status === "live" || status === "partial") {
+      metadata.jiasuApiExampleCheckedAt = catalogModel.metadata!.jiasuApiExampleCheckedAt;
+      metadata.jiasuApiExampleScanStatus = status === "live" && newExample?.sourceStatus === "live" ? "live" : "partial";
+      if (catalogModel.metadata?.jiasuApiExampleRefreshId !== undefined) metadata.jiasuApiExampleRefreshId = catalogModel.metadata.jiasuApiExampleRefreshId;
+      else delete metadata.jiasuApiExampleRefreshId;
+    }
+  }
+  return metadata;
+}
+
 /** Refresh only fields that this catalog originally supplied, never a model API/manual override. */
 function catalogInterfaceMetadata(model: ModelDescriptor, catalogModel: { metadata?: ModelDescriptor["metadata"] } | undefined,
   catalog: SupplierCatalogDiscovery, groupStale: boolean) {
@@ -372,10 +443,6 @@ function catalogInterfaceMetadata(model: ModelDescriptor, catalogModel: { metada
   const incomplete = catalog.complete === false || ["failed", "unauthorized"].includes(catalog.status) || groupStale;
   let supplied = false;
   if (catalogModel && !["failed", "unauthorized"].includes(catalog.status)) {
-    if (catalogModel.metadata?.jiasuCatalogRecord) {
-      for (const field of ["jiasuCatalogRecord", "jiasuApiParameters", "jiasuCatalogDescription", "jiasuCatalogCheckedAt"])
-        if (catalogModel.metadata[field] !== undefined) metadata[field] = catalogModel.metadata[field];
-    }
     const fields = [
       ["endpointTypes", "supplierCatalogEndpointTypes"],
       ["documentationUrl", "supplierCatalogDocumentationUrl"],
@@ -484,6 +551,9 @@ export function applySupplierCatalogPrices(
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
   return models.map((model) => {
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
+    // Public API evidence refreshes independently of every price early-return.
+    if (selected && catalogModel && isJiasuApiUrl(sourceUrl)) model = { ...model,
+      metadata: jiasuExampleMetadata(model, catalogModel, catalog, selected.details?.stale === true, sourceUrl) };
     if (["manual", "generated-result"].includes(String(model.metadata?.priceSource)) && model.pricing) return model;
     // Hang's separate board has ambiguous image/token currency declarations.
     // Its new chat feed must not overwrite an existing media quote.
@@ -656,7 +726,8 @@ export function applySupplierCatalogPrices(
     if (model.pricing?.tiers?.some(tier => tier.conditions || tier.otherwise) && !catalogPricing && !isImportedConditionalCatalogPrice(model)) return model;
     const replacingWeAiSnapshot = canReplaceWeAiDocumentSnapshot(model, catalogModel, selected, catalog, sourceUrl);
     const friSnapshotLabel = friSnapshotPriceLabel(model, group, catalog, sourceUrl);
-    if (hasOwnPrice(model) && !replacingWeAiSnapshot && !friSnapshotLabel) return model;
+    const replacingMikotoSnapshot = canReplaceMikotoAutomaticSnapshot(model, catalogModel, selected, catalog, sourceUrl, resolvedGroupId);
+    if (hasOwnPrice(model) && !replacingWeAiSnapshot && !friSnapshotLabel && !replacingMikotoSnapshot) return model;
     const modelPrice = prices.get(model.id);
     const priceDetails = image || video ? supplierGroupMediaPriceDetails(supplierGroupModelPriceDetails(details, model.id, groupModelIds), image ? "image" : "video", model.id) : undefined;
     const groupPrice = !priceDetails?.stale ? supplierGroupPriceLabel(priceDetails) : "";
@@ -692,6 +763,7 @@ export function applySupplierCatalogPrices(
         ? model.metadata.priceLabel
         : "";
     let name = model.name;
+    if (replacingMikotoSnapshot && /^GPT Image 2（原生4K(?:组 | · )\$0\.08\/张）$/u.test(name)) name = "GPT Image 2（原生4K）";
     if (friSnapshotLabel && name.endsWith(`（${friSnapshotLabel}·快照）`)) name = name.slice(0, -(`（${friSnapshotLabel}·快照）`).length);
     // The dedicated We-AI reader appended both the old quote and this exact
     // size suffix. Remove only that generated suffix after its quote is replaced.
@@ -780,6 +852,43 @@ async function documentedPrices(models: readonly ModelDescriptor[], siteUrl: str
   }));
 }
 
+function retainedPriceOrigin(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    return ["https://genimage.pro", "https://vapi.chuangxiangai.asia"].includes(url.origin) &&
+      !url.username && !url.password && !url.search && !url.hash ? url.origin : undefined;
+  } catch { return undefined; }
+}
+
+/** This fallback has already passed the supplier source and stable-group join.
+ * A failed independent price read must not discard that exact saved quote.
+ */
+function reusableSavedQuote(model: ModelDescriptor, group: string, officialGroupId: string | undefined, origin: string): boolean {
+  const pricing = model.pricing;
+  return !!pricing && retainedPriceOrigin(pricing.sourceUrl ?? "") === origin &&
+    Number.isFinite(Date.parse(pricing.checkedAt)) &&
+    (typeof pricing.unitAmount === "number" && Number.isFinite(pricing.unitAmount) && pricing.unitAmount >= 0 ||
+      !!pricing.tiers?.length && pricing.tiers.every(tier => Number.isFinite(tier.price) && tier.price >= 0) ||
+      pricing.kind === "token" && [pricing.inputPerMillion, pricing.outputPerMillion, pricing.imageOutputPerMillion]
+        .some(value => typeof value === "number" && Number.isFinite(value) && value >= 0)) &&
+    ["supplier-catalog", "supplier-group"].includes(String(model.metadata?.priceSource)) &&
+    (officialGroupId ? model.metadata?.supplierPriceGroupId === officialGroupId : model.metadata?.supplierPriceGroup === group);
+}
+
+function retainFailedPriceAttempt(previous: ModelDescriptor, priced: ModelDescriptor, group: string,
+  officialGroupId: string | undefined, origin: string): ModelDescriptor {
+  const attemptedAt = Date.parse(String(previous.metadata?.priceLastAttemptAt ?? ""));
+  const quoteAt = Date.parse(String(priced.metadata?.priceCheckedAt ?? priced.pricing?.checkedAt ?? ""));
+  if (!reusableSavedQuote(priced, group, officialGroupId, origin) ||
+    !["failed", "unauthorized", "partial"].includes(String(previous.metadata?.priceStatus)) ||
+    !Number.isFinite(attemptedAt) || !Number.isFinite(quoteAt) || attemptedAt <= quoteAt) return priced;
+  const label = typeof priced.metadata?.priceLabel === "string" ? priced.metadata.priceLabel : undefined;
+  return { ...priced, metadata: { ...priced.metadata,
+    ...(label && !unknownPrice.test(label) ? { priceLabel: `${label.replace(/（上次价格）$/u, "")}（上次价格）` } : {}),
+    priceStatus: "partial", priceLastAttemptAt: previous.metadata!.priceLastAttemptAt,
+    priceLastAttemptStatus: previous.metadata!.priceLastAttemptStatus ?? previous.metadata!.priceStatus } };
+}
+
 /** Every model scan (including newly added suppliers) passes through this lookup. */
 export async function enrichSupplierModelPrices(
   connection: Connection,
@@ -807,15 +916,57 @@ export async function enrichSupplierModelPrices(
   );
   const supplierGroupId = sameSource ? String(connection.config.accountKeyGroupId ??
     supplier.catalog.groups.find(item => item.id === group)?.supplierGroupId ?? "") : undefined;
+  const officialPriceGroupId = /^\d+$/u.test(supplierGroupId ?? "") ? supplierGroupId : undefined;
+  const savedPriceGroups = sameSource ? supplier.catalog.groups.filter(row => officialPriceGroupId
+    ? row.supplierGroupId === officialPriceGroupId : row.id === group) : [];
+  // NewAPI's unnumbered group keys are official identities. Numbered Sub2API
+  // groups use their stable ID even after a display-name change.
+  const retainedOrigin = retainedPriceOrigin(apiUrl);
+  const savedPriceScope = !!(sameSource && retainedOrigin && retainedPriceOrigin(supplier.siteUrl || supplier.apiUrl) === retainedOrigin &&
+    typeof connection.config.supplierSourceId === "string" && connection.config.supplierSourceId &&
+    connection.config.supplierSourceId === supplier.state?.sourceId && savedPriceGroups.length === 1);
+  const savedPriceCatalog = (): SupplierCatalogDiscovery => ({
+    groups: supplier!.catalog.groups.map(row => ({ ...row, source: "catalog", models: row.models.map(model => ({ ...model,
+      protocol: model.protocol === "rest" ? "unknown" : model.protocol })) })), kind: supplier!.kind,
+    status: supplier!.scanStatus === "unscanned" ? "failed" : supplier!.scanStatus,
+    complete: supplier!.scanComplete === true, checkedAt: supplier!.scannedAt ?? supplier!.updatedAt,
+  });
   const savedMeasured = (result: ModelDescriptor[]) => sameSource && supplierGroupId
     ? applySavedMeasuredPrices(result, connection.config, { sourceId: supplier.state?.sourceId ?? "legacy", supplierGroupId, apiUrl }) : result;
+  const exampleContext = readOptions.jiasuApiExampleContext;
+  // This server-only context carries the just-read public directory across a
+  // Key scan even when there was no account synchronization/pre-commit.
+  const currentExampleCatalog = sameSource && isJiasuApiUrl(apiUrl) && exampleContext && readOptions.refreshId &&
+    exampleContext.supplierId === supplier.id && exampleContext.sourceId === supplier.state?.sourceId &&
+    connection.config.supplierSourceId === exampleContext.sourceId && exampleContext.refreshId === readOptions.refreshId &&
+    supplier.state?.scanId === exampleContext.refreshId ? { ...exampleContext.catalog,
+      groups: exampleContext.catalog.groups.map(group => ({ ...group, models: group.models.filter(model =>
+        model.metadata?.jiasuApiExampleRefreshId === exampleContext.refreshId &&
+        model.metadata?.jiasuApiExampleCheckedAt === exampleContext.catalog.checkedAt) })) } : undefined;
+  // The supplier scan saves current public JS evidence before its Key reads.
+  // Carry it across first; an independent price read cannot erase that body.
+  if (sameSource && isJiasuApiUrl(apiUrl)) {
+    const savedCatalog: SupplierCatalogDiscovery = currentExampleCatalog ?? { kind: supplier.kind,
+      status: supplier.scanStatus === "unscanned" ? "failed" : supplier.scanStatus,
+      complete: supplier.scanComplete === true, checkedAt: supplier.scannedAt ?? supplier.updatedAt,
+      groups: supplier.catalog.groups.map(group => ({ ...group, source: "catalog", models: group.models.map(model => ({ ...model,
+        protocol: model.protocol === "rest" ? "unknown" : model.protocol })) })) };
+    const candidates = /^\d+$/u.test(supplierGroupId ?? "") ? savedCatalog.groups.filter(row => row.supplierGroupId === supplierGroupId)
+      : savedCatalog.groups.filter(row => row.id === group);
+    const currentGroups = candidates.filter(row => row.details?.stale !== true);
+    const selected = currentGroups.length === 1 ? currentGroups[0] : undefined;
+    if (selected) models = models.map(model => ({ ...model,
+      metadata: jiasuExampleMetadata(model, selected.models.find(row => row.id === model.id), savedCatalog, false, supplier.siteUrl || apiUrl) }));
+  }
   if (!allowNetwork || (!force && models.every(hasOwnPrice))) {
-    const catalogModels = sameSource ? applySupplierCatalogPrices(models,
+    let catalogModels = sameSource ? applySupplierCatalogPrices(models,
       group,
       { groups: supplier.catalog.groups.map(group => ({ ...group, source: "catalog", models: group.models.map(model => ({ ...model, protocol: model.protocol === "rest" ? "unknown" : model.protocol })) })),
         kind: supplier.kind, status: supplier.scanStatus === "unscanned" ? "failed" : supplier.scanStatus,
         complete: supplier.scanComplete === true,
         checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl, { savedCatalog: true, supplierGroupId }) : [...models];
+    if (savedPriceScope) catalogModels = catalogModels.map((model, index) =>
+      retainFailedPriceAttempt(models[index]!, model, group, officialPriceGroupId, retainedOrigin!));
     return savedMeasured(await applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, supplier?.siteUrl || apiUrl, false), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined));
   }
   const siteUrl = sameSource
@@ -849,8 +1000,19 @@ export async function enrichSupplierModelPrices(
           : undefined;
         const deadline = AbortSignal.timeout(12000);
         const fetcher = session?.fetch ?? providerFetch;
+        // Only receipts from this exact supplier scan can avoid a second JS
+        // download. Old saved evidence retains its time and needs a fresh read.
+        const reusedJiasuApiExamples = sameSource && isJiasuApiUrl(apiUrl) && readOptions.refreshId && readOptions.refreshId === supplier.state?.scanId
+          ? (currentExampleCatalog?.groups ?? supplier.catalog.groups).filter(group => group.details?.stale !== true).flatMap(group => group.models.flatMap(model => {
+            const source = model.metadata, nested = source?.jiasuCatalogRecord as { apiExampleContract?: unknown } | undefined;
+            const contract = latestJiasuVideoApiExampleContract(model.id, source?.jiasuApiExampleContract, nested?.apiExampleContract);
+            return source && source.jiasuApiExampleRefreshId === readOptions.refreshId && source.jiasuApiExampleScanStatus === "live" &&
+              contract?.sourceStatus === "live" && source.jiasuApiExampleCheckedAt === contract.checkedAt
+              ? [{ groupId: group.id, ...(group.supplierGroupId ? { supplierGroupId: group.supplierGroupId } : {}), contract }] : [];
+          })) : undefined;
         return await discoverSupplierCatalog(
-          { siteUrl, apiUrl, kind: session?.kind ?? kind, signal: deadline },
+          { siteUrl, apiUrl, kind: session?.kind ?? kind, signal: deadline,
+            ...(reusedJiasuApiExamples?.length ? { refreshId: readOptions.refreshId, reusedJiasuApiExamples } : {}) },
           (url, init) =>
             fetcher(url, {
               ...init,
@@ -885,12 +1047,32 @@ export async function enrichSupplierModelPrices(
   if (["failed", "unauthorized"].includes(discovered.status) || discovered.complete === false) {
     if (cache.get(key) === cached) cache.delete(key);
   }
-  const catalogModels = applySupplierCatalogPrices(
-    models,
+  let priceCandidates = models;
+  if (savedPriceScope && (["failed", "unauthorized"].includes(discovered.status) || discovered.complete === false)) {
+    const retained = applySupplierCatalogPrices(models, group, savedPriceCatalog(), supplier!.siteUrl || supplier!.apiUrl,
+      { savedCatalog: true, supplierGroupId });
+    priceCandidates = retained.map((model, index) => savedPriceGroups[0]!.models.some(row => row.id === model.id) &&
+      reusableSavedQuote(model, group, officialPriceGroupId, retainedOrigin!) ? model : models[index]!);
+  }
+  let catalogModels = applySupplierCatalogPrices(
+    priceCandidates,
     group,
     discovered,
     siteUrl,
     { supplierGroupId },
   );
+  if (savedPriceScope && (["failed", "unauthorized"].includes(discovered.status) || discovered.complete === false)) {
+    catalogModels = catalogModels.map(model => reusableSavedQuote(model, group, officialPriceGroupId, retainedOrigin!) &&
+      Date.parse(model.pricing!.checkedAt) < Date.parse(discovered.checkedAt)
+      ? { ...model, metadata: { ...model.metadata, priceStatus: "partial",
+        priceLastAttemptStatus: ["failed", "unauthorized"].includes(discovered.status) ? discovered.status : "partial" } }
+      : model);
+  } else if (savedPriceScope) {
+    catalogModels = catalogModels.map(model => {
+      if (model.metadata?.priceStatus !== "available" || model.metadata.priceLastAttemptStatus === undefined) return model;
+      const metadata = { ...model.metadata }; delete metadata.priceLastAttemptStatus;
+      return { ...model, metadata };
+    });
+  }
   return savedMeasured(await applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, siteUrl, allowNetwork), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined));
 }

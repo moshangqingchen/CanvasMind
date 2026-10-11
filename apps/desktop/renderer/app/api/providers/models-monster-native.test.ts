@@ -7,6 +7,7 @@ vi.mock("../../../lib/server", () => ({ get repository() { return mocks.reposito
   jsonError: (error: string, status: number) => Response.json({ error }, { status }) }));
 vi.mock("../../../lib/supplier-model-pricing", () => ({ enrichSupplierModelPrices: async (_connection: unknown, models: ModelDescriptor[]) => models }));
 vi.mock("../../../lib/supplier-verification", () => ({ enrichVerifiedSupplierModels: async (_id: string, models: ModelDescriptor[]) => models }));
+vi.mock("../../../lib/supplier-document", () => ({ readSupplierDocument: async () => undefined }));
 vi.mock("@super-canvas/providers", async original => ({ ...(await original<typeof import("@super-canvas/providers")>()), providerFetch: mocks.fetch }));
 
 import { encryptSecret } from "@super-canvas/providers";
@@ -38,6 +39,126 @@ async function fixture() {
 }
 
 describe("Monster C1 current native inventory", () => {
+  it.each([
+    { origin: "https://api.eaheng.com", groupId: "11", group: "C1-Gemini（香蕉生图）", supplierKey: undefined, preset: undefined },
+    { origin: "https://api.mikoto.vip", groupId: "28", group: "gemini生图", supplierKey: "mikoto", preset: "mikoto-pro" },
+  ])("preserves a legacy agent consumer while saving its same-Key native union: $origin", async ({ origin, groupId, group, supplierKey, preset }) => {
+    const supplier = await createSupplierRecord({ name: "Native agent", siteUrl: origin, apiUrl: `${origin}/v1`, supplierKey });
+    const prior = await mocks.repository.saveConnection({ id: "c1", name: "Original agent", provider: "rest",
+      encryptedSecret: encryptSecret("agent-native-key", "monster-native-test-master"), config: {
+        supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId, supplierKey: supplier.supplierKey,
+        baseUrl: supplier.apiUrl, modelGroup: group, accountKeyGroup: group, accountKeyGroupId: groupId,
+        usage: "agent", customGroup: false, protocol: "responses", directorProtocol: "responses",
+        ...(preset ? { preset } : {}),
+        defaultModel: "gpt-6-astra", allowedModels: ["gpt-6-astra"], modelNames: { "gpt-6-astra": "Agent label" },
+      } });
+    // A sibling connection has a different Key and extra saved media. It must
+    // never participate in this connection's directory union.
+    const sibling = await mocks.repository.saveConnection({ id: "sibling", name: "Sibling", provider: "openai",
+      encryptedSecret: encryptSecret("sibling-key", "monster-native-test-master"), config: {
+        ...prior.config, usage: "canvas", modelCatalogModels: [{ id: "sibling-image", name: "Sibling", operations: ["image.generate"] }],
+        scannedModelIds: ["sibling-image"],
+      } });
+    mocks.fetch.mockImplementation(async (url, init) => {
+      expect(init.method).toBe("GET");
+      const headers = new Headers(init.headers);
+      if (String(url) === `${origin}/v1/models`) {
+        expect(headers.get("authorization")).toBe("Bearer agent-native-key");
+        expect(headers.get("x-goog-api-key")).toBeNull();
+        return Response.json({ data: [{ id: "gpt-6-astra", output_modalities: ["text"] }, { id: ids[0] }] });
+      }
+      expect(String(url)).toBe(`${origin}/v1beta/models`);
+      expect(headers.get("x-goog-api-key")).toBe("agent-native-key");
+      expect(headers.get("authorization")).toBeNull();
+      return Response.json({ models: [
+        { name: `models/${ids[0]}`, supportedGenerationMethods: ["generateContent"] },
+        { name: "models/nano-banana-2.1", supportedGenerationMethods: ["generateContent"] },
+        { name: "models/embedding-only", supportedGenerationMethods: ["embedContent"] },
+      ] });
+    });
+    const response = await read();
+    expect(response.status).toBe(200);
+    const returned = await response.json() as ModelDescriptor[];
+    expect(returned.map(model => model.id)).toEqual(["gpt-6-astra", ids[0], "nano-banana-2.1"]);
+    expect(returned[0]?.name).toBe("Agent label");
+    expect(returned[2]?.metadata?.nativeImageCatalogSource).toBe(`${origin}/v1beta/models`);
+    const saved = (await mocks.repository.getConnection("c1"))!;
+    expect(saved).toMatchObject({ id: prior.id, name: prior.name, provider: prior.provider, encryptedSecret: prior.encryptedSecret,
+      config: { supplierId: prior.config.supplierId, supplierSourceId: prior.config.supplierSourceId,
+        accountKeyGroupId: groupId, accountKeyGroup: group, modelGroup: group, usage: "agent", customGroup: false,
+        protocol: "responses", directorProtocol: "responses", defaultModel: "gpt-6-astra", allowedModels: ["gpt-6-astra"],
+        modelScanComplete: true, scannedModelIds: returned.map(model => model.id) } });
+    expect(await mocks.repository.getConnection("sibling")).toEqual(sibling);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    mocks.fetch.mockClear();
+    const cached = await read("?cached=1");
+    expect((await cached.json() as ModelDescriptor[]).map(model => model.id)).toEqual(returned.map(model => model.id));
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(await mocks.repository.getSupplierVerification(supplier.id)).toBeNull();
+  });
+
+  it.each([
+    { upstream: 503, response: 502, scanStatus: "failed" },
+    { upstream: 403, response: 403, scanStatus: "unauthorized" },
+  ])("keeps a legacy agent's last complete union after native HTTP $upstream", async ({ upstream, response: expectedResponse, scanStatus }) => {
+    const canvas = await fixture();
+    const prior = await mocks.repository.saveConnection({ ...canvas, provider: "rest", config: { ...canvas.config,
+      usage: "agent", customGroup: false, defaultModel: "gpt-6-astra", protocol: "responses" } });
+    mocks.fetch.mockImplementation(async (url, init) => {
+      expect(init.method).toBe("GET");
+      return String(url).endsWith("/v1/models")
+        ? Response.json({ data: [{ id: ids[0] }] }) : Response.json({ error: "native unavailable" }, { status: upstream });
+    });
+    const response = await read();
+    expect(response.status).toBe(expectedResponse);
+    const saved = (await mocks.repository.getConnection("c1"))!;
+    expect(saved.config).toMatchObject({ usage: "agent", customGroup: false, defaultModel: "gpt-6-astra",
+      protocol: "responses", modelScanComplete: false, modelScanStatus: scanStatus });
+    expect(saved.config.scannedModelIds).toEqual(prior.config.scannedModelIds);
+    expect(saved.config.modelCatalogModels).toEqual(prior.config.modelCatalogModels);
+    expect(saved.encryptedSecret).toBe(prior.encryptedSecret);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("discards an old native directory response after its agent Key changes", async () => {
+    const canvas = await fixture();
+    await mocks.repository.saveConnection({ ...canvas, provider: "rest", config: { ...canvas.config,
+      usage: "agent", customGroup: false, protocol: "responses" } });
+    let replacement: Awaited<ReturnType<MemoryRepository["saveConnection"]>>;
+    mocks.fetch.mockImplementation(async (url, init) => {
+      expect(init.method).toBe("GET");
+      if (String(url).endsWith("/v1/models")) return Response.json({ data: [{ id: ids[0] }] });
+      expect(String(url)).toBe("https://api.eaheng.com/v1beta/models");
+      expect(new Headers(init.headers).get("x-goog-api-key")).toBe("c1-key");
+      const current = (await mocks.repository.getConnection("c1"))!;
+      replacement = await mocks.repository.saveConnection({ ...current,
+        encryptedSecret: encryptSecret("replacement-key", "monster-native-test-master"), config: { ...current.config,
+          modelScanRequestId: "replacement-scan", scannedModelIds: ["replacement-text"], modelCatalogModels: [
+            { id: "replacement-text", name: "Replacement", operations: [], outputKinds: ["text"] },
+          ] } });
+      return Response.json({ models: [{ name: "models/nano-banana-2.1", supportedGenerationMethods: ["generateContent"] }] });
+    });
+    expect((await read()).status).toBe(409);
+    expect(await mocks.repository.getConnection("c1")).toEqual(replacement!);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not read a native image directory for a legacy agent in a different official group", async () => {
+    const canvas = await fixture();
+    await mocks.repository.saveConnection({ ...canvas, provider: "rest", config: { ...canvas.config,
+      usage: "agent", customGroup: false, accountKeyGroupId: "12" } });
+    mocks.fetch.mockImplementation(async (url, init) => {
+      expect(init.method).toBe("GET");
+      expect(String(url)).toBe("https://api.eaheng.com/v1/models");
+      expect(new Headers(init.headers).get("authorization")).toBe("Bearer c1-key");
+      return Response.json({ data: [{ id: ids[0] }] });
+    });
+    const response = await read();
+    expect(response.status).toBe(200);
+    expect((await response.json() as ModelDescriptor[]).map(model => model.id)).toEqual([ids[0]]);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("also persists Mikoto group 28's current native full alias without replacing it with the guide's example ID", async () => {
     const supplier = await createSupplierRecord({ name: "Mikoto", supplierKey: "mikoto", siteUrl: "https://api.mikoto.vip", apiUrl: "https://api.mikoto.vip" });
     await mocks.repository.saveConnection({ id: "c1", name: "Mikoto native alias", provider: "openai",

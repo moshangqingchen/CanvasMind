@@ -36,7 +36,7 @@ function declaredImageEditingCapabilities(connection: ImageEditingConnection, mo
     if (url.hostname === "genimage.pro") return { transparent: ["default", "gptResponseBase64", "geminiResponseUrl"].includes(group) && image25.has(modelId), mask: null };
     if (["platform.frimodel.com", "api.frimodel.com"].includes(url.hostname)) return { transparent: false, mask: modelId === "gpt-image-2" ? "multipart" : null };
     if (url.hostname === "vapi.chuangxiangai.asia") return { transparent: false,
-      mask: group === "生图" && /^gpt-image-2(?:\.5-(?:flare|sunburst))?-(?:1k|2k|4k)$/u.test(modelId) ? "url" : null };
+      mask: group === "生图" && /^gpt-image-2-(?:1k|2k|4k)$/u.test(modelId) ? "url" : null };
     if (["tk1688.com", "api.tk1688.com"].includes(url.hostname)) return { transparent: false,
       mask: group === "default" && modelId === "gpt-image-1" ? "multipart" : null };
   }

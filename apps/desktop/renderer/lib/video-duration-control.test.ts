@@ -50,6 +50,18 @@ describe("supplier video duration controls", () => {
     expect(videoDurationControl("video-generation", { ...duration, min: 30, max: 30, default: 30 }, 30)).toEqual({ kind: "select", options: [{ value: 30, label: "30 秒" }] });
   });
 
+  it("keeps typed duration inputs editable when API examples do not enumerate the full range", () => {
+    const example: ModelParameterDescriptor = { key: "duration", label: "视频时长", control: "number", valueType: "integer", min: 1, step: 1,
+      allowCustomValue: true, options: [{ value: 5, label: "5 秒（API 示例）" }] };
+    const metadata = { durationRangeUnverified: true };
+    const context = videoDurationControlContext({ metadata });
+    for (const value of [5, 38, undefined]) expect(videoDurationControl("video-generation", example, value, true, false, context)).toBeUndefined();
+    expect(coerceParameterInput(example, "38")).toBe(38);
+    expect(coerceParameterInput(example, "")).toBeUndefined();
+    expect(normalizedParametersForModel("video-generation", "rest", { parameters: [example], metadata }, { duration: 38 })).toEqual({ duration: 38 });
+    expect(normalizedParametersForModel("video-generation", "rest", { parameters: [example], metadata }, {})).toEqual({});
+  });
+
   it("does not disguise unknown bounds, hints, automatic sentinels or invalid saved values", () => {
     expect(videoDurationControl("video-generation", duration, 5, true)).toMatchObject({ kind: "unavailable" });
     expect(videoDurationControl("video-generation", { ...duration, description: "未公开该模型上限；画布防误输入暂限制 30 秒。" }, 5)).toMatchObject({ kind: "unavailable" });

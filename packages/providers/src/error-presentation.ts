@@ -19,6 +19,8 @@ export interface ProviderErrorPresentation {
   code: string;
   api: string;
   statusCode?: number;
+  source?: "local_validation" | "provider_response";
+  localMessage?: string;
   providerMessage?: string;
   docsUrl?: string;
   actionUrl?: string;
@@ -567,6 +569,7 @@ export function presentProviderError(
     return {
       ...presentation,
       charge,
+      ...(error.details.responseBody === undefined ? {} : { source: "provider_response" as const }),
       phase: error.details.phase,
       retryable: error.details.retryable,
       submissionMayHaveOccurred: error.details.submissionMayHaveOccurred,

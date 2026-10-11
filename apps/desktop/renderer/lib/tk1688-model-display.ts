@@ -48,13 +48,13 @@ export function tk1688RouteSummary(model: Tk1688DisplayModel): string | undefine
     else if (Array.isArray(metadata.tk1688SupportedResolutions)) {
       const tiers = ["1K", "2K", "4K"].filter(tier => (metadata.tk1688SupportedResolutions as unknown[]).includes(tier));
       if (tiers.length) facts.push(`商家声明 ${tiers.join(" / ")}`);
-      else if (metadata.protocol === "openai-images") facts.push("分辨率档位未公布");
+      else if (metadata.protocol === "openai-images") facts.push("分辨率：—");
     }
     if (metadata.tk1688OmitN === true) facts.push("一次 1 张");
     const description = typeof metadata.supplierChannelDescription === "string" ? metadata.supplierChannelDescription : model.description;
     if (description?.trim()) facts.push(`商家说明：${description.trim()}`);
   }
-  if (metadata.tk1688CatalogStale === true) facts.push("上次目录，本次未确认");
+  if (metadata.tk1688CatalogStale === true) facts.push("上次目录记录");
   return facts.join(" · ") || undefined;
 }
 

@@ -381,7 +381,7 @@ describe("model refresh source boundary", () => {
     expect(mocks.fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
     expect(await mocks.repository.getSupplierVerification(String(connection.config.supplierId))).toBeNull();
   });
-  it("repairs group price and compact size declarations during cache-only hydration without network or writes", async () => {
+  it("repairs group price and preserves compact tier declarations without inventing pixels during cache-only hydration", async () => {
     const { supplier, connection } = await fixture();
     const group = "image2.5特价";
     const savedSupplier = await mocks.repository.saveSupplier({ ...supplier, scanStatus: "live", catalog: { groups: [
@@ -397,10 +397,12 @@ describe("model refresh source boundary", () => {
     const models = await response.json();
     expect(models).toHaveLength(1);
     expect(models[0].metadata).toMatchObject({ priceLabel: "0.06一张（分组说明参考）", priceSource: "supplier-group" });
-    const sizes = models[0].parameters.find((p: { key: string }) => p.key === "size").options;
-    expect(sizes.some((o: { value: string }) => o.value === "auto")).toBe(true);
-    for (const tier of ["1K", "2K", "4K"])
-      expect(sizes.filter((o: { label: string }) => o.label.startsWith(tier))).toHaveLength(11);
+    // "124k" declares tiers, not 33 per-ratio pixel sizes. This arbitrary
+    // instance has no exact supplier size contract to add to its bare model.
+    expect(models[0].parameters.some((p: { key: string }) => p.key === "size")).toBe(false);
+    expect(models[0].metadata.supplierGroupResolutionLabel).toContain("1K");
+    expect(models[0].metadata.supplierGroupResolutionLabel).toContain("2K");
+    expect(models[0].metadata.supplierGroupResolutionLabel).toContain("4K");
     expect(models[0].parameters.find((p: { key: string }) => p.key === "quality")).toMatchObject({ default: "max",
       options: ["auto", "low", "medium", "high", "xhigh", "max"].map(value => ({ value })),
     });

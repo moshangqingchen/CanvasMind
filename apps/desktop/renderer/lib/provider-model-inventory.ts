@@ -1,8 +1,10 @@
 import { supplierKeyForConnection } from "./supplier-identity";
+import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { inventoryChanges } from "./model-availability";
 import { assertCompleteModelInventoryPayload, isCompleteModelInventoryResponse, ModelInventoryReadError, modelInventoryFailure, modelDirectoryDenialCode,
   modelInventoryFailureConfig, modelInventoryFailureHeaders, type ModelInventoryFailure } from "./model-inventory-failure";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { SupplierConflictError } from "@super-canvas/db";
 import {
   assertCurrentSupplierConnection,
@@ -43,8 +45,9 @@ import { scanMikotoConnection } from "./mikoto-server";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
 import { discoverSupplierModelInterfaces } from "./supplier-interface-discovery";
 import { withHighestModelQualityDefault } from "./model-quality";
-import { enrichSupplierModelPrices } from "./supplier-model-pricing";
+import { enrichSupplierModelPrices, type JiasuSupplierExampleContext } from "./supplier-model-pricing";
 import { discoverAgentModelCapabilities } from "./agent-model-discovery";
+import { isAgentTextModel } from "./agent-model-capabilities";
 import { supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { MIAOWU_PRESET_ID } from "./miaowu-presets";
 import { scanMiaowuConnection } from "./miaowu-server";
@@ -542,78 +545,18 @@ async function listAgentModels(connection: {
   encryptedSecret?: string | null;
   config: Record<string, unknown>;
 }): Promise<ModelDescriptor[]> {
-  const baseUrl =
-    typeof connection.config.baseUrl === "string"
-      ? connection.config.baseUrl.trim()
-      : "";
-  if (!baseUrl) throw new Error("missing base URL");
-  if (!connection.encryptedSecret) throw new Error("missing API key");
-  const apiKey = decryptSecret(
-    connection.encryptedSecret,
-    requireServerMasterKey(),
-  );
-  const nativeProtocol = String(
-    connection.config.directorProtocol ?? connection.config.protocol ?? "",
-  );
-  const nativeHeaders: Record<string, string> =
-    nativeProtocol === "anthropic-messages"
-      ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
-      : nativeProtocol === "google-generate-content"
-        ? { "x-goog-api-key": apiKey }
-        : { authorization: `Bearer ${apiKey}` };
-  const candidates = [
-    joinUrl(baseUrl, "/models"),
-    joinUrl(
-      baseUrl,
-      nativeProtocol === "google-generate-content"
-        ? "/v1beta/models"
-        : "/v1/models",
-    ),
-  ].filter((url, index, all) => all.indexOf(url) === index);
-  let response: OpenAIModelList | undefined;
-  let lastError: unknown;
-  for (const url of candidates) {
-    try {
-      const payload = await fetchProviderJson<OpenAIModelList>(
-        providerFetch,
-        url,
-        {
-          method: "GET",
-          headers: nativeHeaders,
-          cache: "no-store",
-        },
-        {
-          phase: "connect",
-          timeoutMs: 20_000,
-          allowLoopback: connection.config.allowLocalhost === true,
-        },
-      );
-      assertCompleteModelInventoryPayload(payload);
-      response = payload;
-      break;
-    } catch (error) {
-      if (
-        error instanceof ProviderHttpError && [401, 403].includes(error.details.status ?? 0) ||
-        error instanceof ModelInventoryReadError && error.code !== "invalid_response"
-      )
-        throw error;
-      if (!(lastError instanceof ModelInventoryReadError)) lastError = error;
-    }
-  }
-  if (!response) throw lastError ?? new Error("model list unavailable");
-  const defaultModel =
-    typeof connection.config.defaultModel === "string"
-      ? connection.config.defaultModel.trim()
-      : "";
+  // Use the same exact-Key union as custom groups. A consumer's usage does
+  // not change which authenticated native directories belong to its group.
+  const scan = await listCustomGroupModels(connection);
   const names =
     connection.config.modelNames &&
     typeof connection.config.modelNames === "object" &&
     !Array.isArray(connection.config.modelNames)
       ? (connection.config.modelNames as Record<string, unknown>)
       : {};
-  // A legacy usage label cannot erase a Key's image/video models or the
-  // supplier's explicit media declarations. /models is the grant boundary.
-  return scanProviderModelCatalog(response, { defaultModel }).models
+  // Keep the agent consumer and labels while retaining every media ID from
+  // that Key's generic/native directories, never from a sibling connection.
+  return scan.models
     .filter(model => model.id !== "codex-auto-review")
     .map(model => ({ ...model, name: typeof names[model.id] === "string" ? String(names[model.id]) : model.name }));
 }
@@ -741,7 +684,7 @@ async function readModels(
     }
   }
   let mikotoScanHeaders: Record<string, string> = {};
-  if (!alternateSource && connection.config.preset === "mikoto-pro") {
+  if (!alternateSource && connection.config.preset === "mikoto-pro" && connection.config.usage !== "agent") {
     const scan = await scanMikotoConnection(id, {
       force: refresh,
       persist: refresh,
@@ -1017,7 +960,7 @@ async function offlineInventoryPrices(
 /** One request identity across every adapter prevents delayed results from restoring old state. */
 async function readModelResponse(
   request: Request,
-  context: { params: Promise<{ id: string }>; supplierRefreshId?: string },
+  context: { params: Promise<{ id: string }>; supplierRefreshId?: string; jiasuApiExampleContext?: JiasuSupplierExampleContext },
 ): Promise<Response> {
   const parsedId = parseRouteIdentifier((await context.params).id, "连接 ID");
   if (!parsedId.success) return parsedId.response;
@@ -1098,7 +1041,7 @@ async function readModelResponse(
       // Cached inventories still contain the old protocol decisions after a
       // software update. Rebind those exact IDs without a new upstream scan.
       const cached = original.config.modelCatalogModels as unknown as ModelDescriptor[];
-      const currentPrices = await refreshSavedCangyuanPrices(original, cached);
+      const currentPrices = await refreshSavedCangyuanPrices(original, cached, { offline: true });
       const bound = bindScannedModelProtocols(original, await enrichSupplierModelPrices(original, currentPrices, false, false));
       const reboundConfig = {
         ...original.config,
@@ -1108,7 +1051,9 @@ async function readModelResponse(
       };
       // A transport-only repair must reach the saved connection used by runs,
       // even when the displayed model descriptors are already current.
-      if (JSON.stringify(reboundConfig) !== JSON.stringify(original.config)) {
+      // JSON persistence drops undefined keys; property order is not a catalog
+      // change. Source and application preset projection may rebuild key order.
+      if (!isDeepStrictEqual(JSON.parse(JSON.stringify(reboundConfig)), JSON.parse(JSON.stringify(original.config)))) {
         original = await repository.saveConnection({ ...original, config: reboundConfig }, { expected: original });
       }
       const models = await offlineInventoryPrices(original, mergeManualProviderModels(original, bound.models));
@@ -1199,7 +1144,9 @@ async function readModelResponse(
         ]) : null;
         const ownerSiteScope = siteScope(owner);
         const refreshId = context.supplierRefreshId ?? String(requestId);
-        const supplierPricedModels = await enrichSupplierModelPrices(liveDirectoryConnection, bound.models, true, true, { refreshId });
+        const supplierPricedModels = await enrichSupplierModelPrices(liveDirectoryConnection, bound.models, true, true, {
+          refreshId, jiasuApiExampleContext: context.jiasuApiExampleContext,
+        });
         const pricedModels = latest.config.modelGroup === "VIDEO-Seedance官转"
           ? await refreshSavedCangyuanPrices(latest, supplierPricedModels, { force: true }) : supplierPricedModels;
         const discoveryConnection = owner ? { ...liveDirectoryConnection, config: { ...liveDirectoryConnection.config, supplierWebsiteUrl: owner.siteUrl } } : liveDirectoryConnection;
@@ -1217,6 +1164,8 @@ async function readModelResponse(
         const models = agentModels.map(withHighestModelQualityDefault);
         const defaultModel = isTk1688ApiUrl(String(latest.config.baseUrl ?? ""))
           ? tk1688InventoryDefaultModel(latest, models, config.defaultModel)
+          : latest.config.usage === "agent"
+            ? models.find(model => model.id === config.defaultModel && isAgentTextModel(model)) ?? models.find(isAgentTextModel)
           : models.find((m) => m.id === config.defaultModel && m.metadata?.canvasRunnable !== false) ??
             models.find((m) => m.metadata?.canvasRunnable !== false && m.operations.length > 0);
         const checkedAt = new Date().toISOString();
@@ -1371,7 +1320,7 @@ async function readModelResponse(
 }
 
 /** Read-only enrichment: resolving capabilities never creates or submits paid tests. */
-export async function readProviderModelInventory(request: Request, context: { params: Promise<{ id: string }>; supplierRefreshId?: string }): Promise<Response> {
+export async function readProviderModelInventory(request: Request, context: { params: Promise<{ id: string }>; supplierRefreshId?: string; jiasuApiExampleContext?: JiasuSupplierExampleContext }): Promise<Response> {
   const response = await readModelResponse(request, context);
   if (response.headers.get("X-Model-Scan-Source") === "cli-saved") return response;
   if (!response.ok || new URL(request.url).searchParams.get("verificationRaw") === "1") return response;
@@ -1379,5 +1328,5 @@ export async function readProviderModelInventory(request: Request, context: { pa
   if (!Array.isArray(payload)) return response;
   const { enrichVerifiedSupplierModels } = await import("./supplier-verification");
   const models = await enrichVerifiedSupplierModels((await context.params).id, payload as ModelDescriptor[]);
-  return Response.json(models, { headers: response.headers });
+  return Response.json(models.map(applyUserImageSizePresets), { headers: response.headers });
 }

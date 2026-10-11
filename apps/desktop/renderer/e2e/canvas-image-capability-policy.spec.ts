@@ -10,7 +10,10 @@ test("说明支持的每档开放全部比例和自动，最高档开放全部�
       kind: "newapi", scanStatus: "live", createdAt: "2026-09-23", updatedAt: "2026-09-23",
       catalog: { groups: [{ id: group, label: group, models: [], details: { source: "key-groups", description: "image2.5特价，0.06一张，124k" } }] } },
     connection: { id: "isolated", provider: "openai", config: { modelGroup: group } },
-    model: { id: "gpt-image-2.5-all", name: "参数策略验收", operations: ["image.generate"], metadata: { canvasRunnable: true } },
+    model: { id: "gpt-image-2.5-all", name: "参数策略验收", operations: ["image.generate"],
+      parameters: [{ key: "size", label: "输出尺寸", control: "dimensions", valueType: "string", default: "auto",
+        allowCustomValue: true, options: [{ value: "auto", label: "自动" }] }],
+      metadata: { canvasRunnable: true, imageOpenSizePreferences: true, imageNativeParameterContract: true } },
     fingerprint: "isolated",
   }).model;
   const connectionResponse = await request.post("/api/providers", { data: {

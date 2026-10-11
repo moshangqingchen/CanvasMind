@@ -111,7 +111,7 @@ test("相同型号与报价的 Key 扫描从局部完成变成完整完成后，
   const canvasUrl = page.url();
   const before = await ui.readNode();
   await expect(ui.summary).toContainText("官网目录 2");
-  await expect(ui.summary).toContainText("Key 目录待确认");
+  await expect(ui.summary).toContainText("Key —");
   const choice = ui.list.getByRole("option", { name: "video-confirmed-b", exact: true });
   await expect(choice).toContainText("0.62");
 
@@ -151,7 +151,8 @@ test("官网18、Key15、交集10：八个目录型号显示官方价，键鼠�
   const extra = ui.list.getByRole("option", { name: "video-official-0", exact: true });
   await expect(extra).toHaveAttribute("aria-disabled", "true");
   await expect(extra).toContainText("0.62 CNY / 秒");
-  await expect(extra).toContainText("官网已列出 · 当前 Key 未返回");
+  await expect(extra).toContainText("官网目录 · 当前 Key 返回：0");
+  await expect(extra).not.toContainText(/未确认|不支持|不可运行/u);
   await extra.scrollIntoViewIfNeeded();
   const extraBox = await extra.boundingBox();
   expect(extraBox).not.toBeNull();
@@ -194,20 +195,20 @@ test("图片节点只展示图片目录差集，窄窗口保留报价和说明�
   ui.assertSafe();
 });
 
-for (const failure of ["stale", "failed", "partial", "http503"] as const) test(`Key目录${failure}时官网价格仍可查看，只提示待确认且不声称未开通或无权限`, async ({ page, request }) => {
+for (const failure of ["stale", "failed", "partial", "http503"] as const) test(`Key目录${failure}时官网价格仍可查看，以缺少响应数据表示而不把读取失败写成Key返回0`, async ({ page, request }) => {
   const ui = await fixture(page, request, "video-generation", [video("video-key")], [publicVideo("video-extra")], failure);
-  await expect(ui.summary).toContainText("Key 目录待确认");
+  await expect(ui.summary).toContainText("Key —");
   const extra = ui.list.getByRole("option", { name: "video-extra", exact: true });
   await expect(extra).toHaveAttribute("aria-disabled", "true");
-  await expect(extra).toContainText("Key 目录待确认");
-  await expect(extra).not.toContainText("当前 Key 未返回");
-  await expect(extra).not.toContainText(/未开通|无权限/u);
+  await expect(extra).toContainText("官网目录 · 本次 Key 目录：—");
+  await expect(extra).not.toContainText("当前 Key 返回：0");
+  await expect(extra).not.toContainText(/未开通|无权限|未确认|不支持|不可运行/u);
   if (failure === "stale") {
     await ui.confirmDirectoryWithPendingProtocol();
     await expect(ui.summary).toContainText("Key 1");
-    await expect(ui.summary).not.toContainText("目录待确认");
+    await expect(ui.summary).not.toContainText("Key —");
     await expect(ui.list.getByRole("option", { name: "video-key", exact: true })).toHaveAttribute("aria-disabled", "true");
-    await expect(ui.list.getByRole("option", { name: "video-extra", exact: true })).toContainText("官网已列出 · 当前 Key 未返回");
+    await expect(ui.list.getByRole("option", { name: "video-extra", exact: true })).toContainText("官网目录 · 当前 Key 返回：0");
   }
   ui.assertSafe();
 });

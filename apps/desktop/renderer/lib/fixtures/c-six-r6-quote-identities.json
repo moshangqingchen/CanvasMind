@@ -1,0 +1,3436 @@
+{
+  "source": ".codex-temp/supplier-full-document-recheck-20261010/audit-c/installed-c-six-price-restoration-r4-complete-safe.json",
+  "sourceSha256": "a6d839d5c963cb196424a910ad92aba6298c7e2222cbf84836a0909afa793fb1",
+  "originalQuoteSource": {
+    "path": ".codex-temp/supplier-full-document-recheck-r6-20261010/all-161-raw-contracts-safe.json",
+    "sha256": "d78d3a3df8e31cfc5d5288ca88e65345c11ce783992007453436cb02acf100d9",
+    "databaseSha256": "7123ea5b4bda89be35c45df902a674527d61d46710fc8aa1d347c7a2094fb479",
+    "urlSpellingsPreserved": "true"
+  },
+  "rows": [
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2-1k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.06875
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.06875
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2-2k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.0875
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.0875
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2-4k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.1
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.1
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-flare-1k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-flare-2k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-flare-4k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-sunburst-1k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-sunburst-2k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gpt-image-2.5-sunburst-4k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.2,
+        "tiers": [
+          {
+            "id": "medium",
+            "label": "medium",
+            "price": 0.2
+          },
+          {
+            "id": "max",
+            "label": "max",
+            "price": 0.2
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "nano-banana2-1k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.075
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.075
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "nano-banana2-2k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.1
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.1
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "nano-banana2-4k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.125
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.125
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "nano-banana-pro-1k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.0875
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.0875
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "nano-banana-pro-2k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.1125
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.1125
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "nano-banana-pro-4k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.1375
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.1375
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gemini-3-pro-image-preview",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.0875,
+        "tiers": [
+          {
+            "id": "1K",
+            "label": "1K",
+            "price": 0.0875,
+            "dimension": "resolution",
+            "value": "1K"
+          },
+          {
+            "id": "2K",
+            "label": "2K",
+            "price": 0.1125,
+            "dimension": "resolution",
+            "value": "2K"
+          },
+          {
+            "id": "4K",
+            "label": "4K",
+            "price": 0.1375,
+            "dimension": "resolution",
+            "value": "4K"
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.0875,
+        "tiers": [
+          {
+            "id": "1K",
+            "label": "1K",
+            "price": 0.0875,
+            "dimension": "resolution",
+            "value": "1K"
+          },
+          {
+            "id": "2K",
+            "label": "2K",
+            "price": 0.1125,
+            "dimension": "resolution",
+            "value": "2K"
+          },
+          {
+            "id": "4K",
+            "label": "4K",
+            "price": 0.1375,
+            "dimension": "resolution",
+            "value": "4K"
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "gemini-3.1-flash-image-preview",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.075,
+        "tiers": [
+          {
+            "id": "1K",
+            "label": "1K",
+            "price": 0.075,
+            "dimension": "resolution",
+            "value": "1K"
+          },
+          {
+            "id": "2K",
+            "label": "2K",
+            "price": 0.1,
+            "dimension": "resolution",
+            "value": "2K"
+          },
+          {
+            "id": "4K",
+            "label": "4K",
+            "price": 0.125,
+            "dimension": "resolution",
+            "value": "4K"
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-image",
+        "billingUnit": "image",
+        "unitAmount": 0.075,
+        "tiers": [
+          {
+            "id": "1K",
+            "label": "1K",
+            "price": 0.075,
+            "dimension": "resolution",
+            "value": "1K"
+          },
+          {
+            "id": "2K",
+            "label": "2K",
+            "price": 0.1,
+            "dimension": "resolution",
+            "value": "2K"
+          },
+          {
+            "id": "4K",
+            "label": "4K",
+            "price": 0.125,
+            "dimension": "resolution",
+            "value": "4K"
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "midjourney-1k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-request",
+        "billingUnit": "request",
+        "tiers": [
+          {
+            "id": "relax",
+            "label": "relax",
+            "price": 0.3625,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "speed",
+                "operator": "equals",
+                "value": "relax"
+              }
+            ]
+          },
+          {
+            "id": "fast",
+            "label": "fast",
+            "price": 0.4875,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "speed",
+                "operator": "equals",
+                "value": "fast"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-request",
+        "billingUnit": "request",
+        "tiers": [
+          {
+            "id": "relax",
+            "label": "relax",
+            "price": 0.3625,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "speed",
+                "operator": "equals",
+                "value": "relax"
+              }
+            ]
+          },
+          {
+            "id": "fast",
+            "label": "fast",
+            "price": 0.4875,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "speed",
+                "operator": "equals",
+                "value": "fast"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e33fb-c96f-4826-a7e5-b0e989948b66",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "43",
+      "group": "生图",
+      "fullModelId": "midjourney-2k",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-request",
+        "billingUnit": "request",
+        "tiers": [
+          {
+            "id": "relax",
+            "label": "relax",
+            "price": 0.4875,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "speed",
+                "operator": "equals",
+                "value": "relax"
+              }
+            ]
+          },
+          {
+            "id": "fast",
+            "label": "fast",
+            "price": 0.6125,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "speed",
+                "operator": "equals",
+                "value": "fast"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "per-request",
+        "billingUnit": "request",
+        "tiers": [
+          {
+            "id": "relax",
+            "label": "relax",
+            "price": 0.4875,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "speed",
+                "operator": "equals",
+                "value": "relax"
+              }
+            ]
+          },
+          {
+            "id": "fast",
+            "label": "fast",
+            "price": 0.6125,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "speed",
+                "operator": "equals",
+                "value": "fast"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17ecda2-d0a3-469b-a019-21566dd568b8",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "gptResponseBase64",
+      "fullModelId": "gpt-image-2",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17ecda2-d0a3-469b-a019-21566dd568b8",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "gptResponseBase64",
+      "fullModelId": "gpt-image-2.5-flare",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17ecda2-d0a3-469b-a019-21566dd568b8",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "gptResponseBase64",
+      "fullModelId": "gpt-image-2.5-sunburst",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-nano-banana-2.1",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.08,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.08,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro/",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": true
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-3.1-flash-image-preview",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.08,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.08,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro/",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": true
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-3.1-flash-lite-image",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.03,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.03,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro/",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": true
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-3-pro-image-preview",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.1,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.1,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro/",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": true
+    },
+    {
+      "connectionId": "f17e826a-4f31-4dbc-a420-70831680f599",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "geminiResponseUrl",
+      "fullModelId": "gemini-2.5-flash-image",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.03,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.03,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro/",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": true
+    },
+    {
+      "connectionId": "f17e7c2b-c36a-4a01-a636-272b64186fcb",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "default",
+      "fullModelId": "gemini-3.1-flash-image-preview",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e7c2b-c36a-4a01-a636-272b64186fcb",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "default",
+      "fullModelId": "gemini-2.5-flash-image",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.06,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.06,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e7c2b-c36a-4a01-a636-272b64186fcb",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "default",
+      "fullModelId": "gpt-image-2",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e7c2b-c36a-4a01-a636-272b64186fcb",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "default",
+      "fullModelId": "gpt-image-2.5-sunburst",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e7c2b-c36a-4a01-a636-272b64186fcb",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "default",
+      "fullModelId": "gemini-nano-banana-2.1",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e7c2b-c36a-4a01-a636-272b64186fcb",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "default",
+      "fullModelId": "gemini-3.1-flash-lite-image",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.06,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.06,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e7c2b-c36a-4a01-a636-272b64186fcb",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "default",
+      "fullModelId": "gemini-3-pro-image-preview",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.2,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.2,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17e7c2b-c36a-4a01-a636-272b64186fcb",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "default",
+      "fullModelId": "gpt-image-2.5-flare",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.16,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "38",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-5.5",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 6,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 9,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 6,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 9,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "38",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-5.6-sol",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 6,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 1.25,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 1.25,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 9,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 2.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 2.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 6,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 1.25,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 1.25,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 9,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 2.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 2.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "38",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-5.6-terra",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 0.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 2.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.04,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 0.8,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 3.6,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.08,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 0.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 2.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.04,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 0.8,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 3.6,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.08,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "38",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-6-astra",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 10,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 2.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 2.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 15,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 10,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 2.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 2.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 15,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "38",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-6-sol",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 0.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.04,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 0.8,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 3,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.08,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 0.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.04,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 0.8,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 3,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.08,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17efcbd-fc36-4568-ac26-82db192aab38",
+      "sourceId": "f17e9a2d-3d4d-40a6-a8ab-485dcad431e1",
+      "officialGroupId": "38",
+      "group": "gpt-不降智 0.2x",
+      "fullModelId": "gpt-6.1-sol",
+      "originalQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 0.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.02,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 0.8,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 3,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.04,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptQuote": {
+        "currency": "CNY",
+        "checkedAt": "2026-10-10T23:25:38.492Z",
+        "confidence": "snapshot",
+        "sourceUrl": "https://vapi.chuangxiangai.asia/model-plaza",
+        "kind": "token",
+        "tiers": [
+          {
+            "id": "≤272K:input_price",
+            "label": "≤272K · 输入",
+            "price": 0.4,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:output_price",
+            "label": "≤272K · 输出",
+            "price": 2,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_read_price",
+            "label": "≤272K · 缓存读取",
+            "price": 0.02,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_price",
+            "label": "≤272K · 缓存写入 5m",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": "≤272K:cache_write_1h_price",
+            "label": "≤272K · 缓存写入 1h",
+            "price": 0.5,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": "≤272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:input_price",
+            "label": ">272K · 输入",
+            "price": 0.8,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "input"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:output_price",
+            "label": ">272K · 输出",
+            "price": 3,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "output"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_read_price",
+            "label": ">272K · 缓存读取",
+            "price": 0.04,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_read"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_price",
+            "label": ">272K · 缓存写入 5m",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          },
+          {
+            "id": ">272K:cache_write_1h_price",
+            "label": ">272K · 缓存写入 1h",
+            "price": 1,
+            "conditionMode": "all",
+            "conditions": [
+              {
+                "parameter": "token_kind",
+                "operator": "equals",
+                "value": "cache_write_1h"
+              },
+              {
+                "parameter": "token_context_tier",
+                "operator": "equals",
+                "value": ">272K"
+              }
+            ]
+          }
+        ]
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": false
+    },
+    {
+      "connectionId": "f17ebb89-66f5-4ddc-a537-6bf6e256a536",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "香蕉逆向-fal",
+      "fullModelId": "gemini-3.1-flash-image-preview",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.08,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.08,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro/",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": true
+    },
+    {
+      "connectionId": "f17ebb89-66f5-4ddc-a537-6bf6e256a536",
+      "sourceId": "f17ec6a6-b1b3-4aa9-a39d-12e7aaea899d",
+      "group": "香蕉逆向-fal",
+      "fullModelId": "gemini-3-pro-image-preview",
+      "originalQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.1,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptQuote": {
+        "kind": "per-request",
+        "currency": "USD",
+        "unitAmount": 0.1,
+        "checkedAt": "2026-10-11T04:53:02.713Z",
+        "sourceUrl": "https://genimage.pro/",
+        "confidence": "exact"
+      },
+      "earlierSafeReceiptUrlSpellingDiffers": true
+    }
+  ]
+}

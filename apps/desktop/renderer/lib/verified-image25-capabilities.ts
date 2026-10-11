@@ -6,8 +6,10 @@ import { cangyuanCurrentModel, isCangyuanCurrentModel } from "@super-canvas/prov
 import { supplierKeyForConnection } from "./supplier-identity";
 import { matchesSupplierTemplate } from "./supplier-template-source";
 import { imageSizeOptions, type ImageSizeTier } from "@super-canvas/providers/image-size-presets";
+import { IMAGE25_REQUEST_SAMPLES } from "./image25-request-samples";
 import { IMAGE_QUALITY_PRESET_DESCRIPTION } from "@super-canvas/providers/image-quality-presets";
 import { mikotoGroup, MIKOTO_IMAGE_HIGH_GROUP, MIKOTO_IMAGE_MEDIUM_GROUP } from "./mikoto-presets";
+import { applySupplierImageConstraints } from "@super-canvas/providers/supplier-image-constraints";
 
 const operations = ["image.generate", "image.edit"] as const;
 const qualities = ["auto", "low", "medium", "high", "xhigh", "max"] as const;
@@ -79,6 +81,8 @@ export function applyVerifiedImage25Capabilities(
     return size ? { ...model, parameters: (model.parameters ?? []).map(p => p.key === "size" ? structuredClone(size) : p) } : model;
   }
   if (mikotoOneK) {
+    if (["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(model.id))
+      return applySupplierImageConstraints(connection, model);
     // 2026-09-13: all eleven ratios produced matching image aspect ratios.
     // The channel rescales requested pixels; this does not establish 2K/4K
     // support, new quality tiers, or another model's capabilities.
@@ -123,34 +127,14 @@ export function applyVerifiedImage25Capabilities(
       ),
     };
   }
-  const sizes = imageSizeOptions(
-    full || chentuAdobe
-      ? ["1K", "2K", "4K"]
-      : ["1K", "2K"],
-    advancedQuality ? 3840 : 2048,
-  ).map((option) =>
-    chentuAdobe && option.label.startsWith("2K")
-      ? { ...option, label: `${option.label}（${chentuFlareTwoK ? "实际可能近似" : "请求预设，实际可能近似"}）` }
-      : option,
-  );
+  const sampleHost = supplier === "mikoto" ? "api.mikoto.vip" : supplier === "frimodel" ? "api.frimodel.com" : supplier === "chentu" ? "tu.988236.xyz" : "api.3365api.cn";
+  const sampleKey = `${sampleHost}:${model.id}` as keyof typeof IMAGE25_REQUEST_SAMPLES;
+  const samples = IMAGE25_REQUEST_SAMPLES[sampleKey] ?? [];
   const size: ModelParameterDescriptor = {
-    key: "size",
-    label: "输出分辨率",
-    control: "dimensions",
-    valueType: "string",
-    default: "auto",
-    min: 16,
-    max: advancedQuality ? 3840 : 2048,
-    step: 16,
-    options: sizes,
-    operations,
-    description: chentuFlareTwoK
-      ? "9 月 14 日复测：max 质量下，2K 方图 2048×2048、横图 2720×1536、竖图 1536×2720 均返回目标像素。历史方图曾返回 1920×1920；2K 允许近似输出，所列尺寸为请求值。其他比例为计算预设。"
-      : chentuAdobe
-        ? "2K 为请求尺寸预设：历史请求 2048×2048 返回 1920×1920，其他 2K 比例未逐一实测。9 月 15 日复测返回 503 无可用渠道，不能据此判定尺寸不支持；实际像素以生成结果为准。"
-        : full
-          ? "按所选档位适配比例与尺寸；自动比例优先提示词，其次参考图。宽高按 16 像素对齐。"
-          : "已实测 1K、2K；该渠道请求 4K 未返回目标像素，暂不提供 4K 预设。",
+    key: "size", label: "输出尺寸（size）", control: "dimensions", valueType: "string", default: "auto", step: 1, allowCustomValue: true,
+    options: [{ label: "自动", value: "auto" }, ...samples.map(sample => ({ value: sample.size,
+      label: `${sample.tier} · ${sample.size.replace("x", " × ")}（历史请求样本）` }))],
+    operations, description: "该完整型号的历史 size 请求样本；可输入独立 W/H。样本不是完整枚举，未套用通用像素表、步长、边长或像素预算。实际输出以原图为准。",
   };
   const quality: ModelParameterDescriptor = {
     key: "quality",
@@ -175,6 +159,14 @@ export function applyVerifiedImage25Capabilities(
     canvasRunnable: true,
     supportsImageEdit: true,
     image25VerifiedAt: "2026-09-10",
+    imageNativeParameterContract: true,
+    imageOpenSizePreferences: true,
+    imageSupportedResolutions: full || chentuAdobe ? ["1K", "2K", "4K"] : ["1K", "2K"],
+    imageSizeContract: "same-full-id-historical-request-samples",
+    imageTierSource: "historical-request-output-sample",
+    imageCapabilitiesVerifiedAt: chentuFlareTwoK ? "2026-09-14" : "2026-09-10",
+    imageCapabilitiesVerificationSource: chentuAdobe ? "docs/chentu-image25-recheck-2026-09-10.md" : "docs/image25-provider-verification.md",
+    ...(chentuAdobe ? { imageApproximateResolutions: ["2K"] } : {}),
     image25VerificationSource: "docs/image25-provider-verification.md",
     ...(chentuAdobe
       ? {
@@ -197,7 +189,7 @@ export function applyVerifiedImage25Capabilities(
   delete (metadata as Record<string, unknown>).parameterControlsUnavailable;
   return {
     ...model,
-    parameters: [size, ...(advancedQuality ? [quality] : []), ...parameters],
+    parameters: [size, ...(advancedQuality ? [quality] : []), { key: "aspect_ratio", label: "画面比例偏好", control: "text", valueType: "string", default: "auto", placeholder: "auto / WIDTH:HEIGHT", description: "应用比例偏好，通过 W/H 表达；请求只发送 size。", operations }, ...parameters.filter(parameter => parameter.key !== "aspect_ratio")],
     operations,
     inputKinds: ["text", "image"],
     outputKinds: ["image"],

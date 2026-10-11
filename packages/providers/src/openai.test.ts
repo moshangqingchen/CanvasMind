@@ -475,19 +475,19 @@ describe("OpenAIImageAdapter", () => {
     expect(sizeParameter).toMatchObject({
       control: "dimensions",
       default: "auto",
-      min: 16,
-      max: 3840,
-      step: 16,
+      allowCustomValue: true,
     });
+    expect(sizeParameter?.min).toBeUndefined();
+    expect(sizeParameter?.max).toBeUndefined();
+    expect(sizeParameter?.step).toBeUndefined();
     expect(sizeParameter?.options?.[0]).toEqual({
-      label: "自动（提示词优先，其次参考图）",
+      label: "自动（省略 size）",
       value: "auto",
     });
-    expect(sizeParameter?.options).toEqual(
-      expect.arrayContaining([
-        { label: "4K · 16:9 · 3840 × 2160", value: "3840x2160" },
-      ]),
-    );
+    expect(sizeParameter?.options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "2048x2048" }), expect.objectContaining({ value: "2880x2880" }),
+    ]));
+    expect(listed[0]?.metadata?.imageUserSizePresetSource).toBe("user-request");
     const qualityParameter = listed[0]?.parameters?.find(
       (parameter) => parameter.key === "quality",
     );
@@ -535,20 +535,23 @@ describe("OpenAIImageAdapter", () => {
     );
 
     vi.mocked(fetchMock).mockClear();
-    await adapter.submit({
+    await expect(adapter.submit({
       connectionId: "frimodel",
       operation: "image.generate",
       model: "gpt-image-2-adobe",
       prompt: "A 4K square product image",
       idempotencyKey: "frimodel-4k-shortcut",
       parameters: { size: "auto", size_tier: "4K", quality: "high" },
-    });
+    })).rejects.toThrow(/W\/H/u);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await adapter.submit({ connectionId: "frimodel", operation: "image.generate", model: "gpt-image-2-adobe",
+      prompt: "A square product image", idempotencyKey: "explicit-pixels", parameters: { size: "2881x2881", size_tier: "4K", quality: "high" } });
     const tierBody = JSON.parse(
       String(vi.mocked(fetchMock).mock.calls[0]?.[1]?.body),
     );
     expect(tierBody).toMatchObject({
       model: "gpt-image-2-adobe",
-      size: "2880x2880",
+      size: "2881x2881",
       quality: "high",
     });
     expect(task.result).toMatchObject({
@@ -818,7 +821,8 @@ describe("OpenAIImageAdapter", () => {
     const freeSize = freeModel?.parameters?.find(
       (parameter) => parameter.key === "size",
     );
-    expect(freeSize?.description).toContain("提示词中的比例");
+    expect(freeSize?.description).toContain("用户要求");
+    expect(freeModel?.metadata?.imageUserSizeSourceDescription).toContain("提示词中的比例");
     expect(freeSize?.options?.[0]).toMatchObject({
       label: "自动（提示词优先，其次参考图）",
       value: "auto",
@@ -956,7 +960,8 @@ describe("OpenAIImageAdapter", () => {
     const officialQuality = officialModel?.parameters?.find((p) => p.key === "quality");
     const officialCount = officialModel?.parameters?.find((p) => p.key === "n");
     expect(officialStyle).toMatchObject({ key: "style", default: "vivid" });
-    expect(officialQuality?.default).toBe("standard");
+    expect(officialQuality?.default).toBe("high");
+    expect(officialModel?.metadata?.imageUserQualitySourceParameter).toMatchObject({ default: "standard" });
     expect(officialQuality?.options?.some((option) => option.value === "standard")).toBe(true);
     expect(officialCount?.max).toBe(10);
     expect(officialModel?.operations).toEqual(["image.generate", "image.edit"]);
@@ -1204,6 +1209,7 @@ describe("OpenAIImageAdapter", () => {
       idempotencyKey: "aspect-ratio",
       parameters: {
         aspect_ratio: "16:9",
+        size: "1360x768",
         output_format: "png",
         output_compression: 50,
       },
@@ -1455,6 +1461,7 @@ describe("WeAIImageAdapter", () => {
       idempotencyKey: "weai-generate",
       parameters: {
         aspect_ratio: "16:9",
+        size: "1360x768",
         n: 1,
         quality: "high",
         output_format: "webp",
@@ -1619,6 +1626,7 @@ describe("WeAIImageAdapter", () => {
       model: "gpt-image-2.5-sunburst",
       prompt: "A product poster",
       size: "2880x2880",
+      quality: "max",
       response_format: "url",
     });
   });
@@ -1800,7 +1808,7 @@ describe("WeAIImageAdapter", () => {
     );
     expect(
       models[0]?.parameters?.find((parameter) => parameter.key === "quality"),
-    ).toMatchObject({ label: "质量（quality，可选）" });
+    ).toMatchObject({ label: "质量" });
     expect(
       models[0]?.parameters?.find((parameter) => parameter.key === "n")?.max,
     ).toBe(10);
@@ -1963,29 +1971,24 @@ describe("WeAIImageAdapter", () => {
     expect(adobeCount?.max).toBe(10);
     expect(adobeCount?.description).toContain("最多生成 10 张");
     expect(adobeSize).toMatchObject({
-      label: "输出分辨率（size）",
+      label: "输出尺寸（size）",
       control: "dimensions",
       default: "auto",
     });
-    expect(adobeSize?.options?.map((option) => option.value)).toEqual([
+    expect(adobeSize?.options?.map((option) => option.value)).toEqual(expect.arrayContaining([
       "auto",
       "1024x1024",
       "1536x1024",
       "1024x1536",
       "2048x2048",
       "2048x1152",
-      "2160x2160",
       "3840x2160",
       "2160x3840",
-      "2880x2160",
-      "2160x2880",
-      "3264x2176",
-      "2176x3264",
-      "3840x1648",
-    ]);
+      "2880x2880", "3520x2336", "3312x2480",
+    ]));
     expect(adobeQuality).toBeUndefined();
     expect(tokenQuality).toMatchObject({
-      label: "质量（quality，可选）",
+      label: "质量",
       options: [
         { value: "auto" },
         { value: "low" },
@@ -2083,6 +2086,7 @@ describe("WeAIImageAdapter", () => {
       prompt: "Codex conservative fields",
       n: 1,
       size: "1024x1024",
+      quality: "high",
     });
   });
 
@@ -2097,7 +2101,7 @@ describe("WeAIImageAdapter", () => {
     expect((await adapter.listModels("codex-current")).map(m => m.id)).toEqual(["gpt-image-2", model]);
     await adapter.submit({ connectionId: "codex-current", operation: "image.generate", model, prompt: "Minimal image check", idempotencyKey: model, parameters: { n: 1, size: "1024x1024", quality: "max", output_format: "jpeg" } });
     expect(String(fetchMock.mock.calls.at(-1)?.[0])).toBe("https://asian-acc.we-token.cc/v1/images/generations");
-    expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))).toEqual({ model, prompt: "Minimal image check", n: 1, size: "1024x1024" });
+    expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))).toEqual({ model, prompt: "Minimal image check", n: 1, size: "1024x1024", quality: "max" });
     expect((await adapter.validate({ connectionId: "adobe-token", operation: "image.generate", model, prompt: "Wrong group", idempotencyKey: "wrong" })).issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "model_group_mismatch" })]));
   });
 
@@ -2704,7 +2708,6 @@ describe("WeAIImageAdapter", () => {
           label: "自动（提示词优先，其次参考图）",
           value: "auto",
         },
-        { label: "512 px", value: "512" },
         { label: "1K", value: "1K" },
         { label: "2K", value: "2K" },
         { label: "4K", value: "4K" },

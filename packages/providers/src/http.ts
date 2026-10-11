@@ -977,6 +977,26 @@ export async function fetchProviderBytes(
   url: string,
   options: Omit<ProviderFetchOptions, "allowEmpty">,
 ): Promise<{ data: Uint8Array; mimeType?: string }> {
+  const result = await fetchProviderBinaryResponse(fetchImpl, url, options, false);
+  if ("redirectUrl" in result) throw new Error("Unexpected provider asset redirect");
+  return result;
+}
+
+/** A single authenticated task GET; its redirect is handed off without credentials. */
+export function fetchProviderTaskContent(
+  fetchImpl: FetchImplementation,
+  url: string,
+  options: Omit<ProviderFetchOptions, "allowEmpty">,
+): Promise<{ data: Uint8Array; mimeType?: string } | { redirectUrl: string }> {
+  return fetchProviderBinaryResponse(fetchImpl, url, options, true);
+}
+
+async function fetchProviderBinaryResponse(
+  fetchImpl: FetchImplementation,
+  url: string,
+  options: Omit<ProviderFetchOptions, "allowEmpty">,
+  allowRedirect: boolean,
+): Promise<{ data: Uint8Array; mimeType?: string } | { redirectUrl: string }> {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 60_000;
@@ -997,9 +1017,28 @@ export async function fetchProviderBytes(
     signal.throwIfAborted();
     const response = await awaitProviderResponse(transportTrace.scope.run(trace, () => requestTransportTimeout.run(timeoutMs, () => fetchImpl(url, {
       signal,
-      redirect: "error",
+      redirect: allowRedirect ? "manual" : "error",
     }))), signal);
     stage = "reading_body";
+    if (allowRedirect && [301, 302, 303, 307, 308].includes(response.status)) {
+      void response.body?.cancel().catch(() => undefined);
+      const location = response.headers.get("location");
+      const invalidRedirect = (message: string) => new ProviderHttpError(message, {
+        kind: "invalid_response", phase: options.phase, status: response.status, retryable: false,
+        submissionMayHaveOccurred: false,
+        transport: transportEvidence(undefined, startedAt, stage, responseBytes, trace.path),
+      });
+      if (!location) throw invalidRedirect("Provider task content redirect is missing a location");
+      let target: URL;
+      try { target = new URL(location, url); }
+      catch { throw invalidRedirect("Provider task content redirect is invalid"); }
+      if (!["http:", "https:"].includes(target.protocol) || target.username || target.password)
+        throw invalidRedirect("Provider task content redirect must use HTTP(S) without credentials");
+      // This validates the destination without fetching it. Runtime repeats
+      // DNS/redirect checks while downloading the public artifact with no key.
+      await validateRequestEndpoint(target.href, options, signal, controller.signal);
+      return { redirectUrl: target.href };
+    }
     if (!response.ok) {
       void response.body?.cancel().catch(() => undefined);
       throw new ProviderHttpError(

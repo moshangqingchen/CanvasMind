@@ -51,6 +51,58 @@ beforeEach(() => {
   mocks.accountKeys.mockReset().mockResolvedValue({ keys: [], skipped: 0, complete: true, checkedAt: new Date().toISOString() });
 });
 describe("supplier service", () => {
+  it("projects newly documented Cangyuan audio directory rows without rewriting saved records or creating a chat/Key capability", async () => {
+    const supplier = await createSupplierRecord({ name: "Cangyuan documentary audio", siteUrl: "https://ai.cangyuansuanli.cn", kind: "newapi" });
+    supplier.catalog = { groups: ["AUDIO", "全模型-无claude/gpt"].map(id => ({ id, label: id, source: "catalog", models: [
+      { id: "gemini-tts", capability: "chat", priceLabel: "输入 ¥30/1M · 输出 ¥120/1M", metadata: { endpointTypes: ["openai-speech"] } },
+      { id: "gemini-stt", capability: "chat", priceLabel: "输入 ¥12/1M · 输出 ¥48/1M", metadata: { endpointTypes: ["openai"] } },
+    ] })) };
+    await mocks.repository.saveSupplier(supplier);
+    const before = JSON.stringify(mocks.repository.exportSnapshot());
+    const view = publicSupplierRecord(supplier);
+    for (const group of view.catalog.groups) {
+      expect(group.models.filter(model => model.capability === "chat")).toEqual([]);
+      expect(group.models[0]).toMatchObject({ capability: "other", protocol: "unknown", operations: [], inputKinds: ["text"], outputKinds: ["audio"],
+        priceLabel: "输入 ¥30/1M · 输出 ¥120/1M", metadata: { endpointTypes: ["openai-speech"], cangyuanAudioRequest: { path: "/v1/audio/speech" } } });
+      expect(group.models[1]).toMatchObject({ capability: "other", operations: [], inputKinds: ["audio"], outputKinds: ["text"],
+        parameters: expect.arrayContaining([expect.objectContaining({ key: "language", allowCustomValue: true })]) });
+    }
+    expect(JSON.stringify(mocks.repository.exportSnapshot())).toBe(before);
+    expect(supplier.catalog.groups[0]!.models[0]!.capability).toBe("chat");
+    const manual = { ...supplier, catalog: { groups: [{ ...supplier.catalog.groups[0]!, source: "manual" as const }] } };
+    expect(publicSupplierRecord(manual).catalog.groups[0]!.models[0]).toBe(manual.catalog.groups[0]!.models[0]);
+    expect(publicSupplierRecord({ ...supplier, siteUrl: "https://other.invalid" }).catalog).toEqual(supplier.catalog);
+    expect(mocks.discover).not.toHaveBeenCalled();
+    expect(mocks.models).not.toHaveBeenCalled();
+    expect(mocks.accountKeys).not.toHaveBeenCalled();
+  });
+  it.each([200, 401])("passes this Jiasu scan's public evidence before any account pre-commit and preserves native HTTP %s", async status => {
+    const supplier = await createSupplierRecord({ name: "Jiasu isolated context", siteUrl: "https://ai.jiasuapi.com", apiUrl: "https://ai.jiasuapi.com/v1", kind: "newapi" });
+    const before = await mocks.repository.saveConnection({ id: "jiasu-without-site-account", name: "Existing Jiasu Key", provider: "openai", encryptedSecret: "opaque-existing-key",
+      config: { supplierId: supplier.id, supplierSourceId: supplier.state!.sourceId, baseUrl: supplier.apiUrl,
+        accountKeyGroup: "vip", modelGroup: "vip", usage: "canvas", scannedModelIds: ["dola-sd-2.5"] } });
+    const currentCatalog = { kind: "newapi", status: "live", complete: true, checkedAt: "2026-10-12T02:00:00.000Z",
+      groups: [{ id: "vip", label: "vip", source: "catalog", models: [{ id: "dola-sd-2.5", capability: "video" }] }] };
+    mocks.discover.mockResolvedValue(currentCatalog);
+    mocks.models.mockImplementation(async (_request, context) => {
+      const owner = (await getSupplierRecord(supplier.id))!;
+      expect(owner.catalog.groups).toEqual([]);
+      expect(owner.state!.scanId).toBe(context.supplierRefreshId);
+      expect(context.jiasuApiExampleContext).toEqual({ supplierId: supplier.id, sourceId: supplier.state!.sourceId,
+        refreshId: owner.state!.scanId, catalog: currentCatalog });
+      return Response.json(status === 200 ? [{ id: "dola-sd-2.5" }] : [], { status,
+        headers: { "X-Model-Scan-Status": status === 200 ? "live" : "unauthorized" } });
+    });
+    const scanned = await scanSupplierRecord(supplier.id, undefined, supplier.state!.revision, { catalogOnly: false, verifyCapabilities: false });
+    expect(mocks.models).toHaveBeenCalledOnce();
+    expect(mocks.accountKeys).not.toHaveBeenCalled();
+    expect(mocks.login).not.toHaveBeenCalled();
+    expect(await mocks.repository.getConnection(before.id)).toMatchObject({ id: before.id, config: before.config, encryptedSecret: before.encryptedSecret });
+    expect(scanned.scanComplete).toBe(true); // Public catalog completeness is independent of the Key response.
+    if (status === 401) expect(scanned.scanError).toContain("部分分组 Key 刷新失败");
+    else expect(scanned.scanError).toBeUndefined();
+    expect(scanned.catalog.groups[0]!.models.map(model => model.id)).toEqual(["dola-sd-2.5"]);
+  });
   it("repairs a renamed legacy Key group on catalog upgrade without importing Keys or submitting tests", async () => {
     const created = await createSupplierRecord({ name: "Synora", siteUrl: "https://synoralink.com", apiUrl: "https://synoralink.com/v1", kind: "sub2api" });
     const supplier = await patchSupplierRecord(created.id, { siteLogin: { username: "fixture-user", password: "fixture-password" } });

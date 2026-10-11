@@ -37,11 +37,11 @@ const models = parseTk1688Marketplace(marketplace,
     accountModelIds: marketplace.data.items.map(item => item.alias) }).models;
 
 const cases = [
-  { variant: "fixed", modelId: `${baseModel}@s47c261`, tiers: ["4K"], size: "3840x2160" },
-  { variant: "two-tiers", modelId: `${baseModel}@s46c264`, tiers: ["自动", "1K", "2K"], size: "2496x1680" },
-  { variant: "smart", modelId: baseModel, tiers: ["自动"], size: "1536x1024" },
-  { variant: "four-only", modelId: `${baseModel}@s48c262`, tiers: ["自动", "4K"], size: "3520x2352" },
-  { variant: "all-tiers", modelId: `${baseModel}@s49c263`, tiers: ["自动", "1K", "2K", "4K"], size: "3520x2352" },
+  { variant: "adobe-reference", modelId: `${baseModel}@s47c261`, tiers: ["自动", "1K", "2K", "4K"], size: "3520x2336" },
+  { variant: "two-tiers", modelId: `${baseModel}@s46c264`, tiers: ["自动", "1K", "2K", "4K"], size: "2496x1680" },
+  { variant: "smart", modelId: baseModel, tiers: ["自动", "1K", "2K", "4K"], size: "3520x2336" },
+  { variant: "four-only", modelId: `${baseModel}@s48c262`, tiers: ["自动", "4K"], size: "3520x2336" },
+  { variant: "all-tiers", modelId: `${baseModel}@s49c263`, tiers: ["自动", "1K", "2K", "4K"], size: "3520x2336" },
 ] as const;
 
 for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
@@ -85,58 +85,60 @@ for (const { variant, modelId, tiers: supportedTiers, size } of cases) {
     await expect(preset).toBeVisible();
     await expect(width).toBeVisible();
     await expect(height).toBeVisible();
-    await expect(width).not.toBeEditable();
-    await expect(height).not.toBeEditable();
+    await expect(width).toBeEditable();
+    await expect(height).toBeEditable();
     for (const tier of ["自动", "1K", "2K", "4K"]) {
       const button = tiers.getByRole("button", { name: tier, exact: true });
-      await expect(button).toBeVisible();
       if ((supportedTiers as readonly string[]).includes(tier)) await expect(button).toBeEnabled();
-      else await expect(button).toBeDisabled();
+      else await expect(button).toHaveCount(0);
     }
     await expect(panel.getByLabel("精确尺寸", { exact: true })).toHaveCount(0);
     await expect(panel.getByLabel("画面比例", { exact: true })).toHaveCount(0);
-    if (variant === "fixed") {
-      expect(await values("输出分辨率预设")).toEqual([size]);
-      await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
-      await expect(preset).toHaveValue(size);
-      await tiers.getByRole("button", { name: "4K", exact: true }).click();
-    } else if (variant === "smart") {
-      expect(await values("输出分辨率预设")).toEqual(["auto", "1024x1024", "1536x1024", "1024x1536"]);
-      await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
-      await preset.selectOption(size);
-    } else {
-      const tier = variant === "two-tiers" ? "2K" : "4K";
-      await tiers.getByRole("button", { name: tier, exact: true }).click();
-      await expect(tiers.getByRole("button", { name: tier, exact: true })).toHaveAttribute("aria-pressed", "true");
-      await preset.selectOption(size);
+    if (variant === "four-only") {
+      const available = await values("输出分辨率预设");
+      expect(available).toContain("2880x2880");
+      for (const oldExample of ["1024x1024", "1536x1024", "1024x1536"]) expect(available).not.toContain(oldExample);
     }
+    if (variant === "adobe-reference") {
+      // Native 3840x2160 is a supplier example, so switching away from 4K
+      // must update both saved tier aliases without retaining an old 4K value.
+      await tiers.getByRole("button", { name: "4K", exact: true }).click();
+      await tiers.getByRole("button", { name: "1K", exact: true }).click();
+      await preset.selectOption("1024x1024");
+      await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters)
+        .toMatchObject({ size: "1024x1024", size_tier: "1K", resolution: "1K" });
+    }
+    if (variant === "adobe-reference" || variant === "smart") await expect(panel.getByLabel("数量", { exact: true })).toHaveCount(0);
+    const selectedTier = variant === "two-tiers" ? "2K" : "4K";
+    await tiers.getByRole("button", { name: selectedTier, exact: true }).click();
+    await expect(tiers.getByRole("button", { name: selectedTier, exact: true })).toHaveAttribute("aria-pressed", "true");
+    await preset.selectOption(size);
     await expect(width).toHaveValue(size.split("x")[0]!);
     await expect(height).toHaveValue(size.split("x")[1]!);
-    await expect(panel.getByLabel("当前参数价格", { exact: true })).toContainText(/¥\d+(?:\.\d+)?/u);
+    await expect(panel.getByLabel("当前参数价格", { exact: true })).toContainText(/¥\d+(?:\.\d+)?|\d+(?:\.\d+)? CNY/u);
     await expect(panel.getByLabel("当前参数价格", { exact: true })).not.toContainText(/USD|\$/u);
     const qualityOptions = await values("质量");
-    expect(qualityOptions).not.toContain("xhigh");
-    expect(qualityOptions).not.toContain("max");
+    expect(qualityOptions).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("max");
+    // An untouched default may remain implicit in the stored graph. Exercise
+    // a deliberate selection before checking persistence of that exact value.
+    await panel.getByLabel("质量", { exact: true }).selectOption("high");
+    await panel.getByLabel("质量", { exact: true }).selectOption("max");
     await panel.getByLabel("返回格式", { exact: true }).selectOption("b64_json");
-    const expectedParameters = { response_format: "b64_json", ...(variant === "fixed" ? { size }
-      : { resolution: variant === "two-tiers" ? "2K" : variant === "smart" ? "auto" : "4K", aspect_ratio: "3:2" }) };
+    const expectedParameters = { response_format: "b64_json", size, size_tier: selectedTier, resolution: selectedTier, quality: "max" };
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data)
       .toMatchObject({ model: modelId, parameters: expectedParameters });
     const saved = (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters;
-    expect(saved).not.toHaveProperty("size_tier");
-    if (variant !== "fixed") expect(saved).not.toHaveProperty("size");
+    expect(saved).toMatchObject(expectedParameters);
     await page.reload(); await open();
     await expect(panel.getByLabel("返回格式", { exact: true })).toHaveValue("b64_json");
     await expect(preset).toHaveValue(size);
     await expect(width).toHaveValue(size.split("x")[0]!);
     await expect(height).toHaveValue(size.split("x")[1]!);
-    const restoredTier = variant === "two-tiers" ? "2K" : variant === "smart" ? "自动" : "4K";
-    await expect(tiers.getByRole("button", { name: restoredTier, exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(tiers.getByRole("button", { name: selectedTier, exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("max");
     expect(submitted).toBe(0);
-    await panel.locator(".node-config-popover-body").evaluate(element => {
-      const model = element.querySelector<HTMLElement>(".node-config-model-field");
-      if (model) element.scrollTop = model.offsetTop - 12;
-    });
+    await panel.getByLabel("质量", { exact: true }).scrollIntoViewIfNeeded();
     await panel.screenshot({ path: testInfo.outputPath(`tk1688-${variant}-parameters.png`) });
   });
 }

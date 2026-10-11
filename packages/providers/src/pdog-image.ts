@@ -3,8 +3,8 @@ import { ProviderHttpError, assetToBlob, providerFetch } from "./http.js";
 import { imageEditingConnection, imageEditingRequestIssues, imageReferenceAssets } from "./image-editing-capabilities.js";
 import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig, type RestRequestMapping } from "./rest.js";
-import type { ImageSizeTier } from "./image-size-presets.js";
-import { isPdogImageConnection, pdogImageSizeForTier, pdogImageQualityOptions } from "./pdog-image-contract.js";
+import { applyPdogImageCapabilities, isPdogImageConnection, pdogImageSizeSelection, pdogImageQualityOptions } from "./pdog-image-contract.js";
+import { userImageQualityValues } from "./user-image-quality-presets.js";
 export * from "./pdog-image-contract.js";
 
 type Mode = "async" | "sync";
@@ -18,11 +18,8 @@ function parameters(input: Readonly<Record<string, unknown>> = {}): Record<strin
     result.background = "transparent";
     result.output_format = input.output_format ?? "png";
   }
-  const tier = String(input.size_tier ?? input.resolution ?? "").toUpperCase();
-  const ratio = typeof input.aspect_ratio === "string" && input.aspect_ratio !== "auto" ? input.aspect_ratio : undefined;
-  if (result.size === undefined && (["1K", "2K", "4K"].includes(tier) || ratio)) {
-    result.size = pdogImageSizeForTier((["1K", "2K", "4K"].includes(tier) ? tier : "1K") as ImageSizeTier, ratio ?? "1:1");
-  }
+  const selection = pdogImageSizeSelection(input);
+  if (selection.size !== undefined) result.size = selection.size;
   return result;
 }
 
@@ -61,7 +58,7 @@ export class PdogImageAdapter extends GenericRestAdapter {
   override async validate(request: NormalizedRequest): Promise<ValidationResult> {
     const normalized = { ...request, parameters: parameters(request.parameters) };
     const base = await super.validate(normalized);
-    const issues: ValidationIssue[] = [...base.issues];
+    const issues: ValidationIssue[] = [...base.issues, ...pdogImageSizeSelection(request.parameters).issues];
     const connection = await this.pdogConnections.resolve(request.connectionId).catch(() => undefined);
     if (connection) issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
     const transparent = connection && request.parameters?.background === "transparent"
@@ -70,19 +67,18 @@ export class PdogImageAdapter extends GenericRestAdapter {
       issues.push({ path: "parameters.background", code: "unverified_transparent_route", message: "此型号透明背景仅验证异步图片接口，请使用已验证的异步线路" });
     if (!connection || connection.provider !== "openai" || !isPdogImageConnection({ ...connection.settings, baseUrl: connection.baseUrl }, request.model))
       issues.push({ path: "model", code: "unsupported_model", message: "此 PDog 接口仅适用于当前站点已配置的 GPT 图片模型" });
+    if (connection && request.model) {
+      const descriptor = applyPdogImageCapabilities(imageEditingConnection(connection), { id: request.model, name: request.model, operations: ["image.generate"] });
+      for (const key of ["size_tier", "resolution"]) if (request.parameters?.[key] !== undefined && request.parameters[key] !== "auto" &&
+          !(descriptor.metadata?.imageSupportedResolutions as unknown[] | undefined)?.includes(String(request.parameters[key]).toUpperCase()))
+        issues.push({ path: `parameters.${key}`, code: "invalid_resolution", message: "此 PDog 当前分组没有声明这个档位；旧值保留，请重新选择" });
+    }
     if (request.operation !== "image.generate" && request.operation !== "image.edit") issues.push({ path: "operation", code: "unsupported_operation", message: "PDog GPT 接口只支持生成或编辑图片" });
     const selected = normalized.parameters;
-    const qualities = pdogImageQualityOptions(request.model);
+    const qualities = [...new Set([...pdogImageQualityOptions(request.model, connection ? { ...connection.settings, baseUrl: connection.baseUrl } : {}),
+      ...userImageQualityValues(request.model ?? "")])];
     if (selected.n !== 1) issues.push({ path: "parameters.n", code: "invalid_count", message: "PDog 每个请求只能生成一张图片（n=1）" });
     if (selected.quality !== undefined && (typeof selected.quality !== "string" || !qualities.includes(selected.quality))) issues.push({ path: "parameters.quality", code: "invalid_quality", message: `此 PDog 型号提供的质量选项为 ${qualities.join("、")}` });
-    if (selected.size !== undefined) {
-      const match = typeof selected.size === "string" ? /^(\d+)x(\d+)$/u.exec(selected.size) : null;
-      const width = Number(match?.[1]);
-      const height = Number(match?.[2]);
-      if (!match || width % 16 || height % 16 || Math.max(width, height) > 3840 || Math.max(width, height) / Math.min(width, height) > 3 ||
-          width * height < 655360 || width * height > 8294400)
-        issues.push({ path: "parameters.size", code: "invalid_size", message: "输出尺寸需符合已有 GPT 图片适配的像素及对齐限制；优先选择 PDog 文档尺寸" });
-    }
     if (selected.response_format !== undefined && selected.response_format !== "url" && selected.response_format !== "b64_json") issues.push({ path: "parameters.response_format", code: "invalid_response_format", message: "PDog 返回格式必须为 url 或 b64_json" });
     const images = imageReferenceAssets(request.assets).filter(asset => asset.kind === "image");
     if (request.assets?.some(asset => asset.kind !== "image")) issues.push({ path: "assets", code: "invalid_image", message: "PDog 图片编辑仅接受图片参考素材" });

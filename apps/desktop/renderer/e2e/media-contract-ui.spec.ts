@@ -152,7 +152,7 @@ for (const kind of ["image", "video", "music"] as const) {
       if (kind === "image") {
         await page.keyboard.press("Escape");
         const prices = f.panel.getByLabel("当前参数价格", { exact: true });
-        await expect(prices).toContainText("当前组合价格 0.08 CNY / 张");
+        await expect(prices).toContainText("型号报价 0.08 CNY / 张");
         await f.panel.getByLabel("生成数量", { exact: true }).fill("3");
         await expect(prices).toContainText("本次预计费用 0.24 CNY");
         await expect.poll(async () => (await f.saved()).parameters.n).toBe(3);
@@ -172,7 +172,8 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     const duration = f.panel.getByLabel("视频时长（秒）", { exact: true });
     const count = f.panel.getByLabel("生成数量", { exact: true });
     const prices = f.panel.getByLabel("当前参数价格", { exact: true });
-    await expect(prices).toContainText("当前组合价格 0.2 CNY / 秒");
+    await expect(prices).toContainText("分辨率=720p · 0.2 CNY / 秒");
+    await expect(prices).toContainText("分辨率=1080p · 0.4 CNY / 秒");
     await expect(prices).toContainText("本次预计费用 1 CNY");
     expect(await selectValues(duration)).toEqual(["5", "10", "15"]);
     await duration.selectOption("15");
@@ -187,7 +188,7 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await expect(prices).not.toContainText("本次预计费用");
     await duration.selectOption("10");
     await expect(duration).not.toHaveAttribute("aria-invalid", "true");
-    await expect(prices).toContainText("当前组合价格 0.4 CNY / 秒");
+    await expect(prices).toContainText("分辨率=1080p · 0.4 CNY / 秒");
     await expect(prices).toContainText("本次预计费用 8 CNY");
     await f.panel.getByLabel("生成声音", { exact: true }).uncheck();
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ resolution: "1080p", duration: 10, n: 2, generate_audio: false });
@@ -196,9 +197,8 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await expect(duration).toHaveValue("10");
     await expect(count).toHaveValue("2");
     await expect(prices).toContainText("本次预计费用 8 CNY");
-    await f.panel.getByText("参考素材与限制", { exact: true }).click();
-    await expect(prices).toContainText("图片最多 9 张");
-    await expect(prices).toContainText("首尾帧与参考素材分别使用");
+    await expect(f.panel.getByText("型号参数数据", { exact: true })).toHaveCount(0);
+    await expect(f.panel.getByLabel("生成声音", { exact: true })).not.toBeChecked();
     await f.panel.screenshot({ path: testInfo.outputPath("video-dynamic-parameters-price.png") });
 
     await f.picker.click();
@@ -206,7 +206,7 @@ test("视频分辨率切换收紧离散时长，费用随秒数和数量变化�
     await expect(resolution).toHaveValue("4K");
     await expect(duration).toHaveValue("4");
     await expect(count).toHaveCount(0);
-    await expect(prices).toContainText("当前组合价格 2 USD / 次（参考）");
+    await expect(prices).toContainText("型号报价 2 USD / 次（目录快照）");
     await expect(prices).toContainText("本次预计费用 2 USD（参考）");
     await expect.poll(async () => (await f.saved()).model).toBe(alternateVideo.id);
     await expect.poll(async () => (await f.saved()).parameters).toEqual({ resolution: "4K", duration: 4 });

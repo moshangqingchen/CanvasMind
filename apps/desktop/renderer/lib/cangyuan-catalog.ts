@@ -1502,14 +1502,15 @@ export async function loadCangyuanCatalog(options?: {
 export async function refreshSavedCangyuanPrices(
   connection: { provider: string; config: Readonly<Record<string, unknown>> },
   models: readonly ModelDescriptor[],
-  options: { force?: boolean } = {},
+  options: { force?: boolean; offline?: boolean } = {},
 ): Promise<ModelDescriptor[]> {
   const group = normalizeCangyuanImageGroup(connection.config.modelGroup);
   const nativeSeedanceGroup = connection.config.modelGroup === "VIDEO-Seedance官转";
   if ((!group && !nativeSeedanceGroup) || !matchesSupplierTemplate(connection) ||
       !/cangyuansuanli\.cn/iu.test(String(connection.config.baseUrl)) ||
       (!options.force && models.every(model => model.metadata?.cangyuanBillingVersion === 3))) return [...models];
-  const catalog = await loadCangyuanCatalog({ force: options.force });
+  const catalog = options.offline ? catalogCache().snapshot : await loadCangyuanCatalog({ force: options.force });
+  if (!catalog) return [...models];
   if (catalog.source !== "live") return [...models];
   if (nativeSeedanceGroup) {
     // This named group has its own multiplier. Never substitute VIDEO/all-model quotes.

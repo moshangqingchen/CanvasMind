@@ -63,6 +63,7 @@ export function cangyuanDocumentedImageModel(model: ModelDescriptor): ModelDescr
       ...(x || nativeQuality ? { imageNativeResolutionParameter: x ? "tier" : "quality", imageNativeResolutionOptions: true, imageNativeQualityOptions: true } : { imageResolutionMode: fixedTier(model.id) ? "fixed-model-tier" : "provider-decided" }),
       ...(fixedTier(model.id) ? { imageFixedResolution: fixedTier(model.id)!.toUpperCase() } : {}),
       imagePixelBudgetPublished: false, imageCustomPixels: doc.customPixels, imageOutputEncodingFields: doc.fields.output_format ? ["output_format"] : [],
+      imageSizeOptionsCompleteEnum: doc.pixelOptions.length > 0 && !doc.customPixels,
       ...(doc.referenceDimensions ? { imageOutputReferenceDimensions: doc.referenceDimensions } : {}),
       imageOutputEncodingDeclared: Boolean(doc.fields.output_format), imageOutputTransport: "url", supportsMask: Boolean(doc.fields.mask),
       remoteMediaUrlsOnly: !/^grok-imagine-image(?:-2\.0)?$/u.test(model.id), ...(nano ? { maxInputImageBytes: 35 * 1024 * 1024 } : {}),

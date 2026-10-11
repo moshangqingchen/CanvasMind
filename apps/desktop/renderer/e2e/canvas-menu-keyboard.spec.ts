@@ -28,9 +28,12 @@ test("右键菜单可用方向键操作，Escape 回收焦点，外部点击关�
   await node.locator(".node-title").click({ button: "right" });
   const menu = page.getByRole("menu", { name: "灵感 1 的操作", exact: true });
   const copy = menu.getByRole("menuitem", { name: "复制", exact: false }).first();
+  const copyWithMaterials = menu.getByRole("menuitem", { name: "复制（包含素材）", exact: true });
   const duplicate = menu.getByRole("menuitem", { name: "紧邻复制", exact: false });
   const remove = menu.getByRole("menuitem", { name: "删除节点", exact: false });
   await expect(copy).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(copyWithMaterials).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(duplicate).toBeFocused();
   await page.keyboard.press("End");

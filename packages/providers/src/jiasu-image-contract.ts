@@ -1,5 +1,6 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ValidationIssue } from "./contracts.js";
 import type { ImageEditingConnection } from "./image-editing-capabilities.js";
+import { userImageQualityValues } from "./user-image-quality-presets.js";
 
 export const JIASU_IMAGE_MODELS = ["gpt-image-2-1k", "gpt-image-2-2k", "gpt-image-2-4k", "gpt-image-2-high",
   "gpt-image-2.5-1k", "gpt-image-2.5-flare-1k", "gpt-image-2.5-flare-4k", "gpt-image-2.5-sunburst-1k", "gpt-image-2.5-sunburst-4k"] as const;
@@ -13,7 +14,7 @@ const pendingProtocol = /接口|协议|合同|尚未.*(?:适配|内置)|参数.*
 
 type CardParameter = { name?: unknown; range?: unknown; default?: unknown };
 /** Only this full model's retained official card can update its parameter contract. */
-export function jiasuImageFacts(model: string, descriptor?: ModelDescriptor): { sizes: readonly string[]; qualities: readonly string[]; qualityDefault: string; countMin: number; countMax: number } {
+export function jiasuImageFacts(model: string, descriptor?: ModelDescriptor): { sizes: readonly string[]; sizeOptionsCompleteEnum: boolean; qualities: readonly string[]; qualityDefault: string; qualityOptionsCompleteEnum: boolean; countMin: number; countMax: number } {
   const record = descriptor?.metadata?.jiasuCatalogRecord as { apiParameters?: CardParameter[] } | undefined;
   const rows = Array.isArray(record?.apiParameters) ? record.apiParameters : [];
   const size = rows.find(row => row?.name === "size");
@@ -25,7 +26,8 @@ export function jiasuImageFacts(model: string, descriptor?: ModelDescriptor): { 
   const qualities = values.length ? [...new Set(values)] : jiasuImageQualities(model);
   const highest = [...qualities].sort((a, b) => ranks.indexOf(b) - ranks.indexOf(a))[0]!;
   const nRange = typeof count?.range === "string" ? /^(\d+)(?:\s*[-–~]\s*(\d+))?$/u.exec(count.range.trim()) : null;
-  return { sizes: pixels.length ? [...new Set(pixels)] : jiasuImageSizes(model), qualities,
+  return { sizes: pixels.length ? [...new Set(pixels)] : jiasuImageSizes(model), sizeOptionsCompleteEnum: pixels.length > 0, qualities,
+    qualityOptionsCompleteEnum: values.length > 0 || !JIASU_RESOLUTION_IMAGE_MODELS.includes(model),
     qualityDefault: ranks.includes(highest) ? highest : typeof quality?.default === "string" && qualities.includes(quality.default) ? quality.default : highest,
     countMin: nRange ? Number(nRange[1]) : 1, countMax: nRange ? Number(nRange[2] ?? nRange[1]) : 1 };
 }
@@ -95,6 +97,8 @@ export function applyJiasuImageCapabilities(connection: ImageEditingConnection, 
   const metadata: Record<string, unknown> = { ...model.metadata, canvasRunnable: true, autoInterfaceStatus: "connected", jiasuImageProtocol: 1,
     protocol: "jiasu-images-async", supportsImageEdit: true, supportsReferenceImages: true,
     imageNativeResolutionOptions: true, imageNativeResolutionParameter: async ? "resolution" : "size", imageNativeQualityOptions: true,
+    imageQualityOptionsCompleteEnum: facts.qualityOptionsCompleteEnum,
+    ...(facts.sizeOptionsCompleteEnum ? { imageSizeOptionsCompleteEnum: true, imageSizeCompleteEnumSource: "jiasu-official-full-model-card-size-range" } : {}),
     imageSupportedResolutions: [tier], imageUnsupportedResolutions: ["1K", "2K", "4K"].filter(value => value !== tier),
     parameterSource: "jiasu-official-full-model-card", documentationUrl: JIASU_IMAGE_DOCUMENTATION, jiasuPixelParametersSource: "https://ai.jiasuapi.com/api/pricing", jiasuSyncEndpointVerified: false,
     parameterControlsUnavailable: false, jiasuDeclaredOutputCount: { min: facts.countMin, max: facts.countMax },
@@ -142,7 +146,8 @@ export function jiasuImageRequestIssues(connection: ImageEditingConnection, requ
     add("parameters.background", "unsupported_background", "当前佳速型号未公布此背景选项");
   if (selected.n !== 1) add("parameters.n", "invalid_count", "当前佳速图片请求一次生成一张（n=1）");
   if (Number(selected.n) < facts.countMin || Number(selected.n) > facts.countMax) add("parameters.n", "invalid_model_count", "当前完整型号模型卡的张数范围不支持此请求");
-  if (selected.quality !== undefined && !facts.qualities.includes(String(selected.quality))) add("parameters.quality", "invalid_quality", `此完整型号仅支持 ${facts.qualities.join("、")}`);
+  const qualities = facts.qualityOptionsCompleteEnum ? facts.qualities : userImageQualityValues(model);
+  if (selected.quality !== undefined && !qualities.includes(String(selected.quality))) add("parameters.quality", "invalid_quality", `请选择当前完整型号的质量选项：${qualities.join("、")}`);
   const async = JIASU_RESOLUTION_IMAGE_MODELS.includes(model);
   if (async) {
     const resolutions = ["resolution", "image_size", "size_tier"].filter(key => input[key] !== undefined);
@@ -158,9 +163,11 @@ export function jiasuImageRequestIssues(connection: ImageEditingConnection, requ
     if (!JIASU_IMAGE_RATIOS.includes(selected.ratio as typeof JIASU_IMAGE_RATIOS[number])) add("parameters.ratio", "invalid_aspect_ratio", "请选择此完整型号支持的五个画面比例");
     if (input.size !== undefined && input.size !== "auto") add("parameters.size", "invalid_size", "佳速异步 1K 型号需选择 resolution 与 ratio，不能发送 size 预设");
   } else {
-    if (selected.size !== undefined && !facts.sizes.includes(String(selected.size))) add("parameters.size", "invalid_size", "请选择当前完整型号模型卡列出的像素尺寸");
+    if (selected.size !== undefined && (facts.sizeOptionsCompleteEnum ? !facts.sizes.includes(String(selected.size))
+      : !/^[1-9]\d*x[1-9]\d*$/u.test(String(selected.size))))
+      add("parameters.size", "invalid_size", facts.sizeOptionsCompleteEnum ? "请选择当前完整型号模型卡列出的像素尺寸" : "输出尺寸使用正整数 WIDTHxHEIGHT");
     if (input.response_format !== undefined && input.response_format !== "url" && input.response_format !== "auto") add("parameters.response_format", "invalid_response_format", "佳速异步图片以 CDN URL 返回结果");
-    for (const key of ["ratio", "aspect_ratio", "aspectRatio", "resolution", "image_size", "size_tier"]) if (input[key] !== undefined && input[key] !== "auto")
+    for (const key of ["ratio", "aspect_ratio", "aspectRatio", "resolution", "image_size", ...(facts.sizeOptionsCompleteEnum ? ["size_tier"] : [])]) if (input[key] !== undefined && input[key] !== "auto")
       add(`parameters.${key}`, "invalid_size_field", "此佳速像素型号使用模型卡的 size 像素尺寸，请重新选择");
   }
   if (request.operation !== "image.generate" && request.operation !== "image.edit") add("operation", "unsupported_operation", "佳速图片接口只支持图片生成和参考图编辑");

@@ -7,6 +7,7 @@ import type {
   ModelParameterOption,
   ModelParameterValue,
   ProviderOperation,
+  ValidationIssue,
 } from "@super-canvas/providers";
 import {
   coerceParameterInput,
@@ -102,12 +103,14 @@ export function sizeOnTierChange(
   descriptor: ModelParameterDescriptor,
   value: unknown,
   tier: ResolutionTierShortcut["label"],
+  exactPreference?: { ratio?: unknown },
 ): string {
   if (String(value ?? "auto").toLowerCase() === "auto") return "auto";
   const current = descriptor.options?.find(
     (o) => String(o.value) === String(value),
   );
-  const ratioLabel = current?.label.match(/\d+\s*:\s*\d+/u)?.[0];
+  const explicitRatio = typeof exactPreference?.ratio === "string" && /^\d+:\d+$/u.test(exactPreference.ratio) ? exactPreference.ratio : undefined;
+  const ratioLabel = explicitRatio ?? current?.label.match(/\d+\s*:\s*\d+/u)?.[0];
   const options = resolutionOptionsForTier(descriptor, tier).filter((o) =>
     canonicalDimension(o.value),
   );
@@ -115,6 +118,7 @@ export function sizeOnTierChange(
     ratioLabel &&
     options.find((o) => o.label.match(/\d+\s*:\s*\d+/u)?.[0] === ratioLabel);
   if (matching) return String(matching.value);
+  if (exactPreference) return String(value);
   const [width, height] = dimensionParts(value).map(Number);
   if (!width || !height || !options.length) return "auto";
   const closest = options.reduce((best, option) => {
@@ -146,6 +150,25 @@ export function activeResolutionTierForValue(
     return resolutionTierForValue(shortcuts, value);
   const normalizedTier = String(savedTier ?? "").toUpperCase();
   return shortcuts.find((shortcut) => shortcut.label === normalizedTier)?.label;
+}
+
+/** Keep the supplier's declared tier spelling and automatic mode on the wire. */
+export function syncUserImageNativeTier(
+  model: Pick<ModelDescriptor, "metadata" | "parameters"> | null | undefined,
+  parameters: Readonly<Record<string, unknown>>,
+  tier: ResolutionTierShortcut["label"] | null,
+): Record<string, unknown> {
+  const next = { ...parameters };
+  const key = model?.metadata?.imageResolutionTierParameter ?? model?.metadata?.imageNativeResolutionParameter;
+  if (typeof key !== "string" || key === "size" || key === "size_tier") return next;
+  const descriptor = model?.parameters?.find(parameter => parameter.key === key);
+  if (!descriptor) return next;
+  const option = descriptor.options?.find(item => tier
+    ? String(item.value).toUpperCase() === tier
+    : ["auto", "web"].includes(String(item.value).toLowerCase()));
+  if (option) next[key] = option.value;
+  else if (tier && !descriptor.options?.length) next[key] = tier;
+  return next;
 }
 
 export function resolutionOptionsForTier(
@@ -183,13 +206,57 @@ interface SizeAspectRatioContext {
   hasAspectRatioControl: boolean;
   defaultAspectRatio?: ModelParameterValue;
   aspectRatioKey?: string;
-  model?: Pick<ModelDescriptor, "metadata"> | null;
+  model?: Pick<ModelDescriptor, "metadata" | "parameters"> | null;
 }
 
 /**
  * Keeps the provider's exact-size and aspect-ratio inputs mutually exclusive,
  * regardless of whether `size` is rendered as text, select, or dimensions.
  */
+function hasIndependentImageTier(model?: SizeAspectRatioContext["model"]): boolean {
+  if (model?.metadata?.imageUserSizePresets) return false;
+  return Boolean(((model?.metadata?.imageNativeParameterContract === true || model?.metadata?.mikotoImageContract === true || model?.metadata?.pdogImageProtocol === 1 || model?.metadata?.imageApplicationOnlyResolution === true) && model.metadata.imageResolutionTierParameter === "size_tier") ||
+    (model?.metadata?.tk1688ImageSizeContract === 2 && model.metadata.imageResolutionTierParameter === "resolution"));
+}
+
+/** This combination is stamped only by the exact Genimage official native route. */
+export function isGenimageNativeImageContractModel(model: ModelDescriptor | null | undefined): boolean {
+  const contracts: Readonly<Record<string, string>> = {
+    "gemini-3-pro-image-preview": "declared-tiers",
+    "gemini-3.1-flash-image-preview": "declared-tiers",
+    "gemini-2.5-flash-image": "omit-size",
+    "gemini-3.1-flash-lite-image": "open-size",
+    "gemini-nano-banana-2.1": "open-size",
+  };
+  return Boolean(model && model.metadata?.source !== "manual" && model.metadata?.source !== "paid-test" &&
+    model.metadata?.protocolEvidence !== "paid-test" && model.metadata?.imageNativeParameterContract === true &&
+    model.metadata.bananaProtocolVersion === 1 && model.metadata.protocol === "gemini-generate-content" &&
+    model.metadata.imageContractParameterCoverage === "exact-full-id-description-and-linked-native-schema" &&
+    model.metadata.documentationUrl === "https://docs.newapi.ai/zh/docs/api/ai-model/images/gemini/geminirelayv1beta-383837589" &&
+    contracts[model.id] !== undefined && model.metadata.imageSizeFieldContract === contracts[model.id]);
+}
+
+export function undeclaredGenimageNativeImageParameterKeys(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string[] {
+  if (!isGenimageNativeImageContractModel(model)) return [];
+  const declared = ["aspect_ratio", "aspectRatio", "ratio", "image_size", "imageSize", "resolution", "size_tier", "size", "n"];
+  // The adapter checks key presence, including empty/auto unknown values.
+  // Keep every saved alias; only an explicit clear action removes an extra key.
+  return Object.keys(parameters).filter(key => !declared.includes(key));
+}
+
+export function undeclaredCOpenImageParameterKeys(model: ModelDescriptor | undefined, parameters: Readonly<Record<string, unknown>>, operation?: ProviderOperation): string[] {
+  if (model?.metadata?.cOpenImageContract !== 1 || model.metadata.imageAdditionalFieldContract !== "not-declared-in-exact-supplier-material") return [];
+  const measured = model.metadata.imageMeasuredAdditionalFields as Readonly<Record<string, unknown>> | undefined;
+  const exactMeasuredPng = operation === "image.generate" && measured?.operation === "image.generate" &&
+    measured.origin === "https://api.hangzhale.com" && measured.officialGroupId === "75" && measured.fullModelId === model.id &&
+    ["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(model.id) &&
+    measured.source === "same-exact-identity-original-transparent-png-evidence" &&
+    measured.background === "transparent" && measured.output_format === "png" &&
+    parameters.background === "transparent" && parameters.output_format === "png";
+  return ["output_format", "output_compression", "background", "moderation", "user"].filter(key =>
+    !(exactMeasuredPng && ["background", "output_format"].includes(key)) && parameters[key] !== undefined && parameters[key] !== "" && parameters[key] !== "auto");
+}
+
 export function setParameterValueWithSizeExclusivity(
   parameters: Readonly<Record<string, unknown>>,
   key: string,
@@ -198,6 +265,9 @@ export function setParameterValueWithSizeExclusivity(
 ): Record<string, unknown> {
   const next = setParameterValue(parameters, key, value, context.model);
   const aspectRatioKey = context.aspectRatioKey ?? "aspect_ratio";
+  // This supplier's tier selection has no published pixel/ratio mapping.
+  // Editing W/H retains both preferences; only size is sent on the wire.
+  if (context.model?.metadata?.imageOpenSizePreferences === true || hasIndependentImageTier(context.model)) return next;
 
   if (key === "size" && context.hasSizeControl && context.hasAspectRatioControl && aspectRatioKey !== "size") {
     if (value === undefined) {
@@ -234,6 +304,49 @@ export function savedSelectValueMissingFromDescriptor(
   );
 }
 
+function parameterDataValue(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "—";
+  if (Array.isArray(value)) return `数组（${value.length} 项）`;
+  if (typeof value === "object") return "对象";
+  return String(value);
+}
+
+/** Saved values and this model's contract data replace editor verdicts.
+ * The validator and adapter still decide whether an actual request is legal.
+ */
+export function parameterIssueFacts(
+  issues: readonly Pick<ValidationIssue, "path">[],
+  descriptors: readonly ModelParameterDescriptor[],
+  parameters: Readonly<Record<string, unknown>>,
+  model?: Pick<ModelDescriptor, "metadata"> | null,
+): string[] {
+  return [...new Set(issues.map(issue => issue.path.replace(/^parameters\./u, "")))].map(key => {
+    const descriptor = descriptors.find(item => item.key === key);
+    const duration = ["duration", "seconds", "duration_seconds"].includes(key);
+    const conditional = model?.metadata?.durationMaxByResolution;
+    const resolution = parameters.resolution ?? descriptors.find(item => item.key === "resolution")?.default;
+    const conditionalMax = conditional && typeof conditional === "object" && !Array.isArray(conditional)
+      ? (conditional as Record<string, unknown>)[String(resolution)] : undefined;
+    const rangeMissing = duration && model?.metadata?.durationRangeUnverified === true &&
+      !(typeof conditionalMax === "number" && Number.isFinite(conditionalMax)) ||
+      ["resolution", "size_tier", "image_size"].includes(key) && model?.metadata?.resolutionRangeUnverified === true;
+    const unit = duration ? " 秒" : "";
+    let range = "—";
+    if (descriptor && !rangeMissing) {
+      const choices = descriptor.options?.map(option => option.label === String(option.value)
+        ? option.label : `${option.label}（${String(option.value)}）`).join(" / ");
+      const minimum = typeof descriptor.min === "number" && Number.isFinite(descriptor.min) ? descriptor.min : undefined;
+      const maximum = typeof descriptor.max === "number" && Number.isFinite(descriptor.max) ? descriptor.max : undefined;
+      const bounds = minimum !== undefined && maximum !== undefined ? `${minimum}–${maximum}${unit}`
+        : minimum !== undefined ? `≥ ${minimum}${unit}` : maximum !== undefined ? `≤ ${maximum}${unit}` : undefined;
+      const step = typeof descriptor.step === "number" && Number.isFinite(descriptor.step) ? `步长 ${descriptor.step}${unit}` : undefined;
+      range = [choices, bounds, step].filter(Boolean).join(" · ") || (descriptor.control === "toggle" ? "true / false" : "—");
+    }
+    const defaultValue = rangeMissing ? confirmedVideoParameterDefault(model, key) : descriptor?.default;
+    return `${descriptor?.label ?? key} · 当前值：${parameterDataValue(parameters[key])} · 目录范围：${range} · 默认值：${parameterDataValue(defaultValue)}${duration && model?.metadata?.durationRangeSource === "user-fallback" ? " · 用户指定兜底" : ""}${descriptor?.valueType ? ` · 数据类型：${descriptor.valueType}` : ""}${descriptor?.required ? " · 必填：true" : ""}`;
+  });
+}
+
 /** Use one layout for exact sizes, without extending a select-only contract. */
 export function imageDimensionsPresentation(descriptor: ModelParameterDescriptor): ModelParameterDescriptor {
   return isExactSizeParameterDescriptor(descriptor)
@@ -253,6 +366,8 @@ function DimensionsControl({
   automaticOptions,
   allowOptionalAlignment = true,
   showContractDescription = false,
+  showResolutionShortcuts = true,
+  explicitRatio,
 }: {
   id: string;
   descriptor: ModelParameterDescriptor;
@@ -265,6 +380,8 @@ function DimensionsControl({
   automaticOptions?: readonly ModelParameterOption[];
   allowOptionalAlignment?: boolean;
   showContractDescription?: boolean;
+  showResolutionShortcuts?: boolean;
+  explicitRatio?: unknown;
 }) {
   const initial = useMemo(() => dimensionParts(value), [value]);
   const [width, setWidth] = useState(initial[0]);
@@ -328,7 +445,7 @@ function DimensionsControl({
     const exactSize = `${w}x${h}`;
     update(
       exactSize,
-      resolutionTierForValue(resolutionShortcuts, exactSize) ?? null,
+      (useSavedResolutionTier ? activeResolutionTier : undefined) ?? resolutionTierForValue(resolutionShortcuts, exactSize) ?? null,
     );
   };
 
@@ -354,7 +471,7 @@ function DimensionsControl({
           />
         </label>}
       </div>
-      {resolutionShortcuts.length > 0 || showAllResolutionTiers ? (
+      {showResolutionShortcuts && (resolutionShortcuts.length > 0 || showAllResolutionTiers) ? (
         <div
           className={`parameter-dimensions-shortcuts${autoOption || showAllResolutionTiers ? " has-auto" : ""}`}
           role="group"
@@ -398,6 +515,7 @@ function DimensionsControl({
                     descriptor,
                     value,
                     shortcut.label,
+                    showContractDescription ? { ratio: explicitRatio } : undefined,
                   );
                   const [w, h] = dimensionParts(next);
                   setWidth(w);
@@ -455,6 +573,9 @@ function DimensionsControl({
           ))}
         </select>
       ) : null}
+      {showContractDescription && activeResolutionTier && String(value).toLowerCase() !== "auto" &&
+        !resolutionOptionsForTier(descriptor, activeResolutionTier).some(option => String(option.value) === String(value)) &&
+        <small className="parameter-help" role="status">已保留 {activeResolutionTier} 档位偏好与当前 W/H；该档位没有此比例的已列像素，请确认 W/H 后提交。</small>}
       <div className="parameter-dimensions-inputs">
         <span>W</span>
         <input
@@ -609,9 +730,9 @@ function ParameterControl({
     value,
   );
   const update = (raw: string | boolean) => {
-    let nextValue = coerceParameterInput(descriptor, raw);
+    let nextValue = coerceParameterInput(descriptor, raw, nodeType);
     if (
-      clampNumericInput &&
+      clampNumericInput && nodeType !== "video-generation" &&
       typeof nextValue === "number" &&
       Number.isFinite(nextValue)
     ) {
@@ -639,21 +760,40 @@ function ParameterControl({
     raw: string,
     tier?: ResolutionTierShortcut["label"] | null,
   ) => {
-    const nextValue = coerceParameterInput(descriptor, raw);
-    const next = setParameterValueWithSizeExclusivity(
+    const nextValue = coerceParameterInput(descriptor, raw, nodeType);
+    let next = setParameterValueWithSizeExclusivity(
       parameters,
       descriptor.key,
       nextValue,
       sizeAspectRatioContext,
     );
-    if (descriptor.control === "select" || tier === null) delete next.size_tier;
-    else if (tier !== undefined) next.size_tier = tier;
+    if (sizeAspectRatioContext.model?.metadata?.imageUserSizePresets) {
+      if (tier) next.size_tier = tier;
+      else delete next.size_tier;
+      // Choosing a preset is an explicit shape change. Keep its named ratio in
+      // sync instead of leaving a previous independent preference to block it.
+      const chosen = descriptor.options?.find(option => String(option.value) === raw);
+      const ratio = chosen?.label.match(/\d+\s*:\s*\d+/u)?.[0]?.replaceAll(" ", "");
+      for (const key of ["aspect_ratio", "aspectRatio", "ratio"]) {
+        if (parameters[key] !== undefined) {
+          if (ratio) next[key] = ratio;
+          else delete next[key];
+        }
+      }
+      next = syncUserImageNativeTier(sizeAspectRatioContext.model, next, tier ?? null);
+    } else if (!hasIndependentImageTier(sizeAspectRatioContext.model)) {
+      if (sizeAspectRatioContext.model?.metadata?.imageOpenSizePreferences === true) {
+        if (tier !== undefined && tier !== null) next.size_tier = tier;
+      } else if (descriptor.control === "select" || tier === null) delete next.size_tier;
+      else if (tier !== undefined) next.size_tier = tier;
+    }
     onChange(next);
   };
 
-  const nativeImageContract = nodeType === "image-generation" && imageLayout && sizeAspectRatioContext.model?.metadata?.imageNativeParameterContract === true;
+  const nativeImageContract = nodeType === "image-generation" && imageLayout && (sizeAspectRatioContext.model?.metadata?.imageNativeParameterContract === true ||
+    sizeAspectRatioContext.model?.metadata?.mikotoImageContract === true);
   const imageDimensions = nodeType === "image-generation" && imageLayout
-    ? { ...imageDimensionsPresentation(descriptor), ...(nativeImageContract ? { label: descriptor.label } : {}) }
+    ? { ...imageDimensionsPresentation(descriptor), ...(nativeImageContract ? { label: sizeAspectRatioContext.model?.metadata?.imageUserSizePresets ? "比例与尺寸（W × H）" : descriptor.label } : {}) }
     : descriptor;
   if (imageDimensions.control === "dimensions") {
     return (
@@ -663,13 +803,17 @@ function ParameterControl({
         id={id}
         descriptor={imageDimensions}
         value={value}
-        savedTier={parameters.size_tier}
+        savedTier={parameters.size_tier ?? parameters[String(sizeAspectRatioContext.model?.metadata?.imageResolutionTierParameter ?? sizeAspectRatioContext.model?.metadata?.imageNativeResolutionParameter ?? "size_tier")]}
+        useSavedResolutionTier={Boolean(sizeAspectRatioContext.model?.metadata?.imageUserSizePresets &&
+          (parameters.size_tier !== undefined || parameters[String(sizeAspectRatioContext.model.metadata.imageResolutionTierParameter ?? sizeAspectRatioContext.model.metadata.imageNativeResolutionParameter ?? "size_tier")] !== undefined))}
         update={updateDimensions}
         readOnlyDimensions={descriptor.control === "select"}
         allowOptionalAlignment={!nativeImageContract}
         showContractDescription={nativeImageContract}
+        showResolutionShortcuts={!hasIndependentImageTier(sizeAspectRatioContext.model)}
+        explicitRatio={parameters.aspect_ratio ?? parameters.aspectRatio ?? parameters.ratio}
       />
-      {savedSelectValueMissing && <small role="status" className="parameter-help parameter-wide">已保存：{String(value)}，当前目录未确认此尺寸</small>}
+      {savedSelectValueMissing && <small role="status" className="parameter-help parameter-wide">已保存：{String(value)}；目录尺寸：{(descriptor.options ?? []).map(option => option.label).join(" / ") || "—"}</small>}
       </>
     );
   }
@@ -712,12 +856,12 @@ function ParameterControl({
               value={durationControl.value}
               disabled={Boolean(disabledReason)}
               title={disabledReason ?? descriptor.description}
-              aria-valuetext={durationControl.invalidValue !== undefined ? `已保存 ${durationControl.invalidValue}，需要重新选择；候选 ${durationControl.value} 秒` : `${durationControl.value} 秒`}
+              aria-valuetext={durationControl.invalidValue !== undefined ? `已保存 ${durationControl.invalidValue}；候选 ${durationControl.value} 秒` : `${durationControl.value} 秒`}
               aria-invalid={durationControl.invalidValue !== undefined || undefined}
               aria-describedby={`${id}-bounds${durationContext.userFallbackRange ? ` ${id}-source` : ""}${durationControl.invalidValue !== undefined ? ` ${id}-saved` : ""}`}
               onChange={(event) => update(event.target.value)}
             />
-            <output htmlFor={id}>{durationControl.invalidValue !== undefined ? `${durationControl.invalidValue}（待修正）` : `${durationControl.value} 秒`}</output>
+            <output htmlFor={id}>{durationControl.invalidValue !== undefined ? `${durationControl.invalidValue}（已保存）` : `${durationControl.value} 秒`}</output>
           </div>
           <small id={`${id}-bounds`} className="parameter-duration-bounds">
             <span>{durationControl.min} 秒</span>
@@ -727,22 +871,22 @@ function ParameterControl({
             用户兜底范围：{durationControl.min}–{durationControl.max} 秒。供应商未公布完整范围；已公布的限制仍优先适用。
           </small>}
           {durationControl.invalidValue !== undefined && <div id={`${id}-saved`} className="parameter-duration-saved parameter-help" role="status">
-            <span>已保存的时长 {durationControl.invalidValue} 不符合当前范围或步长。请移动滑块重新选择；原值尚未修改。</span>
+            <span>当前值：{durationControl.invalidValue} · 目录范围：{durationControl.min}–{durationControl.max} 秒 · 步长：{durationControl.step} 秒。</span>
             <button type="button" className="button nodrag nopan" disabled={Boolean(disabledReason)}
               onClick={() => update(String(durationControl.value))}>使用 {durationControl.value} 秒</button>
           </div>}
         </div>
-      ) : durationControl?.kind === "unavailable" || nodeType === "video-generation" && descriptor.key === "resolution" && resolutionRangeUnverified ? (
+      ) : durationControl?.kind === "unavailable" || nodeType === "video-generation" && descriptor.key === "resolution" && resolutionRangeUnverified && descriptor.allowCustomValue !== true && sizeAspectRatioContext.model?.metadata?.videoResolutionValueMode !== "derived-size" ? (
         <div className="parameter-duration-unavailable">
           <select id={id} value={String(unverifiedValue)} disabled={Boolean(disabledReason)}
             title={disabledReason ?? descriptor.description} aria-describedby={`${id}-unavailable`}
             aria-invalid={unverifiedValueMissing || undefined} onChange={event => update(event.target.value)}>
             <option value="">供应商默认（未公开可选范围）</option>
             {confirmedDefault !== undefined && <option value={String(confirmedDefault)}>{String(confirmedDefault)}（已公布默认值）</option>}
-            {unverifiedValueMissing && <option value={String(unverifiedValue)} disabled>{String(unverifiedValue)}（已保存，当前未确认）</option>}
+            {unverifiedValueMissing && <option value={String(unverifiedValue)} disabled>{String(unverifiedValue)}（已保存）</option>}
           </select>
           <small id={`${id}-unavailable`} role="status" className="parameter-help">
-            {durationControl?.kind === "unavailable" ? durationControl.reason : "供应商尚未确认此完整型号的可选分辨率，保留当前值。"}
+            当前值：{unverifiedValueMissing ? String(unverifiedValue) : "供应商默认"} · 目录范围：—。
             选择供应商默认会清除当前自定义值。
           </small>
         </div>
@@ -764,7 +908,7 @@ function ParameterControl({
               : "模型默认"}
           </option>
           {savedSelectValueMissing ? (
-            <option value={String(value)} disabled={nodeType === "video-generation"}>{String(value)}（已保存{durationControl?.kind === "select" ? "，不在当前档位" : ""}）</option>
+            <option value={String(value)} disabled={nodeType === "video-generation"}>{String(value)}（已保存）</option>
           ) : null}
           {(selectOptions ?? []).map((option) => (
             <option key={String(option.value)} value={String(option.value)}>
@@ -802,9 +946,13 @@ function ParameterControl({
               ))}
             </datalist>
           ) : null}
+          {descriptor.allowCustomValue && <small className="parameter-help">
+            {descriptor.options?.length ? `API 示例：${descriptor.options.map(option => String(option.value)).join(" / ")}。` : ""}
+            按输入发送；留空使用供应商默认值。
+          </small>}
         </>
       )}
-      {durationControl?.kind === "select" && savedSelectValueMissing && <small role="status" className="parameter-help">已保留原时长 {String(value)}，请选择供应商当前支持的档位。</small>}
+      {durationControl?.kind === "select" && savedSelectValueMissing && <small role="status" className="parameter-help">当前值：{String(value)} · 目录时长：{durationControl.options.map(option => option.label).join(" / ") || "—"}。</small>}
       {disabledReason && <small className="parameter-help">{disabledReason}</small>}
     </div>
   );
@@ -822,19 +970,24 @@ export function NodeParameterFields({
   transparentSupported = false,
   hasReferenceVideo = false,
 }: NodeParameterFieldsProps) {
+  const undeclaredSavedImageFields = nodeType === "image-generation" ? [...new Set([
+    ...undeclaredCOpenImageParameterKeys(model ?? undefined, parameters, operation),
+    ...undeclaredGenimageNativeImageParameterKeys(model, parameters),
+  ])] : [];
   const descriptors = useMemo(
     () => parameterDescriptorsForValues(nodeType, provider, model, parameters, operation, { hasReferenceVideo }),
     [hasReferenceVideo, model, nodeType, parameters, provider, operation],
   );
   const resolutionControlId = useId();
+  const userSizePresets = nodeType === "image-generation" && Boolean(model?.metadata?.imageUserSizePresets);
   const tk1688Resolution = provider !== "cli"
-    ? tk1688ResolutionControl(model, descriptors, parameters)
+    ? tk1688ResolutionControl(model, descriptors)
     : undefined;
-  const nativeResolution = nodeType === "image-generation" && provider !== "cli" && !tk1688Resolution
+  const nativeResolution = nodeType === "image-generation" && provider !== "cli" && !tk1688Resolution && !userSizePresets
     ? nativeImageResolutionControl(descriptors, model)
     : undefined;
   const unifiedExactSize = nodeType === "image-generation" && provider !== "cli" && !nativeResolution && !tk1688Resolution &&
-    shouldUseUnifiedResolutionControl(descriptors.map(imageDimensionsPresentation), parameters);
+    (userSizePresets || shouldUseUnifiedResolutionControl(descriptors.map(imageDimensionsPresentation), parameters));
   const clampNumericInput = provider !== "cli" && model?.metadata?.clampNumericParameters === true;
   const clearUnavailableParameters =
     provider !== "cli" && model?.metadata?.parameterControlsUnavailable === true;
@@ -898,16 +1051,16 @@ export function NodeParameterFields({
   return (
     <>
       {provider === "cli" && !model && <p className="parameter-group-note">请先在“个人 AI 网站”中接入并同步模型与参数。</p>}
-      {!compactImageNotes && typeof model?.metadata?.imageParameterContractNote === "string" && model.metadata.imageParameterContractNote && (
+      {!compactImageNotes && !userSizePresets && typeof model?.metadata?.imageParameterContractNote === "string" && model.metadata.imageParameterContractNote && (
         <p className="parameter-group-note">{model.metadata.imageParameterContractNote}</p>
       )}
-      {parameterIssues.length > 0 && <div role="alert" className="parameter-group-note">{parameterIssues.map(issue => <p key={`${issue.path}:${issue.code}`}>{issue.message}</p>)}{provider === "cli" && <p>已保留原参数，请修正后再生成。</p>}</div>}
+      {parameterIssues.length > 0 && <div role="status" className="parameter-group-note" aria-label="当前参数与目录数据">{parameterIssueFacts(parameterIssues, descriptors, parameters, model).map(fact => <p key={fact}>{fact}</p>)}</div>}
       {typeof model?.metadata?.imageCapabilityNote === "string" && model.metadata.imageCapabilityNote && (
         <p className="parameter-group-note">实测说明：{model.metadata.imageCapabilityNote}</p>
       )}
       {!compactImageNotes && typeof model?.metadata?.supplierGroupResolutionLabel === "string" && model.metadata.supplierGroupResolutionLabel && (
         <p className="parameter-group-note" title={typeof model.metadata.supplierGroupDescription === "string" ? model.metadata.supplierGroupDescription : undefined}>
-          分组说明：{model.metadata.supplierGroupResolutionLabel}{model.metadata.supplierGroupInfoStale ? "（上次读取，本次未确认）" : ""}
+          分组说明：{model.metadata.supplierGroupResolutionLabel}{model.metadata.supplierGroupInfoStale ? "（上次记录）" : ""}
         </p>
       )}
       <div className="parameter-grid">
@@ -930,13 +1083,14 @@ export function NodeParameterFields({
             showAllResolutionTiers
             useSavedResolutionTier
             automaticOptions={tk1688Resolution.automaticOptions}
-            update={(raw, tier) => onChange(
-              tk1688ParametersForResolutionChange(tk1688Resolution, parameters, raw, tier),
+            update={() => onChange(
+              tk1688ParametersForResolutionChange(tk1688Resolution, parameters),
             )}
           />
         )}
         {descriptors.filter(
           descriptor => (provider === "cli" || descriptor.key !== "background") &&
+            (!userSizePresets || !["size_tier", String(model?.metadata?.imageResolutionTierParameter ?? model?.metadata?.imageNativeResolutionParameter ?? "size_tier")].filter(key => key !== "size").includes(descriptor.key)) &&
             (!(nodeType === "image-generation" && usesSecureSeedreamSizePrecedence(model)) || !["width", "height"].includes(descriptor.key)) &&
             (provider === "cli" || descriptor.key !== "mask") && (!tk1688Resolution || !["size", "resolution", "aspect_ratio"].includes(descriptor.key)) &&
             (!nativeResolution || (descriptor.key !== nativeResolution.resolution.key && descriptor.key !== nativeResolution.ratio?.key)) &&
@@ -960,11 +1114,20 @@ export function NodeParameterFields({
               provider !== "cli" && descriptor.key === "output_format" && parameters.background === "transparent"
                 ? "透明模式使用 PNG，保留透明通道"
                 : descriptor.key === "output_compression" && !compressionEnabled
-                ? "PNG 是无损格式，不支持设置压缩率；请选择 JPEG 或 WebP"
+                ? "压缩率适用格式：JPEG / WebP · 当前格式：PNG（无损）"
                 : undefined
             }
           />
         ))}
+        {undeclaredSavedImageFields.length > 0 && <div className="parameter-help" role="group" aria-label="已保存的其它图片字段">
+          {undeclaredSavedImageFields.map(key => <div className="parameter-field" key={key}>
+            <span>{key}（已保存）：{String(parameters[key])}</span>
+            <button type="button" className="button nodrag nopan" onClick={() => {
+              const next = { ...parameters }; delete next[key]; onChange(next);
+            }}>清除 {key}</button>
+          </div>)}
+          <small>这些原值继续保存；当前完整型号资料未声明其请求映射，提交前可在此逐项清除。</small>
+        </div>}
         {nodeType === "image-generation" && provider !== "cli" && (
           <div className="image-output-mode">
             <span>生成模式</span>
@@ -975,7 +1138,7 @@ export function NodeParameterFields({
                 onClick={() => onChange(imageModeParameters(parameters, true, "transparent"))}>透明模式</button>}
             </div>
             {transparentSupported && parameters.background === "transparent" && <small>透明背景 · PNG 原图</small>}
-            {!transparentSupported && parameters.background === "transparent" && <small role="status">原透明模式当前不受支持，请切换到普通模式。</small>}
+            {!transparentSupported && parameters.background === "transparent" && <small role="status">当前模式：透明 · 目录模式：普通。</small>}
           </div>
         )}
       </div>
@@ -984,7 +1147,7 @@ export function NodeParameterFields({
           <summary>参数说明与分组依据{model.metadata.supplierGroupInfoStale ? "（分组说明待更新）" : ""}</summary>
           {typeof model.metadata.imageParameterContractNote === "string" && <p>{model.metadata.imageParameterContractNote}</p>}
           {typeof model.metadata.supplierGroupResolutionLabel === "string" && <p title={typeof model.metadata.supplierGroupDescription === "string" ? model.metadata.supplierGroupDescription : undefined}>
-            分组说明：{model.metadata.supplierGroupResolutionLabel}{model.metadata.supplierGroupInfoStale ? "（上次读取，本次未确认）" : ""}
+            分组说明：{model.metadata.supplierGroupResolutionLabel}{model.metadata.supplierGroupInfoStale ? "（上次记录）" : ""}
           </p>}
         </details>
       )}

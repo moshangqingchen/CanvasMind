@@ -53,6 +53,95 @@ import { cyberAfeiCatalogFromPricing, resolveCyberAfeiScannedGroup } from "./cyb
 import { applyWeAiLivePricing, type WeAiLiveModelPricing } from "./weai-catalog";
 
 const weaiSnapshotOrigin = "https://asian-acc.we-token.cc";
+describe("exact Genimage/Chuangxiang saved official quotes after an independent price-read failure", () => {
+  const quoteAt = "2026-10-10T08:00:00.000Z", attemptedAt = "2026-10-11T04:53:56.000Z";
+  const genOrigin = "https://genimage.pro", cxOrigin = "https://vapi.chuangxiangai.asia";
+  const image: ModelDescriptor = { id: "gpt-image-2", name: "gpt-image-2", operations: ["image.generate"], outputKinds: ["image"] };
+  function fixture(origin = genOrigin) {
+    const chuang = origin === cxOrigin, group = chuang ? "生图" : "default", id = chuang ? "gpt-image-2.5-flare-4k" : image.id;
+    const pricing: NonNullable<ModelDescriptor["pricing"]> = chuang
+      ? { kind: "per-image", currency: "CNY", sourceUrl: cxOrigin + "/model-plaza", checkedAt: quoteAt, confidence: "snapshot",
+        tiers: ["medium", "max"].map(quality => ({ id: quality, label: quality, price: .2, conditions: [{ parameter: "quality", operator: "equals" as const, value: quality }] })) }
+      : { kind: "per-request", currency: "USD", unitAmount: .16, sourceUrl: genOrigin, checkedAt: quoteAt, confidence: "exact" };
+    const model: ModelDescriptor = { ...image, id, name: id };
+    const supplier = { id: "retained-price-" + (chuang ? "cx" : "gen"), apiUrl: origin + "/v1", siteUrl: origin, state: { sourceId: "same-price-source" },
+      kind: chuang ? "sub2api" : "newapi", scanStatus: chuang ? "failed" : "live", scanComplete: !chuang, scannedAt: quoteAt, updatedAt: quoteAt,
+      catalog: { groups: [{ id: group, label: group, ...(chuang ? { supplierGroupId: "43" } : {}), source: "catalog", models: [{ id,
+        capability: "image", priceLabel: chuang ? "medium ¥0.2/张 · max ¥0.2/张" : "$0.16/次", metadata: {
+          ...(chuang ? { chuangxiangCatalogPricing: pricing, supplierCatalogModelStale: true, supplierCatalogPriceCheckedAt: quoteAt } : { officialCatalogPricing: pricing }) } }] }] } };
+    const config = { supplierId: supplier.id, supplierSourceId: supplier.state.sourceId, baseUrl: supplier.apiUrl, accountKeyGroup: group,
+      ...(chuang ? { accountKeyGroupId: "43" } : {}) };
+    vi.mocked(getSupplierRecord).mockResolvedValue(supplier as unknown as Awaited<ReturnType<typeof getSupplierRecord>>);
+    return { supplier, config, model, pricing, group };
+  }
+  afterEach(() => { vi.mocked(getSupplierRecord).mockResolvedValue(null); });
+  it.each([genOrigin, cxOrigin])("retains %s's exact full-model tariff and original date through a failed force refresh", async origin => {
+    const { config, model, pricing } = fixture(origin);
+    vi.mocked(discoverSupplierCatalog).mockResolvedValueOnce({ kind: origin === cxOrigin ? "sub2api" : "newapi", status: "failed", complete: false,
+      checkedAt: attemptedAt, groups: [] });
+    const [priced] = await enrichSupplierModelPrices({ config }, [model], true, true);
+    expect(priced?.pricing).toEqual(pricing);
+    expect(priced?.metadata).toMatchObject({ priceSource: "supplier-catalog", priceStatus: "partial", priceCheckedAt: quoteAt,
+      priceLastAttemptAt: attemptedAt, priceLastAttemptStatus: "failed" });
+    expect(modelPriceSummary(priced, { quality: "max" })).toContain(origin === cxOrigin ? "0.2" : "0.16");
+    expect(modelEstimatedCost(priced, { quality: "max", n: 1 })).toBeUndefined();
+    const reloaded = (await enrichSupplierModelPrices({ config }, JSON.parse(JSON.stringify([priced])), false, false))[0];
+    expect(reloaded?.pricing).toEqual(pricing);
+    expect(reloaded?.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: quoteAt, priceLastAttemptAt: attemptedAt,
+      priceLastAttemptStatus: "failed" });
+  });
+  it("repairs a saved failed-price descriptor offline without upgrading its failed attempt or requesting HTTP", async () => {
+    const { config, model, pricing } = fixture();
+    const saved = { ...model, metadata: { priceSource: "supplier-catalog", supplierPriceGroup: "default", priceLabel: "价格查询失败",
+      priceStatus: "failed", priceCheckedAt: attemptedAt, priceLastAttemptAt: attemptedAt } };
+    const count = vi.mocked(discoverSupplierCatalog).mock.calls.length;
+    const [priced] = await enrichSupplierModelPrices({ config }, [saved], false, false);
+    expect(priced?.pricing).toEqual(pricing);
+    expect(priced?.metadata).toMatchObject({ priceStatus: "partial", priceCheckedAt: quoteAt, priceLastAttemptAt: attemptedAt,
+      priceLastAttemptStatus: "failed", priceLabel: "$0.16/次（上次价格）" });
+    expect(discoverSupplierCatalog).toHaveBeenCalledTimes(count);
+  });
+  it.each(["source", "missing-source", "group", "origin", "full-id", "quote-source", "ambiguous-group"])("does not reuse a %s mismatch", async changed => {
+    const { config, supplier, model } = fixture();
+    const altered = { ...config };
+    if (changed === "source") altered.supplierSourceId = "different-source";
+    if (changed === "missing-source") delete (altered as Partial<typeof altered>).supplierSourceId;
+    if (changed === "group") altered.accountKeyGroup = "gptResponseBase64";
+    if (changed === "origin") altered.baseUrl = "https://other-genimage.example/v1";
+    if (changed === "full-id") model.id += "-alias";
+    if (changed === "quote-source") (supplier.catalog.groups[0]!.models[0]!.metadata as Record<string, NonNullable<ModelDescriptor["pricing"]>>).officialCatalogPricing!.sourceUrl = "https://other.example/pricing";
+    if (changed === "ambiguous-group") supplier.catalog.groups.push(structuredClone(supplier.catalog.groups[0]!));
+    vi.mocked(discoverSupplierCatalog).mockResolvedValueOnce({ kind: "newapi", status: "failed", complete: false, checkedAt: attemptedAt, groups: [] });
+    expect((await enrichSupplierModelPrices({ config: altered }, [model], true, true))[0]?.pricing).toBeUndefined();
+  });
+  it("joins Chuangxiang by stable group ID across a rename but never by another numbered group", async () => {
+    const { config, model, pricing } = fixture(cxOrigin);
+    for (const groupId of ["43", "44"]) {
+      vi.mocked(discoverSupplierCatalog).mockResolvedValueOnce({ kind: "sub2api", status: "unauthorized", complete: false, checkedAt: attemptedAt, groups: [] });
+      const [priced] = await enrichSupplierModelPrices({ config: { ...config, accountKeyGroup: "旧生图名称", accountKeyGroupId: groupId } }, [model], true, true);
+      if (groupId === "43") { expect(priced?.pricing).toEqual(pricing); expect(priced?.metadata).toMatchObject({ supplierPriceGroupId: "43",
+        priceStatus: "partial", priceLastAttemptStatus: "unauthorized", priceCheckedAt: quoteAt }); }
+      else expect(priced?.pricing).toBeUndefined();
+    }
+  });
+  it("uses the current successfully read price instead of an older saved fallback", async () => {
+    const { config, model } = fixture();
+    vi.mocked(discoverSupplierCatalog).mockResolvedValueOnce({ kind: "newapi", status: "live", complete: true, checkedAt: attemptedAt, groups: [
+      { id: "default", label: "default", source: "catalog", models: [{ id: model.id, capability: "image", priceLabel: "$0.18/次" }] }] });
+    const [priced] = await enrichSupplierModelPrices({ config }, [{ ...model, metadata: { priceLastAttemptStatus: "failed" } }], true, true);
+    expect(priced?.pricing?.unitAmount).toBe(.18);
+    expect(priced?.metadata).toMatchObject({ priceStatus: "available", priceCheckedAt: attemptedAt });
+    expect(priced?.metadata?.priceLastAttemptStatus).toBeUndefined();
+    expect(modelEstimatedCost(priced, { n: 1 })).toBe("0.18 USD");
+  });
+  it("preserves a manually authored price during a failed supplier price read", async () => {
+    const { config, model } = fixture();
+    const manual = { ...model, pricing: { kind: "per-request" as const, currency: "CNY", unitAmount: 9, checkedAt: quoteAt, confidence: "exact" as const },
+      metadata: { priceSource: "manual", priceLabel: "¥9/次" } };
+    vi.mocked(discoverSupplierCatalog).mockResolvedValueOnce({ kind: "newapi", status: "failed", complete: false, checkedAt: attemptedAt, groups: [] });
+    expect((await enrichSupplierModelPrices({ config }, [manual], true, true))[0]).toEqual(manual);
+  });
+});
 describe("durable exact ledger observations", () => {
   const scope = { sourceId: "source-a", supplierGroupId: "74", apiUrl: "https://supplier.example/v1" };
   const model: ModelDescriptor = { id: "video-exact", name: "Video", operations: ["video.generate"], metadata: {
@@ -475,12 +564,21 @@ it("preserves Cyber Omni's generate/edit resolution prices through generic suppl
   const enriched = applySupplierCatalogPrices([descriptor], group, { ...parsed, status: "live", kind: "newapi", complete: true, checkedAt: "now" }, origin)[0]!;
   expect(enriched.pricing).toEqual(descriptor.pricing);
   expect(enriched.pricing?.unitAmount).toBeUndefined();
-  // Published rates remain available, but a quote alone does not confirm the request's resolution contract.
+  // The published tariff survives enrichment; selected estimates also follow
+  // this model's native size mapping and the actual generation/edit transport.
   expect(enriched.metadata?.resolutionRangeUnverified).toBe(true);
+  expect(enriched.metadata?.videoResolutionAllowsCustom).toBe(false);
+  expect(enriched.metadata?.videoResolutionValueMode).toBe("derived-size");
+  expect(modelEstimatedCost(enriched, { mode: "generate", resolution: "720p", aspect_ratio: "16:9" })).toBe("8.25 USD");
+  expect(modelEstimatedCost(enriched, { mode: "generate", resolution: "720p", size: "1280x720" })).toBe("8.25 USD");
   expect(modelEstimatedCost(enriched, { mode: "generate", resolution: "720p" })).toBeUndefined();
-  expect(modelEstimatedCost(enriched, { mode: "edit", resolution: "720p" })).toBeUndefined();
+  expect(modelEstimatedCost(enriched, { mode: "edit", resolution: "720p", aspect_ratio: "16:9", has_reference_video: true })).toBeUndefined();
   expect(modelEstimatedCost(enriched, { mode: "{{mode}}", resolution: "720p" })).toBeUndefined();
-  expect(modelPriceSummary(enriched, { mode: "{{mode}}", resolution: "{{resolution}}" })).toContain("当前分辨率未确认");
+  expect(modelEstimatedCost(enriched, { mode: "edit", resolution: "1440p" })).toBeUndefined();
+  expect(modelEstimatedCost(enriched, { mode: "edit" })).toBeUndefined();
+  expect(modelEstimatedCost(enriched, { resolution: "720p" })).toBeUndefined();
+  expect(modelEstimatedCost(enriched, { mode: "generate", resolution: "1080p", aspect_ratio: "16:9", size: "1280x720" })).toBeUndefined();
+  expect(modelPriceSummary(enriched, { mode: "{{mode}}", resolution: "{{resolution}}" })).toBe("当前像素尺寸与换算档位不一致");
 });
 
 const secureCatalog = (multiplier = 1): SupplierCatalogDiscovery => ({

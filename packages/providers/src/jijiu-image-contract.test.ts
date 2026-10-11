@@ -53,7 +53,7 @@ describe("Jijiu exact image contract", () => {
     const id = "gpt-image-2-2K/4K", f = fixture(id, async () => Response.json({ data: [{ id }] }));
     const model = (await f.adapter.listModels("jijiu")).find(item => item.id === id);
     expect(model?.parameters?.find(p => p.key === "size")?.options?.map(option => option.value)).toEqual(["auto", "1K", "2K", "4K"]);
-    expect(model?.parameters?.find(p => p.key === "quality")?.options?.map(option => option.value)).toEqual(["auto", "high"]);
+    expect(model?.parameters?.find(p => p.key === "quality")?.options?.map(option => option.value)).toEqual(["auto", "low", "medium", "high"]);
     expect(model?.metadata?.qualitySupport).toBe("user-requested");
     expect(f.fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
   });
@@ -95,9 +95,41 @@ describe("Jijiu exact image contract", () => {
       await expect(f.adapter.submit({ ...request(id), parameters })).rejects.toThrow(); expect(f.fetch).not.toHaveBeenCalled();
     }
   });
-  it.each(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst"])("does not extend the high-tier override to low-tier %s", async id => {
-    for (const parameters of [{ size: "4K", quality: "high" }, { imageSize: "4K" }, { quality: "high" }]) {
+  it.each(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst"])("does not send native K strings to the open pixel size field of %s", async id => {
+    for (const parameters of [{ size: "4K", quality: "high" }, { imageSize: "4K" }]) {
       const f = fixture(id); await expect(f.adapter.submit({ ...request(id), parameters })).rejects.toThrow(); expect(f.fetch).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst"])("sends %s selected pixels and highest quality without application tier fields", async id => {
+    const highest = id === "gpt-image-2" ? "high" : "max";
+    for (const operation of ["image.generate", "image.edit"] as const) {
+      const f = fixture(id), parameters = Object.freeze({ size: "3840x2160", size_tier: "4K", quality: highest, n: 1 });
+      const assets = operation === "image.edit" ? [{ id: "reference", kind: "image" as const, url: "https://assets.example/original.png" }] : undefined;
+      const input = { ...request(id), operation, parameters, ...(assets ? { assets } : {}) };
+      expect(await f.adapter.validate(input)).toEqual({ valid: true, issues: [] });
+      await f.adapter.submit(input);
+      expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body))).toEqual({ model: id, prompt: "A cup", size: "3840x2160", quality: highest, n: 1,
+        ...(assets ? { image: [assets[0]!.url] } : {}) });
+      expect(parameters).toEqual({ size: "3840x2160", size_tier: "4K", quality: highest, n: 1 });
+    }
+  });
+
+  it.each(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst"])("preserves %s's declared size string instead of treating the example as an enum", async id => {
+    const model = applyJijiuImageCapabilities({ provider: "openai", config: configFor(id) }, { id, name: id, operations: ["image.generate"] });
+    expect(model.parameters?.find(parameter => parameter.key === "size")).toMatchObject({ control: "text", allowCustomValue: true });
+    for (const operation of ["image.generate", "image.edit"] as const) {
+      const f = fixture(id), parameters = Object.freeze({ size: "1024x1536", n: 1 });
+      const input = { ...request(id), operation, parameters, ...(operation === "image.edit" ? { assets: [{ id: "ref", kind: "image" as const, url: "https://assets.example/ref.png" }] } : {}) };
+      expect(await f.adapter.validate(input)).toEqual({ valid: true, issues: [] });
+      expect(validateModelParameters(model, parameters, operation)).toEqual({ valid: true, issues: [] });
+      await f.adapter.submit(input);
+      expect(JSON.parse(String(f.fetch.mock.calls[0]?.[1]?.body))).toMatchObject({ size: "1024x1536", n: 1 });
+      expect(parameters).toEqual({ size: "1024x1536", n: 1 });
+    }
+    for (const size of ["0x1024", "1024x0", "1.5x1024", "4K", 1024]) {
+      expect(jijiuGptImageRequestIssues({ provider: "openai", config: configFor(id) }, { ...request(id), parameters: { size } }))
+        .toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.size" })]));
     }
   });
   it("keeps the high-tier override scoped to the exact origin, model and permitted Key group", async () => {
@@ -134,8 +166,8 @@ describe("Jijiu exact image contract", () => {
     expect(JSON.parse(String(init?.body)).generationConfig).toEqual({ responseModalities: ["IMAGE"], imageConfig: { imageSize: "2K" } });
     expect((await f.adapter.extractOutputs(task.result))[0]?.mimeType).toBe("image/png");
   });
-  it("blocks unverified saved GPT size/quality and native unsupported or conflicting aliases before HTTP", async () => {
-    for (const [id, parameters] of [["gpt-image-2", { size: "4096x4096" }], ["gpt-image-2", { quality: "max" }],
+  it("blocks malformed saved GPT size and native unsupported or conflicting aliases before HTTP", async () => {
+    for (const [id, parameters] of [["gpt-image-2", { size: "4096x0" }], ["gpt-image-2", { quality: "max" }],
       ["gemini-3-pro-image", { quality: "max" }], ["gemini-3-pro-image", { image_size: "2K", resolution: "4K" }],
       ["gemini-3-pro-image", { ratio: "16:9" }], ["gemini-3-pro-image", { aspect_ratio: "auto", aspectRatio: "16:9" }]] as const) {
       const f = fixture(id); await expect(f.adapter.submit({ ...request(id), parameters })).rejects.toThrow(); expect(f.fetch).not.toHaveBeenCalled();

@@ -369,6 +369,7 @@ export function scanProviderModelCatalog(
     const videoSupplier = remainingVideoSupplier(options.baseUrl);
     const hasDeclaredNonVideoOutput = facts.metadata.outputKindsSource === "declared" && !modelGenerationMediaKinds(descriptor).includes("video");
     const documentedVideo = videoSupplier && !hasDeclaredNonVideoOutput ? remainingVideoModel(videoSupplier, id, descriptor, {
+      baseUrl: options.baseUrl,
       group: options.modelGroup ?? (group === "默认群组" ? undefined : group), groupDescription: options.groupDescription,
     }) : undefined;
     const videoMetadata = documentedVideo ? { ...documentedVideo.metadata, canvasRunnable: documentedVideo.metadata?.jijiuGroupUnavailable !== true } : undefined;

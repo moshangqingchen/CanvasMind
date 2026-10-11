@@ -1,7 +1,5 @@
 import type { ModelDescriptor, ModelParameterDescriptor } from "./contracts.js";
-import { imageSizeOptions } from "./image-size-presets.js";
 import { chuangxiangImageVerification } from "./chuangxiang-image-evidence.js";
-import { imageQualityPresetsAfterSuccess, IMAGE_QUALITY_PRESET_DESCRIPTION } from "./image-quality-presets.js";
 
 /** Paid evidence belongs to this exact API origin, account group and model ID. */
 export function chuangxiangImageEvidence(
@@ -10,6 +8,7 @@ export function chuangxiangImageEvidence(
 ) {
   if (
     config.usage === "agent" ||
+    config.manualProtocol === true ||
     config.usage === "disabled" ||
     config.supplierArchived === true
   )
@@ -39,13 +38,16 @@ export function applyChuangxiangImageCapabilities(
 ): ModelDescriptor {
   if (
     connection.provider !== "openai" ||
+    model.metadata?.source === "manual" || model.metadata?.source === "paid-test" || model.metadata?.protocolEvidence === "paid-test" ||
     model.metadata?.canvasRunnable === false ||
     !model.operations.includes("image.generate")
   )
     return model;
   const verified = chuangxiangImageEvidence(connection.config, model.id);
   if (!verified) return model;
-  const qualityPresets = imageQualityPresetsAfterSuccess(model.id, verified.qualities);
+  const metadata = { ...model.metadata };
+  for (const key of ["imageOutputDimensions", "imageOutputReferenceDimensions", "imageResolutionProfiles", "imageCustomDimensionRules", "imageFixedResolution", "imageNativeResolutionParameter"])
+    delete metadata[key];
   const historicalSmallOutput = /实际仅 1672×94[01]/u.test(verified.note);
   const note = verified.note.replace("本轮不列为 4K", "按长边计为近似 2K，4K 仍可请求")
     .replace("2K 尚无成功尺寸证据；", historicalSmallOutput ? "" : "2K 尚无成功尺寸证据；");
@@ -62,24 +64,16 @@ export function applyChuangxiangImageCapabilities(
       control: "dimensions",
       valueType: "string",
       default: "auto",
-      min: 16,
-      max: 3840,
-      step: 16,
+      allowCustomValue: true,
       // A sampled output size is evidence about that response, not a permanent
       // request restriction. Preserve all request tiers and label their evidence.
-      options: imageSizeOptions(["1K", "2K", "4K"]).map((option) => ({
-        ...option,
-        label: verified.mismatchedSizes.includes(String(option.value))
-          ? `${option.label}（实测比例有偏差）`
-          : verified.failedSizes.includes(String(option.value))
-            ? `${option.label}（本轮服务错误）`
-            : option.value === "auto" ||
-                verified.testedSizes.includes(String(option.value))
-              ? option.label
-              : `${option.label}（比例预设）`,
-      })),
+      options: [{ value: "auto", label: "自动（供应商决定）" },
+        ...[...new Set([...verified.testedSizes, ...verified.mismatchedSizes, ...verified.failedSizes,
+          ...(historicalSmallOutput ? ["3840x2160"] : [])])].map(value => ({ value,
+          label: `历史请求 · ${value.replace("x", " × ")}${verified.mismatchedSizes.includes(value)
+            ? "（实测比例有偏差）" : verified.failedSizes.includes(value) ? "（本轮服务错误）" : ""}` }))],
       description:
-        "像素为请求值，渠道可能调整输出；历史返回偏小或临时服务错误不限制请求档位。自动比例优先提示词，其次参考图；实际尺寸见结果。",
+        "所列仅为本完整型号历史请求值，不是逐比例像素表或像素范围；其他宽高按输入发送。历史返回偏小或临时服务错误不限制后续尺寸，实际输出见原图。",
     });
   if (verified.qualities.length)
     parameters.push({
@@ -87,12 +81,12 @@ export function applyChuangxiangImageCapabilities(
       label: "请求质量",
       control: "select",
       valueType: "string",
-      default: "high",
-      options: qualityPresets ?? verified.qualities.map((value) => ({
+      default: verified.qualities.at(-1) ?? "high",
+      options: verified.qualities.map((value) => ({
         value,
         label: `${labels[value] ?? value}（${value}）`,
       })),
-      description: qualityPresets ? IMAGE_QUALITY_PRESET_DESCRIPTION : note,
+      description: note,
     });
   return {
     ...model,
@@ -114,7 +108,13 @@ export function applyChuangxiangImageCapabilities(
         }
       : {}),
     metadata: {
-      ...model.metadata,
+      ...metadata,
+      imageNativeParameterContract: true,
+      imageNativeResolutionOptions: true,
+      imageResolutionMode: "historical-request-samples-and-open-size",
+      imageTierSource: "historical-request-output-sample",
+      imagePixelBudgetPublished: false,
+      imageRequestSizeSamples: [...verified.testedSizes],
       imageCapabilitiesVerifiedAt: "2026-09-21",
       imageTestedQualities: [...verified.qualities],
       imageCapabilitiesVerificationSource:

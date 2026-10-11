@@ -13,6 +13,9 @@ const weai = JSON.parse(readFileSync(new URL("./__fixtures__/weai-legacy-price-2
   initial: { code: number; data: { groups: Array<{ id: number; name: string }> } };
   groups: Array<{ groupId: number; payload: unknown }>;
 };
+const availableChannels = JSON.parse(readFileSync(new URL("./__fixtures__/available-channels-20261010.json", import.meta.url), "utf8")) as {
+  sources: Array<{ siteUrl: string; reads: Array<{ url: string; checkedAt: string; httpStatus: number; payload: unknown }> }>;
+};
 
 it("keeps the exact official Afei declared video pending without borrowing its token placeholder or another video contract", () => {
   const id = "ya-sd25-30s";
@@ -34,6 +37,27 @@ it("keeps the exact official Afei declared video pending without borrowing its t
 });
 
 describe("supplier discovery", () => {
+  it.each(availableChannels.sources)("reads $siteUrl current channel/legacy fixtures without claiming omitted account groups empty", async source => {
+    const result = await discoverSupplierCatalog({ siteUrl: source.siteUrl, apiUrl: "", kind: "sub2api" }, async url => {
+      const read = source.reads.find(read => read.url === String(url));
+      return read ? Response.json(read.payload, { status: read.httpStatus }) : Response.json({}, { status: 404 });
+    });
+    if (source.siteUrl === "https://api.mikoto.vip") {
+      expect(result).toMatchObject({ status: "live", complete: false });
+      expect(result.groups).toHaveLength(7);
+      expect(result.groups.find(group => group.supplierGroupId === "39")!.models.map(model => [model.id, model.priceLabel])).toEqual([
+        ["gpt-image-2", "$0.1/张"], ["gpt-image-2.5-flare", "$0.12/张"], ["gpt-image-2.5-sunburst", "$0.12/张"],
+      ]);
+      const medium = result.groups.find(group => group.supplierGroupId === "16")!;
+      expect(medium.models[0]!.priceLabel).toBe("$0.08/张");
+      expect(medium.details?.referencePrice).toContain("0.07");
+      expect(result.groups.find(group => group.supplierGroupId === "28")?.models).toEqual([]);
+    } else {
+      expect(result).toMatchObject({ status: "live", complete: true });
+      expect(result.groups).toHaveLength(11);
+      expect(result.groups.some(group => group.models.some(model => model.metadata?.weaiLegacyPricing))).toBe(true);
+    }
+  });
   it("keeps Synora billed evidence on the stable group even when its public model catalog is unavailable", async () => {
     const requests: string[] = [];
     const fetcher: typeof fetch = async url => {
@@ -66,7 +90,7 @@ describe("supplier discovery", () => {
       if (id === failureId) return Response.json({ code: failure }, { status: failure });
       return Response.json(id ? weai.groups.find(group => group.groupId === Number(id))!.payload : weai.initial);
     }
-    if (["/api/v1/model-plaza", "/api/v1/pricing/channels"].includes(parsed.pathname)) return Response.json({}, { status: 404 });
+    if (["/api/v1/model-plaza", "/api/v1/pricing/channels", "/api/v1/channels/available"].includes(parsed.pathname)) return Response.json({}, { status: 404 });
     throw new Error("Unexpected official legacy fixture endpoint");
   };
   it("uses the exact We-AI legacy fallback for 11 separately priced account groups and 54 complete IDs", async () => {
@@ -134,7 +158,64 @@ describe("supplier discovery", () => {
     const result = await discoverSupplierCatalog({ siteUrl: WEAI_LEGACY_ORIGIN, apiUrl: "", kind: "sub2api" }, fetcher);
     expect(result.complete).toBe(true);
     expect(fetcher.mock.calls.some(([url]) => String(url).startsWith(WEAI_LEGACY_MODELS_URL))).toBe(false);
+    expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/api/v1/channels/available"))).toBe(false);
   });
+  it.each([WEAI_LEGACY_ORIGIN, "https://api.mikoto.vip"])("reads %s deployed available channels after the older price route fails", async siteUrl => {
+    const calls: string[] = [];
+    const data = [{ name: "official channel", description: "exact full IDs", platforms: [{ platform: "openai",
+      groups: [{ id: 101, name: "same label", rate_multiplier: 1 }, { id: 102, name: "same label", rate_multiplier: 2 }],
+      supported_models: [{ name: "gpt-image-2-4K", pricing: { billing_mode: "image", per_request_price: .08 } }] }] }];
+    const result = await discoverSupplierCatalog({ siteUrl, apiUrl: `${siteUrl}/v1`, kind: "sub2api" }, async url => {
+      const parsed = new URL(String(url)); calls.push(parsed.pathname);
+      expect(parsed.origin).toBe(siteUrl); expect(parsed.search).toBe("");
+      if (parsed.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: data[0]!.platforms[0]!.groups });
+      if (parsed.pathname === "/api/v1/channels/available") return Response.json({ code: 0, data });
+      return Response.json({}, { status: 404 });
+    });
+    expect(result).toMatchObject({ status: "live", complete: siteUrl !== WEAI_LEGACY_ORIGIN });
+    expect(result.groups).toHaveLength(2);
+    expect(result.groups.map(group => group.supplierGroupId)).toEqual(["101", "102"]);
+    expect(result.groups.map(group => group.models[0]!.id)).toEqual(["gpt-image-2-4K", "gpt-image-2-4K"]);
+    expect(result.groups[0]!.models[0]!.priceLabel).toContain("0.08");
+    expect(result.groups[1]!.models[0]!.priceLabel).toContain(siteUrl === "https://api.mikoto.vip" ? "0.08" : "0.16");
+    expect(result.groups[0]!.models[0]!.metadata).toMatchObject({ supplierPriceSourceUrl: `${siteUrl}/api/v1/channels/available`,
+      supplierPriceCheckedAt: expect.any(String), supplierPriceChannel: "official channel", supplierPricePlatform: "openai" });
+    expect(calls).toEqual(["/api/v1/model-plaza", "/api/v1/groups/available", "/api/v1/pricing/channels", "/api/v1/channels/available",
+      ...(siteUrl === WEAI_LEGACY_ORIGIN ? ["/api/v1/model-plaza-legacy/models"] : [])]);
+  });
+  it("reads We-AI legacy models after a genuine empty available-channel response", async () => {
+    const legacy = weaiFetch();
+    const result = await discoverSupplierCatalog({ siteUrl: WEAI_LEGACY_ORIGIN, apiUrl: "", kind: "sub2api" }, async (url, init) =>
+      String(url).endsWith("/api/v1/channels/available") ? Response.json({ code: 0, message: "success", data: [] }) : legacy(url, init));
+    expect(result).toMatchObject({ status: "live", complete: true });
+    expect(result.groups).toHaveLength(11);
+    expect(result.groups.reduce((total, group) => total + group.models.length, 0)).toBe(54);
+  });
+  it("quotes Mikoto published channel image prices without applying token group rates", () => {
+    const source = { supplierSiteUrl: "https://api.mikoto.vip", sourceUrl: "https://api.mikoto.vip/api/v1/channels/available", checkedAt: "2026-10-11T03:46:01.369Z" };
+    const data = [{ name: "生图（2k4k高质量）", platforms: [{ platform: "openai", groups: [{ id: 39, name: "生图（2k4k 高质量）", rate_multiplier: .18, peak_rate_enabled: false }],
+      supported_models: [{ name: "gpt-image-2", pricing: { billing_mode: "image", per_request_price: .1, intervals: [] } },
+        { name: "gpt-image-2.5-flare", pricing: { billing_mode: "image", per_request_price: .12, intervals: [] } }] }] }];
+    const models = parseSupplierPricingChannels({ code: 0, data }, undefined, source)[0]!.models;
+    expect(models.map(model => model.priceLabel)).toEqual(["$0.1/张", "$0.12/张"]);
+    expect(models[1]!.metadata).toMatchObject({ officialCatalogPricing: { currency: "USD", kind: "per-image", unitAmount: .12, sourceUrl: source.sourceUrl,
+      checkedAt: source.checkedAt }, supplierChannelPriceDisplayMultiplier: 1 });
+    for (const other of [{ ...source, supplierSiteUrl: "https://other.test" }, { ...source, sourceUrl: "https://api.mikoto.vip/api/v1/pricing/channels" }]) {
+      const unrelated = parseSupplierPricingChannels({ code: 0, data }, undefined, other)[0]!.models[1]!;
+      expect(unrelated.priceLabel).toContain("0.0216");
+      expect(unrelated.metadata?.officialCatalogPricing).toBeUndefined();
+    }
+  });
+  it.each([{ code: 401, data: [] }, { code: 0, data: [{ platforms: [{}] }] }, { code: 0, data: { unavailable: true } }])(
+    "keeps Mikoto account groups partial for rejected/malformed available channels %j", async payload => {
+      const result = await discoverSupplierCatalog({ siteUrl: "https://api.mikoto.vip", apiUrl: "", kind: "sub2api" }, async url => {
+        const path = new URL(String(url)).pathname;
+        if (path === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 101, name: "images" }] });
+        if (path === "/api/v1/channels/available") return Response.json(payload);
+        return Response.json({}, { status: 404 });
+      });
+      expect(result).toMatchObject({ status: "live", complete: false, groups: [{ supplierGroupId: "101", models: [] }] });
+    });
   it("keeps exact monster/pDog billing scopes through the real nested plaza parser", () => {
     const payload = { code: 0, data: { groups: [{ id: 101, name: "fixture-image", rate_multiplier: .7, user_rate_multiplier: .5,
       image_rate_independent: true, image_rate_multiplier: .25, models: [{ name: "gpt-image-2", pricing: { billing_mode: "image", per_request_price: .1,
@@ -236,7 +317,7 @@ describe("supplier discovery", () => {
     expect(result).toMatchObject({ kind: "newapi", complete: true, status: "live" });
     for (const group of result.groups) {
       expect(group.models.find(model => model.id === alias)).toMatchObject({ capability: "image", priceLabel: "¥0.206688/次", limits: { maxOutputImages: 1 },
-        metadata: { tk1688FixedSize: "3840x2160", tk1688OmitN: true, tk1688Pricing: { kind: "per-request", currency: "CNY", unitAmount: 0.206688 } } });
+        metadata: { tk1688ReferenceSize: "3840x2160", tk1688OmitN: true, tk1688Pricing: { kind: "per-request", currency: "CNY", unitAmount: 0.206688 } } });
     }
   });
   it("keeps a failed词元 marketplace read incomplete without probing unrelated platform endpoints", async () => {
@@ -310,21 +391,23 @@ describe("supplier discovery", () => {
     expect(calls).toHaveLength(3);
     expect(result.complete).toBe(true);
   });
-  it("lists the three exact Secure Skill video declarations with prices while their generation protocol remains unconfirmed", () => {
-    const channels = [{ name: "flow", platforms: [{ platform: "flow2", groups: [{ id: 14, name: "flow" }],
+  it("lists exact Secure Skill video declarations with their own platform, group and prices", () => {
+    const channels = [{ name: "muse", platforms: [{ platform: "muse", groups: [{ id: 57, name: "muse-video", rate_multiplier: 1 }],
+      supported_models: [{ name: "muse-video", platform: "muse", pricing: { billing_mode: "per_second", per_request_price: 0.03, intervals: [] } }] }] },
+    { name: "flow", platforms: [{ platform: "flow2", groups: [{ id: 14, name: "flow" }],
       supported_models: [{ name: "omni", pricing: { billing_mode: "per_request", per_request_price: .63 } },
         { name: "gemini-3-pro-image", pricing: { billing_mode: "image", per_request_price: .1 } }] }] },
     { name: "enterprise", platforms: [{ platform: "newtoken-sd", groups: [{ id: 16, name: "video-企业版" }],
       supported_models: [{ name: "video-2.0-fast", pricing: { billing_mode: "per_second", per_request_price: .55 } },
         { name: "video-2.0-pro", pricing: { billing_mode: "per_second", per_request_price: .65 } }] }] }];
     const groups = parseSupplierPricingChannels({ code: 0, data: channels }, "CNY", { supplierSiteUrl: "https://token.secure-skill.com", checkedAt: "2026-10-08T14:33:39.047Z" });
-    for (const [groupId, id, kind, price] of [["14", "omni", "per-request", .63], ["16", "video-2.0-fast", "per-second", .55], ["16", "video-2.0-pro", "per-second", .65]]) {
+    for (const [groupId, id, kind, price] of [["57", "muse-video", "per-second", .03], ["14", "omni", "per-request", .63], ["16", "video-2.0-fast", "per-second", .55], ["16", "video-2.0-pro", "per-second", .65]]) {
       expect(groups.find(group => group.supplierGroupId === groupId)?.models.find(model => model.id === id)).toMatchObject({ capability: "video", outputKinds: ["video"], protocol: "unknown",
         metadata: { canvasRunnable: false, outputKindsSource: "declared", catalogGenerationDeclarationSource: "official-price-page",
           canvasUnavailableReason: "官网已列出视频型号 · 调用协议待确认", secureSkillCatalogPricing: { kind, unitAmount: price, currency: "CNY" } } });
     }
-    expect(groups[0]?.models[1]).toMatchObject({ capability: "image", outputKinds: ["image"] });
-    expect(groups[0]?.models[1]?.metadata?.catalogGenerationDeclarationSource).toBeUndefined();
+    expect(groups.find(group => group.supplierGroupId === "14")?.models[1]).toMatchObject({ capability: "image", outputKinds: ["image"] });
+    expect(groups.find(group => group.supplierGroupId === "14")?.models[1]?.metadata?.catalogGenerationDeclarationSource).toBeUndefined();
   });
   it("preserves explicit understanding outputs and does not borrow Secure Skill declarations on another host or platform", () => {
     const payload = (platform: string, row: Record<string, unknown> = {}) => ({ code: 0, data: [{ platforms: [{ platform, groups: [{ id: 14, name: "flow" }], supported_models: [{ name: "omni", ...row }] }] }] });
@@ -532,13 +615,14 @@ describe("API-key page group fallback", () => {
       expect(request.origin).toBe(siteUrl);
       calls.push(request.pathname);
       if (request.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: [group] });
-      if (["/api/v1/model-plaza", "/api/v1/pricing/channels", "/api/v1/model-plaza-legacy/models"].includes(request.pathname)) return Response.json({}, { status: 404 });
+      if (["/api/v1/model-plaza", "/api/v1/pricing/channels", "/api/v1/channels/available", "/api/v1/model-plaza-legacy/models"].includes(request.pathname)) return Response.json({}, { status: 404 });
       throw new Error("Unexpected synthetic account/catalog endpoint");
     });
     expect(result).toMatchObject({ kind: "sub2api", status: "live", complete: false,
       groups: [{ id: group.name, supplierGroupId: String(group.id), models: [], details: { rateMultiplier: group.rate_multiplier } }] });
     expect(result.error).toContain("模型价格目录");
     expect(calls).toEqual(["/api/v1/model-plaza", "/api/v1/groups/available", siteUrl === "https://api.hangzhale.com" ? "/api/provider/pricing" : "/api/v1/pricing/channels",
+      ...([WEAI_LEGACY_ORIGIN, "https://api.mikoto.vip", "https://api.hangzhale.com", "https://synoralink.com"].includes(siteUrl) ? ["/api/v1/channels/available"] : []),
       ...(siteUrl === WEAI_LEGACY_ORIGIN ? ["/api/v1/model-plaza-legacy/models"] : []),
       ...(siteUrl === "https://synoralink.com" ? ["/api/v1/usage", "/api/v1/announcements"] : [])]);
   });

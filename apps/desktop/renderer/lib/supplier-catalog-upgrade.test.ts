@@ -27,6 +27,22 @@ async function fixture() {
 
 describe("supplier catalog upgrade", () => {
   const previousRevision = "2026-10-09-full-supplier-recheck-contracts-prices-v11";
+  it("refreshes the official Jiasu vip inventory once and notifies the existing connection", async () => {
+    const f = await fixture();
+    await f.save("jiasu-vip", { baseUrl: "https://ai.jiasuapi.com/v1", usage: "canvas",
+      modelGroup: "vip", accountKeyGroup: "vip", defaultModel: "sd-2.5-J2" });
+    await f.save("jiasu-spoofed", { baseUrl: "https://ai.jiasuapi.com.evil.example/v1" });
+    f.service.start(); await f.service.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(1);
+    expect(await f.readModels.mock.calls[0]![1].params).toEqual({ id: "jiasu-vip" });
+    expect(f.service.status()).toMatchObject({ total: 1, refreshed: 1, updatedConnectionIds: ["jiasu-vip"] });
+    const saved = (await f.repository.getConnection("jiasu-vip"))!;
+    expect(saved.encryptedSecret).toBe("opaque-test-key");
+    expect(saved.config).toMatchObject({ modelGroup: "vip", accountKeyGroup: "vip", defaultModel: "sd-2.5-J2",
+      modelScanStatus: "live", modelScanComplete: true, catalogUpgradeRevision: SUPPLIER_CATALOG_REVISION });
+    f.service.start(); await f.service.settle();
+    expect(f.readModels).toHaveBeenCalledTimes(1);
+  });
   it.each([previousRevision, SUPPLIER_CATALOG_REVISION])("retains a non-Jijiu %s success for the same identity without rewriting its version", async revision => {
     const f = await fixture();
     await f.save("active");

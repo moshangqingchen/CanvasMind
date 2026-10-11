@@ -485,12 +485,11 @@ function chentuImageParameters(
         control: "dimensions",
         valueType: "string",
         default: "auto",
-        min: 16,
-        max: 8192,
-        step: 16,
-        options: sizeOptions,
+        step: 1,
+        options: [{ value: "auto", label: "自动" }],
+        allowCustomValue: true,
         description:
-          "自动模式优先读取提示词中的比例，其次参考图；选择 1K、2K 或 4K 后只显示该档位的常用比例和像素尺寸，也可填写自定义尺寸。",
+          "自由传参 size 使用独立 W/H 原值；不套用固定档位型号的枚举或未公布的 8192 边界。",
         operations: IMAGE_OPERATIONS,
       }
     : sizeOptions.length === 0

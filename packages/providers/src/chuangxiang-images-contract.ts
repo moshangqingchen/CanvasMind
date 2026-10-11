@@ -1,7 +1,7 @@
 import type { NormalizedRequest, ProviderConnectionResolver, ProviderTask, ValidationResult } from "./contracts.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
 
-import { isChuangxiangImageConnection, CHUANGXIANG_IMAGE_QUALITIES as QUALITIES } from "./chuangxiang-image-contract.js";
+import { isChuangxiangImageConnection, isChuangxiangImage25, chuangxiangImageQualities } from "./chuangxiang-image-contract.js";
 export { isChuangxiangImageConnection, chuangxiangRequiresPublicAssets, applyChuangxiangCurrentImageCapabilities } from "./chuangxiang-image-contract.js";
 
 const mapping = (key: string) => ({ target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` }, omitIfUndefined: true, omitValues: ["auto"] });
@@ -56,11 +56,26 @@ export class ChuangxiangImageAdapter extends GenericRestAdapter {
     if (normalized.parameters?.n !== undefined && normalized.parameters.n !== 1)
       issues.push({ path: "parameters.n", code: "invalid_count", message: "创想此图片接口每次仅生成一张" });
     const quality = normalized.parameters?.quality;
-    if (quality !== undefined && quality !== "auto" && !QUALITIES.includes(String(quality)))
-      issues.push({ path: "parameters.quality", code: "invalid_quality", message: "创想质量支持 low、medium、high、xhigh、max 或自动省略" });
+    const image25 = isChuangxiangImage25(request.model);
+    if (quality !== undefined && quality !== "auto" && !chuangxiangImageQualities(request.model).includes(String(quality)))
+      issues.push({ path: "parameters.quality", code: "invalid_quality", message: image25
+        ? "创想 Flare/Sunburst 质量仅接受 medium、max 或自动省略；请修改已保存的质量选值" : "创想质量支持 low、medium、high、xhigh、max 或自动省略" });
     const size = normalized.parameters?.size;
     if (size !== undefined && size !== "auto" && (typeof size !== "string" || !/^[1-9]\d*(?:x|:)[1-9]\d*$/u.test(size)))
       issues.push({ path: "parameters.size", code: "invalid_image_size", message: "创想 size 使用宽高比或 WIDTHxHEIGHT；分辨率档位由完整型号选择" });
+    if (image25 && typeof size === "string" && /^[1-9]\d*x[1-9]\d*$/u.test(size)) {
+      const [width, height] = size.split("x").map(Number) as [number, number];
+      const pixels = width * height;
+      if (width % 16 || height % 16 || width > 3840 || height > 3840 || Math.max(width, height) > 3 * Math.min(width, height) ||
+          pixels < 655360 || pixels > 8294400)
+        issues.push({ path: "parameters.size", code: "invalid_custom_dimensions", message: "创想 Flare/Sunburst 宽高须为16倍数且≤3840，长短边≤3:1，总像素655360–8294400；请修改请求尺寸" });
+      const tier = request.model?.match(/-(1k|2k|4k)$/u)?.[1];
+      if ((tier === "1k" && pixels > 2097152) || (tier === "2k" && (pixels <= 2097152 || pixels > 4194304)) ||
+          (tier === "4k" && pixels <= 4194304))
+        issues.push({ path: "parameters.size", code: "image_tier_mismatch", message: "创想 Flare/Sunburst 请求像素预算与当前完整型号档位不符；请修改尺寸或选择对应型号" });
+    }
+    if (image25 && (request.parameters?.mask || request.assets?.some(asset => asset.role === "mask")))
+      issues.push({ path: "assets", code: "unsupported_mask", message: "创想 Flare/Sunburst 官方文档声明暂不接受 mask；请用参考图和文字描述编辑区域" });
     return { valid: !issues.length, issues };
   }
   override async submit(request: NormalizedRequest): Promise<ProviderTask> {

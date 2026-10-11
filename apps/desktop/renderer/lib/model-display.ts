@@ -1,10 +1,14 @@
 import { modelPriceAmount, tokenComponentRate } from "@super-canvas/providers/media-billing";
 import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
+import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { getModelParameterDescriptor, validateModelParameters } from "@super-canvas/providers/cli-contracts";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { measuredPriceScopeMatches } from "./supplier-price-evidence";
 import { confirmedVideoParameterDefault, videoDurationControl, videoDurationControlContext } from "./video-duration-control";
 import { modelParameterAliases } from "./model-parameters";
+import { modelPickerPriceData } from "./model-picker-data";
+import { mikotoImageRatioIssues } from "@super-canvas/providers/supplier-image-constraints";
+import { cyberafeiSeedance25SizePreferenceIssues } from "@super-canvas/providers/cyberafei-seedance25-video-contract";
 
 /** A missing local quote is not evidence that the supplier never published one. */
 export function displayPriceLabel(label: unknown, status?: unknown): string {
@@ -124,7 +128,23 @@ function videoParameterPriceIssue(model: ModelDescriptor, parameters: Readonly<R
   for (const [canonical, aliases] of modelParameterAliases(model)) {
     if (aliases.some(alias => parameters[canonical] !== undefined && parameters[alias] !== undefined && parameters[canonical] !== parameters[alias])) return "当前参数不支持，请重新选择";
   }
-  if (model.metadata?.resolutionRangeUnverified === true && values.resolution !== undefined &&
+  if (model.metadata?.videoResolutionValueMode === "derived-size" && values.resolution !== undefined) {
+    const mappings = model.metadata.videoDerivedSizeMappings as Readonly<Record<string, Readonly<Record<string, string>>>> | undefined;
+    const sizes = typeof values.resolution === "string" ? mappings?.[values.resolution] : undefined;
+    const size = typeof values.aspect_ratio === "string" ? sizes?.[values.aspect_ratio]
+      : typeof values.size === "string" && Object.values(sizes ?? {}).includes(values.size) ? values.size : undefined;
+    if (!size || values.size !== undefined && values.size !== size) return "当前像素尺寸与换算档位不一致";
+  }
+  if (model.id === "seedance2.5" && model.metadata?.videoResolutionValueMode === "application-price-tier" &&
+      model.metadata?.supplier === "cyberafei") {
+    const source = model.metadata.videoPriceResolutionSource as Record<string, unknown> | undefined;
+    if (source?.origin === "https://api.3365api.cn" && source.fullModelId === model.id &&
+        ["图片视频模型综合分组", "特价seedance2.0"].includes(String(source.group))) {
+      const issue = cyberafeiSeedance25SizePreferenceIssues(values)[0];
+      if (issue) return issue.message;
+    }
+  }
+  if (model.metadata?.resolutionRangeUnverified === true && model.metadata?.videoResolutionAllowsCustom !== true && model.metadata?.videoResolutionValueMode !== "derived-size" && values.resolution !== undefined &&
       values.resolution !== confirmedVideoParameterDefault(model, "resolution")) return "当前分辨率未确认，请选择供应商默认";
   for (const key of ["duration", "seconds"]) {
     const descriptor = getModelParameterDescriptor(model, key, values);
@@ -140,7 +160,7 @@ function videoParameterPriceIssue(model: ModelDescriptor, parameters: Readonly<R
 
 export function modelPriceSummary(model: import("@super-canvas/providers").ModelDescriptor | undefined, parameters: Readonly<Record<string, unknown>>): string {
   if (!model) return "价格未知";
-  model = normalizeTk1688CnyModel(model);
+  model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
   parameters = videoPriceAliases(model, parameters);
   const parameterIssue = videoParameterPriceIssue(model, parameters);
   if (parameterIssue) return parameterIssue;
@@ -148,6 +168,11 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   if (!media.valid) return "当前模式与参考视频不匹配";
   parameters = media.parameters;
   const pricing = model.pricing;
+  // Jijiu classifies custom pixel sizes on its server without a published
+  // pixel-to-tier formula. Keep its tariff visible without choosing a rate.
+  if (model.metadata?.jijiuVideoContract === true && parameters.size !== undefined &&
+      pricing?.tiers?.some(tier => tier.conditions?.some(condition => ["resolution", "size_tier", "image_size"].includes(condition.parameter))))
+    return modelPickerPriceData(model);
   const tier = String(parameters.size_tier ?? parameters.resolution ?? parameters.image_size ?? "").toUpperCase()
     || model.parameters?.find(p => p.key === "size")?.options?.find(option => option.value === parameters.size)?.label.match(/\b[124]K\b/iu)?.[0]?.toUpperCase();
   const quality = parameters.quality ?? model.parameters?.find(p => p.key === "quality")?.default;
@@ -226,10 +251,21 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   return typeof model.metadata?.priceLabel === "string" ? displayPriceLabel(model.metadata.priceLabel, model.metadata?.priceStatus) : "价格未知";
 }
 
+/** The menu shows the model's tariff and its conditions independently of the
+ * current node's saved parameters. Validation and estimation are unchanged.
+ */
+export function modelPickerPriceSummary(model: ModelDescriptor | undefined, _parameters: Readonly<Record<string, unknown>>, _selected: boolean): string {
+  void _parameters;
+  void _selected;
+  return modelPickerPriceData(model);
+}
+
 /** A preview of the selected request, separate from the supplier's unit price. */
 export function modelEstimatedCost(model: ModelDescriptor | null | undefined, parameters: Readonly<Record<string, unknown>>): string | undefined {
   if (!model || model.metadata?.priceSource === "generated-result" || model.metadata?.priceStatus === "partial") return undefined;
-  model = normalizeTk1688CnyModel(model);
+  if (model.metadata?.mikotoImageContract === true && model.metadata.imageResolutionTierParameter === "size_tier" &&
+      mikotoImageRatioIssues(parameters).length) return undefined;
+  model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
   parameters = videoPriceAliases(model, parameters);
   if (videoParameterPriceIssue(model, parameters)) return undefined;
   const media = mediaPriceParameters(model, parameters);
@@ -237,6 +273,12 @@ export function modelEstimatedCost(model: ModelDescriptor | null | undefined, pa
   parameters = media.parameters;
   const pricing = model.pricing;
   if (!pricing || !["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return undefined;
+  if (model.metadata?.jijiuVideoContract === true && parameters.size !== undefined &&
+      pricing.tiers?.some(tier => tier.conditions?.some(condition => ["resolution", "size_tier", "image_size"].includes(condition.parameter)))) return undefined;
+  // This edit core sends source URLs in chat messages. Saved resolution values
+  // are not wire fields and cannot establish a conditional output tariff.
+  if (model.metadata?.videoCoreEditOnly === true && (model.metadata.videoEffectiveMode === "edit" || parameters.mode === "edit") &&
+      pricing.tiers?.some(tier => tier.conditions?.some(condition => ["resolution", "size", "size_tier", "image_size"].includes(condition.parameter)))) return undefined;
   const values = { ...Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default])), ...parameters };
   const declaredValues = Object.fromEntries(Object.entries(values).filter(([key]) => getModelParameterDescriptor(model, key, values)));
   if (model.parameters?.length && !validateModelParameters(model, declaredValues).valid) return undefined;
@@ -262,7 +304,7 @@ export function comparableModelPrice(models: readonly import("@super-canvas/prov
   if (parameterIssue) return parameterIssue;
   if (model.parameters?.some(parameter => {
     const resolved = getModelParameterDescriptor(model, parameter.key, parameters);
-    return parameters[parameter.key] !== undefined && (!resolved || resolved.options?.length && !resolved.options.some(option => String(option.value) === String(parameters[parameter.key])));
+    return parameters[parameter.key] !== undefined && (!resolved || !resolved.allowCustomValue && resolved.options?.length && !resolved.options.some(option => String(option.value) === String(parameters[parameter.key])));
   })) return "当前参数不支持";
   const price = modelPriceSummary(model, parameters);
   return price === "价格未知" ? "同型号未报价" : `同型号 ${price}`;

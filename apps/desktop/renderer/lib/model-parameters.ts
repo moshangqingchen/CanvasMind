@@ -8,7 +8,7 @@ import type { GenerationNodeType } from "./graph-ui";
 import { withHighestQualityDefault } from "./model-quality";
 import { preserveImageMaskParameters } from "./image-editing";
 import { getModelParameterDescriptor, resolveModelParameters } from "@super-canvas/providers/cli-contracts";
-import { videoDurationControl, videoDurationControlContext } from "./video-duration-control";
+import { confirmedVideoParameterDefault } from "./video-duration-control";
 
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
   {
@@ -215,7 +215,7 @@ export function parameterDescriptorsForValues(
     const resolved = getModelParameterDescriptor(model, descriptor.key, effective, operation);
     if (!resolved) return [];
     const result = { ...descriptor, ...resolved, default: descriptor.default };
-    if (result.default !== undefined && result.options?.length && !result.options.some(option => option.value === result.default)) result.default = result.options[0]?.value;
+    if (result.default !== undefined && !result.allowCustomValue && result.options?.length && !result.options.some(option => option.value === result.default)) result.default = result.options[0]?.value;
     return [result];
   }) : declared;
   if (provider === "cli") return descriptors;
@@ -410,7 +410,7 @@ export function parametersWithDefaults(
       const acceptsCurrentValue =
         currentValue === undefined ||
         descriptor.control !== "select" ||
-        !descriptor.options?.length ||
+        descriptor.allowCustomValue || !descriptor.options?.length ||
         descriptor.options.some(
           (option) => String(option.value) === String(currentValue),
         );
@@ -516,6 +516,7 @@ export function normalizedParametersForModel(
   current: Readonly<Record<string, unknown>> = {},
   context?: ModelParameterContext,
 ): Record<string, unknown> {
+  if (nodeType === "video-generation" && !model) return { ...current };
   if (provider === "cli") return model ? preserveImageMaskParameters(resolveModelParameters(model as ModelDescriptor, current).parameters, current) : { ...current };
   const descriptors = parameterDescriptorsForValues(
     nodeType,
@@ -529,7 +530,7 @@ export function normalizedParametersForModel(
   // the current contract, so validation can explain the change before charging.
   // Native video objects such as materials/face have no individual UI descriptor.
   // New nodes still receive defaults; explicit model changes use parametersWithDefaults.
-  if (model?.metadata?.imageNativeParameterContract === true) {
+  if (model?.metadata?.imageNativeParameterContract === true || model?.metadata?.mikotoImageContract === true) {
     const parameters = { ...parametersWithDefaults(descriptors, current, true), ...current };
     for (const [canonical, previousKeys] of modelParameterAliases(model)) {
       if (current[canonical] !== undefined) continue;
@@ -541,8 +542,15 @@ export function normalizedParametersForModel(
     return parameters;
   }
   if (model?.metadata?.jiasuImageProtocol === 1 ||
-      nodeType === "video-generation" && model?.metadata?.jiasuVideoContract === true) {
-    const parameters = { ...parametersWithDefaults(descriptors, {}, true), ...current };
+      nodeType === "video-generation") {
+    const defaults = parametersWithDefaults(descriptors, {}, true);
+    if (nodeType === "video-generation") {
+      for (const key of ["duration", "seconds", "resolution"]) {
+        const rangeUnverified = key === "resolution" ? model?.metadata?.resolutionRangeUnverified : model?.metadata?.durationRangeUnverified;
+        if (rangeUnverified === true && confirmedVideoParameterDefault(model, key) === undefined) delete defaults[key];
+      }
+    }
+    const parameters = { ...defaults, ...current };
     for (const [canonical, previousKeys] of modelParameterAliases(model)) {
       if (current[canonical] !== undefined) continue;
       const previous = previousKeys.find(key => current[key] !== undefined);
@@ -560,21 +568,8 @@ export function normalizedParametersForModel(
     const previous = previousKeys.find(key => current[key] !== undefined);
     if (previous) parameters[canonical] = current[previous];
   }
-  // A catalog refresh or dependent resolution change must expose an invalid
-  // saved duration for correction instead of changing the requested video.
-  // Explicit model changes still use parametersWithDefaults directly.
-  if (nodeType === "video-generation") {
-    for (const key of ["duration", "seconds"]) {
-      const descriptor = descriptors.find(descriptor => descriptor.key === key);
-      if (!descriptor) continue;
-      if (current[key] !== undefined) parameters[key] = current[key];
-      else if (!aliases.some(([canonical, previous]) => canonical === key && previous.some(alias => current[alias] !== undefined)) &&
-        videoDurationControl(nodeType, descriptor, descriptor.default, model?.metadata?.durationRangeUnverified === true, false, videoDurationControlContext(model, key))?.kind === "unavailable") delete parameters[key];
-    }
-  }
   if (model?.metadata?.clampNumericParameters === true) {
     for (const descriptor of descriptors) {
-      if (nodeType === "video-generation" && ["duration", "seconds"].includes(descriptor.key)) continue;
       const value = parameters[descriptor.key];
       const numeric =
         typeof value === "number"
@@ -615,6 +610,7 @@ export function normalizedParametersForModel(
 export function coerceParameterInput(
   descriptor: ModelParameterDescriptor,
   raw: string | boolean,
+  nodeType?: string,
 ): ModelParameterValue | undefined {
   if (descriptor.control === "toggle") return Boolean(raw);
   if (typeof raw !== "string" || raw === "") return undefined;
@@ -629,7 +625,7 @@ export function coerceParameterInput(
   ) {
     const value = Number(raw);
     if (!Number.isFinite(value)) return undefined;
-    return descriptor.valueType === "integer" ? Math.trunc(value) : value;
+    return descriptor.valueType === "integer" && nodeType !== "video-generation" ? Math.trunc(value) : value;
   }
   if (descriptor.valueType === "boolean") return raw === "true";
   return raw;
@@ -659,6 +655,14 @@ export function setParameterValue(
 }
 
 export function modelParameterAliases(model?: Pick<ModelDescriptor, "metadata" | "parameters"> | null): ReadonlyArray<readonly [string, readonly string[]]> {
+  if (model?.metadata?.genimageNativeSizeOpen === true)
+    return [["aspect_ratio", ["aspectRatio", "ratio"]]];
+  if (model?.metadata?.mikotoImageContract === true && model.metadata.imageResolutionTierParameter === "size_tier")
+    return [["aspect_ratio", ["aspectRatio", "ratio"]]];
+  if (model?.metadata?.pdogImageProtocol === 1 && model.metadata.imageResolutionTierParameter === "size_tier")
+    return [["aspect_ratio", ["aspectRatio", "ratio"]], ["size_tier", ["resolution"]]];
+  if (model?.metadata?.tk1688ImageSizeContract === 2)
+    return [["aspect_ratio", ["aspectRatio", "ratio"]], ["resolution", ["image_size", "imageSize", "size_tier"]]];
   if (model?.metadata?.jijiuImageContract === true && model.metadata.imageParameterPresetSource === "jijiu-high-tier-user-request")
     return [["size", ["resolution", "image_size", "imageSize", "size_tier"]]];
   if (model?.metadata?.jiasuImageProtocol === 1)
@@ -667,9 +671,25 @@ export function modelParameterAliases(model?: Pick<ModelDescriptor, "metadata" |
     return [["duration", ["seconds"]], ["aspect_ratio", ["ratio"]]];
   const metadata = model?.metadata;
   if (metadata?.source !== "manual" && metadata?.protocolEvidence !== "paid-test" && metadata?.source !== "paid-test" &&
-    typeof metadata?.supplier === "string" && typeof metadata.videoContractCheckedAt === "string" &&
-    model?.parameters?.some(parameter => parameter.key === "duration") && !model.parameters.some(parameter => parameter.key === "seconds"))
-    return [["duration", ["seconds"]]];
+    typeof metadata?.supplier === "string" && typeof metadata.videoContractCheckedAt === "string") {
+    const aliases: Array<readonly [string, readonly string[]]> = [];
+    if (model?.parameters?.some(parameter => parameter.key === "duration") && !model.parameters.some(parameter => parameter.key === "seconds"))
+      aliases.push(["duration", ["seconds"]]);
+    const declared = metadata.videoParameterAliases;
+    if (declared && typeof declared === "object" && !Array.isArray(declared)) {
+      for (const [canonical, previous] of Object.entries(declared)) {
+        if (!model?.parameters?.some(parameter => parameter.key === canonical) ||
+            !Array.isArray(previous) || !previous.every(key => typeof key === "string" && key !== canonical)) continue;
+        const retained = previous.filter(key => !model.parameters?.some(parameter => parameter.key === key));
+        if (retained.length) {
+          const existing = aliases.findIndex(([key]) => key === canonical);
+          if (existing < 0) aliases.push([canonical, retained]);
+          else aliases[existing] = [canonical, [...new Set([...aliases[existing]![1], ...retained])]];
+        }
+      }
+    }
+    return aliases;
+  }
   return [];
 }
 

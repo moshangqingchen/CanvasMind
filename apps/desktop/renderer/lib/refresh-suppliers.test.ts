@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), connections: vi.fn(), scan: vi.fn(), invalidate: vi.fn(), billing: vi.fn(), seed: vi.fn() }));
 vi.mock("./client-api", () => ({ fetchConnections: mocks.connections, invalidateModelCache: mocks.invalidate }));
 vi.mock("./client-supplier-billing", () => ({ refreshSupplierAccount: mocks.billing, seedSupplierBilling: mocks.seed }));
@@ -6,7 +6,107 @@ vi.mock("./client-suppliers", () => ({ fetchSuppliers: mocks.fetch, scanSupplier
 import { refreshAllSuppliers, refreshSupplier, subscribeSupplierRefresh, type SupplierRefreshProgress } from "./refresh-suppliers";
 const supplier = (id: string) => ({ id, name: id, state: { revision: 2 }, catalog: { groups: [{ id: "old", label: "Old", source: "catalog", models: [] }] }, scanStatus: "live", scanComplete: true, scannedAt: "old-time" });
 beforeEach(() => { vi.clearAllMocks(); mocks.connections.mockResolvedValue([]); });
+afterEach(() => { vi.unstubAllGlobals(); });
+function browserNotifications() {
+  const target = new EventTarget();
+  const notifications: Array<{ updatedConnectionIds: string[] }> = [];
+  vi.stubGlobal("window", target);
+  vi.stubGlobal("CustomEvent", class extends Event {
+    readonly detail: unknown;
+    constructor(type: string, init: { detail?: unknown } = {}) { super(type); this.detail = init.detail; }
+  });
+  target.addEventListener("supplier-catalog-upgraded", event => {
+    notifications.push((event as CustomEvent<{ updatedConnectionIds: string[] }>).detail);
+  });
+  return { target, notifications };
+}
 describe("refresh all configured suppliers", () => {
+  it("notifies an open canvas after saving confirmation changes even when its models and prices are identical", async () => {
+    const { target, notifications } = browserNotifications();
+    const beforeSupplier = supplier("one"), afterSupplier = { ...beforeSupplier, scannedAt: "new-time" };
+    const models = [{ id: "sd-2.5-J2", operations: ["video.generate"], pricing: { kind: "per-second", currency: "CNY", unitAmount: .65 } }];
+    const before = { id: "key-one", apiKeySet: true, config: { supplierId: "one", modelCatalogModels: models,
+      modelScanStatus: "live", modelScanComplete: false, modelScanCheckedAt: "old-time" } };
+    const after = { ...before, config: { ...before.config, modelScanComplete: true, modelScanCheckedAt: "new-time" } };
+    const unrelated = { id: "key-other", config: { supplierId: "other", modelScanStatus: "live", modelScanComplete: true } };
+    mocks.fetch.mockResolvedValueOnce([beforeSupplier, supplier("other")]).mockResolvedValue([afterSupplier, supplier("other")]);
+    mocks.connections.mockResolvedValueOnce([before, unrelated]).mockResolvedValue([after, unrelated]);
+    mocks.scan.mockResolvedValue(afterSupplier);
+    let reread: Promise<unknown> | undefined;
+    target.addEventListener("supplier-catalog-upgraded", () => {
+      // The canvas listener only rereads; it must observe invalidation and the
+      // final snapshot without initiating another supplier scan.
+      expect(mocks.connections).toHaveBeenCalledTimes(2);
+      expect(mocks.invalidate).toHaveBeenCalledWith("key-one");
+      reread = mocks.connections();
+    });
+    const first = refreshSupplier("one");
+    expect(refreshSupplier("one")).toBe(first);
+    await first;
+    expect(notifications).toEqual([{ updatedConnectionIds: ["key-one"] }]);
+    expect(await reread).toEqual([after, unrelated]);
+    expect(after.config.modelCatalogModels).toEqual(before.config.modelCatalogModels);
+    expect(mocks.invalidate).not.toHaveBeenCalledWith("key-other");
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    expect(mocks.scan).toHaveBeenCalledWith("one", undefined, 2, { verifyCapabilities: false });
+  });
+  it("does not notify an unchanged failed scan or unrelated concurrent connection edits", async () => {
+    const { notifications } = browserNotifications();
+    mocks.fetch.mockResolvedValue([supplier("one"), supplier("other")]);
+    const own = { id: "own", config: { supplierId: "one", modelScanStatus: "live", modelScanComplete: true } };
+    const unrelated = { id: "other", config: { supplierId: "other", modelScanStatus: "live" } };
+    mocks.connections.mockResolvedValueOnce([own, unrelated]).mockResolvedValueOnce([own, { ...unrelated, config: { ...unrelated.config, modelScanStatus: "empty" } }]);
+    mocks.scan.mockRejectedValue(new Error("scan did not persist"));
+    await refreshSupplier("one");
+    expect(notifications).toEqual([]);
+    expect(mocks.invalidate).not.toHaveBeenCalledWith("other");
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+  });
+  it("notifies a real persisted Key denial even when the supplier request subsequently fails", async () => {
+    const { notifications } = browserNotifications();
+    mocks.fetch.mockResolvedValue([supplier("one")]);
+    const before = { id: "key", config: { supplierId: "one", modelScanStatus: "live", modelScanComplete: true } };
+    const denied = { ...before, config: { ...before.config, modelScanStatus: "unauthorized", modelScanComplete: false } };
+    mocks.connections.mockResolvedValueOnce([before]).mockResolvedValueOnce([denied]);
+    mocks.scan.mockRejectedValue(new Error("request failed after saving Key denial"));
+    await refreshSupplier("one");
+    expect(notifications).toEqual([{ updatedConnectionIds: ["key"] }]);
+    expect(mocks.invalidate).toHaveBeenCalledWith("key");
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+  });
+  it.each(["deleted", "replaced"])("does not publish an old scan for a %s supplier source", async change => {
+    const { notifications } = browserNotifications();
+    const before = { ...supplier("one"), state: { revision: 2, sourceId: "original", visibility: "visible" } };
+    const after = { ...before, scannedAt: "new-time" };
+    const current = { ...after, state: { ...after.state,
+      ...(change === "deleted" ? { visibility: "deleted" } : { sourceId: "replacement" }) } };
+    mocks.fetch.mockResolvedValueOnce([before]).mockResolvedValueOnce([current]);
+    mocks.scan.mockResolvedValue(after);
+    const connection = { id: "key", config: { supplierId: "one", supplierSourceId: "original", modelScanStatus: "live" } };
+    mocks.connections.mockResolvedValueOnce([connection]).mockResolvedValueOnce([{ ...connection, config: { ...connection.config, modelScanStatus: "empty" } }]);
+    await refreshSupplier("one");
+    expect(notifications).toEqual([]);
+    expect(mocks.invalidate).not.toHaveBeenCalled();
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+  });
+  it("finishes a changed scan without browser globals", async () => {
+    vi.stubGlobal("window", undefined);
+    vi.stubGlobal("CustomEvent", undefined);
+    const before = supplier("one"), after = { ...before, scannedAt: "new-time" };
+    mocks.fetch.mockResolvedValueOnce([before]).mockResolvedValueOnce([after]);
+    mocks.scan.mockResolvedValue(after);
+    const connection = { id: "key", config: { supplierId: "one", modelScanStatus: "live" } };
+    mocks.connections.mockResolvedValue([connection]);
+    await refreshSupplier("one");
+    expect(mocks.invalidate).toHaveBeenCalledWith("key");
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    let state!: SupplierRefreshProgress;
+    const unsubscribe = subscribeSupplierRefresh(value => { state = value; });
+    expect(state.running).toBe(false);
+    expect(state.completed).toBe(1);
+    expect(state.results[0]!.message).not.toContain("无法核对供应商更新结果");
+    unsubscribe();
+  });
   it("does not count a failed refresh of a previously confirmed empty Key as newly confirmed", async () => {
     mocks.fetch.mockResolvedValue([supplier("one")]);
     const before = { id: "key", apiKeySet: true, config: { supplierId: "one", modelScanStatus: "empty", modelScanCheckedAt: "old-time" } };
@@ -18,7 +118,7 @@ describe("refresh all configured suppliers", () => {
     const unsubscribe = subscribeSupplierRefresh(s => { state = s; });
     await refreshAllSuppliers();
     expect(state.results[0]!.status).toBe("partial");
-    expect(state.results[0]!.message).toContain("Key 已确认 0/1");
+    expect(state.results[0]!.message).toContain("Key 目录读取 0/1");
     unsubscribe();
   });
   it("reads the full connection list only twice and scans at most two suppliers concurrently", async () => {
@@ -63,7 +163,7 @@ describe("refresh all configured suppliers", () => {
     const unsubscribe = subscribeSupplierRefresh(s => { state = s; });
     await refreshAllSuppliers();
     expect(state.results[0]!.status).toBe("partial");
-    expect(state.results[0]!.message).toContain("Key 已确认 0/1");
+    expect(state.results[0]!.message).toContain("Key 目录读取 0/1");
     expect(state.results[0]!.message).toContain("模型新增 0");
     unsubscribe();
   });

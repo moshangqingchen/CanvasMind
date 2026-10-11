@@ -1,6 +1,7 @@
 import type { ProviderConnectionResolver, ProviderOperation, ProviderTask } from "./contracts.js";
 import { ProviderHttpError } from "./http.js";
 import { GenericRestAdapter, type GenericRestAdapterOptions, type RestConnectorConfig } from "./rest.js";
+import { isSecureSkillGptImage, secureSkillImageParameters } from "./secure-skill-image-contract.js";
 
 const MODELS = new Set(["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
 
@@ -8,7 +9,7 @@ const MODELS = new Set(["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sun
 export function isSecureSkillImageConnection(config: Readonly<Record<string, unknown>> | undefined, model?: string): boolean {
   const selected = model || config?.defaultModel;
   if (typeof selected !== "string" || !MODELS.has(selected)) return false;
-  return isSecureSkillOrigin(config);
+  return !!config && isSecureSkillGptImage(config, selected);
 }
 
 export function isSecureSkillSeedreamConnection(config: Readonly<Record<string, unknown>> | undefined, model?: string): boolean {
@@ -40,7 +41,7 @@ const CONNECTOR: RestConnectorConfig = {
     mappings: [
       { target: "/model", source: { kind: "request", path: "$.model" } },
       { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
-      ...["size", "quality", "background", "n"].map(key => ({
+      ...["size", "image_size", "aspect_ratio", "quality", "background", "n"].map(key => ({
         target: `/${key}`, source: { kind: "request" as const, path: `$.parameters.${key}` },
         omitIfUndefined: true, omitValues: ["auto"],
       })),
@@ -77,7 +78,7 @@ export class SecureSkillImageAdapter extends GenericRestAdapter {
   override async submit(request: Parameters<GenericRestAdapter["submit"]>[0]): Promise<ProviderTask> {
     // GPT Image 2 quality is selected by the upstream Key group. Image 2.5
     // still uses quality; preserve its field and the measured transparent PNG path.
-    const parameters = { ...request.parameters };
+    const parameters = secureSkillImageParameters(request.model ?? "gpt-image-2", request.parameters);
     if (request.model === "gpt-image-2") delete parameters.quality;
     const task = await super.submit({ ...request, parameters });
     if (!task.providerTaskId.trim() || task.providerTaskId.startsWith("rest:sync:")) {

@@ -20,6 +20,8 @@ export interface RunErrorDetails {
   code?: string;
   api?: string;
   statusCode?: number;
+  source?: ProviderErrorPresentation["source"];
+  localMessage?: string;
   providerMessage?: string;
   docsUrl?: string;
   actionUrl?: string;

@@ -111,7 +111,7 @@ function valueIssues(descriptor: ModelParameterDescriptor, value: unknown): Vali
   if (valueType && (valueType === "integer" ? !Number.isInteger(value) : typeof value !== valueType))
     return issue("type", `${descriptor.label}类型无效`);
   if (!["string", "number", "boolean"].includes(typeof value)) return issue("type", `${descriptor.label}必须是文本、数字或开关值`);
-  if (descriptor.options && !descriptor.options.some(option => option.value === value))
+  if (descriptor.options && descriptor.allowCustomValue !== true && !descriptor.options.some(option => option.value === value))
     return issue("option", `${descriptor.label}不支持当前值，请重新选择`);
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return issue("number", `${descriptor.label}必须是有效数字`);
@@ -244,6 +244,7 @@ export function parseCliModelCatalog(value: unknown): ModelDescriptor[] {
         if (parameter.valueType !== undefined && !["string", "number", "integer", "boolean"].includes(String(parameter.valueType))) throw new Error("CLI 参数类型无效");
         if (parameter.default !== undefined && !isValue(parameter.default)) throw new Error("CLI 参数默认值无效");
         if (parameter.required !== undefined && typeof parameter.required !== "boolean") throw new Error("CLI 参数必填标记无效");
+        if (parameter.allowCustomValue !== undefined && typeof parameter.allowCustomValue !== "boolean") throw new Error("CLI 参数自定义值标记无效");
         for (const field of ["min", "max", "step"]) if (parameter[field] !== undefined && (typeof parameter[field] !== "number" || !Number.isFinite(parameter[field]))) throw new Error("CLI 参数范围无效");
         if ((typeof parameter.step === "number" && parameter.step <= 0) || (typeof parameter.min === "number" && typeof parameter.max === "number" && parameter.min > parameter.max)) throw new Error("CLI 参数范围或步长无效");
         if (parameter.options !== undefined) parseOptions(parameter.options);
@@ -257,7 +258,8 @@ export function parseCliModelCatalog(value: unknown): ModelDescriptor[] {
             if (constraint.options !== undefined) parseOptions(constraint.options);
             for (const field of ["min", "max"]) if (constraint[field] !== undefined && (typeof constraint[field] !== "number" || !Number.isFinite(constraint[field]))) throw new Error("CLI 联动范围无效");
             if (constraint.required !== undefined && typeof constraint.required !== "boolean") throw new Error("CLI 联动必填标记无效");
-            if (Object.keys(constraint).some(key => !["when", "options", "min", "max", "required"].includes(key))) throw new Error("CLI 联动包含未知字段");
+            if (constraint.allowCustomValue !== undefined && typeof constraint.allowCustomValue !== "boolean") throw new Error("CLI 联动自定义值标记无效");
+            if (Object.keys(constraint).some(key => !["when", "options", "min", "max", "required", "allowCustomValue"].includes(key))) throw new Error("CLI 联动包含未知字段");
           }
         }
       }

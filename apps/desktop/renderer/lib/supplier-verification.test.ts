@@ -72,17 +72,17 @@ function capabilities(group: string, description = "", custom = model) {
 }
 
 describe("supplier capability decisions", () => {
-  it("keeps pDog Image2.5 max as an unverified candidate even when the group's generic text mentions high", () => {
+  it("keeps pDog Image2.5 highest quality within the exact native options", () => {
     const group = "1K2K4K(超分组)";
     const configuredSupplier = { ...supplier, apiUrl: "https://ai.whyshy.cn", siteUrl: "https://ai.whyshy.cn",
       catalog: { groups: [{ id: group, label: group, models: [], details: { source: "key-groups" as const, description: "高质量图片 0.03/张" } }] } };
     const result = effectiveImageCapabilities({ supplier: configuredSupplier,
       connection: { ...connection, config: { ...connection.config, baseUrl: configuredSupplier.apiUrl, modelGroup: group } },
       model: { ...model, id: "gpt-image-2.5-flare" }, fingerprint: "f" });
-    expect(result.quality).toBe("max");
-    expect(result.qualityOptions).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
-    expect(result.evidence.find(item => item.quality)).toMatchObject({ quality: "max", kind: "adapter", status: "assumed" });
-    expect(result.needsQualityProbe).toBe(true);
+    expect(result.quality).toBe("high");
+    expect(result.qualityOptions).toEqual(["low", "medium", "high"]);
+    expect(result.model.metadata?.pdogQualityDocumented).toBe(true);
+    expect(result.needsQualityProbe).toBe(false);
   });
   it.each(["1K", "1K2K4K(超分组)"])("uses pDog documented pixels and group-scoped high quality for %s", group => {
     const configuredSupplier = { ...supplier, apiUrl: "https://ai.whyshy.cn", siteUrl: "https://ai.whyshy.cn",
@@ -93,10 +93,10 @@ describe("supplier capability decisions", () => {
     expect(result.quality).toBe("high");
     expect(result.qualityOptions).toEqual(["low", "medium", "high"]);
     const size = result.model.parameters?.find(parameter => parameter.key === "size");
-    for (const tier of group === "1K" ? ["1K"] : ["1K", "2K", "4K"])
-      expect(size?.options?.filter(option => option.label.startsWith(tier))).toHaveLength(11);
-    if (group === "1K") expect(size?.options?.some(option => option.label.startsWith("4K"))).toBe(false);
-    else expect(size?.options?.find(option => option.label.startsWith("2K · 16:9"))?.value).toBe("2048x1152");
+    expect(size?.options?.filter(option => option.label.startsWith("1K"))).toHaveLength(1);
+    expect(size?.options?.filter(option => option.label.startsWith("2K"))).toHaveLength(group === "1K" ? 0 : 9);
+    expect(size?.options?.filter(option => option.label.startsWith("4K"))).toHaveLength(group === "1K" ? 0 : 9);
+    expect(size?.options?.map(option => option.value)).not.toContain("1360x768");
     expect(size?.options?.some(option => option.value === "auto")).toBe(true);
   });
   it.each([{ values: ["1080p"] }, { values: ["1080p", "2K", "4K"] }])("preserves vendor-native image enums $values without adding GPT controls", ({ values }) => {
@@ -143,7 +143,7 @@ describe("supplier capability decisions", () => {
     const limited = capabilities("图片", "", { ...model, id: "banana", parameters: [
       { key: "image_size", label: "尺寸", control: "select", default: "2K", options: [{ value: "2K", label: "2K" }] },
     ] });
-    expect(limited.probeTiers).toEqual(["2K"]);
+    expect(limited.probeTiers).toEqual([]);
     expect(limited.tiers.map(t => t.tier)).toEqual(["2K"]);
   });
   it("opens all declared tiers from a cached compact group description without claiming paid verification", () => {
@@ -152,11 +152,8 @@ describe("supplier capability decisions", () => {
       { tier: "1K", status: "declared" }, { tier: "2K", status: "declared" }, { tier: "4K", status: "declared" },
     ]);
     const sizes = result.model.parameters?.find(parameter => parameter.key === "size")?.options ?? [];
-    expect(sizes.some(option => option.value === "auto")).toBe(true);
-    for (const tier of ["1K", "2K", "4K"])
-      expect(sizes.filter(option => option.label.startsWith(tier))).toHaveLength(11);
-    expect(sizes.some(option => option.label.startsWith("2K") && /^\d+x\d+$/u.test(String(option.value)))).toBe(true);
-    expect(sizes.some(option => option.label.startsWith("4K") && option.value === "3840x2160")).toBe(true);
+    expect(sizes).toEqual([]);
+    expect(result.probeTiers).toEqual([]);
     expect(result.evidence.filter(item => item.resolution).every(item => item.kind === "group")).toBe(true);
     expect(result.model.parameters?.find(parameter => parameter.key === "quality")).toMatchObject({
       default: "max", options: ["auto", "low", "medium", "high", "xhigh", "max"].map(value => ({ value })),
@@ -167,8 +164,7 @@ describe("supplier capability decisions", () => {
       { key: "image_size", label: "尺寸", control: "select", options: [{ value: "4K", label: "4K" }] },
       { key: "aspect_ratio", label: "比例", control: "select", options: [{ value: "16:9", label: "16:9" }] },
     ] });
-    expect(result.model.parameters?.find(parameter => parameter.key === "aspect_ratio")?.options).toHaveLength(12);
-    expect(result.model.parameters?.find(parameter => parameter.key === "aspect_ratio")?.options?.[0]?.value).toBe("auto");
+    expect(result.model.parameters?.find(parameter => parameter.key === "aspect_ratio")?.options).toEqual([{ value: "16:9", label: "16:9" }]);
     expect(result.model.parameters?.find(parameter => parameter.key === "quality")?.options).toHaveLength(6);
     expect(result.evidence.some(item => item.kind === "test")).toBe(false);
   });
@@ -177,7 +173,7 @@ describe("supplier capability decisions", () => {
       { key: "size", label: "尺寸", control: "dimensions", options: [{ value: "2560x1440", label: "2K · 16:9" }] },
     ] });
     const sizes = result.model.parameters?.find(parameter => parameter.key === "size")?.options ?? [];
-    expect(sizes.filter(option => option.label.startsWith("2K"))).toHaveLength(11);
+    expect(sizes.filter(option => option.label.startsWith("2K"))).toHaveLength(1);
     expect(sizes.find(option => option.label.startsWith("2K · 16:9"))?.value).toBe("2560x1440");
     const limited = capabilities("图片", "支持4K；支持 max；不支持 low", { ...model, id: "gpt-image-2.5-all" });
     expect(limited.model.parameters?.find(parameter => parameter.key === "quality")?.options?.map(o=>o.value)).toEqual(["auto", "medium", "high", "xhigh", "max"]);
@@ -187,9 +183,9 @@ describe("supplier capability decisions", () => {
       { key: "aspect_ratio", label: "比例", control: "select", default: "16:9", options: [{ value: "16:9", label: "16:9 (documented)" }] },
     ] });
     const ratio = result.model.parameters?.find(p => p.key === "aspect_ratio");
-    expect(ratio?.options).toHaveLength(12);
+    expect(ratio?.options).toHaveLength(1);
     expect(ratio?.options).toContainEqual({ value: "16:9", label: "16:9 (documented)" });
-    expect(ratio?.options).toContainEqual({ value: "9:21", label: "9:21" });
+    expect(ratio?.options).not.toContainEqual({ value: "9:21", label: "9:21" });
     expect(ratio?.default).toBe("16:9");
     expect(result.evidence.some(e => e.kind === "test")).toBe(false);
     if (id === "nano-banana2-4k") expect(result.model.parameters?.some(p => p.key === "size")).toBe(false);
@@ -232,11 +228,9 @@ describe("supplier capability decisions", () => {
     };
     const result = effectiveImageCapabilities({ supplier, connection, model, fingerprint: "f", tests: [passed] });
     const size = result.model.parameters!.find(p => p.key === "size")!;
-    expect(size.options?.some(o => o.value === "auto")).toBe(true);
-    expect(size.options?.filter(o => o.label.startsWith("4K"))).toHaveLength(11);
-    expect(size.options?.some(o => o.value === "2160x3840")).toBe(true);
+    expect(size.options?.map(o => o.value)).toEqual(["3840x2160"]);
     expect(result.tiers.map(t => t.tier)).toEqual(["1K", "2K", "4K"]);
-    expect(size.options?.filter(o => o.label.startsWith("2K"))).toHaveLength(11);
+    expect(size.options?.filter(o => o.label.startsWith("2K"))).toHaveLength(0);
     expect(result.evidence.find(e => e.resolution === "2K")).toMatchObject({ status: "inferred", kind: "inference", actualWidth: undefined, actualHeight: undefined });
     expect(result.evidence.find(e => e.resolution === "2K")?.excerpt).toContain("未另行生成");
     expect(result.evidence.filter(e => e.kind === "test")).toHaveLength(1);
@@ -249,8 +243,8 @@ describe("supplier capability decisions", () => {
     expect(effectiveImageCapabilities({ supplier, connection, model, fingerprint: "f", tests: [overloaded2K, passed] }).tiers).toContainEqual({ tier: "2K", status: "inferred" });
     const native = effectiveImageCapabilities({ supplier, connection, model: { ...model, id: "banana" }, fingerprint: "f",
       tests: [{ ...passed, modelId: "banana", ratio: "1:1", parameters: { image_size: "4K", aspect_ratio: "1:1" } }] });
-    expect(native.model.parameters?.find(p => p.key === "image_size")?.options?.some(o => o.value === "4K")).toBe(true);
-    expect(native.model.parameters?.find(p => p.key === "aspect_ratio")?.options).toHaveLength(12);
+    expect(native.model.parameters?.find(p => p.key === "image_size")?.options?.map(o => o.value)).toEqual(["4K"]);
+    expect(native.model.parameters?.find(p => p.key === "aspect_ratio")).toBeUndefined();
   });
   it("binds evidence to routing headers and actual account group without invalidating equivalent group aliases", () => {
     const original=verificationFingerprint(connection,"key");
@@ -272,12 +266,12 @@ describe("supplier capability decisions", () => {
   it("does not resolution-test 1K groups; tests highest quality once", () => {
     const result = capabilities("生图（1k）");
     expect(result.tiers.map((t) => t.tier)).toEqual(["1K"]);
-    expect(result.probeTiers).toEqual(["1K"]);
+    expect(result.probeTiers).toEqual([]);
     expect(result.quality).toBe("high");
   });
   it("recognizes a named 1K group and scoped quality documentation", () => {
-    expect(capabilities("1k分组").probeTiers).toEqual(["1K"]);
-    expect(capabilities("1k低价生图").probeTiers).toEqual(["1K"]);
+    expect(capabilities("1k分组").probeTiers).toEqual([]);
+    expect(capabilities("1k低价生图").probeTiers).toEqual([]);
     expect(capabilities("生图（原生4k").tiers.map(t=>t.tier)).toEqual(["1K", "2K", "4K"]);
     const result = effectiveImageCapabilities({
       supplier,
@@ -308,9 +302,9 @@ describe("supplier capability decisions", () => {
   });
   it("probes only missing sizes at the highest legal quality", () => {
     const result = capabilities("普通图片");
-    expect(result.probeTiers).toEqual(["4K"]);
+    expect(result.probeTiers).toEqual([]);
     expect(result.tiers).toMatchObject([{ tier: "1K", status: "assumed" }, { tier: "4K", status: "assumed" }]);
-    expect(result.model.parameters?.find(parameter => parameter.key === "size")?.options?.filter(option => option.label.startsWith("4K"))).toHaveLength(11);
+    expect(result.model.parameters?.find(parameter => parameter.key === "size")).toBeUndefined();
     expect(result.evidence.find(entry => entry.resolution === "4K")).toMatchObject({ status: "assumed", excerpt: expect.stringContaining("待核验") });
   });
   it("keeps a newly imported Sunburst's pending 4K selectable without inventing verified capability", async () => {
@@ -413,6 +407,15 @@ describe("automatic connection onboarding", () => {
   });
 });
 
+/** Durable queue tests declare their own input pixels; they do not depend on supplier guessing. */
+const queueSize = { key: "size", label: "精确测试尺寸", control: "dimensions" as const, options: [
+  { value: "1360x768", label: "1K · 16:9" }, { value: "2048x1152", label: "2K · 16:9" }, { value: "3840x2160", label: "4K · 16:9" },
+] };
+function queueDescriptor(current: ModelDescriptor): ModelDescriptor {
+  const size = current.parameters?.find(p => p.key === "size");
+  if (size?.options?.length || current.parameters?.some(p => ["image_size", "tier", "resolution"].includes(p.key))) return current;
+  return { ...current, parameters: [queueSize, ...(current.parameters ?? []).filter(p => p.key !== "size")] };
+}
 async function fixture(overrides: Partial<VerificationDependencies> = {}) {
   const repository = new MemoryRepository();
   await repository.saveSupplier(supplier);
@@ -427,7 +430,7 @@ async function fixture(overrides: Partial<VerificationDependencies> = {}) {
   const deps: VerificationDependencies = {
     repository,
     fingerprintKey: "server-secret",
-    models: async () => [model],
+    models: async () => [queueDescriptor(model)],
     submit,
     poll: async (_, task) => task,
     archive: async (test) => ({
@@ -438,6 +441,8 @@ async function fixture(overrides: Partial<VerificationDependencies> = {}) {
     sleep: async () => {},
     ...overrides,
   };
+  const originalModels = deps.models;
+  deps.models = async key => (await originalModels(key)).map(queueDescriptor);
   return {
     repository,
     submit,
@@ -481,7 +486,7 @@ describe("durable paid verification", () => {
       await f.repository.saveSupplierVerification(prepared, prepared.revision);
     }
     await f.repository.saveConnection({ ...connection, id: "new-key" });
-    f.deps.models = async key => key.id === "new-key" ? [model] : [];
+    f.deps.models = async key => key.id === "new-key" ? [queueDescriptor(model)] : [];
     await f.service.plan(supplier.id, false, { onboarding: true });
     await f.service.kick();
     expect(f.submit).toHaveBeenCalledOnce();
@@ -818,7 +823,7 @@ describe("durable paid verification", () => {
     old.used = 1; old.paused = true; old.reason = old.cases[0]!.reason;
     await f.repository.saveSupplierVerification(old, old.revision);
     await f.repository.saveConnection({ ...connection, id: "new-key", config: { ...connection.config, modelGroup: "image2.5全参" } });
-    f.deps.models = async key => key.id === "new-key" ? [{ ...model, id: "gpt-image-2.5-sunburst" }, { ...model, id: "gpt-image-2.5-flare" }] : [model];
+    f.deps.models = async key => (key.id === "new-key" ? [{ ...model, id: "gpt-image-2.5-sunburst" }, { ...model, id: "gpt-image-2.5-flare" }] : [model]).map(queueDescriptor);
     await f.service.plan(supplier.id);
     const queued = (await f.repository.getSupplierVerification(supplier.id))!.cases.find(test => test.modelId === "gpt-image-2.5-sunburst")!;
     await f.service.runQueuedCase(supplier.id, queued.id);

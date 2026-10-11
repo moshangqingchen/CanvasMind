@@ -6,7 +6,7 @@ import { attachedPanelGeometry } from "./attached-panel-geometry";
 
 for (const [id, values] of [
   ["gpt-image-2.5-flare-yf", ["auto", "low", "medium", "high", "xhigh", "max"]],
-  ["gpt-image-2-cf", ["low", "medium", "high"]],
+  ["gpt-image-2-cf", ["auto", "low", "medium", "high"]],
 ] as const) test(`highest quality unlocks all options and persists each choice: ${id}`, async ({ page, request }) => {
   const config = { baseUrl: "https://vapi.chuangxiangai.asia", modelGroup: "生图", usage: "canvas" };
   const bound = bindScannedModelProtocols({ provider: "openai", config }, [{ id, name: "质量验收", operations: ["image.generate"] }]).models[0]!;

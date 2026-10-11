@@ -122,6 +122,8 @@ export interface PublicRunError {
   code?: string;
   api?: string;
   statusCode?: number;
+  source?: ProviderErrorPresentation["source"];
+  localMessage?: string;
   providerMessage?: string;
   docsUrl?: string;
   phase?: ProviderErrorPresentation["phase"];
@@ -191,6 +193,8 @@ function publicError(
     typeof value.providerMessage === "string"
       ? redactPublicText(value.providerMessage).slice(0, 2_048)
       : undefined;
+  const localMessage = typeof value.localMessage === "string"
+    ? redactPublicText(value.localMessage).slice(0, 2_048) : undefined;
   const charge = publicCharge(value.charge);
   return {
     message,
@@ -198,6 +202,9 @@ function publicError(
     ...(detail("code") ? { code: detail("code") } : {}),
     ...(detail("api") ? { api: detail("api") } : {}),
     ...(statusCode === undefined ? {} : { statusCode }),
+    ...(["local_validation", "provider_response"].includes(String(value.source))
+      ? { source: value.source as PublicRunError["source"] } : {}),
+    ...(localMessage ? { localMessage } : {}),
     ...(providerMessage ? { providerMessage } : {}),
     ...(docsUrl ? { docsUrl } : {}),
     ...(["connect", "submit", "poll", "cancel", "archive"].includes(String(value.phase)) ? { phase: value.phase as ProviderErrorPresentation["phase"] } : {}),

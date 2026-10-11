@@ -15,6 +15,8 @@ import type {
 } from "./contracts.js";
 import { chentuAzImageDescriptor, isChentuAzImageModel, CHENTU_AZ_IMAGE_SIZES } from "./chentu-az.js";
 import { monsterImageEvidence } from "./monster-image-capabilities.js";
+import { cOpenImageRoute, cOpenImageParameters, cOpenImageParameterIssues, applyCOpenImageCapabilities } from "./c-open-image-contract.js";
+import { isSecureSkillGptImage, secureSkillImageParameterIssues } from "./secure-skill-image-contract.js";
 import { applyHangImageCapabilities, hangImageBaseUrl } from "./hang-image-contract.js";
 import { chuangxiangImageEvidence } from "./chuangxiang-image-capabilities.js";
 import { isSecureSkillImageConnection, isSecureSkillImageResult, isSecureSkillSeedreamConnection, SecureSkillImageAdapter } from "./secure-skill-image.js";
@@ -24,14 +26,17 @@ import { applyJiasuImageCapabilities, isJiasuImageConnection, isJiasuImageResult
 import { applyJijiuImageCapabilities, isJijiuGptImage, jijiuGptImageParameters, jijiuGptImageRequestIssues, jijiuImageOrigin } from "./jijiu-image-contract.js";
 import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnection, isChuangxiangMidjourneyResult, ChuangxiangMidjourneyAdapter } from "./chuangxiang-midjourney.js";
-import { imageQualityPresetsAfterSuccess } from "./image-quality-presets.js";
 import { applySupplierImageConstraints, isMikotoDocumentedImageSize, supplierImageParameterIssues } from "./supplier-image-constraints.js";
+import { isMikotoGptImage, mikotoUrlImageReferences } from "./mikoto-image-contract.js";
+import { isGenimageImageConnection, genimageImageParameters, genimageImageRatioIssues } from "./genimage-image-capabilities.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
   imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
 import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, weAiBananaModelUnavailable, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
+import { applyUserImageSizePresets, resolveUserImageSizeParameters } from "./image-size-presets.js";
+import { userImageQualityValues } from "./user-image-quality-presets.js";
 import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
 import {
@@ -47,6 +52,8 @@ import {
 import {
   WEAI_ADOBE_PER_REQUEST_PRICES,
   weAIModelDescriptors,
+  weAIImageDimensionParameters,
+  imageSizePreferenceIssues,
 } from "./weai-models.js";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -251,7 +258,7 @@ function friModelSupportsImageEdit(model: string): boolean {
 }
 
 function isFriModelImage25(model: string): boolean {
-  return /^gpt-image-2\.5-(?:flare|sunburst)-adobe$/iu.test(model.trim());
+  return /^gpt-image-2\.5(?:-(?:flare|sunburst)(?:-adobe)?)?$/iu.test(model.trim());
 }
 
 function isChentuImageCandidate(model: string): boolean {
@@ -504,6 +511,10 @@ const FRIMODEL_GPT_IMAGE_SIZE_OPTIONS: readonly ModelParameterOption[] = [
   { label: "2K · 16:9 · 2560 × 1440", value: "2560x1440" },
   { label: "2K · 21:9 · 2560 × 1104", value: "2560x1104" },
   { label: "2K · 9:21 · 1104 × 2560", value: "1104x2560" },
+  { label: "2K · 1:2 · 1024 × 2048", value: "1024x2048" },
+  { label: "2K · 2:1 · 2048 × 1024", value: "2048x1024" },
+  { label: "2K · 1:3 · 672 × 2016", value: "672x2016" },
+  { label: "2K · 3:1 · 2016 × 672", value: "2016x672" },
   { label: "4K · 1:1 · 2880 × 2880", value: "2880x2880" },
   { label: "4K · 2:3 · 2352 × 3520", value: "2352x3520" },
   { label: "4K · 3:2 · 3520 × 2352", value: "3520x2352" },
@@ -515,12 +526,18 @@ const FRIMODEL_GPT_IMAGE_SIZE_OPTIONS: readonly ModelParameterOption[] = [
   { label: "4K · 16:9 · 3840 × 2160", value: "3840x2160" },
   { label: "4K · 21:9 · 3840 × 1648", value: "3840x1648" },
   { label: "4K · 9:21 · 1648 × 3840", value: "1648x3840" },
+  { label: "4K · 1:2 · 1920 × 3840", value: "1920x3840" },
+  { label: "4K · 2:1 · 3840 × 1920", value: "3840x1920" },
+  { label: "4K · 1:3 · 1280 × 3840", value: "1280x3840" },
+  { label: "4K · 3:1 · 3840 × 1280", value: "3840x1280" },
 ];
 
 function friModelImageParameterDescriptors(
   modelId: string,
 ): readonly ModelParameterDescriptor[] {
   const fixedQuality = /^gpt-image-2-(low|medium|high)$/iu.exec(modelId.trim())?.[1]?.toLowerCase();
+  const ownsPixelTable = /^gpt-image-2(?:-(?:low|medium|high))?$/iu.test(modelId.trim());
+  const openImage25Quality = isFriModelImage25(modelId) && !/^gpt-image-2\.5-(?:flare|sunburst)-adobe$/iu.test(modelId.trim());
   return [
     {
       key: "size",
@@ -528,21 +545,21 @@ function friModelImageParameterDescriptors(
       control: "dimensions",
       valueType: "string",
       default: "auto",
-      min: 16,
-      max: 3840,
-      step: 16,
-      options: FRIMODEL_GPT_IMAGE_SIZE_OPTIONS,
+      ...(ownsPixelTable ? { min: 16, max: 3840, step: 16 } : {}),
+      allowCustomValue: true,
+      options: ownsPixelTable ? FRIMODEL_GPT_IMAGE_SIZE_OPTIONS : [{ label: "自动（省略 size）", value: "auto" }],
       description:
-        "FriModel 官方文档支持 1K、2K、4K 常见尺寸；最长边不超过 3840px，两边需为 16 的倍数。",
+        ownsPixelTable ? "FriModel 官方文档支持 1K、2K、4K 常见尺寸；最长边不超过 3840px，两边需为 16 的倍数。" : "此完整型号 size 为开放字符串；没有对应逐比例像素表，不套用 GPT2 的范围或步长。",
       operations: ["image.generate", "image.edit"],
     },
     {
       key: "quality",
       label: "质量（quality）",
-      control: "select",
+      control: openImage25Quality ? "text" : "select",
       valueType: "string",
-      default: "high",
-      options: fixedQuality
+      default: isFriModelImage25(modelId) ? "max" : "high",
+      ...(openImage25Quality ? { allowCustomValue: true } : {}),
+      options: openImage25Quality ? [{ label: "自动（auto）", value: "auto" }, { label: "最高偏好（max）", value: "max" }] : fixedQuality
         ? [
             {
               label: `${fixedQuality === "low" ? "低" : fixedQuality === "medium" ? "中" : "高"}（${fixedQuality}，模型固定）`,
@@ -561,7 +578,7 @@ function friModelImageParameterDescriptors(
           ],
       description: fixedQuality
         ? `gpt-image-2-${fixedQuality} 是 FriModel 模型广场的固定${fixedQuality.toUpperCase()}质量模型。`
-        : "FriModel 图片接口指南支持 auto、low、medium、high；默认使用 high。",
+        : openImage25Quality ? "当前完整型号未公布完整质量枚举；max 为应用最高质量偏好，开放字符串按原值发送。" : "FriModel 图片接口指南支持 auto、low、medium、high；默认使用 high。",
       operations: ["image.generate", "image.edit"],
     },
     {
@@ -831,9 +848,7 @@ function chentuModelDisplayName(model: string): string {
 }
 
 function chentuOfficialQuality(_model: string): "standard" {
-  // 辰途当前 image2 官 key 文档将 quality 标为 standard 默认值；
-  // 省略该字段可让分组按模型档位自行路由，避免旧画布的 high/low 值
-  // 把请求送进不兼容的渠道。
+  // Keep the documented default separate from the user's requested high/max.
   return "standard";
 }
 
@@ -942,7 +957,7 @@ function chentuModelDescriptor(
                         value: officialQuality,
                       },
                     ],
-                    description: "image2 官 key 按辰途官方文档使用默认 standard 质量；提交时省略该字段。",
+                    description: "image2 官 key 文档默认 standard；旧 standard 与自动值省略字段，显式质量按用户选择发送。",
                     operations: ["image.generate"],
                   }
                 : {
@@ -1309,8 +1324,7 @@ function weAIParametersForModel(
       ? WEAI_GEMINI_COMPAT_PARAMETER_DESCRIPTORS
       : WEAI_GEMINI_NATIVE_PARAMETER_DESCRIPTORS;
   const max = weAIMaxOutputCount(model, group);
-  const supportsKResolutionTiers = /^gpt-image-2(?:-|$)/u.test(model);
-  const descriptors = WEAI_IMAGE_PARAMETER_DESCRIPTORS.map((descriptor) => {
+  const descriptors = [...weAIImageDimensionParameters(model), ...WEAI_IMAGE_PARAMETER_DESCRIPTORS.filter(parameter => !["size", "aspect_ratio"].includes(parameter.key))].map((descriptor) => {
     if (descriptor.key === "n")
       return {
         ...descriptor,
@@ -1320,30 +1334,24 @@ function weAIParametersForModel(
             ? "当前分组单次仅支持 1 张；批量任务请在画布中拆分"
             : "当前分组单次最多生成 10 张",
       };
-    if (descriptor.key === "size" && !supportsKResolutionTiers)
-      return {
-        ...descriptor,
-        options: (descriptor.options ?? []).filter((option) =>
-          ["auto", "1024x1024", "1536x1024", "1024x1536"].includes(
-            String(option.value),
-          ),
-        ),
-        description:
-          "作为 Images API 的 size 请求参数发送，不会写进提示词；当前模型使用 OpenAI 官方标准尺寸",
-      };
     return descriptor;
   });
-  const supportsOptionalQuality =
+  const supportsComplexOutputParameters =
     group === WEAI_ADOBE_TOKEN_GROUP ||
     group === WEAI_AZURE_GROUP ||
     group === WEAI_ADOBE_PER_REQUEST_URL_GROUP;
+  const codexQuality = group === WEAI_CODEX_TOKEN_GROUP && /^gpt-image-2(?:\.5-(?:flare|sunburst))?$/u.test(model);
+  const supportsOptionalQuality = supportsComplexOutputParameters || codexQuality;
   const supportsUrlResponse = isWeAIAdobeUrlOutputGroup(group, model);
   // Adobe per-request supports response_format: url, but We-AI only documents
   // the standard output_format/output_compression extensions for the other
   // compatible image routes.
-  const supportsComplexOutputParameters = supportsOptionalQuality;
   const extensions: ModelParameterDescriptor[] = [
-    ...(supportsOptionalQuality ? [WEAI_OPTIONAL_QUALITY_DESCRIPTOR] : []),
+    ...(supportsOptionalQuality ? [codexQuality && model.includes("2.5")
+      ? { key: "quality", label: "请求质量", control: "text" as const, valueType: "string" as const, default: "max", allowCustomValue: true,
+        options: [{ value: "auto", label: "自动" }, { value: "max", label: "max（应用最高质量偏好）" }], operations: ["image.generate", "image.edit"] as const,
+        description: "当前 CODEX Key 返回此完整型号；quality 保留原输入，未借用 GPT2 四档枚举或供应商默认值。" }
+      : WEAI_OPTIONAL_QUALITY_DESCRIPTOR] : []),
     ...(supportsComplexOutputParameters
       ? IMAGE_PARAMETER_DESCRIPTORS.filter((descriptor) =>
           ["output_format", "output_compression"].includes(descriptor.key),
@@ -1400,6 +1408,9 @@ function weAIModelDescriptor(
       supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"],
     },
     metadata: {
+      ...(!isMikotoGeminiGroup(group) ? { imageNativeParameterContract: true, imageOpenSizePreferences: !isGemini,
+        imageSupportedResolutions: isGemini || /^gpt-image-2(?:-(?:low|medium|high))?$/u.test(id) ? ["1K", "2K", "4K"] : [],
+        documentationUrl: "https://docs.we-ai.cc/guides/image-generation.html" } : {}),
       ...(maxOutputCount === 1 ? { fixedOutputCount: 1 } : {}),
       ...(quality ? { fixedQuality: quality } : {}),
       ...(isGemini
@@ -1640,9 +1651,11 @@ function chentuImageParameterKeys(
 
 function weAIImageParameterKeys(
   group?: string,
+  model?: string,
 ): readonly WeAIImageParameterKey[] {
-  if (group === WEAI_CODEX_TOKEN_GROUP) return ["n", "size"];
-  if (group === WEAI_ADOBE_PER_REQUEST_GROUP || isWeAIImage25Group(group))
+  if (group === WEAI_CODEX_TOKEN_GROUP) return ["n", "size", ...(/^gpt-image-2(?:\.5-(?:flare|sunburst))?$/u.test(model ?? "") ? ["quality" as const] : [])];
+  if (isWeAIImage25Group(group)) return ["n", "size", "quality", "response_format"];
+  if (group === WEAI_ADOBE_PER_REQUEST_GROUP)
     return ["n", "size", "response_format"];
   if (group === WEAI_ADOBE_PER_REQUEST_URL_GROUP)
     return ["n", "quality", "size"];
@@ -1669,12 +1682,14 @@ function friModelImageParameters(
       ? parameters["size_tier"].trim().toUpperCase()
       : "";
   const normalizedModel = model?.trim().toLowerCase() ?? "";
-  const isGptImage2 = normalizedModel.startsWith("gpt-image-2");
+  const isGptImage2 = /^gpt-image-2(?:-(?:low|medium|high))?$/u.test(normalizedModel);
   if (typeof rawSize === "string" && rawSize.trim().toLowerCase() !== "auto") {
     result.size = rawSize.trim();
   } else if (isGptImage2 && ["1K", "2K", "4K"].includes(sizeTier)) {
+    const ratio = parameters?.aspect_ratio ?? parameters?.aspectRatio ?? parameters?.ratio;
+    const selectedRatio = typeof ratio === "string" && ratio !== "auto" ? ratio.trim() : "1:1";
     const tierSize = FRIMODEL_GPT_IMAGE_SIZE_OPTIONS.find((option) =>
-      String(option.label).toUpperCase().startsWith(sizeTier),
+      String(option.label).split(" · ")[0] === sizeTier && String(option.label).split(" · ")[1] === selectedRatio,
     )?.value;
     if (tierSize && tierSize !== "auto") result.size = tierSize;
   }
@@ -1714,10 +1729,13 @@ function imageParameters(
   }
   if (supplierKey === "frimodel")
     return friModelImageParameters(parameters, model);
+  if (supplierKey === "chentu" && model === "gpt-image-2自由传参" &&
+      ["低价Adobe生图", "兜底原生生图", "image2.5全参"].includes(group ?? "") && /^https:\/\/tu\.988236\.xyz(?:\/v1)?\/?$/u.test(baseUrl ?? ""))
+    return Object.fromEntries(OPENAI_IMAGE_PARAMETER_KEYS.flatMap(key => parameters?.[key] === undefined || key === "size" && parameters[key] === "auto" ? [] : [[key, parameters[key]]]));
   const sourceParameters = parameters ?? {};
   const permitted =
     profile === "weai"
-      ? weAIImageParameterKeys(group)
+      ? weAIImageParameterKeys(group, model)
       : supplierKey === "chentu"
         ? chentuImageParameterKeys(model, group)
         : isTk1688ApiUrl(baseUrl) ? TK1688_IMAGE_PARAMETER_KEYS : OPENAI_IMAGE_PARAMETER_KEYS;
@@ -1756,9 +1774,9 @@ function imageParameters(
     }),
   );
   if (isChentuOfficialModelGroup(group)) {
-    // The official route documents standard as the default. Omit quality so
-    // the distributor can select the correct channel for the model's tier.
-    delete result.quality;
+    // Preserve the old automatic/default request while forwarding an explicit
+    // quality selection through the group's existing Images field.
+    if (result.quality === "standard" || result.quality === "auto") delete result.quality;
     if (result.style === undefined) result.style = "vivid";
     if (result.n === undefined) result.n = 1;
   }
@@ -1773,7 +1791,7 @@ function imageParameters(
       sourceParameters["aspect_ratio"],
     );
     if (tierSize) result.size = tierSize;
-  } else if (!chentuPromptAutomatic && result.size === undefined) {
+  } else if (profile !== "weai" && supplierKey !== "cyberafei" && !/^gpt-image-2\.5(?:-|$)/u.test(model) && !chentuPromptAutomatic && result.size === undefined) {
     const inferredSize = sizeFromAspectRatio(sourceParameters["aspect_ratio"], tk1688ImagePolicyModelId(model, baseUrl));
     if (inferredSize) result.size = inferredSize;
   }
@@ -2659,11 +2677,25 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const source = imageEditingConnection(connection);
     const route = bananaImageRoute(source, model);
     if (!route) return;
-    if (!route.weaiGroup && (this.profile !== "openai" || !route.pdog && !route.chentu && !route.synora && !route.tk1688 && !jijiuImageOrigin(connection.baseUrl) && model !== GEMINI_NANO_BANANA_21_MODEL)) return;
+    if (!route.weaiGroup && (this.profile !== "openai" || !route.pdog && !route.chentu && !route.synora && !route.tk1688 && !route.monster && !route.genimage && route.kind !== "chuangxiang" && !jijiuImageOrigin(connection.baseUrl) && model !== GEMINI_NANO_BANANA_21_MODEL)) return;
     const descriptor = applyBananaImageCapabilities(source, { id: model, name: model,
       operations: ["image.generate", "image.edit"], metadata: { liveInventory: true } });
     return new BananaImageAdapter(this.connections, route, descriptor, { fetch: this.fetchImpl,
       requestTimeoutMs: configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs") });
+  }
+
+  private withUserImageSize(request: NormalizedRequest, connection: ResolvedProviderConnection): NormalizedRequest {
+    if (!request.operation.startsWith("image.") || connection.settings?.manualProtocol === true) return request;
+    const id = request.model ?? configuredImageModel(connection, this.defaultModel, this.profile);
+    const catalog = connection.settings?.modelCatalogModels;
+    const saved = Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(model => model?.id === id) : undefined;
+    const base = saved ?? (this.profile === "weai" || isWeAITokenEndpoint(connection.baseUrl ?? "")
+      ? weAIModelDescriptor(id, false, configuredModelGroup(connection), configuredGeminiProtocol(connection)) : undefined);
+    if (!base || !Array.isArray(base.operations)) return request;
+    const source = imageEditingConnection(connection);
+    const model = applySupplierImageConstraints(source, applyJijiuImageCapabilities(source,
+      applyBananaImageCapabilities(source, applyCOpenImageCapabilities(source, base))));
+    return { ...request, parameters: resolveUserImageSizeParameters(model, request.parameters) };
   }
 
   public async testConnection(connectionId: string): Promise<void> {
@@ -2889,11 +2921,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       // This authenticated catalog read supersedes the saved ID list for these descriptors.
       const source = pdogImageOrigin(connection.baseUrl) || supplierKey === "chentu" ? { ...configured, config: { ...configured.config,
         scannedModelIds: remoteIds, modelScanStatus: "live" } } : configured;
-      const described = applyChuangxiangMidjourneyCapabilities({ ...source, config: { ...source.config,
-        scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyChuangxiangCurrentImageCapabilities(source, model));
-      return applyJijiuImageCapabilities({ ...source, config: { ...source.config, scannedModelIds: remoteIds, modelScanStatus: "live" } },
+      const described = applyCOpenImageCapabilities(source, applyChuangxiangMidjourneyCapabilities({ ...source, config: { ...source.config,
+        scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyChuangxiangCurrentImageCapabilities(source, model)));
+      return applyUserImageSizePresets(applyJijiuImageCapabilities({ ...source, config: { ...source.config, scannedModelIds: remoteIds, modelScanStatus: "live" } },
         applyHangImageCapabilities(source, applySupplierImageConstraints(source, applyJiasuImageCapabilities({ ...source, config: { ...source.config,
-        scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyBananaImageCapabilities(source, described)))));
+        scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyBananaImageCapabilities(source, described))))));
     });
   }
 
@@ -2903,6 +2935,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     try {
       const connection = await this.connections.resolve(request.connectionId);
       resolvedConnection = connection;
+      request = this.withUserImageSize(request, connection);
       if (!connection.apiKey) {
         issues.push({
           path: "connection.apiKey",
@@ -2952,6 +2985,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         : this.defaultModel);
     if (resolvedConnection) issues.push(...imageEditingRequestIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
     if (resolvedConnection) issues.push(...supplierImageParameterIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
+    if (this.profile === "openai" && resolvedConnection && isSecureSkillGptImage(imageEditingConnection(resolvedConnection).config, requestedModel)) {
+      issues.push(...secureSkillImageParameterIssues(imageEditingConnection(resolvedConnection).config, requestedModel, request.parameters));
+      const result = await this.secureSkill.validate({ ...request, model: requestedModel });
+      return { valid: !issues.length && result.valid, issues: [...issues, ...result.issues] };
+    }
     if (resolvedConnection && isJijiuGptImage(imageEditingConnection(resolvedConnection).config, requestedModel)) {
       issues.push(...jijiuGptImageRequestIssues(imageEditingConnection(resolvedConnection), { ...request, model: requestedModel }));
       return { valid: issues.length === 0, issues };
@@ -3008,8 +3046,12 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         ? canonicalWeAIGeminiModel(requestedModel)
         : requestedModel;
     const tk1688 = isTk1688ApiUrl(resolvedConnection?.baseUrl);
+    const isGenimage = this.profile === "openai" && resolvedConnection !== undefined &&
+      isGenimageImageConnection(imageEditingConnection(resolvedConnection).config, resolvedModel);
+    const cOpenImage = this.profile === "openai" && resolvedConnection ? cOpenImageRoute(imageEditingConnection(resolvedConnection).config, resolvedModel) : undefined;
+    if (cOpenImage && resolvedConnection) issues.push(...cOpenImageParameterIssues(imageEditingConnection(resolvedConnection).config, resolvedModel, request.parameters, request.operation));
     const tk1688Model = resolvedConnection ? configuredTk1688ImageModel(resolvedConnection, resolvedModel) : undefined;
-    if (tk1688) issues.push(...tk1688ImageParameterIssues(tk1688Model, request.parameters ?? {}));
+    if (tk1688) issues.push(...tk1688ImageParameterIssues(tk1688Model, request.parameters ?? {}, resolvedModel));
     const monster = this.profile === "openai" && resolvedConnection
       ? monsterImageEvidence({
           ...(isRecord(resolvedConnection.settings?.config) ? resolvedConnection.settings.config : {}),
@@ -3027,7 +3069,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const verifiedImage = monster ?? chuangxiang;
     const mikotoModelGroup = resolvedSupplierKey === "mikoto" && resolvedConnection
       ? configuredModelGroup(resolvedConnection) : undefined;
-    if (resolvedSupplierKey === "mikoto" && resolvedModel === "gpt-image-2" &&
+    if (resolvedSupplierKey === "mikoto" && (resolvedModel === "gpt-image-2" ||
+      mikotoModelGroup === "生图（2k4k 中质量）" && ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(resolvedModel)) &&
       ["生图（2k4k 高质量）", "生图（2k4k 中质量）"].includes(mikotoModelGroup ?? "")) {
       const declaredQuality = mikotoModelGroup === "生图（2k4k 中质量）" ? "medium" : "high";
       const quality = request.parameters?.quality;
@@ -3036,17 +3079,20 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     }
     if (verifiedImage) {
       const quality = request.parameters?.quality;
-      const allowedQualities = [...verifiedImage.qualities,
-        ...(imageQualityPresetsAfterSuccess(resolvedModel, verifiedImage.qualities) ?? []).map(option => String(option.value))];
+      const allowedQualities = [...new Set([...verifiedImage.qualities, ...userImageQualityValues(resolvedModel ?? "")])];
       if (allowedQualities.length && quality !== undefined && (typeof quality !== "string" || !allowedQualities.includes(quality)))
         issues.push({ path: "parameters.quality", code: "invalid_quality", message: `请选择${monster ? "怪兽 AI" : "创想 AI"}当前分组、型号可用的质量参数` });
       const size = request.parameters?.size;
-      const match = typeof size === "string" ? /^(\d+)x(\d+)$/iu.exec(size) : undefined;
-      // A prior undersized response must not block a valid later 4K request.
-      const maxPixels = chuangxiang ? 3840 * 2160
-        : verifiedImage.tiers.includes("4K") ? 3840 * 2160 : verifiedImage.tiers.includes("2K") ? 2048 ** 2 : 1024 ** 2;
-      if (verifiedImage.tiers.length && match && (Number(match[1]) * Number(match[2]) > maxPixels || Math.max(Number(match[1]), Number(match[2])) > 3840))
-        issues.push({ path: "parameters.size", code: "invalid_image_size", message: `当前分组、型号仅验证 ${verifiedImage.tiers.join(" / ")}，请选择对应档位内的尺寸` });
+      // Historical app tier classification never publishes a custom pixel bound.
+      // Retain only B3's specific recorded 4K rejection, not a guessed area/edge cap.
+      if (monster && /不支持\s*4K/iu.test(monster.note) &&
+          (size === "3840x2160" || request.parameters?.size_tier === "4K"))
+        issues.push({ path: "parameters.size", code: "invalid_image_size", message: "怪兽当前 B3 分组记录了 4K 档位限制；旧选择已保留，请修改。" });
+      issues.push(...genimageImageRatioIssues(request.parameters).map(issue => ({ ...issue,
+        message: issue.message.replaceAll("基因形象", monster ? "怪兽当前型号" : "创想当前型号") })));
+      if (request.parameters?.size_tier !== undefined && request.parameters.size_tier !== "auto" &&
+          !(typeof size === "string" && /^[1-9]\d*x[1-9]\d*$/u.test(size)))
+        issues.push({ path: "parameters.size", code: "resolution_requires_explicit_size", message: "此完整型号没有该档位逐比例像素映射；档位原值已保留，请输入明确 W/H，程序不会猜尺寸。" });
     }
     const azModel = resolvedSupplierKey === "chentu"
       ? chentuAzImageDescriptor(resolvedModel, resolvedConnection ? configuredModelGroup(resolvedConnection) : undefined)
@@ -3116,7 +3162,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const permittedParameters: ReadonlySet<string> =
       this.profile === "weai"
         ? new Set<WeAIImageParameterKey>(
-            weAIImageParameterKeys(resolvedModelGroup),
+            weAIImageParameterKeys(resolvedModelGroup, resolvedModel),
           )
         : isFriModel
           ? new Set<FriModelImageParameterKey>(FRIMODEL_IMAGE_PARAMETER_KEYS)
@@ -3128,7 +3174,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
                       ? configuredModelGroup(resolvedConnection)
                       : undefined,
                   )
-                : tk1688 ? TK1688_IMAGE_PARAMETER_KEYS : OPENAI_IMAGE_PARAMETER_KEYS,
+                : tk1688 || isGenimage ? TK1688_IMAGE_PARAMETER_KEYS : OPENAI_IMAGE_PARAMETER_KEYS,
             );
     const assets = imageReferenceAssets(request.assets);
     const images = assets.filter((asset) => asset.kind === "image");
@@ -3247,10 +3293,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     }
     const responseFormat = request.parameters?.["response_format"];
     if (
-      permittedParameters.has("response_format") &&
+      (permittedParameters.has("response_format") || (resolvedConnection && isMikotoGptImage(imageEditingConnection(resolvedConnection), resolvedModel))) &&
       responseFormat !== undefined &&
       (typeof responseFormat !== "string" ||
-        !(tk1688 ? ["url", "b64_json"].includes(responseFormat) : resolvedSupplierKey === "chentu"
+        !((tk1688 || isGenimage || (resolvedConnection && isMikotoGptImage(imageEditingConnection(resolvedConnection), resolvedModel))) ? ["url", "b64_json"].includes(responseFormat) : resolvedSupplierKey === "chentu"
           ? (isChentuOfficial
               ? ["url"].includes(responseFormat)
               : ["url", "b64_json"].includes(responseFormat))
@@ -3262,7 +3308,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         path: "parameters.response_format",
         code: "invalid_response_format",
           message:
-            tk1688 ? "词元 response_format 必须是 url 或 b64_json" : resolvedSupplierKey === "chentu"
+            isGenimage ? "基因形象 response_format 必须是 url 或 b64_json" : resolvedConnection && isMikotoGptImage(imageEditingConnection(resolvedConnection), resolvedModel) ? "Mikoto response_format 必须是 url 或 b64_json" : tk1688 ? "词元 response_format 必须是 url 或 b64_json" : resolvedSupplierKey === "chentu"
             ? isChentuOfficial
               ? "辰途 image2 官 key response_format 仅支持 url"
               : "辰途 API response_format 必须是 url 或 b64_json"
@@ -3303,15 +3349,15 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     if (
       count !== undefined &&
       (typeof count !== "number" ||
-        !Number.isInteger(count) ||
+        !(isGenimage ? Number.isSafeInteger(count) : Number.isInteger(count)) ||
         count < 1 ||
-        count > maxCount)
+        (!isGenimage && count > maxCount))
     ) {
       issues.push({
         path: "parameters.n",
         code: "invalid_count",
         message:
-          tk1688MaxCount !== undefined ? `词元当前型号单次最多生成 ${maxCount} 张` : this.profile === "weai"
+          isGenimage ? "基因形象 n 必须是正整数；官网未公布此完整型号的数量上限" : tk1688MaxCount !== undefined ? `词元当前型号单次最多生成 ${maxCount} 张` : this.profile === "weai"
             ? `We-AI ${resolvedModel} n must be an integer between 1 and ${maxCount}`
             : resolvedSupplierKey === "chentu"
               ? isChentuOfficialModelGroup(
@@ -3364,7 +3410,9 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       const liveSizes = hasLiveSizes && isRecord(savedSize) && Array.isArray(savedSize.options)
         ? savedSize.options.flatMap(option => isRecord(option) && typeof option.value === "string" ? [option.value] : [])
         : [];
-      const allowedSizes = liveSizes.length ? liveSizes : chentuAllowedSizes(resolvedModel);
+      // Static historical presets are examples, not a supplier refusal. Only
+      // the current Key's explicit capability response closes this enum.
+      const allowedSizes = liveSizes.length ? liveSizes : /^gpt-image-2(?:[.-]|$)/u.test(resolvedModel) ? [] : chentuAllowedSizes(resolvedModel);
       if (
         typeof size === "string" &&
         allowedSizes.length > 0 &&
@@ -3377,7 +3425,9 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         });
     }
     const aspectRatio = request.parameters?.["aspect_ratio"];
-    if (useGemini) {
+    if (isGenimage) {
+      issues.push(...genimageImageRatioIssues(request.parameters));
+    } else if (useGemini) {
       const allowedAspectRatios =
         resolvedSupplierKey === "mikoto"
           ? MIKOTO_GEMINI_ASPECT_RATIOS
@@ -3447,11 +3497,44 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         code: "invalid_aspect_ratio",
         message: "OpenAI aspect_ratio must be auto or WIDTH:HEIGHT",
       });
+    const cyberDeclaredOpenSize = this.profile === "openai" && resolvedSupplierKey === "cyberafei" &&
+      ["gpt-image-2", "gpt-image-2-2K", "gpt-image-2-4K", "gpt-image-4K"].includes(resolvedModel) &&
+      /^https:\/\/api\.3365api\.cn(?:\/v1)?\/?$/u.test(resolvedConnection?.baseUrl ?? "");
+    const friOwnPixelTable = isFriModel && /^gpt-image-2(?:-(?:low|medium|high))?$/u.test(resolvedModel);
+    const friOpenSize = isFriModel && /^gpt-image-2(?:-(?:adobe|az|w|wc|o)|\.5(?:-(?:flare|sunburst)(?:-adobe)?)?)$/u.test(resolvedModel);
+    const chentuFreeOpenSize = resolvedSupplierKey === "chentu" && resolvedModel === "gpt-image-2自由传参" &&
+      /^https:\/\/tu\.988236\.xyz(?:\/v1)?\/?$/u.test(resolvedConnection?.baseUrl ?? "") &&
+      ["低价Adobe生图", "兜底原生生图", "image2.5全参"].includes(resolvedConnection ? configuredModelGroup(resolvedConnection) ?? "" : "");
+    if (friOwnPixelTable) {
+      const mapped = friModelImageParameters(request.parameters, resolvedModel);
+      const reference = FRIMODEL_GPT_IMAGE_SIZE_OPTIONS.find(option => option.value === mapped.size);
+      const nominalRatio = reference?.label.split(" · ")[1];
+      const preferredTier = typeof request.parameters?.size_tier === "string" ? request.parameters.size_tier.toUpperCase() : undefined;
+      if (preferredTier && ["1K", "2K", "4K"].includes(preferredTier) && reference && reference.value !== "auto" && reference.label.split(" · ")[0] !== preferredTier)
+        issues.push({ path: "parameters.size_tier", code: "image_size_tier_conflict", message: "FriModel 现有 W/H 属于官方表中的另一档位；原值保留，请确认尺寸或档位。" });
+      // Match the document's nominal ratio for its own rounded reference pixels.
+      // This does not change the actual size string sent to the provider.
+      const comparisonSize = nominalRatio?.includes(":") ? nominalRatio.replace(":", "x") : mapped.size;
+      issues.push(...genimageImageRatioIssues({ ...request.parameters, ...(comparisonSize ? { size: comparisonSize } : {}) }).map(issue => ({ ...issue, message: issue.message.replaceAll("基因形象", "FriModel") })));
+      if (request.parameters?.size_tier !== undefined && request.parameters.size_tier !== "auto" && !mapped.size)
+        issues.push({ path: "parameters.size", code: "resolution_requires_explicit_size", message: "FriModel 此档位/比例没有合法原文表项；原值保留，请输入明确 W/H。" });
+    }
+    const chentuGrokNoSchema = this.profile === "openai" && resolvedSupplierKey === "chentu" &&
+      /^https:\/\/tu\.988236\.xyz(?:\/v1)?\/?$/u.test(resolvedConnection?.baseUrl ?? "") &&
+      configuredModelGroup(resolvedConnection!) === "grok生图" && ["grok-imagine-image", "grok-imagine-image-2.0", "grok-imagine-image-2.0福利"].includes(resolvedModel);
+    if (chentuGrokNoSchema) for (const key of ["size_tier", "resolution", "size", "aspect_ratio", "aspectRatio", "ratio"]) {
+      const value = request.parameters?.[key];
+      if (value !== undefined && value !== null && value !== "auto" && value !== "")
+        issues.push({ path: `parameters.${key}`, code: "missing_image_size_schema", message: "辰途当前 grok生图完整型号的 /v1/images/models 返回 404，档位/尺寸/比例原值保留，需要该 Key 对应字段 schema 才能映射提交。" });
+    }
+    if (!useGemini && (cyberDeclaredOpenSize || friOpenSize || chentuFreeOpenSize || this.profile === "weai" ||
+        ["chentu", "cyberafei"].includes(resolvedSupplierKey ?? "") && /^gpt-image-2\.5(?:-(?:flare|sunburst))?$/u.test(resolvedModel)))
+      issues.push(...imageSizePreferenceIssues(request.parameters));
     const policyModel = tk1688ImagePolicyModelId(resolvedModel, resolvedConnection?.baseUrl);
-    if (/^gpt-image-2(?:-|$)/u.test(policyModel)) {
+    if (!isGenimage && /^gpt-image-2(?:-|$)/u.test(policyModel)) {
       const size = request.parameters?.["size"];
       if (typeof size === "string") {
-        const reason = resolvedConnection && isMikotoDocumentedImageSize(imageEditingConnection(resolvedConnection), requestedModel, size.trim())
+        const reason = cOpenImage || cyberDeclaredOpenSize || friOpenSize || tk1688 || verifiedImage || resolvedConnection && isMikotoDocumentedImageSize(imageEditingConnection(resolvedConnection), requestedModel, size.trim())
           ? undefined : gptImage2SizeIssue(size.trim());
         if (reason)
           issues.push({
@@ -3462,7 +3545,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       }
       const quality = request.parameters?.["quality"];
       if (
-        !isFriModel && !verifiedImage?.qualities.length && !tk1688Model?.parameters?.find(parameter => parameter.key === "quality")?.options?.length &&
+        !cOpenImage && !isFriModel && !verifiedImage?.qualities.length && !tk1688Model?.parameters?.find(parameter => parameter.key === "quality")?.options?.length &&
         permittedParameters.has("quality") &&
         quality !== undefined &&
         !(
@@ -3503,10 +3586,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     }
     if (isFriModel) {
       const quality = request.parameters?.["quality"];
+      const openImage25Quality = isFriModelImage25(resolvedModel) && !/^gpt-image-2\.5-(?:flare|sunburst)-adobe$/iu.test(resolvedModel);
       if (
         quality !== undefined &&
         (typeof quality !== "string" ||
-          ![
+          !openImage25Quality && ![
             "auto",
             "low",
             "medium",
@@ -3560,6 +3644,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   public async submit(request: NormalizedRequest): Promise<ProviderTask> {
     assertValidResult(await this.validate(request));
     const connection = await this.connections.resolve(request.connectionId);
+    request = this.withUserImageSize(request, connection);
     const apiKey = requireApiKey(connection);
     const supplierKey = configuredSupplierKey(connection);
     const selectedModel =
@@ -3629,13 +3714,22 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         : selectedModel;
     const tk1688Model = configuredTk1688ImageModel(connection, model);
     const effectiveParameters = normalizeImageEditingParameters(imageEditingConnection(connection), model, request.parameters);
+    const historicalImage = this.profile === "openai" && (monsterImageEvidence(imageEditingConnection(connection).config, model) ??
+      chuangxiangImageEvidence(imageEditingConnection(connection).config, model));
     // Marketplace Image2.5 connections use the generic OpenAI profile, whose
     // parameter allowlist omits response_format. Apply the Adobe URL contract
     // after that filtering, for both JSON generation and multipart editing.
     const forceWeAIUrlOutput = useWeAITransport &&
       isWeAIAdobeUrlOutputGroup(configuredModelGroup(connection), model);
     const imageRequestParameters = {
-      ...imageParameters(effectiveParameters, model, this.profile, modelGroup, supplierKey, baseUrl, tk1688Model),
+      ...(this.profile === "openai" && isGenimageImageConnection(imageEditingConnection(connection).config, model)
+        ? genimageImageParameters(effectiveParameters)
+        : this.profile === "openai" && cOpenImageRoute(imageEditingConnection(connection).config, model)
+          ? cOpenImageParameters(imageEditingConnection(connection).config, model, effectiveParameters, request.operation)
+          : imageParameters(historicalImage ? { ...effectiveParameters, aspect_ratio: undefined } : effectiveParameters,
+            model, this.profile, modelGroup, supplierKey, baseUrl, tk1688Model)),
+      ...(isMikotoGptImage(imageEditingConnection(connection), model) && ["url", "b64_json"].includes(String(effectiveParameters?.response_format))
+        ? { response_format: effectiveParameters!.response_format } : {}),
       ...(this.profile === "openai" && hangImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, model) && effectiveParameters?.n === undefined ? { n: 1 } : {}),
       ...(forceWeAIUrlOutput ? { response_format: "url" } : {}),
       // Exact live proof can extend a conservative group allowlist for transparent generation.
@@ -3659,7 +3753,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     const acceptsOutputFormat =
       (useFriModel || this.profile !== "weai") ||
       (!useGemini &&
-        weAIImageParameterKeys(modelGroup).includes("output_format"));
+        weAIImageParameterKeys(modelGroup, model).includes("output_format"));
     const requestedOutputFormat = acceptsOutputFormat
       ? (imageFormat(effectiveParameters?.["output_format"]) ??
         IMAGE_FORMATS.png)
@@ -3878,6 +3972,15 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         );
       }
       protocol = "gemini-openai-compatible";
+    } else if (isMikotoGptImage(imageEditingConnection(connection), model) && request.operation === "image.edit" &&
+        mikotoUrlImageReferences(imageReferenceAssets(request.assets))) {
+      commonHeaders.set("content-type", "application/json");
+      response = await fetchProviderJson<OpenAIImageResponse>(submitFetch, joinUrl(baseUrl, "/images/edits"), {
+        method: "POST", headers: commonHeaders,
+        body: JSON.stringify({ model, prompt: request.prompt,
+          images: mikotoUrlImageReferences(imageReferenceAssets(request.assets)), ...imageRequestParameters }),
+      }, { phase: "submit", timeoutMs: requestTimeoutMs, maxResponseBytes, idempotent: false,
+        allowLoopback: allowLoopbackGateway(connection) });
     } else if (supplierKey === "chentu" && request.operation === "image.edit") {
       // 辰途低价 Adobe 路由实际要求 multipart 的 `image` 字段。即使
       // 运行时同时附带了本地素材的签名 URL，也必须优先上传真实字节；

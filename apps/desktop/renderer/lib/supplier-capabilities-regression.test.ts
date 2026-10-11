@@ -16,6 +16,14 @@ const supplier: SupplierRecord = {
 };
 const connection = { id: "key-a", provider: "openai", config: { accountKeyGroup: group } };
 const model = (id: string): ModelDescriptor => ({ id, name: id, operations: ["image.generate"] });
+// A declared same-model request size is necessary to exercise queue recovery.
+// These isolated fixtures do not rely on a tier-to-pixel formula.
+const withMockRequestSize = (current: ModelDescriptor): ModelDescriptor => ({ ...current, parameters: [
+  ...(current.parameters ?? []).filter(parameter => parameter.key !== "size"),
+  { key: "size", label: "尺寸", control: "dimensions", options: [
+    { value: "3840x2160", label: "4K · 16:9 · 3840 × 2160" },
+  ] },
+] });
 const get = (current: ModelDescriptor, extra: Partial<Parameters<typeof effectiveImageCapabilities>[0]> = {}) =>
   effectiveImageCapabilities({ supplier, connection, model: current, fingerprint: "f", ...extra });
 const attempt = (id: string, overrides: Partial<SupplierVerificationCase> = {}): SupplierVerificationCase => ({
@@ -36,7 +44,9 @@ describe("supplier fixed quality and unresolved resolution requests", () => {
           default: quality, options: [{ value: quality }],
         });
         expect(result.qualityOptions).toEqual([quality]);
-        expect(verificationParameters(result, "4K").parameters).toMatchObject({ quality, size: "3840x2160" });
+        expect(verificationParameters(result, "4K")).toMatchObject({ parameters: { quality }, width: 0, height: 0 });
+        expect(verificationParameters(result, "4K").parameters.size).toBeUndefined();
+        expect(result.probeTiers).toEqual([]);
         expect(get(result.model).quality).toBe(quality);
         expect(result.evidence.some(evidence => evidence.status === "verified")).toBe(false);
       }
@@ -94,9 +104,9 @@ describe("supplier fixed quality and unresolved resolution requests", () => {
     const result = get(current, { supplier: { ...supplier, catalog: { groups: [] } }, tests: [original] });
     const sizes = result.model.parameters?.find(parameter => parameter.key === "size")?.options ?? [];
     expect(result.tiers).toContainEqual({ tier: "4K", status: "assumed" });
-    expect(sizes.filter(option => option.label.startsWith("4K"))).toHaveLength(11);
-    expect(sizes.filter(option => option.label.startsWith("4K")).every(option => option.label.includes("待核验"))).toBe(true);
-    expect(sizes.some(option => option.value === "auto")).toBe(true);
+    expect(sizes).toEqual([]);
+    expect(verificationParameters(result, "4K")).toMatchObject({ width: 0, height: 0 });
+    expect(verificationParameters(result, "4K").parameters.size).toBeUndefined();
     expect(result.probeTiers).toEqual([]);
     expect(result.evidence.find(evidence => evidence.resolution === "4K")).toMatchObject({
       status: "assumed", kind: "test", checkedAt: "later", excerpt: expect.stringContaining("original-request"),
@@ -136,7 +146,7 @@ describe("supplier fixed quality and unresolved resolution requests", () => {
     expect(result.model.parameters?.find(parameter => parameter.key === "quality")?.visibleWhen).toEqual(visibleWhen);
     expect(result.model.parameters?.find(parameter => parameter.key === "quality")).toMatchObject({ default: "max",
       options: nativeQualities.map(value => ({ value })) });
-    expect(result.model.parameters?.find(parameter => parameter.key === "aspect_ratio")?.options).toHaveLength(12);
+    expect(result.model.parameters?.find(parameter => parameter.key === "aspect_ratio")?.options).toEqual([{ value: "16:9", label: "16:9" }]);
     expect(verificationParameters(result, "4K").parameters).toMatchObject({ tier: "4k", quality: "max", series: "sunburst" });
     const quoted: ModelDescriptor = { ...current, pricing: { kind: "tiered", currency: "CNY", billingUnit: "image", confidence: "exact", checkedAt: "now",
       tiers: [{ id: "sunburst-4k-max", label: "sunburst 4k max", price: 4, conditionMode: "all", conditions: [
@@ -160,7 +170,9 @@ describe("supplier fixed quality and unresolved resolution requests", () => {
     const limited = get(seedream);
     expect(limited.tiers.map(tier => tier.tier)).toEqual(["1K", "2K"]);
     expect(limited.qualityKey).toBeUndefined();
-    expect(limited.model.parameters?.find(parameter => parameter.key === "size")?.options).toHaveLength(23);
+    expect(limited.model.parameters?.find(parameter => parameter.key === "size")?.options).toBeUndefined();
+    expect(limited.probeTiers).toEqual([]);
+    expect(verificationParameters(limited, "2K")).toMatchObject({ width: 0, height: 0 });
     const providerQuality = get({ ...model("gpt-image-2.5-provider-decided"), metadata: { qualitySupport: "provider-decided" } });
     expect(providerQuality.qualityKey).toBeUndefined();
     expect(providerQuality.model.parameters?.some(parameter => parameter.key === "quality")).toBe(false);
@@ -175,7 +187,7 @@ describe("supplier fixed quality and unresolved resolution requests", () => {
     }]), { fetch: fetchMock });
     const request = { connectionId: connection.id, operation: "image.generate" as const, model: id,
       prompt: "isolated transport validation", idempotencyKey: `mock-${quality}`,
-      parameters: verificationParameters(get(model(id)), "4K").parameters };
+      parameters: verificationParameters(get(withMockRequestSize(model(id))), "4K").parameters };
     expect((await adapter.validate(request)).valid).toBe(true);
     await adapter.submit(request);
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ model: id, quality, size: "3840x2160" });
@@ -238,7 +250,7 @@ async function planFixture(current: ModelDescriptor) {
   await repository.saveSupplier(supplier);
   await repository.saveConnection(storedConnection);
   const submit = vi.fn<VerificationDependencies["submit"]>(async () => ({ providerTaskId: "mock-task", status: "succeeded" }));
-  const dependencies: VerificationDependencies = { repository, fingerprintKey: "mock-key", models: async () => [current], submit,
+  const dependencies: VerificationDependencies = { repository, fingerprintKey: "mock-key", models: async () => [withMockRequestSize(current)], submit,
     poll: async (_, task) => task, archive: async test => ({ assetId: "mock-asset", width: test.expectedWidth, height: test.expectedHeight }),
     sleep: async () => {} };
   const service = new SupplierVerificationService(dependencies);
@@ -282,7 +294,7 @@ describe("durable quality-plan correction", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
-  it("uses native tier and series parameters for the queued request's expected price", async () => {
+  it("quotes native tier and series without inventing pixels or scheduling a pixel verification", async () => {
     const current: ModelDescriptor = { ...model("gpt-image-2.5-x"), metadata: { imageNativeResolutionParameter: "tier", imageNativeQualityOptions: true },
       parameters: [
         { key: "tier", label: "档位", control: "select", default: "4k", options: [{ value: "4k", label: "4k" }] },
@@ -292,10 +304,13 @@ describe("durable quality-plan correction", () => {
         tiers: [{ id: "native", label: "sunburst 4k", price: 4, conditionMode: "all", conditions: [
           { parameter: "series", operator: "equals", value: "sunburst" }, { parameter: "tier", operator: "equals", value: "4k" },
         ] }, { id: "web", label: "web", price: 0.2, otherwise: true }] } };
+    const capabilities = get(current);
+    const selected = verificationParameters(capabilities, "4K");
+    expect(selected).toMatchObject({ parameters: { tier: "4k", quality: "max", series: "sunburst" }, width: 0, height: 0 });
+    expect(selected.parameters.size).toBeUndefined();
+    expect(declaredImageCharge(current, "4K", "max", selected.parameters)).toMatchObject({ amount: 4, currency: "CNY" });
     const fixture = await planFixture(current);
-    expect((await fixture.repository.getSupplierVerification(supplier.id))?.cases[0]).toMatchObject({
-      parameters: { tier: "4k", quality: "max", series: "sunburst" }, expectedCharge: { amount: 4, currency: "CNY" },
-    });
+    expect((await fixture.repository.getSupplierVerification(supplier.id))?.cases).toEqual([]);
     expect(fixture.submit).not.toHaveBeenCalled();
   });
   it("corrects the existing unsubmitted B4-high plan while preserving its IDs and protection pause", async () => {

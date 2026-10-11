@@ -32,10 +32,10 @@ describe("词元模型与商家展示分组", () => {
     expect(tk1688RouteLabel(route())).toBe("自动路由");
   });
   it("distinguishes missing declarations, fixed sizes and stale evidence", () => {
-    expect(tk1688RouteSummary(route("@s1c23", { tk1688SupportedResolutions: [] }))).toBe("分辨率档位未公布");
+    expect(tk1688RouteSummary(route("@s1c23", { tk1688SupportedResolutions: [] }))).toBe("分辨率：—");
     expect(tk1688RouteSummary(route("@s47c261", { tk1688SupportedResolutions: ["4K"], tk1688FixedSize: "3840x2160",
       tk1688OmitN: true, supplierChannelDescription: "Adobe 原生4K", tk1688CatalogStale: true })))
-      .toBe("固定 3840×2160 · 一次 1 张 · 商家说明：Adobe 原生4K · 上次目录，本次未确认");
+      .toBe("固定 3840×2160 · 一次 1 张 · 商家说明：Adobe 原生4K · 上次目录记录");
     expect(tk1688RouteSummary(route())).toContain("规格和价格可能不同");
   });
   it("finds merchant descriptions through both the picker and the outer supplier search", () => {

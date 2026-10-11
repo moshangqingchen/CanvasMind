@@ -54,7 +54,7 @@ function fixture(options: {
   const request: NormalizedRequest = {
     connectionId: "weai-timeout", operation, model: options.model ?? "gpt-image-2.5-sunburst",
     prompt: "Offline delayed response", idempotencyKey: "offline-single-submission",
-    parameters: { size: "2880x2880", quality: "max", n: 1 },
+    parameters: { size: "2880x2880", quality: options.model === "gpt-image-2" ? "high" : "max", n: 1 },
     ...(operation === "image.edit" ? { assets: [{ id: "reference", kind: "image" as const,
       mimeType: "image/png", filename: "reference.png", data: new Uint8Array([137, 80, 78, 71]) }] } : {}),
   };

@@ -108,6 +108,19 @@ describe("GenericRestAdapter", () => {
       taskId: "one", status: "succeeded", remote: {} })).rejects.toThrow("current connection origin");
     expect(fetcher).not.toHaveBeenCalled();
   });
+
+  it("does not enable redirect handoff for another supplier's authenticated task content", async () => {
+    const config: RestConnectorConfig = { ...asyncConfig, output: { ...asyncConfig.output,
+      kind: "video", contentFallback: { path: "/jobs/{taskId}/content" } } };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 302,
+      headers: { location: "https://cdn.test/original.mp4" } }));
+    const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "non-jijiu-content", provider: "rest", apiKey: "content-secret",
+      baseUrl: "https://provider.test", settings: { connector: config } }]), { fetch: fetcher });
+    await expect(adapter.extractOutputs({ connectionId: "non-jijiu-content", baseUrl: "https://provider.test", config,
+      taskId: "one", status: "succeeded", remote: {} })).rejects.toMatchObject({ details: { phase: "archive", status: 302 } });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: "GET", redirect: "error" });
+  });
   it.each(["image.generate", "image.edit"] as const)("keeps %s waiting beyond legacy connection request deadlines", async operation => {
     vi.useFakeTimers();
     try {

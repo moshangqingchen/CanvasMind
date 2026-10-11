@@ -17,6 +17,44 @@ function fixture(baseUrl: string, options: { model?: string; group?: string; pro
 }
 
 describe("supplier banana image protocols", () => {
+  it("uses Genimage's exact full-ID tiers, preserving open strings and the literal 512 wire value", async () => {
+    for (const selected of ["gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview", "gemini-3.1-flash-lite-image", "gemini-nano-banana-2.1", "gemini-2.5-flash-image"]) {
+      const f = fixture("https://genimage.pro/v1", { model: selected, group: "default" });
+      const route = bananaImageRoute({ provider: "openai", config: f.config }, selected)!;
+      const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected, name: selected,
+        operations: ["image.generate"], parameters: [{ key: "size", control: "dimensions", label: "old", min: 16, max: 3840, step: 16 }],
+        pricing: { kind: "per-image", currency: "USD", unitAmount: .16, billingUnit: "image", sourceUrl: "https://genimage.pro", checkedAt: "2026-10-10", confidence: "snapshot" },
+        metadata: { imageResolutionProfiles: { "4K": { "1:1": "2880x2880" } }, imageCustomDimensionRules: { alignment: 16, maximumEdge: 3840 } } });
+      expect(descriptor.metadata?.imageNativeParameterContract).toBe(true);
+      expect(descriptor.metadata?.imageResolutionProfiles).toBeUndefined(); expect(descriptor.metadata?.imageCustomDimensionRules).toBeUndefined();
+      expect(descriptor.pricing?.unitAmount).toBe(.16);
+      const resolution = descriptor.parameters?.find(parameter => parameter.key === "image_size");
+      const sizes = selected === "gemini-3.1-flash-image-preview" ? ["auto", "512", "1K", "2K", "4K"]
+        : selected === "gemini-3-pro-image-preview" ? ["auto", "1K", "2K", "4K"] : ["auto"];
+      expect(resolution?.options?.map(option => option.value)).toEqual(sizes);
+      expect(resolution?.allowCustomValue).toBe(selected.includes("lite") || selected.includes("2.1"));
+      const parameters = { image_size: selected === "gemini-3.1-flash-image-preview" ? "512" : selected === "gemini-2.5-flash-image" ? "auto" : selected.includes("lite") || selected.includes("2.1") ? "supplier-native-value" : "4K", aspect_ratio: "1000:1501", n: 1 };
+      const original = structuredClone(parameters);
+      expect(normalizeBananaParameters(route, parameters)).toMatchObject(parameters);
+      await f.adapter.submit({ ...request, model: selected, parameters });
+      expect(parameters).toEqual(original);
+      const config = JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).generationConfig.imageConfig;
+      expect(config).toEqual({ aspectRatio: "1000:1501", ...(selected === "gemini-2.5-flash-image" ? {} : { imageSize: parameters.image_size }) });
+      expect(f.fetch).toHaveBeenCalledOnce();
+    }
+  });
+  it("blocks explicit old Genimage 2.5 tiers and conflicting aliases without changing saved input or submitting", async () => {
+    const selected = "gemini-2.5-flash-image", f = fixture("https://genimage.pro/v1", { model: selected, group: "geminiResponseUrl" });
+    for (const key of ["image_size", "imageSize", "resolution", "size_tier", "size"]) {
+      const parameters = { [key]: "1K", aspect_ratio: "16:9" }, original = structuredClone(parameters);
+      await expect(f.adapter.submit({ ...request, model: selected, parameters })).rejects.toThrow(/改选自动/u);
+      expect(parameters).toEqual(original);
+    }
+    const pro = fixture("https://genimage.pro/v1");
+    for (const parameters of [{ image_size: "2K", imageSize: "4K" }, { image_size: "4K", aspect_ratio: "16:9", ratio: "9:16" }, { image_size: "4K", quality: "max" }])
+      await expect(pro.adapter.submit({ ...request, parameters })).rejects.toThrow();
+    expect(f.fetch).not.toHaveBeenCalled(); expect(pro.fetch).not.toHaveBeenCalled();
+  });
   it("uses Mikoto's exact native nano-banana-2.1 ID and all supplier-declared tiers/ratios without claiming fixed pixels", async () => {
     const selected = "nano-banana-2.1";
     const f = fixture("https://api.mikoto.vip", { model: selected, group: "gemini生图", settings: { accountKeyGroupId: "28" } });
@@ -47,7 +85,7 @@ describe("supplier banana image protocols", () => {
     expect(bananaImageRoute({ provider: "openai", config: { ...f.config, accountKeyGroupId: "40" } }, selected)).toBeUndefined();
     expect(bananaImageRoute({ provider: "openai", config: f.config }, "nano-banana2")).toBeUndefined();
   });
-  it.each(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "gemini-nano-banana-2.1", "nano-banana-2.1"])(
+  it.each(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "gemini-3.1-flash-lite-image", "gemini-nano-banana-2.1", "nano-banana-2.1"])(
     "uses Monster C1's native full ID %s for generation and reference editing", async selected => {
       const f = fixture("https://api.eaheng.com/v1", { model: selected, group: "C1-Gemini（香蕉生图）", settings: { accountKeyGroupId: "11" } });
       const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected, name: selected, operations: ["image.generate"] });
@@ -77,6 +115,17 @@ describe("supplier banana image protocols", () => {
       expect(bananaImageRoute({ provider: "openai", config: { ...f.config, accountKeyGroupId: "12" } }, selected)).toBeUndefined();
       expect(bananaImageRoute({ provider: "openai", config: { ...f.config, scannedModelIds: [] } }, selected)?.unavailableReason).toContain("未返回");
     });
+  it("keeps the current Monster C1 three-ID Key separate from its plaza Lite declaration", async () => {
+    const selected = "gemini-3.1-flash-lite-image";
+    const f = fixture("https://api.eaheng.com/v1", { model: selected, group: "C1-Gemini（香蕉生图）", settings: {
+      accountKeyGroupId: "11", scannedModelIds: ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "gemini-nano-banana-2.1"],
+    } });
+    const descriptor = applyBananaImageCapabilities({ provider: "openai", config: f.config }, { id: selected, name: selected, operations: ["image.generate"] });
+    expect(descriptor.metadata?.canvasRunnable).toBe(false);
+    await expect(f.adapter.submit({ ...request, model: selected, parameters: {} })).rejects.toThrow(/权限|接口/);
+    expect(f.fetch).not.toHaveBeenCalled();
+    expect(bananaImageRoute({ provider: "openai", config: { ...f.config, accountKeyGroupId: "20", modelGroup: "C2-Gemini（香蕉生图）V2" } }, selected)).toBeUndefined();
+  });
   it("does not mistake a text-only Monster native result for image generation success", async () => {
     const f = fixture("https://api.eaheng.com/v1", { group: "C1-Gemini（香蕉生图）", reply: { candidates: [{ content: { parts: [{ text: "no image" }] } }] } });
     await expect(f.adapter.submit({ ...request, parameters: {} })).rejects.toThrow("没有图片");
@@ -151,7 +200,9 @@ describe("supplier banana image protocols", () => {
     ["https://asian-acc.we-token.cc/v1", "adobe香蕉", "Authorization", "Bearer fixture-key", "gemini-3-pro-image"],
   ])("sends native image requests for %s without GPT fields", async (baseUrl, group, header, credential, sentModel) => {
     const f = fixture(baseUrl!, { group });
-    const result = await f.adapter.submit({ ...request, parameters: { size: "auto", size_tier: "4K", aspect_ratio: "16:9", quality: "max", background: "opaque" } });
+    const result = await f.adapter.submit({ ...request, parameters: baseUrl!.includes("genimage.pro")
+      ? { size: "auto", size_tier: "4K", aspect_ratio: "16:9" }
+      : { size: "auto", size_tier: "4K", aspect_ratio: "16:9", quality: "max", background: "opaque" } });
     expect(f.fetch).toHaveBeenCalledOnce();
     const [url, init] = f.fetch.mock.calls[0]!;
     expect(String(url)).toBe(`${new URL(baseUrl!).origin}/v1beta/models/${sentModel}:generateContent`);
@@ -261,7 +312,7 @@ describe("supplier banana image protocols", () => {
     await expect(unsupported.adapter.submit({ ...request, model: "gemini-3.1-flash-lite-image" })).rejects.toThrow(/当前分组/);
     expect(unsupported.fetch).not.toHaveBeenCalled();
     const route = bananaImageRoute({ provider: "openai", config: { baseUrl: "https://genimage.pro/v1" } }, model)!;
-    expect(normalizeBananaParameters(route, { aspect_ratio: "1000:1501", image_size: "2K" }).aspect_ratio).toBe("2:3");
+    expect(normalizeBananaParameters(route, { aspect_ratio: "1000:1501", image_size: "2K" }).aspect_ratio).toBe("1000:1501");
   });
 
   it.each([
@@ -375,6 +426,16 @@ describe("Chentu keyed native Gemini image contract", () => {
 });
 
 describe("We-AI current group-scoped Gemini contracts", () => {
+  it.each(["adobe香蕉", "aistudio香蕉"])("enforces %s's documented per-reference 20 MB without submitting or changing saved selections", async group => {
+    const selected = "gemini-3-pro-image", f = fixture("https://asian-acc.we-token.cc/v1", { model: selected, group, provider: "weai" });
+    const route = bananaImageRoute({ provider: "weai", config: f.config }, selected)!;
+    expect(route.maxInputs).toBe(14); expect(route.maxInputBytes).toBe(20 * 1024 * 1024);
+    const parameters = { image_size: "4K", aspect_ratio: "16:9" }, before = structuredClone(parameters);
+    const result = await f.adapter.validate({ ...request, model: selected, operation: "image.edit", parameters,
+      assets: [{ id: "oversized-fixture", kind: "image", mimeType: "image/png", data: new Uint8Array(20 * 1024 * 1024 + 1) }] });
+    expect(result.valid).toBe(false); expect(result.issues).toContainEqual(expect.objectContaining({ code: "image_too_large" }));
+    expect(parameters).toEqual(before); expect(f.fetch).not.toHaveBeenCalled();
+  });
   it.each(["us-la.we-token.cc", "asian-acc.we-token.cc", "sub2api.we-token.cc"].flatMap(host =>
     ["gemini-3.0-pro-image", "gemini-3.0-pro-image-preview"].map(alias => [host, alias])))
   ("routes %s Adobe alias %s to the documented base model with the correct default", async (host, alias) => {

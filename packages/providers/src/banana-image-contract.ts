@@ -3,7 +3,7 @@ import { pdogImageOrigin, PDOG_GEMINI_DOCUMENTATION, PDOG_GEMINI_LEGACY_UNAVAILA
 import { modelSupportsGenerationMedia } from "./model-media.js";
 import { JIJIU_GEMINI_IMAGE_IDS, JIJIU_IMAGE_DOCS, jijiuImageGroupAllowed } from "./jijiu-image-contract.js";
 type Connection = { provider: string; config: Readonly<Record<string, unknown>> };
-export type BananaRoute = { kind: "native" | "chuangxiang" | "secure-async"; auth: "bearer" | "google"; docs: string; maxInputs: number; model: string; sizes: string[]; ratios: string[]; asyncTextGeneration?: boolean; unavailableReason?: string; maxInputBytes?: number; inputLimitSource?: "adapter"; weaiGroup?: "adobe" | "aistudio"; pdog?: true; chentu?: true; synora?: true; tk1688?: true; monster?: true; mikoto?: true; defaultSize?: string; thinking?: { values: string[]; default: string } };
+export type BananaRoute = { kind: "native" | "chuangxiang" | "secure-async"; auth: "bearer" | "google"; docs: string; maxInputs: number; model: string; sizes: string[]; ratios: string[]; asyncTextGeneration?: boolean; unavailableReason?: string; maxInputBytes?: number; inputLimitSource?: "adapter"; weaiGroup?: "adobe" | "aistudio"; pdog?: true; chentu?: true; synora?: true; tk1688?: true; monster?: true; mikoto?: true; genimage?: "declared-tiers" | "open-size" | "omit-size"; defaultSize?: string; thinking?: { values: string[]; default: string } };
 export const GEMINI_NANO_BANANA_21_MODEL = "gemini-nano-banana-2.1";
 export const CHENTU_GEMINI_PENDING_PROTOCOL_REASON = "尚无已验证的画布生成协议";
 const CHENTU_MISSING_PROTOCOL_REASONS = new Set([CHENTU_GEMINI_PENDING_PROTOCOL_REASON,
@@ -32,7 +32,7 @@ function inventoryModelUnavailable(config: Connection["config"], model: string, 
 
 /** Supplier documentation is scoped by origin and model; GPT never enters this path. */
 export function bananaImageRoute(connection: Connection, model: string): BananaRoute | undefined {
-  if ((!["openai", "weai", "rest"].includes(connection.provider)) || !imageModel(model) || connection.config.usage === "agent" ||
+  if ((!["openai", "weai", "rest"].includes(connection.provider)) || !imageModel(model) || connection.config.manualProtocol === true || connection.config.usage === "agent" ||
       connection.config.usage === "disabled" || connection.config.supplierArchived === true) return;
   let url: URL;
   try { url = new URL(String(connection.config.baseUrl ?? "")); } catch { return; }
@@ -62,7 +62,7 @@ export function bananaImageRoute(connection: Connection, model: string): BananaR
   }
   if (url.hostname === "api.eaheng.com" && (connection.config.accountKeyGroupId != null
       ? String(connection.config.accountKeyGroupId) === "11" : group === "C1-Gemini（香蕉生图）") &&
-      ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", GEMINI_NANO_BANANA_21_MODEL, "nano-banana-2.1"].includes(model)) {
+      ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "gemini-3.1-flash-lite-image", GEMINI_NANO_BANANA_21_MODEL, "nano-banana-2.1"].includes(model)) {
     const unavailableReason = inventoryModelUnavailable(connection.config, model, "怪兽 C1", new Set());
     return { kind: "native", auth: "google", docs: "https://api.eaheng.com/v1beta/models", maxInputs: 14, inputLimitSource: "adapter",
       model, sizes: ["auto"], ratios: [], defaultSize: "auto", monster: true, ...(unavailableReason ? { unavailableReason } : {}) };
@@ -95,8 +95,17 @@ export function bananaImageRoute(connection: Connection, model: string): BananaR
   if (model === GEMINI_NANO_BANANA_21_MODEL && url.hostname === "api.frimodel.com")
     return { ...native("https://ai-doc.apifox.cn/9285585m0", "google"),
       sizes: ["1K", "2K", "4K", "auto"], inputLimitSource: "adapter" };
-  if (url.hostname === "genimage.pro" && model.startsWith("gemini-"))
-    return native("https://docs.newapi.ai/zh/docs/api/ai-model/images/gemini/geminirelayv1beta-383837589");
+  if (url.hostname === "genimage.pro" && model.startsWith("gemini-")) {
+    // The fresh exact model description supplies tiers; the linked request
+    // schema declares imageConfig.imageSize/aspectRatio as strings. Unknown
+    // sibling IDs retain that open field without inheriting a tier whitelist.
+    const flash = model === "gemini-3.1-flash-image-preview", pro = model === "gemini-3-pro-image-preview";
+    const omitSize = model === "gemini-2.5-flash-image";
+    return { kind: "native", auth: "bearer", docs: "https://docs.newapi.ai/zh/docs/api/ai-model/images/gemini/geminirelayv1beta-383837589",
+      model, maxInputs: 14, inputLimitSource: "adapter", genimage: omitSize ? "omit-size" : flash || pro ? "declared-tiers" : "open-size",
+      sizes: flash ? ["auto", "512", "1K", "2K", "4K"] : pro ? ["auto", "1K", "2K", "4K"] : ["auto"],
+      ratios: flash ? EXTENDED_RATIOS : pro ? RATIOS : [], defaultSize: flash || pro ? "4K" : "auto" };
+  }
   if (url.hostname === "api.frimodel.com" && model.startsWith("gemini-"))
     return native("https://ai-doc.apifox.cn/9285585m0", "google");
   if (pdogImageOrigin(String(connection.config.baseUrl)) && model.startsWith("gemini-")) {
@@ -126,7 +135,7 @@ export function bananaImageRoute(connection: Connection, model: string): BananaR
       : canonical === "gemini-3.1-flash-image" ? { values: ["minimal", "high"], default: "minimal" }
       : { values: ["minimal", "medium", "high"], default: "medium" } : undefined;
     return { ...native("https://docs.we-ai.cc/guides/gemini-banana-image.html"), model: canonical,
-      sizes: ["1K", "2K", "4K"], defaultSize: aistudio ? "1K" : "2K", weaiGroup: aistudio ? "aistudio" : "adobe",
+      sizes: ["1K", "2K", "4K"], defaultSize: aistudio ? "1K" : "2K", weaiGroup: aistudio ? "aistudio" : "adobe", maxInputBytes: 20 * 1024 * 1024,
       ratios: !aistudio || model === GEMINI_NANO_BANANA_21_MODEL ? EXTENDED_RATIOS : RATIOS,
       ...(thinking ? { thinking } : {}),
       ...(!supported ? { unavailableReason: "当前 We-AI 分组未声明此完整型号的香蕉图片合同；请使用当前分组支持的型号" } : {}) };
@@ -138,7 +147,8 @@ export function bananaImageRoute(connection: Connection, model: string): BananaR
         ? { unavailableReason: "此模型虽在分组列表中，但供应商香蕉接口仅声明支持 gemini-3-pro-image 和 gemini-3.1-flash-image；请选已支持的型号" } : {}) };
   if (url.hostname === "vapi.chuangxiangai.asia" && connection.config.modelGroup === "生图") {
     const fixed = /-(1k|2k|4k)$/iu.exec(model)?.[1]?.toUpperCase();
-    return { kind: "chuangxiang", auth: "bearer", docs: "https://vapi.chuangxiangai.asia/docs/image", maxInputs: 9, model, sizes: fixed ? [fixed] : ["1K", "2K", "4K"], ratios: RATIOS };
+    return { kind: "chuangxiang", auth: "bearer", docs: "https://vapi.chuangxiangai.asia/docs/image", maxInputs: 9, model,
+      sizes: fixed ? [fixed] : ["1K", "2K", "4K"], ratios: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"] };
   }
 }
 
@@ -160,6 +170,7 @@ export function weAiBananaModelUnavailable(connection: Connection, model: string
 }
 
 export function applyBananaImageCapabilities(connection: Connection, model: ModelDescriptor): ModelDescriptor {
+  if (connection.config.manualProtocol === true || model.metadata?.source === "manual" || model.metadata?.source === "paid-test" || model.metadata?.protocolEvidence === "paid-test") return model;
   if (!modelSupportsGenerationMedia(model, "image")) return model;
   const route = bananaImageRoute(connection, model.id);
   const automaticOnly = route?.synora || route?.tk1688 || route?.monster;
@@ -180,7 +191,7 @@ export function applyBananaImageCapabilities(connection: Connection, model: Mode
   if (route.inputLimitSource === "adapter") delete limits.maxInputImages;
   else limits.maxInputImages = route.maxInputs;
   const metadata = { ...model.metadata };
-  if (automaticOnly || route.mikoto) for (const key of ["imageOutputDimensions", "imageOutputReferenceDimensions", "imageNativeQualityParameter", "imageNativeQualityOptions", "imageFixedResolution", "imageResolutionProfiles", "image1KVerifiedAt", "image2KVerifiedAt", "image4KVerifiedAt"])
+  if (automaticOnly || route.mikoto || route.genimage || route.kind === "chuangxiang") for (const key of ["imageOutputDimensions", "imageOutputReferenceDimensions", "imageNativeQualityParameter", "imageNativeQualityOptions", "imageFixedResolution", "imageResolutionProfiles", "imageCustomDimensionRules", "image1KVerifiedAt", "image2KVerifiedAt", "image4KVerifiedAt"])
     delete metadata[key];
   if (repairLegacyAlias || repairPdogLegacy || repairChentuLegacy || repairSynoraLegacy) {
     metadata.canvasRunnable = true;
@@ -191,17 +202,32 @@ export function applyBananaImageCapabilities(connection: Connection, model: Mode
   return { ...model, operations: ["image.generate", "image.edit"], capabilities: ["image.generate", "image.edit"], inputKinds: ["text", "image", "image[]"], outputKinds: ["image"], parameters: [
     { key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: "auto", options: [
       { value: "auto", label: "自动（提示词优先，其次参考图）" }, ...route.ratios.map(value => ({ value, label: value })),
-    ] },
+    ], ...(route.genimage ? { allowCustomValue: true, description: "aspectRatio 是供应商原生字符串字段；保存的比例按原值发送，不猜最接近比例或像素。" } : {}) },
     { key: "image_size", label: "分辨率", control: "select", valueType: "string", default: route.defaultSize ?? route.sizes.at(-1)!, options: route.sizes.map(value => ({ value, label: value === "auto" ? "模型默认（不指定档位）" : value })),
       ...(automaticOnly ? { description: `${route.synora ? "Synora" : route.monster ? "怪兽 C1" : "词元 vip"} 自家文档与当前分组 Key 已声明原生 Gemini 接口，但未公布此型号的 K 档、逐比例像素、quality 或 thinking；当前保留供应商自动尺寸，以原图为准。` } : {}),
       ...(route.mikoto ? { description: "Mikoto 原生接口提供 1K / 2K / 4K；官网明确档位不是固定像素尺寸，比例和实际输出以原图为准。" } : {}),
-      ...(model.id === GEMINI_NANO_BANANA_21_MODEL && !route.weaiGroup && !automaticOnly ? { description: "新型号已在当前目录发现，使用官方原生协议；默认不指定档位。1K/2K/4K 为官方标准参数，是否支持以此型号实际返回为准，尚未逐档付费实测。" } : {}) },
+      ...(model.id === GEMINI_NANO_BANANA_21_MODEL && !route.weaiGroup && !automaticOnly && !route.genimage ? { description: "新型号已在当前目录发现，使用官方原生协议；默认不指定档位。1K/2K/4K 为官方标准参数，是否支持以此型号实际返回为准，尚未逐档付费实测。" } : {}),
+      ...(route.genimage ? { allowCustomValue: route.genimage === "open-size", description: route.genimage === "omit-size"
+        ? "本完整型号文档不接受分辨率档位；自动时省略 imageSize。旧显式档位保留显示，提交前需改选自动，比例另按原字段发送。"
+        : route.genimage === "open-size" ? "本完整型号未列档位；imageSize 为开放字符串字段。默认省略，用户输入按原值发送，不借用兄弟型号档位。"
+        : "本完整型号目录列出这些档位，原生 imageSize 字符串原值发送；档位不等于固定像素尺寸。应用初选最高 4K，供应商默认独立。" } : {}) },
     ...(route.thinking ? [{ key: "thinking_level", label: "思考档位", control: "select" as const, valueType: "string" as const,
       default: route.thinking.default, options: route.thinking.values.map(value => ({ value, label: value })) }] : []),
     { key: "n", label: "生成张数", control: "number", valueType: "integer", default: 1, min: 1, max: 1 },
   ], limits,
   ...(model.id === GEMINI_NANO_BANANA_21_MODEL ? { description: "当前目录中的 Gemini Nano Banana 2.1；通过官方 generateContent 协议生图和参考图编辑。新别名尚未付费实测，分辨率与参考数量以供应商模型能力及实际返回为准。" } : {}),
   metadata: { ...metadata, protocol: route.kind === "native" ? "gemini-generate-content" : "chuangxiang-banana-images",
+    ...(route.kind === "chuangxiang" ? { imageNativeParameterContract: true, imageNativeResolutionOptions: true, imageNativeResolutionParameter: "image_size",
+      imageSupportedResolutions: route.sizes, imageRequestResolutions: route.sizes, imagePixelBudgetPublished: false,
+      imageResolutionMode: /-(?:1k|2k|4k)$/iu.test(model.id) ? "fixed-model-tier-and-ratio" : "native-variable-pixels",
+      contractCheckedAt: "2026-10-10", imageParameterContractNote: "创想图片教程仅声明七种比例；Nano 档位固定于完整型号，Gemini 档位映射 quality，未声明逐比例像素。" } : {}),
+    ...(route.genimage ? { imageNativeParameterContract: true, imageNativeResolutionOptions: true, imageNativeResolutionParameter: "image_size",
+      imageSupportedResolutions: route.sizes.filter(value => value !== "auto"), imageRequestResolutions: route.sizes.filter(value => value !== "auto"),
+      imageResolutionMode: route.genimage === "omit-size" ? "provider-decided" : "native-variable-pixels",
+      imagePixelBudgetPublished: false, imageInputFormatsSource: "adapter", imageSizeFieldContract: route.genimage,
+      imageParameterContractNote: "按完整型号目录及所关联开放字符串 schema；没有逐比例像素、范围或步长声明。",
+      imageContractParameterCoverage: "exact-full-id-description-and-linked-native-schema", contractCheckedAt: "2026-10-10",
+      imageApplicationResolutionDefault: route.defaultSize } : {}),
     ...(automaticOnly ? { canvasRunnable: true, imageNativeParameterContract: true, imageNativeResolutionOptions: true, imageNativeResolutionParameter: "image_size",
       imageSupportedResolutions: [], imageRequestResolutions: [], imageResolutionMode: "provider-decided", imagePixelBudgetPublished: false,
       imageOutputEncodingDeclared: false, imageInputFormatsSource: "adapter", resolutionVerification: "supplier-model-specific-values-not-published",
@@ -224,6 +250,16 @@ export function applyBananaImageCapabilities(connection: Connection, model: Mode
 
 /** Translate old canvas controls before the generic GPT sizing path can discard the tier. */
 export function normalizeBananaParameters(route: BananaRoute, input: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
+  if (route.kind === "chuangxiang") return { ...input,
+    aspect_ratio: input.aspect_ratio ?? input.aspectRatio ?? input.ratio ?? (input.size !== "auto" && typeof input.size === "string" && !/^[124]k$/iu.test(input.size) ? input.size : undefined) ?? "auto",
+    image_size: input.image_size ?? input.imageSize ?? input.resolution ?? input.size_tier ??
+      (/^[124]k$/iu.test(String(input.size)) ? String(input.size).toUpperCase() : undefined) ??
+      (/^[124]k$/iu.test(String(input.quality)) && route.model.startsWith("gemini-") ? String(input.quality).toUpperCase() : undefined) ?? route.sizes.at(-1), n: input.n ?? 1 };
+  if (route.genimage) {
+    const sizes = [input.image_size, input.imageSize, input.resolution, input.size_tier, input.size].filter(value => value !== undefined);
+    return { ...input, aspect_ratio: input.aspect_ratio ?? input.aspectRatio ?? input.ratio ?? "auto",
+      image_size: sizes.find(value => value !== "auto") ?? sizes[0] ?? route.defaultSize, n: input.n ?? 1 };
+  }
   if (route.docs === JIJIU_IMAGE_DOCS) return { ...input, aspect_ratio: input.aspect_ratio ?? input.aspectRatio ?? input.ratio ?? "auto",
     image_size: input.image_size ?? input.imageSize ?? input.resolution ?? input.size_tier ?? input.size ?? "auto", n: input.n ?? 1 };
   if (route.mikoto) return { ...input, aspect_ratio: input.aspect_ratio ?? input.aspectRatio ?? "auto",
@@ -246,7 +282,7 @@ export function normalizeBananaParameters(route: BananaRoute, input: Readonly<Re
   const pixels = dimensions ? Number(dimensions[1]) * Number(dimensions[2]) : 0;
   const legacyTier = dimensions ? (pixels > 6_400_000 ? "4K" : pixels > 1_600_000 ? "2K" : "1K") : undefined;
   const tier = input.image_size ?? input.imageSize ?? input.size_tier ?? (/^(?:512|[124]k)$/iu.test(String(input.size)) ? input.size : undefined) ??
-    (route.kind === "chuangxiang" && /^[124]k$/iu.test(String(input.quality)) ? input.quality : undefined) ?? legacyTier ?? route.sizes.at(-1);
+    legacyTier ?? route.sizes.at(-1);
   let ratio = input.aspect_ratio ?? input.aspectRatio ?? (typeof input.size === "string" && /^\d+:\d+$/u.test(input.size) ? input.size : undefined);
   if (!ratio && dimensions) {
     const value = Number(dimensions[1]) / Number(dimensions[2]);

@@ -141,9 +141,8 @@ describe("Chuangxiang paid image evidence", () => {
     expect(size.options?.find((o) => o.value === "768x1360")?.label).toContain(
       "实测比例有偏差",
     );
-    expect(size.options?.find((o) => o.value === "1536x2720")?.label).toContain(
-      "比例预设",
-    );
+    expect(size.options?.find((o) => o.value === "1536x2720")).toBeUndefined();
+    expect(size.min).toBeUndefined(); expect(size.max).toBeUndefined(); expect(size.step).toBeUndefined();
     expect(
       size.options?.find((o) => o.value === "3840x2160")?.label,
     ).not.toContain("预设");
@@ -151,7 +150,7 @@ describe("Chuangxiang paid image evidence", () => {
     expect(result.metadata?.priceLabel).toBe(model.metadata!.priceLabel);
     expect(
       result.parameters?.find((p) => p.key === "quality")?.description,
-    ).toContain("其余选项未逐档实测");
+    ).toBe(result.metadata?.imageCapabilityNote);
     expect(
       applyChuangxiangImageCapabilities({ provider: "openai", config }, result),
     ).toEqual(result);
@@ -233,11 +232,11 @@ describe("Chuangxiang paid image evidence", () => {
         parameters: { size: "3840x2160", quality: "high" },
       });
     expect(JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toMatchObject({ model: "gpt-image-2.5-sunburst-cf", size: "3840x2160" });
-    await adapter.submit({
+    await expect(adapter.submit({
         ...request,
         model: "gpt-image-2.5-sunburst-cf",
         parameters: { size: "auto", size_tier: "4K", quality: "high" },
-      });
+      })).rejects.toThrow(/明确 W\/H/u);
     fetchMock.mockClear();
     await expect(
       adapter.submit({ ...request, parameters: { quality: "ultra" } }),
@@ -258,22 +257,22 @@ describe("Chuangxiang paid image evidence", () => {
       quality: "max",
       n: 1,
     });
-    for (const quality of ["auto", "low", "medium", "high", "xhigh", "max"]) {
+    for (const quality of chuangxiangImageVerification[model.id]!.qualities) {
       await adapter.submit({ ...request, parameters: { size: "1024x1024", quality } });
       const last = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
       expect(JSON.parse(String(last[1].body))).toMatchObject({ model: model.id, quality });
     }
-    for (const quality of ["low", "medium", "high"]) {
+    for (const quality of chuangxiangImageVerification["gpt-image-2-cf"]!.qualities) {
       await adapter.submit({ ...request, model: "gpt-image-2-cf", parameters: { size: "1024x1024", quality } });
       const last = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
       expect(JSON.parse(String(last[1].body))).toMatchObject({ model: "gpt-image-2-cf", quality });
     }
   });
-  it("opens six options only for a 2.5 route with max evidence, and three for Image 2 high", () => {
+  it("keeps exact successful historical quality values without borrowing sibling levels", () => {
     for (const [id, expected] of [
-      ["gpt-image-2.5-flare-yf", ["auto", "low", "medium", "high", "xhigh", "max"]],
+      ["gpt-image-2.5-flare-yf", ["high", "xhigh", "max"]],
       ["gpt-image-2.5-yf", ["high"]],
-      ["gpt-image-2-cf", ["low", "medium", "high"]],
+      ["gpt-image-2-cf", ["high"]],
     ] as const) {
       const result = applyChuangxiangImageCapabilities({ provider: "openai", config }, { ...model, id });
       expect(result.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(expected);

@@ -1,0 +1,352 @@
+{
+  "checkedAt": "2026-10-11T05:37:20.460Z",
+  "source": {
+    "path": ".codex-temp/supplier-full-document-recheck-r3-20261010/free-refresh-runs/2026-10-11T05-32-43-780Z-179368-f17e1dc1-cd79-49dc-a5f3-347b5d88b6e2/connection-030-models-safe.json",
+    "sha256": "5837fb1416496d806e24893c21c25e16b60de81614ef67dffd03aaf827fc7087"
+  },
+  "origin": "https://api.mikoto.vip",
+  "supplierId": "supplier-85a8c80adddefe307e2fc6fa",
+  "sourceId": "f17ed5f5-9b8f-47d9-a621-0bbe4bfb9e15",
+  "group": "生图（2k4k 中质量）",
+  "officialGroupId": "16",
+  "connectionId": "f17ec01c-9316-452e-af8f-91879d2f04ba",
+  "provider": "rest",
+  "original": {
+    "id": "gpt-image-2",
+    "name": "GPT Image 2（原生4K · $0.08/张）",
+    "operations": [
+      "image.generate",
+      "image.edit"
+    ],
+    "inputKinds": [
+      "text",
+      "image",
+      "image[]"
+    ],
+    "outputKinds": [
+      "image"
+    ],
+    "parameters": [
+      {
+        "key": "size",
+        "label": "输出尺寸",
+        "control": "dimensions",
+        "valueType": "string",
+        "default": "auto",
+        "step": 1,
+        "options": [
+          {
+            "label": "自动",
+            "value": "auto"
+          },
+          {
+            "label": "2K · 1:1 · 1440 × 1440",
+            "value": "1440x1440"
+          },
+          {
+            "label": "2K · 16:9 · 2560 × 1440",
+            "value": "2560x1440"
+          },
+          {
+            "label": "2K · 9:16 · 1152 × 2048",
+            "value": "1152x2048"
+          },
+          {
+            "label": "2K · 4:3 · 1920 × 1440",
+            "value": "1920x1440"
+          },
+          {
+            "label": "2K · 3:4 · 1440 × 1920",
+            "value": "1440x1920"
+          },
+          {
+            "label": "2K · 3:2 · 2160 × 1440",
+            "value": "2160x1440"
+          },
+          {
+            "label": "2K · 2:3 · 1440 × 2160",
+            "value": "1440x2160"
+          },
+          {
+            "label": "2K · 21:9 · 2560 × 1097",
+            "value": "2560x1097"
+          },
+          {
+            "label": "4K · 1:1 · 2160 × 2160",
+            "value": "2160x2160"
+          },
+          {
+            "label": "4K · 16:9 · 3840 × 2160",
+            "value": "3840x2160"
+          },
+          {
+            "label": "4K · 9:16 · 2160 × 3840",
+            "value": "2160x3840"
+          },
+          {
+            "label": "4K · 4:3 · 2880 × 2160",
+            "value": "2880x2160"
+          },
+          {
+            "label": "4K · 3:4 · 2160 × 2880",
+            "value": "2160x2880"
+          },
+          {
+            "label": "4K · 3:2 · 3240 × 2160",
+            "value": "3240x2160"
+          },
+          {
+            "label": "4K · 2:3 · 2160 × 3240",
+            "value": "2160x3240"
+          },
+          {
+            "label": "4K · 21:9 · 3840 × 1646",
+            "value": "3840x1646"
+          }
+        ],
+        "description": "官网常用尺寸示例；自定义正整数宽高及比例按原值发送，供应商未公布宽高范围或对齐要求。size 不使用 2K / 4K 档位字符串。",
+        "operations": [
+          "image.generate",
+          "image.edit"
+        ],
+        "allowCustomValue": true
+      },
+      {
+        "key": "quality",
+        "label": "质量",
+        "control": "select",
+        "valueType": "string",
+        "default": "medium",
+        "options": [
+          {
+            "label": "中",
+            "value": "medium"
+          }
+        ],
+        "operations": [
+          "image.generate",
+          "image.edit"
+        ],
+        "description": "当前官方分组规定的质量档位；旧画布的其他质量值需重新选择。"
+      },
+      {
+        "key": "response_format",
+        "label": "结果返回方式",
+        "control": "select",
+        "valueType": "string",
+        "options": [
+          {
+            "label": "图片链接",
+            "value": "url"
+          },
+          {
+            "label": "Base64",
+            "value": "b64_json"
+          }
+        ],
+        "operations": [
+          "image.generate",
+          "image.edit"
+        ]
+      }
+    ],
+    "pricing": {
+      "kind": "per-image",
+      "currency": "USD",
+      "unitAmount": 0.08,
+      "sourceUrl": "https://api.mikoto.vip/",
+      "checkedAt": "2026-08-13T00:00:00.000Z",
+      "confidence": "snapshot"
+    },
+    "limits": {
+      "supportedMimeTypes": [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ]
+    },
+    "metadata": {
+      "fixedOutputCount": 1,
+      "modality": "image",
+      "pricingCapturedAt": "2026-08-13",
+      "tested4KHighAt": "2026-08-13",
+      "canvasRunnable": true,
+      "supplierGroupDescription": "2.0跟2.5都有 0.07一张 只能中质量",
+      "supplierGroupResolutionLabel": "说明支持 2K / 4K",
+      "imageResolutionOrigins": {},
+      "supplierGroupInfoSource": "key-groups",
+      "supplierGroupInfoStale": false,
+      "supplierGroupCheckedAt": "2026-10-11T04:48:13.488Z",
+      "protocol": "openai-images",
+      "imageCapabilitiesSource": "supplier-group-and-api-docs",
+      "imageCapabilitiesCheckedAt": "2026-09-21",
+      "imageCapabilitiesDocumentation": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+      "mikotoImageContract": true,
+      "imageNativeParameterContract": true,
+      "imageSizeSource": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+      "imageSizeSourceKind": "supplier-examples",
+      "imageEditingSource": "https://api.mikoto.vip/openai-image-4k-2k-guide.html",
+      "supplierChannelDescription": "支持原生4k高质量，一次0.07",
+      "imageResolutionTierSource": "official-key-group",
+      "imageResolutionTiers": [
+        "2K",
+        "4K"
+      ],
+      "imageCapabilityEvidence": [
+        {
+          "id": "f17ec01c-9316-452e-af8f-91879d2f04ba:gpt-image-2:2K",
+          "supplierId": "supplier-85a8c80adddefe307e2fc6fa",
+          "sourceId": "f17ed5f5-9b8f-47d9-a621-0bbe4bfb9e15",
+          "connectionId": "f17ec01c-9316-452e-af8f-91879d2f04ba",
+          "group": "生图（2k4k 中质量）",
+          "modelId": "gpt-image-2",
+          "operation": "image.generate",
+          "kind": "documentation",
+          "sourceUrl": "https://api.mikoto.vip/",
+          "checkedAt": "2026-10-11T04:48:13.488Z",
+          "status": "declared",
+          "resolution": "2K",
+          "excerpt": "该供应商完整型号的官方档位；像素表或预算未公开时保留具体资料缺项，不生成通用尺寸。"
+        },
+        {
+          "id": "f17ec01c-9316-452e-af8f-91879d2f04ba:gpt-image-2:4K",
+          "supplierId": "supplier-85a8c80adddefe307e2fc6fa",
+          "sourceId": "f17ed5f5-9b8f-47d9-a621-0bbe4bfb9e15",
+          "connectionId": "f17ec01c-9316-452e-af8f-91879d2f04ba",
+          "group": "生图（2k4k 中质量）",
+          "modelId": "gpt-image-2",
+          "operation": "image.generate",
+          "kind": "documentation",
+          "sourceUrl": "https://api.mikoto.vip/",
+          "checkedAt": "2026-10-11T04:48:13.488Z",
+          "status": "declared",
+          "resolution": "4K",
+          "excerpt": "该供应商完整型号的官方档位；像素表或预算未公开时保留具体资料缺项，不生成通用尺寸。"
+        }
+      ],
+      "imageCapabilityPolicy": 2
+    },
+    "includedMetadataFields": [
+      "canvasRunnable",
+      "fixedOutputCount",
+      "imageCapabilitiesCheckedAt",
+      "imageCapabilitiesDocumentation",
+      "imageCapabilitiesSource",
+      "imageCapabilityEvidence",
+      "imageCapabilityPolicy",
+      "imageEditingSource",
+      "imageNativeParameterContract",
+      "imageResolutionOrigins",
+      "imageResolutionTierSource",
+      "imageResolutionTiers",
+      "imageSizeSource",
+      "imageSizeSourceKind",
+      "mikotoImageContract",
+      "modality",
+      "pricingCapturedAt",
+      "protocol",
+      "supplierChannelDescription",
+      "supplierGroupCheckedAt",
+      "supplierGroupDescription",
+      "supplierGroupInfoSource",
+      "supplierGroupInfoStale",
+      "supplierGroupResolutionLabel",
+      "tested4KHighAt"
+    ],
+    "omittedSensitiveMetadataFields": [],
+    "parametersSha256": "ca5f0fb8b8479cbcff98abce7b04d830654b7a736f484cd028d33b840f708694",
+    "pricingSha256": "21b5ab0839f01c265cb07f654bdda76445dba3bd6666d25a917eac1dfdd80aea",
+    "modelSha256": "43f6c4afd173b9e653e4689f197542511f6a273b81da24d86031e939d066b268"
+  },
+  "groupCatalog": {
+    "id": "生图（2k4k 中质量）",
+    "label": "生图（2k4k 中质量）",
+    "source": "catalog",
+    "supplierGroupId": "16",
+    "details": {
+      "source": "key-groups",
+      "description": "2.0跟2.5都有 0.07一张 只能中质量",
+      "referencePrice": "2.0跟2.5都有 0.07一张 只能中质量",
+      "supportedResolutions": [
+        "2K",
+        "4K"
+      ],
+      "imagePrices": [
+        {
+          "resolution": "1K",
+          "amount": 0.07
+        },
+        {
+          "resolution": "2K",
+          "amount": 0.07
+        },
+        {
+          "resolution": "4K",
+          "amount": 0.07
+        }
+      ],
+      "rateMultiplier": 0.18,
+      "imageRateMultiplier": 1
+    },
+    "models": [
+      {
+        "id": "gpt-image-2",
+        "name": "gpt-image-2",
+        "capability": "image",
+        "protocol": "unknown",
+        "outputKinds": [
+          "image"
+        ],
+        "parameters": [],
+        "priceLabel": "$0.08/张",
+        "metadata": {
+          "modelFactsSource": "supplier-catalog",
+          "inputKindsSource": "inferred",
+          "outputKindsSource": "inferred",
+          "supplierChannelDescription": "支持原生4k高质量，一次0.07",
+          "priceSource": "supplier-price-page",
+          "supplierPriceChannel": "生图（2k4k中质量）",
+          "supplierPricePlatform": "openai",
+          "supplierPriceSourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+          "supplierPriceCheckedAt": "2026-10-11T04:48:13.488Z",
+          "officialCatalogPricing": {
+            "kind": "per-image",
+            "currency": "USD",
+            "billingUnit": "image",
+            "unitAmount": 0.08,
+            "sourceUrl": "https://api.mikoto.vip/api/v1/channels/available",
+            "checkedAt": "2026-10-11T04:48:13.488Z",
+            "confidence": "exact"
+          },
+          "officialCatalogPriceGroupVerified": true,
+          "supplierChannelPriceDisplayMultiplier": 1
+        },
+        "includedMetadataFields": [
+          "inputKindsSource",
+          "modelFactsSource",
+          "officialCatalogPriceGroupVerified",
+          "officialCatalogPricing",
+          "outputKindsSource",
+          "priceSource",
+          "supplierChannelDescription",
+          "supplierChannelPriceDisplayMultiplier",
+          "supplierPriceChannel",
+          "supplierPriceCheckedAt",
+          "supplierPricePlatform",
+          "supplierPriceSourceUrl"
+        ],
+        "omittedSensitiveMetadataFields": [],
+        "parametersSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "pricingSha256": "57a5819c590d80e971cea18a9e794b5bdbc1b53c852c7f889f75b6f85119773c",
+        "modelSha256": "3eddccb227edcf82019d45a2d01f140f71b4ffc5c73598d90b04460ad9d938e3"
+      }
+    ]
+  },
+  "catalogState": {
+    "kind": "sub2api",
+    "status": "live",
+    "complete": false,
+    "checkedAt": "2026-10-11T04:48:13.488Z"
+  },
+  "note": "Original actual r3 cached snapshot and exact saved official group retained. Tests changing published amount are isolated fixtures, not actual supplier prices."
+}

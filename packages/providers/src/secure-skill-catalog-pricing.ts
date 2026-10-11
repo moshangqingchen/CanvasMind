@@ -21,7 +21,8 @@ function officialSource(supplierSiteUrl?: string): boolean {
  */
 export function secureSkillCatalogVideoDeclaration(modelId: unknown, platform: unknown, supplierSiteUrl?: string): boolean {
   return officialSource(supplierSiteUrl) && (platform === "flow2" && modelId === "omni" ||
-    platform === "newtoken-sd" && (modelId === "video-2.0-fast" || modelId === "video-2.0-pro"));
+    platform === "newtoken-sd" && (modelId === "video-2.0-fast" || modelId === "video-2.0-pro") ||
+    platform === "muse" && modelId === "muse-video");
 }
 
 /** Secure Skill's own price page converts these fields from CNY/token to CNY/1M

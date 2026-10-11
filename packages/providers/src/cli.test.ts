@@ -84,6 +84,46 @@ describe("CLI shared contracts", () => {
     expect(() => parseCliModelCatalog([{ ...model, limits: { supportedMimeTypes: [true] } }])).toThrow();
   });
 
+  it("treats API suggestions as examples while retaining integer and range constraints", () => {
+    const catalog = parseCliModelCatalog([{ id: "example-video", name: "example-video", operations: ["video.generate"], parameters: [
+      { key: "duration", label: "秒数", control: "number", valueType: "integer", allowCustomValue: true, min: 1, max: 30, step: 1,
+        options: [{ label: "API 示例 5 秒", value: 5 }] },
+    ] }]);
+    const example = catalog[0]!;
+    const parameters = Object.freeze({ duration: 29 });
+    expect(validateModelParameters(example, parameters)).toEqual({ valid: true, issues: [] });
+    expect(parameters.duration).toBe(29);
+    expect(validateModelParameters(example, { duration: 3.8 }).issues).toContainEqual(expect.objectContaining({ code: "type" }));
+    expect(validateModelParameters(example, { duration: "5" }).issues).toContainEqual(expect.objectContaining({ code: "type" }));
+    expect(validateModelParameters(example, { duration: 0 }).issues).toContainEqual(expect.objectContaining({ code: "min" }));
+    expect(validateModelParameters(example, { duration: 38 }).issues).toContainEqual(expect.objectContaining({ code: "max" }));
+  });
+
+  it("parses conditional custom-value rules and restores an exhaustive enum for that condition", () => {
+    const catalog = parseCliModelCatalog([{ id: "conditional-video", name: "conditional-video", operations: ["video.generate"], parameters: [
+      { key: "mode", label: "模式", control: "select", valueType: "string", options: [{ label: "开放", value: "open" }, { label: "固定", value: "fixed" }] },
+      { key: "resolution", label: "分辨率", control: "text", valueType: "string", allowCustomValue: true,
+        options: [{ label: "720p 示例", value: "720p" }], constraints: [{ when: [{ parameter: "mode", values: ["fixed"] }], allowCustomValue: false }] },
+    ] }]);
+    const conditional = catalog[0]!;
+    expect(validateModelParameters(conditional, { mode: "open", resolution: "1440p" }).valid).toBe(true);
+    expect(getModelParameterDescriptor(conditional, "resolution", { mode: "fixed" })?.allowCustomValue).toBe(false);
+    expect(validateModelParameters(conditional, { mode: "fixed", resolution: "1440p" }).issues)
+      .toContainEqual(expect.objectContaining({ path: "parameters.resolution", code: "option" }));
+    expect(validateModelParameters(conditional, { mode: "fixed", resolution: "720p" }).valid).toBe(true);
+  });
+
+  it.each(["false", "true", 0, 1, null, {}])("rejects nonboolean custom-value declarations: %j", allowCustomValue => {
+    const parameter = { key: "resolution", label: "分辨率", control: "text", valueType: "string", options: [{ label: "720p", value: "720p" }] };
+    expect(() => parseCliModelCatalog([{ ...model, parameters: [{ ...parameter, allowCustomValue }] }])).toThrow();
+    expect(() => parseCliModelCatalog([{ ...model, parameters: [
+      { key: "mode", label: "模式", control: "text", valueType: "string" },
+      { ...parameter, constraints: [{ when: [{ parameter: "mode", values: ["fixed"] }], allowCustomValue }] },
+    ] }])).toThrow();
+    const unparsed = { ...model, parameters: [{ ...parameter, allowCustomValue }] } as unknown as ModelDescriptor;
+    expect(validateModelParameters(unparsed, { resolution: "1440p" }).valid).toBe(false);
+  });
+
   it("does not pass application secrets or Node hooks to personal CLI processes", async () => {
     const result = cliProcessEnvironment({ MASTER_KEY: "secret", MASTER_KEY_FILE: "private", SUPERCANVAS_DESKTOP_TOKEN: "token", SUPER_CANVAS_INTERNAL: "private", NODE_OPTIONS: "--require=hook.js", HOME: "/home/person", USERPROFILE: "C:\\Users\\Person", APPDATA: "C:\\AppData", PATH: "commands", PERSONAL_AI_TOKEN: "personal" });
     expect(result).toEqual({ HOME: "/home/person", USERPROFILE: "C:\\Users\\Person", APPDATA: "C:\\AppData", PATH: "commands", PERSONAL_AI_TOKEN: "personal" });

@@ -87,7 +87,8 @@ describe("词元 inventory permission join", () => {
     { accountModelIds: [`${base}@s47c261`, `${base}@s46c264`] });
     expect(merged.map(model => model.id)).toEqual([base, `${base}@s47c261`, `${base}@s46c264`]);
     expect(merged[0]?.metadata?.tk1688SupportedResolutions).toEqual([]);
-    expect(merged[1]?.metadata).toMatchObject({ tk1688FixedSize: "3840x2160", fixedOutputCount: 1, tk1688OmitN: true });
+    expect(merged[1]?.metadata).toMatchObject({ tk1688ReferenceSize: "3840x2160", fixedOutputCount: 1, tk1688OmitN: true });
+    expect(merged[1]?.metadata?.tk1688FixedSize).toBeUndefined();
     expect(mergeTk1688ModelInventory([model], market(sku(`${base}@s47c261`, "4K")), undefined).map(model => model.id)).toEqual([base]);
   });
   it("preserves previous exact-SKU facts on failure while removing models outside a changed Key inventory", () => {

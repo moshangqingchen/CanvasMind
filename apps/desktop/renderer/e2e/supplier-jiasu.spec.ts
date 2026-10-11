@@ -73,7 +73,9 @@ test("佳速九个图片型号菜单、精确质量尺寸、参数保存恢复",
   await expect.poll(async () => (await f.saved()).parameters.ratio).toBe("3:4");
   await page.reload(); await f.open();
   await expect(ratio).toHaveValue("3:4");
-  await expect(quality.locator("option")).toHaveText(["模型默认", "自动（上游默认）"]);
+  expect(await quality.locator('option:not([value=""])').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+  await quality.selectOption("max");
+  await expect.poll(async () => (await f.saved()).parameters.quality).toBe("max");
   await page.screenshot({ path: testInfo.outputPath("jiasu-image-parameters.png") }); f.safe();
 });
 

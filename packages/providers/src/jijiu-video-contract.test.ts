@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ModelDescriptor, NormalizedRequest, ProviderAdapter, ProviderAssetInput, ProviderTask } from "./contracts.js";
 import { AutoInterfaceAdapter } from "./auto-interface-adapter.js";
 import { StaticConnectionResolver } from "./credentials.js";
-import { GenericRestAdapter } from "./rest.js";
+import { GenericRestAdapter, type RestConnectorConfig } from "./rest.js";
 import { scanProviderModelCatalog } from "./model-catalog.js";
 import { remainingVideoModel, remainingVideoSupplier } from "./remaining-video-contracts.js";
 import { isJijiuApiUrl, jijiuVideoModel, jijiuVideoModelIds, jijiuVideoRequestIssues, jijiuVideoTransport, normalizeJijiuVideoParameters } from "./jijiu-video-contract.js";
@@ -29,17 +29,18 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(jijiuVideoModel("gpt-image-2")).toBeUndefined();
   });
 
-  it("discovers all 18 current complete IDs even with only chat endpoint labels", () => {
-    const ids = jijiuVideoModelIds(); expect(ids).toHaveLength(18);
+  it("discovers the new exact IDs and retains historical contracts with chat endpoint labels", () => {
+    const ids = jijiuVideoModelIds(); expect(ids).toHaveLength(21);
     const scan = scanProviderModelCatalog({ data: ids.map(id => ({ id, supported_endpoint_types: ["openai"] })) }, { baseUrl: "https://newapi.jijiucanvas.com/v1" });
-    expect(scan.models).toHaveLength(18);
+    expect(scan.models).toHaveLength(21);
     expect(scan.models.every(m => m.outputKinds?.includes("video") && m.metadata?.canvasRunnable === true)).toBe(true);
     expect(scanProviderModelCatalog({ data: [{ id: "SD2.5特价30-10-10-线路一" }] }, { baseUrl: "https://other.example/v1" }).models[0]?.metadata?.jijiuVideoContract).toBeUndefined();
   });
 
   it.each(jijiuVideoModelIds())("submits the exact model %s and its legal bounds without real network", async id => {
     const model = remainingVideoModel("jijiu", id)!, duration = model.parameters!.find(p => p.key === "duration")!;
-    const values = [...new Set([duration.min!, duration.max!])];
+    const min = Number(model.metadata?.videoMinDuration), max = Number(model.metadata?.videoMaxDuration);
+    const values = [...new Set([min, max])];
     for (const value of values) {
       const f = fixture(id, [Response.json({ id: "task_fixture", status: "queued" })]);
       expect((await f.adapter.validate(request(id, { duration: value }))).issues).toEqual([]);
@@ -50,7 +51,7 @@ describe("Jijiu exact official video contracts (offline only)", () => {
       expect(f.fallback.submit).not.toHaveBeenCalled();
     }
     const f = fixture(id);
-    for (const value of [duration.min! - 1, duration.max! + 1, 1.5]) {
+    for (const value of [min - 1, max + 1, 1.5]) {
       expect((await f.adapter.validate(request(id, { duration: value }))).valid).toBe(false);
       await expect(f.adapter.submit(request(id, { duration: value }))).rejects.toThrow();
     }
@@ -68,14 +69,49 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(jijiuVideoModel("SD2.5特价30-10-10-线路一")?.metadata?.durationRangeSource).toBeUndefined();
   });
 
-  it.each(["SD2.0mini稳定900B", "MinimaxH3特价版"])("keeps unknown wire resolution for %s as supplier default", async id => {
+  it("keeps the new full C and SD2.5 third line separate from historical B and second line", async () => {
+    expect(jijiuVideoModel("SD2.0fast稳定900D")?.limits).toMatchObject({ maxInputImages: 9, maxInputVideos: 0, maxInputAudios: 0 });
+    expect(jijiuVideoModel("SD2.0fast稳定903A")?.limits?.maxInputAudios).toBe(3);
+    const fast = fixture("SD2.0fast稳定900D");
+    await expect(fast.adapter.submit(request("SD2.0fast稳定900D", {}, [audio]))).rejects.toThrow();
+    expect(fast.fetcher).not.toHaveBeenCalled();
+    expect(jijiuVideoModel("SD2.5特价30-10-10-线路三")?.metadata?.videoSupportedResolutions).toEqual(["720p"]);
+    expect(jijiuVideoModel("SD2.5特价30-10-10-线路二")?.metadata?.videoSupportedResolutions).toEqual(["480p"]);
+    const id = "满血seedance-2.5全参C";
+    expect(jijiuVideoModel(id)?.metadata).toMatchObject({ supportsFirstLastFrames: false, videoReferenceImageLimit: 30, videoReferenceVideoLimit: 10, videoReferenceAudioLimit: 10 });
+    expect(jijiuVideoModel(id)?.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toEqual(["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
+    expect(jijiuVideoRequestIssues(request(id, { duration: 5, aspect_ratio: "21:9" }, [image, video, audio]))).toEqual([]);
+    const cases = [request(id, {}, [{ ...image, role: "firstFrame" }]), request(id, { ratio: "2:1" }), request(id, {}, [{ ...image, url: "http://media.example/ref.png" }]),
+      request(id, {}, [{ ...audio, durationSeconds: 1 }]), request(id, {}, Array.from({ length: 3 }, (_, i) => ({ ...video, id: `long-${i}`, url: `https://media.example/${i}.mp4`, durationSeconds: 11 })))];
+    for (const input of cases) { const f = fixture(id); await expect(f.adapter.submit(input)).rejects.toThrow(); expect(f.fetcher).not.toHaveBeenCalled(); }
+  });
+
+  it.each(["SD2.0mini稳定900B", "MinimaxH3特价版"])("keeps declared free-string resolution for %s without inventing an enum", async id => {
     const model = jijiuVideoModel(id)!; expect(model.metadata?.resolutionRangeUnverified).toBe(true);
-    expect(model.parameters?.find(p => p.key === "resolution")).toMatchObject({ options: [] });
+    expect(model.parameters?.find(p => p.key === "resolution")).toMatchObject({ control: "text", allowCustomValue: true });
     expect(normalizeJijiuVideoParameters(request(id))).not.toHaveProperty("resolution");
-    const f = fixture(id);
+    const f = fixture(id, [Response.json({ id: "fixture_only", status: "queued" })]);
     expect((await f.adapter.validate(request(id))).valid).toBe(true);
-    await expect(f.adapter.submit(request(id, { resolution: "720p" }))).rejects.toThrow("供应商默认");
+    const input = request(id, { resolution: "720p" });
+    await f.adapter.submit(input);
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ resolution: "720p" });
+    expect(input.parameters).toEqual({ resolution: "720p" });
+  });
+
+  it("uses the exact full-parameter E guide's fixed 480p without rewriting saved 720p or borrowing another line's price tier", async () => {
+    const id = "稳定seedance-2.5全参E", group = "稳定满血视频模型";
+    expect(jijiuVideoModel(id, undefined, group)?.parameters?.find(p => p.key === "resolution")?.options).toEqual([{ label: "480p", value: "480p" }]);
+    expect(jijiuVideoModel(id, undefined, group)?.metadata?.videoSupportedResolutions).toEqual(["480p"]);
+    const old = request(id, { resolution: "720p", duration: 5 }), original = structuredClone(old);
+    const f = fixture(id, [], { accountKeyGroup: group, modelGroup: group });
+    expect((await f.adapter.validate(old)).issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.resolution" })]));
+    await expect(f.adapter.submit(old)).rejects.toThrow("分辨率");
+    expect(old).toEqual(original);
     expect(f.fetcher).not.toHaveBeenCalled();
+    expect(jijiuVideoRequestIssues(request(id, { resolution: "480p", duration: 5 }), undefined, group)).toEqual([]);
+    expect(jijiuVideoModel("满血seedance-2.5全参B", undefined, group)?.metadata?.videoSupportedResolutions).toEqual(["480p", "720p"]);
+    expect(jijiuVideoModel("稳定seedance-2.5全参D", undefined, group)?.metadata?.videoSupportedResolutions).toEqual(["720p"]);
+    expect(jijiuVideoRequestIssues(request(id, { resolution: "480p" }), undefined, "视频SD.2.5")).toEqual(expect.arrayContaining([expect.objectContaining({ path: "model" })]));
   });
 
   it("never claims animated 1080p or upscaled output as native resolution", async () => {
@@ -83,6 +119,53 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     await expect(f.adapter.submit(request("Minimax漫剧优化版", { resolution: "1080p" }))).rejects.toThrow("分辨率");
     expect(jijiuVideoModel("MinimaxH3")?.parameters?.find(p => p.key === "resolution")?.options?.map(o => o.value)).toEqual(["480p", "768p", "1080p", "2k-upscale", "4k-upscale"]);
     expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("preserves duration_seconds through the supplier's universal seconds field, direct=%s", async direct => {
+    const id = "SD2.0满血稳定933-线路一", model = jijiuVideoModel(id)!;
+    expect(model.metadata?.videoParameterAliases).toMatchObject({ duration: ["seconds", "duration_seconds"] });
+    const f = fixture(id, [Response.json({ id: "fixture-alias", status: "queued" })], {
+      accountKeyGroup: "视频SD2.0", modelGroup: "视频SD2.0", connector: { ...jijiuVideoTransport(), models: [model], restrictModels: true },
+    });
+    const adapter = direct ? new GenericRestAdapter(f.resolver, { fetch: f.fetcher }) : f.adapter;
+    const input = request(id, { duration_seconds: 7, resolution: "720p" }), original = structuredClone(input);
+    expect((await adapter.validate(input)).valid).toBe(true);
+    await adapter.submit(input);
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ seconds: 7, resolution: "720p" });
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).not.toHaveProperty("duration_seconds");
+    expect(input).toEqual(original);
+    for (const parameters of [{ duration: 7, duration_seconds: 8 }, { seconds: 7, duration_seconds: 8 }, { duration: 7, seconds: 8, duration_seconds: 7 }, { duration_seconds: 16 }, { duration_seconds: "7" }]) {
+      expect(jijiuVideoRequestIssues(request(id, parameters))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    }
+    expect(jijiuVideoRequestIssues(request(id, { duration: 7, seconds: 7, duration_seconds: 7 }))).toEqual([]);
+  });
+
+  it.each(["MinimaxH3", "Minimax漫剧优化版"])("offers and sends the exact documented callback field for %s", async id => {
+    const model = jijiuVideoModel(id)!;
+    expect(model.parameters?.find(p => p.key === "callback_url")).toMatchObject({ control: "text", valueType: "string" });
+    const f = fixture(id, [Response.json({ id: "fixture-callback", status: "queued" })]);
+    const input = request(id, { callback_url: "https://media.example/completion", metadata: { clientTag: "fixture" } });
+    await f.adapter.submit(input);
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toMatchObject(input.parameters);
+    expect(jijiuVideoModel("MinimaxH3特价版")?.parameters?.some(p => p.key === "callback_url")).toBe(false);
+    expect(jijiuVideoRequestIssues(request("MinimaxH3特价版", input.parameters))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.callback_url" }), expect.objectContaining({ path: "parameters.metadata" })]));
+  });
+
+  it.each([false, true])("submits the supplier's declared size field without deriving unpublished resolutions, direct=%s", async direct => {
+    const id = "MinimaxH3", model = jijiuVideoModel(id)!;
+    expect(model.parameters?.find(parameter => parameter.key === "size")).toMatchObject({ control: "text", valueType: "string", allowCustomValue: true });
+    const f = fixture(id, [Response.json({ id: "fixture-size", status: "queued" })], {
+      accountKeyGroup: "视频-MnimaxH3", modelGroup: "视频-MnimaxH3", connector: { ...jijiuVideoTransport(), models: [model], restrictModels: true },
+    });
+    const adapter = direct ? new GenericRestAdapter(f.resolver, { fetch: f.fetcher }) : f.adapter;
+    const input = request(id, { size: "1280x720", duration: 5 });
+    expect((await adapter.validate(input)).valid).toBe(true);
+    await adapter.submit(input);
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: input.prompt, seconds: 5, size: "1280x720" });
+    expect(input.parameters).toEqual({ size: "1280x720", duration: 5 });
+    for (const size of ["0x720", "-1280x720", "1280.5x720", "720p", 1280]) {
+      expect(jijiuVideoRequestIssues(request(id, { size }))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.size" })]));
+    }
   });
 
   it("maps reference aliases and explicit frame roles without borrowed Jiasu fields", async () => {
@@ -135,7 +218,7 @@ describe("Jijiu exact official video contracts (offline only)", () => {
   });
 
   it("blocks unsupported media, duplicate frames, private URLs and conflicting aliases before HTTP", async () => {
-    const bad = [request("SD2.5特价30-10-10-线路一", {}, [video]), request("SD2.0mini稳定900B", {}, [audio]), request("MinimaxH3", { seconds: 5, duration: 6 }), request("MinimaxH3", { ratio: "1:1", aspect_ratio: "9:16" }), request("MinimaxH3", { images: ["http://127.0.0.1/secret"] }), request("MinimaxH3", {}, [{ ...image, role: "firstFrame" }, { ...image, role: "firstFrame" }]), request("MinimaxH3", { size: "1280x720" })];
+    const bad = [request("SD2.5特价30-10-10-线路一", {}, [video]), request("SD2.0mini稳定900B", {}, [audio]), request("MinimaxH3", { seconds: 5, duration: 6 }), request("MinimaxH3", { ratio: "1:1", aspect_ratio: "9:16" }), request("MinimaxH3", { images: ["http://127.0.0.1/secret"] }), request("MinimaxH3", {}, [{ ...image, role: "firstFrame" }, { ...image, role: "firstFrame" }]), request("MinimaxH3", { size: "0x720" })];
     for (const input of bad) { const f = fixture(input.model!); await expect(f.adapter.submit(input)).rejects.toThrow(); expect(f.fetcher).not.toHaveBeenCalled(); }
     const maxImages = Array.from({ length: 10 }, (_, i) => ({ ...image, id: `fixture-${i}`, url: `https://media.example/${i}.png` }));
     expect(jijiuVideoRequestIssues(request("MinimaxH3", {}, maxImages))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "assets" })]));
@@ -150,6 +233,65 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(jijiuVideoModel("稳定seedance-2.5参图参音F")?.parameters?.find(p => p.key === "resolution")?.options).toEqual([{ label: "720p", value: "720p" }]);
   });
 
+  it.each(["wan3.0-video", "wan3.0-video-prime"])("keeps automatic duration selectable and sends pure text as JSON for %s", async id => {
+    const model = jijiuVideoModel(id)!;
+    expect(model.parameters?.find(p => p.key === "duration")).toMatchObject({ control: "select", options: expect.arrayContaining([{ value: -1, label: "自动时长" }, { value: 30, label: "30 秒" }]) });
+    expect(model.metadata).toMatchObject({ remoteMediaUrlsOnly: false, supportsFirstLastFrames: false, videoSupportsFirstLastFrames: false, videoMediaTransport: "multipart-files", billingIncludesInputDuration: true });
+    expect(model.parameters?.some(p => p.key === "negative_prompt")).toBe(false);
+    const f = fixture(id, [Response.json({ id: "wan_auto_fixture", status: "queued" })]);
+    const input = request(id, { duration: -1, resolution: "720p" }), original = structuredClone(input);
+    expect(await f.adapter.validate(input)).toEqual({ valid: true, issues: [] });
+    await f.adapter.submit(input);
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: input.prompt, seconds: -1, resolution: "720p" });
+    expect(input).toEqual(original);
+  });
+
+  it.each([false, true])("uploads WAN byte references as repeated multipart file fields, direct=%s", async direct => {
+    const id = "wan3.0-video-prime", model = jijiuVideoModel(id)!;
+    const f = fixture(id, [Response.json({ id: "wan_files_fixture", status: "queued" })], {
+      accountKeyGroup: "视频WAN3", modelGroup: "视频WAN3", connector: { ...jijiuVideoTransport(), models: [model], restrictModels: true },
+    });
+    const assets = [{ ...image, filename: "first.png", url: undefined, data: new Uint8Array([1, 2]) }, { ...image, id: "second", filename: "second.png", url: undefined, data: new Uint8Array([3]) },
+      { ...video, filename: "motion.mp4", url: undefined, data: new Uint8Array([4, 5]) }, { ...audio, filename: "voice.mp3", url: undefined, data: new Uint8Array([6]) }];
+    const input = request(id, { duration: -1, resolution: "1080p" }, assets), original = structuredClone(input);
+    const adapter = direct ? new GenericRestAdapter(f.resolver, { fetch: f.fetcher }) : f.adapter;
+    expect(await adapter.validate(input)).toEqual({ valid: true, issues: [] });
+    await adapter.submit(input);
+    const init = f.fetcher.mock.calls[0]?.[1], body = init?.body as FormData;
+    expect(body).toBeInstanceOf(FormData);
+    expect(new Headers(init?.headers).has("content-type")).toBe(false);
+    expect(body.get("seconds")).toBe("-1");
+    expect(body.getAll("images").map(value => (value as File).name)).toEqual(["first.png", "second.png"]);
+    expect(body.getAll("videos")).toHaveLength(1);
+    expect(body.getAll("audios")).toHaveLength(1);
+    expect(body.has("reference_videos")).toBe(false);
+    expect(body.has("reference_audios")).toBe(false);
+    expect(new Uint8Array(await (body.get("videos") as File).arrayBuffer())).toEqual(new Uint8Array([4, 5]));
+    expect(input).toEqual(original);
+    expect(f.fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("downloads an existing WAN public image safely and submits its original bytes as a file", async () => {
+    const id = "wan3.0-video", f = fixture(id, [new Response(new Uint8Array([11, 12]), { headers: { "content-type": "image/jpeg" } }), Response.json({ id: "wan_url_fixture", status: "queued" })]);
+    const input = request(id, { duration: 5 }, [{ ...image, filename: "original.jpg" }]), original = structuredClone(input);
+    await f.adapter.submit(input);
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe(image.url);
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe("https://newapi.jijiucanvas.com/v1/videos");
+    const body = f.fetcher.mock.calls[1]?.[1]?.body as FormData, file = body.get("images") as File;
+    expect(file.name).toBe("original.jpg"); expect(file.type).toBe("image/jpeg");
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([11, 12]));
+    expect(input).toEqual(original);
+  });
+
+  it("blocks WAN unsupported roles/fields, audio alone and combined input cap before HTTP", async () => {
+    const id = "wan3.0-video";
+    const cases = [request(id, { duration: -1 }, [audio]), request(id, { duration: -1 }, [{ ...image, role: "firstFrame" }]), request(id, { duration: -1, first_frame_image: image.url }),
+      ...["negative_prompt", "mode", "quality", "fps", "n", "output_format"].map(key => request(id, { duration: 5, [key]: key === "n" ? 1 : "fixture" })),
+      request(id, { duration: -1 }, Array.from({ length: 2 }, (_, i) => ({ ...video, id: `long-${i}`, durationSeconds: 15 }))), request(id, { duration: 1 }), request(id, { duration: 0 })];
+    for (const input of cases) { const f = fixture(id); await expect(f.adapter.submit(input)).rejects.toThrow(); expect(f.fetcher).not.toHaveBeenCalled(); }
+    expect(jijiuVideoRequestIssues(request(id, { duration: -1 }, [{ ...video, durationSeconds: 15 }, { ...video, id: "other", durationSeconds: 13 }]))).toEqual([]);
+  });
+
   it.each([false, true])("restores queued tasks and downloads authenticated content, artifact URL present=%s", async artifact => {
     const contentUrl = "https://newapi.jijiucanvas.com/v1/tasks/task_fixture/artifacts/video/content?access=fixture-ticket";
     const f = fixture("MinimaxH3", [Response.json({ id: "task_fixture", status: "queued" }), Response.json({ id: "task_fixture", status: "unknown" }), Response.json({ id: "task_fixture", status: "completed", ...(artifact ? { content_url: contentUrl } : {}) }), new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "content-type": "video/mp4" } })]);
@@ -161,6 +303,95 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(f.fetcher.mock.calls[3]?.[0]).toBe(artifact ? contentUrl : "https://newapi.jijiucanvas.com/v1/videos/task_fixture/content");
     expect(f.fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
     for (const [, init] of f.fetcher.mock.calls) expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fixture-key-only");
+  });
+
+  it.each([false, true])("recovers the signed nested video URL through GET only, legacy saved contract=%s", async legacy => {
+    const id = "SD2.5特价30-10-10-线路一", taskId = "task_saved_video";
+    const contentUrl = `https://newapi.jijiucanvas.com/v1/tasks/${taskId}/artifacts/video/content?expires=1234567890&signature=fixture%2Bticket%2Fone`;
+    const transport = jijiuVideoTransport();
+    const config: RestConnectorConfig = { ...transport, submit: transport.submit!, output: {
+      ...transport.output!, fallbackPaths: transport.output!.fallbackPaths!.filter(path => !legacy || path !== "$.video.url"),
+    }, allowedHosts: ["newapi.jijiucanvas.com"] };
+    const f = fixture(id, [Response.json({ id: taskId, status: "completed", video: { duration: 30, url: contentUrl } }),
+      new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "content-type": "video/mp4" } })]);
+    const saved: ProviderTask = JSON.parse(JSON.stringify({ providerTaskId: taskId, status: "succeeded", result: {
+      connectionId: "jijiu-offline-fixture", baseUrl: "https://newapi.jijiucanvas.com/v1", model: id, config,
+      taskId, status: "succeeded", remote: { id: taskId, status: "completed", video: { duration: 30, url: contentUrl } }, autoInterface: true,
+    } }));
+    const state = await f.adapter.poll(saved);
+    expect(state.status).toBe("succeeded");
+    expect(await f.adapter.extractOutputs(state.result)).toEqual([{ kind: "video", data: new Uint8Array([1, 2, 3, 4]), mimeType: "video/mp4" }]);
+    expect(f.fetcher.mock.calls.map(([url]) => url)).toEqual([
+      `https://newapi.jijiucanvas.com/v1/videos/${taskId}`, contentUrl,
+    ]);
+    for (const [index, [, init]] of f.fetcher.mock.calls.entries()) {
+      expect(init).toMatchObject({ method: "GET", redirect: index === 0 ? "error" : "manual" });
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fixture-key-only");
+    }
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+    expect(f.fallback.poll).not.toHaveBeenCalled();
+  });
+
+  it("keeps content_url ahead of a nested video URL when both are present", async () => {
+    const taskId = "task_receipt_priority";
+    const primary = `https://newapi.jijiucanvas.com/v1/videos/${taskId}/content?access=primary`;
+    const nested = `https://newapi.jijiucanvas.com/v1/tasks/${taskId}/artifacts/video/content?access=nested`;
+    const transport = jijiuVideoTransport();
+    const config: RestConnectorConfig = { ...transport, submit: transport.submit!, output: transport.output! };
+    const f = fixture("MinimaxH3", [new Response(new Uint8Array([1]), { headers: { "content-type": "video/mp4" } })]);
+    await f.adapter.extractOutputs({ connectionId: "jijiu-offline-fixture", baseUrl: "https://newapi.jijiucanvas.com/v1",
+      config, taskId, status: "succeeded", remote: { content_url: primary, video: { url: nested } }, autoInterface: true });
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe(primary);
+  });
+
+  it.each([
+    "https://cdn.example/v1/tasks/task_exact/artifacts/video/content?access=external",
+    "https://newapi.jijiucanvas.com/v1/tasks/task_other/artifacts/video/content?access=other-task",
+  ])("does not send content credentials to a nested URL outside the exact task: %s", async contentUrl => {
+    const transport = jijiuVideoTransport();
+    const config: RestConnectorConfig = { ...transport, submit: transport.submit!, output: transport.output! };
+    const f = fixture();
+    await expect(f.adapter.extractOutputs({ connectionId: "jijiu-offline-fixture", baseUrl: "https://newapi.jijiucanvas.com/v1",
+      config, taskId: "task_exact", status: "succeeded", remote: { video: { url: contentUrl } }, autoInterface: true }))
+      .resolves.toEqual([{ kind: "video", url: contentUrl, mimeType: "video/mp4" }]);
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
+  it("hands off a signed nested task redirect without sending the API key to the CDN", async () => {
+    const taskId = "task_content_redirect";
+    const contentUrl = `https://newapi.jijiucanvas.com/v1/tasks/${taskId}/artifacts/video/content?access=original`;
+    const fileUrl = "https://files.jijiu-fixture.test/original.mp4?signature=fixture%2Bticket%2Fone";
+    const transport = jijiuVideoTransport();
+    const config: RestConnectorConfig = { ...transport, submit: transport.submit!, output: transport.output! };
+    const f = fixture("MinimaxH3", [new Response(null, { status: 302, headers: { location: fileUrl } })]);
+    await expect(f.adapter.extractOutputs({ connectionId: "jijiu-offline-fixture", baseUrl: "https://newapi.jijiucanvas.com/v1",
+      config, taskId, status: "succeeded", remote: { video: { url: contentUrl } }, autoInterface: true }))
+      .resolves.toEqual([{ kind: "video", url: fileUrl, mimeType: "video/mp4" }]);
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    expect(f.fetcher.mock.calls[0]).toEqual([contentUrl, expect.objectContaining({ method: "GET", redirect: "manual" })]);
+    expect(new Headers(f.fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer fixture-key-only");
+    expect(f.fallback.submit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "file:///C:/private/video.mp4",
+    "javascript:alert(1)",
+    "https://username:password@files.jijiu-fixture.test/original.mp4",
+    "https://127.0.0.1/private.mp4",
+    "https://newapi.jijiucanvas.com/v1/tasks/task_other/artifacts/video/content?access=other-task",
+    "https://newapi.jijiucanvas.com/api/user/self",
+  ])("rejects unsafe or unrelated task content redirect without another request: %s", async location => {
+    const taskId = "task_content_redirect";
+    const contentUrl = `https://newapi.jijiucanvas.com/v1/tasks/${taskId}/artifacts/video/content?access=original`;
+    const transport = jijiuVideoTransport();
+    const config: RestConnectorConfig = { ...transport, submit: transport.submit!, output: transport.output! };
+    const f = fixture("MinimaxH3", [new Response(null, { status: 302, headers: { location } })]);
+    await expect(f.adapter.extractOutputs({ connectionId: "jijiu-offline-fixture", baseUrl: "https://newapi.jijiucanvas.com/v1",
+      config, taskId, status: "succeeded", remote: { video: { url: contentUrl } }, autoInterface: true })).rejects.toThrow();
+    expect(f.fetcher).toHaveBeenCalledOnce();
+    expect(f.fetcher.mock.calls[0]).toEqual([contentUrl, expect.objectContaining({ method: "GET", redirect: "manual" })]);
+    expect(f.fallback.submit).not.toHaveBeenCalled();
   });
 
   it("retains upstream failure without retrying creation", async () => {

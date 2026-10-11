@@ -779,14 +779,14 @@ test.describe("超级画布完整验收", () => {
         await tiers.getByRole("button", { name: "自动", exact: true }).click();
       }
       await tiers.getByRole("button", { name: "2K", exact: true }).click();
-      await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(n => n.id === "e2e-image")?.data.parameters).toMatchObject({ size: "auto", size_tier: "2K" });
+      await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(n => n.id === "e2e-image")?.data.parameters).toMatchObject({ size_tier: "2K" });
       await panel.getByLabel("输出分辨率预设", { exact: true }).selectOption("1536x2720");
-      await panel.getByLabel("请求质量", { exact: true }).selectOption("high");
+      await panel.getByLabel("质量", { exact: true }).selectOption("high");
       await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(n => n.id === "e2e-image")?.data.parameters).toMatchObject({ size: "1536x2720", size_tier: "2K", quality: "high" });
       await page.reload();
       await node.getByRole("button", { name: /打开 E2E 图片生成 模型与参数/u }).click();
       await expect(panel.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("1536x2720");
-      await expect(panel.getByLabel("请求质量", { exact: true })).toHaveValue("high");
+      await expect(panel.getByLabel("质量", { exact: true })).toHaveValue("high");
     });
   }
 

@@ -29,7 +29,7 @@ describe("model image capability labels", () => {
 
   it.each([
     ["api.frimodel.com", "gpt_image", "gpt-image-2", "openai", "multipart"],
-    ["vapi.chuangxiangai.asia", "生图", "gpt-image-2.5-flare-4k", "openai", "url"],
+    ["vapi.chuangxiangai.asia", "生图", "gpt-image-2-4k", "openai", "url"],
     ["ai.cangyuansuanli.cn", "IMAGE", "gpt-image-2-4k", "rest", "url"],
     ["api.tk1688.com", "default", "gpt-image-1", "openai", "multipart"],
   ])("recognizes the exact mask route for %s / %s / %s", (host, group, id, provider, mask) => {

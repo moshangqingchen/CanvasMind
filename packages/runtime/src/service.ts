@@ -9,6 +9,11 @@ import { repositoryScheduler, runtimeConcurrency, scheduleReadyNodes, type Runti
 import { assertDesktopPublicAssets } from "./desktop-preflight.js";
 import { ImageMaskValidationError, resolveImageMask } from "./image-mask.js";
 import { localReferenceChannelConfigured, localReferenceUrls } from "./reference-channel.js";
+import { monsterImageEvidence } from "@super-canvas/providers/monster-image-capabilities";
+import { applyUserImageSizePresets, resolveUserImageSizeParameters } from "@super-canvas/providers/image-size-presets";
+import { chuangxiangImageEvidence } from "@super-canvas/providers/chuangxiang-image-capabilities";
+import { genimageImageRatioIssues, isGenimageImageConnection } from "@super-canvas/providers/genimage-image-capabilities";
+import { isChuangxiangMidjourneyConnection } from "@super-canvas/providers/chuangxiang-midjourney-contract";
 import { cloudSubmissionId, isCloudSubmission, readCloudGenerationConfig, runCloudGeneration, testCloudGeneration, uploadCloudReferences, type CloudGenerationConfig } from "./cloud-generation.js";
 import {
   extractPromptAssetIds,
@@ -38,11 +43,20 @@ import {
   FakeProviderAdapter,
   imageSizeForTier,
   isPdogImageConnection,
+  applyPdogImageCapabilities,
+  isTk1688ApiUrl,
+  tk1688ImageParameterIssues,
+  normalizeTk1688CnyModel,
+  cOpenImageRoute,
+  cOpenImageParameterIssues,
+  isSecureSkillGptImage,
+  secureSkillImageParameterIssues,
+  secureSkillImageParameters,
   isJiasuImageConnection,
   jijiuImageOrigin,
   isJijiuGptImage,
   JIJIU_IMAGE_IDS,
-  pdogImageSizeForTier,
+  pdogImageSizeSelection,
   GenericRestAdapter,
   cangyuanMusicTransport,
   isCangyuanMusicRequest,
@@ -51,6 +65,7 @@ import {
   restRequestRequiresPublicAssets,
   secureSkillRequiresPublicAssets,
   chuangxiangRequiresPublicAssets,
+  isChuangxiangImageConnection,
   chuangxiangMidjourneyRequiresPublicAssets,
   bananaImageRoute,
   bananaRequiresPublicAssets,
@@ -3104,10 +3119,22 @@ export class RunService {
     // Exact supplier contracts validate saved size/tier/ratio/count choices themselves.
     // Generic inference must not erase an illegal selection before that validation.
     if (!resumingTask && !nativeJiasuImage && providerName !== "cli" && semanticType(node) === "image-generation") {
-      const imageDescriptor = configuredImageDescriptor(
+      const configuredDescriptor = configuredImageDescriptor(
         connectionConfig,
         model,
       );
+      // Refresh exact supplier pixels before resolving an automatic canvas tier.
+      // An old generic scan table must not become an explicit user size first.
+      const currentDescriptor = providerName === "openai" && isPdogImageConnection(connectionConfig, model)
+        ? applyPdogImageCapabilities({ provider: providerName, config: connectionConfig ?? {} },
+          configuredDescriptor ?? { id: model ?? "", name: model ?? "", operations: ["image.generate"] })
+        : configuredDescriptor;
+      const imageDescriptor = currentDescriptor ? applyUserImageSizePresets(currentDescriptor) : undefined;
+      const userSizePresets = Boolean(imageDescriptor?.metadata?.imageUserSizePresets);
+      if (userSizePresets && imageDescriptor) {
+        parameters = resolveUserImageSizeParameters(imageDescriptor, parameters,
+          aspectRatioFromPrompt(prompt) ?? referenceAspectRatio(graph, assets));
+      }
       const verifiedImageSizes =
         isRecord(imageDescriptor?.metadata) &&
         (imageDescriptor.metadata.image25VerifiedAt !== undefined ||
@@ -3133,7 +3160,21 @@ export class RunService {
           : undefined;
       const selectedOpenAiTier = providerName === "openai" && /^gpt-image/iu.test(model ?? "")
         ? weAiResolutionTier(parameters.size_tier) : undefined;
-      const isPdogGptImage = providerName === "openai" && isPdogImageConnection(connectionConfig, model);
+      const explicitImageContract = connectionConfig?.manualProtocol === true || imageDescriptor?.metadata?.source === "manual" ||
+        imageDescriptor?.metadata?.source === "paid-test" || imageDescriptor?.metadata?.protocolEvidence === "paid-test";
+      const isPdogGptImage = !explicitImageContract && providerName === "openai" && isPdogImageConnection(connectionConfig, model);
+      const isTk1688Image = !explicitImageContract && ["openai", "rest"].includes(providerName) && isTk1688ApiUrl(String(connectionConfig?.baseUrl ?? ""));
+      const isCOpenImage = !explicitImageContract && providerName === "openai" && cOpenImageRoute(connectionConfig ?? {}, model ?? "") !== undefined;
+      const hasHistoricalOpenImageEvidence = !explicitImageContract && providerName === "openai" &&
+        (monsterImageEvidence(connectionConfig ?? {}, model ?? "") !== undefined ||
+          chuangxiangImageEvidence(connectionConfig ?? {}, model ?? "") !== undefined);
+      const isGenimageGptImage = !explicitImageContract && providerName === "openai" && isGenimageImageConnection(connectionConfig ?? {}, model ?? "");
+      const hasNativeImageFields = !explicitImageContract &&
+        (isChuangxiangImageConnection(connectionConfig, model) ||
+          isChuangxiangMidjourneyConnection(connectionConfig, model) || bananaRoute?.genimage !== undefined);
+      const isSecureImage = !explicitImageContract && ["openai", "rest"].includes(providerName) && isSecureSkillGptImage(connectionConfig ?? {}, model ?? "");
+      const exactImageFieldContract = explicitImageContract || isPdogGptImage || isTk1688Image || isCOpenImage ||
+        hasHistoricalOpenImageEvidence || isGenimageGptImage || hasNativeImageFields || isSecureImage;
       const selectedConnectorTier =
         providerName === "rest" && (supplier !== "cyberafei" || verifiedImageSizes)
           ? weAiResolutionTier(parameters.size_tier)
@@ -3149,7 +3190,7 @@ export class RunService {
           ? weAiResolutionTier(parameters.size_tier)
           : undefined) ??
         (parameters.size === "auto"
-          ? singleConfiguredSizeTier(imageDescriptor)
+          ? singleConfiguredSizeTier(configuredDescriptor)
           : undefined) ??
         (verifiedImageSizes && parameters.size === "auto" ? "1K" : undefined);
       const autoAspectKey =
@@ -3158,7 +3199,7 @@ export class RunService {
           : parameters.size === "auto"
             ? "size"
             : undefined;
-      if (isRecord(imageDescriptor?.metadata) &&
+      if (!exactImageFieldContract && isRecord(imageDescriptor?.metadata) &&
           imageDescriptor.metadata.imageCapabilitiesVerifiedAt !== undefined &&
           selectedResolutionTier &&
           (parameters.size === undefined || parameters.size === "auto") &&
@@ -3173,13 +3214,51 @@ export class RunService {
           ? (aspectRatioFromPrompt(prompt) ??
             referenceAspectRatio(graph, assets))
           : undefined;
-      if (isPdogGptImage && selectedResolutionTier && (parameters.size === undefined || parameters.size === "auto")) {
-        const selectedRatio = typeof parameters.aspect_ratio === "string" && parameters.aspect_ratio !== "auto"
-          ? parameters.aspect_ratio : inferredRatio;
-        // The site's long-edge 2K pixels differ from the generic image pixel budget.
-        // Resolve from the original connection contract, including old scan caches.
-        parameters.size = pdogImageSizeForTier(selectedResolutionTier as "1K" | "2K" | "4K", selectedRatio ?? "1:1");
-        delete parameters.aspect_ratio;
+      if (explicitImageContract) {
+        // Manually declared and measured contracts own their exact fields.
+      } else if (isPdogGptImage) {
+        const contract = applyPdogImageCapabilities({ provider: "openai", config: connectionConfig ?? {} },
+          imageDescriptor ?? { id: model ?? "", name: model ?? "", operations: ["image.generate"] });
+        const requestedTiers = [parameters.size_tier, parameters.resolution].filter(value => value !== undefined && value !== "" && value !== "auto");
+        if (requestedTiers.some(value => !(contract.metadata?.imageSupportedResolutions as unknown[] | undefined)?.includes(String(value).toUpperCase())))
+          throw new ProviderTaskFailedError("此 PDog 当前分组没有声明这个档位；旧值保留，请重新选择", providerErrorContext);
+        const hasExplicitDimensions = parameters.size !== undefined && parameters.size !== "auto" || parameters.width !== undefined || parameters.height !== undefined;
+        const savedRatio = [parameters.aspect_ratio, parameters.aspectRatio, parameters.ratio].find(value => typeof value === "string" && value !== "auto" && value !== "");
+        const selectedRatio = savedRatio ?? (hasExplicitDimensions ? undefined : inferredRatio);
+        // Resolve only the site's published mapping or independent W/H. This branch
+        // also keeps legacy nodes out of the generic pixel-budget fallback below.
+        const selection = pdogImageSizeSelection({ ...parameters,
+          ...(selectedRatio ? { aspect_ratio: selectedRatio } : {}),
+        });
+        if (selection.issues.length) throw new ProviderTaskFailedError(selection.issues.map(issue => issue.message).join("；"), providerErrorContext);
+        if (selection.size !== undefined) parameters.size = selection.size;
+        else delete parameters.size;
+      } else if (isTk1688Image) {
+        // The studio's default WxH examples are not merchant tier mappings.
+        // Keep saved size/ratio/tier for the exact adapter rather than deriving
+        // generic pixels or replacing the user's ratio from prompt/reference.
+        const contract = imageDescriptor ? normalizeTk1688CnyModel(imageDescriptor) : undefined;
+        const issues = tk1688ImageParameterIssues(contract, parameters);
+        if (issues.length) throw new ProviderTaskFailedError(issues.map(issue => issue.message).join("；"), providerErrorContext);
+      } else if (isCOpenImage) {
+        const issues = cOpenImageParameterIssues(connectionConfig ?? {}, model ?? "", parameters, operation);
+        if (issues.length) throw new ProviderTaskFailedError(issues.map(issue => issue.message).join("；"), providerErrorContext);
+      } else if (isSecureImage) {
+        const issues = secureSkillImageParameterIssues(connectionConfig ?? {}, model ?? "", parameters);
+        if (issues.length) throw new ProviderTaskFailedError(issues.map(issue => issue.message).join("；"), providerErrorContext);
+        parameters = secureSkillImageParameters(model ?? "", parameters);
+      } else if (hasHistoricalOpenImageEvidence || isGenimageGptImage) {
+        const issues = genimageImageRatioIssues(parameters);
+        const explicitSize = typeof parameters.size === "string" && /^\d+x\d+$/iu.test(parameters.size.trim());
+        if (parameters.size_tier !== undefined && parameters.size_tier !== "" && parameters.size_tier !== "auto" && !explicitSize)
+          issues.push({ path: "parameters.size", code: "resolution_requires_explicit_size", message: "所选图片档位没有当前型号的逐比例像素映射；请填写 W/H，原档位、比例与旧值已保留。" });
+        if (issues.length) throw new ProviderTaskFailedError(issues.map(issue => issue.message.replaceAll("基因形象", "当前供应商")).join("；"), providerErrorContext);
+      } else if (hasNativeImageFields) {
+        // These exact adapters own the supplier's native fields. Their saved
+        // tier/ratio strings must not become generic Images pixel presets.
+      } else if (userSizePresets && typeof parameters.size === "string" && /^\d+x\d+$/iu.test(parameters.size)) {
+        // The user's application presets were resolved before exact supplier
+        // validation. Keep those pixels instead of re-inferring a different size.
       } else if (isCangyuanGptImage4K && !singleConfiguredSizeTier(imageDescriptor)) {
         // The Cangyuan 4K SKU accepts ratios, but an explicit 4K canvas is
         // required when automatic sizing is selected. Keep a user-entered
@@ -4030,12 +4109,17 @@ class ProviderRequestValidationError extends Error {
         .filter(Boolean)
         .join("; ") || "请求参数不符合模型要求";
     const base = presentProviderError(detail, context);
+    delete base.providerMessage;
     const presentation: ProviderErrorPresentation = {
       ...base,
       message: `请求未提交：${detail}`,
       type: "请求参数错误",
       code: issues[0]?.code || "invalid_request",
-      providerMessage: detail,
+      source: "local_validation",
+      localMessage: detail,
+      phase: "submit",
+      retryable: false,
+      submissionMayHaveOccurred: false,
       failureCategory: "invalid_request",
       charge: { status: "not_charged", source: "not_submitted" },
     };
@@ -4049,7 +4133,7 @@ class ProviderTaskFailedError extends Error {
   public readonly presentation: ProviderErrorPresentation;
 
   public constructor(rawError: unknown, context: ProviderErrorContext) {
-    const presentation = presentProviderError(rawError, context);
+    const presentation: ProviderErrorPresentation = { ...presentProviderError(rawError, context), source: "provider_response" };
     super(presentation.message);
     this.name = "ProviderTaskFailedError";
     this.presentation = presentation;

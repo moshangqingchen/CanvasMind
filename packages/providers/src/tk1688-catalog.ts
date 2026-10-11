@@ -2,6 +2,8 @@ import type { ModelDescriptor, ModelParameterDescriptor, StructuredModelPricing 
 import { parseProviderModelFacts } from "./model-catalog.js";
 import { isTk1688ApiUrl } from "./tk1688-model-policy.js";
 import { tokenComponentPricing, tokenComponentRate } from "./media-billing.js";
+import { normalizeTk1688ImageSizeContract, tk1688DescriptionFacts } from "./tk1688-image-size-contract.js";
+export { tk1688DescriptionFacts } from "./tk1688-image-size-contract.js";
 
 export const TK1688_MARKETPLACE_URL = "https://tk1688.com/api/marketplace/listings";
 export const TK1688_MARKET_URL = "https://tk1688.com/market";
@@ -12,16 +14,17 @@ const text = (value: unknown, maximum = 8000) => typeof value === "string" ? val
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const money = (value: number) => String(Number(value.toPrecision(10)));
 const tiers = ["1K", "2K", "4K"] as const;
-type Tier = typeof tiers[number];
 
-type PricedModel = { pricing?: StructuredModelPricing; priceLabel?: string; metadata?: Record<string, unknown> };
+type PricedModel = { pricing?: StructuredModelPricing; priceLabel?: string; metadata?: Record<string, unknown>; parameters?: readonly ModelParameterDescriptor[]; operations?: ModelDescriptor["operations"] };
 const unavailableCnyPrice = "人民币价格暂不可用（汇率未读取）";
 
 /** Use the marketplace's own positive FX rate. This also repairs saved USD
  * catalogs on read; original supplier prices remain evidence, never CNY input. */
 export function normalizeTk1688CnyModel<T extends PricedModel>(model: T): T {
   if (model.metadata?.tk1688Catalog !== true) return model;
+  model = normalizeTk1688ImageSizeContract(model);
   const metadata = { ...model.metadata };
+  const parameters = model.parameters;
   const candidate = model.pricing ?? record(metadata.tk1688Pricing) as unknown as StructuredModelPricing | undefined;
   const fxValue = number(metadata.tk1688FxRate), fx = fxValue && fxValue > 0 ? fxValue : undefined;
   let pricing = candidate;
@@ -58,7 +61,7 @@ export function normalizeTk1688CnyModel<T extends PricedModel>(model: T): T {
     metadata.tk1688FxRateSourceUrl ??= TK1688_STATUS_URL;
     metadata.tk1688FxRateCheckedAt ??= metadata.tk1688CatalogCheckedAt ?? candidate?.checkedAt;
   }
-  return { ...model, ...(model.pricing !== undefined || candidate ? { pricing } : {}),
+  return { ...model, ...(parameters ? { parameters } : {}), ...(model.pricing !== undefined || candidate ? { pricing } : {}),
     ...(model.priceLabel !== undefined ? { priceLabel } : {}), metadata };
 }
 
@@ -77,27 +80,7 @@ export function parseTk1688AccountModelIds(payload: unknown): string[] | undefin
   return [...new Set(root.data.map(value => value.trim()))];
 }
 
-/** Marketplace prose is model/channel evidence. An adjective or an unrelated
- * prompt sample never declares a capability for a different merchant. */
-export function tk1688DescriptionFacts(description: string) {
-  const supported = new Set<Tier>();
-  for (const match of description.matchAll(/(?:^|[^\d])([124](?:\s*[/、,，]?\s*[124]){0,2})\s*k\b/giu)) {
-    for (const digit of match[1]!.match(/[124]/gu) ?? []) supported.add(`${digit}K` as Tier);
-  }
-  for (const tier of tiers) {
-    if (new RegExp(`(?:不支持|禁止|不含|无)\\s*${tier}`, "iu").test(description)) supported.delete(tier);
-  }
-  const dimensions = /\b(\d{3,5})\s*[x×*]\s*(\d{3,5})\b/iu.exec(description);
-  const fixedSize = dimensions && /原生|固定|仅|限|支持/iu.test(description)
-    ? `${Number(dimensions[1])}x${Number(dimensions[2])}` : undefined;
-  const omitN = /(?:不支持|禁止|不接受|不传)\s*(?:参数\s*)?[`"']?n\b|(?:does not support|unsupported)\s+[`"']?n\b/iu.test(description);
-  const qualityMatch = /(?:quality|质量)\s*(?:支持|档位|可选|为|[:：=])?\s*([a-z]+(?:(?:\s*[,，、/|]\s*)[a-z]+)+)/iu.exec(description);
-  const quality = qualityMatch ? [...new Set(qualityMatch[1]!.toLowerCase().split(/\s*[,，、/|]\s*/u)
-    .filter(value => ["auto", "low", "medium", "high", "max"].includes(value)))] : [];
-  return { resolutions: tiers.filter(tier => supported.has(tier)), fixedSize, omitN, quality };
-}
-
-function parametersFor(facts: ReturnType<typeof tk1688DescriptionFacts>): ModelParameterDescriptor[] {
+function parametersFor(facts: Pick<ReturnType<typeof tk1688DescriptionFacts>, "resolutions" | "fixedSize" | "omitN" | "quality">): ModelParameterDescriptor[] {
   const result: ModelParameterDescriptor[] = facts.fixedSize ? [{
     key: "size", label: "精确尺寸", control: "select", valueType: "string", default: facts.fixedSize,
     options: [{ label: `原生 ${facts.fixedSize.replace("x", " × ")}`, value: facts.fixedSize }],
@@ -107,7 +90,7 @@ function parametersFor(facts: ReturnType<typeof tk1688DescriptionFacts>): ModelP
     options: [{ label: "自动（由当前渠道决定）", value: "auto" }, ...facts.resolutions.map(value => ({ label: value, value }))],
     description: facts.resolutions.length ? "仅显示当前商家说明中明确支持的档位。" : "商家未公布分辨率档位，按渠道默认值生成。",
   }, {
-    key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: "auto",
+    key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", default: "auto", allowCustomValue: true,
     options: [{ label: "自动", value: "auto" }, { label: "方形 1:1", value: "1:1" },
       { label: "横向 3:2", value: "3:2" }, { label: "竖向 2:3", value: "2:3" }],
     description: "词元生图中心公布的比例；自动模式使用提示词或参考图的比例。",
@@ -153,7 +136,8 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
     limits: { ...declared.limits, ...(facts.omitN && image ? { maxOutputImages: 1 } : {}) },
     ...(pricing ? { pricing } : {}),
     metadata: { ...declared.metadata, tk1688Catalog: true, tk1688Routing: "merchant", tk1688BaseModel: base,
-      tk1688SupportedResolutions: facts.resolutions, ...(facts.fixedSize ? { tk1688FixedSize: facts.fixedSize } : {}),
+      tk1688SupportedResolutions: facts.resolutions, tk1688ResolutionOptionsExclusive: facts.exclusiveResolutions, tk1688UnsupportedResolutions: facts.unsupportedResolutions,
+      ...(facts.referenceSize ? { tk1688ReferenceSize: facts.referenceSize } : {}), ...(facts.exclusiveResolutions ? { exclusiveResolutions: true } : {}), ...(facts.fixedSize ? { tk1688FixedSize: facts.fixedSize } : {}),
       ...(facts.omitN ? { tk1688OmitN: true, fixedOutputCount: 1 } : {}),
       tk1688QualityDeclared: facts.quality.length > 0, tk1688ListingId: row.id,
       tk1688QualitySource: facts.quality.length ? "merchant-description" : "official-image-station-common",
@@ -187,8 +171,8 @@ function smartModel(base: string, skus: ModelDescriptor[], checkedAt: string): M
   const priceLabel = unavailable ? unavailableCnyPrice : image ? `${range(priceValues)}/次（自动路由，实际价格由商家决定）`
     : `输入 ${range(tokenInputs)}/1M · 输出 ${range(tokenOutputs)}/1M（自动路由）`;
   const metadata = { ...first.metadata };
-  for (const key of ["tk1688ListingId", "tk1688MerchantId", "tk1688Channel", "tk1688FixedSize", "fixedOutputCount", "tk1688OmitN", "tk1688OriginalPricing", "tk1688OriginalPriceLabel"]) delete metadata[key];
-  return { id: base, name: `${base} · 自动路由`, operations: first.operations,
+  for (const key of ["tk1688ListingId", "tk1688MerchantId", "tk1688Channel", "tk1688FixedSize", "tk1688ReferenceSize", "tk1688ResolutionOptionsExclusive", "tk1688UnsupportedResolutions", "exclusiveResolutions", "imageUnsupportedResolutions", "fixedOutputCount", "tk1688OmitN", "tk1688OriginalPricing", "tk1688OriginalPriceLabel"]) delete metadata[key];
+  return normalizeTk1688ImageSizeContract({ id: base, name: `${base} · 自动路由`, operations: first.operations,
     description: "自动选择商家。参数使用当前可选商家明确支持的交集；商家未公布或档位冲突时使用自动。",
     ...(inputKinds ? { inputKinds } : {}), ...(first.outputKinds ? { outputKinds: first.outputKinds } : {}),
     ...(image ? { parameters: parametersFor({ resolutions, fixedSize, omitN, quality: [] }) } : {}),
@@ -201,7 +185,7 @@ function smartModel(base: string, skus: ModelDescriptor[], checkedAt: string): M
       priceLabel, priceCheckedAt: checkedAt, supplierChannelDescription: skus.map(model => `${model.id}：${model.description}`).join("\n").slice(0, 8000),
       ...(image ? {} : { inputKindsSource: skus.every(model => model.metadata?.inputKindsSource === "declared") ? "declared" : "inferred",
         agentCapabilities: { imageInput: inputKinds?.includes("image") === true, audioInput: inputKinds?.includes("audio") === true, videoInput: inputKinds?.includes("video") === true } }),
-    } };
+    } });
 }
 
 /** Key inventory + authenticated account aliases + active marketplace entries

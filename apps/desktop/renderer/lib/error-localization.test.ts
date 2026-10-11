@@ -5,6 +5,26 @@ import { presentProviderError } from "../../../../packages/providers/src/error-p
 import { ProviderHttpError } from "../../../../packages/providers/src/http";
 
 describe("localizeRunError", () => {
+  it("preserves local validation evidence without labeling it a supplier response", () => {
+    const error = { message: "请求未提交：输出分辨率不支持当前值", source: "local_validation",
+      localMessage: "输出分辨率不支持当前值", failureCategory: "invalid_request",
+      charge: { status: "not_charged", source: "not_submitted" } };
+    expect(localizeRunError(error)).toEqual(error);
+    const legacy = localizeRunError({ ...error, source: undefined, localMessage: undefined,
+      providerMessage: "输出分辨率不支持当前值" });
+    expect(legacy).toEqual(error);
+    expect(legacy).not.toHaveProperty("providerMessage");
+  });
+
+  it("keeps actual supplier responses and does not infer a source from arbitrary messages", () => {
+    const response = { message: "请求未提交：供应商拒绝参数", source: "provider_response", statusCode: 400,
+      providerMessage: "Unsupported resolution", failureCategory: "invalid_request" };
+    expect(localizeRunError(response)).toEqual(response);
+    expect(localizeRunError({ ...response, source: "not-a-source" })).not.toHaveProperty("source");
+    expect(localizeRunError({ message: "供应商拒绝参数", providerMessage: "Unsupported resolution" }))
+      .not.toHaveProperty("source");
+  });
+
   it("corrects legacy 24-hour content blocks while preserving the recorded charge", () => {
     const charge = { status: "charged", amount: 0.2, currency: "USD", source: "provider_response" };
     const error = localizeRunError({ message: "API 拒绝了当前请求，请检查模型、参数、提示词和素材格式。",
