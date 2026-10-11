@@ -1,6 +1,6 @@
 import type { ModelDescriptor, ModelParameterDescriptor, ModelParameterOption, NormalizedRequest, ValidationIssue } from "./contracts.js";
 import type { ImageEditingConnection } from "./image-editing-capabilities.js";
-import { imageSizePresetMatchesRatio } from "./image-size-presets.js";
+import { imageSizeOptions, imageSizePresetMatchesRatio, userImageSizeOptions } from "./image-size-presets.js";
 import { userImageQualityValues } from "./user-image-quality-presets.js";
 import { isMikotoGptImage, MIKOTO_GPT_IMAGE_SIZES, MIKOTO_GPT_RATIOS, MIKOTO_IMAGE_DOCS } from "./mikoto-image-contract.js";
 
@@ -29,6 +29,10 @@ const fri1KSizes: readonly ModelParameterOption[] = [
   { label: "1K · 21:9 · 1920 × 816", value: "1920x816" },
   { label: "1K · 9:21 · 816 × 1920", value: "816x1920" },
 ];
+// Reject recognized higher-tier application choices, without inventing a
+// maximum edge/pixel budget for Fri's otherwise open positive-integer W/H.
+const higherTierPresetSizes = new Set([...imageSizeOptions(["2K", "4K"]), ...userImageSizeOptions(["2K", "4K"])]
+  .filter(option => option.value !== "auto").map(option => option.value));
 
 function hostname(connection: ImageEditingConnection): string | undefined {
   if (connection.provider !== "openai" &&
@@ -55,6 +59,12 @@ function restrictedSizes(connection: ImageEditingConnection, model: string): rea
   if (["platform.frimodel.com", "api.frimodel.com"].includes(host ?? "") &&
       ["codex_image", "gpt_image_web"].includes(group(connection)) &&
       ["gpt-image-2-w", "gpt-image-2.5"].includes(model)) return fri1KSizes;
+}
+
+/** Nominal ratios of this exact group's rounded examples, for comparison only. */
+export function supplierImageSizeNominalRatio(connection: ImageEditingConnection, model: string, size: unknown): string | undefined {
+  const label = restrictedSizes(connection, model)?.find(option => option.value === size)?.label;
+  return label ? /^1K · ([\d:]+) ·/u.exec(label)?.[1] : undefined;
 }
 
 /** Published examples belong to this supplier and complete ID only. */
@@ -102,10 +112,13 @@ export function applySupplierImageConstraints(connection: ImageEditingConnection
     !(sizes && ["aspect_ratio", "resolution", "image_size"].includes(parameter.key)));
   if (sizes) {
     parameters = parameters.filter(parameter => parameter.key !== "size");
-    parameters = [{ key: "size", label: "输出分辨率（当前分组仅 1K）", control: "select", valueType: "string",
+    parameters = [{ key: "size", label: "输出分辨率（当前分组仅 1K）", control: sizes === fri1KSizes ? "dimensions" : "select", valueType: "string",
       default: sizes === secure25Sizes ? "1024x1024" : "auto", options: sizes,
+      ...(sizes === fri1KSizes ? { allowCustomValue: true, step: 1 } : {}),
       operations: ["image.generate", "image.edit"],
-      description: "按照当前供应商分组的官方限制选择；旧画布的 2K/4K 或自定义尺寸需重新选择。" }, ...parameters];
+      description: sizes === fri1KSizes
+        ? "当前官方分组仅 1K；保留尺寸示例及自定义正整数 W/H，示例不是完整枚举，未公布宽高上限。"
+        : "按照当前供应商分组的官方限制选择；旧画布的 2K/4K 或自定义尺寸需重新选择。" }, ...parameters];
   }
   if (mikoto) {
     const declaredQuality = group(connection) === "生图（2k4k 中质量）" ? "medium"
@@ -181,6 +194,13 @@ export function applySupplierImageConstraints(connection: ImageEditingConnection
     }
   }
   const metadata = { ...model.metadata };
+  if (sizes === fri1KSizes) {
+    // The exact group contract has just been rebuilt; stale application
+    // source options must not append a previous group's 2K/4K presets again.
+    delete metadata.imageUserSizePresets;
+    delete metadata.imageUserSizeSourceOptions;
+    delete metadata.imageUserSizeSourceDescription;
+  }
   if (metadata.imageQualityCompleteEnumSource === "mikoto-key-group") {
     delete metadata.imageQualityOptionsCompleteEnum;
     delete metadata.imageQualityCompleteEnumSource;
@@ -198,6 +218,8 @@ export function applySupplierImageConstraints(connection: ImageEditingConnection
     ...(qualityByKey ? { imageQualitySource: "key-group", imageQualityNote: "质量由 API Key 所属分组决定，请求不发送 quality。" } : {}),
     ...(sizes ? { imageSizeContract: "group-1k-only" } : {}),
     ...(sizes === secure25Sizes ? { imageSizeOptionsCompleteEnum: true, imageSizeCompleteEnumSource: "https://token.secure-skill.com/docs#gpt-image" } : {}),
+    ...(sizes === fri1KSizes ? { imageFixedResolution: "1K", imageResolutionTierSource: "official-key-group", imageResolutionTiers: ["1K"],
+      imageSizeOptionsCompleteEnum: false, imageSizeSourceKind: "supplier-examples", imageOpenSizePreferences: true } : {}),
     ...(mikoto ? { mikotoImageContract: true, imageNativeParameterContract: true,
       imageSizeSource: MIKOTO_IMAGE_DOCS, imageSizeSourceKind: "supplier-examples", imageEditingSource: MIKOTO_IMAGE_DOCS } : {}),
     ...(mikoto1K ? { imageResolutionTierSource: "official-key-group", imageResolutionTiers: ["1K"] } : {}),
@@ -254,10 +276,15 @@ export function supplierImageParameterIssues(connection: ImageEditingConnection,
   }
   if (!sizes) return issues;
   const size = request.parameters?.size;
-  if (size !== undefined && size !== "auto" && !sizes.some(option => option.value === size))
+  const friOpenDimensions = sizes === fri1KSizes;
+  const dimensions = typeof size === "string" ? /^([1-9]\d*)x([1-9]\d*)$/iu.exec(size) : null;
+  const validOpenDimensions = dimensions && dimensions.slice(1).every(value => Number.isSafeInteger(Number(value)));
+  const higherTierSize = higherTierPresetSizes.has(typeof size === "string" ? size.toLowerCase() : "") && !sizes.some(option => option.value === size);
+  if (size !== undefined && size !== "auto" && (friOpenDimensions ? !validOpenDimensions || higherTierSize : !sizes.some(option => option.value === size)))
     issues.push({ path: "parameters.size", code: "invalid_group_image_size",
-      message: `当前 ${group(connection)} 分组仅支持官方 1K 尺寸，请重新选择分辨率；当前生成尚未提交` });
-  for (const key of ["image_size", "resolution"] as const) {
+      message: friOpenDimensions ? `当前 ${group(connection)} 分组仅支持 1K；请选择 1K 尺寸或正整数 W/H，已保存的 2K/4K 预设需重新选择`
+        : `当前 ${group(connection)} 分组仅支持官方 1K 尺寸，请重新选择分辨率；当前生成尚未提交` });
+  for (const key of ["image_size", "resolution", ...(friOpenDimensions ? ["size_tier"] : [])]) {
     const value = request.parameters?.[key];
     if (value !== undefined && value !== "auto" && String(value).toUpperCase() !== "1K")
       issues.push({ path: `parameters.${key}`, code: "invalid_group_image_size", message: "当前分组仅支持 1K" });

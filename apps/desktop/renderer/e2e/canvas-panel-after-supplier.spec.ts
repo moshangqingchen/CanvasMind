@@ -336,8 +336,8 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   const suppliers = panel.getByRole("combobox", { name: `${label} 供应商`, exact: true });
   const group = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
   await expect(group).toHaveValue("当前视频");
-  await expect(suppliers.locator(`option[value="${target.supplierKey}"]`)).toContainText("同型号 2 CNY / 次");
-  await expect(suppliers.locator(`option[value="${missing.supplierKey}"]`)).toContainText("当前分组无此型号");
+  await expect(suppliers.locator(`option[value="${target.supplierKey}"]`)).toHaveText("跨组目标视频供应商 · 2 CNY / 次 · 余额未读取");
+  await expect(suppliers.locator(`option[value="${missing.supplierKey}"]`)).toHaveText("跨组无完整型号供应商 · — · 余额未读取");
   await chooseNativeWithMouse(page, suppliers, target.supplierKey);
   await expect(group).toHaveValue("seedance-官方token版");
   await expect(panel.getByRole("combobox", { name: `${label} 模型`, exact: true })).toContainText(exactId);
@@ -348,8 +348,8 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   }).toMatchObject({ connectionId: targetConnection.id, model: exactId });
   await page.screenshot({ path: info.outputPath("supplier-exact-video-group.png") });
   // The same selected group can publish token billing instead of a flat task
-  // price. This canvas has no reference video, so its compact quote must use
-  // the exact no-reference tier instead of the cheaper tier or an unknown range.
+  // price. The model quote must retain both exact rates with their reference
+  // conditions, rather than replacing the whole tariff with its cheapest tier.
   const tokenModel = video(exactId, 2);
   tokenModel.parameters = [...(tokenModel.parameters ?? []), { key: "resolution", label: "分辨率", control: "select", valueType: "string", default: "720p",
     options: [{ value: "720p", label: "720p" }] }];
@@ -366,9 +366,8 @@ test("视频供应商比较与切换选择完整型号所在分组，不借用�
   await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
   await expect(group).toHaveValue("seedance-官方token版");
   const tokenQuote = panel.getByLabel("当前供应商报价", { exact: true });
-  await expect(tokenQuote).toContainText("720p · 不含参考视频 ¥29/1M tokens");
+  await expect(tokenQuote).toHaveText("跨组目标视频供应商 · Token 类型=output 且 分辨率=720p 且 参考视频=false · 29 CNY / 1M tokens；Token 类型=output 且 分辨率=720p 且 参考视频=true · 18.2 CNY / 1M tokens · 余额未读取");
   await expect(tokenQuote).not.toContainText("参考视频条件未确认");
-  await expect(tokenQuote).not.toContainText("18.2");
   await expect(tokenQuote).not.toContainText("2 CNY / 次");
   expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 2)).toBe(true);
   await page.screenshot({ path: info.outputPath("supplier-token-conditional-price.png") });

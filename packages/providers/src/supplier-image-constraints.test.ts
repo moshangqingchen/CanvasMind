@@ -4,6 +4,7 @@ import { applySupplierImageConstraints, isMikotoDocumentedImageSize, supplierIma
 import { StaticConnectionResolver } from "./credentials.js";
 import { createDefaultProviderRegistry } from "./registry.js";
 import { OpenAIImageAdapter, WeAIImageAdapter } from "./openai.js";
+import { applyUserImageSizePresets, userImageSizeOptions } from "./image-size-presets.js";
 
 const model: ModelDescriptor = { id: "gpt-image-2.5-flare", name: "Image", operations: ["image.generate"],
   parameters: [ { key: "size", label: "尺寸", control: "dimensions", default: "3840x2160" },
@@ -35,12 +36,27 @@ describe("supplier image parameter boundaries", () => {
     expect(applySupplierImageConstraints(connection(), { ...model, id: "gpt-image-2" }).parameters?.some(p => p.key === "quality")).toBe(false);
     expect(applySupplierImageConstraints(connection("https://other.example/v1"), { ...model, id: "gpt-image-2" }).parameters?.some(p => p.key === "quality")).toBe(true);
   });
-  it.each(["codex_image", "gpt_image_web"])("limits FriModel %s to its documented 1K presets", group => {
+  it.each(["codex_image", "gpt_image_web"].flatMap(group => ["gpt-image-2-w", "gpt-image-2.5"].map(id => [group, id])))
+    ("keeps FriModel %s / %s at 1K while allowing open positive-integer dimensions", (group, id) => {
     const source = connection("https://platform.frimodel.com/v1", group);
-    const result = applySupplierImageConstraints(source, { ...model, id: "gpt-image-2-w" });
+    const stale = applyUserImageSizePresets({ ...model, id: id! });
+    const result = applyUserImageSizePresets(applySupplierImageConstraints(source, stale));
+    expect(result.metadata).toMatchObject({ imageSizeContract: "group-1k-only", imageFixedResolution: "1K",
+      imageUserSizePresetTiers: ["1K"], imageSizeOptionsCompleteEnum: false, canvasRunnable: false });
+    expect(result.parameters?.find(p => p.key === "size")).toMatchObject({ control: "dimensions", allowCustomValue: true, step: 1 });
     expect(result.parameters?.find(p => p.key === "size")?.options?.every(o => o.value === "auto" || o.label.startsWith("1K"))).toBe(true);
-    expect(supplierImageParameterIssues(source, { ...request, model: "gpt-image-2-w" })).toHaveLength(1);
-    expect(supplierImageParameterIssues(source, { ...request, model: "gpt-image-2-w", parameters: { size: "1920x1088" } })).toEqual([]);
+    expect(result.parameters?.find(p => p.key === "size")?.options).toHaveLength(12);
+    expect(applyUserImageSizePresets(applySupplierImageConstraints(source, result))).toEqual(result);
+    for (const size of ["auto", "1920x1088", "1360x768", "2497x3313", "8193x2305", ...userImageSizeOptions(["1K"]).map(option => option.value)]) {
+      expect(supplierImageParameterIssues(source, { ...request, model: id!, parameters: { size, size_tier: "1K" } }), String(size)).toEqual([]);
+    }
+    for (const size of ["3840x2160", "2048x2048", "3520x2336", "2K", "0x1024", "1.5x1024", "-1x1024", "9007199254740992x1"]) {
+      expect(supplierImageParameterIssues(source, { ...request, model: id!, parameters: { size } }), size).toHaveLength(1);
+    }
+    for (const key of ["size_tier", "resolution", "image_size"]) for (const tier of ["2K", "4K"]) {
+      expect(supplierImageParameterIssues(source, { ...request, model: id!, parameters: { size: "1024x1024", [key]: tier } }))
+        .toEqual([expect.objectContaining({ path: `parameters.${key}`, code: "invalid_group_image_size" })]);
+    }
   });
   it.each(["3840x1646", "2560x1097"])("accepts Mikoto's published %s preset without loosening another supplier", async size => {
     expect(isMikotoDocumentedImageSize(connection("https://api.mikoto.vip/v1"), "gpt-image-2", size)).toBe(true);

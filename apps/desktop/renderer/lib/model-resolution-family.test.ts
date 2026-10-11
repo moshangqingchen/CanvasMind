@@ -99,6 +99,17 @@ it("preserves a ratio-only model's portrait selection without inventing pixels",
   ).toEqual({ aspect_ratio: "9:16" });
 });
 
+it("selects destination-tier pixels when an open model also lists other tiers", () => {
+  const next = model("4K");
+  next.parameters![0]!.options = [
+    ...model("1K").parameters![0]!.options!,
+    ...next.parameters![0]!.options!,
+  ];
+  expect(parametersForResolutionModelChange(model("1K"), next, {
+    size: "768x1360", size_tier: "1K",
+  })).toEqual({ size: "2160x3840", size_tier: "4K" });
+});
+
 it("displays each tier's stated price without treating unknown token billing as free", () => {
   expect(modelResolutionPrice(model("4K"))).toBe("¥0.095/张");
   expect(

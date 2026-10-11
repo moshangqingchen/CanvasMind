@@ -103,7 +103,7 @@ for (const selectedUsage of ["canvas", "agent"] as const) {
     await expect(group.locator('option[value="default"]')).not.toContainText(/\d+\s*个连接/u);
     await expect(apiConnection).toHaveCount(0);
     await expect(picker).toContainText("商家 47 · 渠道 261");
-    await expect(panel.getByLabel("当前供应商报价", { exact: true })).toContainText("¥");
+    await expect(panel.getByLabel("当前供应商报价", { exact: true })).toHaveText("词元 · 0.206688 CNY / 次（目录快照） · 余额未读取");
     await expect(panel.getByLabel("当前供应商报价", { exact: true })).not.toContainText(/USD|\$/u);
     expect(await readNode()).toMatchObject({ connectionId: selected.id, model: merchant47 });
     await scene.chooseMerchant48();

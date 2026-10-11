@@ -1,18 +1,62 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "203.0.113.10", family: 4 }]) }));
-import type { FetchImplementation, NormalizedRequest } from "./contracts.js";
+import type { FetchImplementation, ModelDescriptor, NormalizedRequest } from "./contracts.js";
 import { StaticConnectionResolver } from "./credentials.js";
 import { OpenAIImageAdapter, WeAIImageAdapter } from "./openai.js";
+import { applySupplierImageConstraints } from "./supplier-image-constraints.js";
 
-function fixture(supplierKey: string, baseUrl: string, modelGroup: string, model: string) {
+function fixture(supplierKey: string, baseUrl: string, modelGroup: string, model: string, modelCatalogModels?: ModelDescriptor[]) {
   const fetch = vi.fn<FetchImplementation>(async () => Response.json({ data: [{ url: "https://assets.example/original.png" }] }));
   const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{ id: "mock", provider: "openai", apiKey: "fixture-key", baseUrl,
-    settings: { supplierKey, modelGroup, scannedModelIds: [model] } }]), { fetch });
+    settings: { supplierKey, modelGroup, scannedModelIds: [model], ...(modelCatalogModels ? { modelCatalogModels } : {}) } }]), { fetch });
   const request: NormalizedRequest = { connectionId: "mock", operation: "image.generate", model, prompt: "fixture", idempotencyKey: "mock-no-network" };
   return { adapter, fetch, request };
 }
 
 describe("OpenAI-compatible size rules stay within each actual source", () => {
+  it.each(["codex_image", "gpt_image_web"].flatMap(group => ["gpt-image-2-w", "gpt-image-2.5"].map(model => [group, model])))
+    ("sends selected 1K pixels and custom W/H for Fri %s / %s while rejecting higher tiers before fetch", async (group, model) => {
+      const f = fixture("frimodel", "https://platform.frimodel.com/v1", group!, model!, [
+        { id: model!, name: model!, operations: ["image.generate", "image.edit"], parameters: [{ key: "size", label: "旧尺寸", control: "dimensions" }] },
+      ]);
+      const quality = model === "gpt-image-2.5" ? "max" : "high";
+      for (const size of ["1360x768", "2497x3313", "8193x2305"]) {
+        const parameters = { size, size_tier: "1K", quality }, before = structuredClone(parameters);
+        await f.adapter.submit({ ...f.request, parameters });
+        const body = JSON.parse(String(f.fetch.mock.calls.at(-1)![1]?.body));
+        expect(body).toMatchObject({ model, size, quality });
+        for (const key of ["size_tier", "image_size", "resolution", "aspect_ratio"]) expect(body).not.toHaveProperty(key);
+        expect(parameters).toEqual(before);
+      }
+      await f.adapter.submit({ ...f.request, parameters: { size: "auto", size_tier: "1K", aspect_ratio: "16:9", quality } });
+      expect(JSON.parse(String(f.fetch.mock.calls.at(-1)![1]?.body))).toMatchObject({ size: "1920x1088", quality });
+      expect(f.fetch).toHaveBeenCalledTimes(4);
+      for (const parameters of [{ size: "3840x2160" }, { size: "2048x2048" }, { size: "1024x1024", size_tier: "2K" },
+        { size: "auto", size_tier: "4K", aspect_ratio: "16:9" }, { size: "1024x1024", resolution: "4K" }, { size: "1024x1024", image_size: "2K" }]) {
+        await expect(f.adapter.submit({ ...f.request, parameters })).rejects.toThrow(/1K/u);
+      }
+      expect(f.fetch).toHaveBeenCalledTimes(4);
+      if (model === "gpt-image-2-w") {
+        await f.adapter.submit({ ...f.request, operation: "image.edit", parameters: { size: "1360x768", size_tier: "1K", quality },
+          assets: [{ id: "fixture-image", kind: "image", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) }] });
+        const form = f.fetch.mock.calls.at(-1)![1]?.body as FormData;
+        expect(form.get("size")).toBe("1360x768"); expect(form.get("quality")).toBe(quality);
+        expect(form.has("size_tier")).toBe(false);
+      }
+      const source = { provider: "openai", config: { baseUrl: "https://platform.frimodel.com/v1", modelGroup: group } };
+      const examples = applySupplierImageConstraints(source, { id: model!, name: model!, operations: ["image.generate"] })
+        .parameters!.find(parameter => parameter.key === "size")!.options!.filter(option => option.value !== "auto");
+      expect(examples).toHaveLength(11);
+      for (const example of examples) {
+        await f.adapter.submit({ ...f.request, parameters: { size: example.value, size_tier: "1K", aspect_ratio: example.label.split(" · ")[1], quality } });
+        const body = JSON.parse(String(f.fetch.mock.calls.at(-1)![1]?.body));
+        expect(body).toMatchObject({ size: example.value, quality });
+        expect(body).not.toHaveProperty("aspect_ratio");
+      }
+      const beforeConflict = f.fetch.mock.calls.length;
+      await expect(f.adapter.submit({ ...f.request, parameters: { size: "1920x1088", aspect_ratio: "1:1" } })).rejects.toThrow(/不一致/u);
+      expect(f.fetch).toHaveBeenCalledTimes(beforeConflict);
+    });
   it.each(["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("preserves CODEX %s's actual quality and size on generation and edit wires", async model => {
     const fetch = vi.fn<FetchImplementation>(async () => Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }));
     const adapter = new WeAIImageAdapter(new StaticConnectionResolver([{ id: "codex", provider: "weai", apiKey: "fixture-key",

@@ -26,7 +26,7 @@ import { applyJiasuImageCapabilities, isJiasuImageConnection, isJiasuImageResult
 import { applyJijiuImageCapabilities, isJijiuGptImage, jijiuGptImageParameters, jijiuGptImageRequestIssues, jijiuImageOrigin } from "./jijiu-image-contract.js";
 import { applyChuangxiangCurrentImageCapabilities, isChuangxiangImageConnection, isChuangxiangImageResult, ChuangxiangImageAdapter } from "./chuangxiang-images-contract.js";
 import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnection, isChuangxiangMidjourneyResult, ChuangxiangMidjourneyAdapter } from "./chuangxiang-midjourney.js";
-import { applySupplierImageConstraints, isMikotoDocumentedImageSize, supplierImageParameterIssues } from "./supplier-image-constraints.js";
+import { applySupplierImageConstraints, isMikotoDocumentedImageSize, supplierImageParameterIssues, supplierImageSizeNominalRatio } from "./supplier-image-constraints.js";
 import { isMikotoGptImage, mikotoUrlImageReferences } from "./mikoto-image-contract.js";
 import { isGenimageImageConnection, genimageImageParameters, genimageImageRatioIssues } from "./genimage-image-capabilities.js";
 import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
@@ -3528,8 +3528,13 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         issues.push({ path: `parameters.${key}`, code: "missing_image_size_schema", message: "辰途当前 grok生图完整型号的 /v1/images/models 返回 404，档位/尺寸/比例原值保留，需要该 Key 对应字段 schema 才能映射提交。" });
     }
     if (!useGemini && (cyberDeclaredOpenSize || friOpenSize || chentuFreeOpenSize || this.profile === "weai" ||
-        ["chentu", "cyberafei"].includes(resolvedSupplierKey ?? "") && /^gpt-image-2\.5(?:-(?:flare|sunburst))?$/u.test(resolvedModel)))
-      issues.push(...imageSizePreferenceIssues(request.parameters));
+        ["chentu", "cyberafei"].includes(resolvedSupplierKey ?? "") && /^gpt-image-2\.5(?:-(?:flare|sunburst))?$/u.test(resolvedModel))) {
+      const nominalRatio = friOpenSize && resolvedConnection
+        ? supplierImageSizeNominalRatio(imageEditingConnection(resolvedConnection), requestedModel, request.parameters?.size) : undefined;
+      // Rounded examples retain their nominal ratio; the wire still receives
+      // the exact selected W/H and does not receive this comparison value.
+      issues.push(...imageSizePreferenceIssues(nominalRatio ? { ...request.parameters, size: nominalRatio.replace(":", "x") } : request.parameters));
+    }
     const policyModel = tk1688ImagePolicyModelId(resolvedModel, resolvedConnection?.baseUrl);
     if (!isGenimage && /^gpt-image-2(?:-|$)/u.test(policyModel)) {
       const size = request.parameters?.["size"];

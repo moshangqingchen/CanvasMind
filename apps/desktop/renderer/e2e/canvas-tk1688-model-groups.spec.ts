@@ -49,7 +49,10 @@ test("词元先选择基础型号再比较商家，保留完整型号并保存�
   await expect(list.getByRole("option", { name: base, exact: true })).toHaveCount(1);
   await list.getByRole("option", { name: base, exact: true }).click();
   await expect(list.getByRole("option")).toHaveCount(3); // Smart + two merchants.
-  await expect(list.getByRole("option", { name: "商家 47 · 渠道 261", exact: true })).toContainText("固定 3840×2160");
+  const adobeMerchant = list.getByRole("option", { name: "商家 47 · 渠道 261", exact: true });
+  await expect(adobeMerchant).toContainText(`ID: ${savedMerchant}`);
+  await expect(adobeMerchant).toContainText("商家声明 4K · 一次 1 张 · 商家说明：Adobe支持原生4K(3840*2160)，不支持N。");
+  await expect(adobeMerchant).not.toContainText("固定 3840×2160");
   const readNode = async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data;
   expect((await readNode()).model).toBe(savedMerchant); // Browsing a family never changes the saved route.
   await panel.getByRole("button", { name: "返回模型", exact: true }).click();

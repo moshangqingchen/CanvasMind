@@ -18,6 +18,7 @@ async function fixture(page: Page, modelReadStatus: 200 | 401 = 200) {
     {
       id: "gpt-image-2@s48c262", name: "gpt-image-2 · 商家 s48c262", operations: ["image.generate", "image.edit"],
       metadata: { tk1688Catalog: true, tk1688BaseModel: "gpt-image-2", tk1688Routing: "merchant", tk1688SupportedResolutions: ["4K"],
+        // An old inferred fixed-size marker must not override this open declaration.
         tk1688FixedSize: "3840x2160", tk1688OmitN: true, supplierChannelDescription: "支持 4K，适合大幅输出",
         priceLabel: "¥0.413376/次", priceSource: "tk1688-marketplace" },
     },
@@ -88,7 +89,8 @@ test("词元同型号折叠，展开后分别显示自动路由、商家渠道�
   await expect(firstMerchant).toContainText("商家声明 1K / 2K");
   await expect(firstMerchant.locator(".sm-model-price")).toHaveText("¥0.206688/次");
   const largeMerchant = imageFamily.locator(".sm-model-route").filter({ hasText: "gpt-image-2@s48c262" });
-  await expect(largeMerchant).toContainText("固定 3840×2160");
+  await expect(largeMerchant.locator(".sm-model-route-summary")).toHaveText("商家声明 4K · 一次 1 张 · 商家说明：支持 4K，适合大幅输出");
+  await expect(largeMerchant).not.toContainText("固定 3840×2160");
   await expect(largeMerchant).toContainText("一次 1 张");
   await expect(largeMerchant).toContainText("商家说明：支持 4K，适合大幅输出");
   await expect(largeMerchant.locator(".sm-model-price")).toHaveText("¥0.413376/次");
@@ -96,7 +98,7 @@ test("词元同型号折叠，展开后分别显示自动路由、商家渠道�
   const chatMerchant = section.locator(".sm-model-route").filter({ hasText: "gpt-5@s50c263" });
   await expect(chatMerchant.locator(".sm-model-facts")).toContainText("对话");
   await expect(chatMerchant).toContainText("商家说明：对话渠道");
-  await expect(chatMerchant.locator(".sm-model-price")).toHaveText("输入 ¥6.8896/1M · 输出 ¥13.7792/1M");
+  await expect(chatMerchant.locator(".sm-model-price")).toHaveText("输入 6.8896 CNY / 1M tokens；输出 13.7792 CNY / 1M tokens（目录快照）");
   await expect(section).not.toContainText(/USD|\$/u);
   await page.screenshot({ path: testInfo.outputPath("supplier-tk1688-routes.png"), fullPage: true });
   expect(writes).toEqual([]);
@@ -122,7 +124,7 @@ test("词元模型读取 401 时，已保存美元目录按官方汇率显示人
   await dialog.getByRole("button", { name: "展开 gpt-5 的商家渠道", exact: true }).click();
   const section = dialog.locator('.sm-model-section[data-source="actual"]');
   const chatMerchant = section.locator(".sm-model-route").filter({ hasText: "gpt-5@s50c263" });
-  await expect(chatMerchant.locator(".sm-model-price")).toHaveText("输入 ¥6.8896/1M · 输出 ¥13.7792/1M");
+  await expect(chatMerchant.locator(".sm-model-price")).toHaveText("输入 6.8896 CNY / 1M tokens；输出 13.7792 CNY / 1M tokens（目录快照）");
   await expect(section).not.toContainText(/USD|\$/u);
   expect(writes).toEqual([]);
 });

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { SupplierRecord } from "@super-canvas/db";
-import { OpenAIImageAdapter, StaticConnectionResolver, type ModelDescriptor } from "@super-canvas/providers";
+import { applyUserImageSizePresets, OpenAIImageAdapter, StaticConnectionResolver, type ModelDescriptor } from "@super-canvas/providers";
 import { applyMonsterImageCapabilities } from "@super-canvas/providers/monster-image-capabilities";
 import { effectiveImageCapabilities } from "./supplier-capabilities";
 import { normalizedParametersForModel, parameterDescriptorsForValues, parametersWithDefaults } from "./model-parameters";
 import { supplierImageMenuContract } from "./supplier-image-menu-contract";
 import { cyberAfeiDocumentedModel } from "./cyberafei-catalog";
+import { bindScannedModelProtocols } from "./scanned-model-protocols";
 
 const sparse = (id: string): ModelDescriptor => ({ id, name: id, operations: ["image.generate", "image.edit"] });
 function fixture(baseUrl: string, group: string, model: ModelDescriptor) {
@@ -19,6 +20,25 @@ function fixture(baseUrl: string, group: string, model: ModelDescriptor) {
 }
 
 describe("supplier image menu contract survives capability enrichment", () => {
+  it.each(["codex_image", "gpt_image_web"].flatMap(group => ["gpt-image-2-w", "gpt-image-2.5"].map(id => [group, id])))
+    ("preserves Fri %s / %s's exact 1K group across sparse scans and repeated menu projection", (group, id) => {
+      const connection = { provider: "openai", config: { baseUrl: "https://platform.frimodel.com/v1", modelGroup: group } };
+      const old = applyUserImageSizePresets({ ...sparse(id!), parameters: [{ key: "size", label: "尺寸", control: "dimensions", default: "3840x2160",
+        options: [{ value: "3840x2160", label: "4K · 16:9 · 3840 × 2160" }] }], metadata: { canvasRunnable: false } });
+      const current = bindScannedModelProtocols(connection, [old]).models[0]!;
+      const size = current.parameters!.find(parameter => parameter.key === "size")!;
+      expect(current.metadata).toMatchObject({ imageSizeContract: "group-1k-only", imageFixedResolution: "1K",
+        imageSupportedResolutions: ["1K"], imageUserSizePresetTiers: ["1K"], imageSizeOptionsCompleteEnum: false, canvasRunnable: false });
+      expect(size).toMatchObject({ control: "dimensions", allowCustomValue: true });
+      expect(size.options).toHaveLength(12);
+      expect(size.options!.every(option => option.value === "auto" || option.label.startsWith("1K ·"))).toBe(true);
+      expect(size.options!.find(option => option.label.startsWith("1K · 16:9"))?.value).toBe("1920x1088");
+      const refreshed = applyUserImageSizePresets(supplierImageMenuContract(connection, current));
+      expect(refreshed.parameters).toEqual(current.parameters);
+      expect(refreshed.metadata?.imageUserSizeSourceOptions).toEqual(current.metadata?.imageUserSizeSourceOptions);
+      for (const saved of [{ size: "3840x2160" }, { size: "2497x3313", size_tier: "1K" }])
+        expect(normalizedParametersForModel("image-generation", "openai", refreshed, saved)).toMatchObject(saved);
+    });
   it.each(["grok-imagine-image", "grok-imagine-image-2.0", "grok-imagine-image-quality"])("keeps Hang %s on measured defaults without invented K pixels or quality", id => {
     const model = supplierImageMenuContract({ provider: "openai", config: { baseUrl: "https://api.hangzhale.com", accountKeyGroupId: "74" } }, sparse(id));
     expect(parameterDescriptorsForValues("image-generation", "openai", model, {})).toEqual([]);

@@ -9,6 +9,7 @@ import { applyCOpenImageCapabilities } from "@super-canvas/providers/c-open-imag
 import { parseSupplierGroupDetails } from "@super-canvas/providers/supplier-group-details";
 import { applyMonsterImageCapabilities } from "@super-canvas/providers/monster-image-capabilities";
 import { applySecureSkillImageCapabilities } from "@super-canvas/providers/secure-skill-image-contract";
+import { applySupplierImageConstraints } from "@super-canvas/providers/supplier-image-constraints";
 
 /** Restore exact supplier controls before generic capability/history enrichment. */
 export function supplierImageMenuContract(
@@ -91,12 +92,15 @@ export function supplierImageMenuContract(
   const fri = ["api.frimodel.com", "platform.frimodel.com"].includes(host) && /^gpt-image-2(?:-(?:low|medium|high|adobe|az|w|wc|o)|\.5(?:-(?:flare|sunburst)(?:-adobe)?)?)?$/u.test(model.id);
   const chentu = host === "tu.988236.xyz" && /^(?:gpt-image-2(?:-(?:1k|2k|4k))?|gpt-image-2自由传参)$/u.test(model.id);
   if (!fri && !chentu) return model;
+  const friOneK = fri && ["codex_image", "gpt_image_web"].includes(group) && ["gpt-image-2-w", "gpt-image-2.5"].includes(model.id);
+  if (friOneK) model = applySupplierImageConstraints(connection, model);
   const descriptor = fri ? friModelFallbackImageDescriptor(model.id, group) : chentuFallbackImageDescriptor(model.id, group);
   if (!descriptor?.parameters) return model;
   let parameters = descriptor.parameters.map(parameter => {
     const saved = model.parameters?.find(current => current.key === parameter.key);
     // A current keyed capability response takes precedence over static sizes.
     if (parameter.key === "size" && saved?.options?.length && model.metadata?.imageSizeCapabilitiesSource) return saved;
+    if (parameter.key === "size" && friOneK && saved) return saved;
     return parameter;
   });
   const chentuKeyedSizes = chentu && Boolean(model.metadata?.imageSizeCapabilitiesSource) &&
@@ -108,7 +112,7 @@ export function supplierImageMenuContract(
     description: "保留该型号档位，补齐用户指定比例尺寸；旧静态像素表不是当前 Key 的完整枚举。实际输出以原图为准。",
   } : parameter);
   const friOpenSize = fri && !/^gpt-image-2(?:-(?:low|medium|high))?$/u.test(model.id);
-  const friDeclaredTiers = friOpenSize ? parseSupplierGroupDetails({ name: group,
+  const friDeclaredTiers = friOneK ? ["1K"] : friOpenSize ? parseSupplierGroupDetails({ name: group,
     description: String(model.metadata?.supplierGroupDescription ?? "") }, "key-groups")?.supportedResolutions ?? [] : [];
   if (friOpenSize) parameters = [...parameters, ...(friDeclaredTiers.length ? [{ key: "size_tier", label: "分辨率档位偏好", control: "select" as const, valueType: "string" as const,
     default: "auto", options: [{ value: "auto", label: "自动" }, ...friDeclaredTiers.map(value => ({ value, label: value }))], description: "当前官方分组声明的档位；未公开该完整型号的逐比例像素映射，请填写 W/H，以原 size 字段提交。档位为应用偏好，不添加上游字段。" }] : []),
@@ -123,7 +127,7 @@ export function supplierImageMenuContract(
         ...(chentuFixedTier ? { imageFixedResolution: chentuFixedTier } : {}) }),
     } : {}), ...(friOpenSize ? { imageSupportedResolutions: friDeclaredTiers,
       imageResolutionTierParameter: "size_tier", imageNativeParameterContract: true, imageOpenSizePreferences: true,
-      imageNativeResolutionParameter: friDeclaredTiers.length ? "size_tier" : "size", imageSizeContract: "exact-full-id-open-size-no-published-pixel-map" } : {}), imageNativeResolutionOptions: true,
+      imageNativeResolutionParameter: friDeclaredTiers.length ? "size_tier" : "size", imageSizeContract: friOneK ? "group-1k-only" : "exact-full-id-open-size-no-published-pixel-map" } : {}), imageNativeResolutionOptions: true,
       ...(!friOpenSize ? { imageNativeResolutionParameter: "size" } : {}),
       imageNativeQualityOptions: true, imageMenuContract: fri ? "frimodel-base-image25" : "chentu-fixed-image2-tier" } };
 }

@@ -775,7 +775,9 @@ function ParameterControl({
       const chosen = descriptor.options?.find(option => String(option.value) === raw);
       const ratio = chosen?.label.match(/\d+\s*:\s*\d+/u)?.[0]?.replaceAll(" ", "");
       for (const key of ["aspect_ratio", "aspectRatio", "ratio"]) {
-        if (parameters[key] !== undefined) {
+        // Secure Seedream's legacy ratio overrides size. The explicit size
+        // edit already removed it; restoring it would override the new pixels.
+        if (parameters[key] !== undefined && !usesSecureSeedreamSizePrecedence(sizeAspectRatioContext.model)) {
           if (ratio) next[key] = ratio;
           else delete next[key];
         }

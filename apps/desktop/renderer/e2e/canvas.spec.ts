@@ -2160,7 +2160,8 @@ test.describe("超级画布完整验收", () => {
       imageConfigPopover.getByLabel("E2E 图片生成 模型", { exact: true }),
     ).toContainText("E2E Image Cinematic");
     await imageConfigPopover.getByLabel("质量").selectOption("high");
-    await imageConfigPopover.getByLabel("画面比例").selectOption("9:16");
+    await expect(imageConfigPopover.getByLabel("画面比例", { exact: true })).toHaveCount(0);
+    await expect(imageConfigPopover.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("2160x3840");
     await imageConfigPopover
       .getByRole("button", { name: "关闭模型与参数面板" })
       .click();
@@ -2208,7 +2209,7 @@ test.describe("超级画布完整验收", () => {
           parts: [{ type: "text", text: "节点内的电影感城市海报" }],
           parameters: {
             quality: "high",
-            aspect_ratio: "9:16",
+            size: "2160x3840",
           },
         },
         video: {
@@ -2227,10 +2228,11 @@ test.describe("超级画布完整验收", () => {
     );
     const restoredInspector = await openNodeParameters(restoredImage);
     await expect(restoredInspector.getByRole("combobox", { name: "E2E 图片生成 模型", exact: true })).toContainText("E2E Image Cinematic");
-    await expect(restoredInspector.getByLabel("图片宽度", { exact: true })).toHaveValue("");
-    await expect(restoredInspector.getByLabel("图片高度", { exact: true })).toHaveValue("");
+    await expect(restoredInspector.getByLabel("图片宽度", { exact: true })).toHaveValue("2160");
+    await expect(restoredInspector.getByLabel("图片高度", { exact: true })).toHaveValue("3840");
     await expect(restoredInspector.getByLabel("质量")).toHaveValue("high");
-    await expect(restoredInspector.getByLabel("画面比例")).toHaveValue("9:16");
+    await expect(restoredInspector.getByLabel("画面比例", { exact: true })).toHaveCount(0);
+    await expect(restoredInspector.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("2160x3840");
   });
 
   test("生成中再次运行创建独立结果，后发任务先完成且刷新不覆盖前一任务", async ({ page, request }) => {
@@ -2722,6 +2724,7 @@ test.describe("超级画布完整验收", () => {
             type: "模拟测试错误",
             code: "fake_provider_failure",
             api: "本地模拟 API",
+            source: "provider_response",
             failureCategory: "unknown",
             charge: { status: "unknown", source: "unconfirmed" },
           },

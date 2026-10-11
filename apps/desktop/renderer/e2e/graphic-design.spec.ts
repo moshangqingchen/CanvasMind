@@ -314,7 +314,9 @@ test("客户原话完整进入自定义比例设计，草稿与安全距离保�
     customerText: original,
     layout: { enabled: true, width: "210", height: "289", safety: "7" },
   });
-  expect(node.data.parameters).toMatchObject({ size: "1024x1024" });
+  // The application default keeps prompt-led composition automatic instead of
+  // forcing the connector's old square default onto this custom layout.
+  expect(node.data.parameters).toMatchObject({ size: "auto" });
   expect(graphicFixture.browserRunSubmissions).toEqual([]);
 });
 
@@ -632,8 +634,12 @@ test.describe("平面设计工作台", () => {
     await studio
       .getByRole("checkbox", { name: "模型默认尺寸", exact: true })
       .uncheck();
-    await studio.getByRole("checkbox", { name: /方形/u }).check();
-    await studio.getByRole("checkbox", { name: /竖向/u }).check();
+    const square = studio.getByRole("checkbox", { name: /^1K · 1:1 · 1024\s*[×x]\s*1024$/u });
+    const portrait = studio.getByRole("checkbox", { name: /^1K · 2:3 · 832\s*[×x]\s*1248$/u });
+    await square.check();
+    await portrait.check();
+    await expect(square).toBeChecked();
+    await expect(portrait).toBeChecked();
     await studio
       .getByLabel("每种尺寸方案数", { exact: true })
       .selectOption("2");
@@ -668,13 +674,13 @@ test.describe("平面设计工作台", () => {
             `${(node.data.parameters as JsonRecord).size}:${node.data.graphicDesignVariant}`,
         )
         .sort(),
-    ).toEqual(["1024x1024:1", "1024x1024:2", "1024x1536:1", "1024x1536:2"]);
+    ).toEqual(["1024x1024:1", "1024x1024:2", "832x1248:1", "832x1248:2"]);
     for (const node of designs) {
       expect(node.data).toMatchObject({
         provider: "fake",
         connectionId: graphicFixture.connectionId,
         model: "fake-image-v1",
-        parameters: { quality: "high", n: 1 },
+        parameters: { size_tier: "1K", quality: "high", n: 1 },
       });
       const prompt = promptFor(node);
       for (const exactCopy of [

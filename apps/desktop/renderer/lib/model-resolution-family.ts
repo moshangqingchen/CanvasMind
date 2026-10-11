@@ -101,7 +101,13 @@ export function parametersForResolutionModelChange(
     };
   }
   if (!shape) return {};
-  const concrete = options.filter((o) => ratio(o.value) !== undefined);
+  // Open size controls can contain presets from multiple tiers. A fixed-model
+  // shortcut must choose pixels from its destination tier, even if another
+  // tier contains a closer rounding of the previous aspect ratio.
+  const tierOptions = size?.control === "dimensions"
+    ? options.filter(option => new RegExp(`(?:^|[^A-Z0-9])${to.tier}(?:[^A-Z0-9]|$)`, "iu").test(option.label))
+    : [];
+  const concrete = (tierOptions.length ? tierOptions : options).filter((o) => ratio(o.value) !== undefined);
   const closest = concrete.reduce<(typeof concrete)[number] | undefined>(
     (best, option) =>
       !best ||

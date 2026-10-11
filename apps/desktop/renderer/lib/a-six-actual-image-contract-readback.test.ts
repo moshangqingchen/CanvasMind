@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve, sep } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { isDeepStrictEqual } from "node:util";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository, type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { pdogImageQualityOptions } from "@super-canvas/providers/pdog-image-contract";
@@ -23,7 +24,17 @@ function canonical(value: unknown): unknown {
 }
 const sha = (value: unknown) => createHash("sha256").update(JSON.stringify(canonical(value)) ?? "undefined").digest("hex");
 const changed = (before: Record<string, unknown>, after: Record<string, unknown>) => Object.keys({ ...before, ...after }).filter(key => sha(before[key]) !== sha(after[key]));
-let completedProof: Record<string, unknown> | undefined;
+const proof: unknown[] = [];
+let supplierBefore: SupplierRecord[];
+let networkRequests = 0;
+let connectionGuardsPassed = true;
+let assertNoSupplierWrites = () => {};
+function expectUnchanged(actual: unknown, expected: unknown, message: string) {
+  // Keep the full comparison, but build Vitest's large diff only on failure.
+  const equal = isDeepStrictEqual(actual, expected);
+  if (!equal) expect(actual, message).toEqual(expected);
+  expect(equal, message).toBe(true);
+}
 function contractDelta(before: ProviderConnectionRecord, after: ProviderConnectionRecord) {
   const keys = ["modelCatalogModels", "connector", "modelProtocolTemplate"];
   return { configFields: changed(before.config, after.config), configBeforeCanonicalSha256: sha(before.config), configAfterCanonicalSha256: sha(after.config),
@@ -31,9 +42,10 @@ function contractDelta(before: ProviderConnectionRecord, after: ProviderConnecti
       const leftValue = before.config[key], rightValue = after.config[key];
       const left = (key === "modelCatalogModels" ? leftValue : (leftValue as { models?: ModelDescriptor[] } | undefined)?.models) as ModelDescriptor[] | undefined;
       const right = (key === "modelCatalogModels" ? rightValue : (rightValue as { models?: ModelDescriptor[] } | undefined)?.models) as ModelDescriptor[] | undefined;
+      const rightById = new Map(right?.map(row => [row.id, row]));
       return [key, { beforeIds: left?.map(row => row.id) ?? [], afterIds: right?.map(row => row.id) ?? [], beforeSha256: sha(leftValue), afterSha256: sha(rightValue),
         modelChanges: (left ?? []).flatMap<Record<string, unknown>>(row => {
-          const next = right?.find(item => item.id === row.id); if (!next) return [{ id: row.id, removed: true }];
+          const next = rightById.get(row.id); if (!next) return [{ id: row.id, removed: true }];
           const fields = changed(row as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>);
           return fields.length ? [{ id: row.id, fields, topLevel: Object.fromEntries(fields.filter(field => field !== "metadata").map(field => [field,
             { before: row[field as keyof ModelDescriptor], after: next[field as keyof ModelDescriptor] }])),
@@ -42,28 +54,47 @@ function contractDelta(before: ProviderConnectionRecord, after: ProviderConnecti
     })) };
 }
 afterEach(() => {
-  expect(mocks.upstream).not.toHaveBeenCalled(); vi.unstubAllGlobals(); vi.restoreAllMocks();
-  if (completedProof && process.env.A_SIX_R6_WHOLE_PROOF_PATH) {
+  networkRequests += mocks.upstream.mock.calls.length;
+  try { expect(mocks.upstream).not.toHaveBeenCalled(); assertNoSupplierWrites(); }
+  catch (error) { connectionGuardsPassed = false; throw error; }
+  finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+afterAll(async () => {
+  expectUnchanged(await mocks.repository.listSuppliers(), supplierBefore, "Every original supplier catalog remains unchanged");
+  if (process.env.A_SIX_R6_WHOLE_PROOF_PATH) {
+    expect(connectionGuardsPassed).toBe(true);
+    expect(proof).toHaveLength(fixture.connections.length); expect(networkRequests).toBe(0);
+    const completedProof = { fixture: "lib/fixtures/a-six-r6-actual-connections.json.gz", source: fixture.source,
+      connectionCount: fixture.connections.length, connections: proof, networkRequests, actualProfileWrites: 0 };
     const target = resolve(process.env.A_SIX_R6_WHOLE_PROOF_PATH), allowed = resolve("../../../.codex-temp/supplier-full-document-recheck-20261010/audit-a") + sep;
     if (!target.startsWith(allowed) || !target.endsWith(".json")) throw new Error("Evidence path must stay in audit-a");
     writeFileSync(target, JSON.stringify({ ...completedProof, passed: true, finalGuardCompleted: true }, null, 2) + "\n");
   }
 });
-describe("six suppliers actual complete saved connections to cached API and local persistence", () => {
-  it("restores user size presets separately from supplier evidence without losing IDs, source identity or supplier data", async () => {
-    mocks.repository = new MemoryRepository(); mocks.upstream.mockReset().mockRejectedValue(new Error("No upstream requests in actual saved contracts")); vi.stubGlobal("fetch", mocks.upstream);
+describe.sequential("six suppliers actual complete saved connections to cached API and local persistence", () => {
+  beforeAll(async () => {
+    mocks.repository = new MemoryRepository();
     for (const supplier of fixture.suppliers) await mocks.repository.saveSupplier(structuredClone(supplier));
     for (const connection of fixture.connections) await mocks.repository.saveConnection(structuredClone(connection));
-    const supplierBefore = await mocks.repository.listSuppliers();
-    const proof: unknown[] = [];
-    for (const original of fixture.connections) {
+    supplierBefore = await mocks.repository.listSuppliers();
+  });
+  beforeEach(() => {
+    mocks.upstream.mockReset().mockRejectedValue(new Error("No upstream requests in actual saved contracts")); vi.stubGlobal("fetch", mocks.upstream);
+    const saveSupplier = vi.spyOn(mocks.repository, "saveSupplier"), commitSupplier = vi.spyOn(mocks.repository, "commitSupplier");
+    // Reads return clones. Check both supplier write paths per connection,
+    // including denied ones, then compare every full catalog in afterAll.
+    assertNoSupplierWrites = () => { expect(saveSupplier).not.toHaveBeenCalled(); expect(commitSupplier).not.toHaveBeenCalled(); };
+  });
+  // Preserve the complete shared repository and original connection order.
+  // Each connection gets a deadline instead of timing all 172 reads together.
+  it.each(fixture.connections)("$name retains identity, presets, pricing and idempotence", async original => {
       const connection = (await mocks.repository.getConnection(original.id))!;
       const read = (query = "") => readProviderModelInventory(new Request(`http://localhost/api/providers/${connection.id}/models${query}`), { params: Promise.resolve({ id: connection.id }) });
       const save = vi.spyOn(mocks.repository, "saveConnection");
       const cached = await read("?cached=1"), cachedPayload: unknown = await cached.json();
-      expect(save).not.toHaveBeenCalled(); expect(await mocks.repository.getConnection(connection.id)).toEqual(connection);
+      expect(save).not.toHaveBeenCalled(); expectUnchanged(await mocks.repository.getConnection(connection.id), connection, "Cached read must not alter the saved connection");
       if (!Array.isArray(cachedPayload) || !["live", "failed"].includes(String(connection.config.modelScanStatus))) {
-        proof.push({ connectionId: connection.id, supplierId: connection.config.supplierId, group: connection.config.modelGroup, cachedStatus: cached.status, ordinarySkipped: true, scanStatus: connection.config.modelScanStatus }); save.mockRestore(); continue;
+        proof.push({ connectionId: connection.id, supplierId: connection.config.supplierId, group: connection.config.modelGroup, cachedStatus: cached.status, ordinarySkipped: true, scanStatus: connection.config.modelScanStatus }); save.mockRestore(); return;
       }
       const rows = connection.config.modelCatalogModels as unknown as ModelDescriptor[];
       expect(cachedPayload.map((row: ModelDescriptor) => row.id)).toEqual(rows.map(row => row.id));
@@ -104,18 +135,20 @@ describe("six suppliers actual complete saved connections to cached API and loca
       for (let stage = 1; stage <= 3; stage++) {
         save.mockClear(); const response = await read(); expect(response.status).toBe(200); const api = await response.json() as ModelDescriptor[];
         expect(api.map(row => row.id)).toEqual(rows.map(row => row.id)); checks(api);
-        const after = (await mocks.repository.getConnection(connection.id))!; stages.push(contractDelta(before, after)); counts.push(save.mock.calls.length);
+        const after = (await mocks.repository.getConnection(connection.id))!;
+        // This report was never an assertion. Build detailed hashes/diffs only
+        // when an evidence export is requested; all CI assertions still run.
+        if (process.env.A_SIX_R6_WHOLE_PROOF_PATH) stages.push(contractDelta(before, after));
+        counts.push(save.mock.calls.length);
         expect(json({ ...before, config: undefined, updatedAt: undefined })).toEqual(json({ ...after, config: undefined, updatedAt: undefined }));
-        expect(Object.keys(after.config).filter(key => !["modelCatalogModels", "connector", "modelProtocolTemplate"].includes(key)).map(key => [key, after.config[key]]))
-          .toEqual(Object.keys(before.config).filter(key => !["modelCatalogModels", "connector", "modelProtocolTemplate"].includes(key)).map(key => [key, before.config[key]]));
+        expectUnchanged(Object.keys(after.config).filter(key => !["modelCatalogModels", "connector", "modelProtocolTemplate"].includes(key)).map(key => [key, after.config[key]]),
+          Object.keys(before.config).filter(key => !["modelCatalogModels", "connector", "modelProtocolTemplate"].includes(key)).map(key => [key, before.config[key]]),
+          "Non-contract configuration, including price and source identity, remains unchanged");
+        if (stage === 3) expectUnchanged(after, before, "Third read must leave all descriptors, prices and timestamps unchanged");
         before = after;
       }
       expect(counts[2]).toBe(0);
-      expect(await mocks.repository.listSuppliers()).toEqual(supplierBefore);
       proof.push({ connectionId: connection.id, supplierId: connection.config.supplierId, sourceId: connection.config.supplierSourceId, group: connection.config.modelGroup,
         modelCount: rows.length, cachedStatus: cached.status, ordinaryGetSaveCounts: counts, sourceDelta: { firstGet: stages[0], secondGet: stages[1], thirdGet: stages[2] } }); save.mockRestore();
-    }
-    completedProof = { fixture: "lib/fixtures/a-six-r6-actual-connections.json.gz", source: fixture.source, connectionCount: fixture.connections.length,
-      connections: proof, networkRequests: mocks.upstream.mock.calls.length, actualProfileWrites: 0 };
-  }, 120000);
+  }, 30000);
 });

@@ -5,8 +5,11 @@ import { CANGYUAN_IMAGE_CONNECTOR } from "../lib/provider-presets";
 for (const [baseUrl, modelGroup, id] of [
   ["https://token.secure-skill.com", "gpt-image-2.5", "gpt-image-2.5-flare"],
   ["https://platform.frimodel.com", "gpt_image_web", "gpt-image-2-w"],
+  ["https://platform.frimodel.com", "gpt_image_web", "gpt-image-2.5"],
+  ["https://platform.frimodel.com", "codex_image", "gpt-image-2-w"],
+  ["https://platform.frimodel.com", "codex_image", "gpt-image-2.5"],
 ]) {
-  test(`升级合同的 1K 下拉框显示、保存与恢复：${modelGroup}`, async ({ page, request }, testInfo) => {
+  test(`升级合同的 1K 下拉框显示、保存与恢复：${modelGroup} / ${id}`, async ({ page, request }, testInfo) => {
     const descriptor = bindScannedModelProtocols({ provider: "openai", config: { baseUrl, modelGroup } }, [{
       id: id!, name: "核查参数模型", operations: ["image.generate", "image.edit"], metadata: { canvasRunnable: true },
       parameters: [{ key: "size", label: "尺寸", control: "dimensions", default: "3840x2160", options: [{ label: "4K", value: "3840x2160" }] }],
@@ -41,12 +44,18 @@ for (const [baseUrl, modelGroup, id] of [
     // The obsolete saved value stays visible until the user chooses a valid
     // size; all available contract options are scoped to 1K.
     expect(options.filter(option => !["", "3840x2160", "auto"].includes(option.value)).every(option => option.label?.startsWith("1K"))).toBe(true);
+    if (baseUrl!.includes("frimodel")) {
+      expect(options.filter(option => option.label?.startsWith("1K ·"))).toHaveLength(11);
+      await expect(panel.getByRole("button", { name: "2K", exact: true })).toHaveCount(0);
+      await expect(panel.getByRole("button", { name: "4K", exact: true })).toHaveCount(0);
+    }
     await size.selectOption("1536x1024");
     await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters.size).toBe("1536x1024");
     await page.reload();
     await open();
     await expect(size).toHaveValue("1536x1024");
     expect(submitted).toBe(0);
+    await size.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath("one-k-group-controls.png") });
   });
 }
