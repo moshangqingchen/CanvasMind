@@ -2,6 +2,12 @@ import type { StoredObject } from "@super-canvas/storage";
 import { jsonError, repository, storage } from "../../../../../lib/server";
 import { archiveGeneratedAssetForFinished } from "../../../../../lib/project-service";
 import {
+  convertImageDownload,
+  IMAGE_DOWNLOAD_CONTENT_TYPES,
+  ImageDownloadConversionError,
+  type ImageDownloadFormat,
+} from "../../../../../lib/asset-download-conversion";
+import {
   isSupportedMediaMimeType,
   mediaKindForMime,
   normalizeMimeType,
@@ -109,10 +115,29 @@ async function assetContent(
   const { id } = await context.params;
   const asset = await repository.getAsset(id);
   if (!asset) return jsonError("Asset does not exist", 404);
-  const forceDownload =
-    new URL(request.url).searchParams.get("download") === "1";
+  const searchParams = new URL(request.url).searchParams;
+  const forceDownload = searchParams.get("download") === "1";
+  const requestedFormat = searchParams.get("format")?.trim().toLowerCase();
+  let format: ImageDownloadFormat | null = null;
+  if (requestedFormat !== undefined && requestedFormat !== "original") {
+    if (
+      requestedFormat !== "png" &&
+      requestedFormat !== "jpg" &&
+      requestedFormat !== "jpeg" &&
+      requestedFormat !== "webp"
+    ) {
+      return jsonError("下载格式仅支持原文件、PNG、JPG 或 WebP。", 400);
+    }
+    if (!forceDownload) {
+      return jsonError("格式转换仅用于显式下载，请设置 download=1。", 400);
+    }
+    if (asset.kind !== "image") {
+      return jsonError("只有图片可以选择 PNG、JPG 或 WebP 下载格式。", 415);
+    }
+    format = requestedFormat === "jpeg" ? "jpg" : requestedFormat;
+  }
 
-  if (forceDownload && !headOnly) {
+  const archiveOriginal = async () => {
     try {
       // Explicit downloads of generated results are also copied into the
       // project's protected finished directory before the response is sent.
@@ -125,7 +150,7 @@ async function assetContent(
         error instanceof Error ? error.message : String(error),
       );
     }
-  }
+  };
 
   let loadedObject: StoredObject | null | undefined;
   const metadata = storage.head
@@ -140,6 +165,42 @@ async function assetContent(
           : null;
       });
   if (!metadata) return jsonError("Asset file does not exist", 404);
+
+  if (format) {
+    const contentType = IMAGE_DOWNLOAD_CONTENT_TYPES[format];
+    const filename = `${asset.name.replace(/\.(?:png|jpe?g|webp|gif|avif|heic|heif|tiff?|bmp)$/iu, "")}.${format}`;
+    const headers = applySecurityHeaders(
+      new Headers({
+        // The original byte offsets and size do not describe this encoding.
+        // A converted GET always returns the complete new representation.
+        "accept-ranges": "none",
+        "cache-control": "private, no-store",
+        "content-type": contentType,
+      }),
+      true,
+      filename,
+      contentType,
+    );
+    // Do not perform an expensive conversion or archive on metadata probes.
+    // Omit the unknown encoded length instead of returning the original size.
+    if (headOnly) return new Response(null, { headers });
+
+    loadedObject ??= await storage.get(asset.storageKey);
+    if (!loadedObject) return jsonError("Asset file does not exist", 404);
+    try {
+      const bytes = await convertImageDownload(loadedObject.bytes, format);
+      await archiveOriginal();
+      headers.set("content-length", String(bytes.byteLength));
+      return new Response(bytes as BodyInit, { headers });
+    } catch (error) {
+      if (error instanceof ImageDownloadConversionError) {
+        return jsonError(error.message, error.status);
+      }
+      throw error;
+    }
+  }
+
+  if (forceDownload && !headOnly) await archiveOriginal();
 
   if (headOnly) {
     const media = contentTypeFor(asset.kind, asset.mimeType, metadata.contentType);

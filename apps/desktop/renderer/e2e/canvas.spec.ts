@@ -2971,11 +2971,8 @@ test.describe("超级画布完整验收", () => {
       selectedCardBounds!.width * 0.3,
     );
     await expect(
-      resultActions.getByRole("link", { name: "下载 E2E 可缩放图片" }),
-    ).toHaveAttribute(
-      "href",
-      new RegExp(`/api/assets/${asset.id}/content\\?download=1$`),
-    );
+      resultActions.getByRole("button", { name: "下载 E2E 可缩放图片" }),
+    ).toHaveAttribute("aria-haspopup", "dialog");
     await resultActions
       .getByRole("button", { name: "查看 E2E 可缩放图片 原提示词" })
       .click();

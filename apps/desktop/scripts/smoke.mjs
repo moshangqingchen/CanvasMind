@@ -15,6 +15,7 @@ const desktop = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const rendererRequire = createRequire(join(desktop, "renderer/package.json"));
 const desktopRequire = createRequire(join(desktop, "package.json"));
 const { _electron } = rendererRequire("@playwright/test");
+const sharp = rendererRequire("sharp");
 const packaged = process.argv.includes("--packaged");
 const environment = { ...process.env, ELECTRON_ENABLE_LOGGING: "0" };
 delete environment.ELECTRON_RUN_AS_NODE;
@@ -306,6 +307,127 @@ try {
     return response.status;
   }, imageId);
   assert.equal(finishedDownloadStatus, 200, "existing fake image must archive as a project finished file");
+  // Create a test fixture in the isolated smoke profile, without contacting a
+  // supplier. It is larger than thumbnails and has transparent/opaque halves.
+  const fixtureWidth = 800;
+  const fixtureHeight = 400;
+  const fixturePixels = Buffer.alloc(fixtureWidth * fixtureHeight * 4);
+  for (let offset = 0; offset < fixturePixels.length; offset += 4) {
+    fixturePixels[offset] = 180;
+    fixturePixels[offset + 1] = 40;
+    fixturePixels[offset + 2] = 70;
+    fixturePixels[offset + 3] = (offset / 4) % fixtureWidth < fixtureWidth / 2 ? 0 : 255;
+  }
+  const fixturePng = await sharp(fixturePixels, { raw: { width: fixtureWidth, height: fixtureHeight, channels: 4 } }).png().toBuffer();
+  const imageAsset = await page.evaluate(async (base64) => {
+    const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+    const response = await fetch("/api/assets/upload?name=desktop-download.rgba.png", { method: "POST", headers: { "content-type": "image/png" }, body: bytes });
+    const body = await response.json();
+    if (!response.ok) throw new Error(JSON.stringify(body));
+    return body;
+  }, fixturePng.toString("base64"));
+  const downloadImageId = imageAsset.id;
+  const imageDownloadCanvas = await api("/api/canvas", { title: "桌面图片格式离线验收", graph: {
+    schemaVersion: 1, viewport: { x: 20, y: 20, zoom: 1 }, edges: [], nodes: [{
+      id: "image-download-smoke", type: "workflow", position: { x: 60, y: 90 }, style: { width: 400, height: 200 },
+      data: {
+        nodeType: "asset-input", label: "桌面图片格式验收", assetId: downloadImageId,
+        assetKind: "image", mediaAspectRatio: fixtureWidth / fixtureHeight,
+        generatedResult: true, generatedStatus: "succeeded", generatedFromNodeId: "offline-fixture",
+        generatedFromRunId: "offline-download-fixture", generatedOutputIndex: 0,
+        outputs: [{ id: "asset", kind: "image", label: "图片" }],
+      },
+    }],
+  } });
+  await page.goto(`${origin}/canvas/${imageDownloadCanvas.id}`);
+  // Verify real Electron files, including the authenticated original transfer
+  // and Blob transfers used by the format picker.
+  const originalImageBytes = Buffer.from(await page.evaluate(async (id) => {
+    const response = await fetch(`/api/assets/${id}/content`);
+    if (!response.ok) throw new Error(`Cannot read original smoke image: ${response.status}`);
+    return [...new Uint8Array(await response.arrayBuffer())];
+  }, downloadImageId));
+  assert.deepEqual(originalImageBytes, fixturePng);
+  const originalImageMetadata = await sharp(originalImageBytes).metadata();
+  assert.equal(originalImageMetadata.format, "png");
+  assert.equal(originalImageMetadata.width, fixtureWidth);
+  assert.equal(originalImageMetadata.height, fixtureHeight);
+  await page.getByRole("button", { name: "Fit View", exact: true }).click();
+  const imageResult = page.locator('.react-flow__node[data-id="image-download-smoke"]');
+  await imageResult.waitFor({ state: "visible", timeout: 15000 });
+  await imageResult.locator(".previewable-image").click();
+  await application.evaluate(({ BrowserWindow }, { assetId, origin }) => {
+    const session = BrowserWindow.getAllWindows()[0].webContents.session;
+    globalThis.__imageSmokeDownload = null;
+    const listener = (_event, item) => {
+      const url = new URL(item.getURL());
+      const original = url.pathname === `/api/assets/${assetId}/content` && url.searchParams.get("download") === "1";
+      if (!original && !item.getURL().startsWith(`blob:${origin}/`)) return;
+      globalThis.__imageSmokeDownload = { state: "progressing", filename: item.getFilename() };
+      item.once("done", (_event, state) => {
+        globalThis.__imageSmokeDownload = { state, filename: item.getFilename(), path: item.getSavePath(), receivedBytes: item.getReceivedBytes(), mimeType: item.getMimeType() };
+      });
+    };
+    globalThis.__imageSmokeDownloadListener = listener;
+    session.on("will-download", listener);
+  }, { assetId: downloadImageId, origin });
+  report.imageDownloads = [];
+  try {
+    for (const format of ["original", "png", "jpg", "webp"]) {
+      await application.evaluate(() => { globalThis.__imageSmokeDownload = null; });
+      await page.getByRole("toolbar", { name: "生成结果操作", exact: true }).getByRole("button", { name: /^下载 /u }).click();
+      const downloadDialog = page.getByRole("dialog", { name: "下载图片", exact: true });
+      await downloadDialog.getByRole("combobox", { name: "下载格式", exact: true }).selectOption(format);
+      if (format === "jpg") {
+        assert.match(await downloadDialog.innerText(), /透明.*白/u);
+        await page.screenshot({ path: join(desktop, "release/smoke-image-download-format.png") });
+      }
+      await downloadDialog.getByRole("button", { name: "下载", exact: true }).click();
+      let downloaded;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        downloaded = await application.evaluate(() => globalThis.__imageSmokeDownload);
+        if (downloaded && downloaded.state !== "progressing") break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      assert.equal(downloaded?.state, "completed", `Electron ${format} image download must complete: ${JSON.stringify(downloaded)}`);
+      assert.equal(dirname(resolve(downloaded.path)), resolve(report.profileRoot), "smoke image downloads must stay inside the isolated smoke profile");
+      const downloadedBytes = await readFile(downloaded.path);
+      const metadata = await sharp(downloadedBytes).metadata();
+      const extension = format === "original" ? "png" : format;
+      const expectedFormat = format === "jpg" ? "jpeg" : extension;
+      assert.equal(metadata.format, expectedFormat, `${format} download must contain the actual requested encoding`);
+      assert.equal(metadata.width, originalImageMetadata.width, `${format} download must preserve full original width`);
+      assert.equal(metadata.height, originalImageMetadata.height, `${format} download must preserve full original height`);
+      assert.equal(metadata.hasAlpha, format !== "jpg", `${format} alpha channel must match its format`);
+      const sample = await sharp(downloadedBytes).ensureAlpha().extract({ left: 10, top: 10, width: 1, height: 1 }).raw().toBuffer();
+      if (format === "jpg") assert.deepEqual([...sample], [255, 255, 255, 255], "JPG must fill transparent areas with white");
+      else assert.equal(sample[3], 0, `${format} must keep the transparent area`);
+      assert.equal(downloaded.receivedBytes, downloadedBytes.byteLength);
+      assert.equal(downloaded.mimeType, `image/${expectedFormat}`);
+      assert.ok(downloaded.filename.endsWith(`.${extension}`), `${format} download filename must match its encoding`);
+      if (format === "original") {
+        assert.equal(downloaded.filename, imageAsset.name);
+        assert.deepEqual(downloadedBytes, originalImageBytes, "original download must retain every original byte");
+      }
+      report.imageDownloads.push({ format, state: downloaded.state, filename: downloaded.filename, bytes: downloadedBytes.byteLength, width: metadata.width, height: metadata.height, hasAlpha: metadata.hasAlpha, mimeType: downloaded.mimeType });
+      await downloadDialog.waitFor({ state: "hidden" });
+    }
+  } finally {
+    await application.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].webContents.session.removeListener("will-download", globalThis.__imageSmokeDownloadListener);
+      delete globalThis.__imageSmokeDownloadListener;
+      delete globalThis.__imageSmokeDownload;
+    });
+  }
+  const preservedOriginalBytes = Buffer.from(await page.evaluate(async (id) => {
+    const response = await fetch(`/api/assets/${id}/content`);
+    if (!response.ok) throw new Error(`Cannot read preserved smoke image: ${response.status}`);
+    return [...new Uint8Array(await response.arrayBuffer())];
+  }, downloadImageId));
+  assert.deepEqual(preservedOriginalBytes, originalImageBytes, "format downloads must never replace the saved original");
+  report.checks.push("packaged image format picker completes native original, PNG, JPG and WebP downloads at 800x400, preserving the source and PNG/WebP transparency with white JPG fill");
+  await page.goto(`${origin}/canvas/${canvas.id}`);
+  await page.locator('.react-flow__node[data-id="prompt"]').waitFor({ timeout: 30000 });
   const projectFilesResponse = page.waitForResponse((response) =>
     new URL(response.url()).pathname === `/api/projects/${canvas.id}/files` && response.request().method() === "GET");
   await page.getByRole("button", { name: "打开项目文件", exact: true }).click();

@@ -49,6 +49,7 @@ import {
   assetDownloadPath,
   downloadAssetPreferLocal,
 } from "../lib/asset-download";
+import { ImageDownloadButton } from "./image-download-button";
 import { localizeRunError } from "../lib/error-localization";
 import { runErrorDiagnostic, runErrorTechnicalTitle } from "../lib/run-error-diagnostics";
 import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
@@ -1175,7 +1176,9 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                 </button>
               </div>
             ) : null}
-            {data.assetId ? (
+            {data.assetId && data.assetKind === "image" ? (
+              <ImageDownloadButton assetId={data.assetId} filename={inputAsset?.name} ariaLabel={`下载 ${data.label}`} onOpenChange={data.onConfigurationOpenChange} />
+            ) : data.assetId ? (
               <a
                 href={assetDownloadPath(data.assetId)}
                 download={inputAsset?.name ?? true}

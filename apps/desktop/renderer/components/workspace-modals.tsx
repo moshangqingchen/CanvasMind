@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Brush, Film, X } from "lucide-react";
 import { useDialogFocus } from "./use-dialog-focus";
 import { assetDownloadPath, downloadAssetPreferLocal } from "../lib/asset-download";
+import { ImageDownloadButton } from "./image-download-button";
 import type { AssetView } from "./types";
 export { SettingsModal } from "./settings-modal";
 export { RunHistoryModal } from "./task-center";
@@ -180,7 +181,9 @@ export function AssetPreviewModal({
           <span>
             {asset.mimeType} · {Math.max(1, Math.round(asset.size / 1024))} KB
           </span>
-          <a
+          {asset.kind === "image" ? (
+            <ImageDownloadButton key={asset.id} assetId={asset.id} filename={asset.name} className="button primary" label="下载图片" />
+          ) : <a
             className="button primary"
             href={url}
             download={asset.name}
@@ -190,7 +193,7 @@ export function AssetPreviewModal({
             }}
           >
             下载原文件
-          </a>
+          </a>}
         </footer>
       </section>
     </div>
