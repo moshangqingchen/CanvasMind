@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { resolve, sep } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { MemoryRepository, type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
 
@@ -49,74 +49,97 @@ function stage(before: ProviderConnectionRecord, after: ProviderConnectionRecord
       beforeFullModelIds: modelRows(before, key).map(m => m.id), afterFullModelIds: modelRows(after, key).map(m => m.id),
       changedModels: modelRows(before, key).flatMap(m => { const n = modelRows(after, key).find(n => n.id === m.id); return n && sha(m) !== sha(n) ? [{ fullModelId: m.id, beforeSha256: sha(m), afterSha256: sha(n), priceChanged: sha(m.pricing ?? null) !== sha(n.pricing ?? null), nonPriceChanged: sha(modelsNonPrice(m)) !== sha(modelsNonPrice(n)) }] : []; }) }])) };
 }
-beforeEach(() => { mocks.repository = new MemoryRepository(); mocks.upstream.mockReset().mockRejectedValue(new Error("B6 saved inventory may not call upstream")); vi.stubGlobal("fetch", mocks.upstream); });
-afterEach(() => { expect(mocks.upstream).not.toHaveBeenCalled(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+beforeEach(() => { mocks.upstream.mockReset().mockRejectedValue(new Error("B6 saved inventory may not call upstream")); vi.stubGlobal("fetch", mocks.upstream); });
+afterEach(() => {
+  try { expect(mocks.upstream).not.toHaveBeenCalled(); }
+  finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
 
-describe("B6 actual R6 saved full contracts", () => {
-  it("projects cached without writes and records only finite ordinary parameter migrations", async () => {
+async function inspectConnection(original: ProviderConnectionRecord) {
+  const supplier = fixture.suppliers.find(s => s.id === original.config.supplierId)!;
+  const connection = (await mocks.repository.getConnection(original.id))!;
+  const read = (query = "") => readProviderModelInventory(new Request(`http://localhost/api/providers/${connection.id}/models${query}`), { params: Promise.resolve({ id: connection.id }) });
+  const save = vi.spyOn(mocks.repository, "saveConnection");
+  const cached = await read("?cached=1");
+  expect(save, `${supplier.name}/${connection.id} cached write`).not.toHaveBeenCalled();
+  expect(await mocks.repository.getConnection(connection.id)).toEqual(connection);
+  const cachedPayload = await cached.json();
+  const parameterChangedIds = Array.isArray(cachedPayload) ? cachedPayload.filter((m: ModelDescriptor) => {
+    const prior = modelRows(connection, "modelCatalogModels").find(n => n.id === m.id);
+    return prior && sha(prior.parameters ?? []) !== sha(m.parameters ?? []);
+  }).map((m: ModelDescriptor) => m.id) : [];
+  const needsMigration = parameterChangedIds.length > 0;
+  if (supplier.name === "沧元算力") for (const id of parameterChangedIds) {
+    const row = (cachedPayload as ModelDescriptor[]).find(model => model.id === id)!;
+    const prior = modelRows(connection, "modelCatalogModels").find(model => model.id === id)!;
+    expect(row.metadata?.imageUserSizePresetSource, `${connection.id}/${id} Cangyuan user presets`).toBe("user-request");
+    expect(row.pricing, `${connection.id}/${id} Cangyuan price identity`).toEqual(prior.pricing);
+    expect(row.parameters?.find(parameter => parameter.key === "size")?.options?.some(option => /^\d+x\d+$/u.test(String(option.value)))).toBe(true);
+  }
+  const states = [connection]; const counts: number[] = [], http: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    save.mockClear();
+    if (needsMigration) { const response = await read(); http.push(response.status); await response.json(); }
+    else http.push(cached.status);
+    counts.push(save.mock.calls.length); states.push((await mocks.repository.getConnection(connection.id))!);
+  }
+  const deltas = [stage(states[0]!, states[1]!), stage(states[1]!, states[2]!), stage(states[2]!, states[3]!)];
+  expect(counts[2], `${supplier.name}/${connection.id} third GET save: ${JSON.stringify(deltas[2]?.exactFields.map(field => ({ path: field.path,
+    ...(field.path.includes("metadata") ? { before: field.before, after: field.after } : {}) })))}`).toBe(0);
+  expect(states[3], `${supplier.name}/${connection.id} third GET idempotence`).toEqual(states[2]);
+  for (const d of deltas) {
+    expect(d.exactFields.every(field => field.path[0] === "config" && containers.includes(String(field.path[1]) as typeof containers[number])), `${supplier.name}/${connection.id} protected config`).toBe(true);
+    for (const [key, container] of Object.entries(d.containers)) expect(container.afterFullModelIds, `${connection.id}/${key} full IDs`).toEqual(container.beforeFullModelIds);
+  }
+  const result = { supplierId: supplier.id, supplierName: supplier.name, connectionId: connection.id,
+    sourceId: connection.config.supplierSourceId, officialGroupId: connection.config.accountKeyGroupId,
+    group: connection.config.accountKeyGroup ?? connection.config.modelGroup, provider: connection.provider, origin: connection.config.baseUrl,
+    modelCount: modelRows(connection, "modelCatalogModels").length, fullModelIds: modelRows(connection, "modelCatalogModels").map(m => m.id),
+    cachedHttp: cached.status, cachedModelCount: Array.isArray(cachedPayload) ? cachedPayload.length : 0, cachedConfigSha256: sha(connection.config),
+    cachedModelSha256: sha(cachedPayload), parameterChangedIds, ordinaryRequested: needsMigration, ordinaryHttp: http, ordinaryGetSaveCounts: counts, changed: counts.some(Boolean),
+    cachedImageModels: Array.isArray(cachedPayload) ? cachedPayload.filter((m: ModelDescriptor) => m.operations.some(operation => operation.startsWith("image."))).map((m: ModelDescriptor) => ({ fullModelId: m.id,
+      parameters: m.parameters?.filter(parameter => !/^(?:prompt|password|api_key|authorization|cookie|secret)$/iu.test(parameter.key)), metadata: m.metadata, pricing: m.pricing })) : [],
+    sourceDelta: { firstGet: deltas[0], secondGet: deltas[1], thirdGet: deltas[2] }, protectedEncryptedSecretSha256: sha(connection.encryptedSecret),
+    finalConfigSha256: sha(states[3]!.config) };
+  save.mockRestore();
+  return result;
+}
+
+describe.sequential("B6 actual R6 saved full contracts", () => {
+  let originalSuppliers: SupplierRecord[];
+  const results: Awaited<ReturnType<typeof inspectConnection>>[] = [];
+
+  beforeAll(async () => {
+    // Preserve the original loop's full repository and preceding migrations.
+    mocks.repository = new MemoryRepository();
     for (const supplier of fixture.suppliers) await mocks.repository.saveSupplier(structuredClone(supplier));
-    for (const c of fixture.connections) await mocks.repository.saveConnection(structuredClone(c));
-    const originalSuppliers = await mocks.repository.listSuppliers();
-    const results = [];
-    for (const original of fixture.connections) {
-      const supplier = fixture.suppliers.find(s => s.id === original.config.supplierId)!;
-      const connection = (await mocks.repository.getConnection(original.id))!;
-      const read = (query = "") => readProviderModelInventory(new Request(`http://localhost/api/providers/${connection.id}/models${query}`), { params: Promise.resolve({ id: connection.id }) });
-      const save = vi.spyOn(mocks.repository, "saveConnection");
-      const cached = await read("?cached=1");
-      expect(save, `${supplier.name}/${connection.id} cached write`).not.toHaveBeenCalled();
-      expect(await mocks.repository.getConnection(connection.id)).toEqual(connection);
-      const cachedPayload = await cached.json();
-      const parameterChangedIds = Array.isArray(cachedPayload) ? cachedPayload.filter((m: ModelDescriptor) => {
-        const prior = modelRows(connection, "modelCatalogModels").find(n => n.id === m.id);
-        return prior && sha(prior.parameters ?? []) !== sha(m.parameters ?? []);
-      }).map((m: ModelDescriptor) => m.id) : [];
-      const needsMigration = parameterChangedIds.length > 0;
-      if (supplier.name === "沧元算力") for (const id of parameterChangedIds) {
-        const row = (cachedPayload as ModelDescriptor[]).find(model => model.id === id)!;
-        const prior = modelRows(connection, "modelCatalogModels").find(model => model.id === id)!;
-        expect(row.metadata?.imageUserSizePresetSource, `${connection.id}/${id} Cangyuan user presets`).toBe("user-request");
-        expect(row.pricing, `${connection.id}/${id} Cangyuan price identity`).toEqual(prior.pricing);
-        expect(row.parameters?.find(parameter => parameter.key === "size")?.options?.some(option => /^\d+x\d+$/u.test(String(option.value)))).toBe(true);
-      }
-      const states = [connection]; const counts: number[] = [], http: number[] = [];
-      for (let i = 0; i < 3; i++) {
-        save.mockClear();
-        if (needsMigration) { const response = await read(); http.push(response.status); await response.json(); }
-        else http.push(cached.status);
-        counts.push(save.mock.calls.length); states.push((await mocks.repository.getConnection(connection.id))!);
-      }
-      const deltas = [stage(states[0]!, states[1]!), stage(states[1]!, states[2]!), stage(states[2]!, states[3]!)];
-      expect(counts[2], `${supplier.name}/${connection.id} third GET save: ${JSON.stringify(deltas[2]?.exactFields.map(field => ({ path: field.path,
-        ...(field.path.includes("metadata") ? { before: field.before, after: field.after } : {}) })))}`).toBe(0);
-      expect(states[3], `${supplier.name}/${connection.id} third GET idempotence`).toEqual(states[2]);
-      for (const d of deltas) {
-        expect(d.exactFields.every(field => field.path[0] === "config" && containers.includes(String(field.path[1]) as typeof containers[number])), `${supplier.name}/${connection.id} protected config`).toBe(true);
-        for (const [key, container] of Object.entries(d.containers)) expect(container.afterFullModelIds, `${connection.id}/${key} full IDs`).toEqual(container.beforeFullModelIds);
-      }
-      results.push({ supplierId: supplier.id, supplierName: supplier.name, connectionId: connection.id,
-        sourceId: connection.config.supplierSourceId, officialGroupId: connection.config.accountKeyGroupId,
-        group: connection.config.accountKeyGroup ?? connection.config.modelGroup, provider: connection.provider, origin: connection.config.baseUrl,
-        modelCount: modelRows(connection, "modelCatalogModels").length, fullModelIds: modelRows(connection, "modelCatalogModels").map(m => m.id),
-        cachedHttp: cached.status, cachedModelCount: Array.isArray(cachedPayload) ? cachedPayload.length : 0, cachedConfigSha256: sha(connection.config),
-        cachedModelSha256: sha(cachedPayload), parameterChangedIds, ordinaryRequested: needsMigration, ordinaryHttp: http, ordinaryGetSaveCounts: counts, changed: counts.some(Boolean),
-        cachedImageModels: Array.isArray(cachedPayload) ? cachedPayload.filter((m: ModelDescriptor) => m.operations.some(operation => operation.startsWith("image."))).map((m: ModelDescriptor) => ({ fullModelId: m.id,
-          parameters: m.parameters?.filter(parameter => !/^(?:prompt|password|api_key|authorization|cookie|secret)$/iu.test(parameter.key)), metadata: m.metadata, pricing: m.pricing })) : [],
-        sourceDelta: { firstGet: deltas[0], secondGet: deltas[1], thirdGet: deltas[2] }, protectedEncryptedSecretSha256: sha(connection.encryptedSecret),
-        finalConfigSha256: sha(states[3]!.config) });
-      save.mockRestore();
-    }
+    for (const connection of fixture.connections) await mocks.repository.saveConnection(structuredClone(connection));
+    originalSuppliers = await mocks.repository.listSuppliers();
+  });
+
+  it.each(fixture.connections)("$name ($id): cached projection and ordinary GET idempotence", async original => {
+    const result = await inspectConnection(original);
+    onTestFinished(({ task }) => {
+      // Include the afterEach network guard in the result's passing status.
+      if (task.result?.state === "pass") results.push(result);
+    });
+  }, 60000);
+
+  afterAll(async () => {
     expect(await mocks.repository.listSuppliers()).toEqual(originalSuppliers);
     expect(mocks.upstream).not.toHaveBeenCalled();
     expect(sourcePaths.map(path => ({ path, sha256: createHash("sha256").update(readFileSync(resolve("../../..", path))).digest("hex") }))).toEqual(sourceFiles);
     if (process.env.B6_R6_WHOLE_PROOF_PATH) {
+      // afterAll also runs after failures/skips; never publish partial proof.
+      expect(results.map(result => result.connectionId).sort(), "all connection tests and network guards must pass before proof output").toEqual(fixture.connections.map(connection => connection.id).sort());
+      const orderedResults = [...results].sort((a, b) => a.connectionId.localeCompare(b.connectionId));
       const out = resolve(process.env.B6_R6_WHOLE_PROOF_PATH), allowed = resolve("../../../.codex-temp/supplier-full-document-recheck-20261010/audit-b") + sep;
       if (!out.startsWith(allowed) || !out.endsWith(".json")) throw new Error("Only audit-b safe proof output is permitted");
       writeFileSync(out, JSON.stringify({ passed: true, checkedAt: new Date().toISOString(), fixtureSource: "lib/fixtures/b6-r6-whole-connections.json.gz", fixtureSha256: bytesSha(rawBytes),
         rawFixtureSource: ".codex-temp/supplier-full-document-recheck-r6-20261010/all-161-raw-contracts-safe.json", rawFixtureSha256: fixture.sourceSha256,
         rawProfileSha256: fixture.sourceDatabaseSha256, sourceFiles, ordinarySavedBranchNetworkRequests: mocks.upstream.mock.calls.length, profileWrites: 0,
-        supplierCount: fixture.suppliers.length, connectionCount: fixture.connections.length, modelCount: results.reduce((a, r) => a + r.modelCount, 0),
-        changedConnectionIds: results.filter(r => r.changed).map(r => r.connectionId), results }, null, 2) + "\n", { flag: "wx" });
+        supplierCount: fixture.suppliers.length, connectionCount: fixture.connections.length, modelCount: orderedResults.reduce((a, r) => a + r.modelCount, 0),
+        changedConnectionIds: orderedResults.filter(r => r.changed).map(r => r.connectionId), results: orderedResults }, null, 2) + "\n", { flag: "wx" });
     }
-  }, 60000);
+  });
 });
