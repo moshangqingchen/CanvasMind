@@ -6,6 +6,8 @@ import type { ProviderConnectionView } from "../lib/client-api";
 
 // Public, sanitized official evidence; storage uses an invalid host and every
 // browser upstream request/run submission is blocked. No real account is used.
+// Keep this historical directory to cover saved group/model compatibility;
+// parameter controls still follow the current frozen supplier contracts.
 const official = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/jijiu-billing-20261010.json", import.meta.url), "utf8")) as {
   group_ratio: Record<string, number>;
   data: Array<{ model_name: string; tags: string; enable_groups: string[] }>;
@@ -80,12 +82,12 @@ async function setup(page: Page, request: APIRequestContext, kind: "image" | "vi
   const picker = panel.getByRole("combobox", { name: `${label} 模型`, exact: true });
   const groupControl = panel.getByRole("combobox", { name: `${label} 模型群组`, exact: true });
   const summary = panel.getByLabel("官网与 Key 目录对照", { exact: true });
-  const open = async () => {
+  const open = async (expectedGroup = initialGroup) => {
     await page.getByRole("button", { name: `打开 ${label} 模型与参数`, exact: true }).click();
     await expect(panel).toBeVisible();
     const sidebar = page.getByRole("button", { name: "智能体面板", exact: true });
     if (await sidebar.getAttribute("aria-expanded") === "true") await sidebar.click();
-    await expect(groupControl).toHaveValue(initialGroup);
+    await expect(groupControl).toHaveValue(expectedGroup);
   };
   const menu = async () => { if (await picker.getAttribute("aria-expanded") !== "true") await picker.click(); await expect(panel.getByRole("listbox")).toBeVisible(); };
   const option = (id: string) => panel.getByRole("option").filter({ has: page.locator('[id$="-id"]').filter({ hasText: new RegExp(`^ID:\\s*${id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}$`, "u") }) });
@@ -183,6 +185,18 @@ for (const kind of ["image", "video"] as const) test(`极九 ${kind} 全分组�
             const selected = String(duration.default ?? duration.options![0]!.value);
             await select.selectOption(selected); await expect(select).toHaveValue(selected);
             await expect.poll(async () => (await f.saved()).parameters.duration).toBe(Number(selected));
+          } else if (duration.allowCustomValue && duration.max === undefined) {
+            // Minimax's current guide leaves the API upper bound open. Keep
+            // its positive-integer editor instead of inventing a capped slider.
+            expect(duration.min).toBe(1);
+            const input = f.panel.getByRole("spinbutton", { name: "视频时长", exact: true });
+            await expect(input).toHaveAttribute("min", "1");
+            await expect(input).toHaveAttribute("step", "1");
+            await expect(input).not.toHaveAttribute("max");
+            await expect(f.panel.getByRole("slider", { name: "视频时长", exact: true })).toHaveCount(0);
+            await input.fill("23"); await input.blur();
+            await expect(input).toHaveValue("23");
+            await expect.poll(async () => (await f.saved()).parameters.duration).toBe(23);
           } else {
             const slider = f.panel.getByRole("slider", { name: "视频时长", exact: true });
             await expect(slider).toHaveAttribute("min", String(duration.min)); await expect(slider).toHaveAttribute("max", String(duration.max));
@@ -308,7 +322,7 @@ test("极九高档GPT的原生K档与独立最高质量保存、刷新和切组�
   } finally { f.safe(); }
 });
 
-test("极九固定30、4–29与mini4–10切换保存，错误分组型号不可运行", async ({ page, request }, testInfo) => {
+test("极九5–30、4–29与mini5–10边界选择和刷新保存，错误分组型号不可运行", async ({ page, request }, testInfo) => {
   const f = await setup(page, request, "video", "视频SD2.0", { wrongGroup: true });
   try {
     await f.menu(); await expect(f.summary).toContainText("Key 6");
@@ -318,18 +332,38 @@ test("极九固定30、4–29与mini4–10切换保存，错误分组型号不�
     await expect(wrong).not.toContainText("不支持");
     await f.choose("SD2.0mini稳定903C");
     const slider = f.panel.getByRole("slider", { name: "视频时长", exact: true });
+    await expect(slider).toHaveAttribute("min", "5");
+    await expect(slider).toHaveAttribute("max", "10");
     await slider.press("End"); await expect(slider).toHaveValue("10");
     await f.panel.getByRole("combobox", { name: "输出分辨率", exact: true }).selectOption("480p");
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 10, resolution: "480p" });
     await page.reload(); await f.open(); await expect(slider).toHaveValue("10");
     await f.selectGroup("稳定满血视频模型"); await f.choose("稳定seedance-2.5参图参音F");
+    await expect(slider).toHaveAttribute("min", "4");
+    await expect(slider).toHaveAttribute("max", "29");
     await slider.press("End"); await expect(slider).toHaveValue("29");
     await f.panel.getByRole("combobox", { name: "输出分辨率", exact: true }).selectOption("720p");
     await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 29, resolution: "720p" });
+    await page.reload(); await f.open("稳定满血视频模型");
+    await expect(f.picker).toContainText("稳定seedance-2.5参图参音F");
+    await expect(slider).toHaveValue("29");
+    await expect.poll(async () => (await f.saved()).parameters).toMatchObject({ duration: 29, resolution: "720p" });
     await f.panel.screenshot({ path: testInfo.outputPath("jijiu-f-29-seconds.png") });
     await f.selectGroup("视频SD.2.5"); await f.choose("SD2.5特价30-10-10-线路一");
-    await expect(f.panel.getByRole("combobox", { name: "视频时长", exact: true })).toHaveValue("30");
-    await expect(slider).toHaveCount(0);
+    // Video connection switches use the new contract's defaults; only image
+    // selections currently restore per-connection history. This 5–30 contract
+    // has no default, so the slider's 5 is a candidate, not a saved selection.
+    await expect(f.panel.getByRole("combobox", { name: "视频时长", exact: true })).toHaveCount(0);
+    await expect(slider).toHaveAttribute("min", "5");
+    await expect(slider).toHaveAttribute("max", "30");
+    await expect(slider).toHaveValue("5");
+    await expect(slider).toHaveAttribute("aria-invalid", "true");
+    await expect.poll(async () => (await f.saved()).parameters).not.toHaveProperty("duration");
+    await slider.press("End"); await expect(slider).toHaveValue("30");
+    await expect.poll(async () => (await f.saved()).parameters.duration).toBe(30);
+    await page.reload(); await f.open("视频SD.2.5");
+    await expect(f.picker).toContainText("SD2.5特价30-10-10-线路一");
+    await expect(slider).toHaveValue("30");
     await expect.poll(async () => (await f.saved()).parameters.duration).toBe(30);
   } finally { f.safe(); }
 });

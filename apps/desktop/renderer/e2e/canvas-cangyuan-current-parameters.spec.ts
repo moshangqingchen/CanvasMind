@@ -37,12 +37,14 @@ for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
     const tier = panel.getByRole("group", { name: "自动与输出分辨率快捷档位", exact: true });
     const ratio = panel.getByLabel("画面比例", { exact: true });
     const quality = panel.getByLabel("质量", { exact: true });
-    const highest = id === "gpt-image-2.5-x" ? "max" : "high";
-    await expect(quality).toHaveValue(highest);
+    // Both exact x contracts declare max. A saved selection takes precedence
+    // over the GPT Image 2 family's high default.
+    const savedQuality = "max";
+    await expect(quality).toHaveValue(savedQuality);
     await expect(ratio).toHaveCount(0);
     const preset = panel.getByRole("combobox", { name: "输出分辨率预设", exact: true });
     await expect(panel.getByLabel("清晰度 / 计费档位", { exact: true })).toHaveCount(0);
-    const expectedQualities = id === "gpt-image-2.5-x" ? ["auto", "low", "medium", "high", "xhigh", "max"] : ["auto", "low", "medium", "high"];
+    const expectedQualities = ["medium", "low", "high", "xhigh", "max"];
     expect(await quality.locator("option").evaluateAll(items => items.map(item => (item as HTMLOptionElement).value).filter(Boolean))).toEqual(expectedQualities);
     for (const value of ["1k", "2k", "4k"]) {
       const choice = tier.getByRole("button", { name: value.toUpperCase(), exact: true });
@@ -51,7 +53,7 @@ for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
       const pixels = { "1k": "1552x672", "2k": "3120x1344", "4k": "3840x1648" }[value]!;
       await preset.selectOption(pixels);
       await expect.poll(async () => (await (await request.get(`/api/canvas/${canvas.id}`)).json()).graph.nodes[0].data.parameters)
-        .toMatchObject({ tier: value, size_tier: value.toUpperCase(), size: pixels, quality: highest });
+        .toMatchObject({ tier: value, size_tier: value.toUpperCase(), size: pixels, quality: savedQuality });
     }
     await quality.selectOption("low");
     if (id === "gpt-image-2.5-x") await panel.getByLabel("产品线", { exact: true }).selectOption("flare");
@@ -91,10 +93,15 @@ for (const id of ["gpt-image-2-x", "gpt-image-2.5-x"]) {
     await preset.selectOption("3840x1648");
     await expect.poll(savedParameters).toMatchObject({ tier: "4k", size: "3840x1648", quality: "low" });
     await tier.getByRole("button", { name: "自动", exact: true }).click();
-    await expect.poll(savedParameters).toMatchObject({ tier: "web", size: "auto" });
+    await expect.poll(savedParameters).toMatchObject({ tier: "web", size: "auto", quality: "low" });
     await expect(width).toHaveValue("");
     await expect(height).toHaveValue("");
-    await expect(quality).toHaveCount(0);
+    // The current published schema keeps quality available on web too.
+    await expect(quality).toHaveValue("low");
+    await page.reload(); await open();
+    await expect(preset).toHaveValue("auto");
+    await expect(quality).toHaveValue("low");
+    await expect.poll(savedParameters).toMatchObject({ tier: "web", size: "auto", quality: "low" });
     expect(submissions).toBe(0);
     await panel.screenshot({ path: testInfo.outputPath("cangyuan-current-parameters.png") });
   });
