@@ -25,6 +25,35 @@ function fixture(modelId = "sd-2.0-J2", responses: Response[] = [], extra: Recor
 }
 
 describe("Jiasu exact video supplier contract", () => {
+  it.each(["wan-3.0-特惠", "wan-3.0-特惠-1"])("keeps vip resolution-specific WAN durations for %s and rejects before HTTP without changing user values", async id => {
+    const raw = { model_name: id, description: "10图-5视频-5音频\n| `480p` | 15–30 秒\n| `720p` |10- 20 秒 ", supported_endpoint_types: ["openai-video"], api_parameters: [
+      { name: "duration", type: "integer", range: id.endsWith("-1") ? "1 ~ 60" : "4-30", default: id.endsWith("-1") ? "5-30" : "5" },
+      { name: "resolution", type: "enum", range: "480p, 720p", default: "720p" },
+      { name: "ratio", type: "enum", range: "16:9, 9:16, 1:1", default: "16:9" },
+    ] };
+    const source: ModelDescriptor = { id, name: id, operations: [], metadata: { catalogGroup: "vip", jiasuCatalogRecord: jiasuCatalogRecord(raw) } };
+    const model = jiasuVideoModel(id, source, "vip")!;
+    expect(model.parameters?.find(p => p.key === "duration")).toMatchObject({ required: true, constraints: [
+      { when: [{ parameter: "resolution", values: ["480p"] }], min: 15, max: 30 },
+      { when: [{ parameter: "resolution", values: ["720p"] }], min: 10, max: 20 },
+    ] });
+    expect(model.parameters?.find(p => p.key === "duration")?.default).toBeUndefined();
+    if (id.endsWith("-1")) expect(model.parameters?.find(p => p.key === "duration")).toMatchObject({ min: 1, max: 60 });
+    for (const parameters of [{ duration: 10, resolution: "720p" }, { duration: 20, resolution: "720p" }, { duration: 15, resolution: "480p" }, { duration: 30, resolution: "480p" }])
+      expect(jiasuVideoRequestIssues(request(id, parameters), model, "vip")).toEqual([]);
+    for (const parameters of [{ duration: 9, resolution: "720p" }, { duration: 21, resolution: "720p" }, { duration: 14, resolution: "480p" }, { duration: 31, resolution: "480p" }, { resolution: "720p" }])
+      expect(jiasuVideoRequestIssues(request(id, parameters), model, "vip")).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    expect(jiasuVideoModel(id, source, "other")?.parameters?.find(p => p.key === "duration")?.constraints).toBeUndefined();
+    const entered = request(id, { duration: 5, resolution: "720p" }), original = structuredClone(entered);
+    const blocked = fixture(id, [], { modelGroup: "vip" }, model);
+    expect((await blocked.adapter.validate(entered)).valid).toBe(false);
+    await expect(blocked.adapter.submit(entered)).rejects.toThrow();
+    expect(blocked.fetcher).not.toHaveBeenCalled(); expect(entered).toEqual(original);
+    const valid = fixture(id, [Response.json({ id: "mocked-current-wan-only", status: "queued" })], { modelGroup: "vip" }, model);
+    await valid.adapter.submit(request(id, { duration: 20, resolution: "720p", aspect_ratio: "9:16" }));
+    expect(JSON.parse(String(valid.fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ model: id, duration: 20, resolution: "720p", ratio: "9:16" });
+  });
+
   it("forwards additional fields only from this exact model's published schema with their original values", async () => {
     const id = "future-jiasu-video", model = jiasuVideoModel(id, { id, name: id, operations: [], metadata: { jiasuCatalogRecord: jiasuCatalogRecord({ model_name: id,
       supported_endpoint_types: ["openai-video"], api_parameters: [{ name: "fps", type: "integer", enum: [24, 30], default: 24 },
@@ -293,6 +322,29 @@ describe("Jiasu exact video supplier contract", () => {
     const special = "minimax-h3-933-2k-支持真人";
     expect(normalizeJiasuVideoParameters(request(special, {}, [video]))).toMatchObject({ duration: 15, resolution: "2k", videos: [{ url: video.url, duration_seconds: 6 }] });
     expect(jiasuVideoRequestIssues(request(special, { videos: [{ url: video.url, duration_seconds: 16 }] }))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "assets" })]));
+  });
+
+  it.each([false, true])("keeps the dedicated H3 page's exact body, positive measured durations and total limits, direct=%s", async direct => {
+    const id = "minimax-h3-933-2k-支持真人", model = remainingVideoModel("jiasu", id)!;
+    const refs = [image, video, { ...video, id: "second", url: "https://media.example/second.mp4", durationSeconds: 5 }, audio];
+    const f = fixture(id, [Response.json({ id: "offline-task", status: "queued" })],
+      { connector: { ...jiasuVideoTransport(model), models: [model], restrictModels: true } });
+    const adapter = direct ? new GenericRestAdapter(f.resolver, { fetch: f.fetcher }) : f.adapter;
+    const input = request(id, { duration: 15, ratio: "9:16", resolution: "2k" }, refs), original = structuredClone(input);
+    await adapter.submit(input);
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body))).toEqual({ model: id, prompt: input.prompt,
+      duration: 15, ratio: "9:16", resolution: "2k", images: [image.url],
+      videos: [{ url: video.url, duration_seconds: 6 }, { url: refs[2]!.url, duration_seconds: 5 }], audios: [audio.url] });
+    expect(input).toEqual(original);
+    const bad = [request(id, { videos: [video.url] }), request(id, { videos: [{ url: video.url, duration_seconds: 0 }] }),
+      request(id, {}, [{ ...video, durationSeconds: 8 }, { ...video, id: "over", url: "https://media.example/over.mp4", durationSeconds: 8 }]),
+      request(id, {}, [...Array.from({ length: 8 }, (_, i) => ({ ...image, id: `image-${i}`, url: `https://media.example/${i}.png` })), video, audio, { ...audio, id: "audio2", url: "https://media.example/other.mp3" }]),
+      request(id, { duration: 5 }), request(id, { resolution: "720p" })];
+    for (const entry of bad) {
+      const refused = fixture(id);
+      await expect(refused.adapter.submit(entry)).rejects.toThrow();
+      expect(refused.fetcher).not.toHaveBeenCalled();
+    }
   });
 
   it("submits once with the original Key, restores the saved task and extracts every result_urls video", async () => {

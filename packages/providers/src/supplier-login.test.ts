@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const network = vi.hoisted(() => ({
   lookup: vi.fn(async (hostname: string, _options?: unknown) => {
     // Preserve the real-host scope test without sending a DNS request.
-    if (!["tk1688.com", "asian-acc.we-token.cc", "api.mikoto.vip", "api.eaheng.com", "tu.988236.xyz", "api.hangzhale.com", "vapi.chuangxiangai.asia", "synoralink.com"].includes(hostname)) throw new Error("Unexpected DNS in supplier login test");
+    if (!["tk1688.com", "asian-acc.we-token.cc", "api.mikoto.vip", "api.eaheng.com", "tu.988236.xyz", "api.hangzhale.com", "vapi.chuangxiangai.asia", "synoralink.com", "ai.whyshy.cn", "token.secure-skill.com"].includes(hostname)) throw new Error("Unexpected DNS in supplier login test");
     return [{ address: "203.0.113.10", family: 4 }];
   }),
   fetch: vi.fn(),
@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => {
   try {
     expect(network.fetch).not.toHaveBeenCalled();
-    expect(network.lookup.mock.calls.every(([hostname]) => ["tk1688.com", "asian-acc.we-token.cc", "api.mikoto.vip", "api.eaheng.com", "tu.988236.xyz", "api.hangzhale.com", "vapi.chuangxiangai.asia", "synoralink.com"].includes(hostname))).toBe(true);
+    expect(network.lookup.mock.calls.every(([hostname]) => ["tk1688.com", "asian-acc.we-token.cc", "api.mikoto.vip", "api.eaheng.com", "tu.988236.xyz", "api.hangzhale.com", "vapi.chuangxiangai.asia", "synoralink.com", "ai.whyshy.cn", "token.secure-skill.com"].includes(hostname))).toBe(true);
   } finally {
     vi.unstubAllGlobals();
   }
@@ -41,7 +41,52 @@ const credentials = {
 describe("supplier website access token", () => {
   const base = "https://site.test/gateway";
   const accessToken = "fake-dashboard-token";
-  it.each(["https://api.eaheng.com", "https://tu.988236.xyz", "https://api.hangzhale.com", "https://synoralink.com", "https://vapi.chuangxiangai.asia"])(
+  it.each(["https://api.eaheng.com", "https://vapi.chuangxiangai.asia", "https://api.hangzhale.com", "https://synoralink.com", "https://ai.whyshy.cn", "https://token.secure-skill.com"])(
+    "authenticates %s exact deployed announcement GET without widening credentials", async base => {
+      const fetcher = vi.fn<typeof fetch>(async () => Response.json({ code: 0, success: true, data: { id: 42 } }));
+      const session = await loginSupplierSite({ siteUrl: base, kind: "sub2api", credentials: { accessToken } }, fetcher);
+      const endpoint = `${base}/api/v1/announcements`;
+      await session.fetch(endpoint, { method: "GET" });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe(`Bearer ${accessToken}`);
+      expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+      for (const [url, method] of [[endpoint, "POST"], [`${endpoint}?page=1`, "GET"], [`${endpoint}/`, "GET"],
+        [`${endpoint}#fragment`, "GET"], [`https://user@${new URL(base).host}/api/v1/announcements`, "GET"],
+        ["https://other.test/api/v1/announcements", "GET"]]) {
+        await session.fetch(url!, { method });
+        expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+      }
+      const wrongKind = await loginSupplierSite({ siteUrl: base, kind: "newapi", credentials: { accessToken } }, fetcher);
+      await wrongKind.fetch(endpoint);
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+    });
+  it("authenticates only monster's user channel plaza categories and four documented ranges", async () => {
+    const base = "https://api.eaheng.com";
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ code: 0, data: { id: 42 } }));
+    const session = await loginSupplierSite({ siteUrl: base, kind: "sub2api", credentials: { accessToken } }, fetcher);
+    for (const suffix of ["/api/v1/plaza/categories", ...["90m", "24h", "7d", "30d"].map(range => `/api/v1/plaza?range=${range}`)]) {
+      await session.fetch(base + suffix, { method: "GET" });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe(`Bearer ${accessToken}`);
+      expect(fetcher.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    }
+    for (const [url, method] of [
+      [`${base}/api/v1/plaza?range=90m`, "POST"], [`${base}/api/v1/plaza?range=90m`, "HEAD"],
+      [`${base}/api/v1/plaza`, "GET"], [`${base}/api/v1/plaza?range=1h`, "GET"],
+      [`${base}/api/v1/plaza?range=90m&range=24h`, "GET"], [`${base}/api/v1/plaza?range=90m&extra=1`, "GET"],
+      [`${base}/api/v1/plaza?range=`, "GET"], [`${base}/api/v1/plaza/?range=90m`, "GET"],
+      [`${base}/api/v1/plaza?range=90m#fragment`, "GET"], [`${base}/api/v1/plaza/categories?page=1`, "GET"],
+      [`${base}/api/v1/plaza/categories/`, "GET"], [`${base}/api/v1/plaza/categories`, "POST"],
+      [`${base}/api/v1/admin/plaza/groups/18/accounts?range=90m`, "GET"],
+      ["https://api.hangzhale.com/api/v1/plaza?range=90m", "GET"],
+      ["https://user@api.eaheng.com/api/v1/plaza?range=90m", "GET"],
+    ]) {
+      await session.fetch(url!, { method });
+      expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+    }
+    const wrongKind = await loginSupplierSite({ siteUrl: base, kind: "newapi", credentials: { accessToken } }, fetcher);
+    await wrongKind.fetch(`${base}/api/v1/plaza?range=90m`);
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBeNull();
+  });
+  it.each(["https://api.eaheng.com", "https://tu.988236.xyz", "https://api.hangzhale.com", "https://synoralink.com", "https://vapi.chuangxiangai.asia", "https://ai.whyshy.cn", "https://token.secure-skill.com"])(
     "authenticates the additional %s deployed exact available-channel read", async base => {
       const fetcher = vi.fn<typeof fetch>(async () => Response.json({ code: 0, success: true, data: { id: 42 } }));
       const session = await loginSupplierSite({ siteUrl: base, kind: base === "https://tu.988236.xyz" ? "newapi" : "sub2api", credentials: { accessToken } }, fetcher);

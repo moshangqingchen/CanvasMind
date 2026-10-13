@@ -69,7 +69,27 @@ describe("supplier video contracts", () => {
     expect(isRemainingVideoModel("chentu", "seedance2.0 900")).toBe(true);
     expect(isRemainingVideoModel("chentu", "seedance2.0-900")).toBe(false);
     expect(isRemainingVideoModel("secure", "wan3.0")).toBe(true);
-    expect(remainingVideoModelIds("chentu")).toHaveLength(49);
+    expect(isRemainingVideoModel("secure", "wan3.0-prime")).toBe(true);
+    expect(remainingVideoModelIds("chentu")).toHaveLength(51);
+  });
+
+  it.each(["wan3.0", "wan3.0-prime"])("retains new Secure group58 directory ID %s but applies its documented wire restriction", id => {
+    const input = request(id, { duration: 6, resolution: "720P", aspect_ratio: "16:9" });
+    const before = structuredClone(input);
+    expect(remainingVideoModel("secure", id)?.outputKinds).toEqual(["video"]);
+    expect(remainingVideoModel("secure", id)?.pricing).toBeUndefined();
+    expect(remainingVideoRequestIssues("secure", input, { group: "wan3.0视频", officialGroupId: "58" })).toContainEqual(expect.objectContaining({ path: "model" }));
+    expect(remainingVideoRequestIssues("secure", input, { group: "renamed", officialGroupId: 58 })).toContainEqual(expect.objectContaining({ path: "model" }));
+    expect(remainingVideoRequestIssues("secure", input, { group: "wan3.0视频", officialGroupId: "40" })).not.toContainEqual(expect.objectContaining({ path: "model" }));
+    expect(remainingVideoRequestIssues("secure", input, { group: "wan3.0视频" })).not.toContainEqual(expect.objectContaining({ path: "model" }));
+    expect(remainingVideoTransport("secure", id)?.submit?.mappings?.find(m => m.target === "/model")?.source).toEqual({ kind: "request", path: "$.model" });
+    expect(input).toEqual(before);
+  });
+
+  it("reads Secure WAN's documented download_url fallback without creating a second task", () => {
+    const transport = remainingVideoTransport("secure", "wan3.0-video-prime")!;
+    expect(transport.poll?.path).toBe("/v1/videos/tasks/{taskId}");
+    expect(transport.output?.fallbackPaths).toContain("$.download_url");
   });
 
   it("keeps new Chentu directory IDs intact and only copies published limits", () => {

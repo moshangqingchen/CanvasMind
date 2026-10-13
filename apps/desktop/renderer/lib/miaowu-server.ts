@@ -461,12 +461,12 @@ export async function scanMiaowuConnection(
   const scanScope = String(latest.config.modelGroup ?? MIAOWU_PRESET_ID);
 
   const configuredDefault =
-    typeof latest.config.defaultModel === "string"
+    typeof latest.config.defaultModel === "string" && latest.config.defaultModel.trim()
       ? latest.config.defaultModel
       : undefined;
   const connector = refreshedMiaowuConnector(latest, callable);
   const connectedModels = connector.models ?? [];
-  const defaultModel = miaowuDefaultModel(connectedModels, configuredDefault);
+  const defaultModel = configuredDefault ?? miaowuDefaultModel(connectedModels);
   const config: JsonObject = {
     ...latest.config,
     ...(miaowuConnectionConfig(
@@ -557,12 +557,12 @@ async function syncMiaowuConnectionFromCatalog(
         : catalogModels;
   if (models.length === 0 && !authoritativeScan) return connection;
   const configuredDefault =
-    typeof connection.config.defaultModel === "string"
+    typeof connection.config.defaultModel === "string" && connection.config.defaultModel.trim()
       ? connection.config.defaultModel
       : undefined;
   const connector = refreshedMiaowuConnector(connection, models);
   const connectedModels = connector.models ?? [];
-  const defaultModel = miaowuDefaultModel(connectedModels, configuredDefault);
+  const defaultModel = configuredDefault ?? miaowuDefaultModel(connectedModels);
   const config: JsonObject = {
     ...connection.config,
     ...(miaowuConnectionConfig(

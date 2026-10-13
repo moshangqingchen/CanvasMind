@@ -3,6 +3,10 @@ import { manualProviderModelDescriptors, mergeManualProviderModels, validateManu
 
 const connection = { provider: "openai", config: { usage: "canvas", modelGroup: "手动组", manualModels: [{ id: "my-custom-model", capability: "image", protocol: "openai-images" }] } };
 describe("manual provider models", () => {
+  it("rejects removed protocols and Claude models in manually added chat entries", () => {
+    expect(() => validateManualProviderModels("rest", { manualModels: [{ id: "legacy-model", capability: "chat", protocol: "anthropic-messages" }] })).toThrow();
+    expect(() => validateManualProviderModels("rest", { manualModels: [{ id: "claude-sonnet-4-6", capability: "chat", protocol: "chat-completions" }] })).toThrow("支持已移除");
+  });
   it("allows manual music only when its exact REST model already declares music generation", () => {
     const music = { provider: "rest", config: { manualModels: [{ id: "custom-music", capability: "music", protocol: "rest" }],
       connector: { models: [{ id: "custom-music", operations: ["music.generate"] }] } } };
@@ -36,13 +40,13 @@ describe("manual provider models", () => {
   it("allows one Key to contain image and chat models with independent protocols", () => {
     const config = { usage: "agent", protocol: "responses", manualModels: [
       ...connection.config.manualModels,
-      { id: "chat", capability: "chat", protocol: "anthropic-messages" },
+      { id: "chat", capability: "chat", protocol: "google-generate-content" },
     ] };
     expect(() => validateManualProviderModels("openai", config)).not.toThrow();
     expect(config.protocol).toBe("responses");
     expect(manualProviderModelDescriptors({ provider: "openai", config })).toEqual([
       expect.objectContaining({ id: "my-custom-model", operations: ["image.generate", "image.edit"] }),
-      expect.objectContaining({ id: "chat", operations: [], outputKinds: ["text"], metadata: expect.objectContaining({ agentProtocol: "anthropic-messages", canvasRunnable: false }) }),
+      expect.objectContaining({ id: "chat", operations: [], outputKinds: ["text"], metadata: expect.objectContaining({ agentProtocol: "google-generate-content", canvasRunnable: false }) }),
     ]);
   });
   it("adds a chat model to an existing REST image connector without changing that connector", () => {

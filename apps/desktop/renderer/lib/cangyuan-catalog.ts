@@ -28,6 +28,7 @@ import {
   CANGYUAN_IMAGE_BASE_URL,
   CANGYUAN_IMAGE_PRESET_ID,
   CANGYUAN_IMAGE_GROUP,
+  CANGYUAN_AZURE_IMAGE_GROUP,
   CANGYUAN_LEGACY_BACKUP_IMAGE_GROUP,
   CANGYUAN_VIDEO_GROUP,
   cangyuanDefaultModelForGroup,
@@ -967,6 +968,7 @@ export function cangyuanCatalogFromPricing(
   }
   const groups: Record<CangyuanImageGroup, ModelDescriptor[]> = {
     IMAGE: [],
+    [CANGYUAN_AZURE_IMAGE_GROUP]: [],
     VIDEO: [],
     "全模型-无claude/gpt": [],
     [CANGYUAN_BACKUP_IMAGE_GROUP]: [],
@@ -1325,6 +1327,8 @@ function fallbackSnapshot(): CangyuanCatalogSnapshot {
     source: "fallback",
     groups: {
       IMAGE: [...imageModels, ...fallbackVideos],
+      // No cached IMAGE models or prices establish availability in Azure.
+      [CANGYUAN_AZURE_IMAGE_GROUP]: [],
       VIDEO: videoModels,
       "全模型-无claude/gpt": [...allModels, ...fallbackVideos],
       [CANGYUAN_BACKUP_IMAGE_GROUP]: [
@@ -1968,7 +1972,7 @@ async function syncCangyuanConnectionFromCatalog(
   const mergedModels = [...models];
   const configuredDefault =
     typeof connection.config.defaultModel === "string"
-      ? connection.config.defaultModel.trim()
+      ? connection.config.defaultModel
       : "";
   const defaultModel =
     configuredDefault ||

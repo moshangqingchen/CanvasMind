@@ -6,6 +6,7 @@ import type { ModelDescriptor } from "@super-canvas/providers";
 import { measuredPriceScopeMatches } from "./supplier-price-evidence";
 import { confirmedVideoParameterDefault, videoDurationControl, videoDurationControlContext } from "./video-duration-control";
 import { modelParameterAliases } from "./model-parameters";
+import { evaluateImageParameters } from "@super-canvas/providers/image-parameter-contract";
 import { modelPickerPriceData } from "./model-picker-data";
 import { mikotoImageRatioIssues } from "@super-canvas/providers/supplier-image-constraints";
 import { cyberafeiSeedance25SizePreferenceIssues } from "@super-canvas/providers/cyberafei-seedance25-video-contract";
@@ -173,7 +174,9 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   if (model.metadata?.jijiuVideoContract === true && parameters.size !== undefined &&
       pricing?.tiers?.some(tier => tier.conditions?.some(condition => ["resolution", "size_tier", "image_size"].includes(condition.parameter))))
     return modelPickerPriceData(model);
-  const tier = String(parameters.size_tier ?? parameters.resolution ?? parameters.image_size ?? "").toUpperCase()
+  const image = model.operations.some(operation => operation.startsWith("image."))
+    ? evaluateImageParameters(model, parameters) : undefined;
+  const tier = image ? image.resolutionTier : String(parameters.size_tier ?? parameters.resolution ?? parameters.image_size ?? "").toUpperCase()
     || model.parameters?.find(p => p.key === "size")?.options?.find(option => option.value === parameters.size)?.label.match(/\b[124]K\b/iu)?.[0]?.toUpperCase();
   const quality = parameters.quality ?? model.parameters?.find(p => p.key === "quality")?.default;
   const measured = model.metadata?.priceSource === "generated-result" && model.metadata.measuredPrice &&
@@ -211,7 +214,7 @@ export function modelPriceSummary(model: import("@super-canvas/providers").Model
   }
   if (pricing) {
     const defaults = Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default]));
-    const amount = modelPriceAmount(pricing, { ...defaults, ...parameters, resolution: parameters.resolution ?? (tier || defaults.resolution), quality });
+    const amount = modelPriceAmount(pricing, image?.pricingParameters ?? { ...defaults, ...parameters, resolution: parameters.resolution ?? (tier || defaults.resolution), quality });
     const unit = pricing.billingUnit === "second" || pricing.kind === "per-second" ? "秒" : pricing.billingUnit === "request" || pricing.kind === "per-request" ? "次" : "张";
     if (amount !== undefined && ["per-image", "per-request", "per-second", "tiered"].includes(pricing.kind)) return `${typeof model.metadata?.priceLabel === "string" && model.metadata.priceLabel.endsWith("（上次价格）") ? "上次 " : ""}${model.metadata?.tk1688Catalog === true && pricing.currency === "CNY" ? `¥${amount}` : `${amount} ${pricing.currency === "credits" ? "额度" : pricing.currency}`} / ${unit}${pricing.confidence === "exact" ? "" : "（参考）"}${pricing.timeMultipliers?.length ? "（上海当前时段价，以提交时刻为准）" : ""}`;
     if (pricing.kind === "token") {
@@ -282,8 +285,10 @@ export function modelEstimatedCost(model: ModelDescriptor | null | undefined, pa
   const values = { ...Object.fromEntries((model.parameters ?? []).filter(p => p.default !== undefined).map(p => [p.key, p.default])), ...parameters };
   const declaredValues = Object.fromEntries(Object.entries(values).filter(([key]) => getModelParameterDescriptor(model, key, values)));
   if (model.parameters?.length && !validateModelParameters(model, declaredValues).valid) return undefined;
+  const image = model.operations.some(operation => operation.startsWith("image."))
+    ? evaluateImageParameters(model, parameters) : undefined;
   const resolution = values.size_tier ?? values.resolution ?? values.image_size;
-  const amount = modelPriceAmount(pricing, { ...values, ...(resolution ? { resolution } : {}) });
+  const amount = modelPriceAmount(pricing, image?.pricingParameters ?? { ...values, ...(resolution ? { resolution } : {}) });
   if (amount === undefined || !Number.isFinite(amount) || amount < 0) return undefined;
   const perTask = pricing.billingUnit === "request" || pricing.kind === "per-request" || pricing.billingUnit === "second" || pricing.kind === "per-second";
   const count = Number(values.n ?? (perTask ? model.metadata?.fixedRequestCount : model.metadata?.fixedOutputCount) ?? 1);

@@ -3,12 +3,13 @@ import type { ProviderConnectionRecord } from "@super-canvas/db";
 import { normalizeSupplierSiteBase, normalizeTk1688CnyModel, scanProviderModelCatalog, type ModelDescriptor } from "@super-canvas/providers";
 import { repository } from "./server";
 import { resolveDirectorConnection } from "./director-connections";
+import { unsupportedAgentModelReason } from "./agent-model-support";
 import {
   agentRecord, declaredAgentFlags, isAgentTextModel, normalizeAgentProtocol, resolveAgentCapabilities,
   type AgentCapabilitySource, type AgentInputStatus, type AgentInputLimits, type AgentReasoningOption,
 } from "./agent-model-capabilities";
 
-export const AGENT_PROTOCOLS = ["chat-completions", "responses", "anthropic-messages", "google-generate-content", "xai-responses", "generic-openai-compatible"] as const;
+export const AGENT_PROTOCOLS = ["chat-completions", "responses", "google-generate-content", "xai-responses", "generic-openai-compatible"] as const;
 export function agentProtocol(config: Record<string, unknown>): DirectorProtocol {
   return normalizeAgentProtocol(config.directorProtocol) ?? normalizeAgentProtocol(config.protocol) ?? "openai-chat-completions";
 }
@@ -140,7 +141,7 @@ export async function loadAgentModels(): Promise<AgentModelOption[]> {
       add(scanProviderModelCatalog([{ id: config.defaultModel }]).models[0]!, "catalog");
     }
     for (const [modelId, entry] of models) {
-      if (!isAgentTextModel(entry.model)) continue;
+      if (!isAgentTextModel(entry.model) || unsupportedAgentModelReason(config, entry.model)) continue;
       const reason = !connection.encryptedSecret ? "请在供应商中填写此分组的 Key" : status === "unauthorized" ? "当前 Key 鉴权失败" :
         authoritative && !scanned.includes(modelId) ? "当前 Key 未返回此模型" :
         !authoritative && (entry.source === "catalog" || status === "unscanned") ? "此模型尚未由当前 Key 返回，请刷新供应商模型" : undefined;
@@ -164,6 +165,8 @@ export async function loadAgentModels(): Promise<AgentModelOption[]> {
 export async function resolveAgentModel(connectionId: string, modelId: string, reasoningEffort?: string): Promise<ResolvedDirectorConnection> {
   const connection = await repository.getConnection(connectionId);
   if (!connection || connection.config.supplierArchived === true || connection.config.usage === "disabled") throw new Error("请选择已接入且未停用的供应商分组");
+  const unsupported = unsupportedAgentModelReason(connection.config, { id: modelId });
+  if (unsupported) throw new Error(unsupported);
   const model = (await loadAgentModels()).find(model => model.connectionId === connectionId && model.modelId === modelId);
   if (!model?.available) throw new Error(model?.reason ?? "当前分组没有此对话模型，请刷新供应商模型后重新选择");
   const effort = reasoningEffort === "auto" ? undefined : reasoningEffort;

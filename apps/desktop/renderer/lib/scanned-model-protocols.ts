@@ -496,6 +496,7 @@ export function bindScannedModelProtocols(
       baseUrl: connection.config.baseUrl,
       manualProtocol: connection.config.manualProtocol,
       group: String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? ""),
+      officialGroupId: typeof connection.config.accountKeyGroupId === "string" || typeof connection.config.accountKeyGroupId === "number" ? connection.config.accountKeyGroupId : undefined,
       groupDescription: String(connection.config.supplierGroupDescription ?? connection.config.groupDescription ?? ""),
     });
     const contractPending = model.metadata?.canvasRunnable === false && (
@@ -596,6 +597,7 @@ export function bindScannedModelProtocols(
           baseUrl: connection.config.baseUrl,
           manualProtocol: connection.config.manualProtocol,
           group: String(connection.config.modelGroup ?? connection.config.group ?? ""),
+          officialGroupId: typeof connection.config.accountKeyGroupId === "string" || typeof connection.config.accountKeyGroupId === "number" ? connection.config.accountKeyGroupId : undefined,
           groupDescription: String(connection.config.modelGroupDescription ?? connection.config.groupDescription ?? ""),
         }) : undefined;
     if (!documented) return model;

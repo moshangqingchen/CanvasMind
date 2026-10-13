@@ -428,9 +428,9 @@ describe("model parameter helpers", () => {
     ).toEqual({ duration: 26, aspect_ratio: "16:9", resolution: "2k" });
   });
 
-  it("shows image count only when the model declares a multi-image limit", () => {
+  it("shows declared open image counts without inventing a supplier maximum", () => {
     const model = (
-      max: number,
+      max: number | undefined,
       fixedOutputCount?: number,
     ): ModelDescriptor => ({
       id: `image-${max}`,
@@ -464,6 +464,16 @@ describe("model parameter helpers", () => {
         (parameter) => parameter.key,
       ),
     ).toEqual(["size", "n"]);
+    expect(
+      parameterDescriptorsFor("image-generation", "openai", model(undefined)).map(
+        (parameter) => parameter.key,
+      ),
+    ).toEqual(["size", "n"]);
+    expect(
+      parameterDescriptorsFor("image-generation", "openai", model(undefined, 1)).map(
+        (parameter) => parameter.key,
+      ),
+    ).toEqual(["size"]);
     expect(
       parameterDescriptorsFor("image-generation", "rest", model(10, 1)).map(
         (parameter) => parameter.key,

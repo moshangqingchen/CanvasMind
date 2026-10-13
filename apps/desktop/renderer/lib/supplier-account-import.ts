@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderConnectionRecord, SupplierRecord, SupplierState } from "@super-canvas/db";
 import type { SupplierAccountKeys } from "@super-canvas/providers";
+import { remainingVideoSupplier } from "@super-canvas/providers/remaining-video-contracts";
 import { supplierConnectionDraft } from "./supplier-connection-draft";
+import { reconcileCangyuanNativeGroupConnection } from "./cangyuan-native-group-connection";
 
 function importedKeyConfig(config: ProviderConnectionRecord["config"], verifyCapabilities?: boolean) {
   const next = { ...config };
@@ -89,6 +91,13 @@ export function planSupplierAccountImport(
         try { return options.matchesKey!(connection, candidate.apiKey); } catch { return false; }
       });
     };
+    // This observed unnumbered alias is usable only when the account re-reveals
+    // the same imported Key ID and its actual secret. A name alone is not proof.
+    const provenJijiuRename = (connection: ProviderConnectionRecord) => stableId === undefined &&
+      inventory.complete && remainingVideoSupplier(supplier.siteUrl) === "jijiu" && remainingVideoSupplier(supplier.apiUrl) === "jijiu" &&
+      key.group === "视频SD2.5" && connection.config.accountKeyGroup === "视频SD.2.5" &&
+      connection.config.modelGroup === "视频SD.2.5" && connectionGroupId(connection) === undefined &&
+      verifiedLegacyKey(connection);
     const existing = next.filter(connection =>
       connection.config.supplierId === supplier.id &&
       connection.config.supplierSourceId === supplier.state!.sourceId &&
@@ -98,13 +107,14 @@ export function planSupplierAccountImport(
         // A reassigned Key must not turn its former group into a rename.
         if (stableId !== undefined && previousId !== undefined) return stableId === previousId;
         return connection.config.modelGroup === groupId || connection.config.accountKeyGroup === groupId ||
-          (stableId !== undefined && verifiedLegacyKey(connection));
+          (stableId !== undefined && verifiedLegacyKey(connection)) || provenJijiuRename(connection);
       })());
-    const provenGroup = (connection: ProviderConnectionRecord) => stableId !== undefined &&
+    const provenGroup = (connection: ProviderConnectionRecord) => provenJijiuRename(connection) || stableId !== undefined &&
       (connectionGroupId(connection) === stableId || verifiedLegacyKey(connection));
     // Read-only catalog reconciliation cannot introduce groups from unrelated
     // account Keys or fill a connection whose credential was cleared.
-    if (options.preserveOnly && !existing.some(connection => connection.encryptedSecret && provenGroup(connection) &&
+    if (options.preserveOnly && !existing.some(connection => connection.encryptedSecret && (provenGroup(connection) ||
+      inventory.complete && verifiedLegacyKey(connection) && reconcileCangyuanNativeGroupConnection(connection) !== connection) &&
       connection.config.usage !== "disabled" && unchanged(connection))) {
       summary.skipped += keys.length; continue;
     }
@@ -114,10 +124,18 @@ export function planSupplierAccountImport(
       for (const connection of existing) {
         if (connection.encryptedSecret) {
           summary.preserved++;
+          if (inventory.complete && unchanged(connection) && verifiedLegacyKey(connection)) {
+            next[next.indexOf(connection)] = reconcileCangyuanNativeGroupConnection(connection);
+          }
           if (provenGroup(connection) && connection.config.usage !== "disabled" && unchanged(connection) &&
             (connection.config.accountKeyGroupId !== stableId || connection.config.accountKeyGroup !== groupId || connection.config.modelGroup !== groupId)) {
             next[next.indexOf(connection)] = { ...connection,
-              config: { ...connection.config, accountKeyGroupId: stableId, accountKeyGroup: groupId, modelGroup: groupId } };
+              config: { ...connection.config, accountKeyGroupId: stableId, accountKeyGroup: groupId, modelGroup: groupId,
+                ...(provenJijiuRename(connection) ? { supplierGroupRenameEvidence: {
+                  sourceId: supplier.state!.sourceId, accountKeyId: connection.config.accountKeyId,
+                  from: "视频SD.2.5", to: groupId, checkedAt: inventory.checkedAt,
+                  apiOrigin: "https://newapi.jijiucanvas.com", proof: "same-key-account-inventory",
+                } } : {}) } };
           }
           continue;
         }

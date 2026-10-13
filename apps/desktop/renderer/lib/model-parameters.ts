@@ -9,6 +9,7 @@ import { withHighestQualityDefault } from "./model-quality";
 import { preserveImageMaskParameters } from "./image-editing";
 import { getModelParameterDescriptor, resolveModelParameters } from "@super-canvas/providers/cli-contracts";
 import { confirmedVideoParameterDefault } from "./video-duration-control";
+import { imageParameterAliases, imageParameterControls } from "@super-canvas/providers/image-parameter-contract";
 
 const IMAGE_PARAMETERS: readonly ModelParameterDescriptor[] = [
   {
@@ -174,8 +175,7 @@ export function parameterDescriptorsFor(
           (descriptor) =>
             descriptor.key !== "n" ||
             (fixedOutputCount !== 1 &&
-              typeof descriptor.max === "number" &&
-              descriptor.max > 1),
+              (typeof descriptor.max !== "number" || descriptor.max > 1)),
         )
       : declared;
   }
@@ -211,7 +211,9 @@ export function parameterDescriptorsForValues(
   // The same supplier contract drives controls and submission validation.
   // Evaluate visibility and option/range constraints for every provider.
   const effective = { ...Object.fromEntries(declared.filter(d => d.default !== undefined).map(d => [d.key, d.default])), ...parameters };
-  let descriptors = model?.parameters?.length ? declared.flatMap(descriptor => {
+  let descriptors = nodeType === "image-generation" && model?.parameters?.length
+    ? imageParameterControls({ ...model, parameters: declared }, parameters, operation)
+    : model?.parameters?.length ? declared.flatMap(descriptor => {
     const resolved = getModelParameterDescriptor(model, descriptor.key, effective, operation);
     if (!resolved) return [];
     const result = { ...descriptor, ...resolved, default: descriptor.default };
@@ -655,18 +657,8 @@ export function setParameterValue(
 }
 
 export function modelParameterAliases(model?: Pick<ModelDescriptor, "metadata" | "parameters"> | null): ReadonlyArray<readonly [string, readonly string[]]> {
-  if (model?.metadata?.genimageNativeSizeOpen === true)
-    return [["aspect_ratio", ["aspectRatio", "ratio"]]];
-  if (model?.metadata?.mikotoImageContract === true && model.metadata.imageResolutionTierParameter === "size_tier")
-    return [["aspect_ratio", ["aspectRatio", "ratio"]]];
-  if (model?.metadata?.pdogImageProtocol === 1 && model.metadata.imageResolutionTierParameter === "size_tier")
-    return [["aspect_ratio", ["aspectRatio", "ratio"]], ["size_tier", ["resolution"]]];
-  if (model?.metadata?.tk1688ImageSizeContract === 2)
-    return [["aspect_ratio", ["aspectRatio", "ratio"]], ["resolution", ["image_size", "imageSize", "size_tier"]]];
-  if (model?.metadata?.jijiuImageContract === true && model.metadata.imageParameterPresetSource === "jijiu-high-tier-user-request")
-    return [["size", ["resolution", "image_size", "imageSize", "size_tier"]]];
-  if (model?.metadata?.jiasuImageProtocol === 1)
-    return [["ratio", ["aspect_ratio", "aspectRatio"]], ["resolution", ["image_size", "size_tier"]]];
+  const imageAliases = imageParameterAliases(model);
+  if (imageAliases.length) return imageAliases;
   if (model?.metadata?.jiasuVideoContract === true)
     return [["duration", ["seconds"]], ["aspect_ratio", ["ratio"]]];
   const metadata = model?.metadata;

@@ -33,13 +33,13 @@ describe("user image size controls retain the supplier's native billing tier", (
       expect(model).toEqual(before);
     });
 
-    it(`${id} displays its original web tier as automatic and hides the conditional quality field`, () => {
+    it(`${id} displays its original web tier as automatic and keeps the independently declared quality field`, () => {
       const model = descriptor(id);
       expect(model.parameters?.find(parameter => parameter.key === "tier")?.options?.map(option => option.value))
         .toEqual(["web", "1k", "2k", "4k"]);
       const html = render(model, { tier: "web", size: "auto", series: "sunburst" });
       expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>自动<\/button>/u);
-      expect(html).not.toMatch(/<label[^>]*>质量<\/label>/u);
+      expect(html).toMatch(/<label[^>]*>质量<\/label>/u);
       expect(html).not.toContain("清晰度 / 计费档位");
       expect(html).toContain('aria-label="图片宽度"');
     });

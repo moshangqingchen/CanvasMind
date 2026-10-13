@@ -203,7 +203,7 @@ describe("current supplier descriptor integration", () => {
     expect(result.model.parameters?.find(parameter => parameter.key === "tier")?.options?.map(option => option.value)).toEqual(["web", "1k", "2k", "4k"]);
     expect(result.model.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value))
       .toEqual(current.parameters?.find(parameter => parameter.key === "quality")?.options?.map(option => option.value));
-    expect(parameters).toMatchObject({ tier: "4k", quality: "max", aspect_ratio: "16:9" });
+    expect(parameters).toMatchObject({ tier: "4k", quality: id === "gpt-image-2-x" ? "high" : "max", aspect_ratio: "16:9" });
     if (id === "gpt-image-2.5-x") expect(parameters.series).toBe("sunburst");
     expect(cangyuanCurrentRequestIssues({ connectionId: "mock", operation: "image.generate", model: id,
       prompt: "isolated integration", idempotencyKey: "mock", parameters }, "https://ai.cangyuansuanli.cn")).toEqual([]);

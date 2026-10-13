@@ -34,6 +34,28 @@ const scanned = (
 });
 
 describe("scanned model protocol binding", () => {
+  it("refreshes Secure Muse's saved ten-image descriptor only for the exact current stable group 57", () => {
+    const cached: ModelDescriptor = {
+      id: "muse-video", name: "muse-video", operations: ["video.generate", "video.image-to-video"],
+      outputKinds: ["video"], metadata: { canvasRunnable: true, protocol: "openai-videos", videoReferenceImageLimit: 10 },
+    };
+    const before = structuredClone(cached);
+    const config = { baseUrl: "https://token.secure-skill.com/v1", usage: "canvas", modelGroup: "muse-video",
+      accountKeyGroup: "muse-video", modelScanStatus: "live", scannedModelIds: ["muse-video"] };
+    for (const officialGroupId of ["57", 57, "56", undefined]) {
+      const connection = { provider: "openai", config: { ...config, accountKeyGroupId: officialGroupId } };
+      const current = bindScannedModelProtocols(connection, [cached]).models[0]!;
+      expect(current.metadata?.videoReferenceImageLimit).toBe(String(officialGroupId) === "57" ? 9 : 10);
+      expect(bindScannedModelProtocols(connection, [current]).models[0]?.metadata?.videoReferenceImageLimit)
+        .toBe(current.metadata?.videoReferenceImageLimit);
+      expect(current.parameters?.find(parameter => parameter.key === "duration")?.max).toBe(30);
+    }
+    const current57 = bindScannedModelProtocols({ provider: "openai", config: { ...config, accountKeyGroupId: "57" } }, [cached]).models[0]!;
+    const otherGroup = bindScannedModelProtocols({ provider: "openai", config: { ...config, accountKeyGroupId: "56" } }, [current57]).models[0]!;
+    expect(otherGroup.metadata?.videoReferenceImageLimit).toBe(10);
+    expect(otherGroup.metadata?.videoReferenceImageLimitSource).toBeUndefined();
+    expect(cached).toEqual(before);
+  });
   it("binds all seven exact Jijiu images and exposes high-tier GPT quality without inventing pixels", () => {
     const fixture = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/jijiu-billing-20261010.json", import.meta.url), "utf8")) as {
       data: Array<{ model_name: string; tags: string; enable_groups: string[] }>;

@@ -53,6 +53,37 @@ import { cyberAfeiCatalogFromPricing, resolveCyberAfeiScannedGroup } from "./cyb
 import { applyWeAiLivePricing, type WeAiLiveModelPricing } from "./weai-catalog";
 
 const weaiSnapshotOrigin = "https://asian-acc.we-token.cc";
+describe("Jijiu current-Key pricing after a proven unnumbered group rename", () => {
+  const site = "https://newapi.jijiucanvas.com";
+  const checkedAt = "2026-10-13T01:04:08.364Z";
+  const evidence = { sourceId: "source", accountKeyId: "1548", from: "视频SD.2.5", to: "视频SD2.5", checkedAt,
+    apiOrigin: site, proof: "same-key-account-inventory" };
+  const options = { sourceId: "source", accountKeyId: "1548", keyGroupRenameEvidence: evidence };
+  const payload = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/jijiu-billing-20261012.json", import.meta.url), "utf8"));
+  const catalog = { ...parseSupplierCatalog(payload, { supplierSiteUrl: site, checkedAt }), kind: "newapi", status: "live", complete: true, checkedAt } as SupplierCatalogDiscovery;
+  const ids = ["SD2.5特价30-10-10-线路三", "SD2.5特价30-10线路二", "SD2.5特价900线路一"];
+  const models: ModelDescriptor[] = ids.map(id => ({ id, name: id, operations: ["video.generate"], outputKinds: ["video"], metadata: { liveInventory: true } }));
+  it("prices each actual Key model from the renamed official group without granting other models", () => {
+    const priced = applySupplierCatalogPrices(models, "视频SD.2.5", catalog, site, options);
+    expect(priced.map(m => m.pricing?.unitAmount)).toEqual([5.5, 1.3, 1]);
+    for (const model of priced) expect(model.metadata).toMatchObject({ supplierPriceGroup: "视频SD.2.5", supplierPricingSourceGroup: "视频SD2.5", supplierPriceGroupRenameEvidence: evidence });
+    expect(priced.map(m => m.id)).toEqual(ids);
+    expect(models.every(m => !m.pricing)).toBe(true);
+  });
+  it("requires same-source account Key proof and actual native inventory", () => {
+    for (const invalid of [{}, { ...options, accountKeyId: "other" }, { ...options, sourceId: "other" },
+      { ...options, keyGroupRenameEvidence: { ...evidence, proof: "name-alias" } }, { ...options, supplierGroupId: "115" }])
+      expect(applySupplierCatalogPrices(models, "视频SD.2.5", catalog, site, invalid).every(m => !m.pricing)).toBe(true);
+    expect(applySupplierCatalogPrices(models, "视频SD.2.5", catalog, "https://other.example", options).every(m => !m.pricing)).toBe(true);
+    expect(applySupplierCatalogPrices(models.map(m => ({ ...m, metadata: {} })), "视频SD.2.5", catalog, site, options).every(m => !m.pricing)).toBe(true);
+  });
+  it("retains the valid same-model quote if the renamed price read fails", () => {
+    const priced = applySupplierCatalogPrices(models, "视频SD.2.5", catalog, site, options);
+    const failed = { ...catalog, status: "failed" as const, complete: false, groups: [] };
+    const retained = applySupplierCatalogPrices(priced, "视频SD.2.5", failed, site, options);
+    expect(retained.map(m => m.pricing)).toEqual(priced.map(m => m.pricing));
+  });
+});
 describe("exact Genimage/Chuangxiang saved official quotes after an independent price-read failure", () => {
   const quoteAt = "2026-10-10T08:00:00.000Z", attemptedAt = "2026-10-11T04:53:56.000Z";
   const genOrigin = "https://genimage.pro", cxOrigin = "https://vapi.chuangxiangai.asia";

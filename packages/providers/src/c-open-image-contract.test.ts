@@ -23,6 +23,7 @@ const scopes = [
   { baseUrl: "https://api.eaheng.com", modelGroup: "A2-GPT-Pro正价-0.28倍率", accountKeyGroupId: "6", models: [...gpt, "gpt-image-2.5"], tiers: [] },
   { baseUrl: "https://api.eaheng.com", modelGroup: "GPT生图原生渠道V5", accountKeyGroupId: "24", models: [...gpt, "gpt-image-2.5"], tiers: [] },
   { baseUrl: "https://api.eaheng.com", modelGroup: "B4-GPT生图原生渠道V3（高质量）", accountKeyGroupId: "18", models: ["gpt-image-2.5-flare-high", "gpt-image-2.5-flare-max", "gpt-image-2.5-sunburst-high", "gpt-image-2.5-sunburst-max"], tiers: [] },
+  { baseUrl: "https://api.eaheng.com", modelGroup: "A1-GPT-Pro-0.18倍率", accountKeyGroupId: "2", models: [...gpt, "gpt-image-2.5"], tiers: [] },
 ];
 const stale: ModelDescriptor = { id: gpt[0]!, name: gpt[0]!, operations: ["image.generate", "image.edit"],
   parameters: [{ key: "size", label: "old", control: "dimensions", min: 16, max: 3840, step: 16, options: [{ label: "4K · 16:9", value: "3840x2160" }] },
@@ -31,7 +32,43 @@ const stale: ModelDescriptor = { id: gpt[0]!, name: gpt[0]!, operations: ["image
   metadata: { priceStatus: "partial", priceCheckedAt: "2026-09-20", priceLastAttemptStatus: "failed", imageResolutionProfiles: { "4K": { "16:9": "3840x2160" } } } };
 
 describe("C exact official groups preserve open image inputs without borrowed pixel matrices", () => {
-  it("covers all 21 current exact group/full-ID rows and separates actual group tiers from request pixels", () => {
+  it.each([...gpt, "gpt-image-2.5"])("sends current stable Monster 2's complete %s image fields without borrowing B-group measurements", async model => {
+    const config = scopes.at(-1)!, quality = model.includes("2.5") ? "max" : "high";
+    const fetch = vi.fn<FetchImplementation>(async () => Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }));
+    const resolver = new StaticConnectionResolver([{ id: "monster2", provider: "openai", apiKey: "fixture", baseUrl: config.baseUrl,
+      settings: { ...config, accountKeyId: "1957", scannedModelIds: [model] } }]);
+    const adapter = new OpenAIImageAdapter(resolver, { fetch });
+    const parameters = { size: "3840x2160", quality, n: 1 }, snapshot = structuredClone(parameters);
+    await adapter.submit({ connectionId: "monster2", operation: "image.generate", model, prompt: "fixture", idempotencyKey: "mock-only", parameters });
+    expect(parameters).toEqual(snapshot);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(String(fetch.mock.calls[0]![0])).toBe("https://api.eaheng.com/v1/images/generations");
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body))).toMatchObject({ model, ...parameters });
+    const descriptor = applyCOpenImageCapabilities({ provider: "openai", config }, { ...stale, id: model });
+    expect(descriptor.metadata?.imagePixelBudgetPublished).toBe(false);
+    expect(descriptor.metadata?.imageMeasuredAdditionalFields).toBeUndefined();
+    expect(descriptor.parameters?.find(p => p.key === "quality")?.default).toBe(quality);
+    expect(descriptor.parameters?.find(p => p.key === "n")).toMatchObject({ default: 1, min: 1, step: 1 });
+    expect(descriptor.parameters?.find(p => p.key === "n")?.max).toBeUndefined();
+    expect(descriptor.metadata).toMatchObject({ imageAdditionalFieldContract: "not-declared-in-exact-supplier-material",
+      imageCountFieldSource: "existing-application-images-protocol", imageSupplierOutputCountDefault: null });
+    expect(descriptor.parameters?.some(p => p.key === "output_format")).toBe(false);
+    expect(cOpenImageParameterIssues(config, model, { ...parameters, output_format: "png" })).toContainEqual(
+      expect.objectContaining({ path: "parameters.output_format", code: "missing_exact_field_contract" }));
+    expect(cOpenImageParameters(config, model, { ...parameters, output_format: "png" })).not.toHaveProperty("output_format");
+  });
+  it("limits the new Monster 2 correction to its identity and preserves other Monster groups' existing extra fields", () => {
+    const parameters = { size: "3840x2160", quality: "max", n: 1, output_format: "png", background: "transparent" };
+    for (const config of scopes.filter(scope => scope.baseUrl === "https://api.eaheng.com" && scope.accountKeyGroupId !== "2")) {
+      const model = config.models[0]!;
+      expect(cOpenImageParameters(config, model, parameters)).toMatchObject({ output_format: "png", background: "transparent", n: 1 });
+      expect(cOpenImageParameterIssues(config, model, { ...parameters, quality: cOpenImageRoute(config, model)?.quality ?? "max" })).toEqual([]);
+    }
+    const zhiyuan = applyCOpenImageCapabilities({ provider: "openai", config: scopes[0]! }, stale);
+    expect(zhiyuan.parameters?.find(p => p.key === "n")).toMatchObject({ control: "number", default: 1 });
+    expect(cOpenImageParameters(scopes[0]!, gpt[0]!, { size: "3840x2160", quality: "high", n: 1 })).toEqual({ size: "3840x2160", quality: "high", n: 1 });
+  });
+  it("covers all current exact group/full-ID rows and separates actual group tiers from request pixels", () => {
     let count = 0;
     for (const config of scopes) for (const id of config.models) {
       count++;
@@ -47,7 +84,7 @@ describe("C exact official groups preserve open image inputs without borrowed pi
       expect(model.parameters?.find(p => p.key === "size_tier")?.options?.slice(1).map(o => o.value) ?? []).toEqual(config.tiers);
       expect(applyCOpenImageCapabilities({ provider: "openai", config }, model)).toEqual(model);
     }
-    expect(count).toBe(33);
+    expect(count).toBe(37);
   });
 
   it("uses stable identity when present and does not apply same-name unrelated groups or origins", () => {

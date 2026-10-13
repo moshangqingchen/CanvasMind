@@ -118,6 +118,17 @@ const FRIMODEL_EDIT_PARAMETERS: readonly ModelParameterDescriptor[] = [
     description: "FriModel 图片编辑支持 png、jpeg、webp。",
     operations: ["image.generate", "image.edit"],
   },
+  {
+    key: "n",
+    label: "数量（n）",
+    control: "number",
+    valueType: "integer",
+    default: 1,
+    min: 1,
+    step: 1,
+    description: "FriModel Images 指南声明可选整数 n，建议先使用 1；数量上限未公布。1 是应用默认值，显式数量按原值发送。",
+    operations: ["image.generate", "image.edit"],
+  },
 ];
 
 /**
@@ -184,7 +195,8 @@ export function friModelFallbackImageDescriptor(
       pendingLiveScan: true,
       supportsImageEdit: id !== "gpt-image-2.5",
       referenceEditEndpoint: "/v1/images/edits",
-      fixedOutputCount: 1,
+      imageCountFieldSource: "https://ai-doc.apifox.cn/9077234m0.md",
+      imageCountDefaultSource: "application-preference",
       ...(group ? { modelGroup: group } : {}),
     },
   };

@@ -76,6 +76,7 @@ function nativeContract(connection: Connection, model: ModelDescriptor): ModelDe
       baseUrl: connection.config.baseUrl,
       manualProtocol: connection.config.manualProtocol,
       group: String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? ""),
+      officialGroupId: typeof connection.config.accountKeyGroupId === "string" || typeof connection.config.accountKeyGroupId === "number" ? connection.config.accountKeyGroupId : undefined,
       groupDescription: String(connection.config.supplierGroupDescription ?? connection.config.groupDescription ?? ""),
     });
     if (descriptor) {

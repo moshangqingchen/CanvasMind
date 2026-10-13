@@ -150,7 +150,7 @@ describe("supplier settings boundaries", () => {
   );
 
   it("offers model-specific protocols without dividing API Keys by legacy purpose", () => {
-    const chatProtocols = ["chat-completions", "responses", "anthropic-messages", "google-generate-content", "xai-responses", "generic-openai-compatible"];
+    const chatProtocols = ["chat-completions", "responses", "google-generate-content", "xai-responses", "generic-openai-compatible"];
     expect(manualModelProtocols("openai", "canvas")).toEqual(["openai-images", ...chatProtocols]);
     expect(manualModelProtocols("rest", "canvas")).toEqual(chatProtocols);
     const restConfig = {

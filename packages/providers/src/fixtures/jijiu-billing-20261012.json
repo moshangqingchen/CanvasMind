@@ -1,0 +1,1499 @@
+{
+  "auto_groups": [
+    "default",
+    "图片-GPT-image-2/2.5-1K",
+    "图片-GPT-image-2-2K/4K",
+    "图片-香蕉Pro1K/2K/4K",
+    "视频SD2.0",
+    "视频SD2.5",
+    "视频-MnimaxH3",
+    "ChatGPT-Pro稳定号池",
+    "视频WAN3",
+    "稳定满血视频模型",
+    "音频音乐生成模型"
+  ],
+  "data": [
+    {
+      "model_name": "Lyria-3pro音频音乐",
+      "description": "音乐生成模型（Lyria 3 Pro）：可根据文字描述或图片创作歌曲与背景纯音乐，生成演唱、伴奏及包含主歌、副歌等段落的完整曲目，单曲最长约3分钟；提示词最多10000字符。适合短视频配乐、短剧背景音乐和歌曲创作。按次计费 ¥0.5/次",
+      "icon": "Suno",
+      "tags": "音乐模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "音频音乐生成模型"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-response",
+        "openai-response-compact",
+        "anthropic",
+        "gemini",
+        "openai-alpha-search"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", fixed(0.5))",
+      "pricing_version": "5a90f2b86c08bd983a9a2e6d66c255f4eaef9c4bc934386d2b6ae84ef0ff1f1f"
+    },
+    {
+      "model_name": "SD2.5特价900线路一",
+      "description": "视频生成：支持 9 张参考图（不支持参考视频/音频），720P；5-30 秒；按次计费 ¥1/次",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 1,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "视频SD2.5"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "5s",
+          "facts": {
+            "seconds": 5
+          }
+        },
+        {
+          "label": "15s",
+          "facts": {
+            "seconds": 15
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "gpt-image-2.5",
+      "description": "GPT Image 2 /2.5，固定 1K",
+      "icon": "OpenAI",
+      "tags": "图片模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 2,
+      "enable_groups": [
+        "图片-GPT-image-2/2.5-1K",
+        "default"
+      ],
+      "supported_endpoint_types": [
+        "image-generation",
+        "openai",
+        "openai-response",
+        "openai-response-compact",
+        "anthropic",
+        "gemini",
+        "openai-alpha-search"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", fixed(0.06))"
+    },
+    {
+      "model_name": "gpt-5.5",
+      "icon": "OpenAI",
+      "tags": "语言模型",
+      "quota_type": 0,
+      "model_ratio": 2.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 6,
+      "cache_ratio": 0.1,
+      "enable_groups": [
+        "ChatGPT-Pro稳定号池"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "len <= 272000 ? tier(\"standard\", p * 5 + c * 30 + cr * 0.5 + cc * 6.25) : tier(\"long_context\", p * 10 + c * 45 + cr * 1 + cc * 12.5)"
+    },
+    {
+      "model_name": "稳定seedance-2.5全参D",
+      "description": "稳定seedance-2.5全能参考，30图10音频10视频，固定720p按秒计费",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "稳定满血视频模型"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", u(\"seconds\") * 0.4)",
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video generation unit price",
+            "zh": "视频生成单价"
+          }
+        },
+        "size": {
+          "enum": [
+            "720x1280",
+            "1280x720",
+            "1792x1024",
+            "1024x1792"
+          ],
+          "description": {
+            "en": "Output video dimensions",
+            "zh": "输出视频尺寸"
+          },
+          "enumLabels": {
+            "1024x1792": {
+              "en": "1024x1792",
+              "zh": "1024x1792"
+            },
+            "1280x720": {
+              "en": "1280x720",
+              "zh": "1280x720"
+            },
+            "1792x1024": {
+              "en": "1792x1024",
+              "zh": "1792x1024"
+            },
+            "720x1280": {
+              "en": "720x1280",
+              "zh": "720x1280"
+            }
+          }
+        }
+      }
+    },
+    {
+      "model_name": "Lyria-3.5音频音乐",
+      "description": "音乐生成模型（Lyria 3.5）：可根据文字描述或图片创作歌曲与背景纯音乐，生成演唱、伴奏及包含主歌、副歌等段落的完整曲目，单曲最长约5分钟；提示词最多10000字符。适合短视频配乐、短剧背景音乐和歌曲创作。按次计费 ¥0.6/次",
+      "icon": "Suno",
+      "tags": "音乐模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "音频音乐生成模型"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-response",
+        "openai-response-compact",
+        "anthropic",
+        "gemini",
+        "openai-alpha-search"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", fixed(0.3))"
+    },
+    {
+      "model_name": "SD2.5特价30-10-10-线路三",
+      "description": "视频生成：满参支持人脸，参考图/视频/音频，720P；4-30 秒；按次计费 ¥5.5/次",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 5.5,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "视频SD2.5"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "5s",
+          "facts": {
+            "seconds": 5
+          }
+        },
+        {
+          "label": "30s",
+          "facts": {
+            "seconds": 30
+          }
+        }
+      ]
+    },
+    {
+      "billing_plugin_variants": [
+        {
+          "plugin_key": "minimaxh3",
+          "plugin_name": "MiniMax H3",
+          "icon": "text:H3",
+          "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0) : u(\"resolution\")==\"768p\" ? tier(\"768P\", u(\"seconds\")*0) : u(\"resolution\")==\"1080p\" ? tier(\"1080P\", u(\"seconds\")*0) : u(\"resolution\")==\"2k-upscale\" ? tier(\"2K超分\", u(\"seconds\")*0) : tier(\"4K超分\", u(\"seconds\")*0)) * (hour(\"Asia/Shanghai\") >= 18 && hour(\"Asia/Shanghai\") < 22 ? 0.9 : 1) * (hour(\"Asia/Shanghai\") >= 22 ? 0.7 : 1)",
+          "billing_mode": "tiered_expr",
+          "billing_usage_schema": {
+            "resolution": {
+              "enum": [
+                "480p",
+                "768p",
+                "1080p",
+                "2k-upscale",
+                "4k-upscale"
+              ],
+              "description": {
+                "en": "Output resolution tier",
+                "zh": "输出分辨率档位"
+              },
+              "enumLabels": {
+                "1080p": {
+                  "en": "1080P",
+                  "zh": "1080P"
+                },
+                "2k-upscale": {
+                  "en": "2K upscale",
+                  "zh": "2K 超分"
+                },
+                "480p": {
+                  "en": "480P",
+                  "zh": "480P"
+                },
+                "4k-upscale": {
+                  "en": "4K upscale",
+                  "zh": "4K 超分"
+                },
+                "768p": {
+                  "en": "768P",
+                  "zh": "768P"
+                }
+              }
+            },
+            "seconds": {
+              "type": "number",
+              "unit": "second",
+              "description": {
+                "en": "Video duration in seconds",
+                "zh": "视频时长（秒）"
+              }
+            }
+          },
+          "billing_usage_examples": [
+            {
+              "label": "768P 5s",
+              "facts": {
+                "resolution": "768p",
+                "seconds": 5
+              }
+            },
+            {
+              "label": "1080P 5s",
+              "facts": {
+                "resolution": "1080p",
+                "seconds": 5
+              }
+            },
+            {
+              "label": "4K 超分 5s",
+              "facts": {
+                "resolution": "4k-upscale",
+                "seconds": 5
+              }
+            }
+          ]
+        }
+      ],
+      "model_name": "MinimaxH3",
+      "description": "文生视频 / 图生视频，支持首帧图、尾帧图与多图参考。\n· 分辨率档位：480P / 768P / 1080P / 2K 超分 / 4K 超分\n· 客户福利：免费使用，所有已开放分辨率、所有支持时长均为 ¥0，不分时段。",
+      "icon": "Minimax.Color",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "视频-MnimaxH3"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0) : u(\"resolution\")==\"768p\" ? tier(\"768P\", u(\"seconds\")*0) : u(\"resolution\")==\"1080p\" ? tier(\"1080P\", u(\"seconds\")*0) : u(\"resolution\")==\"2k-upscale\" ? tier(\"2K超分\", u(\"seconds\")*0) : tier(\"4K超分\", u(\"seconds\")*0)) * (hour(\"Asia/Shanghai\") >= 18 && hour(\"Asia/Shanghai\") < 22 ? 0.9 : 1) * (hour(\"Asia/Shanghai\") >= 22 ? 0.7 : 1)",
+      "billing_usage_schema": {
+        "resolution": {
+          "enum": [
+            "480p",
+            "768p",
+            "1080p",
+            "2k-upscale",
+            "4k-upscale"
+          ],
+          "description": {
+            "en": "Output resolution tier",
+            "zh": "输出分辨率档位"
+          },
+          "enumLabels": {
+            "1080p": {
+              "en": "1080P",
+              "zh": "1080P"
+            },
+            "2k-upscale": {
+              "en": "2K upscale",
+              "zh": "2K 超分"
+            },
+            "480p": {
+              "en": "480P",
+              "zh": "480P"
+            },
+            "4k-upscale": {
+              "en": "4K upscale",
+              "zh": "4K 超分"
+            },
+            "768p": {
+              "en": "768P",
+              "zh": "768P"
+            }
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "768P 5s",
+          "facts": {
+            "resolution": "768p",
+            "seconds": 5
+          }
+        },
+        {
+          "label": "1080P 5s",
+          "facts": {
+            "resolution": "1080p",
+            "seconds": 5
+          }
+        },
+        {
+          "label": "4K 超分 5s",
+          "facts": {
+            "resolution": "4k-upscale",
+            "seconds": 5
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "gemini-3-pro-image",
+      "description": "Nano Banana Pro 图片生成模型，支持 1K、2K、4K 分辨率和参考图。",
+      "icon": "Gemini.Color",
+      "tags": "图片模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 60,
+      "enable_groups": [
+        "default",
+        "图片-香蕉Pro1K/2K/4K"
+      ],
+      "supported_endpoint_types": [
+        "gemini",
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", fixed(0.1))"
+    },
+    {
+      "model_name": "gpt-5.6-sol",
+      "icon": "OpenAI",
+      "tags": "语言模型",
+      "quota_type": 0,
+      "model_ratio": 2.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 6,
+      "cache_ratio": 0.1,
+      "create_cache_ratio": 1.25,
+      "enable_groups": [
+        "ChatGPT-Pro稳定号池"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "len <= 272000 ? tier(\"standard\", p * 5 + c * 30 + cr * 0.5 + cc * 6.25) : tier(\"long_context\", p * 10 + c * 45 + cr * 1 + cc * 12.5)"
+    },
+    {
+      "model_name": "gpt-6-astra",
+      "icon": "OpenAI",
+      "tags": "语言模型",
+      "quota_type": 0,
+      "model_ratio": 5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 5,
+      "cache_ratio": 0.1,
+      "enable_groups": [
+        "ChatGPT-Pro稳定号池"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "len <= 272000 ? tier(\"standard\", p * 10 + c * 50 + cr * 1 + cc * 12.5) : tier(\"long_context\", p * 20 + c * 75 + cr * 2 + cc * 25)"
+    },
+    {
+      "model_name": "稳定seedance-2.5全参E",
+      "description": "视频生成：稳定seedance-2.5全能参考，30图10音频10视频，支持480P、720p，按分辨率按秒计费",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "稳定满血视频模型"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0.25) : tier(\"720P\", u(\"seconds\")*0.45))",
+      "billing_usage_schema": {
+        "resolution": {
+          "enum": [
+            "480p",
+            "720p"
+          ],
+          "description": {
+            "en": "Output resolution tier",
+            "zh": "输出分辨率档位"
+          },
+          "enumLabels": {
+            "480p": {
+              "en": "480P",
+              "zh": "480P"
+            },
+            "720p": {
+              "en": "720P",
+              "zh": "720P"
+            }
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "480P 5s",
+          "facts": {
+            "resolution": "480p",
+            "seconds": 5
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "SD2.5特价30-10线路二",
+      "description": "视频生成：支持 30 张参考图 + 10 个参考视频 + 10 个参考音频，720P；5-30 秒；按次计费 ¥1.3/次",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 1.3,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "视频SD2.5"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "5s",
+          "facts": {
+            "seconds": 5
+          }
+        },
+        {
+          "label": "15s",
+          "facts": {
+            "seconds": 15
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "gpt-image-2-2K/4K",
+      "description": "GPT-Image2，支持 1K/2K/4K；支持参考图生图",
+      "icon": "OpenAI",
+      "tags": "图片模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 2,
+      "enable_groups": [
+        "图片-GPT-image-2-2K/4K",
+        "default"
+      ],
+      "supported_endpoint_types": [
+        "image-generation",
+        "openai",
+        "openai-response",
+        "openai-response-compact",
+        "anthropic",
+        "gemini",
+        "openai-alpha-search"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", fixed(0.1))"
+    },
+    {
+      "model_name": "wan3.0-video-prime",
+      "description": "视频生成：反阿里云官链，支持480、720、1080P分档定价，支持2-30s文生图生视频生成，10图5音频5视频；如若参考视频，参考视频+输出视频最高30s，计费规则为参考视频+输出视频计费",
+      "icon": "Wan",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "视频WAN3"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0.24) : u(\"resolution\")==\"1080p\" ? tier(\"1080P\", u(\"seconds\")*0.34) : tier(\"720P\", u(\"seconds\")*0.29))",
+      "billing_usage_schema": {
+        "resolution": {
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "description": {
+            "en": "Output resolution tier",
+            "zh": "输出分辨率档位"
+          },
+          "enumLabels": {
+            "1080p": {
+              "en": "1080P",
+              "zh": "1080P"
+            },
+            "480p": {
+              "en": "480P",
+              "zh": "480P"
+            },
+            "720p": {
+              "en": "720P",
+              "zh": "720P"
+            }
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "480P 5s",
+          "facts": {
+            "resolution": "480p",
+            "seconds": 5
+          }
+        },
+        {
+          "label": "720P 5s",
+          "facts": {
+            "resolution": "720p",
+            "seconds": 5
+          }
+        },
+        {
+          "label": "1080P 5s",
+          "facts": {
+            "resolution": "1080p",
+            "seconds": 5
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "满血seedance-2.5全参A",
+      "description": "满血seedance-2.5全能参考，30图10音频，暂不支持视频参考，支持480、720、1080p按次计费带数字水印，全分辨率",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "稳定满血视频模型"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"videos\")*12) : u(\"resolution\")==\"720p\" ? tier(\"720P\", u(\"videos\")*16) : tier(\"1080P\", u(\"videos\")*22))",
+      "billing_usage_schema": {
+        "resolution": {
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "description": {
+            "en": "Output resolution tier",
+            "zh": "输出分辨率档位"
+          },
+          "enumLabels": {
+            "1080p": {
+              "en": "1080P",
+              "zh": "1080P"
+            },
+            "480p": {
+              "en": "480P",
+              "zh": "480P"
+            },
+            "720p": {
+              "en": "720P",
+              "zh": "720P"
+            }
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        },
+        "videos": {
+          "type": "number",
+          "unit": "count",
+          "unitLabel": {
+            "en": "call",
+            "zh": "次"
+          },
+          "description": {
+            "en": "Per call",
+            "zh": "每次生成"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "720P · 按次",
+          "facts": {
+            "resolution": "720p",
+            "seconds": 5,
+            "videos": 1
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "SD2.0满血稳定933-线路一",
+      "description": "视频生成：支持 9 张参考图 + 3 个参考视频+3音频，720P；原生过真人不卡脸，可生成 4-15 秒。按次计费 ¥2.6/次",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 2.6,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "视频SD2.0"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "15s",
+          "facts": {
+            "seconds": 15
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "gpt-6.1-sol",
+      "description": "GPT-6.1 Sol",
+      "icon": "OpenAI",
+      "tags": "语言模型",
+      "quota_type": 0,
+      "model_ratio": 1,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 5,
+      "cache_ratio": 0.1,
+      "enable_groups": [
+        "ChatGPT-Pro稳定号池"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "len <= 272000 ? tier(\"standard\", p * 2 + c * 10 + cr * 0.2 + cc * 2.5) : tier(\"long_context\", p * 4 + c * 15 + cr * 0.4 + cc * 5)"
+    },
+    {
+      "model_name": "SD2.0满血稳定933-线路二",
+      "description": "视频生成：支持 9 张参考图 + 3 个参考视频 + 3 个参考音频，720P；原生过真人不卡脸，可生成 5-15 秒。",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "视频SD2.0"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", u(\"seconds\") * 0.2)",
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "15s",
+          "facts": {
+            "seconds": 15
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "SD2.0mini稳定900B",
+      "description": "视频生成：支持 9 张参考图可生成 4-15 秒。按次计费 ¥1.5/次",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 1.5,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "视频SD2.0"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_usage_schema": {
+        "resolution": {
+          "enum": [
+            "720p",
+            "480p"
+          ],
+          "description": {
+            "en": "Output resolution tier",
+            "zh": "输出分辨率档位"
+          },
+          "enumLabels": {
+            "480p": {
+              "en": "480P",
+              "zh": "480P"
+            },
+            "720p": {
+              "en": "720P",
+              "zh": "720P"
+            }
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        },
+        "videos": {
+          "type": "number",
+          "unit": "count",
+          "unitLabel": {
+            "en": "call",
+            "zh": "次"
+          },
+          "description": {
+            "en": "Per call",
+            "zh": "每次生成"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "720P · 按次",
+          "facts": {
+            "resolution": "720p",
+            "seconds": 5,
+            "videos": 1
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "满血seedance-2.5全参B",
+      "description": "满血seedance-2.5全能参考，30图10音频，暂不支持视频参考。支持480、720p按秒计费带数字水印，暂不支持1080p",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "稳定满血视频模型"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0.5) : tier(\"720P\", u(\"seconds\")*0.7))",
+      "billing_usage_schema": {
+        "resolution": {
+          "enum": [
+            "480p",
+            "720p"
+          ],
+          "description": {
+            "en": "Output resolution tier",
+            "zh": "输出分辨率档位"
+          },
+          "enumLabels": {
+            "480p": {
+              "en": "480P",
+              "zh": "480P"
+            },
+            "720p": {
+              "en": "720P",
+              "zh": "720P"
+            }
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "720P 5s · 按秒",
+          "facts": {
+            "resolution": "720p",
+            "seconds": 5
+          }
+        }
+      ]
+    },
+    {
+      "billing_plugin_variants": [
+        {
+          "plugin_key": "minimaxh3",
+          "plugin_name": "MiniMax H3",
+          "icon": "text:H3",
+          "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0) : u(\"resolution\")==\"768p\" ? tier(\"768P\", u(\"seconds\")*0) : u(\"resolution\")==\"1080p\" ? tier(\"1080P(不支持，按768P计)\", u(\"seconds\")*0) : u(\"resolution\")==\"2k-upscale\" ? tier(\"2K超分\", u(\"seconds\")*0) : tier(\"4K超分\", u(\"seconds\")*0)) * (hour(\"Asia/Shanghai\") >= 18 && hour(\"Asia/Shanghai\") < 22 ? 0.9 : 1) * (hour(\"Asia/Shanghai\") >= 22 ? 0.6 : 1)",
+          "billing_mode": "tiered_expr",
+          "billing_usage_schema": {
+            "resolution": {
+              "enum": [
+                "480p",
+                "768p",
+                "1080p",
+                "2k-upscale",
+                "4k-upscale"
+              ],
+              "description": {
+                "en": "Output resolution tier",
+                "zh": "输出分辨率档位"
+              },
+              "enumLabels": {
+                "1080p": {
+                  "en": "1080P",
+                  "zh": "1080P"
+                },
+                "2k-upscale": {
+                  "en": "2K upscale",
+                  "zh": "2K 超分"
+                },
+                "480p": {
+                  "en": "480P",
+                  "zh": "480P"
+                },
+                "4k-upscale": {
+                  "en": "4K upscale",
+                  "zh": "4K 超分"
+                },
+                "768p": {
+                  "en": "768P",
+                  "zh": "768P"
+                }
+              }
+            },
+            "seconds": {
+              "type": "number",
+              "unit": "second",
+              "description": {
+                "en": "Video duration in seconds",
+                "zh": "视频时长（秒）"
+              }
+            }
+          },
+          "billing_usage_examples": [
+            {
+              "label": "768P 5s",
+              "facts": {
+                "resolution": "768p",
+                "seconds": 5
+              }
+            },
+            {
+              "label": "2K 超分 5s",
+              "facts": {
+                "resolution": "2k-upscale",
+                "seconds": 5
+              }
+            }
+          ]
+        }
+      ],
+      "model_name": "Minimax漫剧优化版",
+      "description": "漫剧 / 短剧特供视频生成，画面按剧情叙事优化，出图更贴角色与分镜。支持首帧图、尾帧图与多图参考。\n· 分辨率档位：480P / 768P / 2K 超分 / 4K 超分（1080P 本线未开放，将按 768P 出片）\n· 客户福利：免费使用，所有已开放分辨率、所有支持时长均为 ¥0，不分时段。",
+      "icon": "Minimax.Color",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "视频-MnimaxH3"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0) : u(\"resolution\")==\"768p\" ? tier(\"768P\", u(\"seconds\")*0) : u(\"resolution\")==\"1080p\" ? tier(\"1080P\", u(\"seconds\")*0) : u(\"resolution\")==\"2k-upscale\" ? tier(\"2K超分\", u(\"seconds\")*0) : tier(\"4K超分\", u(\"seconds\")*0)) * (hour(\"Asia/Shanghai\") >= 18 && hour(\"Asia/Shanghai\") < 22 ? 0.9 : 1) * (hour(\"Asia/Shanghai\") >= 22 ? 0.6 : 1)",
+      "billing_usage_schema": {
+        "resolution": {
+          "enum": [
+            "480p",
+            "768p",
+            "1080p",
+            "2k-upscale",
+            "4k-upscale"
+          ],
+          "description": {
+            "en": "Output resolution tier",
+            "zh": "输出分辨率档位"
+          },
+          "enumLabels": {
+            "1080p": {
+              "en": "1080P",
+              "zh": "1080P"
+            },
+            "2k-upscale": {
+              "en": "2K upscale",
+              "zh": "2K 超分"
+            },
+            "480p": {
+              "en": "480P",
+              "zh": "480P"
+            },
+            "4k-upscale": {
+              "en": "4K upscale",
+              "zh": "4K 超分"
+            },
+            "768p": {
+              "en": "768P",
+              "zh": "768P"
+            }
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "768P 5s",
+          "facts": {
+            "resolution": "768p",
+            "seconds": 5
+          }
+        },
+        {
+          "label": "2K 超分 5s",
+          "facts": {
+            "resolution": "2k-upscale",
+            "seconds": 5
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "gemini-3.1-flash-image",
+      "description": "Nano Banana Pro 图片生成模型，支持 1K、2K、4K 分辨率和参考图。",
+      "icon": "Gemini.Color",
+      "tags": "图片模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 4,
+      "enable_groups": [
+        "default",
+        "图片-香蕉Pro1K/2K/4K"
+      ],
+      "supported_endpoint_types": [
+        "gemini",
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", fixed(0.1))"
+    },
+    {
+      "model_name": "SD2.0fast稳定900D",
+      "description": "视频生成：支持 9 张参考图 ，720P；不卡脸，时长仅 5/10/15 秒三档。按次计费 ¥0.9/次",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.9,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "视频SD2.0"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "15s",
+          "facts": {
+            "seconds": 15
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "gemini-nano-banana-2.1",
+      "description": "Nano Banana 2.1 图片生成模型，支持 1K、2K、4K 分辨率和参考图。",
+      "icon": "Gemini.Color",
+      "tags": "图片模型",
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.07,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "图片-香蕉Pro1K/2K/4K"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", fixed(0.1))"
+    },
+    {
+      "model_name": "gpt-image-2",
+      "description": "GPT Image 2 /2.5，固定 1K",
+      "icon": "OpenAI",
+      "tags": "图片模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 2,
+      "enable_groups": [
+        "default",
+        "图片-GPT-image-2/2.5-1K"
+      ],
+      "supported_endpoint_types": [
+        "image-generation",
+        "openai",
+        "openai-response",
+        "openai-response-compact",
+        "anthropic",
+        "gemini",
+        "openai-alpha-search"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"standard\", fixed(0.06))"
+    },
+    {
+      "model_name": "gpt-image-2.5-sunburst",
+      "description": "GPT Image 2 /2.5，固定 1K",
+      "icon": "OpenAI",
+      "tags": "图片模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 2,
+      "enable_groups": [
+        "default",
+        "图片-GPT-image-2/2.5-1K"
+      ],
+      "supported_endpoint_types": [
+        "image-generation",
+        "openai",
+        "openai-response",
+        "openai-response-compact",
+        "anthropic",
+        "gemini",
+        "openai-alpha-search"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"standard\", fixed(0.06))"
+    },
+    {
+      "model_name": "wan3.0-video",
+      "description": "视频生成：反阿里云官链，支持480、720、1080P分档定价，支持2-30s文生图生视频生成，10图5音频5视频；如若参考视频，参考视频+输出视频最高30s，计费规则为参考视频+输出视频计费",
+      "icon": "Wan",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "视频WAN3"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0.20) : u(\"resolution\")==\"1080p\" ? tier(\"1080P\", u(\"seconds\")*0.30) : tier(\"720P\", u(\"seconds\")*0.25))",
+      "billing_usage_schema": {
+        "resolution": {
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "description": {
+            "en": "Output resolution tier",
+            "zh": "输出分辨率档位"
+          },
+          "enumLabels": {
+            "1080p": {
+              "en": "1080P",
+              "zh": "1080P"
+            },
+            "480p": {
+              "en": "480P",
+              "zh": "480P"
+            },
+            "720p": {
+              "en": "720P",
+              "zh": "720P"
+            }
+          }
+        },
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "480P 5s",
+          "facts": {
+            "resolution": "480p",
+            "seconds": 5
+          }
+        },
+        {
+          "label": "720P 5s",
+          "facts": {
+            "resolution": "720p",
+            "seconds": 5
+          }
+        },
+        {
+          "label": "1080P 5s",
+          "facts": {
+            "resolution": "1080p",
+            "seconds": 5
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "稳定seedance-2.5参图参音F",
+      "description": "稳定seedance-2.5，支持30图10音频，按秒计费，输出视频时长最长4-29s",
+      "icon": "Jimeng.Color",
+      "tags": "视频模型",
+      "quota_type": 0,
+      "model_ratio": 37.5,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 1,
+      "enable_groups": [
+        "稳定满血视频模型"
+      ],
+      "supported_endpoint_types": [
+        "openai",
+        "openai-video"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "tier(\"base\", u(\"seconds\") * 0.4)",
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "5s",
+          "facts": {
+            "seconds": 5
+          }
+        },
+        {
+          "label": "29s",
+          "facts": {
+            "seconds": 29
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "MinimaxH3特价版",
+      "description": "文生视频 / 图生视频，支持首帧图、尾帧图与多图参考。· 分辨率档位 2K，可生成 4-15 秒，按次计费 ￥1/次",
+      "icon": "Minimax.Color",
+      "tags": "视频模型",
+      "quota_type": 1,
+      "model_ratio": 0,
+      "model_price": 0.8,
+      "owner_by": "",
+      "completion_ratio": 0,
+      "enable_groups": [
+        "视频-MnimaxH3"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_usage_schema": {
+        "seconds": {
+          "type": "number",
+          "unit": "second",
+          "description": {
+            "en": "Video duration in seconds",
+            "zh": "视频时长（秒）"
+          }
+        }
+      },
+      "billing_usage_examples": [
+        {
+          "label": "15s",
+          "facts": {
+            "seconds": 15
+          }
+        }
+      ]
+    },
+    {
+      "model_name": "gpt-6-sol",
+      "description": "GPT-6 Sol",
+      "icon": "OpenAI",
+      "tags": "语言模型",
+      "quota_type": 0,
+      "model_ratio": 1,
+      "model_price": 0,
+      "owner_by": "",
+      "completion_ratio": 5,
+      "cache_ratio": 0.1,
+      "enable_groups": [
+        "ChatGPT-Pro稳定号池"
+      ],
+      "supported_endpoint_types": [
+        "openai"
+      ],
+      "billing_mode": "tiered_expr",
+      "billing_expr": "len <= 272000 ? tier(\"standard\", p * 2 + c * 10 + cr * 0.2 + cc * 2.5) : tier(\"long_context\", p * 4 + c * 15 + cr * 0.4 + cc * 5)"
+    }
+  ],
+  "group_ratio": {
+    "ChatGPT-Pro稳定号池": 0.18,
+    "auto": 1,
+    "default": 1,
+    "图片-GPT-image-2-2K/4K": 1,
+    "图片-GPT-image-2/2.5-1K": 1,
+    "图片-香蕉Pro1K/2K/4K": 1,
+    "稳定满血视频模型": 1,
+    "视频-MnimaxH3": 1,
+    "视频SD2.0": 1,
+    "视频SD2.5": 1,
+    "视频WAN3": 1,
+    "音频音乐生成模型": 1
+  },
+  "pricing_version": "a42d372ccf0b5dd13ecf71203521f9d2",
+  "success": true,
+  "supported_endpoint": {
+    "anthropic": {
+      "path": "/v1/messages",
+      "method": "POST"
+    },
+    "gemini": {
+      "path": "/v1beta/models/{model}:generateContent",
+      "method": "POST"
+    },
+    "image-generation": {
+      "path": "/v1/images/generations",
+      "method": "POST"
+    },
+    "openai": {
+      "path": "/v1/chat/completions",
+      "method": "POST"
+    },
+    "openai-alpha-search": {
+      "path": "/v1/alpha/search",
+      "method": "POST"
+    },
+    "openai-response": {
+      "path": "/v1/responses",
+      "method": "POST"
+    },
+    "openai-response-compact": {
+      "path": "/v1/responses/compact",
+      "method": "POST"
+    },
+    "openai-video": {
+      "path": "/v1/video/generations",
+      "method": "POST"
+    }
+  },
+  "usable_group": {
+    "ChatGPT-Pro稳定号池": "ChatGPT-Pro稳定号池（0.18x）",
+    "auto": "自动（按分组顺序选）",
+    "default": "默认分组",
+    "图片-GPT-image-2-2K/4K": "",
+    "图片-GPT-image-2/2.5-1K": "",
+    "图片-香蕉Pro1K/2K/4K": "",
+    "稳定满血视频模型": "",
+    "视频-MnimaxH3": "",
+    "视频SD2.0": "",
+    "视频SD2.5": "",
+    "视频WAN3": "",
+    "音频音乐生成模型": ""
+  },
+  "vendors": []
+}

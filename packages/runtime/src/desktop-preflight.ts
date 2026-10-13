@@ -1,6 +1,7 @@
 import type { WorkflowGraph } from "@super-canvas/core";
 import { getImageEditingCapabilities, restRequestRequiresPublicAssets, referenceImageHostingEnabled, secureSkillRequiresPublicAssets, bananaRequiresPublicAssets, chuangxiangRequiresPublicAssets, chuangxiangMidjourneyRequiresPublicAssets } from "@super-canvas/providers";
 import { localReferenceChannel, localReferenceChannelConfigured } from "./reference-channel.js";
+import { cangyuanOwnMediaUploadAvailable } from "@super-canvas/providers";
 
 export class DesktopPublicAssetError extends Error {
   readonly code = "DESKTOP_PUBLIC_ASSETS_UNAVAILABLE";
@@ -52,6 +53,7 @@ export function assertDesktopPublicAssets(graph: WorkflowGraph, selected: Readon
     if (!localReferenceChannelConfigured() && referenceImageHostingEnabled(connection?.config)) continue;
     const operation = (data.nodeType ?? node.type) === "image-generation" ? "image.edit" : "video.image-to-video";
     const model = typeof data.model === "string" && data.model ? data.model : connection?.config?.defaultModel;
+    if (cangyuanOwnMediaUploadAvailable(provider, connection?.config, model, operation)) continue;
     const parameters = data.parameters && typeof data.parameters === "object" ? data.parameters as Record<string, unknown> : {};
     const urlMask = parameters.maskAssetId && getImageEditingCapabilities({ provider, config: connection?.config ?? {} }, model ?? "", parameters).mask === "url";
     if (!(provider === "rest" && restRequestRequiresPublicAssets(connection?.config?.connector, model, operation, connection?.config)) &&

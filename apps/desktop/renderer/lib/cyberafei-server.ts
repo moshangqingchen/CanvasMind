@@ -157,9 +157,7 @@ function configForLiveScan(
     config.usage = "agent";
     config.baseUrl = connection.config.baseUrl;
     config.allowedModels = allowedModels;
-    config.defaultModel = allowedModels.includes(configuredDefault)
-      ? configuredDefault
-      : (allowedModels[0] ?? "");
+    config.defaultModel = configuredDefault || (allowedModels[0] ?? "");
     delete config.connector;
     delete config.disabledReason;
     delete config.requestTimeoutMs;
@@ -173,11 +171,7 @@ function configForLiveScan(
         : "";
     config.usage = "canvas";
     config.baseUrl = connection.config.baseUrl;
-    config.defaultModel = canvasModels.some(
-      (model) => model.id === configuredDefault,
-    )
-      ? configuredDefault
-      : cyberAfeiDefaultModelForGroup(group, canvasModels);
+    config.defaultModel = configuredDefault || cyberAfeiDefaultModelForGroup(group, canvasModels);
     config.requestTimeoutMs = 300_000;
     config.connector = cyberAfeiConnectorForGroup(
       group,
@@ -193,11 +187,7 @@ function configForLiveScan(
     config.usage = "agent";
     config.baseUrl = connection.config.baseUrl;
     config.allowedModels = allowedModels;
-    config.defaultModel = allowedModels.includes(
-      typeof connection.config.defaultModel === "string"
-        ? connection.config.defaultModel
-        : "",
-    )
+    config.defaultModel = typeof connection.config.defaultModel === "string" && connection.config.defaultModel
       ? connection.config.defaultModel
       : (allowedModels[0] ?? "");
     delete config.connector;
@@ -215,7 +205,8 @@ function configForLiveScan(
         ? `已扫描到 ${scan.modelIds.length} 个模型，但尚无已验证的画布生成协议`
         : "当前分组未扫描到可运行模型";
   delete config.connector;
-  delete config.defaultModel;
+  // Keep the saved choice even when the current Key has no runnable models.
+  // Availability and submission permission checks still reject unavailable IDs.
   delete config.allowedModels;
   delete config.requestTimeoutMs;
   return config;

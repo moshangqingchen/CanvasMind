@@ -53,6 +53,19 @@ const asyncConfig: RestConnectorConfig = {
 };
 
 describe("GenericRestAdapter", () => {
+  it("keeps the image submit request ID across free polling without replacing its native task ID",async()=>{
+    const fetcher=vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({job:{id:"native-task",state:"ACCEPTED"},request_id:"req-body-submit"},
+      {headers:{"x-request-id":"req-header-submit"}})).mockResolvedValueOnce(Response.json({job:{state:"COMPLETE"}},
+      {headers:{"x-request-id":"req-free-poll"}}));
+    const adapter=new GenericRestAdapter(new StaticConnectionResolver([{id:"current",provider:"rest",apiKey:"fixture",baseUrl:"https://provider.test",settings:{connector:asyncConfig}}]),{fetch:fetcher});
+    const task=await adapter.submit({connectionId:"current",operation:"image.generate",prompt:"fixture",idempotencyKey:"local-key"});
+    expect(task.providerTaskId).toBe("native-task");
+    const polled=await adapter.poll(task);
+    expect(polled.providerTaskId).toBe("native-task");
+    expect(polled.result).toMatchObject({upstreamRequestEvidence:{requestIds:["req-header-submit","req-body-submit"]}});
+    expect(JSON.stringify((polled.result as Record<string,unknown>).upstreamRequestEvidence)).not.toContain("req-free-poll");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it("downloads authenticated content only for a succeeded task with its exact native id", async () => {
     const config: RestConnectorConfig = { ...asyncConfig, output: { ...asyncConfig.output,
       contentFallback: { path: "/jobs/{taskId}/content" } } };

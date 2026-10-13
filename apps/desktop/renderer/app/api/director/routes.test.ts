@@ -87,13 +87,13 @@ describe("director profile route", () => {
       configured: true,
       connected: true,
       brainConnectionId: "brain-1",
-      brainModelId: "claude-test",
+      brainModelId: "gemini-test",
     });
     const response = await patchProfile(
       jsonRequest("http://localhost/api/director/profile", "PATCH", {
         brainConnectionId: "brain-1",
-        brainModelId: "claude-test",
-        protocol: "anthropic-messages",
+        brainModelId: "gemini-test",
+        protocol: "google-generate-content",
       }),
     );
 
@@ -101,7 +101,7 @@ describe("director profile route", () => {
     expect(await response.json()).toEqual({
       profile: expect.objectContaining({
         brainConnectionId: "brain-1",
-        brainModelId: "claude-test",
+        brainModelId: "gemini-test",
       }),
     });
   });

@@ -37,6 +37,19 @@ export function supplierImageMenuContract(
   } catch { return model; }
   if (["api.frimodel.com", "platform.frimodel.com"].includes(host) && connection.provider !== "openai") return model;
   const group = String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "");
+  if (["api.frimodel.com", "platform.frimodel.com"].includes(host)) {
+    const countContract = friModelFallbackImageDescriptor(model.id, group);
+    const count = countContract?.parameters?.find(parameter => parameter.key === "n");
+    if (count) {
+      // Earlier automatic descriptors labelled all Fri Images as fixed one
+      // output, although the current guide declares an open integer n. Remove
+      // that stale automatic restriction before historical size enrichment.
+      const metadata: Record<string, unknown> = { ...model.metadata, imageCountFieldSource: countContract!.metadata?.imageCountFieldSource,
+        imageCountDefaultSource: "application-preference" };
+      delete metadata.fixedOutputCount;
+      model = { ...model, parameters: [...(model.parameters ?? []).filter(parameter => parameter.key !== "n"), count], metadata };
+    }
+  }
   if (host === "tu.988236.xyz" && group === "grok生图" &&
       ["grok-imagine-image", "grok-imagine-image-2.0", "grok-imagine-image-2.0福利"].includes(model.id) && !model.metadata?.imageSizeCapabilitiesSource) {
     // The supplier's API docs require its keyed capability response for exact

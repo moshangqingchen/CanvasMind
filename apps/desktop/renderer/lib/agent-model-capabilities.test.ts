@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProviderConnectionRecord } from "@super-canvas/db";
 import { scanProviderModelCatalog, type ModelDescriptor } from "@super-canvas/providers";
-import { agentModelEvidenceFingerprint, createAgentModelEvidence, isAgentTextModel, modelAgentProtocol, resolveAgentCapabilities } from "./agent-model-capabilities";
+import { agentModelEvidenceFingerprint, createAgentModelEvidence, isAgentTextModel, modelAgentProtocol, normalizeAgentProtocol, officialAgentReasoning, resolveAgentCapabilities } from "./agent-model-capabilities";
 
 const connection = (config: Record<string, unknown> = {}): ProviderConnectionRecord => ({
   id: "key-one", name: "Group key", provider: "rest", encryptedSecret: "encrypted-test-key",
@@ -163,41 +163,22 @@ describe("model capability evidence", () => {
     expect(resolveAgentCapabilities(connection(), modelId).reasoningOptions.map(option => option.value)).toEqual(["auto"]);
   });
 
-  it.each([
-    ["claude-opus-4-5", ["low", "medium", "high"]],
-    ["claude-opus-4-5-20251101", ["low", "medium", "high"]],
-    ["claude-opus-4-6", ["low", "medium", "high", "max"]],
-    ["claude-sonnet-4-6", ["low", "medium", "high", "max"]],
-    ["claude-opus-4-7", ["low", "medium", "high", "xhigh", "max"]],
-    ["claude-opus-4-8", ["low", "medium", "high", "xhigh", "max"]],
-    ["claude-opus-5", ["low", "medium", "high", "xhigh", "max"]],
-    ["claude-sonnet-5", ["low", "medium", "high", "xhigh", "max"]],
-    ["claude-fable-5", ["low", "medium", "high", "xhigh", "max"]],
-    ["claude-fable-5-1", ["low", "medium", "high", "xhigh", "max"]],
-  ] as const)("offers documented native Messages efforts for %s", (modelId, options) => {
-    const result = resolveAgentCapabilities(connection({ protocol: "anthropic-messages" }), modelId);
-    expect(result.reasoningOptions.map(option => option.value)).toEqual(["auto", ...options]);
-    expect(result).toMatchObject({ reasoningSource: "official-model", reasoningFallback: { sourceUrl: "https://platform.claude.com/docs/en/build-with-claude/effort" }, capabilities: { reasoning: true } });
+  it("does not recognize the removed Messages protocol", () => {
+    expect(normalizeAgentProtocol("anthropic-messages")).toBeUndefined();
   });
 
-  it("supplements exact Sonnet 5.5 with official efforts while preserving the channel protocol and restrictions", () => {
-    const modelId = "claude-sonnet-5-5";
-    const c = connection({ protocol: undefined });
-    const result = resolveAgentCapabilities(c, modelId);
-    expect(result).toMatchObject({
-      protocol: "anthropic-messages", reasoningSource: "official-model",
-      reasoningFallback: { sourceUrl: "https://platform.claude.com/docs/en/build-with-claude/effort", checkedAt: "2026-10-01" },
-    });
-    expect(result.reasoningOptions.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
-    expect(modelAgentProtocol(connection({ protocol: "chat-completions" }), modelId)).toBe("openai-chat-completions");
-    const declared = descriptor(modelId, { reasoningOptions: ["high"], agentProtocol: "chat-completions" });
-    const channel = resolveAgentCapabilities(c, modelId, declared);
-    expect(channel).toMatchObject({ protocol: "openai-chat-completions", reasoningSource: "provider-catalog" });
-    expect(channel.reasoningOptions.map(option => option.value)).toEqual(["auto", "high"]);
-    expect(channel.reasoningFallback).toBeUndefined();
-    c.config.agentRuntimeProfiles = { [modelId]: { fingerprint: agentModelEvidenceFingerprint(c), unsupportedReasoningEfforts: ["max"] } };
-    expect(resolveAgentCapabilities(c, modelId).reasoningOptions.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh"]);
-    expect(resolveAgentCapabilities(c, "claude-sonnet-5-5-fast").reasoningOptions.map(option => option.value)).toEqual(["auto"]);
+  it.each(["claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-4-5-20251101", "claude-haiku-4-5-20251001"])("does not restore a dedicated official reasoning fallback for removed %s models", modelId => {
+    expect(officialAgentReasoning(modelId)).toBeUndefined();
+    const c = connection({ protocol: "chat-completions" });
+    const undeclared = resolveAgentCapabilities(c, modelId);
+    expect(undeclared.reasoningOptions.map(option => option.value)).toEqual(["auto"]);
+    expect(undeclared.reasoningFallback).toBeUndefined();
+    expect(undeclared.capabilities.reasoning).toBe(false);
+    const declared = descriptor(modelId, { reasoningOptions: ["high"] });
+    const result = resolveAgentCapabilities(c, modelId, declared);
+    expect(result).toMatchObject({ protocol: "openai-chat-completions", reasoningSource: "provider-catalog" });
+    expect(result.reasoningOptions.map(option => option.value)).toEqual(["auto", "high"]);
+    expect(result.reasoningFallback).toBeUndefined();
   });
 
   it.each([
@@ -215,10 +196,8 @@ describe("model capability evidence", () => {
   it("intersects supplier-declared native efforts with adapter parameter support without inventing budgets", () => {
     const model = descriptor("private-model", { reasoningOptions: ["minimal", "low", "high", "xhigh", "max"] });
     expect(resolveAgentCapabilities(connection({ protocol: "google-generate-content" }), model.id, model).reasoningOptions.map(option => option.value)).toEqual(["auto", "minimal", "low", "high"]);
-    expect(resolveAgentCapabilities(connection({ protocol: "anthropic-messages" }), model.id, model).reasoningOptions.map(option => option.value)).toEqual(["auto", "low", "high", "xhigh", "max"]);
     expect(resolveAgentCapabilities(connection({ protocol: "google-generate-content" }), "gemini-2.5-pro", model).reasoningOptions.map(option => option.value)).toEqual(["auto"]);
     expect(resolveAgentCapabilities(connection({ protocol: "google-generate-content" }), "models/gemini-2.5-pro", model).reasoningOptions.map(option => option.value)).toEqual(["auto"]);
-    expect(resolveAgentCapabilities(connection({ protocol: "anthropic-messages" }), "unknown-native").reasoningOptions.map(option => option.value)).toEqual(["auto"]);
   });
 
   it("keeps declared audio chat and exact official audio models while excluding pure audio tasks", () => {

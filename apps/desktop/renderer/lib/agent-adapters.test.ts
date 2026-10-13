@@ -7,7 +7,6 @@ describe("portable agent decisions across channels", () => {
   it.each<DirectorProtocol>([
     "openai-chat-completions",
     "openai-responses",
-    "anthropic-messages",
     "google-generate-content",
     "xai-responses",
     "generic-openai-compatible",
@@ -27,17 +26,7 @@ describe("portable agent decisions across channels", () => {
         vi.fn(async (_url, init) => {
           body = JSON.parse(init.body);
           const payload =
-            protocol === "anthropic-messages"
-              ? {
-                  content: [
-                    {
-                      type: "tool_use",
-                      name: "submit_director_decision",
-                      input: envelope,
-                    },
-                  ],
-                }
-              : protocol === "google-generate-content"
+            protocol === "google-generate-content"
                 ? { candidates: [{ content: { parts: [{ text: output }] } }] }
                 : protocol.includes("responses")
                   ? {

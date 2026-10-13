@@ -15,14 +15,14 @@ function model(
 
 describe("director reasoning options", () => {
   it("keeps unsupported models on automatic effort", () => {
-    const selected = model("claude-3-haiku", {
+    const selected = model("vendor-chat", {
       metadata: { supportsReasoning: false },
     });
 
-    expect(directorModelSupportsReasoning(selected, "anthropic-messages")).toBe(
+    expect(directorModelSupportsReasoning(selected, "generic-openai-compatible")).toBe(
       false,
     );
-    expect(directorReasoningOptions(selected, "anthropic-messages")).toEqual([
+    expect(directorReasoningOptions(selected, "generic-openai-compatible")).toEqual([
       { value: "auto", label: "自动" },
     ]);
   });

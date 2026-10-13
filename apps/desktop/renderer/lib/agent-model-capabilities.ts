@@ -67,7 +67,7 @@ export function normalizeAgentProtocol(value: unknown): DirectorProtocol | undef
   if (value === "responses") return "openai-responses";
   if (value === "chat-completions") return "openai-chat-completions";
   if (value === "gemini-generate-content" || value === "gemini") return "google-generate-content";
-  return typeof value === "string" && ["openai-responses", "openai-chat-completions", "anthropic-messages", "google-generate-content", "xai-responses", "generic-openai-compatible"].includes(value)
+  return typeof value === "string" && ["openai-responses", "openai-chat-completions", "google-generate-content", "xai-responses", "generic-openai-compatible"].includes(value)
     ? value as DirectorProtocol : undefined;
 }
 
@@ -84,13 +84,11 @@ export function modelAgentProtocol(connection: ProviderConnectionRecord, modelId
     if (protocol) return protocol;
   }
   const base = String(connection.config.baseUrl ?? "");
-  if (/^https:\/\/api\.anthropic\.com(?:\/|$)/u.test(base)) return "anthropic-messages";
   if (/^https:\/\/generativelanguage\.googleapis\.com(?:\/|$)/u.test(base)) return "google-generate-content";
   // Use the recommended Responses transport only when no connection, supplier,
   // or current-Key evidence declared a protocol for this exact official model.
   const officialId = discoveredOfficialModel(connection, model)?.officialModelId ?? modelId;
   if (OFFICIAL_REASONING_OPTIONS[OFFICIAL_REASONING_ALIASES[officialId] ?? officialId]) return "openai-responses";
-  if (CLAUDE_REASONING_OPTIONS[officialId]) return "anthropic-messages";
   if (GEMINI_REASONING_OPTIONS[officialId]) return "google-generate-content";
   return "openai-chat-completions";
 }
@@ -179,25 +177,6 @@ const OFFICIAL_REASONING_ALIASES: Readonly<Record<string, string>> = {
   "gpt-5.4-mini-2026-03-17": "gpt-5.4-mini",
   "gpt-5.2-2025-12-11": "gpt-5.2",
   "gpt-5.2-pro-2025-12-11": "gpt-5.2-pro",
-  "claude-opus-4-5-20251101": "claude-opus-4-5",
-  "claude-haiku-4-5-20251001": "claude-haiku-4-5",
-  "claude-sonnet-4-5-20250929": "claude-sonnet-4-5",
-};
-const CLAUDE_REASONING_OPTIONS: Readonly<Record<string, readonly string[]>> = {
-  // These models support thinking budgets, but not the enumerated effort parameter.
-  "claude-haiku-4-5": [],
-  "claude-sonnet-4-5": [],
-  "claude-opus-4-5": ["low", "medium", "high"],
-  "claude-opus-4-6": ["low", "medium", "high", "max"],
-  "claude-sonnet-4-6": ["low", "medium", "high", "max"],
-  "claude-opus-4-7": ["low", "medium", "high", "xhigh", "max"],
-  "claude-opus-4-8": ["low", "medium", "high", "xhigh", "max"],
-  "claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
-  "claude-opus-5-5": ["low", "medium", "high", "xhigh", "max"],
-  "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
-  "claude-sonnet-5-5": ["low", "medium", "high", "xhigh", "max"],
-  "claude-fable-5": ["low", "medium", "high", "xhigh", "max"],
-  "claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
 };
 const GEMINI_REASONING_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   "gemini-3-pro-preview": ["low", "high"],
@@ -207,12 +186,11 @@ const GEMINI_REASONING_OPTIONS: Readonly<Record<string, readonly string[]>> = {
 };
 function officialReasoningProfile(modelId: string) {
   const canonicalModel = OFFICIAL_REASONING_ALIASES[modelId] ?? (modelId.startsWith("models/gemini-") ? modelId.slice(7) : modelId);
-  const options = OFFICIAL_REASONING_OPTIONS[canonicalModel] ?? CLAUDE_REASONING_OPTIONS[canonicalModel] ?? GEMINI_REASONING_OPTIONS[canonicalModel];
+  const options = OFFICIAL_REASONING_OPTIONS[canonicalModel] ?? GEMINI_REASONING_OPTIONS[canonicalModel];
   if (!options) return undefined;
   const sourceUrl = OFFICIAL_REASONING_OPTIONS[canonicalModel] ? `https://developers.openai.com/api/docs/models/${canonicalModel}` :
-    CLAUDE_REASONING_OPTIONS[canonicalModel] ? "https://platform.claude.com/docs/en/build-with-claude/effort" :
-      canonicalModel === "gemini-3-pro-preview" ? "https://ai.google.dev/gemini-api/docs/thinking" : "https://ai.google.dev/gemini-api/docs/generate-content/thinking";
-  const checkedAt = ["gpt-6.1-sol", "claude-sonnet-5-5"].includes(canonicalModel) ? "2026-10-01" : CLAUDE_REASONING_OPTIONS[canonicalModel] ? "2026-09-24"
+    canonicalModel === "gemini-3-pro-preview" ? "https://ai.google.dev/gemini-api/docs/thinking" : "https://ai.google.dev/gemini-api/docs/generate-content/thinking";
+  const checkedAt = canonicalModel === "gpt-6.1-sol" ? "2026-10-01"
     : ["gpt-6-sol", "gpt-6-luna"].includes(canonicalModel) ? "2026-09-23" : "2026-09-22";
   return { options, sourceUrl, checkedAt };
 }
@@ -289,8 +267,7 @@ export function resolveAgentCapabilities(connection: ProviderConnectionRecord, m
     const right = orderedEfforts.indexOf(b.value);
     return (left < 0 ? orderedEfforts.length : left) - (right < 0 ? orderedEfforts.length : right);
   });
-  const nativeReasoningOptions = protocol === "anthropic-messages" ? ["low", "medium", "high", "xhigh", "max"] :
-    protocol === "google-generate-content" && !/^(?:models\/)?gemini-2\.5(?:-|$)/u.test(modelId) ? ["minimal", "low", "medium", "high"] : [];
+  const nativeReasoningOptions = protocol === "google-generate-content" && !/^(?:models\/)?gemini-2\.5(?:-|$)/u.test(modelId) ? ["minimal", "low", "medium", "high"] : [];
   const supportsReasoningTransport = ["openai-responses", "openai-chat-completions", "xai-responses", "generic-openai-compatible"].includes(protocol) ||
     (nativeReasoningOptions.length > 0 && options.length > 0);
   const reasoning = flag("reasoning");
@@ -313,7 +290,7 @@ export function resolveAgentCapabilities(connection: ProviderConnectionRecord, m
     audioInput: audio.value === true && audioTransport,
     videoInput: video.value === true && videoTransport,
     structuredOutput: runtime.disableStructuredOutput !== true && flag("structuredOutput").value === true,
-    toolCalling: flag("toolCalling").value === true && protocol === "anthropic-messages",
+    toolCalling: false,
     nativeWebSearch: false,
     reasoning: reasoningSupported,
     probeSource: firstKnown?.source === "live" ? "live" : firstKnown?.source === "manual" ? "manual" : "provider-catalog",

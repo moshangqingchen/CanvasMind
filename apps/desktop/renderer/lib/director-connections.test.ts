@@ -22,6 +22,7 @@ vi.mock("@super-canvas/providers", () => ({
 import {
   resolveDirectorConnection,
   saveDirectorProfileConfiguration,
+  publicDirectorProfile,
 } from "./director-connections";
 
 const connection: ProviderConnectionRecord = {
@@ -62,6 +63,26 @@ beforeEach(() => {
 });
 
 describe("saveDirectorProfileConfiguration", () => {
+  it.each([
+    { protocol: "anthropic-messages" },
+    { directorProtocol: "anthropic-messages" },
+    { baseUrl: "https://api.anthropic.com/v1" },
+  ])("rejects legacy native configuration without rewriting stored settings: %o", async config => {
+    const saved = { ...structuredClone(connection), config: { ...connection.config, ...config } };
+    mocks.repository.getConnection.mockResolvedValue(saved);
+    await expect(resolveDirectorConnection(currentProfile)).rejects.toThrow("支持已移除");
+    await expect(saveDirectorProfileConfiguration({ brainConnectionId: connection.id, brainModelId: "legacy-model" })).rejects.toThrow("支持已移除");
+    expect(await publicDirectorProfile(currentProfile)).toMatchObject({ connected: false, protocol: undefined });
+    expect(mocks.repository.saveConnection).not.toHaveBeenCalled();
+    expect(mocks.repository.saveDirectorProfile).not.toHaveBeenCalled();
+  });
+
+  it("rejects a saved Claude model even on a compatible endpoint", async () => {
+    const profile = { ...currentProfile, brainModelId: "claude-sonnet-4-6" };
+    await expect(resolveDirectorConnection(profile)).rejects.toThrow("支持已移除");
+    await expect(saveDirectorProfileConfiguration({ brainConnectionId: connection.id, brainModelId: profile.brainModelId })).rejects.toThrow("支持已移除");
+    expect(await publicDirectorProfile(profile)).toMatchObject({ connected: false, protocol: undefined });
+  });
   it("persists only the director profile and never rewrites its supplier connection", async () => {
     const connectionUnderTest = structuredClone(connection);
     const originalConnection = structuredClone(connectionUnderTest);

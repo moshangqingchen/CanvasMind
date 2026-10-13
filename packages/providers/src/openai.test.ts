@@ -41,6 +41,21 @@ function jsonResponse(value: unknown): Response {
   });
 }
 
+describe("original Images upstream request identity",()=>{
+  it.each(["image.generate","image.edit"] as const)("keeps the %s real response IDs without changing the synthetic local task identity",async operation=>{
+    const fetcher=vi.fn<FetchImplementation>(async()=>Response.json({request_id:"req-json-image",data:[{b64_json:"aW1hZ2U="}]},
+      {headers:{"x-request-id":"req-header-image","authorization":"Bearer secret"}}));
+    const adapter=new OpenAIImageAdapter(new StaticConnectionResolver([{id:"monster2",provider:"openai",apiKey:"fixture",baseUrl:"https://api.eaheng.com",
+      settings:{accountKeyGroupId:"2",accountKeyGroup:"A1-GPT-Pro-0.18倍率",scannedModelIds:["gpt-image-2.5-flare"]}}]),{fetch:fetcher});
+    const task=await adapter.submit({connectionId:"monster2",operation,model:"gpt-image-2.5-flare",prompt:"fixture",idempotencyKey:"local-identity",
+      parameters:{size:"3840x2160",quality:"max",n:1},...(operation==="image.edit"?{assets:[{kind:"image" as const,data:new Uint8Array([1,2]),mimeType:"image/png"}]}:{})});
+    expect(task.providerTaskId).toBe("openai:local-identity");
+    expect(task.result).toMatchObject({upstreamRequestEvidence:{requestIds:["req-header-image","req-json-image"]}});
+    expect(JSON.stringify((task.result as Record<string,unknown>).upstreamRequestEvidence)).not.toMatch(/secret|local-identity/u);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+});
+
 describe("Gemini Nano Banana 2.1 native supplier contract", () => {
   const model = "gemini-nano-banana-2.1";
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKcAAAAASUVORK5CYII=";
@@ -460,7 +475,8 @@ describe("OpenAIImageAdapter", () => {
       metadata: {
         protocol: "frimodel-images",
         liveInventory: true,
-        fixedOutputCount: 1,
+        imageCountFieldSource: "https://ai-doc.apifox.cn/9077234m0.md",
+        imageCountDefaultSource: "application-preference",
       },
     });
     expect(listed[0]?.parameters?.map((parameter) => parameter.key)).toEqual([
@@ -468,6 +484,7 @@ describe("OpenAIImageAdapter", () => {
       "quality",
       "background",
       "output_format",
+      "n",
     ]);
     const sizeParameter = listed[0]?.parameters?.find(
       (parameter) => parameter.key === "size",
@@ -510,6 +527,7 @@ describe("OpenAIImageAdapter", () => {
       prompt: "A glossy red apple on a white table",
       size: "3840x2160",
       quality: "high",
+      n: 1,
       output_format: "png",
     });
 
@@ -519,18 +537,13 @@ describe("OpenAIImageAdapter", () => {
         operation: "image.generate",
         model: "gpt-image-2-adobe",
         prompt: "Two variants",
-        idempotencyKey: "frimodel-batch-rejected",
+        idempotencyKey: "frimodel-open-count",
         parameters: { n: 2 },
       }),
     ).resolves.toEqual(
       expect.objectContaining({
-        valid: false,
-        issues: expect.arrayContaining([
-          expect.objectContaining({
-            code: "invalid_count",
-            message: "FriModel 图片接口单次仅支持生成 1 张",
-          }),
-        ]),
+        valid: true,
+        issues: [],
       }),
     );
 
@@ -565,6 +578,43 @@ describe("OpenAIImageAdapter", () => {
         filename: "openai-1.png",
       },
     ]);
+  });
+
+  it.each([
+    ["gpt_image_az", "gpt-image-2.5-flare", "max"],
+    ["gpt_image_az", "gpt-image-2.5-sunburst", "max"],
+    ["openai_official_外接", "gpt-image-2-o", "high"],
+    ["openai_official_外接2", "gpt-image-2-o", "high"],
+    ["gpt_image_adobe2", "gpt-image-2-low", "low"],
+    ["gpt_image_adobe2", "gpt-image-2-medium", "medium"],
+    ["gpt_image_adobe2", "gpt-image-2-adobe", "high"],
+  ])("preserves Fri %s / %s's declared integer n in live controls and both native request bodies", async (group, model, quality) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/models")
+      ? jsonResponse({ data: [{ id: model }] })
+      : jsonResponse({ data: [{ url: "https://cdn.frimodel.test/one.png" }, { url: "https://cdn.frimodel.test/two.png" }] })) as unknown as typeof fetch;
+    const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{ id: "fri-count", provider: "openai", apiKey: "fixture",
+      baseUrl: "https://api.frimodel.com/v1", settings: { supplierKey: "frimodel", accountKeyGroup: group, modelGroup: group } }]), { fetch: fetchMock });
+    const [listed] = await adapter.listModels("fri-count");
+    const count = listed?.parameters?.find(parameter => parameter.key === "n");
+    expect(count).toMatchObject({ control: "number", valueType: "integer", default: 1, min: 1, step: 1 });
+    expect(count?.max).toBeUndefined();
+    expect(listed?.metadata?.fixedOutputCount).toBeUndefined();
+    expect(listed?.metadata?.imageCountDefaultSource).toBe("application-preference");
+    vi.mocked(fetchMock).mockClear();
+    for (const operation of ["image.generate", "image.edit"] as const) {
+      const task = await adapter.submit({ connectionId: "fri-count", operation, model, prompt: "fixture", idempotencyKey: operation,
+        parameters: { size: "3840x2160", quality, n: 2, output_format: "png" },
+        ...(operation === "image.edit" ? { assets: [{ kind: "image" as const, data: new Uint8Array([1, 2]), mimeType: "image/png" }] } : {}) });
+      const body = vi.mocked(fetchMock).mock.calls.at(-1)![1]!.body;
+      if (operation === "image.generate") expect(JSON.parse(String(body))).toMatchObject({ model, n: 2, size: "3840x2160", quality });
+      else { expect(body).toBeInstanceOf(FormData); expect((body as FormData).get("n")).toBe("2"); }
+      expect(await adapter.extractOutputs(task.result)).toHaveLength(2);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const n of [1, 11, 17]) expect((await adapter.validate({ connectionId: "fri-count", operation: "image.generate", model,
+      prompt: "fixture", idempotencyKey: "open-count", parameters: { n } })).valid).toBe(true);
+    for (const n of [0, -1, 1.5, "1", Number.MAX_SAFE_INTEGER + 1]) expect((await adapter.validate({ connectionId: "fri-count", operation: "image.generate", model,
+      prompt: "fixture", idempotencyKey: "invalid-count", parameters: { n } })).issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.n", code: "invalid_count" })]));
   });
 
   it("keeps FriModel's gpt-image-2-high model on fixed high quality", async () => {

@@ -517,6 +517,20 @@ describe("authenticated native Miaowu media directory", () => {
 });
 
 describe("syncMiaowuConnection", () => {
+  it("keeps an absent selected full ID across native scans, repeat scans and catalog synchronization", async () => {
+    const selected = "saved-removed-full-model";
+    const initial = authenticatedConnection(); initial.config.defaultModel = selected;
+    const repository = makeRepository(initial);
+    for (let pass = 0; pass < 2; pass++) {
+      const result = await scanMiaowuConnection(initial.id, { fetch: directoryFetch(), forcePricing: true });
+      expect(result.status).toBe("live");
+      expect(result.connection?.config.defaultModel).toBe(selected);
+      expect(result.modelIds).not.toContain(selected);
+      const synced = await syncMiaowuConnection(initial.id);
+      expect(synced?.config.defaultModel).toBe(selected);
+      expect((await repository.getConnection()).config.defaultModel).toBe(selected);
+    }
+  });
   it("preserves every scanned video model without inventing controls or a Chat route", async () => {
     const repository = makeRepository(oldScannedConnection());
     await loadMiaowuCatalog({

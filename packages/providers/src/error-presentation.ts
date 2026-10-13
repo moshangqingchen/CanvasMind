@@ -26,6 +26,7 @@ export interface ProviderErrorPresentation {
   actionUrl?: string;
   actionLabel?: string;
   transport?: NonNullable<ProviderHttpError["details"]["transport"]>;
+  upstreamRequestEvidence?: NonNullable<ProviderHttpError["details"]["upstreamRequestEvidence"]>;
   phase?: ProviderRequestPhase;
   retryable?: boolean;
   submissionMayHaveOccurred?: boolean;
@@ -574,6 +575,7 @@ export function presentProviderError(
       retryable: error.details.retryable,
       submissionMayHaveOccurred: error.details.submissionMayHaveOccurred,
       ...(error.details.transport ? { transport: error.details.transport } : {}),
+      ...(error.details.upstreamRequestEvidence ? { upstreamRequestEvidence: error.details.upstreamRequestEvidence } : {}),
       ...(error.details.status === undefined
         ? {}
         : { statusCode: error.details.status }),

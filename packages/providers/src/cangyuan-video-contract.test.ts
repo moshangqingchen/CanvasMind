@@ -41,12 +41,12 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(isCangyuanVideoRequest("sd10-seedance-2.0", "https://example.com")).toBe(false);
     expect(model("sd10-seedance-99").parameters).toBeUndefined();
   });
-  it("corrects legacy audio fields and exposes SD10 camera controls without sending unsupported switches", () => {
+  it("corrects legacy audio fields and removes SD10 camera fields absent from current documents", () => {
     expect(normalizeCangyuanVideoParameters(request("sd11-seedance-2.0", { audio: false, seconds: 8 }))).toEqual({ generate_audio: false, duration: 8 });
     expect(validateCangyuanVideoRequest(request("sd10-seedance-2.0", { duration: 7 }))).not.toEqual([]);
-    expect(validateCangyuanVideoRequest(request("sd10-seedance-2.0", { duration: 10, camera_movement: "fixed" }))).toEqual([]);
+    expect(validateCangyuanVideoRequest(request("sd10-seedance-2.0", { duration: 10, camera_movement: "fixed" }))).not.toEqual([]);
     expect(validateCangyuanVideoRequest(request("sd10-seedance-2.0", { duration: 10, generate_audio: true }))).not.toEqual([]);
-    expect(model("sd10-seedance-2.0").parameters?.find(p => p.key === "camera_movement")?.options?.map(p => p.value)).toEqual(["auto", "fixed"]);
+    expect(model("sd10-seedance-2.0").parameters?.find(p => p.key === "camera_movement")).toBeUndefined();
     expect(model("sd8-seedance-2.5").parameters?.some(p => p.key === "resolution")).toBe(false);
   });
   it("supports frame-only Kling while preserving reference/audio exclusions", () => {
@@ -75,7 +75,7 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(validateCangyuanVideoRequest({ ...request("wan3.0-video", { duration: 5 }), assets: [audio(15.1)] })).not.toEqual([]);
     for (const seconds of [3, 10]) expect(validateCangyuanVideoRequest({ ...request("happyhouse-1.0"), assets: [video(seconds)] })).toEqual([]);
     for (const seconds of [2.9, 10.1]) expect(validateCangyuanVideoRequest({ ...request("happyhouse-1.0"), assets: [video(seconds)] })).not.toEqual([]);
-    expect(validateCangyuanVideoRequest({ ...request("sd4-seedance-2.5-480p", { duration: 30 }), assets: [video(30.2), audio(30.2)] })).toEqual([]);
+    expect(validateCangyuanVideoRequest({ ...request("sd4-seedance-2.5-480p", { duration: 29 }), assets: [video(30.2), audio(30.2)] })).toEqual([]);
     for (const reference of [video(30.3), audio(30.3)]) expect(validateCangyuanVideoRequest({ ...request("sd4-seedance-2.5-480p", { duration: 4 }), assets: [reference] })).not.toEqual([]);
   });
   it.each(["omni-v2v", "omni-v2v-no-water"])("checks %s source video's documented eight MB maximum conservatively", id => {
@@ -125,16 +125,15 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(validateCangyuanVideoRequest({ ...request("sd13-seedance-2.5"), assets: [{ ...video, durationSeconds: 30.1 }] })).not.toEqual([]);
     const audio = { id: "a", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://assets.example/a.mp3", durationSeconds: 15.1 };
     expect(validateCangyuanVideoRequest({ ...request("niulai-pro", { duration: 6, reference_image_urls: ["https://assets.example/i.jpg"] }), assets: [audio] })).not.toEqual([]);
-    expect(cangyuanVideoTransport("sd10-seedance-2.0")?.submit?.mappings?.some(m => m.target === "/camera_movement")).toBe(true);
+    expect(cangyuanVideoTransport("sd10-seedance-2.0")?.submit?.mappings?.some(m => m.target === "/camera_movement")).toBe(false);
     expect(cangyuanVideoTransport("sd10-seedance-2.0")?.submit?.mappings?.some(m => m.target === "/generate_audio")).toBe(false);
   });
 
-  it("uses the freshly verified Gemini Omni Flash discrete durations without admitting intermediate seconds", () => {
+  it("uses Gemini Omni Flash current integer range without closing the former examples", () => {
     const id = "gemini-omni-flash", current = model(id);
-    expect(current.parameters?.find(p => p.key === "duration")).toMatchObject({ control: "select", valueType: "integer", default: 4,
-      options: [4, 6, 8, 10].map(value => ({ label: `${value} 秒`, value })) });
-    for (const duration of [4, 6, 8, 10]) expect(validateCangyuanVideoRequest(request(id, { duration }))).toEqual([]);
-    for (const duration of [-1, 0, 5, 7, 9, 11, 4.5, "6"]) expect(validateCangyuanVideoRequest(request(id, { duration }))).toEqual(
+    expect(current.parameters?.find(p => p.key === "duration")).toMatchObject({ control: "number", valueType: "integer", default: 4, min: 4, max: 10 });
+    for (const duration of [4, 5, 6, 7, 8, 9, 10]) expect(validateCangyuanVideoRequest(request(id, { duration }))).toEqual([]);
+    for (const duration of [-1, 0, 3, 11, 4.5, "6"]) expect(validateCangyuanVideoRequest(request(id, { duration }))).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
     expect(cangyuanVideoTransport(id)?.submit?.path).toBe("/v1/videos");
   });
@@ -153,7 +152,7 @@ describe("fresh Cangyuan per-model video contracts", () => {
       { id: "a", kind: "audio" as const, mimeType: "audio/mpeg", url: "https://media.test/audio.mp3", durationSeconds: 30.2 },
     ];
     expect(validateCangyuanVideoRequest({ ...request(id, { duration: 29 }), assets })).toEqual([]);
-    expect(model("sd4-seedance-2.5-480p").parameters?.find(p => p.key === "duration")?.max).toBe(30);
+    expect(model("sd4-seedance-2.5-480p").parameters?.find(p => p.key === "duration")?.max).toBe(29);
     expect(model("sd4-seedance-2.5-480p").metadata?.durationMaxWithReferenceVideo).toBeUndefined();
   });
 
@@ -201,13 +200,13 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(current.parameters?.map(p => p.key)).toEqual(["duration", "aspect_ratio"]);
     expect(current.parameters?.find(p => p.key === "duration")).toMatchObject({ default: 30, options: [{ label: "30 秒", value: 30 }] });
     expect(current.metadata).toMatchObject({ canvasRunnable: false, canvasUnavailableReason: "403 权限不足", facePolicy: "open", videoFixedResolution: "720p",
-      supportsFirstLastFrames: false, referenceNeedsDuration: false, cangyuanVideoContractCheckedAt: "2026-10-08",
+      supportsFirstLastFrames: false, referenceNeedsDuration: false, videoContractSourceLastReviewed: "2026-10-08",
       documentationUrl: "https://ai.cangyuansuanli.cn/docs-static/models/sd8-seedance-2.5-s.json", videoPollingTimeoutMs: 1_800_000 });
     expect(current.pricing).toBeUndefined();
     const price: StructuredModelPricing = { kind: "per-request", currency: "CNY", billingUnit: "request", unitAmount: 3, checkedAt: "fixture", confidence: "exact" };
     expect(cangyuanVideoModel({ ...current, pricing: price }).pricing).toBe(price);
     expect(model("sd8-seedance-2.5").limits).toMatchObject({ maxInputImages: 9, maxInputVideos: 0, maxInputAudios: 0 });
-    expect(model("sd8-seedance-2.5").metadata?.cangyuanVideoContractCheckedAt).toBe("2026-10-07");
+    expect(model("sd8-seedance-2.5").metadata?.cangyuanVideoContractCheckedAt).toMatch(/^2026-10-13T/u);
     expect(isCangyuanVideoModel("sd8-seedance-2.5-s-fast")).toBe(false);
     expect(isCangyuanVideoRequest(sd8s, "https://another-supplier.test/v1")).toBe(false);
   });
@@ -229,7 +228,6 @@ describe("fresh Cangyuan per-model video contracts", () => {
   it.each([
     { name: "29-second output", parameters: { duration: 29 } },
     { name: "string duration", parameters: { duration: "30" } },
-    { name: "unsupported ratio", parameters: { aspect_ratio: "2:3" } },
     { name: "resolution despite fixed output", parameters: { resolution: "720p" } },
     { name: "first frame", parameters: { first_image_url: "https://media.test/first.jpg" } },
     { name: "last frame", parameters: { last_image_url: "https://media.test/last.jpg" } },
@@ -285,5 +283,24 @@ describe("fresh Cangyuan per-model video contracts", () => {
     expect(f.connection).toEqual(original);
     expect(offlineNetwork.lookup).toHaveBeenCalled();
     for (const [hostname] of offlineNetwork.lookup.mock.calls as unknown as [string][]) expect(hostname).toBe("ai.cangyuansuanli.cn");
+  });
+});
+
+describe("2026-10-12 Cangyuan native input contracts", () => {
+  it("accepts intermediate durations and open string recommendations without admitting wrong types", () => {
+    for (const id of ["grok-video", "grok-video-1.5", "grok-imagine-video"]) {
+      expect(validateCangyuanVideoRequest(request(id, { duration: 7, resolution: "900p", aspect_ratio: "9:21", reference_image_urls: ["https://assets.example/ref.png"] }))).toEqual([]);
+      expect(model(id).parameters?.find(p => p.key === "resolution")?.allowCustomValue).toBe(true);
+      expect(validateCangyuanVideoRequest(request(id, { resolution: 720 }))).not.toEqual([]);
+      for (const duration of [0, 16, 4.5, "7"]) expect(validateCangyuanVideoRequest(request(id, { duration }))).not.toEqual([]);
+    }
+  });
+  it("maps a stored Grok first-frame asset to its exact reference-image field", () => {
+    const input = { ...request("grok-imagine-video", { duration: 7 }), operation: "video.image-to-video" as const,
+      assets: [{ id: "frame", kind: "image" as const, role: "firstFrame" as const, mimeType: "image/png", url: "https://assets.example/first.png" }] };
+    expect(normalizeCangyuanVideoParameters(input)).toEqual({ duration: 7, reference_image_urls: ["https://assets.example/first.png"] });
+    expect(validateCangyuanVideoRequest(input)).toEqual([]);
+    expect(cangyuanVideoTransport(input.model!)?.submit?.mappings?.some(mapping => mapping.target === "/reference_image_urls")).toBe(true);
+    expect(cangyuanVideoTransport(input.model!)?.submit?.mappings?.some(mapping => mapping.target === "/first_image_url")).toBe(false);
   });
 });

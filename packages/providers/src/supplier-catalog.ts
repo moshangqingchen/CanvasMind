@@ -20,6 +20,7 @@ import { isJijiuCatalogSource, jijiuCatalogMediaPricing } from "./jijiu-catalog-
 import { isJijiuApiUrl, jijiuVideoModel } from "./jijiu-video-contract.js";
 import { applyJijiuImageCapabilities } from "./jijiu-image-contract.js";
 import { normalizeCangyuanAudioCatalogModel } from "./cangyuan-audio-catalog.js";
+import { readMonsterChannelPlaza, type SupplierChannelPlazaEvidence } from "./supplier-channel-plaza.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
 export type SupplierSiteKind =
@@ -707,6 +708,18 @@ export async function discoverSupplierCatalog(
     return undefined;
   };
   let synoraLedger: Promise<SupplierLedgerPrice[]> | undefined;
+  let monsterPlaza: Promise<Map<string, SupplierChannelPlazaEvidence>> | undefined;
+  const channelPlazaGroups = async (groups: DiscoveredSupplierGroup[]): Promise<DiscoveredSupplierGroup[]> => {
+    if (siteUrl !== "https://api.eaheng.com") return groups;
+    monsterPlaza ??= readMonsterChannelPlaza(siteUrl, checkedAt, url => probe(url, siteHeaders("sub2api")));
+    const observations = await monsterPlaza;
+    return groups.map(group => {
+      const evidence = group.supplierGroupId !== undefined ? observations.get(group.supplierGroupId) : undefined;
+      if (!evidence) return group;
+      return { ...group, details: { ...(group.details ?? { source: "key-groups" as const }), channelPlaza: evidence },
+        models: group.models.map(model => ({ ...model, metadata: { ...model.metadata, supplierChannelPlaza: evidence } })) };
+    });
+  };
   const ledgerGroups = async (groups: DiscoveredSupplierGroup[]): Promise<DiscoveredSupplierGroup[]> => {
     if (!isSynoraLedgerSource(siteUrl)) return groups;
     const headers = siteHeaders("sub2api");
@@ -765,7 +778,7 @@ export async function discoverSupplierCatalog(
     let response = await probe(sourceUrl, siteHeaders("sub2api"));
     let complete = channelPageComplete(response);
     if (!complete && !fallbackPriceSource && ["https://asian-acc.we-token.cc", "https://api.mikoto.vip", "https://api.eaheng.com", "https://tu.988236.xyz",
-      "https://api.hangzhale.com", "https://synoralink.com", "https://vapi.chuangxiangai.asia"].includes(siteUrl)) {
+      "https://api.hangzhale.com", "https://synoralink.com", "https://vapi.chuangxiangai.asia", "https://ai.whyshy.cn", "https://token.secure-skill.com"].includes(siteUrl)) {
       // These sites expose channel prices in their deployed available-channel
       // screen even when the newer model plaza is disabled. Preserve the old
       // price entry and We-AI legacy fallback if this account read also fails.
@@ -853,7 +866,7 @@ export async function discoverSupplierCatalog(
     }
     const priceComplete = priced.complete ||
       ((fallback.status === "live" || fallback.status === "empty") && fallback.complete !== false);
-    const groups = await ledgerGroups(accountComplete ? accountGroupNames(priced.groups, available.groups) : priced.groups);
+    const groups = await channelPlazaGroups(await ledgerGroups(accountComplete ? accountGroupNames(priced.groups, available.groups) : priced.groups));
     return { ...result, groups, ...(groups.length ? { status: "live" as const } : {}),
       complete: priceComplete && accountComplete,
       ...(!priceComplete && accountComplete ? {
@@ -900,9 +913,9 @@ export async function discoverSupplierCatalog(
         // factors when /api/pricing omits group_ratio. Join only exact groups.
         parsed = parseSupplierCatalog({ ...payload, group_ratio: ratios }, currentPrice.options);
       }
-      return success({ ...parsed, groups: await ledgerGroups(accountGroupNames(parsed.groups, available.groups)) }, platform);
+      return success({ ...parsed, groups: await channelPlazaGroups(await ledgerGroups(accountGroupNames(parsed.groups, available.groups))) }, platform);
     }
-    return { ...success({ ...parsed, groups: await ledgerGroups(parsed.groups) }, platform), complete: false,
+    return { ...success({ ...parsed, groups: await channelPlazaGroups(await ledgerGroups(parsed.groups)) }, platform), complete: false,
       error: "模型目录已读取；账号分组说明暂不可用，保留历史分组，请稍后重试或检查站点登录" };
   };
 

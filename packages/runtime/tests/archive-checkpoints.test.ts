@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository } from "@super-canvas/db";
 import type { ProviderAdapter, RemoteArtifact } from "@super-canvas/providers";
+import { ProviderHttpError } from "@super-canvas/providers";
 import {
   LocalObjectStorage,
   ProjectFileStore,
@@ -93,6 +94,27 @@ async function terminal(service: RunService, id: string) {
 }
 
 describe("artifact checkpoints", () => {
+  it("stores the original rejected request ID and does not resubmit an uncertain image",async()=>{
+    const {service,submit}=await fixture(new MemoryStorage(),[]),upstreamRequestEvidence={requestIds:["req-rejected"],observations:[{requestId:"req-rejected",source:"header:x-request-id" as const}]};
+    submit.mockRejectedValue(new ProviderHttpError("supplier rejected",{kind:"invalid_request",phase:"submit",status:403,
+      retryable:false,submissionMayHaveOccurred:true,upstreamRequestEvidence}));
+    const run=await service.createRun({canvasId:"archive",clientRequestId:"rejected-original",scope:"all"}),snapshot=await terminal(service,run.id);
+    expect(snapshot.run.status).toBe("needs_attention");
+    expect(snapshot.nodes[0]?.errorJson).toMatchObject({upstreamRequestEvidence,submissionMayHaveOccurred:true,statusCode:403});
+    await service.getRun(run.id);
+    expect(submit).toHaveBeenCalledOnce();
+  });
+  it("retains exact submit request IDs after successful archive compacts the large provider task",async()=>{
+    const {service,submit}=await fixture(new MemoryStorage(),[{kind:"image",data:validPngBytes,mimeType:"image/png"}]);
+    submit.mockImplementation(async request=>({providerTaskId:`openai:${request.idempotencyKey}`,status:"succeeded",result:{response:{data:[{b64_json:"large-original-response"}]},
+      upstreamRequestEvidence:{requestIds:["req-submit"],observations:[{requestId:"req-submit",source:"header:x-request-id"}]}}}));
+    const run=await service.createRun({canvasId:"archive",clientRequestId:"original-header",scope:"all"}),snapshot=await terminal(service,run.id);
+    expect(snapshot.run.status).toBe("succeeded");
+    expect(snapshot.nodes[0]?.inputJson.providerTask).toBeUndefined();
+    expect(snapshot.nodes[0]?.inputJson.upstreamRequestEvidence).toEqual({requestIds:["req-submit"],observations:[{requestId:"req-submit",source:"header:x-request-id"}]});
+    expect(JSON.stringify(snapshot.nodes[0]?.inputJson.upstreamRequestEvidence)).not.toContain("large-original-response");
+    expect(submit).toHaveBeenCalledOnce();
+  });
   it.each(["bytes", "data-url", "download"])(
     "does not publish or complete an empty %s output and preserves recovery without resubmitting",
     async (source) => {

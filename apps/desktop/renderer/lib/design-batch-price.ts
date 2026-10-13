@@ -1,5 +1,8 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { modelPriceAmount } from "@super-canvas/providers/media-billing";
+import { evaluateImageParameters } from "@super-canvas/providers/image-parameter-contract";
+import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
+import { normalizeTk1688CnyModel } from "@super-canvas/providers/tk1688-catalog";
 import type { CanvasNode } from "../components/types";
 import { modelPriceSummary } from "./model-display";
 
@@ -7,6 +10,7 @@ export function designBatchPrice(
   model: ModelDescriptor,
   nodes: readonly CanvasNode[],
 ) {
+  model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
   const pricing = model.pricing;
   let total = 0;
   let unknown = 0;
@@ -14,34 +18,13 @@ export function designBatchPrice(
     .filter((node) => node.data.nodeType === "image-generation")
     .map((node) => {
       const parameters = node.data.parameters ?? {};
-      const defaults = Object.fromEntries(
-        (model.parameters ?? [])
-          .filter((p) => p.default !== undefined)
-          .map((p) => [p.key, p.default]),
-      );
-      const tier =
-        String(
-          parameters.size_tier ??
-            parameters.resolution ??
-            parameters.image_size ??
-            "",
-        ).toUpperCase() ||
-        model.parameters
-          ?.find((p) => p.key === "size")
-          ?.options?.find((option) => option.value === parameters.size)
-          ?.label.match(/\b[124]K\b/iu)?.[0]
-          ?.toUpperCase();
+      const evaluated = evaluateImageParameters(model, parameters);
       const amount =
         pricing &&
         ["per-image", "per-request", "tiered"].includes(pricing.kind) &&
         pricing.billingUnit !== "second" &&
         model.metadata?.priceSource !== "generated-result"
-          ? modelPriceAmount(pricing, {
-              ...defaults,
-              ...parameters,
-              resolution:
-                parameters.resolution ?? (tier || defaults.resolution),
-            })
+          ? modelPriceAmount(pricing, evaluated.pricingParameters)
           : undefined;
       if (amount === undefined || !Number.isFinite(amount) || amount < 0)
         unknown++;

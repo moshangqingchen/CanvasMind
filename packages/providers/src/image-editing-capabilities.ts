@@ -1,5 +1,6 @@
 import type { NormalizedRequest, ProviderAssetInput, ResolvedProviderConnection, ValidationIssue } from "./contracts.js";
 import { failedTransparentImageEvidence, verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
+import { CANGYUAN_IMAGE_DOCUMENTS } from "./cangyuan-image-documents.js";
 
 export interface ImageEditingConnection {
   provider: string;
@@ -10,11 +11,18 @@ export interface ImageEditingCapabilities {
   mask: "multipart" | "url" | null;
 }
 
+function cangyuanEditingDocument(connection: ImageEditingConnection, modelId: string) {
+  if (connection.provider !== "rest" || connection.config.manualProtocol === true || connection.config.autoProtocol === false) return undefined;
+  try {
+    const url = new URL(String(connection.config.baseUrl ?? ""));
+    return url.protocol === "https:" && ["ai.cangyuansuanli.cn", "vip-api.cangyuansuanli.cn", "direct-api.cangyuansuanli.cn"].includes(url.hostname)
+      ? CANGYUAN_IMAGE_DOCUMENTS[modelId] : undefined;
+  } catch { return undefined; }
+}
+
 const image25 = new Set(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
 const monsterModels = new Set(["gpt-image-2", "gpt-image-2.5", ...image25,
   "gpt-image-2.5-flare-high", "gpt-image-2.5-flare-max", "gpt-image-2.5-sunburst-high", "gpt-image-2.5-sunburst-max"]);
-const cangyuanMaskModels = new Set(["gpt-image-2-1k", "gpt-image-2-2k", "gpt-image-2-4k",
-  "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2-o", "gpt-image-2.5-flare-o", "gpt-image-2.5-sunburst-o"]);
 
 /** Browser-safe, exact supplier contracts. Model-family resemblance is not evidence. */
 function declaredImageEditingCapabilities(connection: ImageEditingConnection, modelId: string,
@@ -41,9 +49,13 @@ function declaredImageEditingCapabilities(connection: ImageEditingConnection, mo
       mask: group === "default" && modelId === "gpt-image-1" ? "multipart" : null };
   }
   if (connection.provider === "rest" && ["ai.cangyuansuanli.cn", "vip-api.cangyuansuanli.cn", "direct-api.cangyuansuanli.cn"].includes(url.hostname)) {
-    return { transparent: false, mask: cangyuanMaskModels.has(modelId) ||
-      (modelId === "gpt-image-2-x" && ["1k", "2k", "4k"].includes(String(parameters.tier))) ||
-      (/^midjourney-[12]k$/u.test(modelId) && parameters.reference === "editor") ? "url" : null };
+    if (config.manualProtocol === true || config.autoProtocol === false ||
+        Array.isArray(config.manualModels) && config.manualModels.some(row => !!row && typeof row === "object" && (row as Record<string, unknown>).id === modelId)) return none;
+    const doc = CANGYUAN_IMAGE_DOCUMENTS[modelId];
+    if (!doc) return none;
+    return { transparent: doc.parameterRules?.background?.enum?.includes("transparent") === true,
+      mask: doc.editing && Boolean(doc.fields.mask) && (Boolean(doc.parameterRules) ||
+        (!/^midjourney-[12]k$/u.test(modelId) || parameters.reference === "editor")) ? "url" : null };
   }
   return none;
 }
@@ -89,7 +101,8 @@ export function imageEditingRequestIssues(connection: ImageEditingConnection, re
       !declaredImageEditingCapabilities(connection, request.model ?? "", request.parameters).transparent)
       add("parameters.background", "unverified_transparent_edit", "此线路仅验证透明文生图；参考图/编辑透明尚未验证。");
     const format = request.parameters.output_format;
-    if (format !== undefined && format !== "png" && format !== "auto")
+    const declaredWebp = format === "webp" && cangyuanEditingDocument(connection, request.model ?? "")?.parameterRules?.output_format?.enum?.includes("webp");
+    if (format !== undefined && format !== "png" && format !== "auto" && !declaredWebp)
       add("parameters.output_format", "transparent_requires_png", "透明模式必须使用 PNG 输出。");
   }
   const masks = request.assets?.filter(asset => asset.role === "mask") ?? [];
@@ -125,6 +138,9 @@ export function imageEditingRequestIssues(connection: ImageEditingConnection, re
 export function normalizeImageEditingParameters(connection: ImageEditingConnection, model: string,
   parameters: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
   const result = { ...parameters };
+  // Native fields are optional. Preserve the user's explicit auto/opaque value
+  // and encoding; validation checks transparent combinations before submission.
+  if (cangyuanEditingDocument(connection, model)?.parameterRules?.background?.enum?.includes("transparent")) return result;
   // A failed transparency test does not change declared normal-mode fields or routing.
   if (getImageEditingCapabilities(connection, model, parameters).transparent ||
     declaredImageEditingCapabilities(connection, model, parameters).transparent) {

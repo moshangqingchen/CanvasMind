@@ -110,7 +110,7 @@ describe("mask edit model selection", () => {
       expect(selectMaskEditModel(options(source([selected]), [selected]))?.parameters.tier).toBe(values.at(-1));
     }
     const selected = model("gpt-image-2-x", { parameters: [{ key: "tier", label: "档位", control: "select", default: "web" }] });
-    expect(selectMaskEditModel(options(source([selected]), [selected]))).toBeNull();
+    expect(selectMaskEditModel(options(source([selected]), [selected]))?.parameters.tier).toBe("web");
   });
 
   it("honors source resolution and quality limits without inventing unsupported max", () => {
@@ -136,7 +136,7 @@ describe("mask edit model selection", () => {
     expect(choice?.parameters).not.toHaveProperty("maskAssetId");
     const fromWeb = selectMaskEditModel(options(connection, [selected]), { connectionId: connection.id, modelId: selected.id,
       parameters: { tier: "web", quality: "low", size: "auto" } });
-    expect(fromWeb?.parameters).toMatchObject({ tier: "4k", quality: "low", size: "auto" });
+    expect(fromWeb?.parameters).toMatchObject({ tier: "web", quality: "low", size: "auto" });
   });
 
   it("does not switch to another supplier merely because it has a higher resolution", () => {

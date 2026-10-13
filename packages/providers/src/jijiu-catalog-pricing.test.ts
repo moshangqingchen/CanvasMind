@@ -16,6 +16,27 @@ const quote = (id: string, multiplier = 1) => jijiuCatalogMediaPricing(row(id), 
 const day = new Date("2026-10-10T04:00:00Z");
 
 describe("Jijiu official billing grammar and exact group identity", () => {
+  it("reads the October 12 directory's new exact IDs, changed rates and zero H3 rates", () => {
+    const current = JSON.parse(readFileSync(new URL("./fixtures/jijiu-billing-20261012.json", import.meta.url), "utf8")) as typeof frozen;
+    const expected: Record<string, { group: string; unit: string; rate: number; resolution?: string }> = {
+      "SD2.5特价900线路一": { group: "视频SD2.5", unit: "request", rate: 1 },
+      "SD2.5特价30-10线路二": { group: "视频SD2.5", unit: "request", rate: 1.3 },
+      "SD2.5特价30-10-10-线路三": { group: "视频SD2.5", unit: "request", rate: 5.5 },
+      "SD2.0fast稳定900D": { group: "视频SD2.0", unit: "request", rate: .9 },
+      "SD2.0满血稳定933-线路二": { group: "视频SD2.0", unit: "second", rate: .2 },
+      "MinimaxH3": { group: "视频-MnimaxH3", unit: "second", rate: 0, resolution: "1080p" },
+      "Minimax漫剧优化版": { group: "视频-MnimaxH3", unit: "second", rate: 0, resolution: "4k-upscale" },
+    };
+    for (const [id, e] of Object.entries(expected)) {
+      const raw = current.data.find(value => value.model_name === id)!;
+      expect(raw.enable_groups).toEqual([e.group]);
+      const parsed = jijiuCatalogMediaPricing(raw, { supplierSiteUrl: source, group: e.group, groupMultiplier: current.group_ratio[e.group], checkedAt: "2026-10-12" });
+      expect(parsed?.pricing.billingUnit, id).toBe(e.unit);
+      expect(modelPriceAmount(parsed!.pricing, { resolution: e.resolution }, day), id).toBe(e.rate);
+    }
+    for (const id of ["满血seedance-2.5全参C", "SD2.5特价30-10-10-线路一", "SD2.5特价30-10-10-线路二", "SD2.5特价30-10线路一", "SD2.0fast稳定903A", "SD2.0mini稳定903C"])
+      expect(current.data.some(value => value.model_name === id), id).toBe(false);
+  });
   it("keeps the independent current rate of all 25 complete media IDs", () => {
     const expected: Record<string, { unit: "request" | "second"; prices: number | Record<string, number> }> = {
       "gemini-3.1-flash-image": { unit: "request", prices: .1 }, "gemini-nano-banana-2.1": { unit: "request", prices: .07 },

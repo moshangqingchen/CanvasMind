@@ -63,13 +63,13 @@ describe("current Cangyuan image catalog and saved scan integration", () => {
       connection: { id: "cangyuan-image-offline", ...connection() }, model, fingerprint: "offline-current-catalog",
     });
     expect(capabilities).toBeTruthy();
-    expect(model.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    expect(model.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["medium", "low", "high", "xhigh", "max"]);
     const connector = cangyuanConnectorForModels("IMAGE", [model]);
     expect(connector.assetsRequirePublicUrls).toBe(true);
     expect(connector.modelOverrides?.[model.id]).toBeUndefined();
   });
 
-  it("requires HTTPS references only for the current native request without changing its shared connector", async () => {
+  it("uses native upload for local references and retains direct HTTPS references without changing its shared connector", async () => {
     const model = catalog().groups.IMAGE.find(m => m.id === "gpt-image-2.5-x")!;
     const current = connection();
     const connector = cangyuanConnectorForModels("IMAGE", [model]);
@@ -79,8 +79,9 @@ describe("current Cangyuan image catalog and saved scan integration", () => {
       apiKey: "offline-test", settings: { ...current.config, connector } }]), { fetch: fetcher });
     const request = { connectionId: "offline", model: model.id, operation: "image.edit" as const, prompt: "offline reference test",
       idempotencyKey: "offline", parameters: { tier: "4k", series: "sunburst", quality: "max", n: 1 } };
-    await expect(adapter.submit({ ...request, assets: [{ id: "local", kind: "image", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) }] })).rejects.toThrow(/HTTPS/u);
-    expect(fetcher).not.toHaveBeenCalled();
+    await expect(adapter.submit({ ...request, assets: [{ id: "local", kind: "image", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) }] })).rejects.toThrow(/上传凭证/u);
+    expect(String(fetcher.mock.calls[0]![0])).toBe(`${current.config.baseUrl}/v1/images/uploads`);
+    fetcher.mockClear();
     await adapter.submit({ ...request, assets: [{ id: "remote", kind: "image", mimeType: "image/png", url: "https://images.example/reference.png" }] });
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)).images).toEqual(["https://images.example/reference.png"]);
     expect(connector).toEqual(before);

@@ -10,7 +10,9 @@ import { assertDesktopPublicAssets } from "./desktop-preflight.js";
 import { ImageMaskValidationError, resolveImageMask } from "./image-mask.js";
 import { localReferenceChannelConfigured, localReferenceUrls } from "./reference-channel.js";
 import { monsterImageEvidence } from "@super-canvas/providers/monster-image-capabilities";
-import { applyUserImageSizePresets, resolveUserImageSizeParameters } from "@super-canvas/providers/image-size-presets";
+import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
+import { resolveImageModelContract } from "@super-canvas/providers/image-model-contract";
+import { evaluateImageParameters } from "@super-canvas/providers/image-parameter-contract";
 import { chuangxiangImageEvidence } from "@super-canvas/providers/chuangxiang-image-capabilities";
 import { genimageImageRatioIssues, isGenimageImageConnection } from "@super-canvas/providers/genimage-image-capabilities";
 import { isChuangxiangMidjourneyConnection } from "@super-canvas/providers/chuangxiang-midjourney-contract";
@@ -38,12 +40,12 @@ import type {
 import { getRepository, isRunRecoveryExpired } from "@super-canvas/db";
 import {
   decryptSecret,
+  storedProviderRequestEvidence,
   CliProviderAdapter,
   cliJobKey,
   FakeProviderAdapter,
   imageSizeForTier,
   isPdogImageConnection,
-  applyPdogImageCapabilities,
   isTk1688ApiUrl,
   tk1688ImageParameterIssues,
   normalizeTk1688CnyModel,
@@ -63,6 +65,7 @@ import {
   modelSupportsGenerationMedia,
   AutoInterfaceAdapter,
   restRequestRequiresPublicAssets,
+  cangyuanOwnMediaUploadAvailable,
   secureSkillRequiresPublicAssets,
   chuangxiangRequiresPublicAssets,
   isChuangxiangImageConnection,
@@ -713,9 +716,15 @@ function mergeChargeEvidence(
 }
 
 function rememberTaskCharge(input: JsonObject, task: ProviderTask): boolean {
+  // Kept outside the potentially large providerTask snapshot so completion,
+  // archival and subsequent free polling cannot erase the submit identity.
+  const requestEvidence = isRecord(task.result) ? storedProviderRequestEvidence(task.result.upstreamRequestEvidence) : undefined;
+  const rememberRequestId = !storedProviderRequestEvidence(input.upstreamRequestEvidence) && requestEvidence;
+  if (rememberRequestId) input.upstreamRequestEvidence = { requestIds: [...rememberRequestId.requestIds],
+    observations: rememberRequestId.observations.map(observation => ({ ...observation })) };
   const charge = mergeChargeEvidence(storedChargeEvidence(input.providerCharge), extractProviderChargeEvidence(task.result));
   if (!charge || charge.source !== "provider_response" || charge.status === "unknown" ||
-      JSON.stringify(input.providerCharge) === JSON.stringify(charge)) return false;
+      JSON.stringify(input.providerCharge) === JSON.stringify(charge)) return Boolean(rememberRequestId);
   input.providerCharge = { ...charge };
   return true;
 }
@@ -3064,7 +3073,7 @@ export class RunService {
         }
       }
     }
-    if (assets.length > 0 &&
+    if (assets.length > 0 && !cangyuanOwnMediaUploadAvailable(providerName, connectionConfig, model, operation) &&
         ((imageMask && editingCapabilities.mask === "url") ||
           (providerName === "rest" && restRequestRequiresPublicAssets(connectionConfig?.connector, model, operation, connectionConfig)) ||
           (providerName !== "fake" && operation.startsWith("video.") && isRecord(descriptor) && isRecord(descriptor.metadata) && descriptor.metadata.remoteMediaUrlsOnly === true) ||
@@ -3126,14 +3135,16 @@ export class RunService {
       // Refresh exact supplier pixels before resolving an automatic canvas tier.
       // An old generic scan table must not become an explicit user size first.
       const currentDescriptor = providerName === "openai" && isPdogImageConnection(connectionConfig, model)
-        ? applyPdogImageCapabilities({ provider: providerName, config: connectionConfig ?? {} },
+        ? resolveImageModelContract({ provider: providerName, config: connectionConfig ?? {} },
           configuredDescriptor ?? { id: model ?? "", name: model ?? "", operations: ["image.generate"] })
         : configuredDescriptor;
       const imageDescriptor = currentDescriptor ? applyUserImageSizePresets(currentDescriptor) : undefined;
       const userSizePresets = Boolean(imageDescriptor?.metadata?.imageUserSizePresets);
       if (userSizePresets && imageDescriptor) {
-        parameters = resolveUserImageSizeParameters(imageDescriptor, parameters,
-          aspectRatioFromPrompt(prompt) ?? referenceAspectRatio(graph, assets));
+        const inferredRatio = aspectRatioFromPrompt(prompt) ?? referenceAspectRatio(graph, assets);
+        parameters = evaluateImageParameters(imageDescriptor, parameters, {
+          operation, ...(inferredRatio ? { inferredRatio } : {}),
+        }).requestParameters;
       }
       const verifiedImageSizes =
         isRecord(imageDescriptor?.metadata) &&
@@ -3217,8 +3228,8 @@ export class RunService {
       if (explicitImageContract) {
         // Manually declared and measured contracts own their exact fields.
       } else if (isPdogGptImage) {
-        const contract = applyPdogImageCapabilities({ provider: "openai", config: connectionConfig ?? {} },
-          imageDescriptor ?? { id: model ?? "", name: model ?? "", operations: ["image.generate"] });
+        const contract = imageDescriptor ?? resolveImageModelContract({ provider: "openai", config: connectionConfig ?? {} },
+          { id: model ?? "", name: model ?? "", operations: ["image.generate"] });
         const requestedTiers = [parameters.size_tier, parameters.resolution].filter(value => value !== undefined && value !== "" && value !== "auto");
         if (requestedTiers.some(value => !(contract.metadata?.imageSupportedResolutions as unknown[] | undefined)?.includes(String(value).toUpperCase())))
           throw new ProviderTaskFailedError("此 PDog 当前分组没有声明这个档位；旧值保留，请重新选择", providerErrorContext);

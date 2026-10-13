@@ -12,15 +12,16 @@ const alias = "gpt-pro-[稳定优先]";
 const model = (fields: Record<string, unknown> = {}) => scanProviderModelCatalog([{ id: alias, ...fields }]).models[0]!;
 
 describe("automatic free agent model discovery", () => {
-  it("fills officially documented Opus 5.5 effort levels and recognizes budget-only Claude models", async () => {
-    const [opus, haiku] = await discoverAgentModelCapabilities(connection, [
+  it("does not restore removed official reasoning profiles during model discovery", async () => {
+    const discovered = await discoverAgentModelCapabilities(connection, [
       model({ id: "claude-opus-5-5" }), model({ id: "claude-haiku-4-5-20251001" }),
     ], async () => undefined);
-    const resolved = resolveAgentCapabilities(connection, opus!.id, opus);
-    expect(resolved.reasoningOptions.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
-    expect(resolved.reasoningFallback?.checkedAt).toBe("2026-09-24");
-    expect(haiku?.metadata?.agentDiscovery).toMatchObject({ status: "complete" });
-    expect(resolveAgentCapabilities(connection, haiku!.id, haiku).reasoningOptions.map(option => option.value)).toEqual(["auto"]);
+    for (const found of discovered) {
+      expect(found.metadata?.agentDiscovery).toMatchObject({ status: "incomplete" });
+      const resolved = resolveAgentCapabilities(connection, found.id, found);
+      expect(resolved.reasoningOptions.map(option => option.value)).toEqual(["auto"]);
+      expect(resolved.reasoningFallback).toBeUndefined();
+    }
   });
 
   it("excludes old Midjourney snapshots from free agent capability discovery", async () => {

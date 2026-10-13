@@ -11,6 +11,22 @@ import {
 } from "./http";
 
 describe("provider HTTP submission safety", () => {
+  it("retains actual response request IDs in opt-in image failures without credential headers", async () => {
+    const captured=vi.fn();
+    const error=await fetchProviderJson(async()=>Response.json({error:{message:"rejected",request_id:"req-body"}},
+      {status:403,headers:{"x-request-id":"req-header","set-cookie":"secret","authorization":"Bearer secret"}}),
+      "https://provider.test/images/generations",{method:"POST"},{phase:"submit",onResponseEvidence:captured}).catch(e=>e as ProviderHttpError);
+    expect(error.details).toMatchObject({status:403,upstreamRequestEvidence:{requestIds:["req-header","req-body"]}});
+    expect(JSON.stringify(error.details.upstreamRequestEvidence)).not.toContain("secret");
+    expect(captured).toHaveBeenLastCalledWith(error.details.upstreamRequestEvidence);
+  });
+  it("retains the received header ID if the response body is truncated; does not retry",async()=>{
+    const fetcher=vi.fn(async()=>new Response(new ReadableStream({start(c){c.error(new Error("truncated"));}}),{headers:{"x-request-id":"req-before-body"}}));
+    const error=await fetchProviderJson(fetcher,"https://provider.test/images/generations",{method:"POST"},
+      {phase:"submit",onResponseEvidence:()=>{}}).catch(e=>e as ProviderHttpError);
+    expect(error.details).toMatchObject({retryable:false,submissionMayHaveOccurred:true,upstreamRequestEvidence:{requestIds:["req-before-body"]}});
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
   it("treats failed network discovery as pre-submission rather than an ambiguous paid request", async () => {

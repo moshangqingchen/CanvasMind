@@ -53,6 +53,15 @@ async function connection(id: string, extra: Record<string, unknown> = {}) {
   });
 }
 describe("agent model routing identity and capabilities", () => {
+  it("excludes removed native connections and Claude models while keeping compatible models", async () => {
+    await connection("legacy", { protocol: "anthropic-messages" });
+    await connection("mixed", { modelScanStatus: "live", scannedModelIds: ["claude-sonnet-4-6", "gpt-5.4"],
+      modelCatalogModels: scanProviderModelCatalog([{ id: "claude-sonnet-4-6" }, { id: "gpt-5.4" }]).models, manualModels: [] });
+    expect((await loadAgentModels()).map(model => model.modelId)).toEqual(["gpt-5.4"]);
+    await expect(resolveAgentModel("legacy", "shared-model")).rejects.toThrow("支持已移除");
+    await expect(resolveAgentModel("mixed", "claude-sonnet-4-6")).rejects.toThrow("支持已移除");
+    expect(await resolveAgentModel("mixed", "gpt-5.4")).toMatchObject({ model: "gpt-5.4" });
+  });
   it("uses official defaults for every known GPT model in a group without channel effort declarations", async () => {
     const ids = ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra", "gpt-6-sol"];
     await connection("stable-pro", { modelGroup: "gpt-pro-[稳定优先]", usage: "canvas", protocol: undefined,
@@ -214,7 +223,7 @@ describe("agent model routing identity and capabilities", () => {
   });
   it("intersects declared capabilities with the actual protocol serializer", async () => {
     const c = await connection("one", {
-      protocol: "anthropic-messages",
+      protocol: "responses",
       directorCapabilities: {
         imageInput: true,
         audioInput: true,
@@ -229,7 +238,6 @@ describe("agent model routing identity and capabilities", () => {
   it.each([
     "responses",
     "chat-completions",
-    "anthropic-messages",
     "google-generate-content",
     "xai-responses",
     "generic-openai-compatible",

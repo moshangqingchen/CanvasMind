@@ -20,7 +20,7 @@ describe("DirectorAdapterRegistry", () => {
     expect(() => registry.register(adapter("openai-responses"))).toThrow(
       "already registered",
     );
-    expect(() => registry.get("anthropic-messages")).toThrow(
+    expect(() => registry.get("google-generate-content")).toThrow(
       "No director adapter",
     );
   });

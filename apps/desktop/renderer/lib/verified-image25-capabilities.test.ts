@@ -312,7 +312,7 @@ describe("verified supplier 2.5 capabilities", () => {
       expect(m.operations).toContain("image.edit");
       expect(m.parameters?.find((p) => p.key === "quality")).toMatchObject({
         label: "质量",
-        default: "max",
+        default: family === "gpt-image-2" ? "high" : "max",
       });
       expect(
         m.parameters

@@ -4,6 +4,7 @@ import type {
   ModelParameterOption,
   RestConnectorConfig,
 } from "@super-canvas/providers";
+import { cangyuanCurrentModel } from "@super-canvas/providers/cangyuan-current-models";
 
 export const CANGYUAN_IMAGE_PRESET_ID = "cangyuan-gpt-image-2";
 export const CANGYUAN_IMAGE_LEGACY_4K_PRESET_ID = "cangyuan-gpt-image-2-4k";
@@ -13,6 +14,7 @@ export const WEAI_IMAGE_BASE_URL = "https://asian-acc.we-token.cc/v1";
 export const WEAI_IMAGE_DEFAULT_MODEL = "gpt-image-2";
 
 export const CANGYUAN_IMAGE_GROUP = "IMAGE";
+export const CANGYUAN_AZURE_IMAGE_GROUP = "IMAGE-GPT-Azure";
 export const CANGYUAN_VIDEO_GROUP = "VIDEO";
 export const CANGYUAN_ALL_MODELS_GROUP = "全模型-无claude/gpt";
 export const CANGYUAN_BACKUP_IMAGE_GROUP = "IMAGE-备用分组";
@@ -36,6 +38,7 @@ export const CANGYUAN_NANO_BANANA_2_4K_MODEL = "nano-banana2-4k";
 
 export type CangyuanImageGroup =
   | typeof CANGYUAN_IMAGE_GROUP
+  | typeof CANGYUAN_AZURE_IMAGE_GROUP
   | typeof CANGYUAN_VIDEO_GROUP
   | typeof CANGYUAN_ALL_MODELS_GROUP
   | typeof CANGYUAN_BACKUP_IMAGE_GROUP;
@@ -45,6 +48,7 @@ export const CANGYUAN_IMAGE_GROUP_OPTIONS: readonly {
   label: string;
 }[] = [
   { value: CANGYUAN_IMAGE_GROUP, label: "IMAGE" },
+  { value: CANGYUAN_AZURE_IMAGE_GROUP, label: "IMAGE-GPT-Azure" },
   { value: CANGYUAN_VIDEO_GROUP, label: "VIDEO" },
   {
     value: CANGYUAN_ALL_MODELS_GROUP,
@@ -580,6 +584,9 @@ export function cangyuanImageConnectorForGroup(
       ? CANGYUAN_BACKUP_IMAGE_CONNECTOR
       : CANGYUAN_IMAGE_CONNECTOR,
   );
+  if (group === CANGYUAN_AZURE_IMAGE_GROUP) connector.models = [
+    "gpt-image-2-az", "gpt-image-2.5-flare-az", "gpt-image-2.5-sunburst-az",
+  ].map(id => cangyuanCurrentModel({ id, name: id, operations: ["image.generate", "image.edit"] }));
   if (
     group === CANGYUAN_VIDEO_GROUP ||
     group === CANGYUAN_ALL_MODELS_GROUP
@@ -592,6 +599,7 @@ export function cangyuanImageConnectorForGroup(
 export function cangyuanDefaultModelForGroup(
   group: CangyuanImageGroup,
 ): string {
+  if (group === CANGYUAN_AZURE_IMAGE_GROUP) return "gpt-image-2-az";
   if (group === CANGYUAN_VIDEO_GROUP) return "sd5-seedance-2.0";
   if (group === CANGYUAN_ALL_MODELS_GROUP) return CANGYUAN_IMAGE_4K_MODEL;
   return group === CANGYUAN_BACKUP_IMAGE_GROUP

@@ -71,13 +71,7 @@ export function adapterFinishReason(
         ? payload.choices[0]
         : undefined;
     const chatReason = choice?.finish_reason;
-    if (protocol === "anthropic-messages") {
-      if (["end_turn", "stop_sequence"].includes(String(payload.stop_reason)))
-        reason = "complete";
-      else if (payload.stop_reason === "max_tokens") reason = "length";
-      else if (payload.stop_reason === "tool_use") reason = "tool_call";
-      else if (payload.stop_reason === "refusal") reason = "blocked";
-    } else if (protocol === "google-generate-content") {
+    if (protocol === "google-generate-content") {
       const candidate =
         Array.isArray(payload.candidates) && isRecord(payload.candidates[0])
           ? payload.candidates[0]
@@ -205,7 +199,7 @@ export function adapterEndpoint(
     );
   }
   // Supplier connections store the site root for catalogs and shared canvas
-  // Keys. Standard OpenAI/Anthropic calls need /v1, while explicitly supplied
+  // Keys. Standard OpenAI calls need /v1, while explicitly supplied
   // gateway prefixes and versioned paths must remain intact.
   const basePath = url.pathname.replace(/\/+$/u, "");
   const defaultPath = connection.protocol === "google-generate-content" ? "/v1beta" : "/v1";

@@ -1,4 +1,5 @@
 import { supplierKeyForConnection } from "./supplier-identity";
+import { reconcileCangyuanNativeGroupConnection } from "./cangyuan-native-group-connection";
 import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
 import { inventoryChanges } from "./model-availability";
 import { assertCompleteModelInventoryPayload, isCompleteModelInventoryResponse, ModelInventoryReadError, modelInventoryFailure, modelDirectoryDenialCode,
@@ -48,6 +49,7 @@ import { withHighestModelQualityDefault } from "./model-quality";
 import { enrichSupplierModelPrices, type JiasuSupplierExampleContext } from "./supplier-model-pricing";
 import { discoverAgentModelCapabilities } from "./agent-model-discovery";
 import { isAgentTextModel } from "./agent-model-capabilities";
+import { unsupportedAgentModelReason } from "./agent-model-support";
 import { supplierSiteLoginCacheIdentity } from "./supplier-site-session";
 import { MIAOWU_PRESET_ID } from "./miaowu-presets";
 import { scanMiaowuConnection } from "./miaowu-server";
@@ -100,6 +102,8 @@ async function listCustomGroupModels(connection: {
   encryptedSecret?: string | null;
   config: Record<string, unknown>;
 }): Promise<CustomGroupModelScan> {
+  const unsupported = unsupportedAgentModelReason(connection.config);
+  if (unsupported) throw new Error(unsupported);
   const baseUrl =
     typeof connection.config.baseUrl === "string"
       ? connection.config.baseUrl.trim()
@@ -114,9 +118,7 @@ async function listCustomGroupModels(connection: {
     connection.config.directorProtocol ?? connection.config.protocol ?? "",
   );
   const nativeHeaders: Record<string, string> =
-    nativeProtocol === "anthropic-messages"
-      ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
-      : nativeProtocol === "google-generate-content"
+    nativeProtocol === "google-generate-content"
         ? { "x-goog-api-key": apiKey }
         : { authorization: `Bearer ${apiKey}` };
   const candidates = [
@@ -185,12 +187,13 @@ async function persistCustomGroupModelScan(
     return;
   const modelIds = [...new Set(scan.models.map((model) => model.id))];
   const configuredDefault =
-    typeof latest.config.defaultModel === "string"
-      ? latest.config.defaultModel.trim()
+    typeof latest.config.defaultModel === "string" && latest.config.defaultModel.trim()
+      ? latest.config.defaultModel
       : "";
-  const effectiveDefault = modelIds.includes(configuredDefault)
-    ? configuredDefault
-    : (scan.models.find((model) => model.isDefault)?.id ?? modelIds[0]);
+  // A directory refresh changes availability, never an existing user choice.
+  // An absent/denied ID remains saved and is checked when actually submitted.
+  const candidates = latest.config.usage === "agent" ? scan.models.filter(isAgentTextModel) : scan.models;
+  const effectiveDefault = configuredDefault || (candidates.find((model) => model.isDefault)?.id ?? candidates[0]?.id);
   const modelGroups = Object.fromEntries(
     scan.groups.map((group) => [group.id, [...group.modelIds]]),
   );
@@ -437,12 +440,10 @@ async function persistWeAiModelScan(
     return;
   const modelIds = [...new Set(items.map((model) => model.id))];
   const configuredDefault =
-    typeof latest.config.defaultModel === "string"
+    typeof latest.config.defaultModel === "string" && latest.config.defaultModel.trim()
       ? latest.config.defaultModel
       : "";
-  const effectiveDefault = modelIds.includes(configuredDefault)
-    ? configuredDefault
-    : (items.find((model) => model.isDefault)?.id ?? modelIds[0]);
+  const effectiveDefault = configuredDefault || (items.find((model) => model.isDefault)?.id ?? modelIds[0]);
   const config = {
     ...latest.config,
     modelScanStatus: modelIds.length > 0 ? "live" : "empty",
@@ -967,6 +968,11 @@ async function readModelResponse(
   const id = parsedId.data;
   let original = await repository.getConnection(id);
   if (!original) return jsonError("供应商连接已删除，请重新选择连接", 404);
+  const nativeGroup = reconcileCangyuanNativeGroupConnection(original);
+  if (nativeGroup !== original) {
+    await assertCurrentSupplierConnection(original);
+    original = await repository.saveConnection(nativeGroup, { expected: original });
+  }
   if (original.provider === "cli") {
     // Opening a canvas (including ?refresh=1 from legacy clients) must never
     // execute a local program. Only the explicit CLI POST action probes it.
@@ -1162,7 +1168,11 @@ async function readModelResponse(
           throw new SupplierConflictError("刷新期间站点认证已改变，旧价格和接口结果已丢弃，请重新刷新");
         await assertCurrentSupplierConnection(afterDiscovery);
         const models = agentModels.map(withHighestModelQualityDefault);
-        const defaultModel = isTk1688ApiUrl(String(latest.config.baseUrl ?? ""))
+        // Never replace a saved nonempty selection because its current Key
+        // directory is empty, changed, or marks it unavailable. New/blank
+        // connections still select a model appropriate to their consumer.
+        const hasSavedDefault = typeof config.defaultModel === "string" && config.defaultModel.trim();
+        const defaultModel = hasSavedDefault ? undefined : isTk1688ApiUrl(String(latest.config.baseUrl ?? ""))
           ? tk1688InventoryDefaultModel(latest, models, config.defaultModel)
           : latest.config.usage === "agent"
             ? models.find(model => model.id === config.defaultModel && isAgentTextModel(model)) ?? models.find(isAgentTextModel)

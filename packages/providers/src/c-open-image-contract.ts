@@ -14,7 +14,8 @@ function measuredExtraFields(config: Readonly<Record<string, unknown>>, model: s
   return evidence?.transport.kind === "openai-images" && evidence.request.background === "transparent" && evidence.request.output_format === "png" ? evidence : undefined;
 }
 
-/** These exact groups publish Images fields, but no per-ratio pixel matrix. */
+/** Exact groups retain Images inputs; prices and native IDs do not declare
+ * every optional Images field or any per-ratio pixel matrix. */
 export function cOpenImageRoute(config: Readonly<Record<string, unknown>>, model: string): COpenImageRoute | undefined {
   if (["agent", "disabled"].includes(String(config.usage)) || config.supplierArchived === true || config.manualProtocol === true) return;
   let origin: string;
@@ -26,9 +27,11 @@ export function cOpenImageRoute(config: Readonly<Record<string, unknown>>, model
   const group = String(config.accountKeyGroup ?? config.modelGroup ?? "");
   const stable = config.accountKeyGroupId != null ? String(config.accountKeyGroupId) : undefined;
   if (origin === "https://api.eaheng.com") {
-    const groups: Record<string, string> = { "6": "A2-GPT-Pro正价-0.28倍率", "24": "GPT生图原生渠道V5", "18": "B4-GPT生图原生渠道V3（高质量）" };
+    const groups: Record<string, string> = { "2": "A1-GPT-Pro-0.18倍率", "6": "A2-GPT-Pro正价-0.28倍率", "24": "GPT生图原生渠道V5", "18": "B4-GPT生图原生渠道V3（高质量）" };
     const stableMatches = (id: string) => stable ? stable === id : group === groups[id];
-    if ((stableMatches("6") || stableMatches("24")) && [...GPT_IDS, "gpt-image-2.5"].includes(model))
+    // The account's stable group 2 publishes image prices and its own current
+    // Key lists these four IDs even though the website plaza omits that group.
+    if ((stableMatches("2") || stableMatches("6") || stableMatches("24")) && [...GPT_IDS, "gpt-image-2.5"].includes(model))
       return { supplier: "monster", group, tiers: [], docs: "https://api.eaheng.com/docs" };
     const fixed = /^gpt-image-2\.5-(?:flare|sunburst)-(high|max)$/u.exec(model)?.[1] as "high" | "max" | undefined;
     if (stableMatches("18") && fixed) return { supplier: "monster", group, tiers: [], quality: fixed, docs: "https://api.eaheng.com/docs" };
@@ -50,6 +53,12 @@ export function cOpenImageRoute(config: Readonly<Record<string, unknown>>, model
   }
 }
 
+function restrictAdditionalFields(config: Readonly<Record<string, unknown>>, route: COpenImageRoute): boolean {
+  if (route.supplier === "monster") return config.accountKeyGroupId != null
+    ? String(config.accountKeyGroupId) === "2" : route.group === "A1-GPT-Pro-0.18倍率";
+  return route.supplier !== "synora";
+}
+
 export function cOpenImageParameterIssues(config: Readonly<Record<string, unknown>>, model: string,
   parameters: Readonly<Record<string, unknown>> = {}, operation: ProviderOperation = "image.generate"): ValidationIssue[] {
   const route = cOpenImageRoute(config, model);
@@ -61,7 +70,7 @@ export function cOpenImageParameterIssues(config: Readonly<Record<string, unknow
     issues.push({ path: "parameters.size", code: "resolution_requires_explicit_size", message: "已保存的档位偏好保留；此完整型号没有逐比例像素映射，请输入明确 W/H，size 将按原值发送。" });
   if (route.quality && parameters.quality !== undefined && parameters.quality !== "auto" && parameters.quality !== route.quality)
     issues.push({ path: "parameters.quality", code: "invalid_quality", message: `当前官方分组/完整型号固定质量 ${route.quality}；原值保留，请修改质量后提交。` });
-  if (!["synora", "monster"].includes(route.supplier)) for (const key of COMPATIBLE_EXTRA_FIELDS) {
+  if (restrictAdditionalFields(config, route)) for (const key of COMPATIBLE_EXTRA_FIELDS) {
     const measured = measuredExtraFields(config, model, parameters, operation);
     if (["background", "output_format"].includes(key) && measured?.request[key] === parameters[key]) continue;
     if (parameters[key] !== undefined && parameters[key] !== null && parameters[key] !== "auto" && parameters[key] !== "")
@@ -74,7 +83,7 @@ export function cOpenImageParameters(config: Readonly<Record<string, unknown>>, 
   parameters: Readonly<Record<string, unknown>> = {}, operation: ProviderOperation = "image.generate"): Record<string, unknown> {
   const route = cOpenImageRoute(config, model);
   const measured = measuredExtraFields(config, model, parameters, operation);
-  const fields = ["size", "quality", "n", "response_format", ...(route && ["synora", "monster"].includes(route.supplier) ? COMPATIBLE_EXTRA_FIELDS :
+  const fields = ["size", "quality", "n", "response_format", ...(route && !restrictAdditionalFields(config, route) ? COMPATIBLE_EXTRA_FIELDS :
     ["background", "output_format"].filter(key => measured?.request[key] === parameters[key]))];
   const result = Object.fromEntries(fields.flatMap(key => parameters[key] === undefined ||
     ["size", "quality", "response_format"].includes(key) && parameters[key] === "auto" ? [] : [[key, parameters[key]]]));
@@ -92,6 +101,7 @@ export function applyCOpenImageCapabilities(connection: Connection, model: Model
   for (const key of ["imageOutputDimensions", "imageOutputReferenceDimensions", "imageResolutionProfiles", "imageCustomDimensionRules", "imageFixedResolution", "imageSupportedSizes"])
     delete metadata[key];
   const quality = route.quality ?? (model.id.includes("2.5") ? "max" : "high");
+  const restrictedExtras = restrictAdditionalFields(connection.config, route);
   const parameters: NonNullable<ModelDescriptor["parameters"]> = [
     ...(route.tiers.length ? [{ key: "size_tier", label: "分辨率档位偏好", control: "select" as const, valueType: "string" as const,
       default: route.tiers.at(-1)!, options: [{ value: "auto", label: "自动" }, ...route.tiers.map(value => ({ value, label: value }))],
@@ -103,6 +113,9 @@ export function applyCOpenImageCapabilities(connection: Connection, model: Model
     { key: "quality", label: "请求质量", control: route.quality ? "select" : "text", valueType: "string", default: quality,
       allowCustomValue: !route.quality, options: (route.quality ? [quality] : ["auto", quality]).map(value => ({ value, label: value })),
       description: route.quality ? `当前官方分组/完整型号固定 ${quality} 质量。` : "high / max 是应用最高质量偏好；当前完整型号未列精确质量枚举或默认，按开放字符串原值发送。" },
+    { key: "n", label: "数量", control: "number", valueType: "integer", default: 1, min: 1, step: 1,
+      operations: ["image.generate", "image.edit"],
+      description: "应用既有 Images 协议数量字段；1 为应用单图初选。当前精确分组未公布默认值或完整数量范围，按用户整数输入保留并发送。" },
     ...(measured && !["synora", "monster"].includes(route.supplier) ? [
       { key: "background", label: "背景", control: "select" as const, valueType: "string" as const, default: "auto", operations: ["image.generate" as const],
         options: [{ value: "auto", label: "自动" }, { value: "transparent", label: "透明（历史原PNG实测）" }], description: `同来源、官方组、完整型号的历史请求字段，${measured.checkedAt}；编辑操作独立核对。` },
@@ -111,16 +124,19 @@ export function applyCOpenImageCapabilities(connection: Connection, model: Model
     ] : []),
   ];
   return { ...model, parameters: [...parameters, ...(model.parameters ?? []).filter(parameter =>
-    !["size", "size_tier", "resolution", "aspect_ratio", "aspectRatio", "ratio", "quality", ...(["synora", "monster"].includes(route.supplier) ? [] : COMPATIBLE_EXTRA_FIELDS)].includes(parameter.key))],
+    !["size", "size_tier", "resolution", "aspect_ratio", "aspectRatio", "ratio", "quality", "n", ...(restrictedExtras ? COMPATIBLE_EXTRA_FIELDS : [])].includes(parameter.key))],
     metadata: { ...metadata, imageNativeParameterContract: true, imageNativeResolutionOptions: true,
       imageNativeResolutionParameter: route.tiers.length ? "size_tier" : "size", imageResolutionTierParameter: "size_tier",
       cOpenImageContract: 1, imageOpenSizePreferences: true, imageNativeQualityOptions: true, imageSupportedResolutions: route.tiers,
       imageRequestResolutions: route.tiers, imageResolutionMode: "open-size-and-independent-preferences", imagePixelBudgetPublished: false,
       imageTierSource: "official-group-description", imageSizeFieldContract: "supplier-open-string",
       imageApplicationQualityDefault: quality, imageSupplierQualityDefault: null,
-      imageAdditionalFieldContract: ["synora", "monster"].includes(route.supplier) ? "official-openai-compatible-images-contract" : "not-declared-in-exact-supplier-material",
+      imageAdditionalFieldContract: route.supplier === "synora" ? "supplier-linked-openai-compatible-images-reference"
+        : restrictedExtras ? "not-declared-in-exact-supplier-material" : "existing-application-compatible-fields; current-exact-vendor-field-contract-not-revalidated",
+      imageCountFieldSource: "existing-application-images-protocol", imageApplicationOutputCountDefault: 1,
+      imageSupplierOutputCountDefault: null, imageSupplierOutputCountRangePublished: false,
       ...(measured ? { imageMeasuredAdditionalFields: { origin: "https://api.hangzhale.com", officialGroupId: "75", fullModelId: model.id,
         checkedAt: measured.checkedAt, operation: "image.generate", background: measured.request.background, output_format: measured.request.output_format,
         source: "same-exact-identity-original-transparent-png-evidence" } } : {}),
-      documentationUrl: route.docs, contractCheckedAt: "2026-10-10" } };
+      documentationUrl: route.docs, contractCheckedAt: "2026-10-12" } };
 }

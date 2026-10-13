@@ -70,7 +70,8 @@ it.each(["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-s
 it("adds Seedream's custom-size request presets without claiming exact output", () => {
   const model = cangyuanCatalogFromPricing({ data: [{ model_name: "doubao-seedream-5-0-pro", request_unit: "image", enable_groups: ["IMAGE"], image_ui_params: { params: { customDimensions: { enabled: true } } } }] }).groups.IMAGE[0]!;
   const sizes = model.parameters?.find(p => p.key === "size")?.options;
-  expect(sizes?.map(o => o.value)).toEqual(["1024x1024", "2048x1152"]);
+  expect(sizes?.map(o => o.value)).toEqual([]);
+  expect(model.parameters?.find(p => p.key === "size")?.allowCustomValue).toBe(true);
   expect(model.parameters?.find(p => p.key === "size")).toMatchObject({ min: 1, step: 1 });
   expect(model.parameters?.find(p => p.key === "size")?.max).toBeUndefined();
   expect(model.metadata?.imagePixelBudgetPublished).toBe(false);
@@ -99,7 +100,7 @@ it("preserves Banana 4K documented pixels above the GPT edge limit", () => {
       },
     ],
   }).groups.IMAGE[0]!;
-  expect(model.parameters?.find((p) => p.key === "size")).toBeUndefined();
+  expect(model.parameters?.find((p) => p.key === "size")).toMatchObject({ control: "dimensions", allowCustomValue: true });
   expect(model.metadata?.imageOutputDimensions).toBeUndefined();
   expect(model.metadata?.imageFixedResolution).toBe("4K");
   expect(model.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toContain("16:9");
@@ -376,7 +377,6 @@ describe("Cangyuan live catalog", () => {
           mimeType: "image/jpeg",
           filename: "reference.jpg",
           url: "https://assets.test/reference.jpg",
-          data: new Uint8Array([1, 2, 3]),
         },
       ],
       parameters: { aspect_ratio: "1:1", n: 1 },
@@ -554,11 +554,8 @@ describe("Cangyuan live catalog", () => {
       },
       assets: [],
     };
-    // The old catalog menu is not an exact API contract: current model docs
-    // omit background. Reject transparency despite that cached menu, while
-    // retaining this test's normal generation/edit asynchronous polling path.
-    await expect(adapter.submit({ ...generationRequest, parameters: { ...generationRequest.parameters, background: "transparent" } }))
-      .rejects.toThrow(/透明/u);
+    // Current exact documentation declares transparent background.
+    expect((await adapter.validate({ ...generationRequest, parameters: { ...generationRequest.parameters, background: "transparent" } })).valid).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
     const task = await adapter.submit(generationRequest);
     await adapter.poll(task);
@@ -590,7 +587,6 @@ describe("Cangyuan live catalog", () => {
           mimeType: "image/png",
           filename: "reference.png",
           url: "https://assets.test/reference.png",
-          data: new Uint8Array([1, 2, 3]),
         },
       ],
     });
@@ -1064,11 +1060,11 @@ describe("Cangyuan live catalog", () => {
     ).toBe("auto");
     expect(
       model?.parameters?.find((parameter) => parameter.key === "size"),
-    ).toMatchObject({ control: "dimensions", min: 1, step: 1 });
+    ).toMatchObject({ control: "dimensions", min: 16, step: 16 });
     expect(
       model?.parameters?.find((parameter) => parameter.key === "quality")
         ?.default,
-    ).toBe("max");
+    ).toBe("high");
     expect(
       cangyuanCurrentTransport("gpt-image-2-4k")?.submit?.mappings?.map(
         (mapping) => mapping.target,

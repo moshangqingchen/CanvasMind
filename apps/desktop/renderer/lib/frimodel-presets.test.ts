@@ -71,6 +71,7 @@ describe("FriModel marketplace presets", () => {
       "size",
       "quality",
       "output_format",
+      "n",
     ]);
     expect(descriptor?.parameters?.[0]).toMatchObject({ control: "dimensions", step: 1, allowCustomValue: true });
     expect(descriptor?.parameters?.[0]?.options?.map(option => option.value)).toEqual(["auto"]);

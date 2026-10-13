@@ -1,5 +1,6 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ValidationIssue } from "./contracts.js";
 import type { RestModelConnectorOverride, RestRequestMapping } from "./rest.js";
+import { userImageQualityOptions } from "./user-image-quality-presets.js";
 import { CANGYUAN_IMAGE_DOCUMENTS } from "./cangyuan-image-documents.js";
 
 const kTiers = ["1k", "2k", "4k"];
@@ -15,37 +16,45 @@ export function cangyuanDocumentedImageModel(model: ModelDescriptor): ModelDescr
   const x = model.id === "gpt-image-2-x" || model.id === "gpt-image-2.5-x";
   const nano = model.id === "gemini-nano-banana-2.1";
   const mj = /^midjourney-[12]k$/u.test(model.id);
+  const rules = doc.parameterRules ?? {};
   const parameters: ModelParameterDescriptor[] = [];
   if (doc.ratios.length) parameters.push({ key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string",
     default: nano ? "1:1" : model.id === "midjourney-v7" || model.id === "seedream-5.0-pro-x" ? "16:9" : "auto",
     options: [...(!nano ? [{ label: "自动（供应商默认）", value: "auto" }] : []), ...options(doc.ratios)], operations,
-    description: `${doc.fields.size} 画布比例映射到请求 size；档位像素未公布时，以原图为准。` });
+    ...(doc.sizeSuggestionsOnly ? { allowCustomValue: true } : {}),
+    description: doc.fields.size ?? "" });
   if (doc.customPixels || doc.pixelOptions.length) parameters.push({ key: "size", label: "自定义宽高", control: doc.customPixels ? "dimensions" : "select",
-    valueType: "string", ...(doc.customPixels ? { min: 1, step: 1 } : {}),
+    valueType: "string", ...(doc.customPixels ? { min: doc.dimensionRules?.step ?? 1, step: doc.dimensionRules?.step ?? 1, allowCustomValue: true,
+      ...(doc.dimensionRules ? { max: doc.dimensionRules.maxSide } : {}) } : {}),
     ...(model.id.startsWith("grok-imagine-image") ? { default: model.id.endsWith("-lite") ? "1280x720" : "1024x1024" } : {}),
-    options: doc.pixelOptions.map(value => ({ label: `${fixedTier(model.id)?.toUpperCase() ?? "原生"} · ${value.replace("x", " × ")}`, value })), operations,
-    description: `${doc.fields.size}${doc.customPixels ? " 官网未公布逐比例像素表、宽高步长或数值预算，不套用通用 K 尺寸。" : " 仅可选择公布的像素尺寸，W/H 只读。"}` });
-  if (model.id === "gpt-image-2.5-x") parameters.push({ key: "series", label: "产品线", control: "select", valueType: "string", required: true,
-    default: "sunburst", options: options(["flare", "sunburst"]), operations, description: doc.fields.series ?? "flare / sunburst" });
-  if (x) parameters.push({ key: "tier", label: "清晰度 / 计费档位", control: "select", valueType: "string", default: "4k",
-    options: options(["web", ...kTiers]), operations, description: `${doc.fields.tier} 各比例精确像素预算未公布；web 是供应商自动档。` });
-  if (doc.qualityOptions.length) {
-    const qualityOptions = /\blow\b/u.test(doc.fields.quality ?? "") ? ["low", "medium", "high", "xhigh", "max", ...(/\bauto\b/u.test(doc.fields.quality ?? "") ? ["auto"] : [])] : doc.qualityOptions;
-    if (model.id === "gpt-image-2.5-x") qualityOptions.splice(0, qualityOptions.length, "auto", "low", "medium", "high", "xhigh", "max");
-    parameters.push({ key: "quality", label: qualityOptions.includes("4k") ? "输出分辨率" : "质量", control: "select", valueType: "string",
-      default: qualityOptions.includes("4k") ? "4k" : "max", options: options(qualityOptions), operations,
-      ...(x ? { visibleWhen: [{ parameter: "tier", values: kTiers }] } : {}), description: doc.fields.quality ?? "" });
+    options: doc.pixelOptions.map(value => ({ label: (fixedTier(model.id)?.toUpperCase() ?? "原生") + " · " + value.replace("x", " × "), value })), operations,
+    description: doc.fields.size ?? "" });
+  const labels: Record<string, string> = { series: "产品线", tier: "清晰度 / 计费档位", quality: "质量", speed: "生成速度", reference: "参考图模式",
+    output_format: "输出文件编码", background: "背景", output_compression: "输出压缩", moderation: "内容审核", response_format: "结果返回方式", async: "异步任务", n: "生成张数" };
+  const legacyOptions: Record<string, string[]> = { series: ["flare", "sunburst"], tier: ["web", ...kTiers], quality: doc.qualityOptions,
+    speed: ["relax", "fast"], reference: ["image", "style", "edit", "moodboard", "editor"], output_format: ["png", "jpeg"] };
+  for (const key of Object.keys(doc.fields).filter(key => !["model", "prompt", "size", "images", "mask"].includes(key))) {
+    const rule = rules[key], values = rule?.enum ?? rule?.suggestions ?? legacyOptions[key];
+    const numeric = rule?.type === "integer" || rule?.type === "number" || key === "n", toggle = rule?.type === "boolean";
+    const defaultValue = rule?.default ?? (key === "n" ? 1 : key === "async" ? true : key === "response_format" ? "url" : key === "tier" ? "4k" : key === "series" ? "sunburst" :
+      key === "quality" ? doc.qualityOptions.includes("4k") ? "4k" : model.id.startsWith("gpt-image-2.5") ? "max" : model.id.startsWith("gpt-image-2") ? "high" : doc.qualityOptions.at(-1) :
+      key === "speed" ? "relax" : key === "reference" ? "image" : key === "output_format" ? "png" : undefined);
+    parameters.push({ key, label: key === "quality" && doc.qualityOptions.includes("4k") ? "输出分辨率" : labels[key] ?? key,
+      control: toggle ? "toggle" : numeric && !rule?.enum ? "number" : values?.length ? "select" : "text",
+      valueType: toggle ? "boolean" : numeric ? rule?.type === "number" ? "number" : "integer" : "string", operations,
+      ...(defaultValue !== undefined ? { default: defaultValue } : {}), ...(rule?.required ? { required: true } : {}),
+      ...(values?.length ? { options: values.map(value => ({ label: String(value), value })) } : {}),
+      ...(rule?.suggestions && !rule.enum ? { allowCustomValue: true } : {}),
+      ...(numeric ? { ...(rule?.type !== "number" ? { step: 1 } : {}), ...(rule?.min !== undefined ? { min: rule.min } : {}), ...(rule?.max !== undefined ? { max: rule.max } : {}) } : {}),
+      description: doc.fields[key] ?? "" });
   }
-  if (doc.fields.speed) parameters.push({ key: "speed", label: "生成速度", control: "select", valueType: "string", default: "relax",
-    options: options(["relax", "fast"]), operations, description: doc.fields.speed });
-  if (doc.fields.reference) parameters.push({ key: "reference", label: "参考图模式", control: "select", valueType: "string", default: "image",
-    options: options(["image", "style", "edit", "moodboard", "editor"]), operations, description: doc.fields.reference });
-  if (doc.fields.output_format) parameters.push({ key: "output_format", label: "输出文件编码", control: "select", valueType: "string", default: "jpeg",
-    options: options(["png", "jpeg"]), operations, description: doc.fields.output_format });
+  // This is the user's quality preference over the existing Images quality field,
+  // separate from a supplier declaration in a document that omitted it.
+  if (!doc.fields.quality && userImageQualityOptions(model.id).length) parameters.push({ key: "quality", label: "质量", control: "select", valueType: "string", operations,
+    default: model.id.startsWith("gpt-image-2.5") ? "max" : "high", options: userImageQualityOptions(model.id),
+    description: "用户指定的应用质量预设；按 Images 协议 quality 字段发送。" });
   if (doc.fields.mask) parameters.push({ key: "mask", label: "蒙版 HTTPS 地址", control: "text", valueType: "string", operations: ["image.edit"],
-    ...(model.id === "gpt-image-2-x" ? { visibleWhen: [{ parameter: "tier", values: kTiers }] } : mj ? { visibleWhen: [{ parameter: "reference", values: ["editor"] }] } : {}),
-    description: doc.fields.mask });
-  parameters.push({ key: "n", label: "生成张数", control: "select", valueType: "integer", default: 1, options: [{ label: "1 次请求", value: 1 }], operations, description: doc.fields.n ?? "" });
+    ...(!doc.parameterRules && mj ? { visibleWhen: [{ parameter: "reference", values: ["editor"] }] } : {}), description: doc.fields.mask });
   const metadata = { ...model.metadata };
   // Discard inherited family pixel presets before installing this exact SKU.
   for (const key of ["imageNativeResolutionParameter", "imageNativeResolutionOptions", "imageOutputDimensions", "imageApproximateResolutions", "imageUnsupportedResolutions", "imageNativeQualityOptions"])
@@ -58,11 +67,14 @@ export function cangyuanDocumentedImageModel(model: ModelDescriptor): ModelDescr
   return { ...model, operations, parameters, description: doc.intro, inputKinds: doc.editing ? ["text", "image", "image[]"] : ["text"], outputKinds: ["image", "image[]"],
     limits: { ...oldLimits, ...(doc.maxReferences !== undefined ? { maxInputImages: doc.maxReferences } : {}), ...(nano ? { supportedMimeTypes: ["image/png", "image/jpeg", "image/webp"] } : {}) },
     metadata: { ...metadata, canvasRunnable: !denied, protocol: "rest", cangyuanCurrentContract: model.id, imageNativeParameterContract: true,
-      operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "image", documentationUrl: doc.sourceUrl, contractCheckedAt: doc.checkedAt, imageContractDocumentSha256: doc.sha256,
+      operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "image", documentationUrl: doc.sourceUrl, contractCheckedAt: doc.checkedAt, imageContractDocumentSha256: doc.sha256, imageContractSourceLastReviewed: doc.sourceLastReviewed,
       imageSupportedResolutions: supported, imageRequestResolutions: x || nativeQuality || fixedTier(model.id) ? supported : [],
       ...(x || nativeQuality ? { imageNativeResolutionParameter: x ? "tier" : "quality", imageNativeResolutionOptions: true, imageNativeQualityOptions: true } : { imageResolutionMode: fixedTier(model.id) ? "fixed-model-tier" : "provider-decided" }),
       ...(fixedTier(model.id) ? { imageFixedResolution: fixedTier(model.id)!.toUpperCase() } : {}),
-      imagePixelBudgetPublished: false, imageCustomPixels: doc.customPixels, imageOutputEncodingFields: doc.fields.output_format ? ["output_format"] : [],
+      imagePixelBudgetPublished: Boolean(doc.dimensionRules), imageQualityOptionsCompleteEnum: Boolean(rules.quality?.enum),
+      ...(!doc.fields.quality && userImageQualityOptions(model.id).length ? { imageUserQualityPresetSource: "user-request", imageApplicationQualityDefault: model.id.startsWith("gpt-image-2.5") ? "max" : "high" } : {}),
+      ...(doc.dimensionRules ? { imageCustomDimensionRules: { alignment: doc.dimensionRules.step, maximumEdge: doc.dimensionRules.maxSide, maximumAspectRatio: doc.dimensionRules.maxAspectRatio, minimumPixels: doc.dimensionRules.minPixels, maximumPixels: doc.dimensionRules.maxPixels } } : {}),
+      imageCustomPixels: doc.customPixels, imageOutputEncodingFields: doc.fields.output_format ? ["output_format"] : [],
       imageSizeOptionsCompleteEnum: doc.pixelOptions.length > 0 && !doc.customPixels,
       ...(doc.referenceDimensions ? { imageOutputReferenceDimensions: doc.referenceDimensions } : {}),
       imageOutputEncodingDeclared: Boolean(doc.fields.output_format), imageOutputTransport: "url", supportsMask: Boolean(doc.fields.mask),
@@ -80,17 +92,16 @@ export function cangyuanDocumentedImageTransport(id: string, parameters?: Readon
     { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
     { target: "/size", source: { kind: "request", path: "$.parameters.aspect_ratio" }, omitIfUndefined: true, omitValues: ["auto"] },
     ...(doc.customPixels || doc.pixelOptions.length ? [{ target: "/size", source: { kind: "request" as const, path: "$.parameters.size" }, omitIfUndefined: true, omitValues: ["auto"] }] : []),
-    ...["tier", "series", "quality", "speed", "reference", "output_format"].flatMap((key): RestRequestMapping[] => doc.fields[key] ? [{ target: `/${key}`,
-      source: { kind: "request", path: `$.parameters.${key}` }, omitIfUndefined: true,
-      ...(x && key === "quality" ? { when: [{ path: "$.parameters.tier", values: kTiers }] } : {}) }] : []),
+    ...[...new Set([...Object.keys(doc.fields).filter(key => !["model", "prompt", "size", "images", "mask"].includes(key)), ...(userImageQualityOptions(id).length ? ["quality"] : [])])].map((key): RestRequestMapping => ({ target: `/${key}`,
+      source: { kind: "request", path: `$.parameters.${key}` }, omitIfUndefined: true })),
   ];
   const response = { taskIdPath: "$.id", taskIdFallbackPaths: ["$.task_id"], statusPath: "$.status", errorPath: "$.error.message", progressPath: "$.progress" };
-  const editPath = mj && parameters?.reference !== "editor" ? "/v1/images/generations" : "/v1/images/edits";
+  const editPath = !doc.parameterRules && mj && parameters?.reference !== "editor" ? "/v1/images/generations" : "/v1/images/edits";
   const submit = (edit: boolean) => ({ path: edit ? editPath : "/v1/images/generations", method: "POST" as const, bodyMode: "json" as const,
     template: { async: true, n: 1, response_format: "url" }, mappings: [...mappings,
       ...(edit ? [{ target: "/images", source: { kind: "assets" as const, assetKind: "image" as const }, omitIfEmpty: true }] : []),
       ...(edit && doc.fields.mask ? [{ target: "/mask", source: { kind: "request" as const, path: "$.parameters.mask" }, omitIfUndefined: true, omitIfEmpty: true,
-        ...(id === "gpt-image-2-x" ? { when: [{ path: "$.parameters.tier", values: kTiers }] } : {}) },
+        ...(!doc.parameterRules && id === "gpt-image-2-x" ? { when: [{ path: "$.parameters.tier", values: kTiers }] } : {}) },
       { target: "/mask", source: { kind: "assets" as const, assetKind: "image" as const, role: "mask" as const, select: "first" as const }, omitIfUndefined: true }] : [])], response });
   const poll = (edit: boolean) => ({ path: `${edit ? editPath : "/v1/images/generations"}/{taskId}`, method: "GET" as const, bodyMode: "none" as const, response });
   return { submit: submit(false), poll: poll(false), pollIntervalMs: 5_000, output: { path: "$.data", kind: "image", urlPath: "url", base64Path: "b64_json" },
@@ -109,21 +120,31 @@ export function cangyuanDocumentedImageIssues(request: NormalizedRequest): Valid
   for (const parameter of model.parameters ?? []) {
     const value = p[parameter.key];
     if (parameter.required && value === undefined) add(`parameters.${parameter.key}`, `必须选择${parameter.label}。`);
-    if (value !== undefined && parameter.control === "select" && !parameter.options?.some(option => String(option.value) === String(value)))
+    if (value !== undefined && parameter.control === "select" && parameter.allowCustomValue !== true && !parameter.options?.some(option => String(option.value) === String(value)))
       add(`parameters.${parameter.key}`, `${request.model} 不支持 ${parameter.key}=${String(value)}。`);
   }
-  if (p.size !== undefined && doc.customPixels && p.size !== "auto" && !/^\d+x\d+$/u.test(String(p.size))) add("parameters.size", "自定义宽高必须为 WIDTHxHEIGHT。");
+  if (p.size !== undefined && doc.customPixels && typeof p.size !== "string") add("parameters.size", "size 必须为字符串。");
   if (/^\d+x\d+$/u.test(String(p.size)) && String(p.size).split("x").some(v => !Number.isSafeInteger(Number(v)) || Number(v) <= 0)) add("parameters.size", "图片宽高必须为正整数。");
-  if (p.n !== undefined && p.n !== 1) add("parameters.n", "一次请求只能 n=1；返回多张的型号仍按一次请求。 ");
+  for (const [key, rule] of Object.entries(doc.parameterRules ?? {})) {
+    const value = key === "size" ? p.size ?? p.aspect_ratio : p[key]; if (value === undefined) continue;
+    if (rule.type === "string" && typeof value !== "string" || rule.type === "boolean" && typeof value !== "boolean") add("parameters." + key, "参数类型与官方字段不一致。");
+    if (rule.type === "integer" && (typeof value !== "number" || !Number.isInteger(value)) || rule.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) add("parameters." + key, "请输入合法数值。");
+    if (typeof value === "number" && (rule.min !== undefined && value < rule.min || rule.max !== undefined && value > rule.max)) add("parameters." + key, "数值超出该型号公布范围。");
+  }
+  if (!doc.parameterRules && p.n !== undefined && p.n !== 1) add("parameters.n", "一次请求只能 n=1。");
+  if (doc.dimensionRules && /^\d+x\d+$/u.test(String(p.size))) {
+    const [width, height] = String(p.size).split("x").map(Number) as [number, number], d = doc.dimensionRules;
+    if (width % d.step || height % d.step || Math.max(width, height) > d.maxSide || Math.max(width / height, height / width) > d.maxAspectRatio || width * height < d.minPixels || width * height > d.maxPixels)
+      add("parameters.size", "尺寸须满足该型号的对齐、边长、比例及总像素限制。");
+  }
   if (!doc.editing && request.operation === "image.edit") add("operation", "该完整型号只支持文生图。");
-  if (x && p.tier === undefined && p.quality !== undefined) add("parameters.tier", "带质量参数的旧请求必须先选择明确的 1k / 2k / 4k 清晰度档。");
   const masks = request.assets?.filter(a => a.role === "mask") ?? [];
-  const maskAllowed = Boolean(doc.fields.mask) && request.operation === "image.edit" && (request.model !== "gpt-image-2-x" || kTiers.includes(String(p.tier))) && (!/^midjourney-[12]k$/u.test(request.model!) || p.reference === "editor");
+  const maskAllowed = Boolean(doc.fields.mask) && request.operation === "image.edit" && (Boolean(doc.parameterRules) || (request.model !== "gpt-image-2-x" || kTiers.includes(String(p.tier))) && (!/^midjourney-[12]k$/u.test(request.model!) || p.reference === "editor"));
   if ((p.mask || masks.length) && !maskAllowed) add("parameters.mask", "当前完整型号、档位或模式不支持蒙版。");
   if (masks.length > 1) add("assets", "最多支持 1 张蒙版。");
   if (p.mask && !/^https:\/\//u.test(String(p.mask))) add("parameters.mask", "蒙版必须为公网 HTTPS 地址。");
   const refs = request.assets?.filter(a => a.kind === "image" && a.role !== "mask") ?? [];
-  const limit = request.model === "gpt-image-2.5-x" && p.tier === "web" ? 9 : doc.maxReferences;
+  const limit = !doc.parameterRules && request.model === "gpt-image-2.5-x" && p.tier === "web" ? 9 : doc.maxReferences;
   if (limit !== undefined && refs.length > limit) add("assets", `当前档位最多 ${limit} 张参考图。`);
   if (!doc.editing && refs.length) add("assets", "该型号不支持参考图。");
   if (model.metadata?.remoteMediaUrlsOnly) for (const asset of request.assets ?? []) if (asset.url && !asset.url.startsWith("https://")) add("assets", "素材须是公网 HTTPS URL。");

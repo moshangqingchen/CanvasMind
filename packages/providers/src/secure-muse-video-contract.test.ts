@@ -48,6 +48,37 @@ describe("Secure Muse's current official contract", () => {
       .toEqual(expect.arrayContaining([expect.objectContaining({ path: "assets", message: "Muse 去重后的参考图最多 10 张。" })]));
   });
 
+  it("applies announcement63's nine-image limit only to stable group57 and preserves inputs", async () => {
+    const exact = { group: "muse-video", officialGroupId: "57" };
+    const nine = request({ duration: 30, resolution: "720p" }, Array.from({ length: 9 }, (_, id) => image(id)));
+    const ten = request({ duration: 30, resolution: "720p" }, Array.from({ length: 10 }, (_, id) => image(id)));
+    const original = structuredClone(ten);
+    expect(remainingVideoModel("secure", "muse-video", undefined, exact)?.metadata).toMatchObject({
+      videoReferenceImageLimit: 9, videoReferenceImageLimitSource: "official-group57-announcement63", videoMaxDuration: 30,
+    });
+    expect(remainingVideoRequestIssues("secure", nine, exact)).toEqual([]);
+    expect(remainingVideoRequestIssues("secure", ten, exact)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "assets", message: "Muse 去重后的参考图最多 9 张。" }),
+    ]));
+    expect(remainingVideoRequestIssues("secure", ten, { group: "muse-video", officialGroupId: 56 })).toEqual([]);
+    expect(remainingVideoRequestIssues("secure", ten, context)).toEqual([]);
+    expect(ten).toEqual(original);
+    const repeated = request({}, Array.from({ length: 12 }, (_, id) => image(id, "https://media.example/same.png")));
+    expect(remainingVideoRequestIssues("secure", repeated, exact)).toEqual([]);
+    const model = remainingVideoModel("secure", "muse-video", undefined, exact)!;
+    const native = remainingVideoTransport("secure", "muse-video", exact)!;
+    const connector: RestConnectorConfig = { auth: { type: "bearer" }, allowedHosts: ["token.secure-skill.com"], models: [model],
+      submit: { path: "/unused", method: "POST", bodyMode: "json" }, output: { path: "$.unused", kind: "video" }, ...native };
+    const fetcher = vi.fn<typeof fetch>();
+    const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ id: "muse", provider: "rest", baseUrl: "https://token.secure-skill.com", apiKey: "fixture-only",
+      settings: { connector, modelGroup: "muse-video", accountKeyGroupId: "57", usage: "canvas", modelScanStatus: "live", scannedModelIds: ["muse-video"] } }]), { fetch: fetcher });
+    expect((await adapter.validate(ten)).valid).toBe(false);
+    await expect(adapter.submit(ten)).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(ten).toEqual(original);
+    expect((await adapter.validate(nine)).valid).toBe(true);
+  });
+
   it.each([{ duration: 0 }, { duration: 31 }, { duration: 1.5 }, { duration: "wrong" }, { seconds: 6, video_length: 10 },
     { resolution: 1080 }, { extra: 3 }, { timeout: 0 }, { timeout: 2.5 }, { stream: true }, { reference_videos: ["https://media.example/a.mp4"] },
     { reference_audios: ["https://media.example/a.mp3"] }, { first_frame: "https://media.example/a.png" }, { reference_images: [{}] }])

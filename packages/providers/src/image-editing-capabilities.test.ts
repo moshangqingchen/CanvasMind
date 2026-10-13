@@ -77,9 +77,12 @@ describe("exact image editing capabilities", () => {
     for (const model of ["gpt-image-2-1k", "gpt-image-2-2k", "gpt-image-2-4k", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])
       expect(getImageEditingCapabilities(cangyuan, model).mask).toBe("url");
     for (const tier of ["1k", "2k", "4k"]) expect(getImageEditingCapabilities(cangyuan, "gpt-image-2-x", { tier }).mask).toBe("url");
-    for (const model of ["gpt-image-2", "gpt-image-2.5-flare-4k", "gpt-image-2.5-x"])
+    for (const model of ["gpt-image-2.5-flare-4k", "unknown-gpt-image-2.5-x"])
       expect(getImageEditingCapabilities(cangyuan, model, { tier: "4k" }).mask).toBe(null);
-    expect(getImageEditingCapabilities(cangyuan, "gpt-image-2-x", { tier: "web" }).mask).toBe(null);
+    expect(getImageEditingCapabilities(cangyuan, "gpt-image-2-x", { tier: "web" }).mask).toBe("url");
+    for (const model of ["gpt-image-2", "gpt-image-2.5-x", "gpt-image-2-az", "gpt-image-2.5-flare-az", "gpt-image-2.5-sunburst-az"])
+      expect(getImageEditingCapabilities(cangyuan, model)).toMatchObject({ transparent: true, mask: "url" });
+    expect(getImageEditingCapabilities({ ...cangyuan, config: { ...cangyuan.config, manualProtocol: true } }, "gpt-image-2-az")).toEqual({ transparent: false, mask: null });
     expect(getImageEditingCapabilities(connection("api.tk1688.com"), "gpt-image-1").mask).toBe("multipart");
     expect(getImageEditingCapabilities(connection("api.tk1688.com"), "gpt-image-1@s1c2").mask).toBe(null);
     expect(getImageEditingCapabilities(connection("api.frimodel.com"), "gpt-image-2-high").mask).toBe(null);

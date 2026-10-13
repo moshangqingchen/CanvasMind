@@ -22,6 +22,18 @@ const cangyuanModel = (id: string) => cangyuanVideoModel({ id, name: id, operati
 const videoAsset: ProviderAssetInput = { id: "reference-video", kind: "video", mimeType: "video/mp4", url: "https://media.example/reference.mp4", durationSeconds: 9.2 };
 
 describe("current media contracts repair saved REST transports", () => {
+  it.each(["wan3.0", "wan3.0-prime"])("honors Secure stable58's explicit short-ID restriction before network for %s", async id => {
+    const model = remainingVideoModel("secure", id)!;
+    const input = request(id, { duration: 6, resolution: "720P", aspect_ratio: "16:9" });
+    const { adapter, fetcher } = fixture("https://token.secure-skill.com/v1", model, [], { accountKeyGroupId: "58", accountKeyGroup: "wan3.0视频" });
+    const snapshot = structuredClone(input);
+    await expect(adapter.submit(input)).rejects.toThrow("当前分组接口文档明确要求使用");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(input).toEqual(snapshot);
+    const older = fixture("https://token.secure-skill.com/v1", model, [Response.json({ task_id: "old-wan", status: "queued" })], { accountKeyGroupId: "40", accountKeyGroup: "wan3.0视频" });
+    await older.adapter.submit(input);
+    expect(JSON.parse(String(older.fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ model: id });
+  });
   it("sends the documented Cangyuan audio field instead of stale saved image/alias mappings", async () => {
     const id = "sd11-seedance-2.0";
     const { adapter, fetcher } = fixture("https://ai.cangyuansuanli.cn/v1", cangyuanModel(id), [Response.json({ id: "video_1", status: "queued" })]);

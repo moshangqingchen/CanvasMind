@@ -86,6 +86,45 @@ describe("parameter panel directory data (offline)", () => {
     expect(validateModelParameters(model, parameters).issues).toContainEqual(expect.objectContaining({ path: "parameters.duration", code: "max" }));
   });
 
+  it("keeps open select suggestions editable after reloading saved custom strings", () => {
+    const open: ModelDescriptor = { ...model, metadata: { resolutionRangeUnverified: true }, parameters: [
+      model.parameters![0]!,
+      { key: "resolution", label: "输出分辨率", control: "select", valueType: "string", allowCustomValue: true,
+        options: [{ value: "720p", label: "720p（示例）" }] },
+      { key: "aspect_ratio", label: "画面比例", control: "select", valueType: "string", allowCustomValue: true,
+        options: [{ value: "16:9", label: "16:9（示例）" }] },
+    ] };
+    for (const aspect_ratio of ["2.35:1", "2.39:1"]) {
+      const parameters = Object.freeze({ duration: 7, resolution: "custom-resolution", aspect_ratio });
+      const onChange = vi.fn();
+      const html = renderToStaticMarkup(React.createElement(NodeParameterFields, { nodeId: "open-select", nodeType: "video-generation",
+        provider: "rest", model: open, parameters, onChange }));
+      expect(html).toMatch(/<input(?=[^>]*aria-label="输出分辨率（自定义）")(?=[^>]*value="custom-resolution")[^>]*>/u);
+      expect(html).toContain(`aria-label="画面比例（自定义）"`);
+      expect(html).toContain(`value="${aspect_ratio}"`);
+      expect(html).toContain("720p（示例）");
+      expect(html).toContain("16:9（示例）");
+      expect(html).not.toContain('aria-invalid="true"');
+      expect(validateModelParameters(open, parameters).valid).toBe(true);
+      expect(onChange).not.toHaveBeenCalled();
+      expect(parameters).toEqual({ duration: 7, resolution: "custom-resolution", aspect_ratio });
+    }
+  });
+
+  it("offers custom input from a suggested value without widening explicit enums or duration bounds", () => {
+    const suggested: ModelDescriptor = { ...model, parameters: model.parameters!.map(parameter => parameter.key === "aspect_ratio"
+      ? { ...parameter, valueType: "string", allowCustomValue: true } : parameter) };
+    const html = renderToStaticMarkup(React.createElement(NodeParameterFields, { nodeId: "suggested-select", nodeType: "video-generation",
+      provider: "rest", model: suggested, parameters: { duration: 38, resolution: "720p", aspect_ratio: "16:9" }, onChange: vi.fn() }));
+    expect(html).toContain('value="__custom_ratio__">自定义</option>');
+    expect(html).not.toContain('aria-label="画面比例（自定义）"');
+    expect(html).not.toContain('aria-label="输出分辨率（自定义）"');
+    expect(html).toContain('value="720p" disabled="" selected="">720p（已保存）');
+    expect(html).toContain("38（已保存）");
+    expect(validateModelParameters(suggested, { duration: 38, aspect_ratio: "2.39:1" }).issues)
+      .toContainEqual(expect.objectContaining({ path: "parameters.duration", code: "max" }));
+  });
+
   it("uses only published defaults when duration range data is missing and preserves absent custom fields", () => {
     const missing = { metadata: { durationRangeUnverified: true, videoParameterConfirmedDefaults: { duration: 8 } } };
     const issues = [{ path: "parameters.duration" }, { path: "parameters.duration" }, { path: "parameters.custom" }];

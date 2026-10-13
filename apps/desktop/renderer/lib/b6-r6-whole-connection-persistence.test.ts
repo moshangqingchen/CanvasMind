@@ -72,9 +72,16 @@ async function inspectConnection(original: ProviderConnectionRecord) {
   if (supplier.name === "沧元算力") for (const id of parameterChangedIds) {
     const row = (cachedPayload as ModelDescriptor[]).find(model => model.id === id)!;
     const prior = modelRows(connection, "modelCatalogModels").find(model => model.id === id)!;
-    expect(row.metadata?.imageUserSizePresetSource, `${connection.id}/${id} Cangyuan user presets`).toBe("user-request");
     expect(row.pricing, `${connection.id}/${id} Cangyuan price identity`).toEqual(prior.pricing);
-    expect(row.parameters?.find(parameter => parameter.key === "size")?.options?.some(option => /^\d+x\d+$/u.test(String(option.value)))).toBe(true);
+    if (row.operations.some(operation => operation.startsWith("image."))) {
+      expect(row.metadata?.imageUserSizePresetSource, `${connection.id}/${id} Cangyuan user presets`).toBe("user-request");
+      expect(row.parameters?.find(parameter => parameter.key === "size")?.options?.some(option => /^\d+x\d+$/u.test(String(option.value)))).toBe(true);
+    } else if (row.operations.some(operation => operation.startsWith("video."))) {
+      // Updated video documents migrate in the same read path; image presets do not apply.
+      expect(row.metadata?.videoContractDocumentSha256, `${connection.id}/${id} current video source`).toMatch(/^[a-f\d]{64}$/u);
+      expect(row.parameters?.find(parameter => parameter.key === "duration"), `${connection.id}/${id} exact duration contract`).toMatchObject({ valueType: "integer" });
+      expect(row.parameters?.some(parameter => parameter.key === "image_size")).toBe(false);
+    }
   }
   const states = [connection]; const counts: number[] = [], http: number[] = [];
   for (let i = 0; i < 3; i++) {

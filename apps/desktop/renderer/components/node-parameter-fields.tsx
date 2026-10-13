@@ -637,7 +637,7 @@ export function jijiuVideoAspectRatioPresets(
   });
 }
 
-function VideoRatioSuggestions({
+function ParameterSuggestions({
   id, descriptor, presets, value, disabledReason, update,
 }: {
   id: string;
@@ -892,6 +892,10 @@ function ParameterControl({
             选择供应商默认会清除当前自定义值。
           </small>
         </div>
+      ) : descriptor.control === "select" && descriptor.allowCustomValue === true && durationControl?.kind !== "select" ? (
+        <ParameterSuggestions key={`${nodeId}:${modelId ?? ""}:${descriptor.key}`}
+          id={id} descriptor={descriptor} presets={(selectOptions ?? []).map(option => ({ value: String(option.value), label: option.label }))}
+          value={String(value)} disabledReason={disabledReason} update={update} />
       ) : durationControl?.kind === "select" || descriptor.control === "select" ? (
         <select
           id={id}
@@ -919,7 +923,7 @@ function ParameterControl({
           ))}
         </select>
       ) : ratioPresets.length > 0 ? (
-        <VideoRatioSuggestions key={`${nodeId}:${modelId ?? ""}:${descriptor.key}`}
+        <ParameterSuggestions key={`${nodeId}:${modelId ?? ""}:${descriptor.key}`}
           id={id} descriptor={descriptor} presets={ratioPresets} value={String(value)} disabledReason={disabledReason} update={update} />
       ) : descriptor.key === "lyrics" ? (
         <textarea id={id} value={String(value)} rows={6} maxLength={20000} disabled={Boolean(disabledReason)} placeholder="[Verse] 你的歌词…" onChange={event => update(event.target.value)} />

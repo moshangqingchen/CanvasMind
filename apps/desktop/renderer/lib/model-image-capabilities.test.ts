@@ -34,7 +34,7 @@ describe("model image capability labels", () => {
     ["api.tk1688.com", "default", "gpt-image-1", "openai", "multipart"],
   ])("recognizes the exact mask route for %s / %s / %s", (host, group, id, provider, mask) => {
     const model = descriptor(id);
-    expect(modelImageCapabilities(connection(host, group, model, {}, provider), model)).toEqual({ transparent: false, mask });
+    expect(modelImageCapabilities(connection(host, group, model, {}, provider), model)).toEqual({ transparent: host === "ai.cangyuansuanli.cn", mask });
   });
 
   it("requires both an edit operation and no explicit edit prohibition for a known mask route", () => {
@@ -51,9 +51,9 @@ describe("model image capability labels", () => {
     const source = connection("ai.cangyuansuanli.cn", "IMAGE", model, {}, "rest");
     const selected = Object.freeze({ tier: "web" });
     expect(modelImageCapabilities(source, model).mask).toBe("url");
-    expect(modelImageCapabilities(source, model, selected).mask).toBeNull();
+    expect(modelImageCapabilities(source, model, selected).mask).toBe("url");
     expect(modelImageCapabilities(source, model, { tier: "2k" }).mask).toBe("url");
-    expect(modelImageCapabilities(source, descriptor(model.id)).mask).toBeNull();
+    expect(modelImageCapabilities(source, descriptor(model.id)).mask).toBe("url");
     expect(model.parameters?.[0]?.default).toBe("4k");
     expect(selected).toEqual({ tier: "web" });
   });

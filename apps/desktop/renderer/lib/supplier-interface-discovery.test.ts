@@ -12,6 +12,26 @@ const docs = [{ url: "https://supplier.test/openapi.json", body: { openapi: "3.1
 } }];
 
 describe("automatic supplier interface onboarding", () => {
+  it("carries stable Secure group 57 into native Muse contracts without reading or granting another group's limits", async () => {
+    const cached: ModelDescriptor = {
+      id: "muse-video", name: "muse-video", operations: ["video.generate", "video.image-to-video"],
+      outputKinds: ["video"], metadata: { canvasRunnable: true, protocol: "openai-videos", videoReferenceImageLimit: 10 },
+    };
+    const before = structuredClone(cached);
+    const read = vi.fn(async () => []);
+    for (const officialGroupId of ["57", "56"]) {
+      const source = { provider: "openai", config: { baseUrl: "https://token.secure-skill.com/v1", usage: "canvas",
+        modelGroup: "muse-video", accountKeyGroup: "muse-video", accountKeyGroupId: officialGroupId,
+        modelScanStatus: "live", scannedModelIds: ["muse-video"] } };
+      const result = await discoverSupplierModelInterfaces(source, [cached], source, read);
+      expect(result.models[0]?.metadata?.videoReferenceImageLimit).toBe(officialGroupId === "57" ? 9 : 10);
+      expect(result.bindings).toEqual({});
+      expect(applySavedModelInterfaces(source, result.models)[0]?.metadata?.videoReferenceImageLimit)
+        .toBe(officialGroupId === "57" ? 9 : 10);
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(cached).toEqual(before);
+  });
   it("passes explicit freshness and operation identity to the document reader", async () => {
     const read = vi.fn(async () => docs);
     await discoverSupplierModelInterfaces(connection, [model], connection, read, { force: true, refreshId: "scan-1" });

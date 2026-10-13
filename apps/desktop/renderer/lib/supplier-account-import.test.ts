@@ -20,6 +20,32 @@ function connection(patch: Partial<ProviderConnectionRecord> = {}): ProviderConn
     createdAt: "before", updatedAt: "before", ...patch };
 }
 describe("account key import plan", () => {
+  it("keeps the original Jijiu connection and credential on its proven unnumbered group rename", () => {
+    const newGroup = { id: "视频SD2.5", label: "视频SD2.5", source: "catalog" as const, models: [{ id: "SD2.5特价900线路一", capability: "video" as const }] };
+    const currentSupplier = { ...supplier, siteUrl: "https://newapi.jijiucanvas.com", apiUrl: "https://newapi.jijiucanvas.com/v1", catalog: { groups: [newGroup] } };
+    const saved = connection({ encryptedSecret: encrypt("same-secret"), config: { supplierId: "s", supplierSourceId: "source", accountKeyId: "1548",
+      accountKeyGroup: "视频SD.2.5", modelGroup: "视频SD.2.5", usage: "canvas", modelScanStatus: "live", modelScanComplete: true,
+      scannedModelIds: ["SD2.5特价900线路一"], supplierVerificationRequestId: "accepted", manualModels: [{ id: "manual" }] } });
+    const currentKeys = { ...inventory, keys: [{ id: "1548", group: "视频SD2.5", apiKey: "same-secret", name: "saved" }] };
+    const options = { preserveOnly: true, verifyCapabilities: false, matchesKey: (existing: ProviderConnectionRecord, apiKey: string) => existing.encryptedSecret === encrypt(apiKey) };
+    const plan = planSupplierAccountImport(currentSupplier, [saved], currentKeys, () => { throw new Error("No import expected"); }, [saved], options);
+    expect(plan.connections).toHaveLength(1);
+    expect(plan.connections[0]).toMatchObject({ id: saved.id, encryptedSecret: saved.encryptedSecret, name: saved.name,
+      config: { ...saved.config, accountKeyGroup: "视频SD2.5", modelGroup: "视频SD2.5", supplierGroupRenameEvidence: {
+        sourceId: "source", accountKeyId: "1548", from: "视频SD.2.5", to: "视频SD2.5", checkedAt: currentKeys.checkedAt,
+        apiOrigin: "https://newapi.jijiucanvas.com", proof: "same-key-account-inventory",
+      } } });
+    expect(plan.summary).toMatchObject({ imported: 0, preserved: 1 });
+    for (const wrong of [
+      { ...saved, encryptedSecret: encrypt("other") },
+      { ...saved, config: { ...saved.config, accountKeyId: "wrong" } },
+      { ...saved, config: { ...saved.config, accountKeyGroup: "other", modelGroup: "other" } },
+      { ...saved, config: { ...saved.config, accountKeyGroupId: "115" } },
+      { ...saved, config: { ...saved.config, usage: "disabled" } },
+    ]) expect(planSupplierAccountImport(currentSupplier, [wrong], currentKeys, encrypt, [wrong], options).connections).toEqual([wrong]);
+    expect(planSupplierAccountImport({ ...currentSupplier, siteUrl: "https://site.example.com" }, [saved], currentKeys, encrypt, [saved], options).connections).toEqual([saved]);
+    expect(planSupplierAccountImport(currentSupplier, [saved], { ...currentKeys, complete: false }, encrypt, [saved], options).connections).toEqual([saved]);
+  });
   it("imports all nine usable Jijiu media groups as canvas with exact group and full model IDs", () => {
     const official = JSON.parse(readFileSync(new URL("../../../../packages/providers/src/fixtures/jijiu-billing-20261010.json", import.meta.url), "utf8"));
     const catalog = parseSupplierCatalog(official, { supplierSiteUrl: "https://newapi.jijiucanvas.com" });

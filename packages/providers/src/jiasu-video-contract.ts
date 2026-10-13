@@ -128,7 +128,7 @@ function durationParameter(id: string, facts: { description: string; apiParamete
   if (id === specialMinimax) return { key: "duration", label: "视频时长", control: "select", valueType: "integer", default: 15, options: [{ label: "15 秒", value: 15 }] };
   const declared = declaredRange(facts.apiParameters, "duration"), range = String(declared?.enum ?? declared?.range ?? "");
   const proseRange = /(?:时长[：:]?\s*|支持|生成)?(\d+)\s*[-–]\s*(\d+)\s*秒/u.exec(facts.description);
-  const match = /^(\d+)\s*[-–]\s*(\d+)(?:秒)?$/u.exec(range) ?? proseRange;
+  const match = /^(\d+)\s*[-–~～]\s*(\d+)(?:秒)?$/u.exec(range) ?? proseRange;
   const values = enumValues(range);
   const options = values.length && values.every(value => /^\d+(?:秒)?$/u.test(value))
     ? [...new Set(values.map(value => Number(value.replace("秒", ""))))].filter(value => value > 0) : [];
@@ -162,6 +162,7 @@ function resolutions(id: string, facts: { description: string; apiParameters: Ro
 
 export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: string): ModelDescriptor | undefined {
   const facts = declaration(id, current); if (!facts) return undefined;
+  const currentGroup = group?.trim() || String(current?.metadata?.jiasuContractGroup ?? current?.metadata?.catalogGroup ?? "");
   const videoDescription = String(declaredRange(facts.apiParameters, "videos")?.description ?? "");
   const totalAssets = /(?:图片\+视频\+音频|图片、视频、音频)合计最多\s*(\d+)/u.exec(videoDescription);
   const totalVideo = /多条合计不超过\s*(\d+)\s*秒/u.exec(videoDescription);
@@ -177,6 +178,20 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
     values: declaredDuration.options?.map(option => option.value), default: declaredDuration.default });
   const duration = durationFallback ? { ...declaredDuration, min: durationFallback.min, max: durationFallback.max, allowCustomValue: false,
     description: seedanceDurationFallbackDescription(durationFallback) } : declaredDuration;
+  if (currentGroup === "vip" && ["wan-3.0-特惠", "wan-3.0-特惠-1"].includes(id)) {
+    const ranges = [...facts.description.matchAll(/\|\s*`?(480p|720p)`?\s*\|\s*(\d+)\s*[-–]\s*(\d+)\s*秒/giu)]
+      .filter(match => Number(match[2]) > 0 && Number(match[3]) >= Number(match[2]));
+    if (ranges.length) {
+      duration.constraints = ranges.map(match => ({ when: [{ parameter: "resolution", values: [match[1]!.toLowerCase()] }], min: Number(match[2]), max: Number(match[3]) }));
+      const declaredResolution = String(declaredRange(facts.apiParameters, "resolution")?.default ?? "").toLowerCase();
+      const selected = duration.constraints.find(constraint => constraint.when[0]?.values.includes(declaredResolution));
+      if (typeof duration.default === "number" && selected && (duration.default < selected.min! || duration.default > selected.max!)) delete duration.default;
+      // The current published default5 conflicts with 720p10–20; require a
+      // deliberate legal value instead of silently injecting/changing it.
+      if (duration.default === undefined) duration.required = true;
+      duration.description = "当前 vip 分组说明：480p 为 15–30 秒，720p 为 10–20 秒；分辨率条件优先于通用 duration 范围。旧值保留，请选择合法组合。";
+    }
+  }
   const declaredDefault = typeof range?.default === "string" ? range.default.trim() : "";
   const defaultResolution = sizes.includes(declaredDefault) ? declaredDefault : sizes.includes("720p") ? "720p" : sizes[0];
   const exampleResolution = typeof facts.apiExampleContract?.values.resolution === "string" ? facts.apiExampleContract.values.resolution : undefined;
@@ -211,7 +226,6 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
     durationRangeSource: _previousDurationSource, durationRangeFallbackFamily: _previousDurationFamily,
     userFallbackDurationRange: _previousDurationFallback,
     videoParameterConfirmedDefaults: _previousConfirmedDefaults, ...currentMetadata } = current?.metadata ?? {};
-  const currentGroup = group?.trim() || String(current?.metadata?.jiasuContractGroup ?? current?.metadata?.catalogGroup ?? "");
   return { ...current, id, name: current?.name ?? id, operations: supported("image") ? ["video.generate", "video.image-to-video"] : ["video.generate"], parameters,
     inputKinds: ["text", ...(supported("image") ? ["image" as const, "image[]" as const] : []), ...(supported("video") ? ["video" as const, "video[]" as const] : []), ...(supported("audio") ? ["audio" as const, "audio[]" as const] : [])], outputKinds: ["video"],
     limits: { ...current?.limits, ...refs }, metadata: { ...currentMetadata, supplier: "jiasu", modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared",
@@ -306,7 +320,13 @@ export function jiasuVideoRequestIssues(request: NormalizedRequest, model?: Mode
       add(`parameters.${key}`, `${key} 不符合当前完整型号声明的类型或范围。`);
   }
   const duration = descriptor.parameters?.find(parameter => parameter.key === "duration"), seconds = p.duration;
+  if (duration?.required && seconds === undefined) add("parameters.duration", "请填写当前分辨率对应的合法整数秒数。");
   if (seconds !== undefined && (typeof seconds !== "number" || !Number.isInteger(seconds) || seconds < (duration?.min ?? 1) || duration?.max !== undefined && seconds > duration.max || duration?.options?.length && !duration.options.some(option => option.value === seconds))) add("parameters.duration", "请选择该型号声明范围内的整数秒数。");
+  for (const constraint of duration?.constraints ?? []) {
+    if (constraint.when.every(condition => condition.values.includes(p[condition.parameter] as string | number | boolean)) && typeof seconds === "number" &&
+      (constraint.min !== undefined && seconds < constraint.min || constraint.max !== undefined && seconds > constraint.max))
+      add("parameters.duration", `当前 ${String(p.resolution)} 对应时长为 ${constraint.min}–${constraint.max} 秒；原值已保留，请改选合法组合。`);
+  }
   if (request.model === "sd-2.0-mini-J1" && p.resolution === "720p" && typeof seconds === "number" && seconds > 12) add("parameters.duration", "此型号 720p 最长 12 秒；480p 最长 15 秒。");
   for (const [key, value] of [["aspect_ratio", p.ratio], ["resolution", p.resolution]] as const) {
     const parameter = descriptor.parameters?.find(parameter => parameter.key === key), options = parameter?.options;

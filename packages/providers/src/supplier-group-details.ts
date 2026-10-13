@@ -1,4 +1,5 @@
 import type { SupplierLedgerPrice } from "./supplier-ledger-pricing.js";
+import type { SupplierChannelPlazaEvidence } from "./supplier-channel-plaza.js";
 
 /** Display evidence from the supplier's group record, never executable configuration. */
 export interface SupplierGroupDetails {
@@ -18,6 +19,8 @@ export interface SupplierGroupDetails {
   stale?: boolean;
   /** Actual billed samples scoped to exact official group, model and parameters. */
   ledgerPrices?: SupplierLedgerPrice[];
+  /** Sampled official group health, kept apart from protocol and price facts. */
+  channelPlaza?: SupplierChannelPlazaEvidence;
 }
 const tiers = ["1K", "2K", "4K"];
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;

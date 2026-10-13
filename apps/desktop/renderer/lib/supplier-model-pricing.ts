@@ -49,6 +49,28 @@ function structuredCatalogPrice(metadata: ModelDescriptor["metadata"]): ModelDes
     metadata?.weaiLegacyPricing ?? metadata?.sub2apiPlazaPricing ?? metadata?.miaowuCatalogPricing ?? metadata?.hangCatalogPricing ?? metadata?.officialCatalogPricing) as ModelDescriptor["pricing"];
 }
 
+type KeyGroupRenameEvidence = {
+  sourceId: string; accountKeyId: string; from: string; to: string;
+  checkedAt: string; apiOrigin: string; proof: string;
+};
+type CatalogPriceOptions = {
+  savedCatalog?: boolean; supplierGroupId?: string; sourceId?: string; accountKeyId?: string;
+  keyGroupRenameEvidence?: KeyGroupRenameEvidence;
+};
+function provenJijiuPriceGroup(group: string, catalog: SupplierCatalogDiscovery, sourceUrl: string | undefined, options: CatalogPriceOptions): string | undefined {
+  const e = options.keyGroupRenameEvidence;
+  if (group !== "视频SD.2.5" || !e || e.from !== group || e.to !== "视频SD2.5" ||
+    !e.sourceId || e.sourceId !== options.sourceId || !e.accountKeyId || e.accountKeyId !== options.accountKeyId ||
+    e.apiOrigin !== "https://newapi.jijiucanvas.com" || e.proof !== "same-key-account-inventory" ||
+    !Number.isFinite(Date.parse(e.checkedAt)) || catalog.status !== "live" || catalog.complete !== true || options.supplierGroupId) return undefined;
+  try {
+    const url = new URL(sourceUrl ?? "");
+    if (url.origin !== e.apiOrigin || url.username || url.password || url.search || url.hash || !/^(?:\/v1)?\/?$/u.test(url.pathname)) return undefined;
+  } catch { return undefined; }
+  const candidates = catalog.groups.filter(g => g.id === e.to && !g.supplierGroupId && g.source === "catalog" && g.details?.stale !== true);
+  return candidates.length === 1 ? e.to : undefined;
+}
+
 function friSnapshotPriceLabel(model: ModelDescriptor, group: string, catalog: SupplierCatalogDiscovery, sourceUrl: string | undefined): string | undefined {
   if (["manual", "generated-result"].includes(String(model.metadata?.priceSource)) || catalog.status !== "live" || catalog.complete === false) return undefined;
   try {
@@ -518,8 +540,20 @@ export function applySupplierCatalogPrices(
   group: string,
   catalog: SupplierCatalogDiscovery,
   sourceUrl?: string,
-  options: { savedCatalog?: boolean; supplierGroupId?: string } = {},
+  options: CatalogPriceOptions = {},
 ): ModelDescriptor[] {
+  const renamedGroup = provenJijiuPriceGroup(group, catalog, sourceUrl, options);
+  const observedIds = new Set(["SD2.5特价30-10-10-线路三", "SD2.5特价30-10线路二", "SD2.5特价900线路一"]);
+  if (renamedGroup) return models.map(model => {
+    if (!observedIds.has(model.id) || model.metadata?.liveInventory !== true) return applySupplierCatalogPrices([model], group, catalog, sourceUrl,
+      { ...options, keyGroupRenameEvidence: undefined })[0]!;
+    const result = applySupplierCatalogPrices([model], renamedGroup, catalog, sourceUrl,
+      { ...options, keyGroupRenameEvidence: undefined })[0]!;
+    // A failed/partial quote cannot erase valid historical evidence.
+    if (!result.pricing || result.pricing.confidence !== "exact" || result.pricing.sourceUrl !== "https://newapi.jijiucanvas.com/api/pricing") return model;
+    return { ...result, metadata: { ...result.metadata, supplierPriceGroup: group, supplierPricingSourceGroup: renamedGroup,
+      supplierPriceGroupRenameEvidence: options.keyGroupRenameEvidence } };
+  });
   const officialId = /^\d+$/u.test(options.supplierGroupId ?? "") ? options.supplierGroupId : undefined;
   const matches = officialId ? catalog.groups.filter(g => g.supplierGroupId === officialId) : catalog.groups.filter(g => g.id === group);
   const freshMatches = matches.filter(g => g.details?.stale !== true && (g as { status?: string }).status !== "missing");
@@ -916,6 +950,10 @@ export async function enrichSupplierModelPrices(
   );
   const supplierGroupId = sameSource ? String(connection.config.accountKeyGroupId ??
     supplier.catalog.groups.find(item => item.id === group)?.supplierGroupId ?? "") : undefined;
+  const renameRecord = connection.config.supplierGroupRenameEvidence;
+  const keyPriceContext: CatalogPriceOptions = sameSource && renameRecord && typeof renameRecord === "object" && !Array.isArray(renameRecord)
+    ? { sourceId: supplier.state?.sourceId, accountKeyId: String(connection.config.accountKeyId ?? ""),
+      keyGroupRenameEvidence: renameRecord as KeyGroupRenameEvidence } : {};
   const officialPriceGroupId = /^\d+$/u.test(supplierGroupId ?? "") ? supplierGroupId : undefined;
   const savedPriceGroups = sameSource ? supplier.catalog.groups.filter(row => officialPriceGroupId
     ? row.supplierGroupId === officialPriceGroupId : row.id === group) : [];
@@ -964,7 +1002,7 @@ export async function enrichSupplierModelPrices(
       { groups: supplier.catalog.groups.map(group => ({ ...group, source: "catalog", models: group.models.map(model => ({ ...model, protocol: model.protocol === "rest" ? "unknown" : model.protocol })) })),
         kind: supplier.kind, status: supplier.scanStatus === "unscanned" ? "failed" : supplier.scanStatus,
         complete: supplier.scanComplete === true,
-        checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl, { savedCatalog: true, supplierGroupId }) : [...models];
+        checkedAt: supplier.scannedAt ?? supplier.updatedAt }, supplier.siteUrl || supplier.apiUrl, { savedCatalog: true, supplierGroupId, ...keyPriceContext }) : [...models];
     if (savedPriceScope) catalogModels = catalogModels.map((model, index) =>
       retainFailedPriceAttempt(models[index]!, model, group, officialPriceGroupId, retainedOrigin!));
     return savedMeasured(await applyMeasuredSupplierPrices(sameSource ? supplier.id : undefined, await documentedPrices(catalogModels, supplier?.siteUrl || apiUrl, false), group, supplier?.state?.sourceId ?? "legacy", supplierGroupId || undefined));
@@ -1050,7 +1088,7 @@ export async function enrichSupplierModelPrices(
   let priceCandidates = models;
   if (savedPriceScope && (["failed", "unauthorized"].includes(discovered.status) || discovered.complete === false)) {
     const retained = applySupplierCatalogPrices(models, group, savedPriceCatalog(), supplier!.siteUrl || supplier!.apiUrl,
-      { savedCatalog: true, supplierGroupId });
+      { savedCatalog: true, supplierGroupId, ...keyPriceContext });
     priceCandidates = retained.map((model, index) => savedPriceGroups[0]!.models.some(row => row.id === model.id) &&
       reusableSavedQuote(model, group, officialPriceGroupId, retainedOrigin!) ? model : models[index]!);
   }
@@ -1059,7 +1097,7 @@ export async function enrichSupplierModelPrices(
     group,
     discovered,
     siteUrl,
-    { supplierGroupId },
+    { supplierGroupId, ...keyPriceContext },
   );
   if (savedPriceScope && (["failed", "unauthorized"].includes(discovered.status) || discovered.complete === false)) {
     catalogModels = catalogModels.map(model => reusableSavedQuote(model, group, officialPriceGroupId, retainedOrigin!) &&

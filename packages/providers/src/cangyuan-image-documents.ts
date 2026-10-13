@@ -1,195 +1,1909 @@
-/** Exact supplier model documents fetched on 2026-10-09 (America/Los_Angeles).
+/** Exact supplier model documents fetched on 2026-10-12 (America/Los_Angeles).
  * Values and pixel examples remain model-specific; no generic K-to-pixel mapping. */
-export interface CangyuanImageDocument { sourceUrl: string; checkedAt: string; sha256: string; intro: string; fields: Record<string,string>; ratios: string[]; pixelOptions: string[]; customPixels: boolean; autoSize: boolean; omitSizeAutomatic: boolean; qualityOptions: string[]; maxReferences?: number; editing: boolean; referenceDimensions?: Array<{resolution:string;aspectRatio:string;width:number;height:number}>; }
+export interface CangyuanImageDocument { sourceLastReviewed?: string; sizeSuggestionsOnly?: boolean; parameterRules?: Record<string,{type?: string; description?: string; required?: boolean; enum?: Array<string | number>; suggestions?: Array<string | number>; min?: number; max?: number; default?: string | number | boolean; suggestedDefault?: string | number | boolean}>; dimensionRules?: {step:number;maxSide:number;maxAspectRatio:number;minPixels:number;maxPixels:number}; sourceUrl: string; checkedAt: string; sha256: string; intro: string; fields: Record<string,string>; ratios: string[]; pixelOptions: string[]; customPixels: boolean; autoSize: boolean; omitSizeAutomatic: boolean; qualityOptions: string[]; maxReferences?: number; editing: boolean; referenceDimensions?: Array<{resolution:string;aspectRatio:string;width:number;height:number}>; }
 export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocument>> = {
   "gpt-image-2": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.json",
-    "checkedAt": "2026-10-10T00:16:03.781Z",
-    "sha256": "86fdf53551b965cb8f0a131d1ca5feb77ef1f3413efd967b45d15bf5fe57ab7a",
-    "intro": "gpt-image-2；张数 1；参考图最多 9 张；不支持蒙版。",
+    "checkedAt": "2026-10-13T00:53:23.107Z",
+    "sha256": "1960540e67d4cdeb27678b60f922960c79bdc653a6765101cd827d42c3bd7b83",
+    "intro": "gpt-image-2",
     "fields": {
       "model": "固定传 gpt-image-2。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
-      "9:16",
       "3:2",
-      "2:3",
+      "16:9",
       "4:3",
       "3:4",
       "5:4",
       "4:5",
-      "21:9"
+      "21:9",
+      "2:3",
+      "9:16"
     ],
-    "pixelOptions": [],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
     "customPixels": true,
     "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "gpt-image-2-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-1k.json",
-    "checkedAt": "2026-10-10T00:16:04.033Z",
-    "sha256": "fcef8bc5f6f1c7c9c37986af2fbe56ec71159deb2ab1239fa9a05cff393edcc3",
-    "intro": "gpt-image-2-1k；张数 1；quality 为 low / medium / high / xhigh / max；参考图最多 9 张，可带 1 张蒙版。",
+    "checkedAt": "2026-10-13T00:53:27.712Z",
+    "sha256": "372c1c869260edcf1838669a262ac17ac93aa5a55be80562be18fdd38622cf4b",
+    "intro": "gpt-image-2-1k",
     "fields": {
       "model": "固定传 gpt-image-2-1k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 1K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质，可选 low / medium / high / xhigh / max。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
+      "5:4",
+      "7:6",
       "9:16",
+      "21:9",
+      "16:9",
       "3:2",
-      "2:3",
       "4:3",
+      "4:5",
       "3:4",
-      "21:9"
+      "2:3"
     ],
     "pixelOptions": [],
     "customPixels": true,
-    "autoSize": false,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [
-      "low",
       "medium",
+      "low",
       "high",
       "xhigh",
       "max"
     ],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 1048576
+    }
   },
   "gpt-image-2-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-2k.json",
-    "checkedAt": "2026-10-10T00:16:04.287Z",
-    "sha256": "4199d4a59d4be81de405f7020b368977648e7185b37caa42131fea73bebac1f1",
-    "intro": "gpt-image-2-2k；张数 1；quality 为 low / medium / high / xhigh / max；参考图最多 9 张，可带 1 张蒙版。",
+    "checkedAt": "2026-10-13T00:53:26.180Z",
+    "sha256": "7fc8b00e0f86b7a09646684a34e8db51f32485b669515a7feabf889572574406",
+    "intro": "gpt-image-2-2k",
     "fields": {
       "model": "固定传 gpt-image-2-2k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 2K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质，可选 low / medium / high / xhigh / max。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
+      "5:4",
+      "7:6",
       "9:16",
+      "21:9",
+      "16:9",
       "3:2",
-      "2:3",
       "4:3",
+      "4:5",
       "3:4",
-      "21:9"
+      "2:3"
     ],
     "pixelOptions": [],
     "customPixels": true,
-    "autoSize": false,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [
-      "low",
       "medium",
+      "low",
       "high",
       "xhigh",
       "max"
     ],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 4194304
+    }
   },
   "gpt-image-2-4k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-4k.json",
-    "checkedAt": "2026-10-10T00:16:04.543Z",
-    "sha256": "417e4a99fcf5ff29a4974228560319614551cfcf78420ce7f18c21da67412510",
-    "intro": "gpt-image-2-4k；张数 1；quality 为 low / medium / high / xhigh / max；参考图最多 9 张，可带 1 张蒙版。",
+    "checkedAt": "2026-10-13T00:53:29.251Z",
+    "sha256": "3a152d59362144cfb9a4e20f96dff4d84e0eb31f1ae696e88b69733e2d7b35d0",
+    "intro": "gpt-image-2-4k",
     "fields": {
       "model": "固定传 gpt-image-2-4k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 4K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质，可选 low / medium / high / xhigh / max。",
-      "response_format": "推荐 url，结果为 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
+      "5:4",
+      "7:6",
       "9:16",
+      "21:9",
+      "16:9",
       "3:2",
-      "2:3",
       "4:3",
+      "4:5",
       "3:4",
-      "21:9"
+      "2:3"
     ],
     "pixelOptions": [],
     "customPixels": true,
-    "autoSize": false,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [
-      "low",
       "medium",
+      "low",
       "high",
       "xhigh",
       "max"
     ],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 8294400
+    }
   },
   "gpt-image-2-x": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-x.json",
-    "checkedAt": "2026-10-10T00:16:04.804Z",
-    "sha256": "dc48ccd84eecf9d9b0c0d676f465e23689abae280fa193b49a9c10fa4344590f",
-    "intro": "gpt-image-2-x 用 tier 选择清晰度，价格与对应公共名相同：省略或 web 等于 gpt-image-2，1k / 2k / 4k 等于 gpt-image-2-1k / gpt-image-2-2k / gpt-image-2-4k。直接调用那些公共名时不要传 tier。",
+    "checkedAt": "2026-10-13T00:53:24.642Z",
+    "sha256": "55835fd13f82cb4aebbd4f8b3f536bbf05df2af9576ac9fd29c2a10f1061b2f0",
+    "intro": "gpt-image-2-x",
     "fields": {
       "model": "固定传 gpt-image-2-x。",
-      "tier": "清晰度。web、1k、2k、4k。省略或 web 为默认档，价格与 gpt-image-2 相同。1k / 2k / 4k 与 gpt-image-2-1k / gpt-image-2-2k / gpt-image-2-4k 相同。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。1k / 2k / 4k 的宽高须落在该档像素预算内。",
-      "quality": "仅 1k / 2k / 4k 可传，可选 low / medium / high / xhigh / max。不改变本页价格。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "仅 1k / 2k / 4k 可传，可选蒙版 HTTPS URL，最多 1 张。web 不要传。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "tier": "选择生成档位。支持值：web / 1k / 2k / 4k。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
-      "9:16",
       "3:2",
-      "2:3",
+      "16:9",
       "4:3",
       "3:4",
       "5:4",
       "4:5",
-      "21:9"
+      "21:9",
+      "2:3",
+      "9:16"
+    ],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "medium",
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "maxReferences": 9,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "tier": {
+        "type": "string",
+        "description": "选择生成档位。支持值：web / 1k / 2k / 4k。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "web",
+          "1k",
+          "2k",
+          "4k"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gpt-image-2.5": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5.json",
+    "checkedAt": "2026-10-13T00:53:30.787Z",
+    "sha256": "287b06ff5b304612d72d01e74de54eddd74c89d2280f50b5343452fd0e232deb",
+    "intro": "gpt-image-2.5",
+    "fields": {
+      "model": "固定传 gpt-image-2.5。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
+    },
+    "ratios": [
+      "1:1",
+      "3:2",
+      "16:9",
+      "4:3",
+      "3:4",
+      "5:4",
+      "4:5",
+      "21:9",
+      "2:3",
+      "9:16"
+    ],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [],
+    "maxReferences": 9,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gpt-image-2.5-flare": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare.json",
+    "checkedAt": "2026-10-13T00:53:33.853Z",
+    "sha256": "afe3bf2c61c37757d684fb2d17a82cd334fab7cb7be0e595bf62f0e7c1b2867d",
+    "intro": "gpt-image-2.5-flare",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-flare。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
+    },
+    "ratios": [
+      "1:1",
+      "3:2",
+      "16:9",
+      "4:3",
+      "3:4",
+      "5:4",
+      "4:5",
+      "21:9",
+      "2:3",
+      "9:16"
+    ],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [],
+    "maxReferences": 9,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gpt-image-2.5-flare-1k": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-1k.json",
+    "checkedAt": "2026-10-13T00:53:38.458Z",
+    "sha256": "2acbff6c86f335a93f5fc29cd261bfd06f66fb9156724b9871648d53d4adfe2d",
+    "intro": "gpt-image-2.5-flare-1k",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-flare-1k。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。"
+    },
+    "ratios": [
+      "1:1",
+      "5:4",
+      "7:6",
+      "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "4:5",
+      "3:4",
+      "2:3"
     ],
     "pixelOptions": [],
     "customPixels": true,
     "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [
+      "medium",
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 1048576
+    }
+  },
+  "gpt-image-2.5-flare-2k": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-2k.json",
+    "checkedAt": "2026-10-13T00:53:32.323Z",
+    "sha256": "7fdc1b4783dc9db9b48a6b2c6a160dfa6910c168fe0c07b83b1b9ee80e7dd1c8",
+    "intro": "gpt-image-2.5-flare-2k",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-flare-2k。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。"
+    },
+    "ratios": [
+      "1:1",
+      "5:4",
+      "7:6",
+      "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "4:5",
+      "3:4",
+      "2:3"
+    ],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "medium",
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 4194304
+    }
+  },
+  "gpt-image-2.5-flare-4k": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-4k.json",
+    "checkedAt": "2026-10-13T00:53:35.389Z",
+    "sha256": "4f76c934a9c74869b095417a6c5fb933cdc74cf5231f70a2ead11913e1450a2d",
+    "intro": "gpt-image-2.5-flare-4k",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-flare-4k。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。"
+    },
+    "ratios": [
+      "1:1",
+      "5:4",
+      "7:6",
+      "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "4:5",
+      "3:4",
+      "2:3"
+    ],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "medium",
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 8294400
+    }
+  },
+  "gpt-image-2.5-sunburst": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst.json",
+    "checkedAt": "2026-10-13T00:53:36.927Z",
+    "sha256": "9e0740aa05b8ee7c8ce4c5d4686a18abdf892bb9db6d6bd4464dab7c2eedfefa",
+    "intro": "gpt-image-2.5-sunburst",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-sunburst。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
+    },
+    "ratios": [
+      "1:1",
+      "3:2",
+      "16:9",
+      "4:3",
+      "3:4",
+      "5:4",
+      "4:5",
+      "21:9",
+      "2:3",
+      "9:16"
+    ],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [],
+    "maxReferences": 9,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gpt-image-2.5-sunburst-1k": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-1k.json",
+    "checkedAt": "2026-10-13T00:53:40.004Z",
+    "sha256": "cd72d84f8b4de0d74c2a7b6f3b7a8ea89222ca463d8619f396a33321261650a3",
+    "intro": "gpt-image-2.5-sunburst-1k",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-sunburst-1k。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。"
+    },
+    "ratios": [
+      "1:1",
+      "5:4",
+      "7:6",
+      "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "4:5",
+      "3:4",
+      "2:3"
+    ],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "medium",
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–1048576。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 1048576
+    }
+  },
+  "gpt-image-2.5-sunburst-2k": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-2k.json",
+    "checkedAt": "2026-10-13T00:53:41.529Z",
+    "sha256": "21cd0e103d83749671de329eb7a9ecd00da94a010ff2e316e6a65f06cabdab93",
+    "intro": "gpt-image-2.5-sunburst-2k",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-sunburst-2k。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。"
+    },
+    "ratios": [
+      "1:1",
+      "5:4",
+      "7:6",
+      "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "4:5",
+      "3:4",
+      "2:3"
+    ],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "medium",
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–4194304。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 4194304
+    }
+  },
+  "gpt-image-2.5-sunburst-4k": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-4k.json",
+    "checkedAt": "2026-10-13T00:53:43.072Z",
+    "sha256": "2a6d92cc834e145c68b45855e6c704d58f25fd233a9d830a440ef7a02e5ae725",
+    "intro": "gpt-image-2.5-sunburst-4k",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-sunburst-4k。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。"
+    },
+    "ratios": [
+      "1:1",
+      "5:4",
+      "7:6",
+      "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "4:5",
+      "3:4",
+      "2:3"
+    ],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "medium",
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。精确尺寸宽高须为 16 的倍数，长边最多 3840px，比例最多 3:1，总像素 655360–8294400。推荐值：1:1 / 5:4 / 7:6 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 4:5 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "5:4",
+          "7:6",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "4:5",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    },
+    "dimensionRules": {
+      "step": 16,
+      "maxSide": 3840,
+      "maxAspectRatio": 3,
+      "minPixels": 655360,
+      "maxPixels": 8294400
+    }
+  },
+  "gpt-image-2.5-x": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-x.json",
+    "checkedAt": "2026-10-13T00:53:44.611Z",
+    "sha256": "9f223c6fe76aca562ad5289374415758383367aca234addee305c42202b6b1b3",
+    "intro": "gpt-image-2.5-x",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-x。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "tier": "选择生成档位。支持值：web / 1k / 2k / 4k。无法识别的值按未传处理。",
+      "series": "选择生成档位。支持值：flare / sunburst。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
+    },
+    "ratios": [
+      "1:1",
+      "3:2",
+      "16:9",
+      "4:3",
+      "3:4",
+      "5:4",
+      "4:5",
+      "21:9",
+      "2:3",
+      "9:16"
+    ],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "medium",
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "maxReferences": 9,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：medium / low / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "tier": {
+        "type": "string",
+        "description": "选择生成档位。支持值：web / 1k / 2k / 4k。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "web",
+          "1k",
+          "2k",
+          "4k"
+        ]
+      },
+      "series": {
+        "type": "string",
+        "description": "选择生成档位。支持值：flare / sunburst。无法识别的值按未传处理。",
+        "required": true,
+        "enum": [
+          "flare",
+          "sunburst"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gpt-image-2-o": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-o.json",
+    "checkedAt": "2026-10-13T00:53:53.803Z",
+    "sha256": "b5e22e20ea899a6708157829c422ee7bd3c818b444fd260c39b0c1dae6296924",
+    "intro": "gpt-image-2-o",
+    "fields": {
+      "model": "固定传 gpt-image-2-o。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：auto / low / medium / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
+    },
+    "ratios": [
+      "1:1",
+      "3:2",
+      "16:9",
+      "4:3",
+      "3:4",
+      "5:4",
+      "4:5",
+      "21:9",
+      "2:3",
+      "9:16"
+    ],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "auto",
       "low",
       "medium",
       "high",
@@ -197,525 +1911,340 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       "max"
     ],
     "maxReferences": 9,
-    "editing": true
-  },
-  "gpt-image-2.5": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5.json",
-    "checkedAt": "2026-10-10T00:16:05.058Z",
-    "sha256": "2cdca9799c88c42207fd876db3a10e53b1b17b5b71c97cb57fafc83e59dfcbf3",
-    "intro": "gpt-image-2.5；张数 1；参考图最多 9 张，可带 1 张蒙版。这不是 gpt-image-2.5-x 的 web 档。那个入口的 web 档是 gpt-image-2.5-flare 或 gpt-image-2.5-sunburst。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": true,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [],
-    "maxReferences": 9,
-    "editing": true
-  },
-  "gpt-image-2.5-flare": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare.json",
-    "checkedAt": "2026-10-10T00:16:05.310Z",
-    "sha256": "42855733fc5aa785cd2cf2a3c1637635b576e209c14b7dcd48e96dc760cec7aa",
-    "intro": "gpt-image-2.5-flare；张数 1；参考图最多 9 张，可带 1 张蒙版。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-flare。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": true,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [],
-    "maxReferences": 9,
-    "editing": true
-  },
-  "gpt-image-2.5-flare-1k": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-1k.json",
-    "checkedAt": "2026-10-10T00:16:05.562Z",
-    "sha256": "644cc1d2ca9ebd32966f10a2a72e35b034c386037c45b66e61357c88f963a5ba",
-    "intro": "gpt-image-2.5-flare-1k；张数 1；参考图最多 16 张。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-flare-1k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 1K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质。low / medium / high / 省略 / auto 按标准档计费；xhigh / max 按标准档双倍。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": false,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-    ],
-    "maxReferences": 16,
-    "editing": true
-  },
-  "gpt-image-2.5-flare-2k": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-2k.json",
-    "checkedAt": "2026-10-10T00:16:05.818Z",
-    "sha256": "8ab3cb1f5a613d614c5c4ed4e0779021ca5359f8f9531ce41a32d3119ff78b4a",
-    "intro": "gpt-image-2.5-flare-2k；张数 1；参考图最多 16 张。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-flare-2k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 2K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质。low / medium / high / 省略 / auto 按标准档计费；xhigh / max 按标准档双倍。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": false,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-    ],
-    "maxReferences": 16,
-    "editing": true
-  },
-  "gpt-image-2.5-flare-4k": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-4k.json",
-    "checkedAt": "2026-10-10T00:16:06.062Z",
-    "sha256": "9721d9a2fe2afbbb2f2ea04fa985bcf7e5bc60cc43bef2bef7327fd66887da68",
-    "intro": "gpt-image-2.5-flare-4k；张数 1；参考图最多 16 张。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-flare-4k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 4K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质。low / medium / high / 省略 / auto 按标准档计费；xhigh / max 按标准档双倍。",
-      "response_format": "推荐 url，结果为 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": false,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-    ],
-    "maxReferences": 16,
-    "editing": true
-  },
-  "gpt-image-2.5-sunburst": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst.json",
-    "checkedAt": "2026-10-10T00:16:06.318Z",
-    "sha256": "642eb5399a338835f96b8288b0c9c64a664e276f1449167477c800229059f1fd",
-    "intro": "gpt-image-2.5-sunburst；张数 1；参考图最多 9 张，可带 1 张蒙版。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-sunburst。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": true,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [],
-    "maxReferences": 9,
-    "editing": true
-  },
-  "gpt-image-2.5-sunburst-1k": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-1k.json",
-    "checkedAt": "2026-10-10T00:16:06.582Z",
-    "sha256": "30ae8d9861620aa84047d8ba95f53f5dc00bd08128743375d0b44c44c4524999",
-    "intro": "gpt-image-2.5-sunburst-1k；张数 1；参考图最多 16 张。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-sunburst-1k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 1K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质。low / medium / high / 省略 / auto 按标准档计费；xhigh / max 按标准档双倍。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": false,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-    ],
-    "maxReferences": 16,
-    "editing": true
-  },
-  "gpt-image-2.5-sunburst-2k": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-2k.json",
-    "checkedAt": "2026-10-10T00:16:06.828Z",
-    "sha256": "cc5c2e7c2cb361f610abca0599338e16d2a987cffb547df7d3a58bfa1241e337",
-    "intro": "gpt-image-2.5-sunburst-2k；张数 1；参考图最多 16 张。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-sunburst-2k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 2K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质。low / medium / high / 省略 / auto 按标准档计费；xhigh / max 按标准档双倍。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": false,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-    ],
-    "maxReferences": 16,
-    "editing": true
-  },
-  "gpt-image-2.5-sunburst-4k": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-4k.json",
-    "checkedAt": "2026-10-10T00:16:07.089Z",
-    "sha256": "37264ba329e90801cdcaa4a94094278c5df465b20705432295d9b607fe1b91fb",
-    "intro": "gpt-image-2.5-sunburst-4k；张数 1；参考图最多 16 张。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-sunburst-4k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，须落在 4K 像素预算内。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 21:9。",
-      "quality": "画质。low / medium / high / 省略 / auto 按标准档计费；xhigh / max 按标准档双倍。",
-      "response_format": "推荐 url，结果为 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": false,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-    ],
-    "maxReferences": 16,
-    "editing": true
-  },
-  "gpt-image-2.5-x": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-x.json",
-    "checkedAt": "2026-10-10T00:16:07.332Z",
-    "sha256": "09e88049a65b3f761e906ccb324fc8f8a3806ab67f907c006260fbd8620ec439",
-    "intro": "gpt-image-2.5-x 用 series 选择 Flare 或 Sunburst，再用 tier 选择清晰度，价格与对应公共名相同。series 必须传。省略 tier 或 web：flare 等于 gpt-image-2.5-flare，sunburst 等于 gpt-image-2.5-sunburst。1k / 2k / 4k 等于同名的 k 公共名。k 档在 quality 为 xhigh 或 max 时按标准价加倍。gpt-image-2.5 不是本页的 web 档。直接调用那些公共名时不要传 series 或 tier。",
-    "fields": {
-      "model": "固定传 gpt-image-2.5-x。",
-      "series": "产品线。只能是 flare 或 sunburst，必须传。",
-      "tier": "清晰度。web、1k、2k、4k。省略或 web 为默认档。1k / 2k / 4k 与对应 k 公共名相同。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。1k / 2k / 4k 的宽高须落在该档像素预算内。",
-      "quality": "1k / 2k / 4k 可传 low / medium / high / xhigh / max。省略、auto、low、medium、high 按标准档；xhigh / max 按标准档双倍。web 不按 quality 加价。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组。1k / 2k / 4k 最多 16 张，web 档最多 9 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": true,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-    ],
-    "maxReferences": 16,
-    "editing": true
-  },
-  "gpt-image-2-o": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-o.json",
-    "checkedAt": "2026-10-10T00:16:07.585Z",
-    "sha256": "cbdfb12ddfc711fafbe64336553cab8b37996fe3fa444c3d49156d62b370fcc7",
-    "intro": "gpt-image-2-o。官转。按 token 计费，文本输入、图片输入、图片输出分列。张数 1；参考图最多 9 张，可带 1 张蒙版。quality 与像素会影响用量。",
-    "fields": {
-      "model": "固定传 gpt-image-2-o。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。",
-      "quality": "画质。low / medium / high / xhigh / max / auto。省略或 auto 由服务端决定；更高画质和更大像素会增加图片输出 token。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
-    },
-    "ratios": [
-      "1:1",
-      "16:9",
-      "9:16",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": true,
-    "autoSize": true,
-    "omitSizeAutomatic": false,
-    "qualityOptions": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-    ],
-    "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-21",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：auto / low / medium / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "gpt-image-2.5-flare-o": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-o.json",
-    "checkedAt": "2026-10-10T00:16:07.836Z",
-    "sha256": "c11272dc4677b4d71e6724d9e2b24223dee998ab233c8c0f8c6ffd0d7dc370c2",
-    "intro": "gpt-image-2.5-flare-o。官转，偏速度。按 token 计费，文本输入、图片输入、图片输出分列。张数 1；参考图最多 9 张，可带 1 张蒙版。quality 与像素会影响用量。",
+    "checkedAt": "2026-10-13T00:53:47.684Z",
+    "sha256": "5072d33ab5605d4972f5d261ee0b700c8b5cac3da081798258e0dd39c8e9be3e",
+    "intro": "gpt-image-2.5-flare-o",
     "fields": {
       "model": "固定传 gpt-image-2.5-flare-o。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。",
-      "quality": "画质。low / medium / high / xhigh / max / auto。省略或 auto 由服务端决定；更高画质和更大像素会增加图片输出 token。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：auto / low / medium / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
-      "9:16",
       "3:2",
-      "2:3",
+      "16:9",
       "4:3",
       "3:4",
       "5:4",
       "4:5",
-      "21:9"
+      "21:9",
+      "2:3",
+      "9:16"
     ],
-    "pixelOptions": [],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
     "customPixels": true,
     "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [
+      "auto",
       "low",
       "medium",
       "high",
       "xhigh",
-      "max",
-      "auto"
+      "max"
     ],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-21",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：auto / low / medium / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "gpt-image-2.5-sunburst-o": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-o.json",
-    "checkedAt": "2026-10-10T00:16:08.087Z",
-    "sha256": "8c1831df3fe9e262da119ec89e82e7dd06bcf2ea049d4b69980629c01906ceb6",
-    "intro": "gpt-image-2.5-sunburst-o。官转，偏画质与编辑精度。按 token 计费，文本输入、图片输入、图片输出分列。张数 1；参考图最多 9 张，可带 1 张蒙版。quality 与像素会影响用量。",
+    "checkedAt": "2026-10-13T00:53:46.139Z",
+    "sha256": "db2ae5ff8598a16e3c209f094e62ff888d54e14284a2f8648b713a946e9f7c9e",
+    "intro": "gpt-image-2.5-sunburst-o",
     "fields": {
       "model": "固定传 gpt-image-2.5-sunburst-o。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 16:9 / 9:16 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 21:9，或 auto。",
-      "quality": "画质。low / medium / high / xhigh / max / auto。省略或 auto 由服务端决定；更高画质和更大像素会增加图片输出 token。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。",
-      "mask": "可选蒙版 HTTPS URL，最多 1 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：auto / low / medium / high / xhigh / max。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
-      "9:16",
       "3:2",
-      "2:3",
+      "16:9",
       "4:3",
       "3:4",
       "5:4",
       "4:5",
-      "21:9"
+      "21:9",
+      "2:3",
+      "9:16"
     ],
-    "pixelOptions": [],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1536x864",
+      "1536x1152",
+      "1152x1536",
+      "1280x1024",
+      "1024x1280",
+      "1536x656",
+      "1024x1536"
+    ],
     "customPixels": true,
     "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [
+      "auto",
       "low",
       "medium",
       "high",
       "xhigh",
-      "max",
-      "auto"
+      "max"
     ],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-21",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 16:9 / 1536x864 / 4:3 / 1536x1152 / 3:4 / 1152x1536 / 5:4 / 1280x1024 / 4:5 / 1024x1280 / 21:9 / 1536x656 / 2:3 / 1024x1536 / auto / 9:16；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "16:9",
+          "1536x864",
+          "4:3",
+          "1536x1152",
+          "3:4",
+          "1152x1536",
+          "5:4",
+          "1280x1024",
+          "4:5",
+          "1024x1280",
+          "21:9",
+          "1536x656",
+          "2:3",
+          "1024x1536",
+          "auto",
+          "9:16"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：auto / low / medium / high / xhigh / max。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "nano-banana-pro": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro.json",
@@ -757,114 +2286,238 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
   },
   "nano-banana-pro-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-1k.json",
-    "checkedAt": "2026-10-10T00:16:08.591Z",
-    "sha256": "14507700ee05bb777f11f50e77b9c2d1219540b522a5d4e40c237fae0912c684",
-    "intro": "nano-banana-pro-1k；张数 1；清晰度写在公共名里，不要再传 quality；参考图最多 9 张；不支持蒙版。",
+    "checkedAt": "2026-10-13T00:53:49.214Z",
+    "sha256": "18f36a7bfa83a4b79c9aae544cf98cfb6c32bdc0bf9607211f2fb18811058f27",
+    "intro": "nano-banana-pro-1k",
     "fields": {
       "model": "固定传 nano-banana-pro-1k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
       "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
       "4:3",
       "3:4",
-      "3:2",
-      "2:3",
-      "21:9"
+      "2:3"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "nano-banana-pro-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-2k.json",
-    "checkedAt": "2026-10-10T00:16:08.870Z",
-    "sha256": "b38a4c9dd428e66e937463cbfb769ca72fec5511fb8b995c9fc5d4d31c3a9206",
-    "intro": "nano-banana-pro-2k；张数 1；清晰度写在公共名里，不要再传 quality；参考图最多 9 张；不支持蒙版。",
+    "checkedAt": "2026-10-13T00:53:52.272Z",
+    "sha256": "c8b25188fa24072bd9cb76be63b56840290d115071beaa132d5cef65adcf0f04",
+    "intro": "nano-banana-pro-2k",
     "fields": {
       "model": "固定传 nano-banana-pro-2k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
       "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
       "4:3",
       "3:4",
-      "3:2",
-      "2:3",
-      "21:9"
+      "2:3"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "nano-banana-pro-4k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana-pro-4k.json",
-    "checkedAt": "2026-10-10T00:16:09.100Z",
-    "sha256": "e49118fed8f2a8a0d9348b52ea03b5e28eb466e6df7bfefc302d42ff2086c80d",
-    "intro": "nano-banana-pro-4k；张数 1；清晰度写在公共名里，不要再传 quality；参考图最多 9 张；不支持蒙版。",
+    "checkedAt": "2026-10-13T00:53:55.334Z",
+    "sha256": "cdec2e29463325d125523003d36e14194df8277c00faec3fc9eda1a5032b90b4",
+    "intro": "nano-banana-pro-4k",
     "fields": {
       "model": "固定传 nano-banana-pro-4k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
       "9:16",
+      "21:9",
+      "16:9",
+      "3:2",
       "4:3",
       "3:4",
-      "3:2",
-      "2:3",
-      "21:9"
+      "2:3"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。推荐值：1:1 / 9:16 / 21:9 / 16:9 / 3:2 / 4:3 / 3:4 / 2:3；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "9:16",
+          "21:9",
+          "16:9",
+          "3:2",
+          "4:3",
+          "3:4",
+          "2:3"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "gemini-3-pro-image-preview": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gemini-3-pro-image-preview.json",
-    "checkedAt": "2026-10-10T00:16:09.394Z",
-    "sha256": "e8ab609f8c38a416b05fa4bd4a7fe990bb5c40f640c5f212164c87248c9f9e7a",
-    "intro": "文生图走 /v1/images/generations，图生图走 /v1/images/edits，一次只出 1 张。quality 选择清晰度，只能是 1k / 2k / 4k，价格分别与 nano-banana-pro-1k / 2k / 4k 相同。省略或 auto 按 1k。没有 web。编辑时 images 按数组顺序对应提示词里的「第一张 / 第二张」。不支持蒙版。需要自动比例时省略 size，不要传 auto。",
+    "checkedAt": "2026-10-13T00:53:56.876Z",
+    "sha256": "e185aaa695781e20ce573eb7817a4004c093e246fe556a5258f7f87be15a45cc",
+    "intro": "gemini-3-pro-image-preview",
     "fields": {
-      "model": "固定传本页公共名。",
-      "prompt": "文生图写画面。图生图写编辑要求，可用「第一张 / 第二张」按 images 数组顺序指代参考图。",
-      "n": "张数，只能为 1。",
-      "size": "画幅比例，只传 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9。不要传像素，不要传 1k / 2k / 4k。省略则按参考图比例，无参考图时由模型决定。",
-      "quality": "清晰度，1k / 2k / 4k。省略或 auto 按 1k。不要传 web，也不要另传 tier。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，一张或多张。第一项是「第一张」，第二项是「第二张」。"
+      "model": "固定传 gemini-3-pro-image-preview。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1:1 / 16:9 / 16:9 / 9:16 / 9:16 / 4:3 / 4:3 / 3:4 / 3:4 / 3:2 / 3:2 / 2:3 / 2:3 / 5:4 / 5:4 / 4:5 / 4:5 / 21:9 / 21:9 / auto；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：1k / 2k / 4k。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
@@ -879,127 +2532,304 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       "21:9"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
-    "omitSizeAutomatic": true,
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
     "qualityOptions": [
       "1k",
       "2k",
-      "4k",
-      "auto"
+      "4k"
     ],
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "maxReferences": 9,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1:1 / 16:9 / 16:9 / 9:16 / 9:16 / 4:3 / 4:3 / 3:4 / 3:4 / 3:2 / 3:2 / 2:3 / 2:3 / 5:4 / 5:4 / 4:5 / 4:5 / 21:9 / 21:9 / auto；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "5:4",
+          "4:5",
+          "21:9",
+          "auto"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：1k / 2k / 4k。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "1k",
+          "2k",
+          "4k"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "nano-banana2-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-1k.json",
-    "checkedAt": "2026-10-10T00:16:09.621Z",
-    "sha256": "ddeca68a3bafebc18ed16d92f2a8144e26ddff635cc9de733ff2c8ecdb8766fd",
-    "intro": "nano-banana2-1k；张数 1；清晰度写在公共名里，不要再传 quality；参考图最多 9 张；不支持蒙版。",
+    "checkedAt": "2026-10-13T00:53:59.953Z",
+    "sha256": "d1b22d88a31411c8e4029a60672d42ced0ec57d6a142a5568733d75056f5172a",
+    "intro": "nano-banana2-1k",
     "fields": {
       "model": "固定传 nano-banana2-1k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
-      "9:16",
       "4:3",
       "3:4",
+      "16:9",
+      "9:16",
       "3:2",
       "2:3",
       "21:9"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "nano-banana2-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-2k.json",
-    "checkedAt": "2026-10-10T00:16:09.896Z",
-    "sha256": "a1260764a26e585473882771a827bcfb177e1e70a2251a6de4a939758a217626",
-    "intro": "nano-banana2-2k；张数 1；清晰度写在公共名里，不要再传 quality；参考图最多 9 张；不支持蒙版。",
+    "checkedAt": "2026-10-13T00:53:58.414Z",
+    "sha256": "2d1f4d70122f677e73911558e109c5487814d9e5df372a06a850c8b12ea2bc68",
+    "intro": "nano-banana2-2k",
     "fields": {
       "model": "固定传 nano-banana2-2k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
-      "9:16",
       "4:3",
       "3:4",
+      "16:9",
+      "9:16",
       "3:2",
       "2:3",
       "21:9"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 9,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "nano-banana2-4k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/nano-banana2-4k.json",
-    "checkedAt": "2026-10-10T00:16:10.145Z",
-    "sha256": "5c3b32d0adf57d9529d33af35c84c37f6584df5fcc090d513f059c6b6a9da21d",
-    "intro": "nano-banana2-4k；张数 1；清晰度写在公共名里，不要再传 quality；参考图最多 9 张；不支持蒙版。",
+    "checkedAt": "2026-10-13T00:54:03.014Z",
+    "sha256": "1d6c5e676c76b7354bd0d5832129db83af8123ec77328be5e7557531c0db0d7a",
+    "intro": "nano-banana2-4k",
     "fields": {
       "model": "固定传 nano-banana2-4k。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 9 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
-      "16:9",
-      "9:16",
       "4:3",
       "3:4",
+      "16:9",
+      "9:16",
       "3:2",
       "2:3",
       "21:9"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
-    "maxReferences": 9,
-    "editing": true
+    "maxReferences": 16,
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 4K 档位，不能请求其他分辨率档位。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "gemini-3.1-flash-image-preview": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gemini-3.1-flash-image-preview.json",
-    "checkedAt": "2026-10-10T00:16:10.404Z",
-    "sha256": "369ae54edce675dfe1a23dd9d667164bf1cf9f65eca9e953cdf5aeb67a542557",
-    "intro": "文生图走 /v1/images/generations，图生图走 /v1/images/edits，一次只出 1 张。size 只传比例，另有超宽 8:1 / 4:1 / 1:4 / 1:8。quality 选择清晰度，只能是 1k / 2k / 4k，价格分别与 nano-banana2-1k / 2k / 4k 相同。省略或 auto 按 1k。没有 web。编辑时 images 按数组顺序对应提示词里的「第一张 / 第二张」。不支持蒙版。需要自动比例时省略 size，不要传 auto。",
+    "checkedAt": "2026-10-13T00:54:01.488Z",
+    "sha256": "8464c0e53ed0e45be2883b1063082873b1febc94cbfb80e1af032a604f3bbfa4",
+    "intro": "gemini-3.1-flash-image-preview",
     "fields": {
-      "model": "固定传本页公共名。",
-      "prompt": "文生图写画面。图生图写编辑要求，可用「第一张 / 第二张」按 images 数组顺序指代参考图。",
-      "n": "张数，只能为 1。",
-      "size": "画幅比例，只传 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9 / 8:1 / 4:1 / 1:4 / 1:8。不要传像素，不要传 1k / 2k / 4k。省略则按参考图比例，无参考图时由模型决定。",
-      "quality": "清晰度，1k / 2k / 4k。省略或 auto 按 1k。不要传 web，也不要另传 tier。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，一张或多张。第一项是「第一张」，第二项是「第二张」。"
+      "model": "固定传 gemini-3.1-flash-image-preview。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1:1 / 16:9 / 16:9 / 9:16 / 9:16 / 4:3 / 4:3 / 3:4 / 3:4 / 3:2 / 3:2 / 2:3 / 2:3 / 5:4 / 5:4 / 4:5 / 4:5 / 21:9 / 21:9 / 8:1 / 8:1 / 4:1 / 4:1 / 1:4 / 1:4 / 1:8 / 1:8 / auto；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：1k / 2k / 4k。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 9 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
@@ -1018,53 +2848,109 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       "1:8"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
-    "omitSizeAutomatic": true,
-    "qualityOptions": [
-      "1k",
-      "2k",
-      "4k",
-      "auto"
-    ],
-    "editing": true
-  },
-  "gemini-nano-banana-2.1": {
-    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gemini-nano-banana-2.1.json",
-    "checkedAt": "2026-10-10T00:16:10.668Z",
-    "sha256": "c043c35553914ba4ea7866056a9eaa4e72bb5ac0e78072ce246649b330d63d52",
-    "intro": "文生图走 /v1/images/generations，图生图走 /v1/images/edits，一次只出 1 张。先选下表 10 种比例，再用 quality 选 1k / 2k / 4k。省略 size 按 1:1，省略 quality 或 auto 按 1k。价格分别与 nano-banana2-1k / 2k / 4k 相同。不支持 1:4、4:1、1:8、8:1，也不接受任意宽x高。参考图 png / jpeg / webp，每张不超过 35MB，最多 14 张。不支持蒙版。",
-    "fields": {
-      "model": "固定传 gemini-nano-banana-2.1。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "只能传 1:1 / 2:3 / 3:2 / 3:4 / 4:3 / 4:5 / 5:4 / 9:16 / 16:9 / 21:9。省略按 1:1。不要传宽x高，不要把 1k / 2k / 4k 写进 size，不要传 1:4、4:1、1:8、8:1。",
-      "quality": "清晰度，1k / 2k / 4k。价格分别与 nano-banana2-1k / 2k / 4k 相同。省略或 auto 按 1k。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组。png / jpeg / webp，每张不超过 35MB，最多 14 张。超过 14 张会被拒绝，不出图。"
-    },
-    "ratios": [
-      "1:1",
-      "2:3",
-      "3:2",
-      "3:4",
-      "4:3",
-      "4:5",
-      "5:4",
-      "9:16",
-      "16:9",
-      "21:9"
-    ],
-    "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [
       "1k",
       "2k",
-      "4k",
-      "auto"
+      "4k"
+    ],
+    "editing": true,
+    "sourceLastReviewed": "2026-09-26",
+    "maxReferences": 9,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1:1 / 16:9 / 16:9 / 9:16 / 9:16 / 4:3 / 4:3 / 3:4 / 3:4 / 3:2 / 3:2 / 2:3 / 2:3 / 5:4 / 5:4 / 4:5 / 4:5 / 21:9 / 21:9 / 8:1 / 8:1 / 4:1 / 4:1 / 1:4 / 1:4 / 1:8 / 1:8 / auto；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "5:4",
+          "4:5",
+          "21:9",
+          "8:1",
+          "4:1",
+          "1:4",
+          "1:8",
+          "auto"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：1k / 2k / 4k。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "1k",
+          "2k",
+          "4k"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gemini-nano-banana-2.1": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gemini-nano-banana-2.1.json",
+    "checkedAt": "2026-10-13T00:54:04.553Z",
+    "sha256": "e193919067ce449fa526d793f7f765bc4baf67c3b23583192c9e94240468a2b9",
+    "intro": "gemini-nano-banana-2.1",
+    "fields": {
+      "model": "固定传 gemini-nano-banana-2.1。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1:1 / 16:9 / 16:9 / 9:16 / 9:16 / 4:3 / 4:3 / 3:4 / 3:4 / 3:2 / 3:2 / 2:3 / 2:3 / 5:4 / 5:4 / 4:5 / 4:5 / 21:9 / 21:9 / auto；推荐值不代表完整允许集合。",
+      "quality": "输出质量。支持值：1k / 2k / 4k。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 14 个。"
+    },
+    "ratios": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3",
+      "5:4",
+      "4:5",
+      "21:9"
+    ],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "1k",
+      "2k",
+      "4k"
     ],
     "maxReferences": 14,
     "editing": true,
@@ -1249,21 +3135,74 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
         "width": 6336,
         "height": 2688
       }
-    ]
+    ],
+    "sourceLastReviewed": "2026-10-07",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1:1 / 16:9 / 16:9 / 9:16 / 9:16 / 4:3 / 4:3 / 3:4 / 3:4 / 3:2 / 3:2 / 2:3 / 2:3 / 5:4 / 5:4 / 4:5 / 4:5 / 21:9 / 21:9 / auto；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "5:4",
+          "4:5",
+          "21:9",
+          "auto"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：1k / 2k / 4k。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "1k",
+          "2k",
+          "4k"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "midjourney-v7": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/midjourney-v7.json",
-    "checkedAt": "2026-10-10T00:16:10.925Z",
-    "sha256": "32e7a1249cb689ca6b6e91cffc6c0e5d6a71a8d376726343afec198ec42a800b",
-    "intro": "Midjourney V7 文生图和图生图，按次计费。没有 1K / 2K 档，也没有速度档。结果地址可以直接拉取，适合高并发。n 只能为 1，结果仍可能有多张，请遍历 data，不按返回张数加价。不要和 midjourney-1k、midjourney-2k 混用。",
+    "checkedAt": "2026-10-13T00:54:07.632Z",
+    "sha256": "9b37437d8e0281b8a997323c0be659e0a813a5c2b55bbf87f93c36836da3e7da",
+    "intro": "midjourney-v7",
     "fields": {
       "model": "固定传 midjourney-v7。",
-      "prompt": "图像描述，最多 4000 字符。不要写 --v、--niji、--fast、--hd。",
-      "n": "只能为 1。返回的 data 仍可能有多项。我们按次计费，不按返回张数加价。",
-      "size": "比例：1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9。也可传对应的宽x高。省略按 16:9。没有 1K / 2K 档。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 5 张。",
-      "response_format": "推荐 url。结果地址可以直接拉取，适合高并发。结果在 data 数组里，可能多于一项。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 5 个。"
     },
     "ratios": [
       "1:1",
@@ -1279,28 +3218,70 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
     ],
     "pixelOptions": [],
     "customPixels": true,
-    "autoSize": false,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 5,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "5:4",
+          "4:5",
+          "21:9"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "midjourney-1k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/midjourney-1k.json",
-    "checkedAt": "2026-10-10T00:16:11.186Z",
-    "sha256": "ddab67dbfe4de887e9272019b364eeec9c34c7c649ced64acc4aafca10cafa20",
-    "intro": "Midjourney 文生图，固定 1K 档，按次计费。默认 Relax，speed=fast 或 prompt 写 --fast 为 Fast。版本 8.2。n=1，一次出 4 张，不按张加价。结果是官网原链，下载容易被 Cloudflare 拦截，不适合高并发拉取。可用 --v / --niji 换版本。不要和 midjourney-v7 混用。",
+    "checkedAt": "2026-10-13T00:54:15.286Z",
+    "sha256": "739f9bcda4de01fc48e5987c49f9c4f581766f1c19e08c23c543ed9ae5e5a193",
+    "intro": "midjourney-1k",
     "fields": {
       "model": "固定传 midjourney-1k。",
-      "prompt": "图像描述。可写官网参数 --ar / --fast / --relax / --v / --niji / --stylize / --chaos / --seed / --weird / --raw / --no。省略 --v / --niji 时按 8.2。可用 --v 6 / 6.1 / 7 / 8.1 / 8.2 或 --niji 换版本。已是 --ar 16:9 --fast 这种写法时会原样保留。",
-      "n": "只能为 1。一次请求仍返回 4 张，按次计费，不按返回张数加价。",
-      "size": "官网比例：1:2 / 6:11 / 9:16 / 2:3 / 3:4 / 4:5 / 5:6 / 1:1，以及反向 2:1 / 11:6 / 16:9 / 3:2 / 4:3 / 5:4 / 6:5。也可写在 prompt 的 --ar。省略则不指定。",
-      "speed": "生成速度，可选 relax / fast。也可写在 prompt 的 --fast / --relax。省略为 relax。这不是画质，不要用 quality。",
-      "images": "可选。参考图 HTTPS URL 数组。不要发本地文件或 data URI。怎么用看 reference：image / style / edit / moodboard 走 /v1/images/generations；editor 走 /v1/images/edits 且只能 1 张。edit 最多 4 张。不要另发明 sref_images、edit_images 等字段。",
-      "reference": "和 images 一起用，决定这些图扮演什么角色。省略或 image：把图当画面素材，构图和物体会被拆散重组进新图，单图要配文字。style：只借配色、笔触、光影，不把原图里的人/物体搬过来，必须另写要画的内容（对应 --sref）。edit：把图当要改的对象，尽量保住物体，按文字改颜色、季节、背景等，最多 4 张；仍走 /v1/images/generations，不要发 mask。moodboard：用这批图现场建一块风格板再出图（对应 --profile）；prompt 里已有 --p 或 --profile 则不再建板。editor：已有成图要在这张画布上擦除、换材质或扩边，必须走 /v1/images/edits，源图只能 1 张。",
-      "mask": "仅 /v1/images/edits。可选。HTTPS URL，标出要重绘的区域。有 mask 只改那一块；不传则整图换材质（结构大致保留）。扩边用 size 或 prompt 的 --ar，不是 mask。不要在 /v1/images/generations 里发送。",
-      "response_format": "推荐 url。地址是 Midjourney 官网 CDN 原链，下载容易被 Cloudflare 拦截，不要在服务器上高并发拉取。不要用 b64_json。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+      "speed": "生成速度。支持值：relax / fast。无法识别的值按未传处理。",
+      "reference": "参考方式。支持值：image / style / edit / moodboard / editor。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 4 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:2",
@@ -1320,29 +3301,99 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       "6:5"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 4,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 1K 档位，不能请求其他分辨率档位。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:2",
+          "6:11",
+          "9:16",
+          "2:3",
+          "3:4",
+          "4:5",
+          "5:6",
+          "1:1",
+          "2:1",
+          "11:6",
+          "16:9",
+          "3:2",
+          "4:3",
+          "5:4",
+          "6:5"
+        ]
+      },
+      "speed": {
+        "type": "string",
+        "description": "生成速度。支持值：relax / fast。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "relax",
+          "fast"
+        ],
+        "suggestedDefault": "relax"
+      },
+      "reference": {
+        "type": "string",
+        "description": "参考方式。支持值：image / style / edit / moodboard / editor。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "image",
+          "style",
+          "edit",
+          "moodboard",
+          "editor"
+        ],
+        "suggestedDefault": "image"
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "midjourney-2k": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/midjourney-2k.json",
-    "checkedAt": "2026-10-10T00:16:11.434Z",
-    "sha256": "1884a6bed596583bc3c8cc4130a537a496fb044e77622c0e62cefdaba9e2c56e",
-    "intro": "Midjourney 文生图，固定 2K 档，按次计费。默认 Relax，speed=fast 或 prompt 写 --fast 为 Fast。版本 8.2。n=1，一次出 4 张，不按张加价。结果是官网原链，下载容易被 Cloudflare 拦截，不适合高并发拉取。可用 --v / --niji 换版本。不要和 midjourney-v7 混用。",
+    "checkedAt": "2026-10-13T00:54:09.163Z",
+    "sha256": "175123121f8181f5824a84f8aedfe7a2accc15186c57863f513f9566151ce149",
+    "intro": "midjourney-2k",
     "fields": {
       "model": "固定传 midjourney-2k。",
-      "prompt": "图像描述。可写官网参数 --ar / --fast / --relax / --hd / --v / --niji / --stylize / --chaos / --seed / --weird / --raw / --no。省略 --v / --niji 时按 8.2。可用 --v 6 / 6.1 / 7 / 8.1 / 8.2 或 --niji 换版本。已是 --ar 16:9 --fast --hd 这种写法时会原样保留。",
-      "n": "只能为 1。一次请求仍返回 4 张，按次计费，不按返回张数加价。",
-      "size": "官网比例：1:2 / 6:11 / 9:16 / 2:3 / 3:4 / 4:5 / 5:6 / 1:1，以及反向 2:1 / 11:6 / 16:9 / 3:2 / 4:3 / 5:4 / 6:5。也可写在 prompt 的 --ar。省略则不指定。",
-      "speed": "生成速度，可选 relax / fast。也可写在 prompt 的 --fast / --relax。省略为 relax。这不是画质，不要用 quality。",
-      "images": "可选。参考图 HTTPS URL 数组。不要发本地文件或 data URI。怎么用看 reference：image / style / edit / moodboard 走 /v1/images/generations；editor 走 /v1/images/edits 且只能 1 张。edit 最多 4 张。不要另发明 sref_images、edit_images 等字段。",
-      "reference": "和 images 一起用，决定这些图扮演什么角色。省略或 image：把图当画面素材，构图和物体会被拆散重组进新图，单图要配文字。style：只借配色、笔触、光影，不把原图里的人/物体搬过来，必须另写要画的内容（对应 --sref）。edit：把图当要改的对象，尽量保住物体，按文字改颜色、季节、背景等，最多 4 张；仍走 /v1/images/generations，不要发 mask。moodboard：用这批图现场建一块风格板再出图（对应 --profile）；prompt 里已有 --p 或 --profile 则不再建板。editor：已有成图要在这张画布上擦除、换材质或扩边，必须走 /v1/images/edits，源图只能 1 张。",
-      "mask": "仅 /v1/images/edits。可选。HTTPS URL，标出要重绘的区域。有 mask 只改那一块；不传则整图换材质（结构大致保留）。扩边用 size 或 prompt 的 --ar，不是 mask。不要在 /v1/images/generations 里发送。",
-      "response_format": "推荐 url。地址是 Midjourney 官网 CDN 原链，下载容易被 Cloudflare 拦截，不要在服务器上高并发拉取。不要用 b64_json。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+      "speed": "生成速度。支持值：relax / fast。无法识别的值按未传处理。",
+      "reference": "参考方式。支持值：image / style / edit / moodboard / editor。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 4 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:2",
@@ -1362,126 +3413,316 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       "6:5"
     ],
     "pixelOptions": [],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 4,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-29",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。固定 2K 档位，不能请求其他分辨率档位。推荐值：1:2 / 1:2 / 6:11 / 6:11 / 9:16 / 9:16 / 2:3 / 2:3 / 3:4 / 3:4 / 4:5 / 4:5 / 5:6 / 5:6 / 1:1 / 1:1 / 2:1 / 2:1 / 11:6 / 11:6 / 16:9 / 16:9 / 3:2 / 3:2 / 4:3 / 4:3 / 5:4 / 5:4 / 6:5 / 6:5；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:2",
+          "6:11",
+          "9:16",
+          "2:3",
+          "3:4",
+          "4:5",
+          "5:6",
+          "1:1",
+          "2:1",
+          "11:6",
+          "16:9",
+          "3:2",
+          "4:3",
+          "5:4",
+          "6:5"
+        ]
+      },
+      "speed": {
+        "type": "string",
+        "description": "生成速度。支持值：relax / fast。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "relax",
+          "fast"
+        ],
+        "suggestedDefault": "relax"
+      },
+      "reference": {
+        "type": "string",
+        "description": "参考方式。支持值：image / style / edit / moodboard / editor。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "image",
+          "style",
+          "edit",
+          "moodboard",
+          "editor"
+        ],
+        "suggestedDefault": "image"
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "grok-imagine-image": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/grok-imagine-image.json",
-    "checkedAt": "2026-10-10T00:16:14.282Z",
-    "sha256": "508f9c26ac3578ab0b3ee76d9fb838a8c3b5a19572a812c33f2209e18c453830",
-    "intro": "文生图与参考图编辑。张数 1。画幅用 size：1:1 / 16:9 / 9:16 / 2:3 / 3:2 / 4:3 / 3:4，或 1024x1024 / 1792x1024 / 1024x1792。编辑参考图 1–8 张，无蒙版。各 size 同价。",
+    "checkedAt": "2026-10-13T00:54:06.092Z",
+    "sha256": "932f84b5b4bdae1465f36ad725f7355289402d1ad5918295c09040b7edd2789c",
+    "intro": "grok-imagine-image",
     "fields": {
       "model": "固定传 grok-imagine-image。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 16:9 / 9:16 / 2:3 / 3:2 / 4:3 / 3:4，或像素 1024x1024 / 1792x1024 / 1024x1792。省略默认 1024x1024（1:1）。1792x1024 是 3:2，不是 16:9。",
-      "response_format": "url 或 b64_json。推荐 url。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "image": "单张参考图：HTTPS URL 或 data:image/...;base64, Data URI。",
-      "images": "多张参考图数组，1–8 张。每项 HTTPS URL 或 Data URI。与 image 不要混着重复传同一张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1024x1024 / 1024x1024 / 1792x1024 / 1792x1024 / 1024x1792 / 1024x1792 / 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 8 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
       "16:9",
       "9:16",
-      "2:3",
-      "3:2",
       "4:3",
-      "3:4"
+      "3:4",
+      "3:2",
+      "2:3",
+      "21:9"
     ],
     "pixelOptions": [
       "1024x1024",
       "1792x1024",
       "1024x1792"
     ],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-20",
+    "maxReferences": 8,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1024x1024 / 1024x1024 / 1792x1024 / 1792x1024 / 1024x1792 / 1024x1792 / 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1024x1024",
+          "1792x1024",
+          "1024x1792",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "grok-imagine-image-2.0": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/grok-imagine-image-2.0.json",
-    "checkedAt": "2026-10-10T00:16:14.557Z",
-    "sha256": "62f4796570bfd8dd4faba0592560212103df216f6bc879d232eb4d9645f300ef",
-    "intro": "文生图与参考图编辑，质感高于 grok-imagine-image。张数 1。画幅用 size：1:1 / 16:9 / 9:16 / 2:3 / 3:2 / 4:3 / 3:4，或 1024x1024 / 1792x1024 / 1024x1792。编辑参考图 1–8 张，无蒙版。各 size 同价。",
+    "checkedAt": "2026-10-13T00:54:13.748Z",
+    "sha256": "ebd68d391f4bf95feb78e3b1505502d36c90ca08d637121f7ef87289fb6df77f",
+    "intro": "grok-imagine-image-2.0",
     "fields": {
       "model": "固定传 grok-imagine-image-2.0。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 16:9 / 9:16 / 2:3 / 3:2 / 4:3 / 3:4，或像素 1024x1024 / 1792x1024 / 1024x1792。省略默认 1024x1024（1:1）。1792x1024 是 3:2，不是 16:9。",
-      "response_format": "url 或 b64_json。推荐 url。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "image": "单张参考图：HTTPS URL 或 data:image/...;base64, Data URI。",
-      "images": "多张参考图数组，1–8 张。每项 HTTPS URL 或 Data URI。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1024x1024 / 1024x1024 / 1792x1024 / 1792x1024 / 1024x1792 / 1024x1792 / 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 8 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
       "16:9",
       "9:16",
-      "2:3",
-      "3:2",
       "4:3",
-      "3:4"
+      "3:4",
+      "3:2",
+      "2:3",
+      "21:9"
     ],
     "pixelOptions": [
       "1024x1024",
       "1792x1024",
       "1024x1792"
     ],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-20",
+    "maxReferences": 8,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1024x1024 / 1024x1024 / 1792x1024 / 1792x1024 / 1024x1792 / 1024x1792 / 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1024x1024",
+          "1792x1024",
+          "1024x1792",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "grok-imagine-image-lite": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/grok-imagine-image-lite.json",
-    "checkedAt": "2026-10-10T00:16:14.801Z",
-    "sha256": "d92dad866745a5cb4b0d6388ae8a037593a5be8a9f118e3e14563229cab49dea",
-    "intro": "仅文生图。张数 1。画幅用 size：1280x720（16:9）/ 720x1280（9:16）/ 960x960（1:1）。不要传参考图。各 size 同价。",
+    "checkedAt": "2026-10-13T00:54:18.347Z",
+    "sha256": "67ed8ccf1bea5d20b80d34bf274511b9051d64f9445796d4bd23c3bfadf1abd1",
+    "intro": "grok-imagine-image-lite",
     "fields": {
       "model": "固定传 grok-imagine-image-lite。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "1280x720（16:9）/ 720x1280（9:16）/ 960x960（1:1）。不要传 4:3 等未列出比例。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1280x720 / 1280x720 / 720x1280 / 720x1280 / 960x960 / 960x960；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。"
     },
-    "ratios": [
-      "16:9",
-      "9:16",
-      "1:1",
-      "4:3"
-    ],
+    "ratios": [],
     "pixelOptions": [
       "1280x720",
       "720x1280",
       "960x960"
     ],
-    "customPixels": false,
-    "autoSize": false,
+    "customPixels": true,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
-    "editing": false
+    "editing": false,
+    "sourceLastReviewed": "2026-09-20",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1280x720 / 1280x720 / 720x1280 / 720x1280 / 960x960 / 960x960；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1280x720",
+          "720x1280",
+          "960x960"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "seedream-5.0-pro-x": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/seedream-5.0-pro-x.json",
-    "checkedAt": "2026-10-10T00:16:15.078Z",
-    "sha256": "c359a8226e9ba9a3d0befb7edb413d1ffddf1b97b215e18054514cab43f98f8b",
-    "intro": "seedream-5.0-pro-x 文生图和参考图编辑。清晰度 1K 或 2K。size 传比例或宽x高，其它比例就近收到 8 种画面。省略按 16:9、2K。参考图最多 10 张。不支持蒙版。不要和 doubao-seedream-5-0-pro 混用。",
+    "checkedAt": "2026-10-13T00:54:10.693Z",
+    "sha256": "5b4b630f66b69940e6baf1be26943f1dd3aab3a2333b75ea44e6dde9eb61abec",
+    "intro": "seedream-5.0-pro-x",
     "fields": {
       "model": "固定传 seedream-5.0-pro-x。",
-      "prompt": "图像描述，最多 8000 字符。",
-      "n": "张数，只能为 1。",
-      "size": "比例 1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9，或宽x高，例如 1024x1024、2048x1152。其它比例就近收到这 8 种。省略按 16:9、2K。成品像素以返回图片为准。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 10 张。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 10 个。"
     },
     "ratios": [
       "1:1",
@@ -1493,31 +3734,68 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       "2:3",
       "21:9"
     ],
-    "pixelOptions": [
-      "1024x1024",
-      "2048x1152"
-    ],
+    "pixelOptions": [],
     "customPixels": true,
-    "autoSize": false,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 10,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-30",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "doubao-seedream-5-0-pro": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/doubao-seedream-5-0-pro.json",
-    "checkedAt": "2026-10-10T00:16:15.324Z",
-    "sha256": "9ca30a61cd797acbfaf654c5b835ea58f5f19c78f6159aea352d9d8f157c09e1",
-    "intro": "doubao-seedream-5-0-pro。张数 1；size 为比例或 WIDTHxHEIGHT；参考图最多 10 张；不支持蒙版。各 size 同价。",
+    "checkedAt": "2026-10-13T00:54:12.223Z",
+    "sha256": "ca78d55e38d61fd075d517ba0d16ca065034ac7095f30dc109a194ac7cd88ef8",
+    "intro": "doubao-seedream-5-0-pro",
     "fields": {
       "model": "固定传 doubao-seedream-5-0-pro。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT，例如 1024x1024 / 2048x1152。也可传比例 1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9。省略默认 1:1。",
-      "output_format": "png 或 jpeg。省略默认 jpeg。",
-      "response_format": "推荐 url，结果 HTTPS 地址。",
-      "async": "true 时按创建端点轮询；省略或 false 为同步等待。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 10 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+      "output_format": "输出图片格式。支持值：jpeg / png。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 10 个。"
     },
     "ratios": [
       "1:1",
@@ -1529,30 +3807,79 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       "2:3",
       "21:9"
     ],
-    "pixelOptions": [
-      "1024x1024",
-      "2048x1152"
-    ],
+    "pixelOptions": [],
     "customPixels": true,
-    "autoSize": false,
+    "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 10,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 4:3 / 3:4 / 16:9 / 9:16 / 3:2 / 2:3 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：jpeg / png。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "jpeg",
+          "png"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   },
   "flux-pro-2": {
     "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/flux-pro-2.json",
-    "checkedAt": "2026-10-10T00:16:18.247Z",
-    "sha256": "f538fbfdbbe3743d7046be254683e5606d56e630287185bede6a876f72035934",
-    "intro": "FLUX.2 Pro 异步图像。张数 1；size 为比例或 WIDTHxHEIGHT；参考图最多 16 张。",
+    "checkedAt": "2026-10-13T00:54:16.811Z",
+    "sha256": "7aa1fed17bc0eeced96efd67c28f147001a25be16199cc20746dae562535dc7a",
+    "intro": "flux-pro-2",
     "fields": {
       "model": "固定传 flux-pro-2。",
-      "prompt": "图像描述。",
-      "n": "张数，只能为 1。",
-      "size": "需要固定宽高时传 WIDTHxHEIGHT。也可传比例 1:1 / 3:2 / 2:3 / 16:9 / 9:16，或 auto。",
-      "response_format": "推荐 url，结果为第一方 HTTPS 地址。",
-      "async": "本 SKU 按异步使用，传 true 后轮询任务。",
-      "images": "编辑请求的参考图 HTTPS URL 数组，最多 16 张。"
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 1。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 2:3 / 1024x1536 / 16:9 / 1920x1080 / 9:16 / 1080x1920 / 1:1-max / 1920x1920 / auto；推荐值不代表完整允许集合。",
+      "output_format": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+      "output_compression": "输出压缩质量。最小 0。最大 100。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
     },
     "ratios": [
       "1:1",
@@ -1561,12 +3888,493 @@ export const CANGYUAN_IMAGE_DOCUMENTS: Readonly<Record<string,CangyuanImageDocum
       "16:9",
       "9:16"
     ],
-    "pixelOptions": [],
+    "pixelOptions": [
+      "1024x1024",
+      "1536x1024",
+      "1024x1536",
+      "1920x1080",
+      "1080x1920",
+      "1920x1920"
+    ],
     "customPixels": true,
     "autoSize": true,
     "omitSizeAutomatic": false,
     "qualityOptions": [],
     "maxReferences": 16,
-    "editing": true
+    "editing": true,
+    "sourceLastReviewed": "2026-09-15",
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 1。",
+        "required": false,
+        "min": 1,
+        "max": 1
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 1024x1024 / 3:2 / 1536x1024 / 2:3 / 1024x1536 / 16:9 / 1920x1080 / 9:16 / 1080x1920 / 1:1-max / 1920x1920 / auto；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "1024x1024",
+          "3:2",
+          "1536x1024",
+          "2:3",
+          "1024x1536",
+          "16:9",
+          "1920x1080",
+          "9:16",
+          "1080x1920",
+          "1:1-max",
+          "1920x1920",
+          "auto"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg / webp。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "output_compression": {
+        "type": "integer",
+        "description": "输出压缩质量。最小 0。最大 100。",
+        "required": false,
+        "min": 0,
+        "max": 100,
+        "suggestedDefault": 100
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gpt-image-2-az": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2-az.json",
+    "checkedAt": "2026-10-13T00:54:33.939Z",
+    "sha256": "d7ca14039442299b269a765a84182607cba2938ea3cd732c6d0b23bf9e0906c8",
+    "sourceLastReviewed": "2026-10-11",
+    "intro": "gpt-image-2-az",
+    "fields": {
+      "model": "固定传 gpt-image-2-az。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。",
+      "quality": "输出质量。支持值：low / medium / high。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg。无法识别的值按未传处理。",
+      "output_compression": "输出压缩质量。最小 0。最大 100。",
+      "moderation": "内容审核级别。支持值：auto / low。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
+    },
+    "ratios": [],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。",
+        "required": false
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：low / medium / high。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg"
+        ]
+      },
+      "output_compression": {
+        "type": "integer",
+        "description": "输出压缩质量。最小 0。最大 100。",
+        "required": false,
+        "min": 0,
+        "max": 100,
+        "suggestedDefault": 100
+      },
+      "moderation": {
+        "type": "string",
+        "description": "内容审核级别。支持值：auto / low。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "low"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gpt-image-2.5-flare-az": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-flare-az.json",
+    "checkedAt": "2026-10-13T00:54:35.466Z",
+    "sha256": "84723c43fdade09d39971311a13c7ee95a70541d8a69753a2bd462892655f76d",
+    "sourceLastReviewed": "2026-10-11",
+    "intro": "gpt-image-2.5-flare-az",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-flare-az。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。",
+      "quality": "输出质量。支持值：low / medium / high / xhigh / max / auto。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg。无法识别的值按未传处理。",
+      "output_compression": "输出压缩质量。最小 0。最大 100。",
+      "moderation": "内容审核级别。支持值：auto / low。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
+    },
+    "ratios": [],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "auto"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。",
+        "required": false
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：low / medium / high / xhigh / max / auto。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "auto"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg"
+        ]
+      },
+      "output_compression": {
+        "type": "integer",
+        "description": "输出压缩质量。最小 0。最大 100。",
+        "required": false,
+        "min": 0,
+        "max": 100,
+        "suggestedDefault": 100
+      },
+      "moderation": {
+        "type": "string",
+        "description": "内容审核级别。支持值：auto / low。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "low"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "gpt-image-2.5-sunburst-az": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/gpt-image-2.5-sunburst-az.json",
+    "checkedAt": "2026-10-13T00:54:36.997Z",
+    "sha256": "263d971e48eecaeebdd4ad4f4ba98df28b92f60b73657f7fbb2f99f2086d615f",
+    "sourceLastReviewed": "2026-10-11",
+    "intro": "gpt-image-2.5-sunburst-az",
+    "fields": {
+      "model": "固定传 gpt-image-2.5-sunburst-az。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。",
+      "quality": "输出质量。支持值：low / medium / high / xhigh / max / auto。无法识别的值按未传处理。",
+      "background": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+      "output_format": "输出图片格式。支持值：png / jpeg。无法识别的值按未传处理。",
+      "output_compression": "输出压缩质量。最小 0。最大 100。",
+      "moderation": "内容审核级别。支持值：auto / low。无法识别的值按未传处理。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 16 个。",
+      "mask": "编辑请求的蒙版 HTTPS URL，最多 1 张。"
+    },
+    "ratios": [],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "auto"
+    ],
+    "maxReferences": 16,
+    "editing": true,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。",
+        "required": false
+      },
+      "quality": {
+        "type": "string",
+        "description": "输出质量。支持值：low / medium / high / xhigh / max / auto。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "auto"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "description": "背景类型。支持值：auto / opaque / transparent。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "opaque",
+          "transparent"
+        ]
+      },
+      "output_format": {
+        "type": "string",
+        "description": "输出图片格式。支持值：png / jpeg。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg"
+        ]
+      },
+      "output_compression": {
+        "type": "integer",
+        "description": "输出压缩质量。最小 0。最大 100。",
+        "required": false,
+        "min": 0,
+        "max": 100,
+        "suggestedDefault": 100
+      },
+      "moderation": {
+        "type": "string",
+        "description": "内容审核级别。支持值：auto / low。无法识别的值按未传处理。",
+        "required": false,
+        "enum": [
+          "auto",
+          "low"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
+  },
+  "doubao-seedream-5-0-flash": {
+    "sourceUrl": "https://ai.cangyuansuanli.cn/docs-static/models/doubao-seedream-5-0-flash.json",
+    "checkedAt": "2026-10-13T00:54:38.516Z",
+    "sha256": "007bb5b96aaa0606400ce5974c51a34a1cc6e657ea17c057c78cff7e68b8ee78",
+    "sourceLastReviewed": "2026-10-11",
+    "intro": "Seedream 5.0 Flash 图像生成与编辑。",
+    "fields": {
+      "model": "固定传 doubao-seedream-5-0-flash。",
+      "prompt": "生成内容的描述。",
+      "n": "生成张数。最小 1。最大 10。",
+      "size": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 3:2 / 2:3 / 4:3 / 3:4 / 16:9 / 9:16 / 21:9；推荐值不代表完整允许集合。",
+      "response_format": "url 返回结果地址，b64_json 返回 Base64。",
+      "async": "true 创建异步任务；省略或 false 为同步等待。",
+      "images": "参考图 HTTPS URL 数组，最多 10 个。"
+    },
+    "ratios": [
+      "1:1",
+      "3:2",
+      "2:3",
+      "4:3",
+      "3:4",
+      "16:9",
+      "9:16",
+      "21:9"
+    ],
+    "pixelOptions": [],
+    "customPixels": true,
+    "autoSize": true,
+    "omitSizeAutomatic": false,
+    "qualityOptions": [],
+    "maxReferences": 10,
+    "editing": true,
+    "sizeSuggestionsOnly": true,
+    "parameterRules": {
+      "n": {
+        "type": "integer",
+        "description": "生成张数。最小 1。最大 10。",
+        "required": false,
+        "min": 1,
+        "max": 10
+      },
+      "size": {
+        "type": "string",
+        "description": "画面比例或 WIDTHxHEIGHT 尺寸。推荐值：1:1 / 3:2 / 2:3 / 4:3 / 3:4 / 16:9 / 9:16 / 21:9；推荐值不代表完整允许集合。",
+        "required": false,
+        "suggestions": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "21:9"
+        ]
+      },
+      "response_format": {
+        "type": "string",
+        "description": "url 返回结果地址，b64_json 返回 Base64。",
+        "required": false,
+        "enum": [
+          "url",
+          "b64_json"
+        ]
+      },
+      "async": {
+        "type": "boolean",
+        "description": "true 创建异步任务；省略或 false 为同步等待。",
+        "required": false
+      }
+    }
   }
 };

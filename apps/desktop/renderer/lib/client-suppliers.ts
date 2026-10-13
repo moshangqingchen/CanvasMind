@@ -33,7 +33,6 @@ export type SupplierModelProtocol =
   | "responses"
   | "gemini"
   | "rest"
-  | "anthropic-messages"
   | "google-generate-content"
   | "xai-responses"
   | "generic-openai-compatible"
@@ -315,7 +314,7 @@ export function manualModelProtocols(
     if (provider === "rest" && capabilities.some(value => value !== "chat")) protocols.push("rest");
   }
   if ((!capability || capability === "chat") && capabilities.includes("chat")) protocols.push(
-    "chat-completions", "responses", "anthropic-messages", "google-generate-content",
+    "chat-completions", "responses", "google-generate-content",
     "xai-responses", "generic-openai-compatible",
   );
   return protocols;

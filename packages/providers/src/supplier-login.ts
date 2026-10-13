@@ -331,10 +331,14 @@ function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", hea
       ...((kind === "sub2api" || (kind === "newapi" && base === "https://tu.988236.xyz")) && [
         "https://asian-acc.we-token.cc", "https://api.mikoto.vip", "https://api.eaheng.com", "https://tu.988236.xyz",
         "https://api.hangzhale.com", "https://synoralink.com", "https://vapi.chuangxiangai.asia",
+        "https://ai.whyshy.cn", "https://token.secure-skill.com",
       ].includes(base)
         ? ["/api/v1/channels/available"] : []),
       ...(kind === "sub2api" && base === "https://vapi.chuangxiangai.asia" ? ["/api/v1/channels/media-pricing"] : []),
-      ...(base === "https://synoralink.com" && kind === "sub2api" ? ["/api/v1/announcements"] : []),
+      ...(kind === "sub2api" && [
+        "https://api.eaheng.com", "https://vapi.chuangxiangai.asia",
+        "https://api.hangzhale.com", "https://synoralink.com", "https://ai.whyshy.cn", "https://token.secure-skill.com",
+      ].includes(base) ? ["/api/v1/announcements"] : []),
     ].map((path) => `${base}${path}`),
   );
   return {
@@ -373,8 +377,17 @@ function createSupplierSiteSession(base: string, kind: "newapi" | "sub2api", hea
             (endpoint === `${base}/api/v1/usage/dashboard/stats` && !parsed.search) ||
             (endpoint === `${base}/api/v1/usage` && (usageQuery || scopedUsageQuery))))
         );
+        // The monster user-facing channel plaza reads every group for one of
+        // four published monitoring windows. Do not authenticate admin detail
+        // routes, arbitrary ranges, extra parameters, or another supplier.
+        const monsterPlazaRead = kind === "sub2api" && base === "https://api.eaheng.com" && method === "GET" && (
+          (endpoint === `${base}/api/v1/plaza/categories` && !parsed.search) ||
+          (endpoint === `${base}/api/v1/plaza` && [...parsed.searchParams].length === 1 &&
+            parsed.searchParams.getAll("range").length === 1 &&
+            ["90m", "24h", "7d", "30d"].includes(parsed.searchParams.get("range") ?? ""))
+        );
         authenticatedTarget = !parsed.hash && !parsed.username && !parsed.password && (
-          accountRead ||
+          accountRead || monsterPlazaRead ||
           (kind === "sub2api" && isWeAiLegacyAuthenticatedRead(base, parsed, method)) ||
           (method === "GET" && allowedUrls.has(target)) ||
           (method === "GET" && paginationOnly && (

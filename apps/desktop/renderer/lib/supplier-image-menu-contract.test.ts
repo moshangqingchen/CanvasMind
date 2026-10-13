@@ -20,6 +20,24 @@ function fixture(baseUrl: string, group: string, model: ModelDescriptor) {
 }
 
 describe("supplier image menu contract survives capability enrichment", () => {
+  it.each([
+    ["gpt_image_az", "gpt-image-2.5-flare"], ["gpt_image_az", "gpt-image-2.5-sunburst"],
+    ["openai_official_外接", "gpt-image-2-o"], ["openai_official_外接2", "gpt-image-2-o"],
+    ["gpt_image_adobe2", "gpt-image-2-low"], ["gpt_image_adobe2", "gpt-image-2-medium"], ["gpt_image_adobe2", "gpt-image-2-adobe"],
+    ["gpt_image_adobe", "gpt-image-2.5-flare-adobe"],
+  ])("rehydrates Fri %s / %s's missing count from old cache without changing saved parameters", (group, id) => {
+    const connection = { provider: "openai", config: { baseUrl: "https://api.frimodel.com/v1", accountKeyGroup: group, usage: "canvas" } };
+    const old = { ...sparse(id!), metadata: { protocol: "frimodel-images", fixedOutputCount: 1 }, parameters: [] };
+    const current = supplierImageMenuContract(connection, old);
+    expect(current.parameters?.find(parameter => parameter.key === "n")).toMatchObject({ valueType: "integer", default: 1, min: 1, step: 1 });
+    expect(current.parameters?.find(parameter => parameter.key === "n")?.max).toBeUndefined();
+    expect(current.metadata?.fixedOutputCount).toBeUndefined();
+    expect(current.metadata?.imageCountFieldSource).toBe("https://ai-doc.apifox.cn/9077234m0.md");
+    expect(supplierImageMenuContract(connection, current)).toEqual(current);
+    expect(normalizedParametersForModel("image-generation", "openai", current, { n: 17, size: "3840x2160" })).toMatchObject({ n: 17, size: "3840x2160" });
+    expect(supplierImageMenuContract({ ...connection, config: { ...connection.config, manualProtocol: true } }, old)).toBe(old);
+    expect(supplierImageMenuContract(connection, { ...old, metadata: { ...old.metadata, source: "paid-test" } }).metadata?.fixedOutputCount).toBe(1);
+  });
   it.each(["codex_image", "gpt_image_web"].flatMap(group => ["gpt-image-2-w", "gpt-image-2.5"].map(id => [group, id])))
     ("preserves Fri %s / %s's exact 1K group across sparse scans and repeated menu projection", (group, id) => {
       const connection = { provider: "openai", config: { baseUrl: "https://platform.frimodel.com/v1", modelGroup: group } };

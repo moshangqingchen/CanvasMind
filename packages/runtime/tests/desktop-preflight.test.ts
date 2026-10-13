@@ -134,7 +134,7 @@ describe("desktop public asset preflight", () => {
     Object.assign(direct.nodes[1]!.data, { provider: "openai", __runtimeConnection: { provider: "openai", config: { connector: { assetsRequirePublicUrls: true } } } });
     expect(() => assertDesktopPublicAssets(direct, new Set(["video"]))).not.toThrow();
   });
-  it("checks native-only Cangyuan references before payment without persisting a shared flag", () => {
+  it("allows same-token native Cangyuan image and mask uploads without a separate reference channel", () => {
     vi.stubEnv("SUPERCANVAS_DESKTOP", "true");
     const native = structuredClone(graph);
     const model = "gpt-image-2.5-x";
@@ -144,9 +144,14 @@ describe("desktop public asset preflight", () => {
     native.nodes[1]!.type = "image-generation";
     native.nodes[1]!.data = { nodeType: "image-generation", provider: "rest", model,
       __runtimeConnection: { provider: "rest", config } };
-    expect(() => assertDesktopPublicAssets(native, new Set(["video"]))).toThrow(/未提交付费/);
+    expect(() => assertDesktopPublicAssets(native, new Set(["video"]))).not.toThrow();
     expect(config.connector).not.toHaveProperty("assetsRequirePublicUrls");
     expect(() => assertDesktopPublicAssets({ ...native, edges: [] }, new Set(["video"]))).not.toThrow();
+    native.nodes[1]!.data = { ...native.nodes[1]!.data, parameters: { maskAssetId: "mask" } };
+    expect(() => assertDesktopPublicAssets(native, new Set(["video"]))).not.toThrow();
+    native.nodes[1]!.data = { ...native.nodes[1]!.data,
+      __runtimeConnection: { provider: "rest", config: { ...config, manualProtocol: true, connector: { ...config.connector, assetsRequirePublicUrls: true } } } };
+    expect(() => assertDesktopPublicAssets(native, new Set(["video"]))).toThrow(/未提交付费/);
     native.nodes[1]!.data = { ...native.nodes[1]!.data,
       __runtimeConnection: { provider: "rest", config: { ...config, referenceImageHosting: "litterbox-24h" } } };
     expect(() => assertDesktopPublicAssets(native, new Set(["video"]))).not.toThrow();

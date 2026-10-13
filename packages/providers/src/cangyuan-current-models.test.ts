@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { cangyuanCurrentModel, cangyuanCurrentPricing, cangyuanCurrentRequestIssues, cangyuanCurrentTransport } from "./cangyuan-current-models.js";
+import { cangyuanCurrentModel, cangyuanCurrentPricing, cangyuanCurrentRequestIssues, cangyuanCurrentTransport, managesCangyuanCurrentTransport } from "./cangyuan-current-models.js";
 import { StaticConnectionResolver } from "./credentials.js";
 import { modelPriceAmount } from "./media-billing.js";
 import { GenericRestAdapter, restRequestRequiresPublicAssets, type RestConnectorConfig } from "./rest.js";
@@ -40,7 +40,7 @@ describe("Cangyuan current complete public IDs", () => {
         ...(edit ? { assets: [{ id: "ref", kind: "image" as const, mimeType: "image/png", url: "https://images.example/ref.png" }] } : {}) });
       const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
       for (const field of Object.keys(body)) expect(document.fields).toHaveProperty(field);
-      const path = edit && !/^midjourney-[12]k$/u.test(id) ? "/v1/images/edits" : "/v1/images/generations";
+      const path = edit ? "/v1/images/edits" : "/v1/images/generations";
       expect(String(fetcher.mock.calls[0]![0])).toBe(`${baseUrl}${path}`);
       if (edit) expect(body.images).toEqual(["https://images.example/ref.png"]);
       await adapter.poll(task);
@@ -48,13 +48,13 @@ describe("Cangyuan current complete public IDs", () => {
     }
   });
 
-  it("distinguishes Grok's restricted pixel choices from K tiers and rejects arbitrary dimensions", async () => {
+  it("keeps Grok pixel recommendations open without inventing a supplier K tier", async () => {
     for (const id of ["grok-imagine-image", "grok-imagine-image-2.0"]) {
-      expect(descriptor(id).parameters?.find(p => p.key === "size")).toMatchObject({ control: "select", default: "1024x1024" });
+      expect(descriptor(id).parameters?.find(p => p.key === "size")).toMatchObject({ control: "dimensions", default: "1024x1024", allowCustomValue: true });
       expect(descriptor(id).metadata?.imageSupportedResolutions).toEqual([]);
       const { adapter, fetcher } = adapterFor(id);
-      await expect(adapter.submit(request(id, { size: "2048x2048" }))).rejects.toThrow();
-      expect(fetcher).not.toHaveBeenCalled();
+      await adapter.submit(request(id, { size: "2048x2048" }));
+      expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)).size).toBe("2048x2048");
     }
   });
 
@@ -78,7 +78,7 @@ describe("Cangyuan current complete public IDs", () => {
 
   it("uses Nano 2.1's independent Images protocol and exact quality prices", async () => {
     const id = "gemini-nano-banana-2.1";
-    expect(descriptor(id).parameters?.map(p => p.key)).toEqual(["aspect_ratio", "quality", "n"]);
+    expect(descriptor(id).parameters?.map(p => p.key)).toEqual(["aspect_ratio", "size", "n", "quality", "response_format", "async"]);
     expect(descriptor(id).limits?.maxInputImages).toBe(14);
     expect(descriptor(id).parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).not.toContain("9:21");
     const expression = 'has(param("quality"), "4k") || has(param("quality"), "4K") ? tier("4k", n * 0.10) : has(param("quality"), "2k") || has(param("quality"), "2K") ? tier("2k", n * 0.08) : tier("1k", n * 0.06)';
@@ -91,7 +91,7 @@ describe("Cangyuan current complete public IDs", () => {
       expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ async: true, n: 1, response_format: "url", model: id, prompt: "offline contract test", quality, size: "21:9", images: ["https://assets.example/a.webp"] });
     }
     expect(cangyuanCurrentPricing(id, expression.replace("0.10", "0.11"), 1, "today")).toBeUndefined();
-    for (const input of [request(id, { aspect_ratio: "9:21" }), request(id, { size: "2048x2048" }), request(id, { tier: "4k" }), request(id, { n: 2 }), request(id, { mask: "https://assets.example/mask.png" })]) {
+    for (const input of [request(id, { tier: "4k" }), request(id, { n: 2 }), request(id, { mask: "https://assets.example/mask.png" })]) {
       const { adapter, fetcher } = adapterFor(id);
       await expect(adapter.submit(input)).rejects.toThrow(); expect(fetcher).not.toHaveBeenCalled();
     }
@@ -103,32 +103,28 @@ describe("Cangyuan current complete public IDs", () => {
       expect(model.parameters?.find(p => p.key === "tier")).toMatchObject({ default: "4k", options: [
         { label: "web", value: "web" }, { label: "1k", value: "1k" }, { label: "2k", value: "2k" }, { label: "4k", value: "4k" },
       ] });
-      expect(model.parameters?.find(p => p.key === "quality")).toMatchObject({ default: "max", visibleWhen: [{ parameter: "tier", values: ["1k", "2k", "4k"] }] });
+      expect(model.parameters?.find(p => p.key === "quality")).toMatchObject({ default: id === "gpt-image-2-x" ? "high" : "max" });
     }
-    expect(descriptor("gpt-image-2-x").parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["low", "medium", "high", "xhigh", "max"]);
-    expect(descriptor("gpt-image-2.5-x").parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
+    expect(descriptor("gpt-image-2-x").parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["medium", "low", "high", "xhigh", "max"]);
+    expect(descriptor("gpt-image-2.5-x").parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["medium", "low", "high", "xhigh", "max"]);
     expect(descriptor("gpt-image-2.5-x").parameters?.find(p => p.key === "series")).toMatchObject({ default: "sunburst", required: true });
     for (const id of ["midjourney-v7", "seedream-5.0-pro-x"]) expect(descriptor(id).parameters?.some(p => ["quality", "speed", "tier"].includes(p.key))).toBe(false);
     expect(descriptor("midjourney-v7").metadata?.imageSupportedResolutions).toEqual([]);
     expect(descriptor("seedream-5.0-pro-x").metadata?.imageSupportedResolutions).toEqual(["1K", "2K"]);
   });
 
-  it.each(["gpt-image-2-x", "gpt-image-2.5-x"])("omits hidden web quality and rejects undocumented fields for %s", async id => {
+  it.each(["gpt-image-2-x", "gpt-image-2.5-x"])("preserves selected web quality and rejects undocumented fields for %s", async id => {
     const { adapter, fetcher } = adapterFor(id);
     await expect(adapter.submit(request(id, { tier: "web", image_size: "4K" }))).rejects.toThrow(/image_size/u);
     expect(fetcher).not.toHaveBeenCalled();
     await adapter.submit(request(id, { tier: "web", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}), quality: "max", aspect_ratio: "16:9" }));
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ model: id, prompt: "offline contract test", tier: "web", n: 1,
-      size: "16:9", async: true, response_format: "url", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}) });
+      size: "16:9", quality: "max", async: true, response_format: "url", ...(id === "gpt-image-2.5-x" ? { series: "flare" } : {}) });
   });
 
   it.each(["gpt-image-2-x", "gpt-image-2.5-x"])("maps every K/ratio request through legal native fields for %s", async id => {
     for (const tier of ["1k", "2k", "4k"]) for (const ratio of IMAGE_SIZE_RATIOS) {
       const { adapter, fetcher } = adapterFor(id);
-      if (ratio === "9:21") {
-        await expect(adapter.submit(request(id, { tier, ...(id === "gpt-image-2.5-x" ? { series: "sunburst" } : {}), quality: "max", aspect_ratio: ratio }))).rejects.toThrow(/9:21/u);
-        expect(fetcher).not.toHaveBeenCalled(); continue;
-      }
       await adapter.submit(request(id, { tier, ...(id === "gpt-image-2.5-x" ? { series: "sunburst" } : {}), quality: "max", aspect_ratio: ratio }));
       const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
       expect(body.tier).toBe(tier); expect(body.quality).toBe("max");
@@ -152,17 +148,16 @@ describe("Cangyuan current complete public IDs", () => {
     const { connector } = adapterFor("gpt-image-2.5-x");
     const settings = { baseUrl, connector };
     const before = structuredClone(connector);
-    expect(restRequestRequiresPublicAssets(connector, "gpt-image-2.5-x", "image.edit", settings)).toBe(true);
+    expect(restRequestRequiresPublicAssets(connector, "gpt-image-2.5-x", "image.edit", settings)).toBe(false);
     expect(restRequestRequiresPublicAssets(connector, "unrelated", "image.edit", settings)).toBe(false);
     expect(restRequestRequiresPublicAssets(connector, "gpt-image-2.5-x", "image.edit", { ...settings, baseUrl: "https://other.example" })).toBe(false);
     expect(restRequestRequiresPublicAssets(connector, "gpt-image-2.5-x", "image.edit", { ...settings, manualModels: [{ id: "gpt-image-2.5-x" }] })).toBe(false);
     expect(connector).toEqual(before);
   });
 
-  it("keeps Midjourney's ten declared ratios and rejects the unresolved 9:21 before payment", async () => {
+  it("keeps Midjourney ratio recommendations open and preserves chosen ratios", async () => {
     for (const ratio of IMAGE_SIZE_RATIOS) {
       const { adapter, fetcher } = adapterFor("midjourney-v7", { id: "mj-task", status: "running" });
-      if (ratio === "9:21") { await expect(adapter.submit(request("midjourney-v7", { aspect_ratio: ratio }))).rejects.toThrow(/9:21/u); expect(fetcher).not.toHaveBeenCalled(); continue; }
       const task = await adapter.submit(request("midjourney-v7", { aspect_ratio: ratio }));
       const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
       expect(body.size).toBe(ratio); expect(body.n).toBe(1); expect(body).not.toHaveProperty("quality"); expect(body).not.toHaveProperty("speed"); expect(body).not.toHaveProperty("tier");
@@ -174,16 +169,12 @@ describe("Cangyuan current complete public IDs", () => {
     }
   });
 
-  it("uses only Seedream's eight declared shapes without silently substituting saved ratios", async () => {
+  it("keeps Seedream declared shapes as recommendations without silently substituting saved ratios", async () => {
     for (const ratio of IMAGE_SIZE_RATIOS) {
       const { adapter, fetcher } = adapterFor("seedream-5.0-pro-x");
-      if (["5:4", "4:5", "9:21"].includes(ratio)) {
-        await expect(adapter.submit(request("seedream-5.0-pro-x", { aspect_ratio: ratio }))).rejects.toThrow();
-        expect(fetcher).not.toHaveBeenCalled(); continue;
-      }
       await adapter.submit(request("seedream-5.0-pro-x", { aspect_ratio: ratio }));
       const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
-      expect(["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"]).toContain(body.size);
+      expect(IMAGE_SIZE_RATIOS).toContain(body.size);
       expect(body.size).toBe(ratio);
       expect(body).not.toHaveProperty("quality"); expect(body).not.toHaveProperty("aspect_ratio");
     }
@@ -191,7 +182,7 @@ describe("Cangyuan current complete public IDs", () => {
 
   it("blocks missing series, invalid tier/count and excessive references before fetch", async () => {
     for (const input of [request("gpt-image-2.5-x", { tier: "4k" }), request("gpt-image-2-x", { size: "0x2160" }),
-      request("gpt-image-2-x", { quality: "max" }), request("gpt-image-2-x", { tier: "8k" }), request("gpt-image-2-x", { tier: "4k", quality: "auto" }), request("midjourney-v7", { n: 2 })]) {
+      request("gpt-image-2-x", { tier: "8k" }), request("gpt-image-2-x", { tier: "4k", quality: "auto" }), request("midjourney-v7", { n: 2 })]) {
       const { adapter, fetcher } = adapterFor(input.model!);
       await expect(adapter.submit(input)).rejects.toThrow(); expect(fetcher).not.toHaveBeenCalled();
     }
@@ -200,7 +191,7 @@ describe("Cangyuan current complete public IDs", () => {
     const assets = Array.from({ length: 10 }, (_, i) => ({ id: String(i), kind: "image" as const, mimeType: "image/png", url: `https://images.example/${i}.png` }));
     await expect(adapter.submit({ ...request("gpt-image-2.5-x", { tier: "web", series: "flare" }), assets })).rejects.toThrow(/9/u);
     expect(fetcher).not.toHaveBeenCalled();
-    expect((await adapter.validate({ ...request("gpt-image-2.5-x", { tier: "4k", series: "flare", quality: "max" }), assets })).valid).toBe(true);
+    expect((await adapter.validate({ ...request("gpt-image-2.5-x", { tier: "4k", series: "flare", quality: "max" }), assets })).valid).toBe(false);
   });
 
   it("decodes exact CNY prices for every series, tier and quality using the original billing expression", () => {
@@ -239,5 +230,43 @@ describe("Cangyuan current complete public IDs", () => {
       settings: { connector } }]), { fetch: fetcher });
     await expect(adapter.submit(request("gpt-image-2-x", { tier: "4k", quality: "max" }))).rejects.toThrow(/when/u);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("2026-10-12 Cangyuan document changes", () => {
+  it("sends expanded native n/background/encoding/compression/response fields without discarding choices", async () => {
+    const id = "gpt-image-2.5-flare-az", parameters = { n: 3, size: "2336x3520", quality: "max", background: "transparent", output_format: "png", output_compression: 87, moderation: "low", response_format: "b64_json", async: false };
+    const { adapter, fetcher } = adapterFor(id);
+    await adapter.submit(request(id, parameters));
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ model: id, prompt: "offline contract test", ...parameters });
+    for (const n of [0, 11, 1.5, "3"]) expect(cangyuanCurrentRequestIssues(request(id, { n }), baseUrl)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.n" })]));
+  });
+  it("retains the user's highest quality where a GPT document omitted quality", async () => {
+    for (const [id, quality] of [["gpt-image-2", "high"], ["gpt-image-2.5-flare", "max"]] as const) {
+      const current = descriptor(id);
+      expect(current.parameters?.find(p => p.key === "quality")?.default).toBe(quality);
+      expect(current.metadata?.imageUserQualityPresetSource).toBe("user-request");
+      const { adapter, fetcher } = adapterFor(id);
+      await adapter.submit(request(id, { quality, n: 2, size: "3840x2160" }));
+      expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toMatchObject({ quality, n: 2, size: "3840x2160" });
+    }
+  });
+  it("enforces exact fixed-tier dimension rules and true enums while leaving recommendations open", () => {
+    const id = "gpt-image-2-4k";
+    expect(descriptor(id).parameters?.find(p => p.key === "size")).toMatchObject({ step: 16, max: 3840, allowCustomValue: true });
+    expect(cangyuanCurrentRequestIssues(request(id, { size: "3840x2160", quality: "high", output_format: "webp" }), baseUrl)).toEqual([]);
+    for (const size of ["3841x2160", "4096x2048", "640x640", "3840x3840", "3840x640"]) expect(cangyuanCurrentRequestIssues(request(id, { size }), baseUrl)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.size" })]));
+    expect(cangyuanCurrentRequestIssues(request(id, { quality: "auto" }), baseUrl)).not.toEqual([]);
+    expect(cangyuanCurrentRequestIssues(request("gpt-image-2.5-x", { series: "flare", aspect_ratio: "9:21", quality: "max" }), baseUrl)).toEqual([]);
+  });
+  it("migrates an exact previous native override from normal or cached catalogs but preserves manual and custom mappings", () => {
+    const id = "gpt-image-2.5-x", previous = JSON.parse(readFileSync(new URL("./fixtures/cangyuan-prior-image-contract.json", import.meta.url), "utf8"));
+    const { connector } = adapterFor(id);
+    connector.modelOverrides = { [id]: previous };
+    for (const source of ["live", "cached"]) expect(managesCangyuanCurrentTransport({ connector, catalogSource: source }, baseUrl, connector, id)).toBe(true);
+    expect(managesCangyuanCurrentTransport({ connector, manualProtocol: true }, baseUrl, connector, id)).toBe(false);
+    expect(managesCangyuanCurrentTransport({ connector, manualModels: [{ id }] }, baseUrl, connector, id)).toBe(false);
+    const custom = structuredClone(connector); custom.modelOverrides![id]!.submit!.path = "/custom/images";
+    expect(managesCangyuanCurrentTransport({ connector: custom }, baseUrl, custom, id)).toBe(false);
   });
 });

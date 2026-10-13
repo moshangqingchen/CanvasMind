@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { videoOutputParametersFromBody } from "./video-output-contract.js";
+import type { ProviderRequestEvidence } from "./provider-request-evidence.js";
 import type {
   ArtifactKind,
   FetchImplementation,
@@ -29,9 +30,13 @@ import { isJiasuApiUrl, jiasuVideoGroupMismatch } from "./jiasu-video-contract.j
 import { isJijiuApiUrl, jijiuVideoGroupMismatch, isJijiuWanVideoModel, jijiuVideoTransport } from "./jijiu-video-contract.js";
 import { prepareJijiuWanFiles } from "./jijiu-wan-files.server.js";
 import { uploadJiasuMedia } from "./jiasu-media.js";
+import { cangyuanOwnMediaUploadAvailable } from "./cangyuan-media-upload-contract.js";
+import { cangyuanLocalMedia, cangyuanMediaUploadInputIssues, uploadCangyuanMedia } from "./cangyuan-media-upload.server.js";
 import { isMikotoGptImage } from "./mikoto-image-contract.js";
 import { supplierImageParameterIssues } from "./supplier-image-constraints.js";
-import { applyUserImageSizePresets, resolveUserImageSizeParameters } from "./image-size-presets.js";
+import { applyUserImageSizePresets } from "./image-size-presets.js";
+import { resolveImageModelContract } from "./image-model-contract.js";
+import { evaluateImageParameters } from "./image-parameter-contract.js";
 
 /** Existing native rules apply to exact current automatic group5/16 inventories. */
 function usesMikotoSavedImageParameterContract(connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>, request: NormalizedRequest): boolean {
@@ -63,7 +68,10 @@ function mikotoSizeOnlyRequest(request: NormalizedRequest): NormalizedRequest {
 function remainingVideoContext(settings: Readonly<Record<string, unknown>> | undefined, model?: ModelDescriptor, assets?: readonly ProviderAssetInput[], baseUrl?: unknown): RemainingVideoContext {
   const group = settings?.accountKeyGroup ?? settings?.modelGroup ?? settings?.group ?? settings?.supplierGroupId;
   const description = settings?.supplierGroupDescription ?? settings?.groupDescription;
-  return { baseUrl, manualProtocol: settings?.manualProtocol, ...(typeof group === "string" ? { group } : {}), ...(typeof description === "string" ? { groupDescription: description } : {}), ...(model ? { model } : {}), ...(assets ? { assets } : {}) };
+  const officialGroupId = settings?.accountKeyGroupId;
+  return { baseUrl, manualProtocol: settings?.manualProtocol, ...(typeof group === "string" ? { group } : {}),
+    ...(typeof officialGroupId === "string" || typeof officialGroupId === "number" ? { officialGroupId } : {}),
+    ...(typeof description === "string" ? { groupDescription: description } : {}), ...(model ? { model } : {}), ...(assets ? { assets } : {}) };
 }
 /** Current Miaowu core routes replace only automatic directory mappings. */
 export function preservesMiaowuExplicitVideoContract(config: Readonly<Record<string, unknown>>, model: ModelDescriptor | undefined, operation?: ProviderOperation): boolean {
@@ -264,6 +272,7 @@ export interface RestModelConnectorOverride {
 }
 
 interface RestTaskEnvelope {
+  upstreamRequestEvidence?: ProviderRequestEvidence;
   connectionId: string;
   config: RestConnectorConfig;
   remote: unknown;
@@ -276,6 +285,7 @@ interface RestTaskEnvelope {
 
 /** The selected request, not a mixed group's blanket flag, decides transport. */
 export function restRequestRequiresPublicAssets(value: unknown, model?: string, operation?: ProviderOperation, settings?: unknown): boolean {
+  if (operation && isRecord(settings) && cangyuanOwnMediaUploadAvailable("rest", settings, model, operation)) return false;
   if (operation?.startsWith("video.") && isRecord(settings) && isChuangxiangVideoConnection(settings, model)) return true;
   if (operation?.startsWith("image.") && isRecord(settings) &&
     canApplyCangyuanCurrentContract(settings, typeof settings.baseUrl === "string" ? settings.baseUrl : undefined, model)) return !/^grok-imagine-image(?:-2\.0)?$/u.test(model ?? "");
@@ -1335,6 +1345,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     request?: NormalizedRequest,
     task?: ProviderTask,
     observeBody?: (body: BodyInit | undefined) => void,
+    observeResponse?: (evidence: ProviderRequestEvidence) => void,
   ): Promise<unknown> {
     let body = await this.buildBody(definition, request, task);
     const taskId = task ? getProviderTaskId(task) : undefined;
@@ -1396,6 +1407,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       },
       {
         phase,
+        ...(observeResponse ? { onResponseEvidence: observeResponse } : {}),
         timeoutMs: chuangxiangVideo ? phase === "submit" ? 60_000 : 30_000
           : this.timeoutFor(connection, phase === "submit" && request?.operation.startsWith("image.") === true),
         ...(maxResponseBytes === undefined ? {} : { maxResponseBytes }),
@@ -1453,11 +1465,19 @@ export class GenericRestAdapter implements ProviderAdapter {
     }
     try {
       const connection = await this.connections.resolve(request.connectionId);
+      if (!this.fixedConfig && cangyuanOwnMediaUploadAvailable(connection.provider, { ...connection.settings, baseUrl: connection.baseUrl }, request.model, request.operation)) {
+        issues.push(...cangyuanMediaUploadInputIssues(request.assets ?? []));
+        if (request.assets) request = { ...request, assets: request.assets.map(asset => cangyuanLocalMedia(asset)
+          ? { ...asset, url: `https://pending-cangyuan-media.super-canvas.invalid/${encodeURIComponent(asset.id)}` } : asset) };
+      }
       if (!this.fixedConfig && request.operation.startsWith("image.") && connection.settings?.manualProtocol !== true) {
         const catalog = connection.settings?.modelCatalogModels;
         const model = this.configFrom(connection).models?.find(candidate => candidate.id === request.model) ??
           (Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(candidate => candidate?.id === request.model) : undefined);
-        request = { ...request, parameters: resolveUserImageSizeParameters(model, request.parameters) };
+        if (model) {
+          const contract = resolveImageModelContract(imageEditingConnection(connection), model);
+          request = { ...request, parameters: evaluateImageParameters(contract, request.parameters, { operation: request.operation }).requestParameters };
+        }
       }
       const mikotoCanvasPreferences = !this.fixedConfig && usesMikotoOneKCanvasPreferences(connection, request);
       if (!this.fixedConfig && usesMikotoSavedImageParameterContract(connection, request))
@@ -1814,7 +1834,10 @@ export class GenericRestAdapter implements ProviderAdapter {
       const catalog = connection.settings?.modelCatalogModels;
       const model = this.configFrom(connection).models?.find(candidate => candidate.id === request.model) ??
         (Array.isArray(catalog) ? (catalog as ModelDescriptor[]).find(candidate => candidate?.id === request.model) : undefined);
-      request = { ...request, parameters: resolveUserImageSizeParameters(model, request.parameters) };
+      if (model) {
+        const contract = resolveImageModelContract(imageEditingConnection(connection), model);
+        request = { ...request, parameters: evaluateImageParameters(contract, request.parameters, { operation: request.operation }).requestParameters };
+      }
     }
     let config = this.configFrom(
       connection,
@@ -1856,6 +1879,10 @@ export class GenericRestAdapter implements ProviderAdapter {
       outboundRequest = { ...outboundRequest, assets: await uploadJiasuMedia(connection, request.assets, {
         fetch: this.fetchImpl, requestTimeoutMs: this.requestTimeoutMs,
       }) };
+    if (!this.fixedConfig && cangyuanOwnMediaUploadAvailable(connection.provider, { ...connection.settings, baseUrl: connection.baseUrl }, request.model, request.operation) && outboundRequest.assets?.length)
+      outboundRequest = { ...outboundRequest, assets: await uploadCangyuanMedia(connection, outboundRequest.assets, {
+        fetch: this.fetchImpl, requestTimeoutMs: this.requestTimeoutMs,
+      }) };
     if (outboundRequest.assets?.length && restRequestRequiresPublicAssets(config)) {
       const needsHosting = outboundRequest.assets.some(asset => !asset.url?.startsWith("https://"));
       if (needsHosting && !referenceImageHostingEnabled(connection.settings))
@@ -1873,6 +1900,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       config = { ...config, ...jijiuVideoTransport(request.model, outboundRequest), assetsRequirePublicUrls: false };
     }
     let videoOutputParameters: Record<string, unknown> | undefined;
+    let upstreamRequestEvidence: ProviderRequestEvidence | undefined;
     const received = await this.execute(
       connection,
       config,
@@ -1881,6 +1909,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       outboundRequest,
       undefined,
       config.output.kind === "video" ? body => { videoOutputParameters = videoOutputParametersFromBody(body); } : undefined,
+      request.operation.startsWith("image.") ? evidence => { upstreamRequestEvidence = evidence; } : undefined,
     );
     const cloudTask = isRecord(received) && typeof received.__superCanvasCloudPoll === "string" ? received.__superCanvasCloudPoll : undefined;
     const remote = cloudTask ? (received as Record<string, unknown>).remote : received;
@@ -1910,6 +1939,7 @@ export class GenericRestAdapter implements ProviderAdapter {
       rawTaskId === undefined ? "succeeded" : "running";
     const status = normalizeStatus(rawStatus, config, fallback);
     const envelope: RestTaskEnvelope = {
+      ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
       connectionId: request.connectionId,
       config,
       remote,
@@ -1939,6 +1969,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     if (status === "succeeded" && (config.output.format || config.output.requireOutput) && !(await this.extractOutputs(envelope)).length)
       throw new ProviderHttpError(`供应商已返回响应但没有${config.output.kind === "video" ? "视频" : "图片"}；请核对供应商记录和响应，避免重复提交。`, {
         kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, responseBody: remote,
+        ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
       });
     return result;
   }

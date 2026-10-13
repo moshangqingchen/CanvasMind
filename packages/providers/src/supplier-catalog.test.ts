@@ -37,6 +37,47 @@ it("keeps the exact official Afei declared video pending without borrowing its t
 });
 
 describe("supplier discovery", () => {
+  it("reads all monster channel plaza windows and saves observations by stable group without changing full IDs or prices", async () => {
+    const base = "https://api.eaheng.com", calls: string[] = [];
+    const fetcher: typeof fetch = async url => {
+      const parsed = new URL(String(url)); calls.push(parsed.pathname + parsed.search);
+      if (parsed.pathname === "/api/v1/model-plaza") return Response.json({ code: 0, data: { groups: [
+        { id: 18, name: "V3", models: [{ name: "gpt-image-2.5-flare", price: .08, type: "image" }] },
+        { id: 19, name: "V3", models: [{ name: "gpt-image-2.5-sunburst", price: .09, type: "image" }] },
+      ] } });
+      if (parsed.pathname === "/api/v1/groups/available") return Response.json({ code: 0, data: [{ id: 18, name: "renamed V3" }, { id: 19, name: "V3" }] });
+      if (parsed.pathname === "/api/v1/plaza/categories") return Response.json({ code: 0, data: { categories: [{ id: "gptImage", name: "GPT生图", count: 5 }] } });
+      if (parsed.pathname === "/api/v1/plaza") {
+        const range = parsed.searchParams.get("range");
+        if (range === "7d") return Response.json({}, { status: 503 });
+        return Response.json({ code: 0, data: { health_window: { clamped: false, error_retention_days: 30 }, groups: [
+          { id: 18, name: "old V3", categories: ["gptImage"], status: "degraded", score: null, success_rate: 66.6,
+            latency_ms: 30000, samples: [null, 30000], sample_failed: [true, false], sample_bucket_seconds: 60,
+            samples_end_at: "2026-10-13T01:08:00Z", monitor_profile: "image", score_source: "traffic", bindable: false },
+          { id: 99, name: "V3", categories: ["gptImage"], success_rate: 100 },
+        ] } });
+      }
+      return Response.json({}, { status: 404 });
+    };
+    const result = await discoverSupplierCatalog({ siteUrl: base, apiUrl: `${base}/v1`, kind: "sub2api" }, fetcher);
+    const group = result.groups.find(group => group.supplierGroupId === "18")!;
+    expect(group.models.map(model => model.id)).toEqual(["gpt-image-2.5-flare"]);
+    expect(group.details?.channelPlaza).toMatchObject({ supplierGroupId: "18", status: "partial", source: "official-channel-plaza",
+      failedReads: [{ sourceUrl: `${base}/api/v1/plaza?range=7d`, httpStatus: 503 }], categories: [{ id: "gptImage", count: 5 }] });
+    expect(group.details?.channelPlaza?.observations.map(row => row.range)).toEqual(["90m", "24h", "30d"]);
+    expect(group.models[0]?.metadata?.supplierChannelPlaza).toEqual(group.details?.channelPlaza);
+    expect(group.details?.channelPlaza?.observations[0]).toMatchObject({ samplesEndAt: "2026-10-13T01:08:00Z", score: null,
+      samples: [null, 30000], sampleFailed: [true, false], bindable: false, scoreSource: "traffic", healthWindow: { errorRetentionDays: 30 } });
+    expect(group.models[0]?.metadata?.canvasRunnable).not.toBe(false);
+    expect(result.groups.find(group => group.supplierGroupId === "19")?.details?.channelPlaza).toBeUndefined();
+    expect(calls.filter(path => path.startsWith("/api/v1/plaza"))).toEqual(expect.arrayContaining([
+      "/api/v1/plaza/categories", "/api/v1/plaza?range=90m", "/api/v1/plaza?range=24h", "/api/v1/plaza?range=7d", "/api/v1/plaza?range=30d",
+    ]));
+    expect(calls.some(path => path.includes("admin"))).toBe(false);
+    calls.length = 0;
+    await discoverSupplierCatalog({ siteUrl: "https://other.test", apiUrl: "", kind: "sub2api" }, fetcher);
+    expect(calls.some(path => path.startsWith("/api/v1/plaza"))).toBe(false);
+  });
   it.each(availableChannels.sources)("reads $siteUrl current channel/legacy fixtures without claiming omitted account groups empty", async source => {
     const result = await discoverSupplierCatalog({ siteUrl: source.siteUrl, apiUrl: "", kind: "sub2api" }, async url => {
       const read = source.reads.find(read => read.url === String(url));

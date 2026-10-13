@@ -32,7 +32,7 @@ describe("Cangyuan exact image contracts across refresh, switch and reload", () 
     expect(effectiveImageCapabilities({ supplier, connection, model: JSON.parse(JSON.stringify(result.model)), fingerprint: "scope" }).model.parameters).toEqual(result.model.parameters);
   });
 
-  it.each(["gpt-image-2-x", "seedream-5.0-pro-x"])("retains rejected saved %s ratio through reload and runtime normalization", id => {
+  it.each(["gpt-image-2-x", "seedream-5.0-pro-x"])("retains open saved %s ratio through reload and runtime normalization", id => {
     const descriptor = model(id);
     const saved = { aspect_ratio: "9:21", size: "3840x2160", ...(id.startsWith("gpt") ? { tier: "4k", quality: "max" } : {}) };
     const restored = JSON.parse(JSON.stringify(saved));
@@ -40,10 +40,10 @@ describe("Cangyuan exact image contracts across refresh, switch and reload", () 
     expect(normalized).toMatchObject(saved);
     expect(restored).toEqual(saved);
     expect(cangyuanCurrentRequestIssues({ idempotencyKey: "saved", connectionId: "key", model: id, operation: "image.generate", prompt: "test", parameters: normalized }, supplier.apiUrl)
-      .some(issue => issue.path === "parameters.aspect_ratio")).toBe(true);
+      .some(issue => issue.path === "parameters.aspect_ratio")).toBe(false);
   });
 
-  it("preserves legal exact dimensions and only resets parameters when the user explicitly switches models", () => {
+  it("preserves legal exact dimensions across a switch between current open-size models", () => {
     const descriptor = model("gpt-image-2.5-sunburst");
     const saved = { size: "1234x2345" };
     expect(normalizedParametersForModel("image-generation", "rest", descriptor, saved)).toMatchObject(saved);
@@ -51,7 +51,7 @@ describe("Cangyuan exact image contracts across refresh, switch and reload", () 
     expect(descriptor.parameters?.find(p => p.key === "size")?.max).toBeUndefined();
     const switched = model("grok-imagine-image");
     const reset = parametersWithDefaults(parameterDescriptorsForValues("image-generation", "rest", switched, {}), saved);
-    expect(reset.size).toBe("1024x1024");
+    expect(reset.size).toBe("1234x2345");
     expect(normalizedParametersForModel("image-generation", "rest", switched, JSON.parse(JSON.stringify(reset)))).toEqual(reset);
   });
 });

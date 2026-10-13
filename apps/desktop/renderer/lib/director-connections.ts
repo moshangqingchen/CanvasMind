@@ -23,6 +23,7 @@ import { providerConnectionSupplierKey } from "./provider-connection-options";
 import { requireServerMasterKey } from "./master-key";
 import { repository } from "./server";
 import type { DirectorPublicProfile } from "./director-contracts";
+import { unsupportedAgentModelReason } from "./agent-model-support";
 
 export const DEFAULT_DIRECTOR_PROFILE_ID = "default";
 
@@ -57,8 +58,6 @@ function explicitProtocol(config: JsonObject): DirectorProtocol {
     case "chat-completions":
     case "openai-chat-completions":
       return "openai-chat-completions";
-    case "anthropic-messages":
-      return "anthropic-messages";
     case "google-generate-content":
       return "google-generate-content";
     case "xai-responses":
@@ -80,7 +79,7 @@ function conservativeCapabilities(
     // protocols opt in by contract; compatible endpoints must prove support
     // through their model metadata before this flag is enabled.
     structuredOutput: protocol !== "generic-openai-compatible",
-    toolCalling: protocol === "anthropic-messages",
+    toolCalling: false,
     nativeWebSearch: false,
     reasoning: false,
     probeSource: "provider-catalog",
@@ -126,6 +125,9 @@ export async function resolveDirectorConnection(
 ): Promise<ResolvedDirectorConnection> {
   const connection = await repository.getConnection(profile.brainConnectionId);
   if (!connection) throw new Error("导演大脑连接不存在，请重新配置");
+  const unsupported = unsupportedAgentModelReason(connection.config, { id: profile.brainModelId });
+  const unsupportedProfile = unsupportedAgentModelReason(profile.config);
+  if (unsupported || unsupportedProfile) throw new Error(unsupported ?? unsupportedProfile);
   if ((connection.config.usage === "disabled" || connection.config.supplierArchived === true))
     throw new Error("导演大脑连接已停用，请重新选择供应商分组");
   if (connection.config.supplierId) await (await import("./supplier-service")).assertCurrentSupplierConnection(connection);
@@ -180,6 +182,8 @@ export async function saveDirectorProfileConfiguration(input: {
 }): Promise<DirectorProfileRecord> {
   const connection = await repository.getConnection(input.brainConnectionId);
   if (!connection) throw new Error("导演大脑连接不存在");
+  const unsupported = unsupportedAgentModelReason(connection.config, { id: input.brainModelId });
+  if (unsupported) throw new Error(unsupported);
   if ((connection.config.usage === "disabled" || connection.config.supplierArchived === true))
     throw new Error("请选择未停用的供应商分组");
   if (!connection.encryptedSecret)
@@ -226,8 +230,10 @@ export async function publicDirectorProfile(
     };
   }
   const connection = await repository.getConnection(profile.brainConnectionId);
+  const unsupported = unsupportedAgentModelReason(connection?.config ?? {}, { id: profile.brainModelId }) ??
+    unsupportedAgentModelReason(profile.config);
   let connected = false;
-  if (connection?.encryptedSecret) {
+  if (connection?.encryptedSecret && !unsupported) {
     try {
       connected = Boolean(
         decryptSecret(connection.encryptedSecret, requireServerMasterKey()),
@@ -236,7 +242,7 @@ export async function publicDirectorProfile(
       connected = false;
     }
   }
-  const protocol = connection
+  const protocol = connection && !unsupported
     ? explicitProtocol({
         ...connection.config,
         ...(profile.config.protocol

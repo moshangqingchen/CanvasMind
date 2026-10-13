@@ -102,3 +102,10 @@ _to_delete/
 /docs/transparent-image-billing-2026-10-07.md
 /docs/transparent-image-verification-2026-10-07.md
 /docs/evidence/jijiu-image-persistence-2026-10-10-v2/
+
+# Local account audit originals and generated UI traces from the October release.
+/docs/supplier-complete-recheck*-2026-10-12.json
+/docs/supplier-complete-recheck*-2026-10-12.md
+/docs/supplier-necessary-image-billing-free-2026-10-12.json
+/docs/supplier-necessary-image-billing-free-2026-10-12.md
+/apps/desktop/renderer/.ui-image-rule-contract-*/

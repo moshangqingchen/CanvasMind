@@ -9,7 +9,6 @@ import type {
 export const DIRECTOR_PROTOCOLS = [
   "openai-responses",
   "openai-chat-completions",
-  "anthropic-messages",
   "google-generate-content",
   "xai-responses",
   "generic-openai-compatible",

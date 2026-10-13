@@ -1,5 +1,6 @@
 "use client";
 import { cleanModelDisplayName } from "../lib/model-display";
+import { unsupportedAgentModelReason } from "../lib/agent-model-support";
 import { modelPickerInventoryFact, modelPickerPriceData, modelPickerPriceLabelData } from "../lib/model-picker-data";
 import { SupplierVerificationPanel } from "./supplier-verification-panel";
 import { useSupplierVerificationRevision } from "../lib/use-supplier-verification-revision";
@@ -104,7 +105,6 @@ const PROTOCOL_LABELS: Record<SupplierModelProtocol, string> = {
   responses: "Responses",
   gemini: "Gemini 原生",
   rest: "已有 REST 连接器协议",
-  "anthropic-messages": "Anthropic Messages",
   "google-generate-content": "Gemini GenerateContent",
   "xai-responses": "xAI Responses",
   "generic-openai-compatible": "OpenAI 兼容对话",
@@ -2213,6 +2213,8 @@ function GroupConnectionEditor({
       if (action === "default") {
         const existing = latestConnection.current;
         if (!existing) throw new Error("请先保存连接。");
+        const unsupported = defaultModel.trim() && unsupportedAgentModelReason(existing.config, { id: defaultModel.trim() });
+        if (unsupported) throw new Error(unsupported);
         const saved = await saveConnection({ id: existing.id, name: existing.name, provider: existing.provider,
           config: { ...existing.config, defaultModel: defaultModel.trim() } });
         latestConnection.current = saved;
@@ -2640,7 +2642,7 @@ function GroupConnectionEditor({
                       ...actualModels.map((model) => model.id),
                       ...manualModels.map((model) => model.id),
                     ]),
-                  ].map((id) => (
+                  ].filter(id => !unsupportedAgentModelReason(connection.config, { id })).map((id) => (
                     <option key={id} value={id} />
                   ))}
                 </datalist>

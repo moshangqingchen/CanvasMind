@@ -4,6 +4,13 @@ import { presentProviderError } from "./error-presentation";
 import { ProviderHttpError } from "./http";
 
 describe("provider error presentation", () => {
+  it("preserves bounded original image response IDs in stored error presentation",()=>{
+    const upstreamRequestEvidence={requestIds:["req-rejected"],observations:[{requestId:"req-rejected",source:"header:x-request-id" as const}]};
+    const presentation=presentProviderError(new ProviderHttpError("rejected",{kind:"invalid_request",phase:"submit",retryable:false,
+      submissionMayHaveOccurred:true,status:403,upstreamRequestEvidence}),{provider:"openai",operation:"image.generate"});
+    expect(presentation.upstreamRequestEvidence).toEqual(upstreamRequestEvidence);
+    expect(presentation.submissionMayHaveOccurred).toBe(true);
+  });
   it.each([
     ['JSON API key', '{"api_key":"synthetic-qa-marker"}'],
     ['quoted password with spaces', '{"password":"synthetic-qa-marker with spaces"}'],

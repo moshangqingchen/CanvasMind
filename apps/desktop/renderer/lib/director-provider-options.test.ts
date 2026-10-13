@@ -29,6 +29,15 @@ function connection(
 }
 
 describe("director provider options", () => {
+  it("does not restore removed Claude selections from saved, fetched, or preferred models", () => {
+    const selected = connection("mixed", { scannedModelIds: ["claude-sonnet-4-6", "gpt-5.4"], defaultModel: "claude-sonnet-4-6" });
+    const inventory = directorConfiguredModelInventory(selected);
+    expect(inventory.models.map(model => model.id)).toEqual(["gpt-5.4"]);
+    expect(ensureDirectorModel(inventory, "claude-sonnet-4-6")).toBe(inventory);
+    expect(mergeDirectorModelInventory(inventory, [{ id: "anthropic/claude-opus-5", name: "Claude Opus", operations: [] }])).toEqual(inventory.models);
+    expect(directorBrainConnections([selected, connection("legacy", { protocol: "anthropic-messages" })])).toEqual([selected]);
+    expect(directorConfiguredModelInventory(connection("native", { baseUrl: "https://api.anthropic.com/v1" })).models).toEqual([]);
+  });
   it("keeps the saved model visible when it is absent from a stale inventory", () => {
     const inventory = directorConfiguredModelInventory(
       connection("saved-model-group", { defaultModel: "default-model" }),
@@ -48,7 +57,7 @@ describe("director provider options", () => {
     const agent = connection("agent-group", {
       usage: "agent",
       supplierKey: "supplier-a",
-      modelGroup: "LLM-Claude",
+      modelGroup: "LLM-Gemini",
     });
     const noKey = connection(
       "no-key",

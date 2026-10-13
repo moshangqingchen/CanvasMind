@@ -1,4 +1,5 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
+import { unsupportedAgentModelReason } from "./agent-model-support";
 
 import type {
   CangyuanMarketplaceGroupView,
@@ -63,7 +64,7 @@ function mergeModelDescriptors(
   for (const group of groups) {
     for (const model of group) {
       const id = model.id.trim();
-      if (!id) continue;
+      if (!id || unsupportedAgentModelReason({}, model)) continue;
       if (!byId.has(id)) order.push(id);
       const previous = byId.get(id);
       byId.set(id, {
@@ -115,6 +116,7 @@ export function directorBrainConnections(
     .map((connection, index) => ({ connection, index }))
     .filter(({ connection }) => {
       if (providerConnectionUsage(connection) === "disabled") return false;
+      if (unsupportedAgentModelReason(connection.config)) return false;
       if (!connection.apiKeySet) return false;
       const identity =
         `${connection.name} ${connection.provider} ${providerConnectionSupplierKey(connection)}`.toLowerCase();
@@ -136,7 +138,7 @@ export function directorConfiguredModelInventory(
   connection: ProviderConnectionView | undefined,
   groups: DirectorMarketplaceGroups = {},
 ): DirectorModelInventory {
-  if (!connection) return { models: [], scoped: false };
+  if (!connection || unsupportedAgentModelReason(connection.config)) return { models: [], scoped: false };
   const marketplace = marketplaceModels(connection, groups);
   const allowed = configuredStrings(connection.config.allowedModels);
   const connector = asRecord(connection.config.connector);
@@ -184,7 +186,7 @@ export function ensureDirectorModel(
   preferred?: string,
 ): DirectorModelInventory {
   const id = preferred?.trim();
-  if (!id || inventory.models.some((model) => model.id === id)) return inventory;
+  if (!id || unsupportedAgentModelReason({}, { id }) || inventory.models.some((model) => model.id === id)) return inventory;
   return {
     ...inventory,
     models: [...inventory.models, { id, name: id, operations: [] }],
@@ -192,6 +194,7 @@ export function ensureDirectorModel(
 }
 
 export function directorModelSupportsText(model: ModelDescriptor): boolean {
+  if (unsupportedAgentModelReason({}, model)) return false;
   if (model.outputKinds?.includes("text")) return true;
   if (model.outputKinds && model.outputKinds.length > 0) return false;
   if (

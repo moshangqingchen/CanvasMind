@@ -20,12 +20,13 @@ export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {
   const c = CANGYUAN_CURRENT_VIDEO_CONTRACTS[model.id];
   if (!c) return model;
   const parameters: ModelParameterDescriptor[] = c.parameters.flatMap(p => {
-    if (p.key === "duration" && c.approximateDurationSeconds) return [];
-    const toggle = p.key === "generate_audio" || p.key === "face_mode", numeric = p.key === "duration" || p.key === "seed";
-    return [{ key: p.key, label: labels[p.key] ?? p.key, control: toggle ? "toggle" : p.values?.length ? "select" : numeric ? "number" : "text",
-      valueType: toggle ? "boolean" : numeric ? "integer" : "string", description: p.description,
+    const toggle = p.valueType === "boolean" || p.key === "generate_audio" || p.key === "face_mode", numeric = p.valueType === "integer" || p.valueType === "number" || p.key === "duration" || p.key === "seed";
+    const choices = p.values ?? p.suggestions;
+    return [{ key: p.key, label: labels[p.key] ?? p.key, control: toggle ? "toggle" : numeric && !p.values?.length ? "number" : choices?.length ? "select" : "text",
+      valueType: toggle ? "boolean" : numeric ? p.valueType === "number" ? "number" : "integer" : "string", description: p.description,
+      ...(p.required ? { required: true } : {}), ...(!p.values?.length ? { allowCustomValue: true } : {}),
       ...(p.default !== undefined ? { default: p.default } : p.values?.length ? { default: p.values[0]! } : p.min !== undefined ? { default: p.min } : {}),
-      ...(p.values?.length ? { options: p.values.map(value => ({ label: p.key === "duration" ? `${value} 秒` : value === "fixed" ? "固定镜头" : value === "auto" && p.key === "camera_movement" ? "自动运镜" : String(value), value })) } : {}),
+      ...(choices?.length ? { options: choices.map(value => ({ label: p.key === "duration" ? `${value} 秒` : value === "fixed" ? "固定镜头" : value === "auto" && p.key === "camera_movement" ? "自动运镜" : String(value), value })) } : {}),
       ...(numeric ? { step: 1, ...(p.min === undefined ? p.key === "seed" ? /非负/u.test(p.description) ? { min: 0 } : {} : { min: 1 } : { min: p.min }), ...(p.max === undefined ? {} : { max: p.max }) } : {}),
     }];
   });
@@ -41,6 +42,7 @@ export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {
       ...(model.id.startsWith("omni-v2v") ? { requiresInputVideo: true } : {}) },
     metadata: { ...model.metadata, modality: "video", operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "video", documentationUrl: `https://ai.cangyuansuanli.cn/docs-static/models/${model.id}.json`,
       cangyuanVideoContractCheckedAt: c.checkedAt ?? "2026-10-07", videoContractFields: [...c.fields], payloadBuilder: "seedance-flat", remoteMediaUrlsOnly: true,
+      videoContractDocumentSha256: c.sourceSha256, videoContractSourceLastReviewed: c.sourceLastReviewed,
       ...(c.facePolicy ? { facePolicy: c.facePolicy } : {}), ...(c.fixedResolution ? { videoFixedResolution: c.fixedResolution } : {}),
       supportsFirstLastFrames: c.frames, videoSupportsFirstLastFrames: c.frames, framePairRequired: c.framePairRequired, allowFrameMediaMix: c.allowFrameMediaMix,
       videoReferenceImageLimit: images, videoReferenceVideoLimit: videos, videoReferenceAudioLimit: audios,
@@ -84,11 +86,11 @@ export function normalizeCangyuanVideoParameters(request: NormalizedRequest): Re
   for (const [kind, field] of [["image", "reference_image_urls"], ["video", "reference_videos"], ["audio", "reference_audios"]] as const) {
     const explicit = list(p[field]);
     const supplied = new Set(explicit.map(value => typeof value === "object" && value !== null ? (value as Record<string, unknown>).url : value));
-    const values = [...explicit, ...(request.assets ?? []).filter(a => a.kind === kind && (!a.role || a.role === "reference") && !supplied.has(a.url)).map(a => kind === "video" && c.videoObjects ? { url: a.url, duration: a.durationSeconds } : a.url)];
+    const values = [...explicit, ...(request.assets ?? []).filter(a => a.kind === kind && (!a.role || a.role === "reference" || kind === "image" && a.role === "firstFrame" && !c.frames && c.fields.includes("reference_image_urls")) && !supplied.has(a.url)).map(a => kind === "video" && c.videoObjects ? { url: a.url, duration: a.durationSeconds } : a.url)];
     if (values.length) p[field] = [...new Set(values)];
   }
   for (const [role, field] of [["firstFrame", "first_image_url"], ["lastFrame", "last_image_url"]] as const) {
-    const asset = request.assets?.find(a => a.role === role); if (asset && p[field] === undefined) p[field] = asset.url;
+    const asset = request.assets?.find(a => a.role === role); if (asset && p[field] === undefined && !(role === "firstFrame" && !c.frames && c.fields.includes("reference_image_urls"))) p[field] = asset.url;
   }
   delete p.n;
   return p;
@@ -103,11 +105,16 @@ export function validateCangyuanVideoRequest(request: NormalizedRequest): Valida
   if (request.parameters?.n !== undefined && request.parameters.n !== 1) add("parameters.n", "沧元视频每次只能创建一个任务。");
   for (const key of Object.keys(p)) if (!c.fields.includes(key)) add(`parameters.${key}`, `该型号官方合同未声明参数 ${key}。`);
   for (const d of c.parameters) {
-    const value = p[d.key]; if (value === undefined) continue;
+    const value = p[d.key]; if (value === undefined) { if (d.required) add(`parameters.${d.key}`, "请填写该型号的必填参数。"); continue; }
     if (d.values?.length && !d.values.includes(value as string | number)) add(`parameters.${d.key}`, `请选择该型号支持的 ${d.values.join(" / ")}。`);
     if (["duration", "seed"].includes(d.key) && (typeof value !== "number" || !Number.isInteger(value) || (d.min !== undefined && value < d.min) || (d.key === "duration" && value < 1) || (d.key === "seed" && /非负/u.test(d.description) && value < 0) || (d.max !== undefined && value > d.max))) add(`parameters.${d.key}`, "请输入该型号合法范围内的整数。");
     if (["generate_audio", "face_mode"].includes(d.key) && typeof value !== "boolean") add(`parameters.${d.key}`, "此开关必须为布尔值。");
+    if (d.valueType === "string" && typeof value !== "string") add(`parameters.${d.key}`, "此参数必须为字符串。");
+    if (d.valueType === "boolean" && !["generate_audio", "face_mode"].includes(d.key) && typeof value !== "boolean") add(`parameters.${d.key}`, "此开关必须为布尔值。");
   }
+  if (typeof p.resolution === "string" && c.forbiddenResolutionValues?.includes(p.resolution)) add("parameters.resolution", "该型号明确禁止此分辨率。");
+  if (c.requiresReferenceImage && !list(p.reference_image_urls).length) add("assets", "此型号需要提供参考图。");
+  if (c.requiresReferenceMedia && !list(p.reference_image_urls).length && !list(p.reference_videos).length && !list(p.reference_audios).length && p.first_image_url === undefined) add("assets", "此型号需要提供参考素材。");
   if (c.durationMaxWithReferenceVideo !== undefined && list(p.reference_videos).length && typeof p.duration === "number" && p.duration > c.durationMaxWithReferenceVideo)
     add("parameters.duration", `此型号带参考视频时，出片时长最多 ${c.durationMaxWithReferenceVideo} 秒。`);
   if (request.model === "niulai-pro" && p.duration === undefined) add("parameters.duration", "牛来 Pro 必须填写 4–15 秒的时长。");

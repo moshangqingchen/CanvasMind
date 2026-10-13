@@ -96,6 +96,16 @@
       "import": "./dist/image-size-presets.js",
       "default": "./dist/image-size-presets.js"
     },
+    "./image-model-contract": {
+      "types": "./src/image-model-contract.ts",
+      "import": "./dist/image-model-contract.js",
+      "default": "./dist/image-model-contract.js"
+    },
+    "./image-parameter-contract": {
+      "types": "./src/image-parameter-contract.ts",
+      "import": "./dist/image-parameter-contract.js",
+      "default": "./dist/image-parameter-contract.js"
+    },
     "./tk1688-model-policy": {
       "types": "./src/tk1688-model-policy.ts",
       "import": "./dist/tk1688-model-policy.js",

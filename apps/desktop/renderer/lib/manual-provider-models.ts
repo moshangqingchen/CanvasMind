@@ -1,5 +1,6 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
 import { z } from "zod";
+import { unsupportedAgentModelReason } from "./agent-model-support";
 
 export const ManualProviderModelSchema = z
   .object({
@@ -13,7 +14,6 @@ export const ManualProviderModelSchema = z
       "responses",
       "gemini",
       "rest",
-      "anthropic-messages",
       "google-generate-content",
       "xai-responses",
       "generic-openai-compatible",
@@ -40,12 +40,13 @@ export function validateManualProviderModels(
     throw new ManualModelValidationError("手动模型 ID 不能重复");
   for (const model of models) {
     if (model.capability === "chat") {
+      const unsupported = unsupportedAgentModelReason({ protocol: model.protocol }, model);
+      if (unsupported) throw new ManualModelValidationError(unsupported);
       if (
         !["openai", "rest", "weai"].includes(provider) ||
         ![
           "chat-completions",
           "responses",
-          "anthropic-messages",
           "google-generate-content",
           "xai-responses",
           "generic-openai-compatible",

@@ -1,0 +1,231 @@
+{
+  "submit": {
+    "path": "/v1/images/generations",
+    "method": "POST",
+    "bodyMode": "json",
+    "template": {
+      "async": true,
+      "n": 1,
+      "response_format": "url"
+    },
+    "mappings": [
+      {
+        "target": "/model",
+        "source": {
+          "kind": "request",
+          "path": "$.model"
+        }
+      },
+      {
+        "target": "/prompt",
+        "source": {
+          "kind": "request",
+          "path": "$.prompt"
+        }
+      },
+      {
+        "target": "/size",
+        "source": {
+          "kind": "request",
+          "path": "$.parameters.aspect_ratio"
+        },
+        "omitIfUndefined": true,
+        "omitValues": [
+          "auto"
+        ]
+      },
+      {
+        "target": "/size",
+        "source": {
+          "kind": "request",
+          "path": "$.parameters.size"
+        },
+        "omitIfUndefined": true,
+        "omitValues": [
+          "auto"
+        ]
+      },
+      {
+        "target": "/tier",
+        "source": {
+          "kind": "request",
+          "path": "$.parameters.tier"
+        },
+        "omitIfUndefined": true
+      },
+      {
+        "target": "/series",
+        "source": {
+          "kind": "request",
+          "path": "$.parameters.series"
+        },
+        "omitIfUndefined": true
+      },
+      {
+        "target": "/quality",
+        "source": {
+          "kind": "request",
+          "path": "$.parameters.quality"
+        },
+        "omitIfUndefined": true,
+        "when": [
+          {
+            "path": "$.parameters.tier",
+            "values": [
+              "1k",
+              "2k",
+              "4k"
+            ]
+          }
+        ]
+      }
+    ],
+    "response": {
+      "taskIdPath": "$.id",
+      "taskIdFallbackPaths": [
+        "$.task_id"
+      ],
+      "statusPath": "$.status",
+      "errorPath": "$.error.message",
+      "progressPath": "$.progress"
+    }
+  },
+  "poll": {
+    "path": "/v1/images/generations/{taskId}",
+    "method": "GET",
+    "bodyMode": "none",
+    "response": {
+      "taskIdPath": "$.id",
+      "taskIdFallbackPaths": [
+        "$.task_id"
+      ],
+      "statusPath": "$.status",
+      "errorPath": "$.error.message",
+      "progressPath": "$.progress"
+    }
+  },
+  "pollIntervalMs": 5000,
+  "output": {
+    "path": "$.data",
+    "kind": "image",
+    "urlPath": "url",
+    "base64Path": "b64_json"
+  },
+  "operationOverrides": {
+    "image.edit": {
+      "submit": {
+        "path": "/v1/images/edits",
+        "method": "POST",
+        "bodyMode": "json",
+        "template": {
+          "async": true,
+          "n": 1,
+          "response_format": "url"
+        },
+        "mappings": [
+          {
+            "target": "/model",
+            "source": {
+              "kind": "request",
+              "path": "$.model"
+            }
+          },
+          {
+            "target": "/prompt",
+            "source": {
+              "kind": "request",
+              "path": "$.prompt"
+            }
+          },
+          {
+            "target": "/size",
+            "source": {
+              "kind": "request",
+              "path": "$.parameters.aspect_ratio"
+            },
+            "omitIfUndefined": true,
+            "omitValues": [
+              "auto"
+            ]
+          },
+          {
+            "target": "/size",
+            "source": {
+              "kind": "request",
+              "path": "$.parameters.size"
+            },
+            "omitIfUndefined": true,
+            "omitValues": [
+              "auto"
+            ]
+          },
+          {
+            "target": "/tier",
+            "source": {
+              "kind": "request",
+              "path": "$.parameters.tier"
+            },
+            "omitIfUndefined": true
+          },
+          {
+            "target": "/series",
+            "source": {
+              "kind": "request",
+              "path": "$.parameters.series"
+            },
+            "omitIfUndefined": true
+          },
+          {
+            "target": "/quality",
+            "source": {
+              "kind": "request",
+              "path": "$.parameters.quality"
+            },
+            "omitIfUndefined": true,
+            "when": [
+              {
+                "path": "$.parameters.tier",
+                "values": [
+                  "1k",
+                  "2k",
+                  "4k"
+                ]
+              }
+            ]
+          },
+          {
+            "target": "/images",
+            "source": {
+              "kind": "assets",
+              "assetKind": "image"
+            },
+            "omitIfEmpty": true
+          }
+        ],
+        "response": {
+          "taskIdPath": "$.id",
+          "taskIdFallbackPaths": [
+            "$.task_id"
+          ],
+          "statusPath": "$.status",
+          "errorPath": "$.error.message",
+          "progressPath": "$.progress"
+        }
+      },
+      "poll": {
+        "path": "/v1/images/edits/{taskId}",
+        "method": "GET",
+        "bodyMode": "none",
+        "response": {
+          "taskIdPath": "$.id",
+          "taskIdFallbackPaths": [
+            "$.task_id"
+          ],
+          "statusPath": "$.status",
+          "errorPath": "$.error.message",
+          "progressPath": "$.progress"
+        }
+      }
+    }
+  }
+}

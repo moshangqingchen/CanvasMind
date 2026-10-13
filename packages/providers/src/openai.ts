@@ -16,6 +16,7 @@ import type {
 import { chentuAzImageDescriptor, isChentuAzImageModel, CHENTU_AZ_IMAGE_SIZES } from "./chentu-az.js";
 import { monsterImageEvidence } from "./monster-image-capabilities.js";
 import { cOpenImageRoute, cOpenImageParameters, cOpenImageParameterIssues, applyCOpenImageCapabilities } from "./c-open-image-contract.js";
+import type { ProviderRequestEvidence } from "./provider-request-evidence.js";
 import { isSecureSkillGptImage, secureSkillImageParameterIssues } from "./secure-skill-image-contract.js";
 import { applyHangImageCapabilities, hangImageBaseUrl } from "./hang-image-contract.js";
 import { chuangxiangImageEvidence } from "./chuangxiang-image-capabilities.js";
@@ -35,7 +36,9 @@ import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint 
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, weAiBananaModelUnavailable, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
-import { applyUserImageSizePresets, resolveUserImageSizeParameters } from "./image-size-presets.js";
+import { applyUserImageSizePresets } from "./image-size-presets.js";
+import { resolveImageModelContract } from "./image-model-contract.js";
+import { evaluateImageParameters } from "./image-parameter-contract.js";
 import { userImageQualityValues } from "./user-image-quality-presets.js";
 import { referenceImageHostingEnabled, uploadTemporaryReferenceImages } from "./reference-image-hosting.js";
 import { assertValidResult, withCanonicalModelFields } from "./contracts.js";
@@ -362,6 +365,7 @@ interface GeminiGenerateContentResponse {
 }
 
 interface OpenAIImageTaskResult {
+  upstreamRequestEvidence?: ProviderRequestEvidence;
   response:
     OpenAIImageResponse | GeminiGenerateContentResponse | FriModelChatResponse;
   outputFormat: string;
@@ -607,6 +611,17 @@ function friModelImageParameterDescriptors(
         { label: "WebP", value: "webp" },
       ],
       description: "FriModel 图片生成文档支持 png、jpeg、webp；响应通过 b64_json 返回。",
+      operations: ["image.generate", "image.edit"],
+    },
+    {
+      key: "n",
+      label: "数量（n）",
+      control: "number",
+      valueType: "integer",
+      default: 1,
+      min: 1,
+      step: 1,
+      description: "FriModel Images 指南声明可选整数 n，建议先使用 1；官网未公布数量上限。1 是应用默认值，显式数量按原值发送。",
       operations: ["image.generate", "image.edit"],
     },
   ];
@@ -1459,10 +1474,8 @@ function friModelModelDescriptor(
       ...(supportsImageEdit
         ? { referenceEditEndpoint: "/v1/images/edits" }
         : {}),
-      // FriModel image groups currently return one image per request. An
-      // OpenAI-compatible `n` value may be accepted but is not materialized
-      // as multiple outputs, so the canvas must keep this model single-output.
-      fixedOutputCount: 1,
+      imageCountFieldSource: "https://ai-doc.apifox.cn/9077234m0.md",
+      imageCountDefaultSource: "application-preference",
       ...(priceLabel ? { priceLabel } : {}),
       ...(group ? { modelGroup: group } : {}),
     },
@@ -1614,6 +1627,7 @@ type OpenAIImageParameterKey = (typeof OPENAI_IMAGE_PARAMETER_KEYS)[number];
 type WeAIImageParameterKey = OpenAIImageParameterKey | "response_format" | "style";
 const TK1688_IMAGE_PARAMETER_KEYS = [...OPENAI_IMAGE_PARAMETER_KEYS, "response_format"] as const;
 const FRIMODEL_IMAGE_PARAMETER_KEYS = [
+  "n",
   "size",
   "quality",
   "background",
@@ -2693,9 +2707,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       ? weAIModelDescriptor(id, false, configuredModelGroup(connection), configuredGeminiProtocol(connection)) : undefined);
     if (!base || !Array.isArray(base.operations)) return request;
     const source = imageEditingConnection(connection);
-    const model = applySupplierImageConstraints(source, applyJijiuImageCapabilities(source,
-      applyBananaImageCapabilities(source, applyCOpenImageCapabilities(source, base))));
-    return { ...request, parameters: resolveUserImageSizeParameters(model, request.parameters) };
+    const model = resolveImageModelContract(source, base);
+    return { ...request, parameters: evaluateImageParameters(model, request.parameters, { operation: request.operation }).requestParameters };
   }
 
   public async testConnection(connectionId: string): Promise<void> {
@@ -3343,21 +3356,20 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           )
             ? 10
             : 1
-          : resolvedSupplierKey === "frimodel"
-            ? 1
-            : 10);
+          : 10);
+    const openCount = isGenimage || resolvedSupplierKey === "frimodel";
     if (
       count !== undefined &&
       (typeof count !== "number" ||
-        !(isGenimage ? Number.isSafeInteger(count) : Number.isInteger(count)) ||
+        !(openCount ? Number.isSafeInteger(count) : Number.isInteger(count)) ||
         count < 1 ||
-        (!isGenimage && count > maxCount))
+        (!openCount && count > maxCount))
     ) {
       issues.push({
         path: "parameters.n",
         code: "invalid_count",
         message:
-          isGenimage ? "基因形象 n 必须是正整数；官网未公布此完整型号的数量上限" : tk1688MaxCount !== undefined ? `词元当前型号单次最多生成 ${maxCount} 张` : this.profile === "weai"
+          isGenimage ? "基因形象 n 必须是正整数；官网未公布此完整型号的数量上限" : resolvedSupplierKey === "frimodel" ? "FriModel n 必须是正整数；官网未公布此完整型号的数量上限" : tk1688MaxCount !== undefined ? `词元当前型号单次最多生成 ${maxCount} 张` : this.profile === "weai"
             ? `We-AI ${resolvedModel} n must be an integer between 1 and ${maxCount}`
             : resolvedSupplierKey === "chentu"
               ? isChentuOfficialModelGroup(
@@ -3367,9 +3379,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
                 )
                 ? "辰途 image2 官 key n 必须为 1–10"
                 : "辰途 API 画布同步任务 n 必须为 1"
-              : resolvedSupplierKey === "frimodel"
-                ? "FriModel 图片接口单次仅支持生成 1 张"
-                : "OpenAI n must be an integer between 1 and 10",
+              : "OpenAI n must be an integer between 1 and 10",
       });
     }
     for (const key of ["size", "quality", "style"] as const) {
@@ -3647,6 +3657,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
   }
 
   public async submit(request: NormalizedRequest): Promise<ProviderTask> {
+    let upstreamRequestEvidence: ProviderRequestEvidence | undefined;
+    const captureRequestEvidence = (evidence: ProviderRequestEvidence) => { upstreamRequestEvidence = evidence; };
     assertValidResult(await this.validate(request));
     const connection = await this.connections.resolve(request.connectionId);
     request = this.withUserImageSize(request, connection);
@@ -3665,11 +3677,11 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           method: "POST", headers: mergeHeaders(connection.headers, { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }),
           body: JSON.stringify({ model: selectedModel, prompt: request.prompt, ...jijiuGptImageParameters(request.parameters, selectedModel),
             ...(request.operation === "image.edit" ? { image: assets!.map(asset => asset.url!) } : {}) }),
-        }, { phase: "submit", timeoutMs: configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs"), maxResponseBytes: 128 * 1024 * 1024, idempotent: false });
+        }, { phase: "submit", onResponseEvidence: captureRequestEvidence, timeoutMs: configuredRequestTimeout(connection, this.submitTimeoutMs, "imageSubmitTimeoutMs"), maxResponseBytes: 128 * 1024 * 1024, idempotent: false });
       if (!(await this.extractOutputs({ response, protocol: "openai-images" })).length)
-        throw new ProviderHttpError("极九已响应但没有返回图片；请核对原请求记录，避免重复提交。", { kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true });
+        throw new ProviderHttpError("极九已响应但没有返回图片；请核对原请求记录，避免重复提交。", { kind: "invalid_response", phase: "submit", retryable: false, submissionMayHaveOccurred: true, ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}) });
       return { providerTaskId: `openai:${request.idempotencyKey}`, id: `openai:${request.idempotencyKey}`, status: "succeeded",
-        result: { response, protocol: "openai-images" } };
+        result: { response, protocol: "openai-images", ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}) } };
     }
     const baseUrl = (this.profile === "openai" ? hangImageBaseUrl({ ...connection.settings, baseUrl: connection.baseUrl }, selectedModel) : undefined) ?? configuredBaseUrl(
       connection,
@@ -3800,6 +3812,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           },
           {
             phase: "submit",
+            onResponseEvidence: captureRequestEvidence,
             timeoutMs: requestTimeoutMs,
             maxResponseBytes,
             idempotent: false,
@@ -3836,6 +3849,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           { method: "POST", headers: commonHeaders, body: form },
           {
             phase: "submit",
+            onResponseEvidence: captureRequestEvidence,
             timeoutMs: requestTimeoutMs,
             maxResponseBytes,
             idempotent: false,
@@ -3882,6 +3896,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         },
         {
           phase: "submit",
+          onResponseEvidence: captureRequestEvidence,
           timeoutMs: requestTimeoutMs,
           maxResponseBytes,
           idempotent: false,
@@ -3937,6 +3952,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           },
           {
             phase: "submit",
+            onResponseEvidence: captureRequestEvidence,
             timeoutMs: requestTimeoutMs,
             maxResponseBytes,
             idempotent: false,
@@ -3969,6 +3985,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           { method: "POST", headers: commonHeaders, body: form },
           {
             phase: "submit",
+            onResponseEvidence: captureRequestEvidence,
             timeoutMs: requestTimeoutMs,
             maxResponseBytes,
             idempotent: false,
@@ -3984,7 +4001,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         method: "POST", headers: commonHeaders,
         body: JSON.stringify({ model, prompt: request.prompt,
           images: mikotoUrlImageReferences(imageReferenceAssets(request.assets)), ...imageRequestParameters }),
-      }, { phase: "submit", timeoutMs: requestTimeoutMs, maxResponseBytes, idempotent: false,
+      }, { phase: "submit", onResponseEvidence: captureRequestEvidence, timeoutMs: requestTimeoutMs, maxResponseBytes, idempotent: false,
         allowLoopback: allowLoopbackGateway(connection) });
     } else if (supplierKey === "chentu" && request.operation === "image.edit") {
       // 辰途低价 Adobe 路由实际要求 multipart 的 `image` 字段。即使
@@ -4029,6 +4046,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         { method: "POST", headers: commonHeaders, body: form },
         {
           phase: "submit",
+          onResponseEvidence: captureRequestEvidence,
           timeoutMs: requestTimeoutMs,
           maxResponseBytes,
           idempotent: false,
@@ -4066,6 +4084,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         { method: "POST", headers: commonHeaders, body: form },
         {
           phase: "submit",
+          onResponseEvidence: captureRequestEvidence,
           timeoutMs: requestTimeoutMs,
           maxResponseBytes,
           // The header lets a provider implement deduplication, but OpenAI's
@@ -4091,6 +4110,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         },
         {
           phase: "submit",
+          onResponseEvidence: captureRequestEvidence,
           timeoutMs: requestTimeoutMs,
           maxResponseBytes,
           idempotent: false,
@@ -4106,6 +4126,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       status: "succeeded",
       result: {
         response,
+        ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
         outputFormat: requestedOutputFormat.format,
         protocol,
       } satisfies OpenAIImageTaskResult,

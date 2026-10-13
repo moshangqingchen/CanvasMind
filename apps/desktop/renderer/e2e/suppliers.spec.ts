@@ -323,7 +323,7 @@ test("同组旧画布与智能体连接都保留，切换连接不复制 Key 或
     id: "connection-chat",
     name: "同组另一把 Key",
     provider: "rest",
-    config: { ...original.config, usage: "agent", protocol: "anthropic-messages", defaultModel: "chat-model" },
+    config: { ...original.config, usage: "agent", protocol: "google-generate-content", defaultModel: "chat-model" },
   }, {
     ...original,
     id: "connection-disabled",
@@ -349,7 +349,7 @@ test("同组旧画布与智能体连接都保留，切换连接不复制 Key 或
   expect(api.writes[0]).toMatchObject({ id: original.id, provider: original.provider, config: { connector: original.config.connector } });
   expect(api.writes[0]).not.toHaveProperty("apiKey");
   expect(api.connections()).toHaveLength(3);
-  expect(api.connections().find(connection => connection.id === "connection-chat")?.config.protocol).toBe("anthropic-messages");
+  expect(api.connections().find(connection => connection.id === "connection-chat")?.config.protocol).toBe("google-generate-content");
 });
 
 test("已有 REST 视频 Key 可添加独立对话模型协议，并保留原视频连接器", async ({ page }) => {

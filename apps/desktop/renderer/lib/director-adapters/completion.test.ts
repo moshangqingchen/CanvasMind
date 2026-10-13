@@ -11,7 +11,6 @@ const protocols: DirectorProtocol[] = [
   "generic-openai-compatible",
   "openai-responses",
   "xai-responses",
-  "anthropic-messages",
   "google-generate-content",
 ];
 const structured = {
@@ -55,13 +54,6 @@ function payload(
   reasonPresent = true,
 ) {
   const text = JSON.stringify(structured);
-  if (protocol === "anthropic-messages")
-    return {
-      content: [{ type: "text", text }],
-      ...(reasonPresent
-        ? { stop_reason: complete ? "end_turn" : "max_tokens" }
-        : {}),
-    };
   if (protocol === "google-generate-content")
     return {
       candidates: [
@@ -170,7 +162,6 @@ describe("strict complete extraction through model adapters", () => {
         "openai-chat-completions",
         { choices: [{ finish_reason: "content_filter" }] },
       ],
-      ["anthropic-messages", { stop_reason: "tool_use" }],
       ["google-generate-content", { candidates: [{ finishReason: "SAFETY" }] }],
       [
         "openai-responses",

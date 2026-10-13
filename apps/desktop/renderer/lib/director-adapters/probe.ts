@@ -55,7 +55,7 @@ export function capabilitiesFromVerifiedModel(
         audioInput: false,
         videoInput: false,
         structuredOutput: connection.protocol !== "generic-openai-compatible",
-        toolCalling: connection.protocol === "anthropic-messages",
+        toolCalling: false,
         nativeWebSearch: false,
         reasoning: false,
       }
@@ -243,31 +243,6 @@ export async function probeOpenAICompatibleCapabilities(
     model = listedModel(payload, connection.model);
   }
   return capabilitiesFromVerifiedModel(connection, model);
-}
-
-export async function probeAnthropicCapabilities(
-  connection: DirectorConnection,
-  signal?: AbortSignal,
-): Promise<DirectorModelCapabilities> {
-  const payload = await requestJson(
-    connection,
-    adapterEndpoint(
-      connection,
-      `/models/${encodeURIComponent(connection.model)}`,
-    ),
-    {
-      method: "GET",
-      headers: adapterHeaders(connection, {
-        "x-api-key": connection.apiKey,
-        "anthropic-version": "2023-06-01",
-      }),
-    },
-    signal,
-  );
-  return capabilitiesFromVerifiedModel(
-    connection,
-    requireModelRecord(payload, connection.model),
-  );
 }
 
 export async function probeGoogleCapabilities(

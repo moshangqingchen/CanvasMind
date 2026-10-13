@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { channel } from "node:diagnostics_channel";
 import type { Readable } from "node:stream";
 import { createAutoNetworkConnector } from "./direct-network.js";
+import { providerResponseRequestEvidence, type ProviderRequestEvidence } from "./provider-request-evidence.js";
 
 import {
   Agent,
@@ -46,6 +47,7 @@ export class ProviderHttpError extends Error {
       requestNotSent?: true;
       status?: number;
       responseBody?: unknown;
+      upstreamRequestEvidence?: ProviderRequestEvidence;
       cause?: unknown;
       /** Non-sensitive transport evidence; never request headers, URLs or bodies. */
       transport?: {
@@ -80,6 +82,8 @@ export interface ProviderFetchOptions {
   /** Set only when the remote endpoint honors this request's idempotency key. */
   idempotent?: boolean;
   allowEmpty?: boolean;
+  /** Opt-in image submit identity; only bounded request-ID fields are emitted. */
+  onResponseEvidence?: (evidence: ProviderRequestEvidence) => void;
   cloudPolling?: {
     urlTemplate: string; method: string; headers: Record<string, string>; body?: string;
     submitMapping?: Record<string, unknown>; pollMapping?: Record<string, unknown>;
@@ -821,6 +825,12 @@ export async function fetchProviderJson<T>(
   const trace: RequestTransportTrace = { origin: new URL(url).origin, path: {} };
   let response: Response;
   let receivedResponse: Response | undefined;
+  let upstreamRequestEvidence: ProviderRequestEvidence | undefined;
+  const captureRequestEvidence = (body?: unknown) => {
+    if (!options.onResponseEvidence) return;
+    upstreamRequestEvidence = providerResponseRequestEvidence(response.headers, body, upstreamRequestEvidence);
+    if (upstreamRequestEvidence) options.onResponseEvidence(upstreamRequestEvidence);
+  };
   let requestStarted = false;
   try {
     const requestInit: RequestInit = {
@@ -838,6 +848,7 @@ export async function fetchProviderJson<T>(
       ? cloudTransport(url, requestInit, options)
       : transportTrace.scope.run(trace, () => requestTransportTimeout.run(timeoutMs, () => fetchImpl(url, requestInit))), signal);
     receivedResponse = response;
+    captureRequestEvidence();
     if (progress && response.ok) await withRequestSignal(progress("receiving"), signal);
   } catch (error) {
     // The body reader has not taken ownership while a progress callback is
@@ -882,6 +893,7 @@ export async function fetchProviderJson<T>(
         ...(!receivedResponse && !trace.headersSent && (!requestStarted || DEFINITELY_PRE_SUBMISSION_CODES.has(providerTransportErrorCode(error) ?? "")) ? { requestNotSent: true as const } : {}),
         transport: transportEvidence(error, startedAt, "awaiting_headers", 0, trace.path),
         cause: error,
+        ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
       },
     );
   }
@@ -921,6 +933,7 @@ export async function fetchProviderJson<T>(
             response.status,
           ),
           status: response.status,
+          ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
           transport: transportEvidence(error, startedAt, "reading_body", responseBytes, trace.path),
           ...(error instanceof ProviderResponseTooLargeError
             ? {
@@ -936,6 +949,7 @@ export async function fetchProviderJson<T>(
     }
   }
   clearTimeout(timeout);
+  captureRequestEvidence(body);
   if (!response.ok) {
     throw new ProviderHttpError(`Provider returned HTTP ${response.status}`, {
       kind: statusKind(response.status),
@@ -947,6 +961,7 @@ export async function fetchProviderJson<T>(
         response.status,
       ),
       responseBody: body,
+      ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
       transport: transportEvidence(undefined, startedAt, "reading_body", responseBytes, trace.path),
     });
   }
@@ -960,6 +975,7 @@ export async function fetchProviderJson<T>(
         response.status,
       ),
       status: response.status,
+      ...(upstreamRequestEvidence ? { upstreamRequestEvidence } : {}),
       responseBody: {
         code: "empty_response",
         message: "Provider returned an empty response",
@@ -1124,7 +1140,7 @@ export function requireApiKey(connection: ResolvedProviderConnection): string {
   return connection.apiKey;
 }
 
-function parseDataUrl(
+export function parseDataUrl(
   url: string,
 ): { data: Uint8Array; mimeType: string } | undefined {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/su.exec(url);

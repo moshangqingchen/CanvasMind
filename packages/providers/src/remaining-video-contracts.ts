@@ -13,6 +13,7 @@ export interface RemainingVideoContext {
   baseUrl?: unknown;
   manualProtocol?: unknown;
   group?: string | undefined;
+  officialGroupId?: string | number | undefined;
   groupDescription?: string | undefined;
   model?: ModelDescriptor | undefined;
   assets?: readonly ProviderAssetInput[] | undefined;
@@ -126,6 +127,11 @@ put("chentu", ["grok--video1.0"], chentuDirectory);
 put("chentu", ["MiniMaxH3", "MiniMaxH3-720p", "MiniMaxH3-2k", "MiniMaxH3-2k-pro"], { ...chentuDirectory, min: 2, max: 15, images: 9 });
 put("chentu", ["H3量化版"], { ...chentuDirectory, min: 3, max: 10, images: 4 });
 put("chentu", ["minimax-h3 768p"], { ...chentuDirectory, images: 6 });
+// Fresh exact account catalog IDs. The first-party common guide explicitly
+// permits current Key IDs and image/images compatibility. It does not publish
+// a complete per-ID duration, resolution or reference-count range for these
+// two IDs; keep declared fields open instead of borrowing older H3 limits.
+put("chentu", ["MiniMaxH3-768p", "MiniMaxH3-480p"], { ...chentuDirectory, images: undefined, billingUnit: "second" });
 put("chentu", ["minimax_h3-768p-933"], { ...chentuDirectory, min: 4, max: 15, images: 9 });
 put("chentu", ["a-2.0-720p-v1"], { ...chentuDirectory, min: 5, max: 15, images: 9 });
 put("chentu", ["a-2.0-720p-v4"], { ...chentuDirectory, durations: [5, 10, 15], images: 9 });
@@ -206,13 +212,13 @@ for (const [id, max, resolutions] of [["doubao-seedance-2-0-260128", 15, ["720p"
 const secureWan: VideoContract = { ...secureBase, min: 2, max: 30, images: 10, videos: 5, audios: 5, resolutions: ["480P", "720P", "1080P"], defaultResolution: "720P",
   ratioField: "ratio", freeRatio: true, frames: "wan-first", imageField: "media", videoField: "media", audioField: "media", httpsOnly: true,
   submitPath: "/v1/videos/generations", pollPath: "/v1/videos/tasks/{taskId}", extraParameters: [toggle("prompt_extend", "扩展提示词")],
-  outputPaths: ["$.video_url", "$.url", "$.output.video_url", "$.data.video_url", "$.result.video_url"],
+  outputPaths: ["$.video_url", "$.url", "$.download_url", "$.output.video_url", "$.data.video_url", "$.result.video_url"],
   note: "标准协议支持首帧、普通参考图、视频和音频；只接受公网 HTTPS。标准协议不支持智能时长 -1 或 adaptive 比例。" };
 put("secure", ["wan3.0-video", "wan3.0-video-prime"], secureWan);
 // The current deployed Accounts view explicitly lists all four accepted Wan
 // model strings; the authenticated Key directory returns this bare ID too.
-put("secure", ["wan3.0"], { ...secureWan, directoryContract: true,
-  note: `${secureWan.note} 当前部署与 Key 目录支持原始 wan3.0 型号，提交时保持原样；未进行收费生成验证。` });
+put("secure", ["wan3.0", "wan3.0-prime"], { ...secureWan, directoryContract: true,
+  note: `${secureWan.note} 当前 Key 目录含短型号；新 wan3.0视频组的当前接口文档要求使用 wan3.0-video / wan3.0-video-prime，保留短型号选择并提示改选，不静默替换。未进行收费生成验证。` });
 put("secure", ["minimax-h3"], { ...secureBase, min: 4, max: 15, defaultDuration: 15, ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"], freeRatio: true,
   resolutions: [], ratioField: "ratio", frames: "native-pair", imageField: "image_urls", videoField: "video_urls", audioField: "audio_urls", videos: 3, audios: 3,
   httpsOnly: true, note: "图片数量、分辨率、参考视频和首尾帧权限按分组说明。首尾帧不能与参考图、视频或音频混用；2–3 段音频可能要求参考图。未确认的扩展字段不发送。" });
@@ -402,7 +408,7 @@ function defaultDuration(c: VideoContract): number | undefined {
   return !c.durationOptional && hasDurationRange(c) ? Math.min(c.max!, Math.max(c.min!, 5)) : undefined;
 }
 export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string, current?: ModelDescriptor, context?: RemainingVideoContext): ModelDescriptor | undefined {
-  if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return contractFor(supplier, id, { model: current, ...context }) ? secureMuseVideoModel(current ?? context?.model) : undefined;
+  if (supplier === "secure" && id === SECURE_MUSE_MODEL_ID) return contractFor(supplier, id, { model: current, ...context }) ? secureMuseVideoModel(current ?? context?.model, context?.officialGroupId) : undefined;
   if (supplier === "jijiu") return jijiuVideoModel(id, current ?? context?.model, context?.group);
   if (supplier === "jiasu") return jiasuVideoModel(id, current ?? context?.model, context?.group);
   const c = contractFor(supplier, id, { model: current, ...context }); if (!c) return undefined;
@@ -615,11 +621,18 @@ export function remainingVideoTransport(supplier: RemainingVideoSupplier, id: st
       ...(c.flow || c.pollPath === "/v1/videos/tasks/{taskId}" ? {} : { contentFallback: { path: c.contentPath ?? "/v1/videos/{taskId}/content" } }) } };
 }
 export function remainingVideoRequestIssues(supplier: RemainingVideoSupplier, request: NormalizedRequest, context?: RemainingVideoContext): ValidationIssue[] {
-  if (supplier === "secure" && request.model === SECURE_MUSE_MODEL_ID && contractFor(supplier, request.model, context)) return secureMuseVideoRequestIssues(request);
+  if (supplier === "secure" && request.model === SECURE_MUSE_MODEL_ID && contractFor(supplier, request.model, context)) return secureMuseVideoRequestIssues(request, context?.officialGroupId);
   if (supplier === "jijiu") return jijiuVideoRequestIssues(request, context?.model, context?.group);
   if (supplier === "jiasu") return jiasuVideoRequestIssues(request, context?.model, context?.group);
   const c = contractFor(supplier, request.model ?? "", { ...context, assets: request.assets }); if (!c) return [];
   const p = normalizeRemainingVideoParameters(supplier, request, context), issues: ValidationIssue[] = [], add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
+  // Group 58's fresh Key directory lists these two short IDs, but both of its
+  // current standard/DashScope examples explicitly prohibit them in model.
+  // Keep directory identity and the user's choice; never rewrite the model or
+  // apply this newer group's restriction to the old group 40 connection.
+  if (supplier === "secure" && ["wan3.0", "wan3.0-prime"].includes(request.model ?? "") &&
+      String(context?.officialGroupId) === "58")
+    add("model", "当前分组接口文档明确要求使用 wan3.0-video 或 wan3.0-video-prime；请改选对应完整型号，原选择已保留。");
   const seconds = c.omitDuration ? request.parameters?.duration ?? c.durations?.[0] : p[c.secondsField ?? "duration"];
   if (!c.chatVideo && !c.omitDuration && !hasDurationRange(c) && !(c.directoryContract && c.durationOptional)) {
     if (seconds !== undefined && seconds !== c.defaultDuration)

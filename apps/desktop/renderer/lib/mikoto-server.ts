@@ -310,9 +310,7 @@ export async function syncMikotoConnection(id: string) {
     typeof connection.config.defaultModel === "string"
       ? connection.config.defaultModel
       : "";
-  const defaultModel = group.models.some((model) => model.id === currentDefault)
-    ? currentDefault
-    : group.defaultModel;
+  const defaultModel = currentDefault || group.defaultModel;
   const currentPreset = mikotoConnectionConfig(group.id);
   const config: JsonObject = {
     ...connection.config,
