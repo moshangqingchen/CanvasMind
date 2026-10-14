@@ -1,5 +1,6 @@
-import type { NormalizedRequest, ProviderAssetInput, ResolvedProviderConnection, ValidationIssue } from "./contracts.js";
-import { failedTransparentImageEvidence, verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
+import type { ModelDescriptor, NormalizedRequest, ProviderAssetInput, ResolvedProviderConnection, ValidationIssue } from "./contracts.js";
+import { failedTransparentImageEvidence, latestFailedTransparentImageEvidence, verifiedTransparentImageEvidence,
+  type TransparentImageEvidence, type TransparentImageOperation } from "./transparent-image-evidence.js";
 import { CANGYUAN_IMAGE_DOCUMENTS } from "./cangyuan-image-documents.js";
 
 export interface ImageEditingConnection {
@@ -9,6 +10,15 @@ export interface ImageEditingConnection {
 export interface ImageEditingCapabilities {
   transparent: boolean;
   mask: "multipart" | "url" | null;
+  transparency?: {
+    status: "verified" | "inferred" | "declared" | "rejected" | "unverified";
+    operation: TransparentImageOperation;
+    checkedAt?: string;
+    source?: string;
+    note: string;
+    request?: TransparentImageEvidence["request"];
+    output?: TransparentImageEvidence["output"];
+  };
 }
 
 function cangyuanEditingDocument(connection: ImageEditingConnection, modelId: string) {
@@ -61,10 +71,42 @@ function declaredImageEditingCapabilities(connection: ImageEditingConnection, mo
 }
 
 export function getImageEditingCapabilities(connection: ImageEditingConnection, modelId: string,
-  parameters: Readonly<Record<string, unknown>> = {}): ImageEditingCapabilities {
+  parameters: Readonly<Record<string, unknown>> = {}, operation: TransparentImageOperation = "image.generate"): ImageEditingCapabilities {
   const declared = declaredImageEditingCapabilities(connection, modelId, parameters);
-  return { ...declared, transparent: !failedTransparentImageEvidence(connection, modelId, parameters) &&
-    (declared.transparent || Boolean(verifiedTransparentImageEvidence(connection, modelId, parameters))) };
+  const verified = verifiedTransparentImageEvidence(connection, modelId, parameters, operation);
+  const failed = failedTransparentImageEvidence(connection, modelId, parameters, operation);
+  const sample = failed ?? latestFailedTransparentImageEvidence(connection, modelId, parameters, operation);
+  if (failed) return { ...declared, transparent: false, transparency: {
+    status: failed.reason === "background-rejected" ? "rejected" : "unverified", operation,
+    checkedAt: failed.checkedAt, ...(failed.source ? { source: failed.source } : {}),
+    note: failed.reason === "background-rejected"
+      ? `此分组、完整型号的${operation === "image.edit" ? "参考编辑" : "生成"}接口已拒绝 background=transparent；普通模式保留。`
+      : `此组合 ${failed.checkedAt} 请求的原 PNG 没有透明像素；这是该次尺寸/质量的结果，不代表永久不支持透明。`,
+    request: failed.request,
+  } };
+  if (verified) {
+    const changed = parameters.size === "auto" || parameters.quality === "auto" ||
+      ["size", "quality"].some(key => parameters[key] !== undefined && parameters[key] !== verified.request[key]) ||
+      ["size_tier", "resolution", "image_size"].some(key => parameters[key] !== undefined && parameters[key] !== "auto" &&
+        (parameters.size === undefined || parameters.size === "auto"));
+    const requested = String(verified.request.size ?? "auto");
+    const pixels = `${verified.output.width}×${verified.output.height}`;
+    return { ...declared, transparent: true, transparency: { status: changed ? "inferred" : "verified", operation,
+      checkedAt: verified.checkedAt, source: verified.source ?? "supplier-original-alpha",
+      request: verified.request, output: verified.output,
+      note: `${verified.checkedAt} 同分组、完整型号${operation === "image.edit" ? "参考编辑" : "生成"}原 PNG 已有真实 alpha；请求 ${requested} / ${String(verified.request.quality ?? "渠道质量")}，原图 ${pixels}。${changed ? "当前其他档位由此证据推定，未逐档收费实测。" : ""}${verified.output.requestedDimensionsMatched === false ? "原图像素与请求不同，不能当作精确尺寸通过。" : ""}`,
+    } };
+  }
+  if (connection.provider === "openai" && /^gpt-image-2\.5(?:-(?:flare|sunburst))?$/u.test(modelId) &&
+      /^https:\/\/token\.secure-skill\.com(?:\/v1)?\/?$/u.test(String(connection.config.baseUrl ?? "")))
+    return { ...declared, transparent: false, transparency: { status: "rejected", operation,
+      source: "https://token.secure-skill.com/docs#gpt-image", checkedAt: "2026-10-14",
+      note: "供应商当前 GPT Image 2.5 文档明确：background 字段被忽略，不会出透明底；该声明与参数请求拒绝分别记录。" } };
+  return { ...declared, transparency: { status: declared.transparent ? "declared" : "unverified", operation,
+    ...(sample ? { checkedAt: sample.checkedAt, ...(sample.source ? { source: sample.source } : {}), request: sample.request } : {}),
+    note: sample ? "同身份已有一次不透明原图；当前尺寸/质量尚无透明成功证据，未判为永久不支持。"
+      : declared.transparent ? "当前供应商协议声明透明；此操作的当前参数未分别实测。" : "此供应商分组、完整型号及操作尚无透明成功或明确协议证据。",
+  } };
 }
 
 /** Preserve existing normal/mask routing when a declared contract gains live proof. */
@@ -82,23 +124,51 @@ export function imageEditingConnection(connection: ResolvedProviderConnection): 
   } };
 }
 
+/** Rebuild reference controls only where original files prove this exact operation. */
+export function applyVerifiedImageEditingCapabilities(connection: ImageEditingConnection, model: ModelDescriptor): ModelDescriptor {
+  if (model.metadata?.source === "manual" || model.metadata?.source === "paid-test" || model.metadata?.protocolEvidence === "paid-test") return model;
+  const evidence = verifiedTransparentImageEvidence(connection, model.id, {}, "image.edit");
+  if (!evidence) return model;
+  const parameters = (model.parameters ?? []).map(p => ["background", "output_format"].includes(p.key)
+    ? { ...p, operations: [...new Set([...(p.operations ?? model.operations), "image.edit" as const])] } : p);
+  if (!parameters.some(p => p.key === "background")) parameters.push({ key: "background", label: "背景", control: "select", valueType: "string",
+    default: "opaque", options: [{ label: "普通", value: "opaque" }, { label: "透明", value: "transparent" }], operations: ["image.edit"],
+    description: getImageEditingCapabilities(connection, model.id, {}, "image.edit").transparency!.note });
+  if (!parameters.some(p => p.key === "output_format")) parameters.push({ key: "output_format", label: "图片编码", control: "select", valueType: "string",
+    default: "png", options: [{ label: "PNG", value: "png" }], operations: ["image.edit"], description: "同身份参考编辑原 PNG 的 alpha 已验证；透明模式使用 PNG。" });
+  return { ...model, operations: [...new Set([...model.operations, "image.edit" as const])],
+    inputKinds: [...new Set([...(model.inputKinds ?? ["text"]), "image" as const])], parameters,
+    metadata: { ...model.metadata, supportsImageEdit: true, referenceEditEndpoint: evidence.transport.path,
+      imageTransparentEditEvidence: { checkedAt: evidence.checkedAt, supplierGroupId: evidence.supplierGroupId ?? evidence.group,
+        fullModelId: evidence.model, operation: "image.edit", source: evidence.source ?? "supplier-original-alpha",
+        request: evidence.request, output: evidence.output }, imageLowerResolutionDefaultSource:
+        evidence.request.size === "3840x2160" && evidence.output.requestedDimensionsMatched === true
+          ? "same-identity-highest-sample-inference;not-separate-paid-tests"
+          : "same-identity-alpha-sample;input-presets-and-actual-output-dimensions-separate" } };
+}
+
 export function imageReferenceAssets(assets: readonly ProviderAssetInput[] = []): ProviderAssetInput[] {
   return assets.filter(asset => asset.role !== "mask");
 }
 
 export function imageEditingRequestIssues(connection: ImageEditingConnection, request: NormalizedRequest): ValidationIssue[] {
-  const capabilities = getImageEditingCapabilities(connection, request.model ?? "", request.parameters);
+  const operation = request.operation === "image.edit" ? "image.edit" : "image.generate";
+  const capabilities = getImageEditingCapabilities(connection, request.model ?? "", request.parameters, operation);
   const issues: ValidationIssue[] = [];
   const add = (path: string, code: string, message: string) => issues.push({ path, code, message });
   if (request.parameters?.background === "transparent") {
     if (!capabilities.transparent) {
-      const failed = failedTransparentImageEvidence(connection, request.model ?? "", request.parameters);
-      add("parameters.background", failed ? "transparent_test_failed" : "unsupported_background", failed
-        ? "此线路的透明背景实测未通过，请使用普通模式。"
+      const failed = failedTransparentImageEvidence(connection, request.model ?? "", request.parameters, operation);
+      const onlyGeneration = operation === "image.edit" && !failed &&
+        verifiedTransparentImageEvidence(connection, request.model ?? "", request.parameters, "image.generate");
+      add("parameters.background", onlyGeneration ? "unverified_transparent_edit" : failed ? "transparent_test_failed" : "unsupported_background", onlyGeneration
+        ? "此线路仅验证透明文生图；参考图/编辑透明尚未验证。" : failed
+        ? capabilities.transparency!.note
         : "当前供应商分组和型号未确认支持透明背景，请选择普通模式。");
     }
     else if (request.operation === "image.edit" &&
-      !declaredImageEditingCapabilities(connection, request.model ?? "", request.parameters).transparent)
+      !declaredImageEditingCapabilities(connection, request.model ?? "", request.parameters).transparent &&
+      !verifiedTransparentImageEvidence(connection, request.model ?? "", request.parameters, "image.edit"))
       add("parameters.background", "unverified_transparent_edit", "此线路仅验证透明文生图；参考图/编辑透明尚未验证。");
     const format = request.parameters.output_format;
     const declaredWebp = format === "webp" && cangyuanEditingDocument(connection, request.model ?? "")?.parameterRules?.output_format?.enum?.includes("webp");
@@ -136,15 +206,15 @@ export function imageEditingRequestIssues(connection: ImageEditingConnection, re
 
 /** Normal mode is explicit on declared routes; unsupported routes receive no extra field. */
 export function normalizeImageEditingParameters(connection: ImageEditingConnection, model: string,
-  parameters: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
+  parameters: Readonly<Record<string, unknown>> = {}, operation: TransparentImageOperation = "image.generate"): Record<string, unknown> {
   const result = { ...parameters };
   // Native fields are optional. Preserve the user's explicit auto/opaque value
   // and encoding; validation checks transparent combinations before submission.
   if (cangyuanEditingDocument(connection, model)?.parameterRules?.background?.enum?.includes("transparent")) return result;
   // A failed transparency test does not change declared normal-mode fields or routing.
-  if (getImageEditingCapabilities(connection, model, parameters).transparent ||
+  if (getImageEditingCapabilities(connection, model, parameters, operation).transparent ||
     declaredImageEditingCapabilities(connection, model, parameters).transparent) {
-    result.background = result.background === "transparent" ? "transparent" : "opaque";
+    result.background ??= "opaque";
     if (result.background === "transparent") result.output_format = "png";
   } else if (result.background === "opaque" || result.background === "auto") delete result.background;
   return result;

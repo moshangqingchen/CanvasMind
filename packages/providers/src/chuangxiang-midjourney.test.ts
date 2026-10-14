@@ -164,7 +164,7 @@ describe("exact Midjourney capabilities and cache recovery", () => {
   });
   it("advertises a HTTPS mask only for the two exact editor contracts", () => {
     for (const provider of ["openai", "rest"]) for (const model of ["midjourney-1k", "midjourney-2k"]) {
-      expect(getImageEditingCapabilities({ provider, config }, model, { reference: "editor" })).toEqual({ transparent: false, mask: "url" });
+      expect(getImageEditingCapabilities({ provider, config }, model, { reference: "editor" })).toMatchObject({ transparent: false, mask: "url" });
       for (const reference of ["auto", "image", "style", "edit", "moodboard"])
         expect(getImageEditingCapabilities({ provider, config }, model, { reference }).mask).toBe(null);
     }

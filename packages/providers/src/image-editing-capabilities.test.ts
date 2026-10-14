@@ -82,7 +82,7 @@ describe("exact image editing capabilities", () => {
     expect(getImageEditingCapabilities(cangyuan, "gpt-image-2-x", { tier: "web" }).mask).toBe("url");
     for (const model of ["gpt-image-2", "gpt-image-2.5-x", "gpt-image-2-az", "gpt-image-2.5-flare-az", "gpt-image-2.5-sunburst-az"])
       expect(getImageEditingCapabilities(cangyuan, model)).toMatchObject({ transparent: true, mask: "url" });
-    expect(getImageEditingCapabilities({ ...cangyuan, config: { ...cangyuan.config, manualProtocol: true } }, "gpt-image-2-az")).toEqual({ transparent: false, mask: null });
+    expect(getImageEditingCapabilities({ ...cangyuan, config: { ...cangyuan.config, manualProtocol: true } }, "gpt-image-2-az")).toMatchObject({ transparent: false, mask: null });
     expect(getImageEditingCapabilities(connection("api.tk1688.com"), "gpt-image-1").mask).toBe("multipart");
     expect(getImageEditingCapabilities(connection("api.tk1688.com"), "gpt-image-1@s1c2").mask).toBe(null);
     expect(getImageEditingCapabilities(connection("api.frimodel.com"), "gpt-image-2-high").mask).toBe(null);
@@ -103,7 +103,6 @@ describe("exact image editing capabilities", () => {
   it("does not extend measured transparent generation to reference editing without an existing editing contract", () => {
     const transparentEdit = { ...edit, assets: [original], parameters: { background: "transparent", output_format: "png" } };
     for (const source of [
-      connection("asian-acc.we-token.cc", "生图-openai-codex-token计费", "weai"),
       connection("api.3365api.cn", "image-2稳定生图", "rest"),
     ]) {
       expect(getImageEditingCapabilities(source, "gpt-image-2").transparent).toBe(true);
@@ -120,7 +119,6 @@ describe("exact image editing capabilities", () => {
 
 describe("actual transparent and mask transport", () => {
   it.each([
-    ["asian-acc.we-token.cc", "生图-openai-codex-token计费", "weai"],
     ["api.3365api.cn", "image-2稳定生图", "rest"],
   ])("rejects unverified transparent edits before any request on %s/%s", async (host, group, provider) => {
     const connector: RestConnectorConfig = { submit: { path: "/v1/images/generations", method: "POST", bodyMode: "json",

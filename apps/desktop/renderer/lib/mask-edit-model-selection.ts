@@ -56,7 +56,7 @@ export function selectMaskEditModel(
     const parameters = parametersWithDefaults(descriptors, sourceParameters);
     // Native tier controls may default to a web route without masks. Pick only
     // a declared tier, rather than inventing a 4K value for every Image 2 alias.
-    const sourceSupportsMask = isSourceModel && Boolean(modelImageCapabilities(connection, model, parameters).mask);
+    const sourceSupportsMask = isSourceModel && Boolean(modelImageCapabilities(connection, model, parameters, "image.edit").mask);
     for (const descriptor of descriptors) {
       if (sourceSupportsMask && sourceParameters[descriptor.key] !== undefined) continue;
       if (!["tier", "resolution", "image_size", "imageSize"].includes(descriptor.key) ||
@@ -65,7 +65,7 @@ export function selectMaskEditModel(
         tier(option.value) > tier(best?.value) ? option : best, undefined);
       if (highest) parameters[descriptor.key] = highest.value;
     }
-    const capabilities = modelImageCapabilities(connection, model, parameters);
+    const capabilities = modelImageCapabilities(connection, model, parameters, "image.edit");
     if (!capabilities.mask) continue;
     choices.push({ connection, model, parameters, capabilities: { ...capabilities, mask: capabilities.mask } });
   }

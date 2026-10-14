@@ -14,17 +14,17 @@ function connection(host: string, group: string, model: ModelDescriptor, overrid
 }
 
 describe("model image capability labels", () => {
-  it.each(VERIFIED_TRANSPARENT_IMAGES)("retains verified transparency for $hostname / $group / $model without claiming a mask", evidence => {
+  it.each(VERIFIED_TRANSPARENT_IMAGES)("retains verified transparency for $hostname / $group / $model alongside the independent mask contract", evidence => {
     const model = descriptor(evidence.model);
     const source = connection(evidence.hostname, evidence.group, model, {}, evidence.provider);
-    expect(modelImageCapabilities(source, model)).toEqual({ transparent: true, mask: null });
+    expect(modelImageCapabilities(source, model, evidence.request, evidence.operation ?? "image.generate")).toMatchObject({ transparent: true });
   });
 
   it("does not confuse reference-image editing with a mask contract", () => {
     const model = descriptor("gpt-image-2.5-sunburst", { metadata: { supportsImageEdit: true } });
     const source = connection("synoralink.com", "高质量生图专线", model);
-    expect(modelImageCapabilities(source, model)).toEqual({ transparent: true, mask: null });
-    expect(modelImageCapabilities(connection("unverified.example", "default", model), model)).toEqual(none);
+    expect(modelImageCapabilities(source, model)).toMatchObject({ transparent: true, mask: null });
+    expect(modelImageCapabilities(connection("unverified.example", "default", model), model)).toMatchObject(none);
   });
 
   it.each([
@@ -34,7 +34,7 @@ describe("model image capability labels", () => {
     ["api.tk1688.com", "default", "gpt-image-1", "openai", "multipart"],
   ])("recognizes the exact mask route for %s / %s / %s", (host, group, id, provider, mask) => {
     const model = descriptor(id);
-    expect(modelImageCapabilities(connection(host, group, model, {}, provider), model)).toEqual({ transparent: host === "ai.cangyuansuanli.cn", mask });
+    expect(modelImageCapabilities(connection(host, group, model, {}, provider), model)).toMatchObject({ transparent: host === "ai.cangyuansuanli.cn", mask });
   });
 
   it("requires both an edit operation and no explicit edit prohibition for a known mask route", () => {
@@ -85,9 +85,9 @@ describe("model image capability labels", () => {
   it("checks the API origin and complete model instead of a supplier's display identity", () => {
     const model = descriptor("gpt-image-2.5-sunburst");
     for (const baseUrl of ["http://synoralink.com/v1", "https://synoralink.com.example/v1", "https://synoralink.com/custom"])
-      expect(modelImageCapabilities(connection("synoralink.com", "高质量生图专线", model, { supplierKey: "synora", baseUrl }), model)).toEqual(none);
+      expect(modelImageCapabilities(connection("synoralink.com", "高质量生图专线", model, { supplierKey: "synora", baseUrl }), model)).toMatchObject(none);
     const alias = descriptor(`${model.id}-max`);
-    expect(modelImageCapabilities(connection("synoralink.com", "高质量生图专线", alias), alias)).toEqual(none);
+    expect(modelImageCapabilities(connection("synoralink.com", "高质量生图专线", alias), alias)).toMatchObject(none);
     expect(modelImageCapabilities(null, model)).toEqual(none);
     expect(modelImageCapabilities(undefined, model)).toEqual(none);
   });
@@ -108,5 +108,17 @@ describe("model image capability labels", () => {
     });
     expect(modelImageCapabilities(source, model).transparent).toBe(true);
     expect(modelImageCapabilities({ ...source, config: { ...source.config, modelScanStatus: "empty" } }, model)).toEqual(none);
+  });
+  it("uses current reference-edit evidence without lending it to generation or another Chentu group", () => {
+    const model=descriptor("gpt-image-2.5-sunburst");
+    const current=connection("tu.988236.xyz","新渠道image2.5全参",model);
+    const parameters={size:"3840x2160",quality:"max"};
+    const edited=modelImageCapabilities(current,model,parameters,"image.edit");
+    expect(edited).toMatchObject({transparent:true,transparency:{operation:"image.edit",status:"verified"}});
+    expect(edited.transparency?.note).toContain("参考编辑");
+    expect(modelImageCapabilities(current,model,parameters,"image.generate").transparent).toBe(false);
+    expect(modelImageCapabilities({...current,config:{...current.config,modelGroup:"unrelated",accountKeyGroup:"unrelated"}},model,parameters,"image.edit").transparent).toBe(false);
+    expect(modelImageCapabilities(current,model,{size:"auto",size_tier:"1K",quality:"max"},"image.edit"))
+      .toMatchObject({transparent:true,transparency:{status:"inferred"}});
   });
 });

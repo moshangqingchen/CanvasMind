@@ -30,9 +30,9 @@ import { applyChuangxiangMidjourneyCapabilities, isChuangxiangMidjourneyConnecti
 import { applySupplierImageConstraints, isMikotoDocumentedImageSize, supplierImageParameterIssues, supplierImageSizeNominalRatio } from "./supplier-image-constraints.js";
 import { isMikotoGptImage, mikotoUrlImageReferences } from "./mikoto-image-contract.js";
 import { isGenimageImageConnection, genimageImageParameters, genimageImageRatioIssues } from "./genimage-image-capabilities.js";
-import { getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
+import { applyVerifiedImageEditingCapabilities, getImageEditingCapabilities, imageEditingConnection, imageEditingRequestIssues,
   imageReferenceAssets, normalizeImageEditingParameters } from "./image-editing-capabilities.js";
-import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
+import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint, verifiedTransparentImageMultipartEditEndpoint } from "./transparent-image-evidence.js";
 import { configuredTk1688ImageModel, isTk1688ApiUrl, tk1688ImageParameters, tk1688ImageParameterIssues, tk1688ImagePolicyModelId } from "./tk1688-model-policy.js";
 import { BananaImageAdapter, bananaNativeOutputs, bananaImageRoute, applyBananaImageCapabilities, weAiBananaModelUnavailable, GEMINI_NANO_BANANA_21_MODEL } from "./banana-image.js";
 import { modelSupportsGenerationMedia } from "./model-media.js";
@@ -2936,9 +2936,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         scannedModelIds: remoteIds, modelScanStatus: "live" } } : configured;
       const described = applyCOpenImageCapabilities(source, applyChuangxiangMidjourneyCapabilities({ ...source, config: { ...source.config,
         scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyChuangxiangCurrentImageCapabilities(source, model)));
-      return applyUserImageSizePresets(applyJijiuImageCapabilities({ ...source, config: { ...source.config, scannedModelIds: remoteIds, modelScanStatus: "live" } },
+      const projected = applyUserImageSizePresets(applyJijiuImageCapabilities({ ...source, config: { ...source.config, scannedModelIds: remoteIds, modelScanStatus: "live" } },
         applyHangImageCapabilities(source, applySupplierImageConstraints(source, applyJiasuImageCapabilities({ ...source, config: { ...source.config,
         scannedModelIds: remoteIds, modelScanStatus: "live" } }, applyBananaImageCapabilities(source, described))))));
+      return applyVerifiedImageEditingCapabilities(source, projected);
     });
   }
 
@@ -3125,7 +3126,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
     if (
       resolvedSupplierKey === "frimodel" &&
       request.operation === "image.edit" &&
-      !friModelSupportsImageEdit(resolvedModel)
+      !friModelSupportsImageEdit(resolvedModel) &&
+      !(resolvedConnection && verifiedTransparentImageEvidence(imageEditingConnection(resolvedConnection), resolvedModel, request.parameters, "image.edit"))
     ) {
       issues.push({
         path: "operation",
@@ -3591,7 +3593,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
           message: "GPT Image 2 quality must be auto, low, medium, or high",
         });
       if (permittedParameters.has("background") && background === "transparent" &&
-          !(resolvedConnection && getImageEditingCapabilities(imageEditingConnection(resolvedConnection), resolvedModel, request.parameters).transparent))
+          !(resolvedConnection && getImageEditingCapabilities(imageEditingConnection(resolvedConnection), resolvedModel, request.parameters,
+            request.operation === "image.edit" ? "image.edit" : "image.generate").transparent))
         issues.push({
           path: "parameters.background",
           code: "unsupported_background",
@@ -3694,6 +3697,10 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       return this.jiasu.submit({ ...request, model: selectedModel });
     const transparentEvidence = request.operation === "image.generate" && request.parameters?.background === "transparent"
       ? verifiedTransparentImageEvidence(imageEditingConnection(connection), selectedModel, request.parameters) : undefined;
+    const transparentEditEvidence = request.operation === "image.edit" && request.parameters?.background === "transparent"
+      ? verifiedTransparentImageEvidence(imageEditingConnection(connection), selectedModel, request.parameters, "image.edit") : undefined;
+    const transparentEditEndpoint = verifiedTransparentImageMultipartEditEndpoint(imageEditingConnection(connection), selectedModel,
+      request.parameters ?? {}, transparentEditEvidence);
     // Pin only transparent generation to the exact measured Images path.
     const transparentEndpoint = verifiedTransparentImageJsonEndpoint(imageEditingConnection(connection), selectedModel,
       request.parameters ?? {}, transparentEvidence, "openai-images");
@@ -3730,7 +3737,8 @@ export class OpenAIImageAdapter implements ProviderAdapter {
         ? canonicalWeAIGeminiModel(selectedModel)
         : selectedModel;
     const tk1688Model = configuredTk1688ImageModel(connection, model);
-    const effectiveParameters = normalizeImageEditingParameters(imageEditingConnection(connection), model, request.parameters);
+    const effectiveParameters = normalizeImageEditingParameters(imageEditingConnection(connection), model, request.parameters,
+      request.operation === "image.edit" ? "image.edit" : "image.generate");
     const historicalImage = this.profile === "openai" && (monsterImageEvidence(imageEditingConnection(connection).config, model) ??
       chuangxiangImageEvidence(imageEditingConnection(connection).config, model));
     // Marketplace Image2.5 connections use the generic OpenAI profile, whose
@@ -3751,7 +3759,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       ...(forceWeAIUrlOutput ? { response_format: "url" } : {}),
       // Exact live proof can extend a conservative group allowlist for transparent generation.
       // Keep normal requests on their existing parameter contract.
-      ...(transparentEvidence ? { background: "transparent", output_format: "png" } : {}),
+      ...(transparentEvidence || transparentEditEvidence ? { background: "transparent", output_format: "png" } : {}),
     };
     const geminiProtocol = useGemini
       ? configuredGeminiProtocol(connection)
@@ -3995,6 +4003,9 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       }
       protocol = "gemini-openai-compatible";
     } else if (isMikotoGptImage(imageEditingConnection(connection), model) && request.operation === "image.edit" &&
+        String(connection.settings?.accountKeyGroupId) !== "5" &&
+        String(connection.settings?.accountKeyGroup ?? connection.settings?.modelGroup) !== "生图（1k）" &&
+        !imageReferenceAssets(request.assets).some(asset => asset.data !== undefined) &&
         mikotoUrlImageReferences(imageReferenceAssets(request.assets))) {
       commonHeaders.set("content-type", "application/json");
       response = await fetchProviderJson<OpenAIImageResponse>(submitFetch, joinUrl(baseUrl, "/images/edits"), {
@@ -4042,7 +4053,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       }
       response = await fetchProviderJson<OpenAIImageResponse>(
         this.fetchImpl,
-        joinUrl(baseUrl, "/images/edits"),
+        transparentEditEndpoint ?? joinUrl(baseUrl, "/images/edits"),
         { method: "POST", headers: commonHeaders, body: form },
         {
           phase: "submit",
@@ -4080,7 +4091,7 @@ export class OpenAIImageAdapter implements ProviderAdapter {
       await appendImageMask(form, request.assets, this.fetchImpl);
       response = await fetchProviderJson<OpenAIImageResponse>(
         submitFetch,
-        joinUrl(baseUrl, "/images/edits"),
+        transparentEditEndpoint ?? joinUrl(baseUrl, "/images/edits"),
         { method: "POST", headers: commonHeaders, body: form },
         {
           phase: "submit",

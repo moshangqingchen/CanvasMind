@@ -28,6 +28,7 @@ import {
 } from "../lib/tk1688-resolution-control";
 import { isImageRatioParameter, nativeImageResolutionControl } from "../lib/native-image-resolution";
 import { NativeImageResolutionFields } from "./native-image-resolution-fields";
+import { imageTransparencyEvidenceNote, type ImageTransparencyPresentation } from "../lib/image-transparency-presentation";
 
 interface NodeParameterFieldsProps {
   nodeId: string;
@@ -39,6 +40,7 @@ interface NodeParameterFieldsProps {
   showAdvanced?: boolean;
   operation?: ProviderOperation;
   transparentSupported?: boolean;
+  transparency?: ImageTransparencyPresentation;
   hasReferenceVideo?: boolean;
 }
 
@@ -974,6 +976,7 @@ export function NodeParameterFields({
   showAdvanced = true,
   operation,
   transparentSupported = false,
+  transparency,
   hasReferenceVideo = false,
 }: NodeParameterFieldsProps) {
   const undeclaredSavedImageFields = nodeType === "image-generation" ? [...new Set([
@@ -1061,7 +1064,7 @@ export function NodeParameterFields({
         <p className="parameter-group-note">{model.metadata.imageParameterContractNote}</p>
       )}
       {parameterIssues.length > 0 && <div role="status" className="parameter-group-note" aria-label="当前参数与目录数据">{parameterIssueFacts(parameterIssues, descriptors, parameters, model).map(fact => <p key={fact}>{fact}</p>)}</div>}
-      {typeof model?.metadata?.imageCapabilityNote === "string" && model.metadata.imageCapabilityNote && (
+      {!transparency && typeof model?.metadata?.imageCapabilityNote === "string" && model.metadata.imageCapabilityNote && (
         <p className="parameter-group-note">实测说明：{model.metadata.imageCapabilityNote}</p>
       )}
       {!compactImageNotes && typeof model?.metadata?.supplierGroupResolutionLabel === "string" && model.metadata.supplierGroupResolutionLabel && (
@@ -1144,7 +1147,8 @@ export function NodeParameterFields({
                 onClick={() => onChange(imageModeParameters(parameters, true, "transparent"))}>透明模式</button>}
             </div>
             {transparentSupported && parameters.background === "transparent" && <small>透明背景 · PNG 原图</small>}
-            {!transparentSupported && parameters.background === "transparent" && <small role="status">当前模式：透明 · 目录模式：普通。</small>}
+            {imageTransparencyEvidenceNote(transparency) && <small role="status" aria-label="透明模式依据">{imageTransparencyEvidenceNote(transparency)}</small>}
+            {!transparentSupported && parameters.background === "transparent" && <small role="status">已保存透明模式参数；原值继续保留，可选择普通模式。</small>}
           </div>
         )}
       </div>

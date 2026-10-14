@@ -12,6 +12,7 @@ import styles from "./model-picker.module.css";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary } from "../lib/tk1688-model-display";
 import type { CatalogPickerDirectory } from "../lib/supplier-model-directory-diff";
 import { modelPickerDirectoryFact } from "../lib/model-picker-data";
+import { imageTransparencyEvidenceNote } from "../lib/image-transparency-presentation";
 
 type PickerOption = { id: string; model?: ModelDescriptor; label: string; reason: string | null; family?: string; merchants?: number };
 
@@ -22,7 +23,7 @@ function ModelIdentity({ model, parameters, capabilities, price = false, selecte
     <span className={styles.heading}>
       <span id={detailsId ? `${detailsId}-name` : undefined} className={styles.name}>{family ? route ? tk1688RouteLabel(model) : family : cleanModelDisplayName(model.name, model.metadata?.priceLabel)}</span>
       {(capabilities?.transparent || capabilities?.mask) && <span id={detailsId ? `${detailsId}-capabilities` : undefined} className={styles.capabilities}>
-        {capabilities.transparent && <span className={`${styles.capability} ${styles.transparent}`} title="支持透明 PNG 输出">可透明</span>}
+        {capabilities.transparent && <span className={`${styles.capability} ${styles.transparent}`} title={imageTransparencyEvidenceNote(capabilities.transparency) ?? "支持透明 PNG 输出"}>可透明</span>}
         {capabilities.mask && <span className={`${styles.capability} ${styles.editable}`} title="支持涂抹蒙版、局部修改">可编辑</span>}
       </span>}
     </span>

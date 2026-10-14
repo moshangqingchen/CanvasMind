@@ -1,5 +1,7 @@
 "use client";
 
+import { imageOutputDimensionNotice, imageOutputTransparencyLabel } from "../lib/image-output-notice";
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -221,6 +223,8 @@ function ImageDetails({
           <dd title={text(m.model)}>{text(m.model)}</dd>
           <dt>实际尺寸</dt>
           <dd>{dimensions}</dd>
+          {imageOutputDimensionNotice(asset) ? <><dt>尺寸核对</dt><dd>{imageOutputDimensionNotice(asset)}</dd></> : null}
+          {imageOutputTransparencyLabel(asset) ? <><dt>原图透明</dt><dd>{imageOutputTransparencyLabel(asset)}</dd></> : null}
           <dt>分辨率</dt>
           <dd>{text(parameters.resolution ?? parameters.size)}</dd>
           <dt>比例</dt>

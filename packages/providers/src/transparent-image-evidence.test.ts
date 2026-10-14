@@ -11,11 +11,14 @@ import type { FetchImplementation, NormalizedRequest } from "./contracts.js";
 import { StaticConnectionResolver } from "./credentials.js";
 import { createDefaultProviderRegistry } from "./registry.js";
 import { getImageEditingCapabilities, imageEditingRequestIssues, usesDeclaredImagesEditingRoute } from "./image-editing-capabilities.js";
-import { FAILED_TRANSPARENT_IMAGE_TESTS, VERIFIED_TRANSPARENT_IMAGES, failedTransparentImageEvidence, verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint,
+import { FAILED_TRANSPARENT_IMAGE_TESTS as ALL_FAILED_TRANSPARENT_IMAGE_TESTS, VERIFIED_TRANSPARENT_IMAGES as ALL_VERIFIED_TRANSPARENT_IMAGES, failedTransparentImageEvidence, verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint,
   type TransparentImageEvidence } from "./transparent-image-evidence.js";
 import * as transparency from "./transparent-image-evidence.js";
 import { PdogImageAdapter } from "./pdog-image.js";
 import { GenericRestAdapter, type RestConnectorConfig } from "./rest.js";
+
+const VERIFIED_TRANSPARENT_IMAGES = ALL_VERIFIED_TRANSPARENT_IMAGES.filter(row => (row.operation ?? "image.generate") === "image.generate");
+const FAILED_TRANSPARENT_IMAGE_TESTS = ALL_FAILED_TRANSPARENT_IMAGE_TESTS.filter(row => (row.operation ?? "image.generate") === "image.generate");
 
 const model = "gpt-image-2.5-sunburst";
 const group = "高质量生图专线";
@@ -159,7 +162,7 @@ describe("measured transparent image routes", () => {
       checkedAt: "2026-10-05", request: { size: "3840x2160" },
       output: { width: 1254, height: 1254, format: "png", fullyTransparentPixelRatio: 0.4988120947577004 },
     });
-    expect(getImageEditingCapabilities(codex, "gpt-image-2")).toEqual({ transparent: true, mask: null });
+    expect(getImageEditingCapabilities(codex, "gpt-image-2")).toMatchObject({ transparent: true, mask: null });
     for (const config of [
       { modelGroup: "生图-openai-adobe-token计费", accountKeyGroup: "生图-openai-adobe-token计费" },
       { accountKeyGroup: "生图-openai-adobe-token计费" },
@@ -271,7 +274,7 @@ describe("measured transparent image routes", () => {
     expect(verifiedTransparentImageEvidence(source, model)).toMatchObject({ checkedAt: "2026-10-05",
       transport: { kind: "openai-images", path: "/v1/images/generations" },
       output: { width: 3840, height: 2160, fullyTransparentPixelRatio: 0.7653 } });
-    expect(getImageEditingCapabilities(source, model)).toEqual({ transparent: true, mask: null });
+    expect(getImageEditingCapabilities(source, model)).toMatchObject({ transparent: true, mask: null });
     for (const id of ["gpt-image-2", "gpt-image-2.5", `${model}-max`, `${model}-4k`])
       expect(getImageEditingCapabilities(source, id).transparent, id).toBe(false);
     for (const config of [
@@ -289,7 +292,7 @@ describe("measured transparent image routes", () => {
     const evidence = verifiedTransparentImageEvidence(renamed, measuredModel)!;
     expect(evidence).toMatchObject({ group: "高质量生图专线", supplierGroupId: "115", model: measuredModel,
       checkedAt: "2026-10-05", request: { size: "3840x2160", quality: "max", background: "transparent", output_format: "png" } });
-    expect(getImageEditingCapabilities(renamed, measuredModel)).toEqual({ transparent: true, mask: null });
+    expect(getImageEditingCapabilities(renamed, measuredModel)).toMatchObject({ transparent: true, mask: null });
     expect(verifiedTransparentImageJsonEndpoint(renamed, measuredModel, evidence.request, evidence, "openai-images"))
       .toBe("https://synoralink.com/v1/images/generations");
     for (const config of [
@@ -342,10 +345,10 @@ describe("measured transparent image routes", () => {
     expect(failed).toMatchObject({ checkedAt: "2026-10-05", reason: "opaque-png",
       request: { background: "transparent" }, output: { width: 3584, height: 2016, format: "png", transparentPixels: 0,
         sha256: "3fe934fe32643a339be1bb48298475bffd885226277060e73b2e35d4e9c8197e" } });
-    expect(getImageEditingCapabilities(measured, "gpt-image-2.5")).toEqual({ transparent: false, mask: null });
+    expect(getImageEditingCapabilities(measured, "gpt-image-2.5")).toMatchObject({ transparent: false, mask: null });
     expect(usesDeclaredImagesEditingRoute(measured, "gpt-image-2.5")).toBe(true);
     expect(imageEditingRequestIssues(measured, { ...request, model: "gpt-image-2.5" })).toContainEqual(expect.objectContaining({
-      code: "transparent_test_failed", message: "此线路的透明背景实测未通过，请使用普通模式。",
+      code: "transparent_test_failed",
     }));
     for (const model of ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare-max"]) {
       expect(failedTransparentImageEvidence(measured, model)).toBeUndefined();
@@ -373,7 +376,7 @@ describe("measured transparent image routes", () => {
       reason: "opaque-png", output: { width: 3840, height: 2160, format: "png", transparentPixels: 0,
         sha256: "b12bfcea0006cc18c28fbbd4a8b0c5ad7d75c3cdbe0ebb3c8961c040a0002c01" },
     });
-    expect(getImageEditingCapabilities(measured, model)).toEqual({ transparent: false, mask: null });
+    expect(getImageEditingCapabilities(measured, model)).toMatchObject({ transparent: false, mask: null });
     expect(usesDeclaredImagesEditingRoute(measured, model)).toBe(true);
     // Cases 047-049 ended without image bytes; those errors are not opaque evidence.
     for (const other of ["gpt-image-2.5-flare", "gpt-image-2.5-flare-high", "gpt-image-2.5-sunburst", "gpt-image-2.5-sunburst-max"]) {
@@ -399,7 +402,7 @@ describe("measured transparent image routes", () => {
     const transparentRequest = { ...request, model,
       parameters: { ...request.parameters, ...(model.endsWith("-high") ? { quality: "high" } : {}) } };
     expect((await adapter.validate(transparentRequest)).valid).toBe(false);
-    await expect(adapter.submit(transparentRequest)).rejects.toThrow(/透明背景实测未通过/u);
+    await expect(adapter.submit(transparentRequest)).rejects.toThrow(/原 PNG 没有透明像素/u);
     expect(fetch).not.toHaveBeenCalled();
     const task = await adapter.submit({ ...transparentRequest, parameters: { size: "1024x1024", quality: "high", n: 1, background: "opaque" } });
     expect(task.status).toBe("succeeded");

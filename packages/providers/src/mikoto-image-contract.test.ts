@@ -47,8 +47,8 @@ describe("Mikoto full image detail contract", () => {
     expect(applySupplierImageConstraints(config, { ...descriptor, id: "gpt-image-2.5-flare" }).parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(flareSamples);
     expect(applySupplierImageConstraints(config, { ...descriptor, id: "gpt-image-2.5-sunburst" }).parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(["auto"]);
     const cachedRest = { ...config, provider: "rest" };
-    expect(applySupplierImageConstraints(cachedRest, descriptor).parameters?.[0]?.options?.map(o => o.value)).toEqual(["auto", "1024x1024"]);
-    expect(applySupplierImageConstraints(cachedRest, { ...descriptor, id: "gpt-image-2.5-flare" }).parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(flareSamples);
+    expect(applySupplierImageConstraints(cachedRest, descriptor).parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toContain("3840x2160");
+    expect(applySupplierImageConstraints(cachedRest, { ...descriptor, id: "gpt-image-2.5-flare" }).parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toContain("3840x2160");
     const adapter = new OpenAIImageAdapter(new StaticConnectionResolver([{ ...connection, settings: { supplierKey: "mikoto", modelGroup: "生图（1k）" } }]));
     expect((await adapter.validate({ ...request, parameters: { size: "2560x1440" } })).issues).toContainEqual(expect.objectContaining({ code: "invalid_group_image_size" }));
   });

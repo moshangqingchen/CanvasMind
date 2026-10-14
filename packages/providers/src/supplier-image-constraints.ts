@@ -3,6 +3,7 @@ import type { ImageEditingConnection } from "./image-editing-capabilities.js";
 import { imageSizeOptions, imageSizePresetMatchesRatio, userImageSizeOptions } from "./image-size-presets.js";
 import { userImageQualityValues } from "./user-image-quality-presets.js";
 import { isMikotoGptImage, MIKOTO_GPT_IMAGE_SIZES, MIKOTO_GPT_RATIOS, MIKOTO_IMAGE_DOCS } from "./mikoto-image-contract.js";
+import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
 
 const image25 = new Set(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
 // Exact Flare/group5 requests from 2026-09-13; these are neither fixed output
@@ -35,8 +36,8 @@ const higherTierPresetSizes = new Set([...imageSizeOptions(["2K", "4K"]), ...use
   .filter(option => option.value !== "auto").map(option => option.value));
 
 function hostname(connection: ImageEditingConnection): string | undefined {
-  if (connection.provider !== "openai" &&
-      !(connection.provider === "rest" && isMikotoGptImage(connection, "gpt-image-2"))) return;
+  if (connection.provider !== "openai" && !(connection.provider === "rest" &&
+      (isMikotoGptImage(connection, "gpt-image-2") || /^https:\/\/api\.3365api\.cn(?:\/v1)?\/?$/u.test(String(connection.config.baseUrl ?? ""))))) return;
   try {
     const url = new URL(String(connection.config.baseUrl ?? ""));
     if (url.protocol === "https:" && !url.port && !url.username && !url.password && !url.search && !url.hash &&
@@ -45,6 +46,15 @@ function hostname(connection: ImageEditingConnection): string | undefined {
 }
 function group(connection: ImageEditingConnection): string {
   return String(connection.config.accountKeyGroup ?? connection.config.modelGroup ?? "");
+}
+/** The accepted input presets and actual low output pixels are independent facts. */
+function mikotoAcceptedHighestInput(connection: ImageEditingConnection, model: string): boolean {
+  const evidence = verifiedTransparentImageEvidence(connection, model, {}, "image.edit");
+  return evidence?.hostname === "api.mikoto.vip" && evidence.supplierGroupId === "5" &&
+    evidence.request.size === "3840x2160";
+}
+function afeiStableImage25(connection: ImageEditingConnection, model: string): boolean {
+  return hostname(connection) === "api.3365api.cn" && group(connection) === "image-2稳定生图" && model === "gpt-image-2.5";
 }
 function withoutSizeBounds(parameter: ModelParameterDescriptor): ModelParameterDescriptor {
   const result = { ...parameter };
@@ -98,6 +108,35 @@ export function mikotoImageRatioIssues(parameters: Readonly<Record<string, unkno
 
 /** Apply on both live and cached descriptors so the canvas follows the same contract. */
 export function applySupplierImageConstraints(connection: ImageEditingConnection, model: ModelDescriptor): ModelDescriptor {
+  if (afeiStableImage25(connection, model.id)) {
+    const parameters = (model.parameters ?? []).filter(p => p.key !== "quality");
+    parameters.push({ key: "quality", label: "质量", control: "select", valueType: "string", default: "high",
+      options: ["low", "medium", "high"].map(value => ({ label: value, value })), operations: ["image.generate", "image.edit"],
+      description: "当前同分组裸 GPT Image 2.5 接口明确只接受 low、medium、high；max 已被拒绝，合法最高为 high。" });
+    return { ...model, parameters, metadata: { ...model.metadata,
+      imageQualityOptionsCompleteEnum: true, imageQualityCompleteEnumSource: "same-group-current-schema-and-2026-10-14-rejection",
+      imageRejectedQualities: ["max"], imageApplicationQualityDefault: "high" } };
+  }
+  if (mikotoAcceptedHighestInput(connection, model.id)) {
+    const quality = model.id === "gpt-image-2" ? "high" : "max";
+    const parameters = (model.parameters ?? []).filter(p => !["quality", "size_tier", "size", "resolution", "image_size"].includes(p.key));
+    parameters.push({ key: "size", label: "输出尺寸", control: "dimensions", valueType: "string", default: "auto", allowCustomValue: true, step: 1,
+      options: userImageSizeOptions(), operations: ["image.generate", "image.edit"],
+      description: "当前稳定分组5已接受 3840×2160 参考图请求，1K/2K/4K 为应用预设；原图实测为1672×941，不把输入档位当作输出像素保证。" });
+    parameters.push({ key: "size_tier", label: "分辨率档位", control: "select", valueType: "string", default: "4K",
+      options: ["1K", "2K", "4K"].map(value => ({ label: value, value })), operations: ["image.generate", "image.edit"] });
+    parameters.push({ key: "quality", label: "质量", control: "select", valueType: "string", default: quality,
+      options: userImageQualityValues(model.id).map(value => ({ label: value, value })), operations: ["image.generate", "image.edit"],
+      description: `同分组完整型号参考请求已接受 ${quality}；其他选项为用户应用预设，未逐项收费验证。` });
+    const metadata = { ...model.metadata };
+    for (const key of ["imageFixedResolution", "imageSizeContract", "imageSizeOptionsCompleteEnum", "imageSizeCompleteEnumSource",
+      "imageQualityOptionsCompleteEnum", "imageQualityCompleteEnumSource", "imageUserSizePresets", "imageUserSizeSourceOptions", "imageUserSizeSourceDescription"])
+      delete metadata[key];
+    return { ...model, parameters, metadata: { ...metadata, mikotoImageContract: true, imageNativeParameterContract: true,
+      imageResolutionTiers: ["1K", "2K", "4K"], imageResolutionTierParameter: "size_tier", imageResolutionTierSource: "user-presets+same-group-accepted-4K-input",
+      imageOpenSizePreferences: true, imageSizeSourceKind: "user-request", imageReferenceTransport: "multipart-original-file",
+      imageObservedOutputDimensions: { width: 1672, height: 941, requestedWidth: 3840, requestedHeight: 2160, checkedAt: "2026-10-14" } } };
+  }
   const host = hostname(connection);
   const sizes = restrictedSizes(connection, model.id);
   const qualityByKey = host === "token.secure-skill.com" && model.id === "gpt-image-2";
@@ -239,6 +278,18 @@ export function applySupplierImageConstraints(connection: ImageEditingConnection
 
 export function supplierImageParameterIssues(connection: ImageEditingConnection,
   request: NormalizedRequest & { model: string }): ValidationIssue[] {
+  const binding = (connection.config.autoModelInterfaces as Record<string, { source?: string; model?: { metadata?: Record<string, unknown> } }> | undefined)?.[request.model];
+  if (connection.config.manualProtocol === true || connection.config.customGroup === true ||
+      binding?.source === "manual" || binding?.model?.metadata?.source === "manual") return [];
+  if (afeiStableImage25(connection, request.model)) return request.parameters?.quality !== undefined &&
+    !["low", "medium", "high"].includes(String(request.parameters.quality))
+    ? [{ path: "parameters.quality", code: "invalid_quality", message: "当前同分组 GPT Image 2.5 仅接受 low、medium、high，最高为 high；原质量值保留，请修改。" }] : [];
+  if (mikotoAcceptedHighestInput(connection, request.model)) {
+    const issues = mikotoImageRatioIssues(request.parameters);
+    if (request.parameters?.quality !== undefined && !userImageQualityValues(request.model).includes(String(request.parameters.quality)))
+      issues.push({ path: "parameters.quality", code: "invalid_quality", message: "请选择当前完整型号的应用质量；已接受最高值与其他未逐项实测选项分开记录。" });
+    return issues;
+  }
   const sizes = restrictedSizes(connection, request.model);
   const issues: ValidationIssue[] = [];
   if (isMikotoGptImage(connection, request.model) &&

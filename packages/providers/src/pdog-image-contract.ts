@@ -15,8 +15,10 @@ type Connection = { provider: string; config: Readonly<Record<string, unknown>> 
 /** Reuse the accepted quality only for the exact historical supplier/group/full ID. */
 export function pdogImageMeasuredQuality(config: Readonly<Record<string, unknown>>, model: string | undefined) {
   if (!model || !isPdogImageConnection(config, model)) return;
-  const evidence = verifiedTransparentImageEvidence({ provider: "openai", config }, model);
-  return evidence?.transport.kind === "pdog-async" && evidence.request.quality === "max" ? evidence : undefined;
+  for (const operation of ["image.generate", "image.edit"] as const) {
+    const evidence = verifiedTransparentImageEvidence({ provider: "openai", config }, model, {}, operation);
+    if (evidence?.transport.kind === "pdog-async" && evidence.request.quality === "max") return evidence;
+  }
 }
 
 /** Official common values and a separately sourced, exact-scope accepted request value. */
@@ -96,7 +98,9 @@ function pdogImageTiers(config: Readonly<Record<string, unknown>>, model: ModelD
   const description = String(model.metadata?.supplierGroupDescription ?? config.supplierGroupDescription ?? "");
   const details = parseSupplierGroupDetails({ name: group, description }, "key-groups");
   const named = (["1K", "2K", "4K"] as const).filter(tier => new RegExp(`${tier[0]}\\s*k`, "iu").test(group));
-  const exclusive = details?.exclusiveResolutions || named.length === 1 && named[0] === "1K";
+  // A group label is an identity, not an exclusive dimension contract.
+  // Current group4's public guide and its own original 4K requests contradict that old heuristic.
+  const exclusive = details?.exclusiveResolutions;
   return (["1K", "2K", "4K"] as const).filter(tier => !details?.unsupportedResolutions?.includes(tier) &&
     (!exclusive || (details?.supportedResolutions?.length ? details.supportedResolutions : named).includes(tier)));
 }
@@ -128,7 +132,7 @@ export function applyPdogImageCapabilities(connection: Connection, model: ModelD
       ], description: "仅列 PDog 官方像素表；size 是开放 WIDTHxHEIGHT，W/H 可独立输入。文档没有公布步长、最长边或总像素范围；原生或放大以当前分组说明为准" },
       { key: "quality", label: "质量", control: "select", valueType: "string", default: qualities.at(-1) ?? "high", options: qualities.map(value => ({ value, label: value })),
         description: measuredQuality
-          ? `官网公共字段列 low、medium、high；当前完整型号与原生分组的 ${measuredQuality.checkedAt} 已接受请求另包含 max（${measuredQuality.request.size}、n=${measuredQuality.request.n}），保留原值并作为应用最高质量选择，不改称官网默认或其他分组能力`
+          ? `官网公共字段列 low、medium、high；同一分组与完整型号 ${measuredQuality.checkedAt} 已接受${measuredQuality.operation === "image.edit" ? "参考编辑" : "生成"}请求另包含 max（${measuredQuality.request.size}、n=${measuredQuality.request.n}），保留原值并作为应用最高质量选择，不改称官网默认或其他分组能力`
           : "PDog GPT Images 文档质量为 low、medium、high，最高为 high；具体质量能力由当前上游决定。旧参数保留，提交前校验，不借其他渠道的扩展质量枚举" },
       { key: "n", label: "生成张数", control: "number", valueType: "integer", default: 1, min: 1, max: 1 },
       { key: "response_format", label: "返回格式", control: "select", valueType: "string", default: "url", options: [
@@ -143,7 +147,8 @@ export function applyPdogImageCapabilities(connection: Connection, model: ModelD
       }), pdogDocumentedSizes: PDOG_GPT_IMAGE_SIZES,
       qualitySupport: "declared", pdogQualityDocumented: true, pdogQualityVerified: !!measuredQuality,
       ...(acceptedQuality ? { imageMeasuredQuality: acceptedQuality } : {}),
-      pdogQualitySource: measuredQuality ? "official-gpt-images-common-field+historical-accepted-request" : "official-gpt-images-common-field",
+      pdogQualitySource: measuredQuality ? measuredQuality.operation === "image.edit"
+        ? "official-gpt-images-common-field+same-identity-accepted-reference-request" : "official-gpt-images-common-field+historical-accepted-request" : "official-gpt-images-common-field",
       ...(measuredQuality ? { pdogMeasuredQuality: { value: measuredQuality.request.quality, checkedAt: measuredQuality.checkedAt,
         hostname: measuredQuality.hostname, group: measuredQuality.group, fullModelId: measuredQuality.model,
         transport: measuredQuality.transport, request: measuredQuality.request } } : {}),

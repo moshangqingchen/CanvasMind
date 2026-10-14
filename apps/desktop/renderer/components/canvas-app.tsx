@@ -5281,8 +5281,12 @@ function CanvasShell({
         : restoredSelection
           ? { ...normalizedParametersForModel(nodeType, connection.provider, configuredModel, restoredSelection.parameters), ...restoredSelection.parameters }
           : parametersWithDefaults(parameterDescriptorsFor(nodeType, connection.provider, configuredModel));
+      const imageOperation = directLinkedAssetsForNode(node.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).some(asset => asset.kind === "image") ? "image.edit" : "image.generate";
+      const transparentSupported = nodeType === "image-generation" && connection.provider !== "cli" &&
+        getImageEditingCapabilities(connection, configuredModel?.id ?? "", nextParameters, imageOperation).transparent;
       const selectedParameters = nodeType === "image-generation" && connection.provider !== "cli"
-        ? imageModeParameters(nextParameters, getImageEditingCapabilities(connection, configuredModel?.id ?? "", nextParameters).transparent)
+        ? imageModeParameters(nextParameters, transparentSupported,
+          restoredSelection ? undefined : transparentSupported && nextParameters.background === "transparent" ? "transparent" : "normal")
         : nextParameters;
       updateNodeData(
         nodeId,
@@ -5374,8 +5378,12 @@ function CanvasShell({
       const nextParameters = restoredSelection
         ? { ...normalizedParametersForModel(nodeType, node.data.provider ?? "fake", nextModel, restoredSelection.parameters), ...restoredSelection.parameters }
         : parametersWithDefaults(parameterDescriptorsFor(nodeType, node.data.provider ?? "fake", nextModel), currentParameters);
+      const imageOperation = directLinkedAssetsForNode(node.id, useCanvasStore.getState().nodes, useCanvasStore.getState().edges, assets).some(asset => asset.kind === "image") ? "image.edit" : "image.generate";
+      const transparentSupported = nodeType === "image-generation" && connection &&
+        getImageEditingCapabilities(connection, modelId, nextParameters, imageOperation).transparent;
       const selectedParameters = nodeType === "image-generation" && connection
-        ? imageModeParameters(nextParameters, getImageEditingCapabilities(connection, modelId, nextParameters).transparent)
+        ? imageModeParameters(nextParameters, Boolean(transparentSupported),
+          restoredSelection ? undefined : transparentSupported && nextParameters.background === "transparent" ? "transparent" : "normal")
         : nextParameters;
       updateNodeData(
         nodeId,
@@ -6177,12 +6185,14 @@ function CanvasShell({
           state.edges,
           assets,
         );
+        const imageOperation = linked.some(asset => asset.kind === "image") ? "image.edit" : "image.generate";
+        const imageCapabilities = savedConnection && node.data.nodeType === "image-generation"
+          ? getImageEditingCapabilities(savedConnection, node.data.model ?? "", node.data.parameters, imageOperation) : undefined;
         if (node.data.nodeType === "image-generation" && savedConnection?.provider !== "cli" &&
-            node.data.parameters?.background === "transparent" &&
-            (!savedConnection || !getImageEditingCapabilities(savedConnection, node.data.model ?? "", node.data.parameters).transparent))
-          return `${node.data.label}：当前供应商分组和型号不支持透明模式，请切换到普通模式或选择支持透明输出的模型`;
+            node.data.parameters?.background === "transparent" && !imageCapabilities?.transparent)
+          return `${node.data.label}：${imageCapabilities?.transparency?.note ?? "当前连接、分组及完整型号的透明请求资料尚未确认。"} 可选择普通模式；已保存参数继续保留。`;
         if (typeof node.data.parameters?.maskAssetId === "string") {
-          if (!savedConnection || !getImageEditingCapabilities(savedConnection, node.data.model ?? "", node.data.parameters).mask)
+          if (!savedConnection || !getImageEditingCapabilities(savedConnection, node.data.model ?? "", node.data.parameters, "image.edit").mask)
             return `${node.data.label}：当前模型不支持蒙版编辑，请选择支持局部重绘的模型，或手动移除蒙版`;
           if (linked.filter(asset => asset.kind === "image")[0]?.id !== node.data.parameters.maskSourceAssetId)
             return `${node.data.label}：蒙版对应的原图已改变，请重新绘制蒙版`;
@@ -7429,10 +7439,11 @@ function CanvasShell({
             : ["live", "empty"].includes(String(editingConnection?.config.modelScanStatus)) &&
               editingConnection?.config.modelScanAttemptStatus !== "failed", supplierDirectoryReadFailed));
       const editingModel = effectiveModel ?? retainedImageModelForDisplay(editingConnection, node.data.model, connectionModels);
-      const imageEditingCapabilities = generationType === "image-generation" && editingModel
-        ? modelImageCapabilities(editingConnection, editingModel, node.data.parameters)
-        : { transparent: false, mask: null };
       const linkedAssets = generationType ? directAssetsForNode(node.id) : [];
+      const imageOperation = linkedAssets.some(asset => asset.kind === "image") ? "image.edit" : "image.generate";
+      const imageEditingCapabilities = generationType === "image-generation" && editingModel
+        ? modelImageCapabilities(editingConnection, editingModel, node.data.parameters, imageOperation)
+        : { transparent: false, mask: null };
       const compatibleInputIds =
         connectingFrom && node.id !== connectingFrom.nodeId
           ? (effectiveInputsForNode(node) ?? [])
@@ -7485,7 +7496,7 @@ function CanvasShell({
           linkedAssets,
           imageEditingCapabilities,
           modelImageCapabilities: generationType === "image-generation" ? Object.fromEntries(modelOptions.map(model => [model.id,
-            modelImageCapabilities(editingConnection, model, model.id === effectiveModel?.id ? node.data.parameters : undefined),
+            modelImageCapabilities(editingConnection, model, model.id === effectiveModel?.id ? node.data.parameters : undefined, imageOperation),
           ])) : undefined,
           linkedAssetDurations,
           linkedAssetWarnings: validateLinkedMediaInputs(

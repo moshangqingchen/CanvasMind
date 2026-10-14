@@ -62,7 +62,8 @@ export class PdogImageAdapter extends GenericRestAdapter {
     const connection = await this.pdogConnections.resolve(request.connectionId).catch(() => undefined);
     if (connection) issues.push(...imageEditingRequestIssues(imageEditingConnection(connection), request));
     const transparent = connection && request.parameters?.background === "transparent"
-      ? verifiedTransparentImageEvidence(imageEditingConnection(connection), request.model ?? "", request.parameters) : undefined;
+      ? verifiedTransparentImageEvidence(imageEditingConnection(connection), request.model ?? "", request.parameters,
+        request.operation === "image.edit" ? "image.edit" : "image.generate") : undefined;
     if (transparent && transparent.transport.kind !== `pdog-${this.mode}`)
       issues.push({ path: "parameters.background", code: "unverified_transparent_route", message: "此型号透明背景仅验证异步图片接口，请使用已验证的异步线路" });
     if (!connection || connection.provider !== "openai" || !isPdogImageConnection({ ...connection.settings, baseUrl: connection.baseUrl }, request.model))

@@ -172,7 +172,7 @@ export function getSupplierVerificationService() {
       if (existing) {
         const stored = await storage.get(existing.storageKey);
         if (stored) {
-          const inspected = await inspectImageOutput(stored.bytes);
+          const inspected = await inspectImageOutput(stored.bytes, test.parameters);
           const mismatches = imageOutputContractMismatches(inspected, test.parameters);
           const storageKey = `verification/${id}/original.${inspected.extension}`;
           if (existing.storageKey !== storageKey || stored.contentType !== inspected.mimeType) await storage.put(storageKey, stored.bytes, inspected.mimeType);
@@ -202,7 +202,7 @@ export function getSupplierVerificationService() {
           })
         ).bytes;
       if (!bytes) throw new Error("图片未能下载");
-      const inspected = await inspectImageOutput(bytes);
+      const inspected = await inspectImageOutput(bytes, test.parameters);
       const mismatches = imageOutputContractMismatches(inspected, test.parameters);
       const mime = inspected.mimeType;
       const storageKey = `verification/${id}/original.${inspected.extension}`;

@@ -7,7 +7,7 @@ import { isChuangxiangImageConnection, ChuangxiangImageAdapter } from "./chuangx
 import { isChuangxiangMidjourneyConnection, applyChuangxiangMidjourneyCapabilities, ChuangxiangMidjourneyAdapter } from "./chuangxiang-midjourney.js";
 import { imageEditingConnection, imageEditingRequestIssues, usesDeclaredImagesEditingRoute } from "./image-editing-capabilities.js";
 import { assertValidResult } from "./contracts.js";
-import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint } from "./transparent-image-evidence.js";
+import { verifiedTransparentImageEvidence, verifiedTransparentImageJsonEndpoint, verifiedTransparentImageMultipartEditEndpoint } from "./transparent-image-evidence.js";
 import { isCangyuanMusicRequest } from "./cangyuan-music.js";
 import { cangyuanVideoModel, cangyuanVideoTransport, isCangyuanNativeSeedanceRequest } from "./cangyuan-video-contract.js";
 import { chuangxiangVideoModel, chuangxiangVideoTransport, isChuangxiangVideoConnection } from "./chuangxiang-video-contract.js";
@@ -168,7 +168,8 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
       return this.fallback;
     }
     const source = imageEditingConnection(connection);
-    const transparentEvidence = verifiedTransparentImageEvidence(source, request.model, request.parameters);
+    const transparentEvidence = verifiedTransparentImageEvidence(source, request.model, request.parameters,
+      request.operation === "image.edit" ? "image.edit" : "image.generate");
     const bananaRoute = bananaImageRoute(source, request.model);
     if (bananaRoute && request.operation.startsWith("image.")) {
       const ids = connection.settings?.scannedModelIds;
@@ -216,8 +217,17 @@ export class AutoInterfaceAdapter implements ProviderAdapter {
           (Array.isArray(ids) && !ids.includes(request.model)))
         throw new Error("当前分组没有此图片型号的可用权限或完整接口");
       if (transparentEvidence && request.parameters?.background === "transparent" &&
-          !verifiedTransparentImageJsonEndpoint(source, request.model, request.parameters, transparentEvidence, "openai-images"))
+          !(request.operation === "image.edit"
+            ? verifiedTransparentImageMultipartEditEndpoint(source, request.model, request.parameters, transparentEvidence)
+            : verifiedTransparentImageJsonEndpoint(source, request.model, request.parameters, transparentEvidence, "openai-images")))
         throw new Error("此已验证透明接口需要对应的专用传输配置，不能切换为通用图片接口");
+      return this.fallback;
+    }
+    if (connection.provider === "rest" && request.operation === "image.edit" && transparentEvidence?.transport.kind === "saved-rest" &&
+        ["api.mikoto.vip", "api.3365api.cn"].includes(transparentEvidence.hostname)) {
+      const ids = connection.settings?.scannedModelIds;
+      if (current?.metadata?.canvasRunnable === false || (Array.isArray(ids) && !ids.includes(request.model)))
+        throw new Error("当前分组没有此参考编辑型号的可用权限或接口");
       return this.fallback;
     }
     if (current?.metadata?.autoInterfaceStatus === "incomplete") throw new Error(String(current.metadata.canvasUnavailableReason ?? "供应商接口说明待补充"));

@@ -129,7 +129,7 @@ describe("PDog documented GPT Images contract", () => {
     expect(JSON.parse(String(f.fetch.mock.calls[0]![1]?.body)).quality).toBe("high");
   });
 
-  it.each(VERIFIED_TRANSPARENT_IMAGES.filter(row => row.hostname === "ai.whyshy.cn"))(
+  it.each(VERIFIED_TRANSPARENT_IMAGES.filter(row => row.hostname === "ai.whyshy.cn" && (row.operation ?? "image.generate") === "image.generate"))(
     "reuses accepted max for the exact historical $group / $model, including normal generation and edits", async evidence => {
       const settings = { modelGroup: evidence.group, accountKeyGroup: evidence.group };
       const f = fixture({ model: evidence.model, settings });
@@ -146,7 +146,7 @@ describe("PDog documented GPT Images contract", () => {
       }
       expect(parameters).toEqual({ ...evidence.request, background: "opaque" });
       expect(f.fetch).toHaveBeenCalledTimes(2);
-      for (const config of [{ ...connection.config, modelGroup: "【生图】image2/2.5-1K", accountKeyGroup: "【生图】image2/2.5-1K" },
+      for (const config of [{ ...connection.config, modelGroup: "other1K", accountKeyGroup: "other1K" },
         { ...connection.config, modelGroup: evidence.group, accountKeyGroup: "different" },
         { ...connection.config, baseUrl: "https://ai.whyshy.cn/custom" }, { ...connection.config, baseUrl: "https://example.com" },
         { ...connection.config, manualProtocol: true }])
@@ -228,7 +228,7 @@ describe("PDog documented GPT Images contract", () => {
   });
 
   it("honors an exact group's 1K declaration without borrowing the common guide's 4K", () => {
-    const descriptor = applyPdogImageCapabilities({ provider: "openai", config: { baseUrl: "https://ai.whyshy.cn", modelGroup: "生图1K" } }, { id: model, name: model, operations: ["image.generate"] });
+    const descriptor = applyPdogImageCapabilities({ provider: "openai", config: { baseUrl: "https://ai.whyshy.cn", modelGroup: "生图1K", supplierGroupDescription: "仅支持1K" } }, { id: model, name: model, operations: ["image.generate"] });
     expect(descriptor.parameters?.find(p => p.key === "size_tier")?.options?.map(o => o.value)).toEqual(["auto", "1K"]);
     expect(descriptor.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(["auto", "1024x1024"]);
     expect(descriptor.metadata?.imageSupportedResolutions).toEqual(["1K"]);

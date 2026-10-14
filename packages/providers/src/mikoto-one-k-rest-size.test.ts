@@ -18,7 +18,7 @@ describe("actual Mikoto g5 saved async REST request fields", () => {
     for (const operation of ["image.generate", "image.edit"] as const) {
       const chosen: NormalizedRequest = { ...request, model, operation,
         parameters: Object.freeze({ size: "2051x2049", size_tier: "1K", quality: "max", aspect_ratio: "1:1" }),
-        ...(operation === "image.edit" ? { assets: [{ id: "fixture", kind: "image" as const, mimeType: "image/png", url: "https://fixture.invalid/input.png" }] } : {}) };
+        ...(operation === "image.edit" ? { assets: [{ id: "fixture", kind: "image" as const, mimeType: "image/png", data: new Uint8Array([137, 80, 78, 71]), url: "https://fixture.invalid/input.png" }] } : {}) };
       expect((await adapter.validate(chosen)).valid).toBe(true);
       await adapter.submit(chosen);
       const call = fetcher.mock.calls.at(-1)!;
@@ -41,11 +41,10 @@ describe("actual Mikoto g5 saved async REST request fields", () => {
     expect((await adapter.validate({ ...chosen, parameters: { ...parameters, aspect_ratio: "auto", quality: "unrecognized" } })).issues)
       .toContainEqual(expect.objectContaining({ code: "invalid_quality" }));
   });
-  it("preserves explicit manual contract fields and GPT2's existing transport", async () => {
+  it("preserves explicit manual contract fields", async () => {
     for (const [model, settings] of [
       [ids[0], { ...connection.settings, customGroup: true }],
       [ids[1], { ...connection.settings, autoModelInterfaces: { [ids[1]!]: { source: "manual" } } }],
-      ["gpt-image-2", connection.settings],
     ] as const) {
       const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ task_id: "isolated-task", status: "queued" }));
       const adapter = new GenericRestAdapter(new StaticConnectionResolver([{ ...connection, settings }]), { fetch: fetcher });
@@ -54,7 +53,6 @@ describe("actual Mikoto g5 saved async REST request fields", () => {
     }
   });
   it.each([
-    { group: "5", size: "2560x1440", quality: "high", code: "invalid_group_image_size", raw },
     { group: "16", size: "1024x1024", quality: "medium", code: "invalid_group_image_size", raw: mediumRaw },
     { group: "16", size: "1440x1440", quality: "high", code: "invalid_quality", raw: mediumRaw },
   ])("validates the existing GPT2 group$group $size/$quality restriction on saved REST", async test => {

@@ -11,6 +11,12 @@ export interface ImageOutputInspection {
     imagePages: number;
     imageHasAlpha: boolean;
     imageHasTransparentPixels: boolean;
+    imageHasVisiblePixels?: boolean;
+    imageRequestedSize?: string;
+    imageRequestedWidth?: number;
+    imageRequestedHeight?: number;
+    imageDimensionsMatchRequest?: boolean;
+    imageOutputDimensionNotice?: string;
     imageOrientation?: number;
   };
 }
@@ -30,7 +36,7 @@ function signature(bytes: Uint8Array): string | undefined {
 }
 
 /** Decode the original bytes to verify pixels and alpha; never re-encode them. */
-export async function inspectImageOutput(bytes: Uint8Array): Promise<ImageOutputInspection> {
+export async function inspectImageOutput(bytes: Uint8Array, parameters?: Readonly<Record<string, unknown>>): Promise<ImageOutputInspection> {
   const format = signature(bytes);
   if (!format) throw new Error("供应商图片原文件没有受支持的真实图片签名，不能将 JSON、HTML 或未知文件归档为图片");
   const input = sharp(bytes, { animated: true, failOn: "warning", limitInputPixels: 100_000_000 });
@@ -47,6 +53,15 @@ export async function inspectImageOutput(bytes: Uint8Array): Promise<ImageOutput
   const height = meta.pageHeight ?? meta.height;
   if (decodedFormat !== format || !Number.isSafeInteger(meta.width) || !meta.width || !Number.isSafeInteger(height) || !height)
     throw new Error("供应商图片原文件签名、解码格式或像素尺寸不一致");
+  const size = typeof parameters?.size === "string" ? parameters.size :
+    typeof parameters?.image_size === "string" ? parameters.image_size : undefined;
+  const dimensions = size ? /^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/u.exec(size) : undefined;
+  const requestedWidth = dimensions ? Number(dimensions[1]) : parameters?.width;
+  const requestedHeight = dimensions ? Number(dimensions[2]) : parameters?.height;
+  const hasExplicitDimensions = typeof requestedWidth === "number" && Number.isSafeInteger(requestedWidth) && requestedWidth > 0 &&
+    typeof requestedHeight === "number" && Number.isSafeInteger(requestedHeight) && requestedHeight > 0;
+  const dimensionsMatch = hasExplicitDimensions && requestedWidth === meta.width && requestedHeight === height;
+  const alpha = meta.hasAlpha ? stats.channels.at(-1) : undefined;
   return {
     mimeType: format === "jpeg" ? "image/jpeg" : `image/${format}`,
     extension: format === "jpeg" ? "jpg" : format === "tiff" ? "tif" : format,
@@ -54,6 +69,12 @@ export async function inspectImageOutput(bytes: Uint8Array): Promise<ImageOutput
       imageOutputVerified: true, imageFormat: format, width: meta.width, height,
       imagePages: meta.pages ?? 1, imageHasAlpha: meta.hasAlpha ?? false,
       imageHasTransparentPixels: !!meta.hasAlpha && !stats.isOpaque,
+      imageHasVisiblePixels: !meta.hasAlpha || (alpha?.max ?? 0) > 0,
+      ...(size ? { imageRequestedSize: size } : {}),
+      ...(hasExplicitDimensions ? { imageRequestedWidth: requestedWidth, imageRequestedHeight: requestedHeight,
+        imageDimensionsMatchRequest: dimensionsMatch,
+        ...(!dimensionsMatch ? { imageOutputDimensionNotice: `请求 ${requestedWidth} × ${requestedHeight}，原图实际 ${meta.width} × ${height}` } : {}),
+      } : {}),
       ...(meta.orientation ? { imageOrientation: meta.orientation } : {}),
     },
   };

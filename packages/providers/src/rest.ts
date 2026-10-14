@@ -182,6 +182,8 @@ export interface RestRequestDefinition {
   path: string;
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   bodyMode?: "none" | "json" | "multipart";
+  /** Supplier image edits that require actual original files, including URL-only inputs. */
+  forceAssetFileUploads?: boolean;
   template?: unknown;
   mappings?: readonly RestRequestMapping[];
   headers?: Readonly<Record<string, string>>;
@@ -1160,6 +1162,28 @@ export class GenericRestAdapter implements ProviderAdapter {
         : undefined;
     const selected = applyOverride(operationConfig, modelOperationOverride);
     assertConfig(selected);
+    if (!this.fixedConfig && operation === "image.edit" && model) {
+      const evidence = verifiedTransparentImageEvidence(imageEditingConnection(connection), model, {}, "image.edit");
+      // Only these exact supplier/group/full IDs have a measured multipart reference contract.
+      // Do not manufacture reference support for another Afei group or legacy model.
+      if (evidence?.transport.kind === "saved-rest" && evidence.transport.bodyMode === "multipart" &&
+          (evidence.hostname === "api.mikoto.vip" && evidence.supplierGroupId === "5" ||
+            evidence.hostname === "api.3365api.cn" && evidence.group === "image-2稳定生图" && model === "gpt-image-2.5")) {
+        const template = isRecord(selected.submit.template) ? { ...selected.submit.template } : {};
+        const fields = ["model", "prompt", "size", "quality", "n", "response_format", "background", "output_format"];
+        for (const key of [...fields, "images", "image", "image_url", "image_url[]"]) delete template[key];
+        return { ...selected, assetsRequirePublicUrls: false, submit: { ...selected.submit,
+          path: evidence.transport.path, method: "POST", bodyMode: "multipart", idempotent: false,
+          forceAssetFileUploads: true, template,
+          mappings: [...(selected.submit.mappings ?? []).filter(mapping =>
+            mapping.source.kind !== "assets" && !fields.some(field => mapping.target === `/${field}`) &&
+            !["/images", "/image", "/image_url", "/image_url[]", "/aspect_ratio", "/aspectRatio", "/ratio", "/size_tier", "/resolution", "/image_size"].includes(mapping.target)),
+            ...fields.map(key => ({ target: `/${key}`, source: { kind: "request" as const,
+              path: key === "model" || key === "prompt" ? `$.${key}` : `$.parameters.${key}` }, omitIfUndefined: true })),
+            { target: "/image", source: { kind: "assets", assetKind: "image", select: "all" }, omitIfEmpty: true }],
+        } };
+      }
+    }
     if (!this.fixedConfig && isCangyuanMusicRequest(model, connection.baseUrl)) {
       return { ...applyOverride(selected, cangyuanMusicTransport(undefined, model)), assetsRequirePublicUrls: false };
     }
@@ -1275,6 +1299,7 @@ export class GenericRestAdapter implements ProviderAdapter {
     definition: RestRequestDefinition,
     request: NormalizedRequest | undefined,
     task: ProviderTask | undefined,
+    preflight = false,
   ): Promise<BodyInit | undefined> {
     const method = definition.method ?? "POST";
     const mode =
@@ -1306,7 +1331,9 @@ export class GenericRestAdapter implements ProviderAdapter {
       throw new Error("A multipart REST body must resolve to an object");
     const form = new FormData();
     for (const [name, fieldValue] of Object.entries(value)) {
-      await this.appendFormValue(form, name, fieldValue);
+      // Preflight inspects mappings without repeatedly downloading a URL-only original.
+      // Execute always resolves it into an actual Blob before the single paid submit.
+      await this.appendFormValue(form, name, fieldValue, definition.forceAssetFileUploads === true && !preflight);
     }
     return form;
   }
@@ -1315,14 +1342,15 @@ export class GenericRestAdapter implements ProviderAdapter {
     form: FormData,
     name: string,
     value: unknown,
+    forceAssetFileUploads = false,
   ): Promise<void> {
     if (value === undefined || value === null) return;
     if (Array.isArray(value)) {
-      for (const item of value) await this.appendFormValue(form, name, item);
+      for (const item of value) await this.appendFormValue(form, name, item, forceAssetFileUploads);
       return;
     }
     if (looksLikeAsset(value)) {
-      if (value.data) {
+      if (value.data || forceAssetFileUploads) {
         const blob = await assetToBlob(value, this.fetchImpl);
         form.append(name, blob, value.filename ?? `${value.id}.bin`);
       } else if (value.url) {
@@ -1421,11 +1449,27 @@ export class GenericRestAdapter implements ProviderAdapter {
   /** Keep the saved submit/poll/output contract; extend only its exact verified JSON body. */
   private transparentSubmitBody(connection: Awaited<ReturnType<ProviderConnectionResolver["resolve"]>>,
     request: NormalizedRequest, endpoint: string, method: string, bodyMode: string, body: BodyInit | undefined): BodyInit | undefined {
-    if (request.operation !== "image.generate" || request.parameters?.background !== "transparent") return body;
+    if (!request.operation.startsWith("image.") || request.parameters?.background !== "transparent") return body;
     const source = imageEditingConnection(connection);
-    const evidence = verifiedTransparentImageEvidence(source, request.model ?? "", request.parameters);
+    const evidence = verifiedTransparentImageEvidence(source, request.model ?? "", request.parameters,
+      request.operation === "image.edit" ? "image.edit" : "image.generate");
     // Dedicated adapters (for example PDog async) retain their own measured transport.
     if (!evidence || evidence.transport.kind !== "saved-rest") return body;
+    if (request.operation === "image.edit") {
+      if (endpoint !== `${new URL(String(source.config.baseUrl)).origin}${evidence.transport.path}` ||
+          method !== "POST" || bodyMode !== evidence.transport.bodyMode)
+        throw new Error("已配置的参考编辑端点或传输与同身份透明证据不同，当前请求尚未提交");
+      if (body instanceof FormData) {
+        body.set("background", "transparent"); body.set("output_format", "png");
+        return body;
+      }
+      if (typeof body !== "string") throw new Error("参考编辑请求体不符合已验证协议，当前请求尚未提交");
+      const value: unknown = JSON.parse(body);
+      if (!isRecord(value) || value.model !== evidence.model) throw new Error("参考编辑请求型号与证据不同，当前请求尚未提交");
+      // Cangyuan's current explicit encoding contract also permits alpha WebP.
+      // Its selected encoding remains a native field, separate from our PNG sample.
+      return JSON.stringify({ ...value, background: "transparent", output_format: value.output_format ?? "png" });
+    }
     const verifiedEndpoint = verifiedTransparentImageJsonEndpoint(source, request.model ?? "", request.parameters, evidence, "saved-rest");
     if (!verifiedEndpoint || endpoint !== verifiedEndpoint || method !== "POST" || bodyMode !== "json" || typeof body !== "string")
       throw new Error("已配置的 REST 提交端点或传输与透明证据不一致，当前生成尚未提交");
@@ -1450,7 +1494,8 @@ export class GenericRestAdapter implements ProviderAdapter {
     const connection = await this.connections.resolve(connectionId);
     const config = this.configFrom(connection);
     return (config.models ?? []).map((model) =>
-      withCanonicalModelFields(applyUserImageSizePresets({ ...model }), connection.provider),
+      withCanonicalModelFields(model.operations.some(operation => operation.startsWith("image."))
+        ? resolveImageModelContract(imageEditingConnection(connection), { ...model }) : applyUserImageSizePresets({ ...model }), connection.provider),
     );
   }
 
@@ -1480,7 +1525,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         }
       }
       const mikotoCanvasPreferences = !this.fixedConfig && usesMikotoOneKCanvasPreferences(connection, request);
-      if (!this.fixedConfig && usesMikotoSavedImageParameterContract(connection, request))
+      if (!this.fixedConfig && request.operation.startsWith("image.") && request.model)
         issues.push(...supplierImageParameterIssues(imageEditingConnection(connection), { ...request, model: request.model! }));
       if (request.operation.startsWith("video.") && isJiasuApiUrl(connection.baseUrl) && jiasuVideoGroupMismatch(connection.settings))
         issues.push({ path: "model", code: "model_group_mismatch", message: "当前佳速 Key 绑定的分组与型号分组不一致，请同步正确分组后再生成。" });
@@ -1537,7 +1582,8 @@ export class GenericRestAdapter implements ProviderAdapter {
         request.assets,
       );
       if (request.assets?.some(asset => asset.role === "mask") || request.parameters?.mask) {
-        const capabilities = getImageEditingCapabilities(imageEditingConnection(connection), request.model ?? "", request.parameters);
+        const capabilities = getImageEditingCapabilities(imageEditingConnection(connection), request.model ?? "", request.parameters,
+          request.operation === "image.edit" ? "image.edit" : "image.generate");
         if (capabilities.mask && (capabilities.mask !== "url" || config.submit.bodyMode !== "json"))
           issues.push({ path: "assets", code: "unsupported_mask_transport", message: "当前已配置的接口传输方式不支持此蒙版；请使用供应商的图片编辑接口。" });
       }
@@ -1555,7 +1601,9 @@ export class GenericRestAdapter implements ProviderAdapter {
       const configuredModel = musicRequest && savedModel ? cangyuanMusicModel(savedModel)
         : videoRequest && savedModel ? chuangxiangVideoModel(savedModel.id, savedModel)
         : cangyuanVideo && savedModel ? cangyuanVideoModel(savedModel)
-        : remainingVideo && savedModel ? remainingVideoModel(remainingSupplier!, savedModel.id, savedModel, videoContext) : savedModel;
+        : remainingVideo && savedModel ? remainingVideoModel(remainingSupplier!, savedModel.id, savedModel, videoContext)
+        : !this.fixedConfig && request.operation.startsWith("image.") && savedModel
+          ? resolveImageModelContract(imageEditingConnection(connection), savedModel) : savedModel;
       if (baseConfig.restrictModels && request.model && !configuredModel) {
         issues.push({
           path: "model",
@@ -1810,7 +1858,7 @@ export class GenericRestAdapter implements ProviderAdapter {
         : videoRequest ? { ...request, parameters: normalizeChuangxiangVideoParameters(request) }
         : cangyuanVideo ? { ...request, parameters: normalizeCangyuanVideoParameters(request) }
         : remainingVideo ? { ...request, parameters: normalizeRemainingVideoParameters(remainingSupplier!, request, videoContext) } : request;
-      const body = await this.buildBody(config.submit, mikotoCanvasPreferences ? mikotoSizeOnlyRequest(preflightRequest) : preflightRequest, undefined);
+      const body = await this.buildBody(config.submit, mikotoCanvasPreferences ? mikotoSizeOnlyRequest(preflightRequest) : preflightRequest, undefined, true);
       const method = config.submit.method ?? (body === undefined ? "GET" : "POST");
       const bodyMode = config.submit.bodyMode ?? (method === "GET" || method === "DELETE" ? "none" : "json");
       this.transparentSubmitBody(connection, request, this.resolveUrl(connection.baseUrl, config.submit.path, config), method, bodyMode, body);
@@ -1851,7 +1899,8 @@ export class GenericRestAdapter implements ProviderAdapter {
       config = { ...config, ...current, ...current.operationOverrides?.[request.operation] };
     }
     const editingConnection = imageEditingConnection(connection);
-    const capabilities = getImageEditingCapabilities(editingConnection, request.model ?? "", request.parameters);
+    const capabilities = getImageEditingCapabilities(editingConnection, request.model ?? "", request.parameters,
+      request.operation === "image.edit" ? "image.edit" : "image.generate");
     const hasMask = request.assets?.some(asset => asset.role === "mask") || Boolean(request.parameters?.mask);
     if (hasMask && capabilities.mask === "url") {
       const cangyuan = connection.provider === "rest" && /(^|\.)cangyuansuanli\.cn$/u.test(new URL(connection.baseUrl!).hostname);
@@ -1867,7 +1916,8 @@ export class GenericRestAdapter implements ProviderAdapter {
       };
     }
     let outboundRequest = withNearestSupportedAspectRatio({ ...request,
-      parameters: normalizeImageEditingParameters(editingConnection, request.model ?? "", request.parameters) }, config);
+      parameters: normalizeImageEditingParameters(editingConnection, request.model ?? "", request.parameters,
+        request.operation === "image.edit" ? "image.edit" : "image.generate") }, config);
     if (!this.fixedConfig && usesMikotoOneKCanvasPreferences(connection, request)) outboundRequest = mikotoSizeOnlyRequest(outboundRequest);
     if (!this.fixedConfig && isCangyuanMusicRequest(request.model, connection.baseUrl)) {
       outboundRequest = withCangyuanMusicRequestParameters(request);

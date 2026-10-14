@@ -46,7 +46,7 @@ describe("Jiasu image picker and saved catalog recovery", () => {
       expect(model.parameters?.find(item => item.key === "size")?.options?.map(item => item.value)).toEqual(jiasuImageSizes(id));
       expect(model.parameters?.some(item => item.control === "dimensions")).toBe(false);
     }
-    expect(modelImageCapabilities({ ...connection, config: { ...connection.config, modelCatalogModels: [model] } }, model)).toEqual({ transparent: false, mask: null });
+    expect(modelImageCapabilities({ ...connection, config: { ...connection.config, modelCatalogModels: [model] } }, model)).toMatchObject({ transparent: false, mask: null });
     expect(original).toEqual(snapshot);
   });
   it("binds all nine current Key models after live scan while retaining the original price evidence", () => {

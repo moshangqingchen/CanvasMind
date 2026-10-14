@@ -19,6 +19,7 @@ import { taskConnectionLabel, taskOutcomeLabel } from "../lib/task-evidence";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
 import { generationDetailsFromRun, resultElapsed, resultFileSize, resultPrompt, resultReferenceInputs } from "../lib/result-provenance";
 import { useDialogFocus } from "./use-dialog-focus";
+import { imageOutputDimensionNotice, imageOutputTransparencyLabel } from "../lib/image-output-notice";
 
 /** Mounted only for an active result. Keep actions clear of the fixed canvas controls. */
 export function ResultToolbar({
@@ -190,6 +191,8 @@ export function ResultInformation({
   const operationLabel = ({ "image.generate": "文生图", "image.edit": "参考图生成 / 编辑", "video.generate": "文生视频", "video.image-to-video": "图生视频" } as Record<string, string>)[details.operation ?? ""] ?? details.operation ?? "未记录";
   const unit = data.assetKind === "video" ? "个" : "张";
   const requestedCount = Number(parameters?.n);
+  const dimensionNotice = imageOutputDimensionNotice(asset);
+  const transparencyLabel = imageOutputTransparencyLabel(asset);
   const copyDetail = (text: string, label: string) => {
     void navigator.clipboard.writeText(text)
       .then(() => setCopiedDetail(`已复制${label}`))
@@ -329,6 +332,8 @@ export function ResultInformation({
                     <dd>{details.outputCount !== undefined ? `${details.outputCount} ${unit}${details.outputCount > 0 && typeof data.generatedOutputIndex === "number" && Number.isInteger(data.generatedOutputIndex) && data.generatedOutputIndex >= 0 && data.generatedOutputIndex < details.outputCount ? `，当前为第 ${data.generatedOutputIndex + 1} ${unit}` : ""}` : "未记录"}</dd>
                     <dt>实际尺寸</dt>
                     <dd>{dimensions}</dd>
+                    {dimensionNotice ? <><dt>尺寸核对</dt><dd>{dimensionNotice}</dd></> : null}
+                    {transparencyLabel ? <><dt>原图透明</dt><dd>{transparencyLabel}</dd></> : null}
                     <dt>开始时间</dt>
                     <dd>
                       {data.generatedCreatedAt

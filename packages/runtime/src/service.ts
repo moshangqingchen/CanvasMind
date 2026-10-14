@@ -3773,7 +3773,7 @@ export class RunService {
             Array.isArray(existing.metadata.imageOutputContractMismatches) && existing.metadata.imageOutputContractMismatches.length)) {
           const stored = await this.storage.get(existing.storageKey);
           if (!stored) throw new Error("已归档图片原文件无法读取");
-          const inspected = await inspectImageOutput(stored.bytes);
+          const inspected = await inspectImageOutput(stored.bytes, outputParameters);
           const key = `assets/${id}/original.${inspected.extension}`;
           if (key !== existing.storageKey || stored.contentType !== inspected.mimeType)
             await this.storage.put(key, stored.bytes, inspected.mimeType);
@@ -3906,7 +3906,7 @@ export class RunService {
     let imageMismatches: string[] = [];
     if (artifactKind === "image") {
       if (!bytes) throw new Error("图片原文件未取得，无法验证真实编码与像素");
-      inspectedImage = await inspectImageOutput(bytes);
+      inspectedImage = await inspectImageOutput(bytes, outputParameters);
       if (mime.split(";", 1)[0]?.trim().toLowerCase() !== inspectedImage.mimeType) reportedOutputMimeType = mime;
       mime = inspectedImage.mimeType;
       storageKey = `assets/${id}/original.${inspectedImage.extension}`;

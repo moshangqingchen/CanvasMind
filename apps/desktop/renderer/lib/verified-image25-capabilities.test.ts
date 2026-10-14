@@ -117,7 +117,7 @@ describe("verified supplier 2.5 capabilities", () => {
       ).toBe(model);
     },
   );
-  it("repairs cached Mikoto Flare 1K ratios and restores user quality choices while retaining the 1K size limit", () => {
+  it("repairs cached Mikoto Flare presets without treating the group name as a pixel limit", () => {
     const connection = {
       provider: "rest",
       config: mikotoConnectionConfig(MIKOTO_IMAGE_1K_GROUP),
@@ -129,10 +129,12 @@ describe("verified supplier 2.5 capabilities", () => {
     );
     const descriptor = repaired.models[0]!;
     const size = descriptor.parameters?.find(p => p.key === "size");
-    expect(size?.options).toHaveLength(12);
-    expect(size?.options?.filter(o => o.value !== "auto").every(o => o.label.startsWith("1K"))).toBe(true);
+    expect(size?.options).toHaveLength(34);
+    expect(descriptor.metadata?.imageUserSizePresetTiers).toEqual(["1K", "2K", "4K"]);
+    expect(descriptor.metadata?.imageObservedOutputDimensions).toMatchObject({ width: 1672, height: 941,
+      requestedWidth: 3840, requestedHeight: 2160 });
     expect(size?.options?.map(o => o.value)).toEqual(expect.arrayContaining([
-      "auto", "1360x768", "768x1360", "1552x672", "672x1552",
+      "auto", "1360x768", "768x1360", "1552x672", "672x1552", "3840x2160",
     ]));
     expect(descriptor.parameters?.find(p => p.key === "quality")).toMatchObject({
       default: "max",
@@ -144,7 +146,8 @@ describe("verified supplier 2.5 capabilities", () => {
     const sunburst = applyVerifiedImage25Capabilities(connection, {
       ...descriptor, id: "gpt-image-2.5-sunburst", metadata: {},
     });
-    expect(sunburst.parameters?.find(p => p.key === "size")?.options?.map(option => option.value)).toEqual(["auto"]);
+    expect(sunburst.parameters?.find(p => p.key === "size")?.options?.map(option => option.value)).toContain("3840x2160");
+    expect(sunburst.metadata?.imageSizeSourceKind).toBe("user-request");
     expect(sunburst.parameters?.find(p => p.key === "size")?.allowCustomValue).toBe(true);
     expect(sunburst.metadata?.imageAspectRatiosVerifiedAt).toBeUndefined();
     const denied = { ...descriptor, metadata: { canvasRunnable: false, canvasUnavailableReason: "403 权限拒绝" } };

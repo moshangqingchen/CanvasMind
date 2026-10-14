@@ -4,7 +4,7 @@ import { resolve, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRepository, type ProviderConnectionRecord, type SupplierRecord } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
-import { applyUserImageSizePresets, userImageSizeOptions } from "@super-canvas/providers/image-size-presets";
+import { userImageSizeOptions } from "@super-canvas/providers/image-size-presets";
 
 const mocks = vi.hoisted(() => ({ repository: undefined as unknown as MemoryRepository, upstream: vi.fn() }));
 vi.mock("./server", () => ({ get repository() { return mocks.repository; },
@@ -46,17 +46,18 @@ function delta(before: ProviderConnectionRecord, after: ProviderConnectionRecord
   }])) };
 }
 function assertOpen(rows: ModelDescriptor[]) {
-  for (const id of ids.slice(1)) {
+  for (const id of ids) {
     const model = rows.find(m => m.id === id)!;
     const size = model.parameters?.find(p => p.key === "size");
     expect(size).toMatchObject({ control: "dimensions", step: 1, allowCustomValue: true });
     expect(size?.min).toBeUndefined(); expect(size?.max).toBeUndefined();
-    expect(size?.options?.map(option => option.value)).toEqual(userImageSizeOptions(["1K"]).map(option => option.value));
-    expect(model.metadata).toMatchObject({ imageUserSizePresetSource: "user-request", imageUserSizePresetTiers: ["1K"] });
-    expect(model.parameters?.find(p => p.key === "size_tier")?.options?.map(o => o.value)).toEqual(["1K"]);
-    expect(model.parameters?.find(p => p.key === "aspect_ratio")?.control).toBe("text");
-    expect(model.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
-    expect(model.parameters?.find(p => p.key === "quality")?.default).toBe("max");
+    expect(size?.options?.map(option => option.value)).toEqual(userImageSizeOptions().map(option => option.value));
+    expect(model.metadata).toMatchObject({ imageUserSizePresetSource: "user-request", imageUserSizePresetTiers: ["1K", "2K", "4K"],
+      imageObservedOutputDimensions: { width: 1672, height: 941, requestedWidth: 3840, requestedHeight: 2160 } });
+    expect(model.parameters?.find(p => p.key === "size_tier")?.options?.map(o => o.value)).toEqual(["1K", "2K", "4K"]);
+    expect(model.parameters?.find(p => p.key === "quality")?.options?.map(o => o.value)).toEqual(id === "gpt-image-2"
+      ? ["auto", "low", "medium", "high"] : ["auto", "low", "medium", "high", "xhigh", "max"]);
+    expect(model.parameters?.find(p => p.key === "quality")?.default).toBe(id === "gpt-image-2" ? "high" : "max");
     expect(model.pricing).toMatchObject({ currency: "USD", unitAmount: .02 });
     expect(model.metadata?.supplierPriceGroupId).toBe("5");
   }
@@ -79,7 +80,6 @@ describe("Mikoto group5 actual raw whole saved REST contract", () => {
     const save = vi.spyOn(mocks.repository, "saveConnection"); const response = await read("?cached=1");
     expect(response.status).toBe(200); const api: ModelDescriptor[] = await response.json();
     expect(api.map(m => m.id)).toEqual(ids); assertOpen(api);
-    expect(api[0]?.parameters).toEqual(applyUserImageSizePresets(rows(connection, "modelCatalogModels")[0]!).parameters);
     expect(save).not.toHaveBeenCalled(); expect(await mocks.repository.getConnection(connection.id)).toEqual(connection);
     expect(await mocks.repository.getSupplier(supplier.id)).toEqual(supplier);
   });
@@ -103,8 +103,11 @@ describe("Mikoto group5 actual raw whole saved REST contract", () => {
         // second GET brings only that template to the same user preset projection.
         const expectedGpt2 = key === "modelProtocolTemplate"
           ? rows(connection, "modelCatalogModels").find(m => m.id === "gpt-image-2")! : beforeGpt2;
-        expect(afterGpt2.parameters).toEqual(key === "modelProtocolTemplate" && stage === stages[1]
-          ? expectedGpt2.parameters : applyUserImageSizePresets(expectedGpt2).parameters);
+        if (key === "modelProtocolTemplate" && stage === stages[1]) expect(afterGpt2.parameters).toEqual(expectedGpt2.parameters);
+        else {
+          expect(afterGpt2.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(userImageSizeOptions().map(o => o.value));
+          expect(afterGpt2.parameters?.find(p => p.key === "quality")?.default).toBe("high");
+        }
         expect(afterGpt2.pricing?.unitAmount).toBe(key === "modelProtocolTemplate"
           ? rows(connection, "modelCatalogModels").find(m => m.id === "gpt-image-2")!.pricing?.unitAmount : beforeGpt2.pricing?.unitAmount);
       }

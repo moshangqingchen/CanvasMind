@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { SupplierRecord } from "@super-canvas/db";
 import type { ModelDescriptor } from "@super-canvas/providers";
-import { applyUserImageSizePresets } from "@super-canvas/providers/image-size-presets";
+import { applyUserImageSizePresets, userImageSizeOptions } from "@super-canvas/providers/image-size-presets";
 import { bindScannedModelProtocols } from "./scanned-model-protocols";
 import { effectiveImageCapabilities } from "./supplier-capabilities";
 import { nativeImageResolutionControl } from "./native-image-resolution";
@@ -29,7 +29,7 @@ const enrich = (row: typeof fixture.rows[number], model = row.model) => effectiv
   supplier, connection: row.connection, model, fingerprint: "r4-g5-safe-fixture",
 }).model;
 
-describe("Mikoto installed 1K exact source controls", () => {
+describe("Mikoto group5 exact source controls and accepted highest input", () => {
   it.each(fixture.rows)("repairs cached $model.id open dimensions without unpublished bounds", row => {
     const before = structuredClone(row.model);
     const model = enrich(row);
@@ -42,17 +42,19 @@ describe("Mikoto installed 1K exact source controls", () => {
     expect(model.metadata?.supplierPriceGroupId).toBe("5");
     expect(row.model).toEqual(before);
   });
-  it.each(fixture.rows)("gives $model.id a real 1K tier button without a guessed pixel mapping", row => {
+  it.each(fixture.rows)("gives $model.id all user preset tiers without claiming matching output pixels", row => {
     const model = enrich(row);
     const native = nativeImageResolutionControl(model.parameters ?? [], model);
     expect(native?.resolution.key).toBe("size_tier");
-    expect(native?.resolution.options?.map(o => o.value)).toEqual(["1K"]);
+    expect(native?.resolution.options?.map(o => o.value)).toEqual(["1K", "2K", "4K"]);
+    expect(model.metadata?.imageObservedOutputDimensions).toMatchObject({ width: 1672, height: 941,
+      requestedWidth: 3840, requestedHeight: 2160 });
     const selected = Object.freeze({ size_tier: "1K", size: "4097x2051", quality: "high", aspect_ratio: "auto" });
     const html = renderToStaticMarkup(React.createElement(NodeParameterFields, { nodeId: "mikoto-g5", nodeType: "image-generation",
       provider: "rest", model, parameters: selected, onChange: vi.fn() }));
     expect(html).toMatch(/<button(?=[^>]*aria-pressed="true")[^>]*>1K<\/button>/u);
-    expect(html).not.toContain(">2K</button>");
-    expect(html).not.toContain(">4K</button>");
+    expect(html).toContain(">2K</button>");
+    expect(html).toContain(">4K</button>");
     expect(html).toMatch(/<input(?=[^>]*aria-label="图片宽度")(?=[^>]*value="4097")[^>]*>/u);
     expect(html).toMatch(/<input(?=[^>]*aria-label="图片高度")(?=[^>]*value="2051")[^>]*>/u);
     expect(html).not.toMatch(/max="3840"|min="256"|step="16"|16 倍数对齐/u);
@@ -61,32 +63,32 @@ describe("Mikoto installed 1K exact source controls", () => {
       size: "4097x2051", size_tier: "1K", quality: "high", aspect_ratio: "2:1",
     });
   });
-  it("retains Flare's eleven historical request samples as open options, not a complete supplier enum", () => {
+  it("retains Flare's historical request values within explicitly marked user presets", () => {
     const row = fixture.rows.find(row => row.model.id === "gpt-image-2.5-flare")!;
     const model = enrich(row);
-    expect(model.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(["auto", ...samples]);
-    expect(model.metadata?.imageSizeSourceKind).toBe("historical-request-samples");
-    expect(model.metadata?.imageSizeOptionsCompleteEnum).toBe(false);
-    expect(model.metadata?.imageSizeSource).toBe("docs/mikoto-1k-ratios-2026-09-13.md");
+    expect(model.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(userImageSizeOptions().map(o => o.value));
+    expect(model.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(expect.arrayContaining(samples));
+    expect(model.metadata?.imageSizeSourceKind).toBe("user-request");
+    expect(model.metadata?.imageResolutionTierSource).toBe("user-presets+same-group-accepted-4K-input");
+    expect(model.metadata?.imageSizeOptionsCompleteEnum).toBeUndefined();
     expect(model.metadata?.imageAspectRatiosVerifiedAt).toBe("2026-09-13");
     expect(model.parameters?.find(p => p.key === "size")?.allowCustomValue).toBe(true);
   });
-  it("does not borrow Flare or the generic table for Sunburst", () => {
+  it("labels Sunburst dimensions as user presets and does not borrow Flare's ratio verification", () => {
     const row = fixture.rows.find(row => row.model.id === "gpt-image-2.5-sunburst")!;
     const model = enrich(row);
-    expect(model.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(["auto"]);
-    expect(model.metadata?.imageSizePresetSource).toBeUndefined();
+    expect(model.parameters?.find(p => p.key === "size")?.options?.map(o => o.value)).toEqual(userImageSizeOptions().map(o => o.value));
+    expect(model.metadata?.imageResolutionTierSource).toBe("user-presets+same-group-accepted-4K-input");
     expect(model.metadata?.imageAspectRatiosVerifiedAt).toBeUndefined();
-    expect(model.metadata?.imageSizeSourceKind).toBe("supplier-open-field");
-    expect(model.metadata?.imageSizeOptionsCompleteEnum).toBe(false);
-    expect(model.metadata?.imageSizeSource).toBe("https://api.mikoto.vip/image-api-guide.html");
+    expect(model.metadata?.imageSizeSourceKind).toBe("user-request");
+    expect(model.metadata?.imageSizeOptionsCompleteEnum).toBeUndefined();
   });
   it("selects a historical approximate Flare size without injecting or deleting a ratio preference", () => {
     const row = fixture.rows.find(row => row.model.id === "gpt-image-2.5-flare")!;
     const model = enrich(row);
     const option = model.parameters?.find(p => p.key === "size")?.options?.find(o => o.value === "1184x880");
-    expect(option?.label).toContain("1184:880");
-    expect(option?.label).toContain("历史请求");
+    expect(option?.label).toBe("1K · 4:3 · 1184 × 880");
+    expect(model.metadata?.imageSizeSourceKind).toBe("user-request");
     const context = { hasSizeControl: true, hasAspectRatioControl: true, model };
     const automatic = { size: "auto", size_tier: "1K", aspect_ratio: "auto", quality: "high" };
     expect(setParameterValueWithSizeExclusivity(automatic, "size", "1184x880", context)).toEqual({
@@ -97,10 +99,10 @@ describe("Mikoto installed 1K exact source controls", () => {
     expect(selected).toEqual({ ...explicit, size: "1184x880" });
     expect(modelEstimatedCost(model, selected)).toBeUndefined();
   });
-  it.each(fixture.rows)("keeps $model.id high/auto, exact .02 USD price and explicit saved values", row => {
+  it.each(fixture.rows)("keeps $model.id highest max preset, exact .02 USD price and explicit saved values", row => {
     const model = enrich(row);
-    expect(model.parameters?.find(p => p.key === "quality")).toMatchObject({ default: "high",
-      options: [{ label: "自动", value: "auto" }, { label: "高", value: "high" }] });
+    expect(model.parameters?.find(p => p.key === "quality")).toMatchObject({ default: "max",
+      options: ["auto", "low", "medium", "high", "xhigh", "max"].map(value => ({ value })) });
     const choice = Object.freeze({ size: "2051x2049", size_tier: "1K", quality: "auto", aspect_ratio: "1:1" });
     const reloaded = JSON.parse(JSON.stringify(normalizedParametersForModel("image-generation", "rest", model, choice)));
     expect(reloaded).toMatchObject(choice);

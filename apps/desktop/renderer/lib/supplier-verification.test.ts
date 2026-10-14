@@ -94,8 +94,8 @@ describe("supplier capability decisions", () => {
     expect(result.qualityOptions).toEqual(["low", "medium", "high"]);
     const size = result.model.parameters?.find(parameter => parameter.key === "size");
     expect(size?.options?.filter(option => option.label.startsWith("1K"))).toHaveLength(1);
-    expect(size?.options?.filter(option => option.label.startsWith("2K"))).toHaveLength(group === "1K" ? 0 : 9);
-    expect(size?.options?.filter(option => option.label.startsWith("4K"))).toHaveLength(group === "1K" ? 0 : 9);
+    expect(size?.options?.filter(option => option.label.startsWith("2K"))).toHaveLength(9);
+    expect(size?.options?.filter(option => option.label.startsWith("4K"))).toHaveLength(9);
     expect(size?.options?.map(option => option.value)).not.toContain("1360x768");
     expect(size?.options?.some(option => option.value === "auto")).toBe(true);
   });

@@ -174,14 +174,16 @@ describe("current image contracts in saved canvas catalogs", () => {
     expect(withCurrentImageRequestParameters(connection, [denied])[0]?.metadata).toMatchObject(denied.metadata);
   });
 
-  it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("restores the user's max quality for upscaling %s without claiming a paid verification", id => {
+  it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("retains max quality for upscaling %s with exact reference-edit request evidence", id => {
     const image25 = { ...cached, id };
-    const configured = { ...connection, config: { ...connection.config, defaultModel: image25.id, modelCatalogModels: [image25] } };
+    const configured: ProviderConnectionView = { ...connection, config: { ...connection.config, defaultModel: image25.id, modelCatalogModels: [image25] } };
     const model = withCurrentImageRequestParameters(configured, [image25])[0]!;
     const quality = model.parameters!.find(parameter => parameter.key === "quality")!;
     expect(quality.default).toBe("max");
     expect(quality.options!.map(option => option.value)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
-    expect(model.metadata).toMatchObject({ qualitySupport: "declared", pdogQualityDocumented: true, pdogQualityVerified: false });
+    expect(model.metadata).toMatchObject({ qualitySupport: "declared", pdogQualityDocumented: true, pdogQualityVerified: true,
+      pdogQualitySource: "official-gpt-images-common-field+same-identity-accepted-reference-request",
+      pdogMeasuredQuality: { fullModelId: id, group: configured.config.modelGroup, request: { quality: "max" } } });
     expect(model.metadata?.imageUserQualityPresetSource).toBe("user-request");
     expect(model.metadata?.image25VerifiedAt).toBeUndefined();
     const node = source();

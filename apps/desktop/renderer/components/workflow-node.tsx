@@ -818,6 +818,7 @@ function GenerationNodeBody({
             parameters={parameters}
             hasReferenceVideo={hasReferenceVideo}
             transparentSupported={data.imageEditingCapabilities?.transparent === true}
+            transparency={data.imageEditingCapabilities?.transparency}
             showAdvanced={false}
             onChange={(nextParameters) =>
               data.onParametersChange?.(nextParameters)

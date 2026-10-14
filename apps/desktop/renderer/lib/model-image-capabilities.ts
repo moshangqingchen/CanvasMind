@@ -1,4 +1,4 @@
-import type { ModelDescriptor } from "@super-canvas/providers";
+import type { ModelDescriptor, ProviderOperation } from "@super-canvas/providers";
 import { getImageEditingCapabilities, type ImageEditingCapabilities, type ImageEditingConnection } from "@super-canvas/providers/image-editing-capabilities";
 import { savedModelAvailabilityError } from "./model-availability";
 
@@ -7,6 +7,7 @@ export function modelImageCapabilities(
   connection: ImageEditingConnection | null | undefined,
   model: ModelDescriptor,
   parameters: Readonly<Record<string, unknown>> = {},
+  operation: ProviderOperation = "image.generate",
 ): ImageEditingCapabilities {
   const none: ImageEditingCapabilities = { transparent: false, mask: null };
   if (!connection || !model.id ||
@@ -29,9 +30,10 @@ export function modelImageCapabilities(
   const defaults = Object.fromEntries((model.parameters ?? [])
     .filter(parameter => parameter.default !== undefined)
     .map(parameter => [parameter.key, parameter.default]));
-  const capabilities = getImageEditingCapabilities(connection, model.id, { ...defaults, ...parameters });
+  const capabilities = getImageEditingCapabilities(connection, model.id, { ...defaults, ...parameters }, operation === "image.edit" ? "image.edit" : "image.generate");
   return {
     transparent: capabilities.transparent,
+    ...(capabilities.transparency ? { transparency: capabilities.transparency } : {}),
     // General image.edit can mean reference-based generation. Only an exact
     // mask contract qualifies as brush-based local editing.
     mask: model.operations.includes("image.edit") && model.metadata?.supportsImageEdit !== false &&

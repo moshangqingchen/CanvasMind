@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeRunStatus, PromptPart } from "@super-canvas/core";
 import type { ModelDescriptor, ProviderErrorPresentation } from "@super-canvas/providers";
+import type { ImageEditingCapabilities } from "@super-canvas/providers/image-editing-capabilities";
 import type { NodeAlignmentAction } from "../lib/graph-ui";
 
 export interface AssetView {
@@ -134,8 +135,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
   onSelect?: (additive?: boolean) => void;
   onOpenPreview?: (assetId: string) => void;
   onEditMask?: (assetId: string, editNodeId?: string) => void;
-  imageEditingCapabilities?: { transparent: boolean; mask: "multipart" | "url" | null };
-  modelImageCapabilities?: Record<string, { transparent: boolean; mask: "multipart" | "url" | null }>;
+  imageEditingCapabilities?: ImageEditingCapabilities;
+  modelImageCapabilities?: Record<string, ImageEditingCapabilities>;
   onPrepareReversePrompt?: () => void;
   onReusePrompt?: () => Promise<void>;
   onDelete?: () => void;

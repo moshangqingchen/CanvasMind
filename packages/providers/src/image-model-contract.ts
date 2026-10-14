@@ -1,5 +1,6 @@
 import type { ModelDescriptor } from "./contracts.js";
 import type { ImageEditingConnection } from "./image-editing-capabilities.js";
+import { applyVerifiedImageEditingCapabilities } from "./image-editing-capabilities.js";
 import { applyCOpenImageCapabilities } from "./c-open-image-contract.js";
 import { applyBananaImageCapabilities } from "./banana-image-contract.js";
 import { applyChuangxiangCurrentImageCapabilities } from "./chuangxiang-image-contract.js";
@@ -30,6 +31,7 @@ export function resolveImageModelContract(
   current = secureSeedreamImageContract(connection, current);
   current = applyJijiuImageCapabilities(connection, current);
   current = applySupplierImageConstraints(connection, current);
+  current = applyVerifiedImageEditingCapabilities(connection, current);
   return applyUserImageSizePresets(current);
 }
 

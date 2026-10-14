@@ -1,4 +1,7 @@
 import type { ImageEditingConnection } from "./image-editing-capabilities.js";
+import { RETEST_FAILED_TRANSPARENT_IMAGES, RETEST_VERIFIED_TRANSPARENT_IMAGES } from "./transparent-image-retest-evidence.js";
+
+export type TransparentImageOperation = "image.generate" | "image.edit";
 
 export interface TransparentImageEvidence {
   readonly provider: string;
@@ -7,6 +10,10 @@ export interface TransparentImageEvidence {
   /** Official group identity, when verified independently of its editable name. */
   readonly supplierGroupId?: string;
   readonly model: string;
+  /** Omitted in the legacy snapshots means generation, never reference editing. */
+  readonly operation?: TransparentImageOperation;
+  readonly caseId?: string;
+  readonly source?: string;
   /** Only route selectors belong here; tested size/quality are recorded below. */
   readonly selectors?: Readonly<Partial<Record<"series" | "tier", string>>>;
   readonly transport: {
@@ -22,17 +29,19 @@ export interface TransparentImageEvidence {
     readonly height: number;
     readonly format: "png";
     readonly fullyTransparentPixelRatio: number;
+    readonly sha256?: string;
+    readonly requestedDimensionsMatched?: boolean;
     readonly visualNotes?: string;
   };
 }
 
-type ImageEvidenceIdentity = Pick<TransparentImageEvidence, "provider" | "hostname" | "group" | "supplierGroupId" | "model" | "selectors">;
+type ImageEvidenceIdentity = Pick<TransparentImageEvidence, "provider" | "hostname" | "group" | "supplierGroupId" | "model" | "selectors" | "operation">;
 
 /** A measured failure of this exact route, not a permanent supplier capability claim.
  * Connection, quota and timeout errors are deliberately not eligible outcomes.
  */
 export type FailedTransparentImageEvidence = ImageEvidenceIdentity &
-  Pick<TransparentImageEvidence, "transport" | "checkedAt" | "request"> & (
+  Pick<TransparentImageEvidence, "transport" | "checkedAt" | "request" | "caseId" | "source"> & (
     { readonly reason: "opaque-png"; readonly output: {
       readonly width: number; readonly height: number; readonly format: "png";
       readonly transparentPixels: 0; readonly sha256: string;
@@ -41,6 +50,7 @@ export type FailedTransparentImageEvidence = ImageEvidenceIdentity &
   );
 
 export const FAILED_TRANSPARENT_IMAGE_TESTS: readonly FailedTransparentImageEvidence[] = [
+  ...RETEST_FAILED_TRANSPARENT_IMAGES,
   // Original case 042: a PNG with no transparent pixels, despite the transparent request.
   {
     provider: "openai", hostname: "api.eaheng.com", group: "B4-GPT生图原生渠道V3（高质量）", model: "gpt-image-2.5",
@@ -67,6 +77,7 @@ export const FAILED_TRANSPARENT_IMAGE_TESTS: readonly FailedTransparentImageEvid
  * Keep exact routes separate; success never proves a related model or group.
  */
 export const VERIFIED_TRANSPARENT_IMAGES: readonly TransparentImageEvidence[] = [
+  ...RETEST_VERIFIED_TRANSPARENT_IMAGES,
   // Incremental cases 025/026: visually verified alpha PNGs; the 2K request also returned 1254x1254.
   {
     provider: "rest", hostname: "api.3365api.cn", group: "image-2稳定生图", model: "gpt-image-2",
@@ -332,9 +343,14 @@ export const VERIFIED_TRANSPARENT_IMAGES: readonly TransparentImageEvidence[] = 
 
 /** Browser-safe identity matching shared by the mode picker and request adapter. */
 function matchesTransparentImageEvidence(connection: ImageEditingConnection, model: string,
-  parameters: Readonly<Record<string, unknown>>, evidence: ImageEvidenceIdentity): boolean {
+  parameters: Readonly<Record<string, unknown>>, evidence: ImageEvidenceIdentity,
+  operation: TransparentImageOperation = "image.generate"): boolean {
   const config = connection.config;
-  if (config.supplierArchived === true || ["agent", "disabled"].includes(String(config.usage))) return false;
+  const binding = (config.autoModelInterfaces as Record<string, { source?: string; model?: { metadata?: Record<string, unknown> } }> | undefined)?.[model];
+  if (config.supplierArchived === true || config.manualProtocol === true || config.customGroup === true || config.autoProtocol === false ||
+      ["manual", "paid-test"].includes(String(binding?.source)) ||
+      ["manual", "paid-test"].includes(String(binding?.model?.metadata?.source)) || binding?.model?.metadata?.protocolEvidence === "paid-test" ||
+      ["agent", "disabled"].includes(String(config.usage))) return false;
   let url: URL;
   try { url = new URL(String(config.baseUrl ?? "")); } catch { return false; }
   if (url.protocol !== "https:" || url.port || url.username || url.password || url.search || url.hash ||
@@ -349,25 +365,44 @@ function matchesTransparentImageEvidence(connection: ImageEditingConnection, mod
     ? String(config.accountKeyGroupId) === evidence.supplierGroupId : evidence.group === group;
   return evidence.provider === connection.provider &&
     evidence.hostname === url.hostname && matchesGroup && evidence.model === model &&
+    (evidence.operation ?? "image.generate") === operation &&
     Object.entries(evidence.selectors ?? {}).every(([key, value]) => parameters[key] === value);
 }
 
 export function verifiedTransparentImageEvidence(connection: ImageEditingConnection, model: string,
-  parameters: Readonly<Record<string, unknown>> = {}): TransparentImageEvidence | undefined {
-  return VERIFIED_TRANSPARENT_IMAGES.find(evidence => matchesTransparentImageEvidence(connection, model, parameters, evidence));
+  parameters: Readonly<Record<string, unknown>> = {}, operation: TransparentImageOperation = "image.generate"): TransparentImageEvidence | undefined {
+  return VERIFIED_TRANSPARENT_IMAGES.find(evidence => matchesTransparentImageEvidence(connection, model, parameters, evidence, operation));
 }
 
 export function failedTransparentImageEvidence(connection: ImageEditingConnection, model: string,
-  parameters: Readonly<Record<string, unknown>> = {}): FailedTransparentImageEvidence | undefined {
-  return FAILED_TRANSPARENT_IMAGE_TESTS.find(evidence => matchesTransparentImageEvidence(connection, model, parameters, evidence));
+  parameters: Readonly<Record<string, unknown>> = {}, operation: TransparentImageOperation = "image.generate"): FailedTransparentImageEvidence | undefined {
+  return FAILED_TRANSPARENT_IMAGE_TESTS.find(evidence => matchesTransparentImageEvidence(connection, model, parameters, evidence, operation) &&
+    // An opaque original is a result of this request, not a permanent denial of every quality/size.
+    (evidence.reason !== "opaque-png" ||
+      ["size", "quality"].every(key => parameters[key] === undefined || parameters[key] === evidence.request[key])));
+}
+
+/** Identity-only lookup for explaining a failed sample without extending the denial to other parameters. */
+export function latestFailedTransparentImageEvidence(connection: ImageEditingConnection, model: string,
+  parameters: Readonly<Record<string, unknown>> = {}, operation: TransparentImageOperation = "image.generate"): FailedTransparentImageEvidence | undefined {
+  return FAILED_TRANSPARENT_IMAGE_TESTS.find(evidence => matchesTransparentImageEvidence(connection, model, parameters, evidence, operation));
 }
 
 /** Only these two measured Images JSON paths may extend an existing contract. */
 export function verifiedTransparentImageJsonEndpoint(connection: ImageEditingConnection, model: string,
   parameters: Readonly<Record<string, unknown>>, evidence: TransparentImageEvidence | undefined,
   kind: "openai-images" | "saved-rest"): string | undefined {
-  if (!evidence || !matchesTransparentImageEvidence(connection, model, parameters, evidence) ||
+  if (!evidence || !matchesTransparentImageEvidence(connection, model, parameters, evidence, evidence.operation ?? "image.generate") ||
       evidence.transport.kind !== kind || evidence.transport.method !== "POST" || evidence.transport.bodyMode !== "json" ||
       !["/v1/images/generations", "/images/generations"].includes(evidence.transport.path)) return undefined;
+  return `${new URL(String(connection.config.baseUrl)).origin}${evidence.transport.path}`;
+}
+
+/** Reference-edit proof cannot be reused as a generation JSON route. */
+export function verifiedTransparentImageMultipartEditEndpoint(connection: ImageEditingConnection, model: string,
+  parameters: Readonly<Record<string, unknown>>, evidence: TransparentImageEvidence | undefined): string | undefined {
+  if (!evidence || !matchesTransparentImageEvidence(connection, model, parameters, evidence, "image.edit") ||
+      evidence.transport.kind !== "openai-images" || evidence.transport.method !== "POST" || evidence.transport.bodyMode !== "multipart" ||
+      !["/v1/images/edits", "/images/edits"].includes(evidence.transport.path)) return;
   return `${new URL(String(connection.config.baseUrl)).origin}${evidence.transport.path}`;
 }

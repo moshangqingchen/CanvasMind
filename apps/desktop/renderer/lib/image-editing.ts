@@ -9,20 +9,23 @@ export function preserveImageMaskParameters(
   return result;
 }
 
-/** Transparent output is explicit and always lossless; unsupported models stay normal. */
+/** Keep saved modes during ordinary edits; only an explicit mode change clears them. */
 export function imageModeParameters(
   parameters: Readonly<Record<string, unknown>>,
   transparentSupported: boolean,
-  mode: "normal" | "transparent" = parameters.background === "transparent" ? "transparent" : "normal",
+  mode?: "normal" | "transparent",
 ): Record<string, unknown> {
   const result = { ...parameters };
   if (transparentSupported) {
-    result.background = mode === "transparent" ? "transparent" : "opaque";
-    if (mode === "transparent") {
+    const selectedMode = mode ?? (parameters.background === "transparent" ? "transparent" : "normal");
+    // The supplier's optional auto background remains the user's own choice.
+    if (mode !== undefined || result.background !== "auto")
+      result.background = selectedMode === "transparent" ? "transparent" : "opaque";
+    if (selectedMode === "transparent") {
       result.output_format = "png";
       delete result.output_compression;
     }
-  } else {
+  } else if (mode === "normal") {
     delete result.background;
   }
   return result;

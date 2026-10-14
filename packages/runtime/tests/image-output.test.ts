@@ -23,6 +23,7 @@ describe("native image output verification", () => {
     const bytes = await sharp({ create: { width: 4, height: 3, channels: 4, background: { r: 20, g: 40, b: 60, alpha: 0 } } }).toFormat(format).toBuffer();
     const transparent = await inspectImageOutput(bytes);
     expect(transparent.metadata).toMatchObject({ width: 4, height: 3, imageHasAlpha: true, imageHasTransparentPixels: true });
+    expect(transparent.metadata.imageHasVisiblePixels).toBe(false);
     expect(imageOutputContractMismatches(transparent, { output_format: format, background: "transparent" })).toEqual([]);
     expect(imageOutputContractMismatches(opaqueImage, { background: "transparent" })).toEqual(["请求透明背景，原文件没有实际透明像素"]);
   });
@@ -45,5 +46,26 @@ describe("native image output verification", () => {
     ]);
     expect(imageOutputContractMismatches(jpeg, { output_format: "jpg", background: "opaque" })).toEqual([]);
     expect(imageOutputContractMismatches(jpeg, { output_format: "auto" })).toEqual([]);
+  });
+
+  it("records requested versus real dimensions without rejecting a supplier size hint or changing the original", async () => {
+    const bytes = await opaque().png().toBuffer();
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    const output = await inspectImageOutput(bytes, { size: "3840x2160" });
+    expect(output.metadata).toMatchObject({ imageRequestedWidth: 3840, imageRequestedHeight: 2160,
+      width: 3, height: 2, imageDimensionsMatchRequest: false,
+      imageOutputDimensionNotice: "请求 3840 × 2160，原图实际 3 × 2", imageHasVisiblePixels: true });
+    expect(imageOutputContractMismatches(output, { size: "3840x2160" })).toEqual([]);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(hash);
+    expect((await inspectImageOutput(bytes, { size: "3x2" })).metadata).toMatchObject({ imageDimensionsMatchRequest: true });
+    expect((await inspectImageOutput(bytes, { size: "3x2" })).metadata.imageOutputDimensionNotice).toBeUndefined();
+  });
+
+  it("compares explicit dimensions without inventing pixels for tiers, ratios or automatic size", async () => {
+    const bytes = await opaque().png().toBuffer();
+    for (const size of ["auto", "4K", "16:9"])
+      expect((await inspectImageOutput(bytes, { size })).metadata.imageDimensionsMatchRequest).toBeUndefined();
+    expect((await inspectImageOutput(bytes, { width: 3, height: 2 })).metadata.imageDimensionsMatchRequest).toBe(true);
+    expect((await inspectImageOutput(bytes, { width: -3, height: 2 })).metadata.imageDimensionsMatchRequest).toBeUndefined();
   });
 });
