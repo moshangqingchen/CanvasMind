@@ -752,6 +752,8 @@ test.describe("超级画布完整验收", () => {
       const descriptor = applyMonsterImageCapabilities({ provider: "openai", config: { baseUrl: "https://api.eaheng.com", modelGroup } }, {
         id: "gpt-image-2.5-sunburst", name: "E2E 怪兽已实测型号", operations: ["image.generate"],
       });
+      const fourKAllowed = !(descriptor.metadata?.imageUnsupportedResolutions as string[] | undefined)?.includes("4K");
+      expect(fourKAllowed).toBe(!modelGroup.startsWith("B3-"));
       // The fixture has no real key or reachable provider; exercise only local UI/save.
       const created = await request.post("/api/providers", { data: { name: "E2E 怪兽尺寸选项", provider: "rest", apiKey: "e2e-local-only", config: {
         baseUrl: "https://example.invalid", defaultModel: descriptor.id,
@@ -767,12 +769,13 @@ test.describe("超级画布完整验收", () => {
       const node = page.locator('.react-flow__node[data-id="e2e-image"]');
       await node.getByRole("button", { name: /打开 E2E 图片生成 模型与参数/u }).click();
       const panel = page.getByRole("dialog", { name: "E2E 图片生成 模型与参数" });
-      await expect(panel.getByText(/^实测说明：/u)).toBeVisible();
+      const transparencyEvidence = panel.getByLabel("透明模式依据", { exact: true });
+      await expect(transparencyEvidence).toContainText("透明资料未证实");
+      await expect(transparencyEvidence).not.toContainText("3584×2016");
       const tiers = panel.getByRole("group", { name: "自动与输出分辨率快捷档位" });
       await expect(tiers.getByRole("button", { name: "1K", exact: true })).toBeVisible();
-      await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveCount(modelGroup.startsWith("B3-") ? 0 : 1);
-      if (!modelGroup.startsWith("B3-")) {
-        await expect(panel.getByText(/^实测说明：/u)).toContainText("3584×2016");
+      await expect(tiers.getByRole("button", { name: "4K", exact: true })).toHaveCount(fourKAllowed ? 1 : 0);
+      if (fourKAllowed) {
         await tiers.getByRole("button", { name: "4K", exact: true }).click();
         await panel.getByLabel("输出分辨率预设", { exact: true }).selectOption("3840x2160");
         await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(n => n.id === "e2e-image")?.data.parameters).toMatchObject({ size: "3840x2160", size_tier: "4K" });
@@ -783,6 +786,8 @@ test.describe("超级画布完整验收", () => {
       await panel.getByLabel("输出分辨率预设", { exact: true }).selectOption("1536x2720");
       await panel.getByLabel("质量", { exact: true }).selectOption("high");
       await expect.poll(async () => (await savedCanvas(page)).graph.nodes.find(n => n.id === "e2e-image")?.data.parameters).toMatchObject({ size: "1536x2720", size_tier: "2K", quality: "high" });
+      await expect(panel.getByLabel("图片宽度", { exact: true })).toHaveValue("1536");
+      await expect(panel.getByLabel("图片高度", { exact: true })).toHaveValue("2720");
       await page.reload();
       await node.getByRole("button", { name: /打开 E2E 图片生成 模型与参数/u }).click();
       await expect(panel.getByLabel("输出分辨率预设", { exact: true })).toHaveValue("1536x2720");
