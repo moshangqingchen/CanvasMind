@@ -3,7 +3,7 @@
 // Source: https://ai.cangyuansuanli.cn/docs-static/models/{id}.json
 // Public documentation does not grant a Key permission to use a model.
 export interface CangyuanVideoContractData {
- checkedAt?: string; sourceSha256?: string; sourceLastReviewed?: string; forbiddenResolutionValues?: readonly string[]; requiresReferenceImage?: boolean; requiresReferenceMedia?: boolean; facePolicy?: "open"; fixedResolution?: string;
+ checkedAt?: string; sourceSha256?: string; sourceLastReviewed?: string; forbiddenResolutionValues?: readonly string[]; requiresReferenceImage?: boolean; requiresReferenceMedia?: boolean; facePolicy?: "open" | "backend" | "blocked"; warnings?: readonly string[]; fixedResolution?: string;
  fields: readonly string[];
  parameters: readonly { key: string; description: string; valueType?: string; required?: boolean; suggestions?: readonly (string | number)[]; suggestedDefault?: string | number | boolean; values?: readonly (string | number)[]; min?: number; max?: number; default?: string | number | boolean }[];
  references: { images: number | null; videos: number | null; audios: number | null };
@@ -4281,5 +4281,667 @@ export const CANGYUAN_CURRENT_VIDEO_CONTRACTS: Readonly<Record<string, CangyuanV
     "checkedAt": "2026-10-13T00:53:21.574Z",
     "sourceSha256": "7aba6d5c2ba19002aec500e1fa4d2dcce34c59fae9531737ac9ca93549936a5d",
     "sourceLastReviewed": "2026-09-29"
+  },
+  "sd16-seedance-2.0": {
+    "checkedAt": "2026-10-14T03:17:52.833Z",
+    "sourceSha256": "0240523e6c7c2d0226a9e2b289b5210881e75502793d19924afb64ffc08600af",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "backend",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "generate_audio",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios",
+      "first_image_url",
+      "last_image_url"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 4。最大 15。",
+        "valueType": "integer",
+        "min": 4,
+        "max": 15,
+        "suggestedDefault": 5,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：480p / 720p / 1080p / 4k；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "480p",
+          "720p",
+          "1080p",
+          "4k"
+        ],
+        "suggestedDefault": "480p",
+        "default": "480p"
+      },
+      {
+        "key": "generate_audio",
+        "description": "是否生成音频。",
+        "valueType": "boolean"
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 3,
+      "audios": 3
+    },
+    "frames": true,
+    "framePairRequired": true,
+    "allowFrameMediaMix": true
+  },
+  "sd16-seedance-2.0-fast": {
+    "checkedAt": "2026-10-14T03:17:54.869Z",
+    "sourceSha256": "e3f82e36728f3b7b63ef1595c4ebca31593b811203a883193e4c3e977e0800ca",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "backend",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "generate_audio",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios",
+      "first_image_url",
+      "last_image_url"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 4。最大 15。",
+        "valueType": "integer",
+        "min": 4,
+        "max": 15,
+        "suggestedDefault": 5,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：480p / 720p；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "480p",
+          "720p"
+        ],
+        "suggestedDefault": "480p",
+        "default": "480p"
+      },
+      {
+        "key": "generate_audio",
+        "description": "是否生成音频。",
+        "valueType": "boolean"
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 3,
+      "audios": 3
+    },
+    "frames": true,
+    "framePairRequired": true,
+    "allowFrameMediaMix": true,
+    "forbiddenResolutionValues": [
+      "1080p",
+      "1080P",
+      "4k",
+      "4K"
+    ]
+  },
+  "sd16-seedance-2.0-mini": {
+    "checkedAt": "2026-10-14T03:17:56.896Z",
+    "sourceSha256": "c221d8af28a43ad54c4333f8ac5d88aee0f6c4b85b4ca1dadc32613aed90ac87",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "backend",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "generate_audio",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios",
+      "first_image_url",
+      "last_image_url"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 4。最大 15。",
+        "valueType": "integer",
+        "min": 4,
+        "max": 15,
+        "suggestedDefault": 5,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：480p / 720p；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "480p",
+          "720p"
+        ],
+        "suggestedDefault": "480p",
+        "default": "480p"
+      },
+      {
+        "key": "generate_audio",
+        "description": "是否生成音频。",
+        "valueType": "boolean"
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 3,
+      "audios": 3
+    },
+    "frames": true,
+    "framePairRequired": true,
+    "allowFrameMediaMix": true,
+    "forbiddenResolutionValues": [
+      "1080p",
+      "1080P",
+      "4k",
+      "4K"
+    ]
+  },
+  "sd17-seedance-2.0-3": {
+    "checkedAt": "2026-10-14T03:17:58.930Z",
+    "sourceSha256": "16b671b4febdfb6733dd5bd9a6e3e23bd1c6694fd7dc343f0c803c0783f09a60",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "blocked",
+    "fixedResolution": "720P",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 5。最大 15。 公告和广场限定5/10/15秒；schema为5–15范围，按已公布的较窄枚举选择，原有超范围值不改写。",
+        "valueType": "integer",
+        "min": 5,
+        "max": 15,
+        "suggestedDefault": 5,
+        "default": 5,
+        "values": [
+          5,
+          10,
+          15
+        ]
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720P；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestedDefault": "720P",
+        "default": "720P",
+        "values": [
+          "720P"
+        ]
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 0,
+      "audios": 0
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false,
+    "warnings": [
+      "供应商资料冲突：公告/广场为5、10、15秒，schema仅写5–15秒范围；按明确枚举校验。"
+    ]
+  },
+  "sd17-seedance-2.5-3": {
+    "checkedAt": "2026-10-14T03:18:00.971Z",
+    "sourceSha256": "37301944c5ac06e6cf2e8ec97db65090df74e4ca6f020ab2c390282615a64405",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "blocked",
+    "fixedResolution": "720P",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 30。最大 30。",
+        "valueType": "integer",
+        "min": 30,
+        "max": 30,
+        "suggestedDefault": 30,
+        "default": 30,
+        "values": [
+          30
+        ]
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720P；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestedDefault": "720P",
+        "default": "720P",
+        "values": [
+          "720P"
+        ]
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 0,
+      "audios": 0
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "gv4-grok-imagine-video-1.5": {
+    "checkedAt": "2026-10-14T03:18:03.002Z",
+    "sourceSha256": "7b5c708cfc8bf4725bed13a90e13a21fe9c2e16e11751dd41d36de011daacb46",
+    "sourceLastReviewed": "2026-10-13",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 6。最大 15。",
+        "valueType": "integer",
+        "min": 6,
+        "max": 15,
+        "suggestedDefault": 6,
+        "default": 6
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：16:9 / 9:16 / 1:1；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：480p / 720p；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "480p",
+          "720p"
+        ],
+        "suggestedDefault": "480p",
+        "default": "480p"
+      }
+    ],
+    "references": {
+      "images": 7,
+      "videos": 0,
+      "audios": 0
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "mm4-minimax-h3-2k": {
+    "checkedAt": "2026-10-14T03:18:05.038Z",
+    "sourceSha256": "d2284038bbf4141fdc9a4018907a40965946d301ce2c58719d5f389606d8f280",
+    "sourceLastReviewed": "2026-10-13",
+    "fixedResolution": "2K",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 5。最大 15。",
+        "valueType": "integer",
+        "min": 5,
+        "max": 15,
+        "suggestedDefault": 5,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：2K；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestedDefault": "2K",
+        "default": "2K",
+        "values": [
+          "2K"
+        ]
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 3,
+      "audios": 3
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "sd17-seedance-2.0": {
+    "checkedAt": "2026-10-14T03:18:07.075Z",
+    "sourceSha256": "7d066da40327544e448f2168a4ceb131e0b445c6c64ed96b608f113eb531db87",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "open",
+    "fixedResolution": "720P",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 5。最大 15。",
+        "valueType": "integer",
+        "min": 5,
+        "max": 15,
+        "suggestedDefault": 5,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720P；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestedDefault": "720P",
+        "default": "720P",
+        "values": [
+          "720P"
+        ]
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 0,
+      "audios": 3
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "sd17-seedance-2.0-2": {
+    "checkedAt": "2026-10-14T03:18:09.112Z",
+    "sourceSha256": "3e34ddbe8ebbe6a2d9985094a74bd6e0ba70408067827149431196f4cb7faabc",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "open",
+    "fixedResolution": "720P",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 5。最大 15。",
+        "valueType": "integer",
+        "min": 5,
+        "max": 15,
+        "suggestedDefault": 5,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720P；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestedDefault": "720P",
+        "default": "720P",
+        "values": [
+          "720P"
+        ]
+      }
+    ],
+    "references": {
+      "images": 9,
+      "videos": 0,
+      "audios": 3
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "sd17-seedance-2.5": {
+    "checkedAt": "2026-10-14T03:18:11.142Z",
+    "sourceSha256": "ca8b9e195172ab14c21e5af1c3b904f153393bf02a6b2feba33ba83ab0f94fac",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "open",
+    "fixedResolution": "720P",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_videos"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 5。最大 30。",
+        "valueType": "integer",
+        "min": 5,
+        "max": 30,
+        "suggestedDefault": 5,
+        "default": 5
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720P；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestedDefault": "720P",
+        "default": "720P",
+        "values": [
+          "720P"
+        ]
+      }
+    ],
+    "references": {
+      "images": 30,
+      "videos": 10,
+      "audios": 0
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
+  },
+  "sd17-seedance-2.5-2": {
+    "checkedAt": "2026-10-14T03:18:13.166Z",
+    "sourceSha256": "eee7d71af3dab2d04e92818dd435e1854efbaa8524172ad52990b4fbb6a3a833",
+    "sourceLastReviewed": "2026-10-13",
+    "facePolicy": "blocked",
+    "fixedResolution": "720P",
+    "fields": [
+      "duration",
+      "aspect_ratio",
+      "resolution",
+      "reference_image_urls",
+      "reference_videos",
+      "reference_audios"
+    ],
+    "parameters": [
+      {
+        "key": "duration",
+        "description": "视频时长，单位秒。最小 10。最大 30。",
+        "valueType": "integer",
+        "min": 10,
+        "max": 30,
+        "suggestedDefault": 10,
+        "default": 10
+      },
+      {
+        "key": "aspect_ratio",
+        "description": "画面比例。推荐值：21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestions": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ]
+      },
+      {
+        "key": "resolution",
+        "description": "输出分辨率。推荐值：720P；推荐值不代表完整允许集合。",
+        "valueType": "string",
+        "suggestedDefault": "720P",
+        "default": "720P",
+        "values": [
+          "720P"
+        ]
+      }
+    ],
+    "references": {
+      "images": 30,
+      "videos": 10,
+      "audios": 10
+    },
+    "frames": false,
+    "framePairRequired": false,
+    "allowFrameMediaMix": false
   }
 };

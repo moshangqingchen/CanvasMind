@@ -6,6 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./catalog-pricing": {
+      "types": "./src/catalog-pricing.ts",
+      "import": "./dist/catalog-pricing.js",
+      "default": "./dist/catalog-pricing.js"
+    },
     "./c-open-image-contract": {
       "types": "./src/c-open-image-contract.ts",
       "import": "./dist/c-open-image-contract.js",

@@ -22,6 +22,22 @@ describe("词元模型广场 contracts", () => {
       charge_type: "per_token", cache_read_price_usd: "0.25" }), status).models.find(m => m.id.includes("@"))!;
     expect(malformed.pricing).toBeUndefined();
   });
+  it("honors a merchant cache denial without advertising its retained raw cache quotes", () => {
+    const item = { ...sku("s1c52", "文本渠道"), base_model: "gpt-6-astra", alias: "gpt-6-astra@s1c52",
+      charge_type: "per_token", input_price_usd: 2.5, output_price_usd: 15, cache_read_price_usd: .035714, cache_write_price_usd: .446429 };
+    const supported = parseTk1688Marketplace(market({ ...item, cache_unsupported: false }), status).models[1]!;
+    expect(supported.pricing?.tiers).toHaveLength(4);
+    expect(supported.metadata?.tk1688CacheUnsupported).toBe(false);
+    const parsed = parseTk1688Marketplace(market({ ...item, cache_unsupported: true }), status);
+    const exact = parsed.models[1]!;
+    expect(exact.pricing).toMatchObject({ currency: "CNY", inputPerMillion: 17.224, outputPerMillion: 103.344 });
+    expect(exact.pricing?.tiers).toBeUndefined();
+    expect(exact.metadata?.priceLabel).not.toContain("缓存");
+    expect(exact.metadata).toMatchObject({ tk1688CacheUnsupported: true, tk1688CacheReadPriceUsd: .035714, tk1688CacheWritePriceUsd: .446429 });
+    expect(normalizeTk1688CnyModel(exact)).toEqual(exact);
+    expect(parsed.models[0]?.metadata?.tk1688CacheUnsupported).toBeUndefined();
+    expect(parsed.models[0]?.metadata?.tk1688CacheReadPriceUsd).toBeUndefined();
+  });
   it("parses only explicit merchant resolution claims, including compact 124K and denials", () => {
     expect(tk1688DescriptionFacts("原生支持124K").resolutions).toEqual(["1K", "2K", "4K"]);
     expect(tk1688DescriptionFacts("原生/1K /2K").resolutions).toEqual(["1K", "2K"]);
@@ -109,7 +125,18 @@ describe("词元模型广场 contracts", () => {
       charge_type: "per_token", modalities: ["text", "image", "pdf"], context_tokens: 1050000, max_output_tokens: 128000,
       input_price_usd: 0.9, output_price_usd: 5 }), status).models[1]!;
     expect(model).toMatchObject({ operations: [], inputKinds: ["text", "image"], outputKinds: ["text"], pricing: { kind: "token", currency: "CNY", inputPerMillion: 6.20064, outputPerMillion: 34.448 },
-      metadata: { agentCapabilities: { imageInput: true }, tk1688ContextTokens: 1050000, tk1688MaxOutputTokens: 128000 } });
+      metadata: { agentCapabilities: { imageInput: true }, tk1688ContextTokens: 1050000, tk1688MaxOutputTokens: 128000, tk1688Modalities: ["text", "image", "pdf"] } });
+    expect(model.outputKinds).not.toContain("pdf");
+    expect(model.inputKinds).not.toContain("pdf");
+  });
+  it("retains exact-SKU raw modality additions and removals without granting a smart route one merchant's PDF claim", () => {
+    const item = { ...sku("s26c421", "文本渠道"), base_model: "gemini-3-flash", alias: "gemini-3-flash@s26c421", charge_type: "per_token" };
+    const before = parseTk1688Marketplace(market({ ...item, modalities: ["text", "image", "video", "audio"] }), status);
+    const after = parseTk1688Marketplace(market({ ...item, modalities: ["text", "image", "video", "audio", "pdf"] }), status);
+    expect(before.models[1]?.metadata?.tk1688Modalities).toEqual(["text", "image", "video", "audio"]);
+    expect(after.models[1]?.metadata?.tk1688Modalities).toEqual(["text", "image", "video", "audio", "pdf"]);
+    expect(after.models[1]?.inputKinds).toEqual(before.models[1]?.inputKinds);
+    expect(after.models[0]?.metadata?.tk1688Modalities).toBeUndefined();
   });
   it("uses the current official FX for smart price ranges without applying markup twice", () => {
     const parsed = parseTk1688Marketplace(market(sku("s1c1", "1K"), sku("s2c2", "1K", { input_price_usd: 0.05 })), status,

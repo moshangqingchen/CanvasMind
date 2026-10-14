@@ -44,6 +44,7 @@ export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {
       cangyuanVideoContractCheckedAt: c.checkedAt ?? "2026-10-07", videoContractFields: [...c.fields], payloadBuilder: "seedance-flat", remoteMediaUrlsOnly: true,
       videoContractDocumentSha256: c.sourceSha256, videoContractSourceLastReviewed: c.sourceLastReviewed,
       ...(c.facePolicy ? { facePolicy: c.facePolicy } : {}), ...(c.fixedResolution ? { videoFixedResolution: c.fixedResolution } : {}),
+      ...(c.warnings?.length ? { videoContractWarnings: [...c.warnings] } : {}),
       supportsFirstLastFrames: c.frames, videoSupportsFirstLastFrames: c.frames, framePairRequired: c.framePairRequired, allowFrameMediaMix: c.allowFrameMediaMix,
       videoReferenceImageLimit: images, videoReferenceVideoLimit: videos, videoReferenceAudioLimit: audios,
       requiresImageWithAudio: c.requiresImageWithAudio ?? false, referenceVideoObjects: c.videoObjects ?? false,

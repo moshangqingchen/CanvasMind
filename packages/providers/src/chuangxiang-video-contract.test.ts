@@ -61,4 +61,25 @@ describe("current Chuangxiang video contract", () => {
     expect(validateChuangxiangVideoRequest({ ...request("mm3-minimax-h3-2k"), assets: [{ ...video, durationSeconds: 15.1 }] })).not.toEqual([]);
     expect(validateChuangxiangVideoRequest(request("sd11-seedance-2.0", { generate_audio: true, seed: 7 }))).not.toEqual([]);
   });
+  it("binds the new SD8 S identity to its fixed duration, resolution and separate media limits", () => {
+    const id = "sd8-seedance-2.5-s";
+    expect(isChuangxiangVideoConnection({ baseUrl: "https://vapi.chuangxiangai.asia/v1", accountKeyGroup: "视频" }, id)).toBe(true);
+    const model = chuangxiangVideoModel(id, { id, name: id, operations: ["video.generate"],
+      metadata: { videoSupportedResolutions: ["1080p"], videoResolutionParameterUnsupported: true, supportsFirstLastFrames: true } });
+    expect(model.parameters?.find(p => p.key === "duration")?.options?.map(o => o.value)).toEqual([30]);
+    expect(model.parameters?.find(p => p.key === "resolution")?.options?.map(o => o.value)).toEqual(["720p"]);
+    expect(model.limits).toMatchObject({ maxInputImages: 30, maxInputVideos: 10, maxInputAudios: 10 });
+    expect(model.inputKinds).toEqual(["text", "image", "image[]", "video", "video[]", "audio", "audio[]"]);
+    expect(model.metadata).toMatchObject({ supportsFirstLastFrames: false, videoResolutionParameterUnsupported: false });
+    const urls = (count: number, extension: string) => Array.from({ length: count }, (_, i) => `https://assets.example/${i}.${extension}`);
+    const valid = { duration: 30, resolution: "720p", reference_image_urls: urls(30, "jpg"), reference_videos: urls(10, "mp4"), reference_audios: urls(10, "mp3") };
+    expect(validateChuangxiangVideoRequest(request(id, valid))).toEqual([]);
+    for (const [field, value] of [["reference_image_urls", urls(31, "jpg")], ["reference_videos", urls(11, "mp4")], ["reference_audios", urls(11, "mp3")],
+      ["duration", 15], ["resolution", "1080p"], ["first_image_url", "https://assets.example/frame.jpg"]] as const) {
+      expect(validateChuangxiangVideoRequest(request(id, { ...valid, [field]: value }))).not.toEqual([]);
+    }
+    const previousSelection = request(id, { duration: 15, resolution: "1080p" });
+    expect(normalizeChuangxiangVideoParameters(previousSelection)).toMatchObject({ duration: 15, resolution: "1080p" });
+    expect(previousSelection.parameters).toEqual({ duration: 15, resolution: "1080p" });
+  });
 });

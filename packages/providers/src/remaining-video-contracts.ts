@@ -5,6 +5,7 @@ import { modelSupportsGenerationMedia } from "./model-media.js";
 import { seedanceDurationFallback, seedanceDurationFallbackDescription, seedanceDurationFallbackMetadata, type SeedanceDurationFallback } from "./seedance-duration-fallback.js";
 import { isJiasuApiUrl, isJiasuVideoModel, jiasuVideoModelIds, jiasuVideoModel, jiasuVideoTransport, normalizeJiasuVideoParameters, jiasuVideoRequestIssues, jiasuVideoGroupMismatch, JIASU_VIDEO_DOCS } from "./jiasu-video-contract.js";
 import { SECURE_MUSE_MODEL_ID, SECURE_MUSE_DOCS, isSecureMuseVideoModel, secureMuseVideoModel, secureMuseVideoTransport, normalizeSecureMuseVideoParameters, secureMuseVideoRequestIssues } from "./secure-muse-video-contract.js";
+import { SECURE_WAN_VIDEO_CONTRACT } from "./secure-wan-video-contract.js";
 import { isCyberafeiSeedance25PriceSizeContract, cyberafeiSeedance25SizePreferenceIssues, cyberafeiSeedance25OwnPriceTiers } from "./cyberafei-seedance25-video-contract.js";
 
 /** Exact supplier contracts re-read from public official documents on 2026-10-07. */
@@ -54,7 +55,7 @@ interface VideoContract {
   chatVideo?: boolean;
   videoReferenceEncoding?: "prompt-urls";
   sourceVideoChat?: boolean;
-  docs: string; note?: string;
+  docs: string; note?: string; checkedAt?: string;
 }
 const triple = ["16:9", "9:16", "1:1"] as const;
 const portrait = ["16:9", "9:16"] as const;
@@ -209,11 +210,8 @@ for (const [id, max, resolutions] of [["doubao-seedance-2-0-260128", 15, ["720p"
     frames: "doubao-content", allowFrameMediaMix: true, outputAudio: "generate_audio", extraParameters: doubaoExtra, extraWireFields: ["content", "tools"],
     note: "480p / 4K 仅对价格页明确开通的分组可用。首尾帧各 1 张，不能混用参考图或参考视频，可带参考音频。含参考视频会使用对应参考视频单价。" });
 }
-const secureWan: VideoContract = { ...secureBase, min: 2, max: 30, images: 10, videos: 5, audios: 5, resolutions: ["480P", "720P", "1080P"], defaultResolution: "720P",
-  ratioField: "ratio", freeRatio: true, frames: "wan-first", imageField: "media", videoField: "media", audioField: "media", httpsOnly: true,
-  submitPath: "/v1/videos/generations", pollPath: "/v1/videos/tasks/{taskId}", extraParameters: [toggle("prompt_extend", "扩展提示词")],
-  outputPaths: ["$.video_url", "$.url", "$.download_url", "$.output.video_url", "$.data.video_url", "$.result.video_url"],
-  note: "标准协议支持首帧、普通参考图、视频和音频；只接受公网 HTTPS。标准协议不支持智能时长 -1 或 adaptive 比例。" };
+const secureWan: VideoContract = { ...secureBase, ...SECURE_WAN_VIDEO_CONTRACT,
+  extraParameters: [toggle("prompt_extend", "扩展提示词")] };
 put("secure", ["wan3.0-video", "wan3.0-video-prime"], secureWan);
 // The current deployed Accounts view explicitly lists all four accepted Wan
 // model strings; the authenticated Key directory returns this bare ID too.
@@ -460,7 +458,7 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
     limits: { ...(c.chatVideo ? {} : current?.limits), ...(c.images === undefined ? {} : { maxInputImages: Math.max(c.images, c.frames ? 2 : 0) }), ...(c.videos === undefined ? {} : { maxInputVideos: c.videos }),
       ...(c.audios === undefined ? {} : { maxInputAudios: supplier === "secure" && id.startsWith("grok-") ? 0 : c.audios }), ...(c.maxAssets ? { maxInputAssets: c.maxAssets } : {}), ...(c.requiresImage ? { requiresInputImage: true } : {}), ...(c.requiresVideo ? { requiresInputVideo: true } : {}),
       ...(c.videoSeconds ? { maxTotalInputVideoDurationSeconds: c.videoSeconds } : {}), ...(c.audioSeconds ? { maxInputAudioDurationSeconds: c.audioSeconds } : {}) },
-    metadata: { ...metadata, ...seedanceDurationFallbackMetadata(c.durationFallback), supplier, modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: c.chatVideo ? "openai-chat" : "openai-videos", documentationUrl: c.docs, videoContractCheckedAt: c.directoryContract ? "2026-10-09" : "2026-10-07", remoteMediaUrlsOnly: !c.multipartFrames && !c.multipartReference,
+    metadata: { ...metadata, ...seedanceDurationFallbackMetadata(c.durationFallback), supplier, modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: c.chatVideo ? "openai-chat" : "openai-videos", documentationUrl: c.docs, videoContractCheckedAt: c.checkedAt ?? (c.directoryContract ? "2026-10-09" : "2026-10-07"), remoteMediaUrlsOnly: !c.multipartFrames && !c.multipartReference,
       ...(c.directoryContract ? { endpointPath: c.chatVideo ? "/v1/chat/completions" : c.submitPath ?? "/v1/videos", endpointMethod: "POST" } : {}),
       ...(c.directoryContract ? { parameterSource: "supplier-documented-contract", parameterControlsUnavailable: false, protocolEvidence: "supplier-documentation", generationVerified: false, miaowuVideoContractPending: false } : {}),
       ...(c.videoReferenceEncoding ? { videoReferenceEncoding: c.videoReferenceEncoding } : {}),

@@ -24,7 +24,7 @@ export function chuangxiangVideoTransport(): RestModelConnectorOverride {
 const exactModels = new Set([
   "grok-imagine-video", "grok-imagine-video-1.5", "gv3-grok-video-1.5", "kling-3.0", "kling-3.0-pro", "kl1-kling-3.0", "kl2-kling-3.0",
   "wan4-wan3.0", "wan5-wan3.0", "ve1-veo-3.1-fast", "happyhorse-1.1", "mm2-minimax-h3", "mm2-minimax-h3-max", "mm3-minimax-h3-2k", "niulai-pro",
-  "sd7-seedance-2.0-720p", "sd7-seedance-2.0-1080p", "sd8-seedance-2.5", "sd15-seedance-2.0", "sd15-seedance-2.5",
+  "sd7-seedance-2.0-720p", "sd7-seedance-2.0-1080p", "sd8-seedance-2.5", "sd8-seedance-2.5-s", "sd15-seedance-2.0", "sd15-seedance-2.5",
   "omni-fast", "omni-fast-no-water", "omni-v2v", "omni-v2v-no-water",
   ...["sd10", "sd11", "sd12", "sd13", "sd14"].flatMap(prefix => prefix === "sd14" ? [`${prefix}-seedance-2.0`]
     : [`${prefix}-seedance-2.0`, `${prefix}-seedance-2.0-fast`, `${prefix}-seedance-2.0-mini`, ...(prefix === "sd12" ? [] : [`${prefix}-seedance-2.5`])]),
@@ -42,7 +42,7 @@ export function isChuangxiangVideoConnection(config: Readonly<Record<string, unk
 }
 
 function secondsOptions(id: string): number[] | undefined {
-  if (id === "sd8-seedance-2.5") return [30];
+  if (id === "sd8-seedance-2.5" || id === "sd8-seedance-2.5-s") return [30];
   if (id === "sd10-seedance-2.5") return [30];
   if (id === "sd10-seedance-2.0-mini") return [5, 10];
   if (id === "sd10-seedance-2.0" || id === "sd10-seedance-2.0-fast") return [5, 10, 15];
@@ -56,6 +56,7 @@ function references(id: string): { images: number; videos: number; audios: numbe
   if (id === "niulai-pro") return { images: 9, videos: 3, audios: 3, frames: true };
   if (id.startsWith("sd7-")) return { images: 5, videos: 3, audios: 3, frames: false };
   if (id === "sd8-seedance-2.5") return { images: 9, videos: 0, audios: 0, frames: false };
+  if (id === "sd8-seedance-2.5-s") return { images: 30, videos: 10, audios: 10, frames: false };
   if (id.startsWith("sd15-")) return id.endsWith("2.5") ? { images: 30, videos: 0, audios: 10, frames: false } : { images: 9, videos: 3, audios: 3, frames: false };
   if (id.startsWith("omni-")) return { images: 5, videos: id.startsWith("omni-v2v") ? 2 : 0, audios: 0, frames: id.startsWith("omni-fast") };
   if (id.startsWith("mm2-")) return { images: 9, videos: 3, audios: 3, frames: true };
@@ -76,7 +77,7 @@ export function chuangxiangVideoModel(id: string, current?: ModelDescriptor): Mo
   const model = current ?? { id, name: id, operations: ["video.generate", "video.image-to-video"] };
   if (!isChuangxiangVideoModel(id)) return model;
   const refs = references(id), durations = secondsOptions(id);
-  const resolutions = id === "sd8-seedance-2.5" ? undefined : Array.isArray(model.metadata?.videoSupportedResolutions) ? model.metadata.videoSupportedResolutions.filter((v): v is string => typeof v === "string")
+  const resolutions = id === "sd8-seedance-2.5-s" ? ["720p"] : id === "sd8-seedance-2.5" ? undefined : Array.isArray(model.metadata?.videoSupportedResolutions) ? model.metadata.videoSupportedResolutions.filter((v): v is string => typeof v === "string")
     : model.pricing?.tiers?.filter(tier => tier.dimension === "resolution" && typeof tier.value === "string").map(tier => String(tier.value));
   const existing = (model.parameters ?? []).filter(p => ["duration", "seconds", "resolution", "aspect_ratio"].includes(p.key) && ![...(durations ? ["duration", "seconds"] : []), ...(resolutions?.length || id === "sd8-seedance-2.5" ? ["resolution"] : [])].includes(p.key));
   const parameters: ModelParameterDescriptor[] = [...existing,
@@ -96,7 +97,9 @@ export function chuangxiangVideoModel(id: string, current?: ModelDescriptor): Mo
       limits: { ...model.limits, maxInputImages: refs.images + (refs.frames ? 2 : 0), maxInputVideos: refs.videos, maxInputAudios: refs.audios,
         ...(id === "mm3-minimax-h3-2k" ? { maxInputAssets: 10, maxTotalInputVideoDurationSeconds: 15 } : {}), ...(id.startsWith("omni-v2v") ? { requiresInputVideo: true } : {}) } } : {}),
     metadata: { ...model.metadata, documentationUrl: CHUANGXIANG_VIDEO_DOCS, remoteMediaUrlsOnly: true, operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "video",
-      chuangxiangVideoContractCheckedAt: "2026-10-07", videoPollingTimeoutMs: CHUANGXIANG_VIDEO_TIMEOUT_MS,
+      chuangxiangVideoContractCheckedAt: id === "sd8-seedance-2.5-s" ? "2026-10-14" : "2026-10-07", videoPollingTimeoutMs: CHUANGXIANG_VIDEO_TIMEOUT_MS,
+      ...(id === "sd8-seedance-2.5-s" ? { videoSupportedResolutions: ["720p"], videoMinDuration: 30, videoMaxDuration: 30,
+        videoResolutionParameterUnsupported: false } : {}),
       ...(refs ? { videoReferenceImageLimit: refs.images, videoReferenceVideoLimit: refs.videos, videoReferenceAudioLimit: refs.audios, videoSupportsFirstLastFrames: refs.frames,
         supportsFirstLastFrames: refs.frames, allowFrameMediaMix: refs.frames && !id.startsWith("sd14-") && !id.startsWith("omni-fast") && id !== "niulai-pro",
         // SD12 permits audio with a reference image OR video. Its exact
@@ -150,6 +153,7 @@ export function validateChuangxiangVideoRequest(request: NormalizedRequest): Val
   if (durations && p.duration === undefined) add("parameters.duration", `请选择 ${durations.join(" / ")} 秒。`);
   for (const key of Object.keys(p)) if (!["duration", "resolution", "aspect_ratio", "n", "reference_image_urls", "reference_videos", "reference_audios", "first_image_url", "last_image_url"].includes(key)) add(`parameters.${key}`, `创想公开视频合同未声明参数 ${key}。`);
   if (id === "sd8-seedance-2.5" && p.resolution !== undefined) add("parameters.resolution", "SD8 2.5 不接受 resolution 字段。");
+  if (id === "sd8-seedance-2.5-s" && p.resolution !== undefined && p.resolution !== "720p") add("parameters.resolution", "SD8 2.5 S 只支持 720p。");
   const counts: Record<string, number> = {};
   for (const [field, limit] of [["reference_image_urls", refs?.images], ["reference_videos", refs?.videos], ["reference_audios", refs?.audios]] as const) {
     const urls = array(p[field]); counts[field] = urls.length;

@@ -1,0 +1,1825 @@
+{
+  "sourceUrls": {
+    "cangyuan": "https://ai.cangyuansuanli.cn/api/pricing",
+    "chentu": "https://tu.988236.xyz/api/pricing"
+  },
+  "sampledAt": {
+    "cangyuan": "2026-10-14T03:17:52.833Z",
+    "chentu": "2026-10-14T03:13:41.187Z"
+  },
+  "cangyuan": {
+    "data": [
+      {
+        "model_name": "sd16-seedance-2.0",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 4.785,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "has(param(\"resolution\"), \"4k\") || has(param(\"resolution\"), \"4K\") ? tier(\"4k\", n * 29) : has(param(\"resolution\"), \"1080\") ? tier(\"1080p\", n * 10.5) : has(param(\"resolution\"), \"720\") ? tier(\"720p\", n * 6.7) : tier(\"480p\", n * 4.8)",
+        "billing_capability": "image",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜高清多模态；4–15 秒；480p / 720p / 1080p / 4K；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+            },
+            {
+              "text": "使用注意｜后台检查人脸，可能被拦截；首尾帧须成对。初始清晰度为 480p，高清档请主动指定。"
+            }
+          ],
+          "id": "sd16-seedance-2.0",
+          "params": {
+            "duration": {
+              "default": 5,
+              "enabled": true,
+              "max": 15,
+              "min": 4
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "allowFirstOnly": false,
+              "allowWithReferences": true,
+              "enabled": true,
+              "hint": "使用注意｜首尾帧要成对，可以和参考图、参考视频、参考音频一起传。"
+            },
+            "generateAudio": {
+              "enabled": true
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "480p",
+              "enabled": true,
+              "options": [
+                {
+                  "label": "480p",
+                  "value": "480p"
+                },
+                {
+                  "label": "720p",
+                  "value": "720p"
+                },
+                {
+                  "label": "1080p",
+                  "value": "1080p"
+                },
+                {
+                  "label": "4k",
+                  "value": "4k"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 3,
+            "images": 9,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频。首尾帧要成对。",
+            "videos": 3
+          }
+        }
+      },
+      {
+        "model_name": "sd16-seedance-2.0-fast",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 3.825,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "has(param(\"resolution\"), \"720\") ? tier(\"720p\", n * 5.4) : tier(\"480p\", n * 3.9)",
+        "billing_capability": "image",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜Fast 档多模态；4–15 秒；480p / 720p；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+            },
+            {
+              "text": "使用注意｜后台检查人脸，可能被拦截；首尾帧须成对。初始清晰度为 480p，不提供 1080p / 4K 档。"
+            }
+          ],
+          "id": "sd16-seedance-2.0-fast",
+          "params": {
+            "duration": {
+              "default": 5,
+              "enabled": true,
+              "max": 15,
+              "min": 4
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "allowFirstOnly": false,
+              "allowWithReferences": true,
+              "enabled": true,
+              "hint": "使用注意｜首尾帧要成对，可以和参考图、参考视频、参考音频一起传。"
+            },
+            "generateAudio": {
+              "enabled": true
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "480p",
+              "enabled": true,
+              "options": [
+                {
+                  "label": "480p",
+                  "value": "480p"
+                },
+                {
+                  "label": "720p",
+                  "value": "720p"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 3,
+            "images": 9,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频。首尾帧要成对。",
+            "videos": 3
+          }
+        }
+      },
+      {
+        "model_name": "sd16-seedance-2.0-mini",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 2.88,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "has(param(\"resolution\"), \"720\") ? tier(\"720p\", n * 4.2) : tier(\"480p\", n * 2.9)",
+        "billing_capability": "image",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜Mini 档首尾帧；4–15 秒；480p / 720p；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+            },
+            {
+              "text": "使用注意｜后台检查人脸，可能被拦截；首尾帧须成对。初始清晰度为 480p，不提供 1080p / 4K 档。"
+            }
+          ],
+          "id": "sd16-seedance-2.0-mini",
+          "params": {
+            "duration": {
+              "default": 5,
+              "enabled": true,
+              "max": 15,
+              "min": 4
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "allowFirstOnly": false,
+              "allowWithReferences": true,
+              "enabled": true,
+              "hint": "使用注意｜首尾帧要成对，可以和参考图、参考视频、参考音频一起传。"
+            },
+            "generateAudio": {
+              "enabled": true
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "16:9",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16",
+                  "value": "9:16"
+                },
+                {
+                  "label": "1:1",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "480p",
+              "enabled": true,
+              "options": [
+                {
+                  "label": "480p",
+                  "value": "480p"
+                },
+                {
+                  "label": "720p",
+                  "value": "720p"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 3,
+            "images": 9,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频。首尾帧要成对。",
+            "videos": 3
+          }
+        }
+      },
+      {
+        "model_name": "sd17-seedance-2.0-3",
+        "description": "9图/720P/5-10-15秒/21:9 16:9 4:3 1:1 3:4 9:16/高速并发",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 2.9,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜预算优先短片挂机；720p；5–15 秒，常用 5 / 10 / 15 秒；最多 9 张参考图。"
+            },
+            {
+              "text": "使用注意｜卡人脸；不接音频、视频和首尾帧，适合不赶交付的夜间批量任务。"
+            }
+          ],
+          "id": "sd17-seedance-2.0-3",
+          "params": {
+            "duration": {
+              "default": 5,
+              "enabled": true,
+              "max": 15,
+              "min": 5,
+              "numericOptions": [
+                5,
+                10,
+                15
+              ]
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "enabled": false,
+              "hint": "使用注意｜不支持 首尾帧模式。"
+            },
+            "generateAudio": {
+              "enabled": false
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "横屏",
+                  "value": "16:9"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "方形",
+                  "value": "1:1"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "竖屏",
+                  "value": "9:16"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "720P",
+              "enabled": true,
+              "fixedLabel": "720P",
+              "options": [
+                {
+                  "label": "720P",
+                  "value": "720P"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 9 张参考图。不支持参考视频、参考音频或首尾帧。",
+            "videos": 0
+          }
+        }
+      },
+      {
+        "model_name": "sd17-seedance-2.5-3",
+        "description": "9图0音0视/720P/固定30秒/21:9 16:9 4:3 1:1 3:4 9:16/高速并发",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 2.9,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜预算优先长片挂机；固定 30 秒；720p；最多 9 张参考图。"
+            },
+            {
+              "text": "使用注意｜卡人脸；不接音频、视频和首尾帧，适合不赶交付的夜间批量任务。"
+            }
+          ],
+          "id": "sd17-seedance-2.5-3",
+          "params": {
+            "duration": {
+              "default": 30,
+              "enabled": true,
+              "max": 30,
+              "min": 30,
+              "numericOptions": [
+                30
+              ]
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "enabled": false,
+              "hint": "使用注意｜不支持 首尾帧模式。"
+            },
+            "generateAudio": {
+              "enabled": false
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "横屏",
+                  "value": "16:9"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "方形",
+                  "value": "1:1"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "竖屏",
+                  "value": "9:16"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "720P",
+              "enabled": true,
+              "fixedLabel": "720P",
+              "options": [
+                {
+                  "label": "720P",
+                  "value": "720P"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 9,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 9 张参考图。不支持参考视频、参考音频或首尾帧。",
+            "videos": 0
+          }
+        }
+      },
+      {
+        "model_name": "gv4-grok-imagine-video-1.5",
+        "description": "文生或7张图/6-15秒/480p 720p/16:9 9:16 1:1",
+        "vendor_id": 10,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 1.2,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜Grok 图文试做；6–15 秒；480p / 720p；文生或最多 7 张参考图。"
+            },
+            {
+              "text": "使用注意｜画幅 16:9 / 9:16 / 1:1；不接参考音频、视频和首尾帧。"
+            }
+          ],
+          "id": "gv4-grok-imagine-video-1.5",
+          "params": {
+            "duration": {
+              "default": 6,
+              "enabled": true,
+              "max": 15,
+              "min": 6
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "enabled": false,
+              "hint": "使用注意｜不支持 首尾帧模式。"
+            },
+            "generateAudio": {
+              "enabled": false
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "横屏",
+                  "value": "16:9"
+                },
+                {
+                  "label": "竖屏",
+                  "value": "9:16"
+                },
+                {
+                  "label": "方形",
+                  "value": "1:1"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "480p",
+              "enabled": true,
+              "options": [
+                {
+                  "label": "480p",
+                  "value": "480p"
+                },
+                {
+                  "label": "720p",
+                  "value": "720p"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 7,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 7 张参考图。不支持参考视频、参考音频或首尾帧。",
+            "videos": 0
+          }
+        }
+      },
+      {
+        "model_name": "mm4-minimax-h3-2k",
+        "description": "9图3音3视/2K/5-15秒/满血",
+        "vendor_id": 30,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 1.9,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "全模型-无claude/gpt",
+          "VIDEO"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜MiniMax 2K 多模态；5–15 秒；最多 9 张参考图 / 3 段参考音频 / 3 段参考视频。"
+            },
+            {
+              "text": "使用注意｜固定 2K；不接首尾帧。"
+            }
+          ],
+          "id": "mm4-minimax-h3-2k",
+          "params": {
+            "duration": {
+              "default": 5,
+              "enabled": true,
+              "max": 15,
+              "min": 5
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "enabled": false,
+              "hint": "使用注意｜不支持 首尾帧模式。"
+            },
+            "generateAudio": {
+              "enabled": false
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "横屏",
+                  "value": "16:9"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "方形",
+                  "value": "1:1"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "竖屏",
+                  "value": "9:16"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "2K",
+              "enabled": true,
+              "fixedLabel": "2K",
+              "options": [
+                {
+                  "label": "2K",
+                  "value": "2K"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 3,
+            "images": 9,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 9 张参考图、3 段参考视频、3 段参考音频。不支持首尾帧。",
+            "videos": 3
+          }
+        }
+      },
+      {
+        "model_name": "sd17-seedance-2.0",
+        "description": "9图3音/720P/5-15秒/不卡脸",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 3.75,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜人物短片；原生不卡脸；5–15 秒；720p；最多 9 张参考图 / 3 段参考音频。"
+            },
+            {
+              "text": "使用注意｜不接参考视频和首尾帧。"
+            }
+          ],
+          "id": "sd17-seedance-2.0",
+          "params": {
+            "duration": {
+              "default": 5,
+              "enabled": true,
+              "max": 15,
+              "min": 5
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "enabled": false,
+              "hint": "使用注意｜不支持 首尾帧模式。"
+            },
+            "generateAudio": {
+              "enabled": false
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "横屏",
+                  "value": "16:9"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "方形",
+                  "value": "1:1"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "竖屏",
+                  "value": "9:16"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "720P",
+              "enabled": true,
+              "fixedLabel": "720P",
+              "options": [
+                {
+                  "label": "720P",
+                  "value": "720P"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 3,
+            "images": 9,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 9 张参考图、3 段参考音频。不支持参考视频或首尾帧。",
+            "videos": 0
+          }
+        }
+      },
+      {
+        "model_name": "sd17-seedance-2.0-2",
+        "description": "9图3音/720P/5-15秒/官逆",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 4.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜人物短片备选；原生不卡脸；5–15 秒；720p；最多 9 张参考图 / 3 段参考音频。"
+            },
+            {
+              "text": "使用注意｜不接参考视频和首尾帧；与基础款是独立线路，按实时价格和状态选择。"
+            }
+          ],
+          "id": "sd17-seedance-2.0-2",
+          "params": {
+            "duration": {
+              "default": 5,
+              "enabled": true,
+              "max": 15,
+              "min": 5
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "enabled": false,
+              "hint": "使用注意｜不支持 首尾帧模式。"
+            },
+            "generateAudio": {
+              "enabled": false
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "横屏",
+                  "value": "16:9"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "方形",
+                  "value": "1:1"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "竖屏",
+                  "value": "9:16"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "720P",
+              "enabled": true,
+              "fixedLabel": "720P",
+              "options": [
+                {
+                  "label": "720P",
+                  "value": "720P"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 3,
+            "images": 9,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 9 张参考图、3 段参考音频。不支持参考视频或首尾帧。",
+            "videos": 0
+          }
+        }
+      },
+      {
+        "model_name": "sd17-seedance-2.5",
+        "description": "30图10视/720P/5-30秒/原生不卡脸",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 7.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜人物长片；原生不卡脸；5–30 秒；720p；最多 30 张参考图 / 10 段参考视频。"
+            },
+            {
+              "text": "使用注意｜不接参考音频和首尾帧；需要音频或高并发可比较 sd17-seedance-2.5-2，但该档卡人脸。"
+            }
+          ],
+          "id": "sd17-seedance-2.5",
+          "params": {
+            "duration": {
+              "default": 5,
+              "enabled": true,
+              "max": 30,
+              "min": 5
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "enabled": false,
+              "hint": "使用注意｜不支持 首尾帧模式。"
+            },
+            "generateAudio": {
+              "enabled": false
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "横屏",
+                  "value": "16:9"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "方形",
+                  "value": "1:1"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "竖屏",
+                  "value": "9:16"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "720P",
+              "enabled": true,
+              "fixedLabel": "720P",
+              "options": [
+                {
+                  "label": "720P",
+                  "value": "720P"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 0,
+            "images": 30,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 30 张参考图、10 段参考视频。不支持参考音频或首尾帧。",
+            "videos": 10
+          }
+        }
+      },
+      {
+        "model_name": "sd17-seedance-2.5-2",
+        "description": "满血全参30图10音10视/720P/10-30秒/高并发",
+        "vendor_id": 12,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 7.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "VIDEO",
+          "全模型-无claude/gpt"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ],
+        "billing_mode": "per_request",
+        "request_unit": "generation",
+        "video_ui_params": {
+          "apiMode": "videos-json-async",
+          "hints": [
+            {
+              "text": "适合用途｜高并发多模态；10–30 秒；720p；最多 30 张参考图 / 10 段参考音频 / 10 段参考视频。"
+            },
+            {
+              "text": "使用注意｜卡人脸；不接首尾帧。人物参考优先选原生不卡脸款。"
+            }
+          ],
+          "id": "sd17-seedance-2.5-2",
+          "params": {
+            "duration": {
+              "default": 10,
+              "enabled": true,
+              "max": 30,
+              "min": 10
+            },
+            "faceMode": {
+              "enabled": false
+            },
+            "faceSplit": {
+              "enabled": false
+            },
+            "frameInputs": {
+              "enabled": false,
+              "hint": "使用注意｜不支持 首尾帧模式。"
+            },
+            "generateAudio": {
+              "enabled": false
+            },
+            "ratio": {
+              "enabled": true,
+              "options": [
+                {
+                  "label": "21:9",
+                  "value": "21:9"
+                },
+                {
+                  "label": "横屏",
+                  "value": "16:9"
+                },
+                {
+                  "label": "4:3",
+                  "value": "4:3"
+                },
+                {
+                  "label": "方形",
+                  "value": "1:1"
+                },
+                {
+                  "label": "3:4",
+                  "value": "3:4"
+                },
+                {
+                  "label": "竖屏",
+                  "value": "9:16"
+                }
+              ]
+            },
+            "resolution": {
+              "default": "720P",
+              "enabled": true,
+              "fixedLabel": "720P",
+              "options": [
+                {
+                  "label": "720P",
+                  "value": "720P"
+                }
+              ]
+            },
+            "seed": {
+              "enabled": false
+            },
+            "watermark": {
+              "enabled": false
+            },
+            "widthHeight": {
+              "enabled": false,
+              "options": []
+            }
+          },
+          "poll": {
+            "delayMs": 5000,
+            "maxAttempts": 120
+          },
+          "referenceLimits": {
+            "audios": 10,
+            "images": 30,
+            "prependReferenceGuide": true,
+            "showTempMediaHint": true,
+            "validationHint": "使用注意｜最多 30 张参考图、10 段参考视频、10 段参考音频。不支持首尾帧。",
+            "videos": 10
+          }
+        }
+      }
+    ],
+    "group_ratio": {
+      "VIDEO": 1,
+      "全模型-无claude/gpt": 1
+    }
+  },
+  "chentu": {
+    "data": [
+      {
+        "model_name": "seedance-933",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 3.5,
+        "video_unit_prices": {
+          "per_request": {
+            "base": 3.5
+          },
+          "per_second": {}
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "seedance系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_request",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        },
+        "pricing_version": "5a90f2b86c08bd983a9a2e6d66c255f4eaef9c4bc934386d2b6ae84ef0ff1f1f"
+      },
+      {
+        "model_name": "wan3.0-video-prime",
+        "description": "原生官转 · 通义万相 3.0 标准版 · 按秒计费（输出+参考视频，音频不计） 480P $0.205/s · 720P $0.245/s · 1080P $0.285/s\n\n",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.205,
+        "video_unit_prices": {
+          "per_request": {},
+          "per_second": {
+            "base": 0.205,
+            "resolutions": {
+              "1080p": 0.285,
+              "480p": 0.205,
+              "720p": 0.245
+            }
+          }
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "wan系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_second",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480P",
+              "720P",
+              "1080P"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            },
+            "enumLabels": {
+              "1080P": {
+                "en": "1080P",
+                "zh": "1080P"
+              },
+              "480P": {
+                "en": "480P",
+                "zh": "480P"
+              },
+              "720P": {
+                "en": "720P",
+                "zh": "720P"
+              }
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "MiniMaxH3-768p",
+        "vendor_id": 11,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.051,
+        "video_unit_prices": {
+          "per_request": {},
+          "per_second": {
+            "base": 0.051
+          }
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "minimax系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_second",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "768p",
+              "1080p",
+              "2k"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "seedance2.5-2",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 7.5,
+        "video_unit_prices": {
+          "per_request": {
+            "base": 7.5
+          },
+          "per_second": {}
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "seedance系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_request",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "wan3.0-image-prime",
+        "description": "原生官转 · 通义万相 3.0 图生 · 图片+音频参考 · 按秒计费（仅输出时长） 480P $0.205/s · 720P $0.245/s · 1080P $0.285/s",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.205,
+        "video_unit_prices": {
+          "per_request": {},
+          "per_second": {
+            "base": 0.205,
+            "resolutions": {
+              "1080p": 0.285,
+              "480p": 0.205,
+              "720p": 0.245
+            }
+          }
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "wan系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_second",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480P",
+              "720P",
+              "1080P"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "seedance2.5",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.49,
+        "video_unit_prices": {
+          "per_request": {},
+          "per_second": {
+            "base": 0.49
+          }
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "seedance系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_second",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "seedance2.0-933-V",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.24,
+        "video_unit_prices": {
+          "per_request": {},
+          "per_second": {
+            "base": 0.24
+          }
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "seedance系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_second",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "wan3.0-video",
+        "description": "原生官转 · 通义万相 3.0 标准版 · 按秒计费（输出+参考视频，音频不计） 480P $0.195/s · 720P $0.215/s · 1080P $0.255/s\n\n",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.195,
+        "video_unit_prices": {
+          "per_request": {},
+          "per_second": {
+            "base": 0.195,
+            "resolutions": {
+              "1080p": 0.255,
+              "480p": 0.195,
+              "720p": 0.215
+            }
+          }
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "wan系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_second",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480P",
+              "720P",
+              "1080P"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            },
+            "enumLabels": {
+              "1080P": {
+                "en": "1080P",
+                "zh": "1080P"
+              },
+              "480P": {
+                "en": "480P",
+                "zh": "480P"
+              },
+              "720P": {
+                "en": "720P",
+                "zh": "720P"
+              }
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "wan3.0-image",
+        "description": "原生官转 · 通义万相 3.0 图生 · 图片+音频参考 · 按秒计费（仅输出时长） 480P $0.195/s · 720P $0.215/s · 1080P $0.255/s",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.195,
+        "video_unit_prices": {
+          "per_request": {},
+          "per_second": {
+            "base": 0.195,
+            "resolutions": {
+              "1080p": 0.255,
+              "480p": 0.195,
+              "720p": 0.215
+            }
+          }
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "wan系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_second",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480P",
+              "720P",
+              "1080P"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "MiniMaxH3-480p",
+        "vendor_id": 11,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.045,
+        "video_unit_prices": {
+          "per_request": {},
+          "per_second": {
+            "base": 0.045
+          }
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "minimax系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_second",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "768p",
+              "1080p",
+              "2k"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      },
+      {
+        "model_name": "seedance2.5-1",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 6.5,
+        "video_unit_prices": {
+          "per_request": {
+            "base": 6.5
+          },
+          "per_second": {}
+        },
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "seedance系列视频"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "per_request",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "description": {
+              "en": "Output video resolution",
+              "zh": "输出视频分辨率"
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video generation unit price",
+              "zh": "视频生成单价"
+            }
+          }
+        }
+      }
+    ],
+    "group_ratio": {
+      "wan系列视频": 1,
+      "seedance系列视频": 1,
+      "minimax系列视频": 1
+    },
+    "usable_group": {
+      "vip": "",
+      "wan系列视频": ""
+    }
+  }
+}

@@ -120,14 +120,18 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
     ["input_price_usd", "输入", "input"], ["output_price_usd", "输出", "output"],
     ["cache_read_price_usd", "缓存读取", "cache_read"], ["cache_write_price_usd", "缓存写入", "cache_write"],
   ] as const;
-  const tokenRates = image || tokenFields.some(([field]) => row[field] !== undefined && row[field] !== null && number(row[field]) === undefined) ? undefined : tokenComponentPricing(
-    tokenFields.flatMap(([field, label, tokenKind]) => { const price = number(row[field]); return price === undefined ? [] : [{ id: field, label, tokenKind, price }]; }),
+  // A listing can retain old cache quotes while explicitly disabling caching.
+  // Keep those raw USD fields as evidence, not as currently usable price tiers.
+  const applicableTokenFields = tokenFields.filter(([field]) => row.cache_unsupported !== true || !field.startsWith("cache_"));
+  const tokenRates = image || applicableTokenFields.some(([field]) => row[field] !== undefined && row[field] !== null && number(row[field]) === undefined) ? undefined : tokenComponentPricing(
+    applicableTokenFields.flatMap(([field, label, tokenKind]) => { const price = number(row[field]); return price === undefined ? [] : [{ id: field, label, tokenKind, price }]; }),
   { currency: "USD", checkedAt, confidence: "snapshot", sourceUrl: TK1688_MARKET_URL });
   const priceLabel = image && input !== undefined ? `$${money(input)}/次` : tokenRates?.priceLabel ?? "价格条件待确认";
   const pricing: StructuredModelPricing | undefined = image && input !== undefined
     ? { kind: "per-request", currency: "USD", unitAmount: input, billingUnit: "request", sourceUrl: TK1688_MARKET_URL, checkedAt, confidence: "snapshot" }
     : tokenRates?.pricing;
-  const modalities = Array.isArray(row.modalities) ? row.modalities.filter(value => ["text", "image", "audio", "video"].includes(String(value))) : undefined;
+  const declaredModalities = Array.isArray(row.modalities) ? row.modalities.filter((value): value is string => typeof value === "string") : undefined;
+  const modalities = declaredModalities?.filter(value => ["text", "image", "audio", "video"].includes(value));
   const declared = parseProviderModelFacts({ ...row, ...(modalities ? { input_modalities: modalities } : {}), output_modalities: [image ? "image" : "text"] }, "supplier-catalog");
   return normalizeTk1688CnyModel<ModelDescriptor>({
     id, name: `${base} · 商家 ${id.split("@")[1]}`, description, operations: image ? ["image.generate", "image.edit"] : [],
@@ -144,6 +148,8 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
       tk1688CommonParameterSource: "https://tk1688.com/image-station/studio",
       tk1688MerchantId: row.supplier_id, tk1688Channel: row.channel_no,
       tk1688ContextTokens: number(row.context_tokens), tk1688MaxOutputTokens: number(row.max_output_tokens),
+      ...(declaredModalities ? { tk1688Modalities: declaredModalities } : {}),
+      ...(typeof row.cache_unsupported === "boolean" ? { tk1688CacheUnsupported: row.cache_unsupported } : {}),
       tk1688CacheReadPriceUsd: number(row.cache_read_price_usd), tk1688CacheWritePriceUsd: number(row.cache_write_price_usd),
       ...(fx !== undefined ? { tk1688FxRate: fx } : {}), ...(markup !== undefined ? { tk1688PlatformMarkupPercent: markup } : {}),
       tk1688RetailPriceIncludesMarkup: true, tk1688CatalogCheckedAt: checkedAt, documentationUrl: TK1688_MARKET_URL,
@@ -171,7 +177,7 @@ function smartModel(base: string, skus: ModelDescriptor[], checkedAt: string): M
   const priceLabel = unavailable ? unavailableCnyPrice : image ? `${range(priceValues)}/次（自动路由，实际价格由商家决定）`
     : `输入 ${range(tokenInputs)}/1M · 输出 ${range(tokenOutputs)}/1M（自动路由）`;
   const metadata = { ...first.metadata };
-  for (const key of ["tk1688ListingId", "tk1688MerchantId", "tk1688Channel", "tk1688FixedSize", "tk1688ReferenceSize", "tk1688ResolutionOptionsExclusive", "tk1688UnsupportedResolutions", "exclusiveResolutions", "imageUnsupportedResolutions", "fixedOutputCount", "tk1688OmitN", "tk1688OriginalPricing", "tk1688OriginalPriceLabel"]) delete metadata[key];
+  for (const key of ["tk1688ListingId", "tk1688MerchantId", "tk1688Channel", "tk1688FixedSize", "tk1688ReferenceSize", "tk1688ResolutionOptionsExclusive", "tk1688UnsupportedResolutions", "exclusiveResolutions", "imageUnsupportedResolutions", "fixedOutputCount", "tk1688OmitN", "tk1688OriginalPricing", "tk1688OriginalPriceLabel", "tk1688Modalities", "tk1688CacheUnsupported", "tk1688CacheReadPriceUsd", "tk1688CacheWritePriceUsd"]) delete metadata[key];
   return normalizeTk1688ImageSizeContract({ id: base, name: `${base} · 自动路由`, operations: first.operations,
     description: "自动选择商家。参数使用当前可选商家明确支持的交集；商家未公布或档位冲突时使用自动。",
     ...(inputKinds ? { inputKinds } : {}), ...(first.outputKinds ? { outputKinds: first.outputKinds } : {}),

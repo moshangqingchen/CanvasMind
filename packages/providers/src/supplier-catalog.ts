@@ -1,6 +1,6 @@
 import { fetchProviderJson, providerFetch, ProviderHttpError } from "./http.js";
 import type { FetchImplementation, ModelDescriptor } from "./contracts.js";
-import { catalogPriceLabel, scopedCatalogMediaPricing } from "./catalog-pricing.js";
+import { catalogPriceLabel, scopedCatalogMediaPricing, chentuCatalogVideoPricing } from "./catalog-pricing.js";
 import { chuangxiangCatalogPricing, isChuangxiangCatalogSource } from "./chuangxiang-catalog-pricing.js";
 import { parseProviderModelFacts, scanProviderModelCatalog } from "./model-catalog.js";
 import { endpointGenerationMediaKinds, modelGenerationMediaKinds } from "./model-media.js";
@@ -460,6 +460,11 @@ export function parseSupplierCatalog(
         metadata: { ...model.metadata, ...(miaowuKind ? { catalogCapability: miaowuKind, outputKindsSource: "declared" } : {}),
           ...(native ? { miaowuCatalogPricing: native.pricing } : { miaowuCatalogPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" }) } };
     }
+    const chentu = chentuCatalogVideoPricing(raw, { supplierSiteUrl: priceDisplay.supplierSiteUrl, group: id,
+      multiplier: Number(ratios?.[id] ?? 1), currency: explicitCurrency || currency, checkedAt: priceDisplay.checkedAt });
+    if (chentu) return { ...model, priceLabel: chentu.priceLabel, metadata: { ...model.metadata, ...chentu.metadata,
+      ...(chentu.pricing ? { officialCatalogPricing: chentu.pricing,
+        officialCatalogPriceGroupVerified: typeof ratios?.[id] === "number" && Number.isFinite(ratios[id]) && Number(ratios[id]) >= 0 } : {}) } };
     const scoped = scopedCatalogMediaPricing(raw, { supplierSiteUrl: priceDisplay.supplierSiteUrl, group: id, multiplier,
       currency: explicitCurrency || currency, checkedAt: priceDisplay.checkedAt });
     if (scoped) return { ...model, priceLabel: scoped.priceLabel, metadata: { ...model.metadata, officialCatalogPricing: scoped.pricing,

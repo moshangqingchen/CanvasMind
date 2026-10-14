@@ -5,7 +5,7 @@ import { StaticConnectionResolver } from "./credentials.js";
 import { GenericRestAdapter, type RestConnectorConfig } from "./rest.js";
 import { scanProviderModelCatalog } from "./model-catalog.js";
 import { remainingVideoModel, remainingVideoSupplier } from "./remaining-video-contracts.js";
-import { isJijiuApiUrl, jijiuVideoModel, jijiuVideoModelIds, jijiuVideoRequestIssues, jijiuVideoTransport, normalizeJijiuVideoParameters } from "./jijiu-video-contract.js";
+import { isJijiuApiUrl, isJijiuWanVideoModel, jijiuVideoModel, jijiuVideoModelIds, jijiuVideoRequestIssues, jijiuVideoTransport, normalizeJijiuVideoParameters } from "./jijiu-video-contract.js";
 
 const request = (model = "MinimaxH3", parameters: Record<string, unknown> = {}, assets: readonly ProviderAssetInput[] = []): NormalizedRequest => ({ connectionId: "jijiu-offline-fixture", operation: "video.generate", prompt: "Offline contract fixture", idempotencyKey: "single-fixture-request", model, parameters, assets });
 const image: ProviderAssetInput = { id: "fixture-image", kind: "image", mimeType: "image/png", url: "https://media.example/ref.png" };
@@ -37,6 +37,8 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     ["SD2.0mini稳定903C", "image_urls", undefined, "audio_urls"],
     ["SD2.5特价30-10线路二", "images", "videos", "audios"],
     ["SD2.5特价30-10-10-线路三", "images", "video_refs", "audio_refs"],
+    ["SD2.5特价30-10-10-线路二", "image_urls", "video_urls", "audio_urls"],
+    ["满血seedance-2.5全参C", "images", "video_refs", "audio_refs"],
     ["稳定seedance-2.5全参E", "image_refs", "video_refs", "audio_refs"],
   ])("maps %s to its current exact material fields", async (id, imageField, videoField, audioField) => {
     const assets = [image, ...(videoField ? [video] : []), ...(audioField ? [audio] : [])];
@@ -65,9 +67,9 @@ describe("Jijiu exact official video contracts (offline only)", () => {
   });
 
   it("discovers the new exact IDs and retains historical contracts with chat endpoint labels", () => {
-    const ids = jijiuVideoModelIds(); expect(ids).toHaveLength(23);
+    const ids = jijiuVideoModelIds(); expect(ids).toHaveLength(25);
     const scan = scanProviderModelCatalog({ data: ids.map(id => ({ id, supported_endpoint_types: ["openai"] })) }, { baseUrl: "https://newapi.jijiucanvas.com/v1" });
-    expect(scan.models).toHaveLength(23);
+    expect(scan.models).toHaveLength(25);
     expect(scan.models.every(m => m.outputKinds?.includes("video") && m.metadata?.canvasRunnable === true)).toBe(true);
     expect(scanProviderModelCatalog({ data: [{ id: "SD2.5特价30-10-10-线路一" }] }, { baseUrl: "https://other.example/v1" }).models[0]?.metadata?.jijiuVideoContract).toBeUndefined();
   });
@@ -112,7 +114,7 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     await expect(fast.adapter.submit(request("SD2.0fast稳定900D", {}, [audio]))).rejects.toThrow();
     expect(fast.fetcher).not.toHaveBeenCalled();
     expect(jijiuVideoModel("SD2.5特价30-10-10-线路三")?.metadata?.videoSupportedResolutions).toEqual(["720p"]);
-    expect(jijiuVideoModel("SD2.5特价30-10-10-线路二")?.metadata?.videoSupportedResolutions).toEqual(["480p"]);
+    expect(jijiuVideoModel("SD2.5特价30-10-10-线路二")?.metadata?.videoSupportedResolutions).toEqual(["720p"]);
     const id = "满血seedance-2.5全参C";
     expect(jijiuVideoModel(id)?.metadata).toMatchObject({ supportsFirstLastFrames: false, videoReferenceImageLimit: 30, videoReferenceVideoLimit: 10, videoReferenceAudioLimit: 10 });
     expect(jijiuVideoModel(id)?.parameters?.find(p => p.key === "aspect_ratio")?.options?.map(o => o.value)).toEqual(["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
@@ -120,6 +122,45 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     const cases = [request(id, {}, [{ ...image, role: "firstFrame" }]), request(id, { ratio: "2:1" }), request(id, {}, [{ ...image, url: "http://media.example/ref.png" }]),
       request(id, {}, [{ ...audio, durationSeconds: 1 }]), request(id, {}, Array.from({ length: 3 }, (_, i) => ({ ...video, id: `long-${i}`, url: `https://media.example/${i}.mp4`, durationSeconds: 11 })))];
     for (const input of cases) { const f = fixture(id); await expect(f.adapter.submit(input)).rejects.toThrow(); expect(f.fetcher).not.toHaveBeenCalled(); }
+  });
+
+  it("updates the second SD2.5 line without clipping saved 480p or borrowing the first line", async () => {
+    const id = "SD2.5特价30-10-10-线路二", group = "视频SD2.5";
+    const stale = request(id, { duration: 30, resolution: "480p" }), saved = structuredClone(stale);
+    const f = fixture(id, [], { modelGroup: group, accountKeyGroup: group });
+    await expect(f.adapter.submit(stale)).rejects.toThrow("分辨率");
+    expect(f.fetcher).not.toHaveBeenCalled();
+    expect(stale).toEqual(saved);
+    expect(jijiuVideoRequestIssues(request(id, { duration: 4, resolution: "720p" }, [image, video, audio]), undefined, group)).toEqual([]);
+    expect(jijiuVideoModel(id, undefined, group)?.metadata?.jijiuGroupUnavailable).toBe(false);
+  });
+
+  it.each(["wan3.0-video-S", "wan3.0-video-prime-S"])("sends %s as exact JSON URL fields without multipart downloads", async id => {
+    const input = request(id, { duration: 30, resolution: "1080p", aspect_ratio: "16:9" }, [image, { ...video, durationSeconds: 20 }, audio]);
+    const saved = structuredClone(input), model = jijiuVideoModel(id)!;
+    expect(isJijiuWanVideoModel(id)).toBe(false);
+    expect(model.metadata).toMatchObject({ videoMediaTransport: "json-urls", remoteMediaUrlsOnly: true, supportsFirstLastFrames: false });
+    expect(model.metadata?.billingIncludesInputDuration).toBeUndefined();
+    expect(model.limits).toMatchObject({ maxInputImages: 10, maxInputVideos: 5, maxInputAudios: 5 });
+    const f = fixture(id, [Response.json({ id: "task_json_s", status: "queued" })], { modelGroup: "视频WAN3", accountKeyGroup: "视频WAN3" });
+    await f.adapter.submit(input);
+    expect(f.fetcher).toHaveBeenCalledTimes(1);
+    const [url, init] = f.fetcher.mock.calls[0]!;
+    expect(url).toBe("https://newapi.jijiucanvas.com/v1/videos");
+    expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
+    expect(JSON.parse(String(init?.body))).toEqual({ model: id, prompt: input.prompt, seconds: 30, resolution: "1080p", aspect_ratio: "16:9",
+      reference_images: [image.url], videos: [video.url], audios: [audio.url] });
+    expect(input).toEqual(saved);
+    // The non-S-specific 15s reference / 30s combined bound does not apply here.
+    expect(jijiuVideoRequestIssues(input)).toEqual([]);
+    const wrongGroup = jijiuVideoRequestIssues(input, undefined, "视频SD2.5");
+    expect(wrongGroup).toContainEqual(expect.objectContaining({ path: "model" }));
+    for (const bad of [request(id, { duration: -1 }), request(id, { duration: 31 }),
+      request(id, {}, [{ ...image, url: "http://media.example/image.png" }]),
+      request(id, {}, [{ ...image, url: undefined, data: new Uint8Array([1]) }]),
+      request(id, {}, Array.from({ length: 11 }, (_, i) => ({ ...image, id: `image-${i}` })))]) {
+      expect(jijiuVideoRequestIssues(bad).length).toBeGreaterThan(0);
+    }
   });
 
   it.each(["MinimaxH3特价版"])("keeps declared free-string resolution for %s without inventing an enum", async id => {

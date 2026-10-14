@@ -589,6 +589,26 @@ export function applySupplierCatalogPrices(
     if (selected && catalogModel && isJiasuApiUrl(sourceUrl)) model = { ...model,
       metadata: jiasuExampleMetadata(model, catalogModel, catalog, selected.details?.stale === true, sourceUrl) };
     if (["manual", "generated-result"].includes(String(model.metadata?.priceSource)) && model.pricing) return model;
+    // Exact Chentu rows currently disagree about dollars versus site CNY.
+    // Retain the original supplier quote, but remove an automatic numeric
+    // estimate even if an older scanner considered that estimate its own.
+    if (/^https:\/\/tu\.988236\.xyz(?:\/v1)?\/?$/u.test(sourceUrl ?? "") &&
+      catalog.status === "live" && selected?.details?.stale !== true &&
+      catalogModel?.metadata?.supplierCatalogModelStale !== true &&
+      (catalogModel?.metadata?.chentuCurrencyConflict === true || catalogModel?.metadata?.chentuVideoPricingIncomplete === true)) {
+      if (model.metadata?.priceSource === "manual" || model.metadata?.source === "manual" ||
+        model.metadata?.priceSource === "generated-result" && model.metadata?.measuredPrice) return model;
+      const previousAt = Date.parse(String(model.metadata?.priceCheckedAt ?? model.pricing?.checkedAt ?? ""));
+      if (Number.isFinite(previousAt) && previousAt > Date.parse(catalog.checkedAt)) return model;
+      const metadata = { ...model.metadata, ...catalogModel.metadata };
+      delete metadata.officialCatalogPricing;
+      const oldLabel = String(model.metadata?.priceLabel ?? "");
+      const name = oldLabel ? model.name.replace(` · ${oldLabel}`, "").replace(`（${oldLabel}）`, "").replace(`(${oldLabel})`, "") : model.name;
+      return { ...model, name, pricing: undefined, metadata: { ...metadata,
+        priceLabel: catalogModel.priceLabel ?? "", priceSource: "supplier-catalog",
+        priceStatus: catalogModel.metadata.chentuCurrencyConflict === true ? "conflict" : "unconfirmed",
+        priceCheckedAt: catalog.checkedAt, priceLastAttemptAt: catalog.checkedAt, supplierPriceGroup: group } };
+    }
     // Hang's separate board has ambiguous image/token currency declarations.
     // Its new chat feed must not overwrite an existing media quote.
     if (isHangCatalogSite(sourceUrl) && model.pricing && modelGenerationMediaKinds(model).length) return model;

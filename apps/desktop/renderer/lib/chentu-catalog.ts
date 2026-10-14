@@ -6,6 +6,7 @@ import type {
   RestRequestMapping,
 } from "@super-canvas/providers";
 import { remainingVideoModel, remainingVideoTransport } from "@super-canvas/providers/remaining-video-contracts";
+import { chentuCatalogVideoPricing } from "@super-canvas/providers/catalog-pricing";
 import { chentuAzImageDescriptor, isChentuAzImageModel } from "@super-canvas/providers/chentu-az";
 import {
   CHENTU_BASE_URL,
@@ -55,6 +56,8 @@ interface PricingRecord {
   billing_mode?: unknown;
   request_unit?: unknown;
   video_api?: unknown;
+  video_unit_prices?: unknown;
+  billing_usage_schema?: unknown;
 }
 
 export interface ChentuPricingPayload {
@@ -74,6 +77,7 @@ export interface ChentuMarketplaceModelLive {
   endpointTypes: string[];
   canvasRunnable?: boolean;
   canvasUnavailableReason?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ChentuMarketplaceGroupLive {
@@ -206,7 +210,11 @@ function capabilityFor(
 function priceFor(
   record: PricingRecord,
   groupRatio: number,
+  group?: string,
 ): { label: string; billing: string } {
+  const video = chentuCatalogVideoPricing(record, { supplierSiteUrl: CHENTU_SITE_URL,
+    group: group ?? "", multiplier: groupRatio, currency: "CNY" });
+  if (video) return { label: video.priceLabel, billing: video.billingLabel };
   const quotaType = record.quota_type;
   const modelRatio =
     typeof record.model_ratio === "number" ? record.model_ratio : undefined;
@@ -706,7 +714,9 @@ function descriptorWithPricing(
   groupRatio: number,
   checkedAt: string,
 ): ModelDescriptor {
-  const price = priceFor(record, groupRatio);
+  const price = priceFor(record, groupRatio, group);
+  const video = chentuCatalogVideoPricing(record, { supplierSiteUrl: CHENTU_SITE_URL,
+    group, multiplier: groupRatio, currency: "CNY", checkedAt });
   const numericPrice =
     record.quota_type !== 0 &&
     typeof record.model_price === "number" &&
@@ -717,7 +727,7 @@ function descriptorWithPricing(
   const perSecond = providerPriceUnit(record) === "second";
   return {
     ...descriptor,
-    ...(numericPrice === undefined
+    ...(video ? { pricing: video.pricing } : numericPrice === undefined
       ? {}
       : {
           pricing: {
@@ -743,6 +753,7 @@ function descriptorWithPricing(
       priceLabel: price.label,
       billingLabel: price.billing,
       canvasRunnable: true,
+      ...video?.metadata,
     },
   };
 }
@@ -751,11 +762,14 @@ function marketplaceModel(
   record: PricingRecord,
   ratio: number,
   group?: string,
+  checkedAt?: string,
 ): ChentuMarketplaceModelLive | null {
   if (typeof record.model_name !== "string" || !record.model_name.trim())
     return null;
   const id = record.model_name.trim();
-  const prices = priceFor(record, ratio);
+  const prices = priceFor(record, ratio, group);
+  const video = chentuCatalogVideoPricing(record, { supplierSiteUrl: CHENTU_SITE_URL,
+    group: group ?? "", multiplier: ratio, currency: "CNY", checkedAt });
   const capability = capabilityFor(record, id);
   const endpoints = strings(record.supported_endpoint_types);
   const runnable = isChentuAzImageModel(id) ? Boolean(chentuAzImageDescriptor(id, group)) :
@@ -774,6 +788,7 @@ function marketplaceModel(
     billingLabel: prices.billing,
     tags: tags(record.tags),
     endpointTypes: endpoints,
+    ...(video ? { metadata: video.metadata } : {}),
     ...(runnable
       ? { canvasRunnable: true }
       : capability === "image" || capability === "video"
@@ -800,7 +815,7 @@ export function chentuCatalogFromPricing(
   const ratios = numbers(payload.group_ratio);
   const descriptions = stringMap(payload.usable_group);
   const groups: Record<string, ModelDescriptor[]> = {};
-  const groupIds = new Set<string>();
+  const groupIds = new Set<string>([...Object.keys(ratios), ...Object.keys(descriptions)]);
   const marketplaceByGroup = new Map<string, ChentuMarketplaceModelLive[]>();
 
   for (const record of records) {
@@ -809,7 +824,7 @@ export function chentuCatalogFromPricing(
       const descriptor = descriptorFor(record, group);
       groupIds.add(group);
       const ratio = ratios[group] ?? 1;
-      const marketplace = marketplaceModel(record, ratio, group);
+      const marketplace = marketplaceModel(record, ratio, group, checkedAt);
       if (marketplace) {
         const models = marketplaceByGroup.get(group) ?? [];
         models.push(marketplace);
@@ -1025,6 +1040,7 @@ export function resolveChentuScannedGroup(
   for (const model of models) {
     if (model.capability !== "image" && model.capability !== "video") continue;
     const sharedMetadata = {
+      ...model.metadata,
       supplier: CHENTU_SUPPLIER_KEY,
       modelGroup: group,
       groupRatio: publicGroup?.ratio ?? 1,

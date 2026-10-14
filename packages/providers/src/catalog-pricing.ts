@@ -13,6 +13,53 @@ const text = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim().slice(0, 256) : undefined;
 const display = (n: number) => String(Number(n.toPrecision(10)));
 
+/** The current Chentu plaza supplies video rates separately from model_price.
+ * Billing resolution labels are price conditions, not generation capabilities.
+ * Dollar-denominated prose must not silently become a CNY numeric estimate.
+ */
+export function chentuCatalogVideoPricing(value: unknown, options: {
+  supplierSiteUrl?: string | undefined; group: string; multiplier: number; currency?: string | undefined; checkedAt?: string | undefined;
+}): { pricing?: StructuredModelPricing; priceLabel: string; billingLabel: string; metadata: Record<string, unknown> } | undefined {
+  try {
+    const url = new URL(options.supplierSiteUrl ?? "");
+    if (url.origin !== "https://tu.988236.xyz" || url.username || url.password || url.search || url.hash || !/^(?:\/v1)?\/?$/u.test(url.pathname)) return undefined;
+  } catch { return undefined; }
+  const row = record(value), units = record(row.video_unit_prices);
+  if (!Object.keys(units).length || !Array.isArray(row.enable_groups) || !row.enable_groups.includes(options.group) ||
+    !Number.isFinite(options.multiplier) || options.multiplier < 0 || !["per_second", "per_request"].includes(String(row.billing_mode))) return undefined;
+  const mode = String(row.billing_mode), second = mode === "per_second", rates = record(units[mode]);
+  const resolutionRates = record(rates.resolutions), entries = Object.entries(resolutionRates);
+  const base = amount(rates.base), sourceUrl = "https://tu.988236.xyz/api/pricing", checkedAt = options.checkedAt ?? "";
+  const description = typeof row.description === "string" ? row.description.trim() : "";
+  const currency = String(row.currency ?? options.currency ?? "CNY").toUpperCase();
+  const dollarProse = /\$\s*\d+(?:\.\d+)?\s*\/s\b/u.test(description);
+  const conflict = dollarProse && currency !== "USD";
+  const includesInput = second && /输出\s*\+\s*参考视频/u.test(description);
+  const metadata: Record<string, unknown> = {
+    chentuVideoUnitPrices: units, chentuBillingUsageSchema: record(row.billing_usage_schema),
+    chentuPricingDescription: description, chentuPriceSourceUrl: sourceUrl, chentuPriceCheckedAt: checkedAt,
+    ...(includesInput ? { billingIncludesInputDuration: true } : {}),
+  };
+  const valid = ["USD", "CNY", "RMB"].includes(currency) &&
+    (entries.length ? entries.every(([resolution, price]) => /^[\w.-]{1,30}$/u.test(resolution) && amount(price) !== undefined && Number.isFinite(amount(price)! * options.multiplier)) : base !== undefined && Number.isFinite(base * options.multiplier));
+  if (!valid) return { priceLabel: description, billingLabel: second ? "按秒计费" : "按次计费",
+    metadata: { ...metadata, chentuVideoPricingIncomplete: true, priceUnavailableReason: "当前视频分档报价未完整读取" } };
+  if (conflict) {
+    const rawQuotes = description.match(/\d+[pPkK]\s*\$\s*\d+(?:\.\d+)?\s*\/s\b/gu);
+    return { priceLabel: rawQuotes?.join(" · ") || description, billingLabel: includesInput ? "输出与参考视频按秒计费，音频不计" : "仅输出时长按秒计费",
+      metadata: { ...metadata, chentuCurrencyConflict: true, supplierPriceConflict: true,
+        priceContractWarning: "供应商型号说明使用美元，站点金额显示使用人民币；保留说明原价，暂不换算或计算总价。" } };
+  }
+  const pricing: StructuredModelPricing = { kind: entries.length ? "tiered" : second ? "per-second" : "per-request",
+    currency, billingUnit: second ? "second" : "request", sourceUrl, checkedAt, confidence: "exact",
+    ...(entries.length ? { tiers: entries.map(([resolution, price]) => ({ id: resolution, label: resolution,
+      dimension: "resolution" as const, value: resolution, price: Number((amount(price)! * options.multiplier).toPrecision(12)) })) }
+      : { unitAmount: Number((base! * options.multiplier).toPrecision(12)) }) };
+  const symbol = currency === "USD" ? "$" : "¥", unit = second ? "秒" : "请求";
+  return { pricing, priceLabel: entries.length ? mediaPricingLabel(pricing) : `${symbol}${display(pricing.unitAmount!)}/${unit}`,
+    billingLabel: includesInput ? "输出与参考视频按秒计费，音频不计" : second ? "按秒计费" : "按次计费", metadata };
+}
+
 /** Exact official catalog conventions which cannot be inferred from quota_type. */
 export function scopedCatalogMediaPricing(value: unknown, options: {
   supplierSiteUrl?: string | undefined; group: string; multiplier: number; currency?: string | undefined; checkedAt?: string | undefined;

@@ -254,8 +254,8 @@ describe("supplier video contracts", () => {
   });
 
   it("uses Wan3's separate synthesis envelope and task polling", () => {
-    const input = request("wan3.0-video", { duration: 6, aspect_ratio: "2.35:1", prompt_extend: true }, [asset("image"), asset("video"), asset("audio")]);
-    expect(normalizeRemainingVideoParameters("secure", input)).toMatchObject({ resolution: "720P", ratio: "2.35:1", media: [{ type: "reference_image", url: "https://media.example/image-1" }, { type: "reference_video", url: "https://media.example/video-1" }, { type: "audio", url: "https://media.example/audio-1" }], prompt_extend: true });
+    const input = request("wan3.0-video", { duration: 6, aspect_ratio: "21:9", prompt_extend: true }, [asset("image"), asset("video"), asset("audio")]);
+    expect(normalizeRemainingVideoParameters("secure", input)).toMatchObject({ resolution: "720P", ratio: "21:9", media: [{ type: "reference_image", url: "https://media.example/image-1" }, { type: "reference_video", url: "https://media.example/video-1" }, { type: "audio", url: "https://media.example/audio-1" }], prompt_extend: true });
     expect(remainingVideoTransport("secure", input.model!)?.submit?.path).toBe("/v1/videos/generations");
     expect(remainingVideoTransport("secure", input.model!)?.poll?.path).toBe("/v1/videos/tasks/{taskId}");
     expect(remainingVideoRequestIssues("secure", input)).toEqual([]);
