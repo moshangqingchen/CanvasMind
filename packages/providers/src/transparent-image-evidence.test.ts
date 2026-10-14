@@ -338,6 +338,28 @@ describe("measured transparent image routes", () => {
     }
   });
 
+  it("accepts the installed bound custom Chentu group while keeping new/old groups and operations separate", () => {
+    const current = { provider: "openai", config: { baseUrl: "https://tu.988236.xyz/v1", customGroup: true,
+      modelGroup: "新渠道image2.5全参", accountKeyGroup: "新渠道image2.5全参" } };
+    const proof = verifiedTransparentImageEvidence(current, model, request.parameters, "image.edit");
+    expect(proof?.caseId).toBe("R001");
+    expect(getImageEditingCapabilities(current, model, request.parameters, "image.edit")).toMatchObject({
+      transparent: true, transparency: { status: "verified", operation: "image.edit" },
+    });
+    expect(verifiedTransparentImageEvidence(current, model, request.parameters, "image.generate")).toBeUndefined();
+    const old = { ...current, config: { ...current.config, modelGroup: "image2.5全参", accountKeyGroup: "image2.5全参" } };
+    expect(verifiedTransparentImageEvidence(old, model, request.parameters, "image.generate")?.group).toBe("image2.5全参");
+    expect(verifiedTransparentImageEvidence(old, model, request.parameters, "image.edit")).toBeUndefined();
+    for (const config of [
+      { baseUrl: current.config.baseUrl, customGroup: true, modelGroup: current.config.modelGroup },
+      { baseUrl: current.config.baseUrl, customGroup: true, accountKeyGroup: current.config.accountKeyGroup },
+      { ...current.config, accountKeyGroup: "image2.5全参" },
+      { ...current.config, accountKeyGroup: "", modelGroup: "" },
+      { ...current.config, manualProtocol: true }, { ...current.config, autoProtocol: false },
+      { ...current.config, baseUrl: "https://foreign.example/v1" },
+    ]) expect(verifiedTransparentImageEvidence({ ...current, config }, model, request.parameters, "image.edit")).toBeUndefined();
+  });
+
   it("uses the original opaque PNG to override only Monster B4's exact gpt-image-2.5 transparent mode", () => {
     const measured = { provider: "openai", config: { baseUrl: "https://api.eaheng.com/v1",
       modelGroup: "B4-GPT生图原生渠道V3（高质量）", accountKeyGroup: "B4-GPT生图原生渠道V3（高质量）" } };

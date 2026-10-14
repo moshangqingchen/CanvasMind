@@ -24,7 +24,7 @@ test("新旧辰途2.5组分别保存透明PNG，参考图证据与低档推定�
   for(const group of [newer,older]){
     const created=await request.post("/api/providers",{data:{name:`隔离透明 ${group}`,provider:"rest",apiKey:"isolated-no-generation",config:{baseUrl:"https://transparent-reference.invalid",defaultModel:model.id,connector:{...structuredClone(CANGYUAN_IMAGE_CONNECTOR),models:[model]}}}});
     expect(created.ok()).toBeTruthy();const stored=await created.json();
-    const connection:ProviderConnectionView={...stored,provider:"openai",apiKey:"",apiKeySet:true,apiKeyUsable:true,config:{supplierKey:"custom-chentu-transparency",supplierName:"辰途透明回归",usage:"canvas",baseUrl:"https://tu.988236.xyz/v1",modelGroup:group,accountKeyGroup:group,defaultModel:model.id,modelScanStatus:"live",scannedModelIds:[model.id],modelCatalogModels:[model]}};
+    const connection:ProviderConnectionView={...stored,provider:"openai",apiKey:"",apiKeySet:true,apiKeyUsable:true,config:{supplierKey:"custom-chentu-transparency",supplierName:"辰途透明回归",usage:"canvas",baseUrl:"https://tu.988236.xyz/v1",customGroup:true,modelGroup:group,accountKeyGroup:group,defaultModel:model.id,modelScanStatus:"live",scannedModelIds:[model.id],modelCatalogModels:[model]}};
     connections.push(connection);
     await page.route(`**/api/providers/${connection.id}/models*`,route=>{reads++;return route.fulfill({json:[model],headers:{"X-Model-Scan-Status":"live"}});});
   }

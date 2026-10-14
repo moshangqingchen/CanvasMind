@@ -347,7 +347,12 @@ function matchesTransparentImageEvidence(connection: ImageEditingConnection, mod
   operation: TransparentImageOperation = "image.generate"): boolean {
   const config = connection.config;
   const binding = (config.autoModelInterfaces as Record<string, { source?: string; model?: { metadata?: Record<string, unknown> } }> | undefined)?.[model];
-  if (config.supplierArchived === true || config.manualProtocol === true || config.customGroup === true || config.autoProtocol === false ||
+  // Imported supplier groups may be marked custom even though this Key's actual
+  // group was verified. A custom display name alone must never borrow that proof.
+  const unboundCustomGroup = config.customGroup === true &&
+    (typeof config.accountKeyGroup !== "string" || !config.accountKeyGroup.trim() ||
+      typeof config.modelGroup !== "string" || config.accountKeyGroup !== config.modelGroup);
+  if (config.supplierArchived === true || config.manualProtocol === true || unboundCustomGroup || config.autoProtocol === false ||
       ["manual", "paid-test"].includes(String(binding?.source)) ||
       ["manual", "paid-test"].includes(String(binding?.model?.metadata?.source)) || binding?.model?.metadata?.protocolEvidence === "paid-test" ||
       ["agent", "disabled"].includes(String(config.usage))) return false;
