@@ -5,7 +5,7 @@ import type { AssetView, CanvasDocument, CanvasNode } from "../components/types"
 import { CANVAS_ARRANGEMENT_ORDER_KEY } from "../lib/canvas-arrangement";
 import { clickBlankCanvas } from "./canvas-test-actions";
 
-const screenshots = fileURLToPath(new URL("../../../../.codex-logs/2026-10-16-canvas-layout/screenshots/", import.meta.url));
+const screenshots = process.env.CANVAS_LAYOUT_EVIDENCE_DIR ?? fileURLToPath(new URL("../../../../.codex-logs/2026-10-16-canvas-layout/screenshots/", import.meta.url));
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 const connectionOrder = [7, 2, 9, 1, 5, 10, 3, 8, 6, 4];
 const positions = (graph: CanvasDocument) => Object.fromEntries(graph.nodes.map(node => [node.id, node.position]));

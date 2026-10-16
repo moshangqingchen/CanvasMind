@@ -4,8 +4,8 @@ import { writeFile } from "node:fs/promises";
 /** Verify both the DOM and the Electron compositor, including after a restart. */
 export async function captureRenderedHome(application, page, screenshotPath, capturePath, { windowed = false, url = page?.url() } = {}) {
   if (page) {
-    await page.getByRole("heading", { name: "我的画布", exact: true }).waitFor({ state: "visible", timeout: 30000 });
-    await page.getByRole("button", { name: "供应商与模型", exact: true }).waitFor({ state: "visible", timeout: 15000 });
+    await page.getByTestId("neural-workspace").waitFor({ state: "visible", timeout: 30000 });
+    await page.getByRole("button", { name: "创作设置", exact: true }).waitFor({ state: "visible", timeout: 15000 });
   }
   // Playwright permanently marks a crashed Page. Inspect the native WebContents
   // so the same loaded-data check also works after renderer recovery.
@@ -23,22 +23,31 @@ export async function captureRenderedHome(application, page, screenshotPath, cap
           element.getBoundingClientRect().height > 0 && getComputedStyle(element).visibility === "visible";
         return new Promise((resolve, reject) => {
           const deadline = Date.now() + 30000;
+          let openedCanvases = false;
+          let verifiedProjects;
           const check = () => {
-            const heading = document.getElementById("projects-heading");
-            const settings = document.querySelector('button[aria-label="供应商与模型"]');
-            const section = document.querySelector('section[aria-labelledby="projects-heading"]');
-            const loading = section?.textContent.includes("正在读取你的画布");
+            const workspace = document.querySelector('[data-testid="neural-workspace"]');
+            const settings = document.querySelector('button[aria-label="创作设置"]');
+            const module = workspace?.querySelector('[data-testid="neural-module-canvases"]');
             const alerts = [...document.querySelectorAll('[role="alert"]')].filter(visible);
             if (alerts.length) return reject(new Error("Homepage displayed an error: " + alerts.map(alert => alert.textContent).join("; ")));
+            if (!openedCanvases && visible(workspace) && visible(module) && visible(settings)) {
+              openedCanvases = true;
+              module.click();
+            }
+            const section = workspace?.querySelector('section[aria-label="画布"]');
             const articles = [...(section?.querySelectorAll("article") ?? [])];
             const rendered = articles.map(article => ({
-              id: decodeURIComponent(article.querySelector('a[href^="/canvas/"]')?.getAttribute("href")?.slice(8) ?? ""),
+              id: article.querySelector('[data-testid^="neural-item-"]')?.getAttribute("data-testid")?.slice("neural-item-".length) ?? "",
               title: article.getAttribute("aria-label"),
             })).sort(byId);
-            if (visible(heading) && heading.textContent.includes("我的画布") && visible(settings) &&
-                !loading && articles.every(visible) && JSON.stringify(api) === JSON.stringify(rendered)) {
-              requestAnimationFrame(() => requestAnimationFrame(() => resolve({ api, rendered, articleCount: articles.length, loading: false, alerts: 0 })));
-            } else if (Date.now() >= deadline) reject(new Error("Homepage projects did not finish rendering: " + JSON.stringify({ api, rendered, loading })));
+            if (!verifiedProjects && visible(section) && articles.every(visible) && JSON.stringify(api) === JSON.stringify(rendered)) {
+              verifiedProjects = { api, rendered, articleCount: articles.length, loading: false, alerts: 0 };
+              workspace.querySelector('button[aria-label="超级画布首页"]').click();
+            }
+            if (verifiedProjects && workspace?.getAttribute("data-level") === "hub" && visible(workspace.querySelector("h1")) && visible(settings)) {
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve(verifiedProjects)));
+            } else if (Date.now() >= deadline) reject(new Error("Homepage projects did not finish rendering: " + JSON.stringify({ api, rendered, level: workspace?.getAttribute("data-level") })));
             else setTimeout(check, 50);
           };
           check();

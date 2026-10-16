@@ -31,7 +31,7 @@ async function openCanvas(page: Page, request: APIRequestContext) {
 }
 
 for (const preference of ["system", "application"] as const) {
-  test(`${preference} 减少动态效果仍在拖动时降级阴影，结束后恢复`, async ({ page, request }) => {
+  test(`${preference} 减少动态效果仍在拖动时降级阴影，结束后恢复`, async ({ page, request }, testInfo) => {
     if (preference === "system") await page.emulateMedia({ reducedMotion: "reduce" });
     else await page.addInitScript(() => localStorage.setItem("super-canvas:gentle-motion", "off"));
     const { card, wrap, assertNoRuns } = await openCanvas(page, request);
@@ -51,8 +51,27 @@ for (const preference of ["system", "application"] as const) {
     await expect(page.locator(".canvas-toolbar")).toHaveCSS("backdrop-filter", /^blur\((?:12|22)px\) saturate\(1\.6\)$/u);
     await expect(page.locator(".react-flow__controls")).toHaveCSS("backdrop-filter", /^blur\((?:12|22)px\) saturate\(1\.6\)$/u);
     await page.getByRole("button", { name: "API 设置", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "供应商与模型设置", exact: true })).toHaveCSS("animation-name", "none");
-    await expect(page.locator(".sm-settings-backdrop")).toHaveCSS("backdrop-filter", "none");
+    const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
+    // Neural settings deliberately replace the 600ms translated entrance with
+    // one short opacity-only fade for both reduced-motion preferences.
+    await expect(settings).toHaveCSS("animation-name", "neural-settings-fade");
+    const reducedEntrance = await settings.evaluate(element => {
+      const style = getComputedStyle(element);
+      return {
+        durationsMs: style.animationDuration.split(",").map(value => Number.parseFloat(value) * (value.trim().endsWith("ms") ? 1 : 1000)),
+        iterations: style.animationIterationCount.split(",").map(Number),
+        transform: style.transform,
+        keyframes: element.getAnimations().flatMap(animation => animation.effect instanceof KeyframeEffect ? animation.effect.getKeyframes() : []),
+      };
+    });
+    await testInfo.attach("reduced-settings-entrance", { body: JSON.stringify(reducedEntrance, null, 2), contentType: "application/json" });
+    expect(reducedEntrance.durationsMs.every(duration => Number.isFinite(duration) && duration <= 150)).toBe(true);
+    expect(reducedEntrance.iterations.every(iterations => Number.isFinite(iterations) && iterations <= 1)).toBe(true);
+    expect(reducedEntrance.transform).toBe("none");
+    expect(reducedEntrance.keyframes.length).toBeGreaterThan(0);
+    expect(reducedEntrance.keyframes.every(frame => !frame.transform || frame.transform === "none")).toBe(true);
+    // The redesigned drawer retains a static 9px glass backdrop in either mode.
+    await expect(page.locator(".sm-settings-backdrop")).toHaveCSS("backdrop-filter", "blur(9px) saturate(0.85)");
     assertNoRuns();
   });
 }

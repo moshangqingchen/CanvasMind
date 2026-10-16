@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
 import type { CanvasDocument, CanvasNode } from "../components/types";
 
-const screenshots = resolve(process.cwd(), "../../../.codex-logs/2026-10-16-canvas-layout/screenshots");
+const screenshots = resolve(process.env.CANVAS_LAYOUT_EVIDENCE_DIR ?? resolve(process.cwd(), "../../../.codex-logs/2026-10-16-canvas-layout/screenshots"));
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 async function fixture(page: Page, request: APIRequestContext) {

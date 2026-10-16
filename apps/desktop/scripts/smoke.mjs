@@ -17,6 +17,8 @@ const desktopRequire = createRequire(join(desktop, "package.json"));
 const { _electron } = rendererRequire("@playwright/test");
 const sharp = rendererRequire("sharp");
 const packaged = process.argv.includes("--packaged");
+const output = resolve(process.env.SUPERCANVAS_SMOKE_OUTPUT_DIR ?? join(desktop, "release"));
+await mkdir(output, { recursive: true });
 const environment = { ...process.env, ELECTRON_ENABLE_LOGGING: "0" };
 delete environment.ELECTRON_RUN_AS_NODE;
 if (packaged) {
@@ -25,7 +27,7 @@ if (packaged) {
 }
 const executablePath = packaged ? join(desktop, "release/win-unpacked/SuperCanvas.exe") : desktopRequire("electron");
 if (process.argv.includes("--windowed")) {
-  await runWindowedSmoke({ electron: _electron, executablePath, baseArgs: packaged ? [] : [desktop], environment, desktop, packaged });
+  await runWindowedSmoke({ electron: _electron, executablePath, baseArgs: packaged ? [] : [desktop], environment, output, packaged });
 } else {
 const args = packaged ? ["--smoke-test", "--disable-gpu"] : [desktop, "--smoke-test", "--disable-gpu"];
 if (["1.25", "1.5"].includes(process.env.SMOKE_DISPLAY_SCALE)) args.push(`--force-device-scale-factor=${process.env.SMOKE_DISPLAY_SCALE}`);
@@ -53,14 +55,14 @@ try {
   clearTimeout(duplicateTimeout);
   await profileDiagnostics("setup-after-duplicate-exit");
   report.checks.push("single instance lock");
-  await mkdir(join(desktop, "release"), { recursive: true });
-  await page.screenshot({ path: join(desktop, "release/smoke-setup.png") });
+  await page.screenshot({ path: join(output, "smoke-setup.png") });
   report.checks.push("first-run setup");
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
   report.checks.push("renderer has no Node.js require access");
   await page.getByRole("button", { name: "从空白开始" }).click();
   await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/$/, { timeout: 90000 });
-  await page.getByRole("heading", { name: "我的画布" }).waitFor({ timeout: 15000 }).catch(() => page.getByText("我的画布", { exact: true }).first().waitFor());
+  await page.getByTestId("neural-workspace").waitFor({ timeout: 15000 });
+  await page.getByRole("button", { name: "创作设置", exact: true }).waitFor();
   const resizeHome = async (width, height) => {
     const bounds = await application.evaluate(({ BrowserWindow }, size) => {
       const window = BrowserWindow.getAllWindows()[0];
@@ -76,49 +78,58 @@ try {
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   };
   const homeLayouts = [];
+  report.homeLayouts = homeLayouts;
   try {
     for (const [width, height, screenshot] of [[1280, 800, "smoke-home-1280.png"], [1920, 1080, "smoke-home-wide.png"]]) {
       await resizeHome(width, height);
       const layout = await page.evaluate(() => {
-        const main = document.querySelector("main");
-        const home = main.parentElement;
+        const home = document.querySelector('[data-testid="neural-workspace"]');
+        const main = home.querySelector("main");
         const header = home.querySelector("header");
-        const brandText = header.querySelector("a strong").parentElement;
-        const settings = [...header.querySelectorAll("button")].find((button) => button.textContent.includes("供应商与模型"));
-        const heading = document.getElementById("workspace-heading");
+        const brandText = header.querySelector('button[aria-label="超级画布首页"] > span:last-child');
+        const settings = header.querySelector('button[aria-label="创作设置"]');
+        const heading = main.querySelector("h1");
         const eyebrow = heading.previousElementSibling;
-        const eyebrowText = [...eyebrow.children].find((element) => element.textContent.trim());
-        const projects = document.querySelector('section[aria-labelledby="projects-heading"]');
-        const mainStyle = getComputedStyle(main);
+        const eyebrowLines = [...eyebrow.childNodes].filter(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim())
+          .flatMap(node => { const range = document.createRange(); range.selectNodeContents(node); return [...range.getClientRects()]; });
+        const moduleCards = [...main.querySelectorAll("[data-satellite-card]")];
+        const readableCards = moduleCards.every(element => {
+          const bounds = element.getBoundingClientRect();
+          return bounds.width > 100 && bounds.height > 30 && bounds.x >= -1 && bounds.y >= -1 &&
+            bounds.right <= innerWidth + 1 && bounds.bottom <= innerHeight + 1;
+        });
         const mainWidth = main.getBoundingClientRect().width;
         return {
           viewport: { width: innerWidth, height: innerHeight },
           brandDisplay: getComputedStyle(brandText).display,
+          brandDirection: getComputedStyle(brandText).flexDirection,
           actionsDisplay: getComputedStyle(settings.parentElement).display,
-          eyebrowWidth: eyebrowText.getBoundingClientRect().width,
-          eyebrowOverflow: eyebrowText.scrollWidth - eyebrowText.clientWidth,
-          eyebrowHeight: eyebrowText.getBoundingClientRect().height,
-          eyebrowLineHeight: parseFloat(getComputedStyle(eyebrowText).lineHeight),
+          eyebrowWidth: eyebrow.getBoundingClientRect().width,
+          eyebrowOverflow: eyebrow.scrollWidth - eyebrow.clientWidth,
+          eyebrowTextLines: eyebrowLines.length,
           homeWidth: home.clientWidth,
           homeOverflow: home.scrollWidth - home.clientWidth,
           documentOverflow: document.documentElement.scrollWidth - innerWidth,
           mainWidth,
-          mainContentWidth: mainWidth - parseFloat(mainStyle.paddingLeft) - parseFloat(mainStyle.paddingRight),
-          projectsWidth: projects.getBoundingClientRect().width,
+          mainHeight: main.getBoundingClientRect().height,
+          moduleCount: moduleCards.length,
+          readableCards,
         };
       });
       homeLayouts.push(layout);
-      await page.screenshot({ path: join(desktop, "release", screenshot) });
-      assert.equal(layout.brandDisplay, "grid", "packaged brand text must use the matching homepage stylesheet");
+      await page.screenshot({ path: join(output, screenshot) });
+      assert.equal(layout.brandDisplay, "flex", "packaged brand text must use the neural homepage stylesheet");
+      assert.equal(layout.brandDirection, "column", "packaged bilingual brand text must retain its stacked layout");
       assert.equal(layout.actionsDisplay, "flex", "packaged header controls must use the matching homepage stylesheet");
       assert.ok(layout.eyebrowWidth > 100, "homepage eyebrow text must not inherit the old 6px dot width");
       assert.ok(layout.eyebrowOverflow <= 1, "homepage eyebrow text must fit horizontally");
-      assert.ok(layout.eyebrowHeight <= layout.eyebrowLineHeight + 1, "homepage eyebrow text must stay on one line");
+      assert.equal(layout.eyebrowTextLines, 1, "homepage eyebrow text must stay on one line");
       assert.ok(layout.homeOverflow <= 1 && layout.documentOverflow <= 1, "homepage must not overflow the viewport horizontally");
       assert.ok(Math.abs(layout.mainWidth - layout.homeWidth) <= 2, "homepage main must expand with the window");
-      assert.ok(Math.abs(layout.projectsWidth - layout.mainContentWidth) <= 2, "project section must fill the available main content width");
+      assert.ok(Math.abs(layout.mainHeight - layout.viewport.height) <= 2, "neural workspace must fill the available content height");
+      assert.equal(layout.moduleCount, 4, "neural homepage must render all four module clusters");
+      assert.equal(layout.readableCards, true, "neural module cards must remain readable inside the resized viewport");
     }
-    report.homeLayouts = homeLayouts;
     report.checks.push("packaged homepage stylesheet matches its markup, keeps text readable and fills resized windows");
   } finally {
     await resizeHome(1440, 960);
@@ -380,7 +391,7 @@ try {
       await downloadDialog.getByRole("combobox", { name: "下载格式", exact: true }).selectOption(format);
       if (format === "jpg") {
         assert.match(await downloadDialog.innerText(), /透明.*白/u);
-        await page.screenshot({ path: join(desktop, "release/smoke-image-download-format.png") });
+        await page.screenshot({ path: join(output, "smoke-image-download-format.png") });
       }
       await downloadDialog.getByRole("button", { name: "下载", exact: true }).click();
       let downloaded;
@@ -562,7 +573,7 @@ try {
   assert.ok(designNode.data.parts[0].text.includes("画面比例为 210:289。主要元素以及文字必须在居中的 203:282 范围之内"));
   report.checks.push("customer source stays verbatim with the requested 203:282 safe area in the packaged app");
   report.checks.push("poster design studio creates a configured image workflow in the packaged app");
-  await page.screenshot({ path: join(desktop, "release/smoke-canvas.png") });
+  await page.screenshot({ path: join(output, "smoke-canvas.png") });
   await smokeCustomSuppliers(page, api, origin);
   report.checks.push("custom supplier names, rename propagation, group/model selection and saved connection identity");
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
@@ -593,7 +604,7 @@ try {
   await reopened.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/$/, { timeout: 90000 });
   await profileDiagnostics("profile-restart-home-ready");
   report.restartRendering = await captureRenderedHome(application, reopened,
-    join(desktop, "release/smoke-home-restart.png"), join(desktop, "release/smoke-home-restart-capture.png"));
+    join(output, "smoke-home-restart.png"), join(output, "smoke-home-restart-capture.png"));
   report.checks.push("existing profile restarts into a visible homepage with nonempty Electron paint");
   assert.equal(new URL(reopened.url()).origin, origin, "reuse the available port so browser drafts keep their origin");
   const reopenedData = await reopened.evaluate(async () => {
@@ -648,11 +659,11 @@ try {
   const page = await application.firstWindow().catch(() => null);
   if (page && !page.isClosed()) {
     report.visibleText = await page.locator("body").innerText().catch(() => "");
-    await page.screenshot({ path: join(desktop, "release/smoke-failure.png") }).catch(() => {});
+    await page.screenshot({ path: join(output, "smoke-failure.png") }).catch(() => {});
   }
   throw error;
 } finally {
-  await writeFile(join(desktop, "release/smoke-report.json"), JSON.stringify(report, null, 2));
+  await writeFile(join(output, "smoke-report.json"), JSON.stringify(report, null, 2));
   if (!succeeded) await application.evaluate(({ app }) => app.exit(1)).catch(() => {});
   console.log(JSON.stringify(report));
 }

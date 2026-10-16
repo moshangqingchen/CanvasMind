@@ -86,7 +86,7 @@ export async function smokeCustomSuppliers(page, api, origin) {
   assert.match(await select.locator("option:checked").textContent(), /^怪兽设计 · .* · 余额未读取$/u);
   assert.equal(await select.inputValue(), monster.supplier.supplierKey);
   await page.goto(origin);
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByRole("button", { name: "创作设置", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "供应商与模型设置" });
   await settings.getByRole("button").filter({ has: page.locator("strong", { hasText: "怪兽设计" }) }).click();
   await settings.locator("summary").filter({ hasText: "账号账务与生成方式" }).click();

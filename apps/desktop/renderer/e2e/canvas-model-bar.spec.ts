@@ -9,7 +9,7 @@ const model: ModelDescriptor = {
   metadata: { canvasRunnable: true, priceSource: "generated-result", priceLabel: "$0.08/张（账单实测）· 4K",
     measuredPrice: { parameters: { n: 1, size: "3840x2160", quality: "max", background: "transparent" } } },
 };
-const screenshots = resolve(process.cwd(), "../../../.codex-logs/2026-10-16-canvas-layout/screenshots");
+const screenshots = resolve(process.env.CANVAS_LAYOUT_EVIDENCE_DIR ?? resolve(process.cwd(), "../../../.codex-logs/2026-10-16-canvas-layout/screenshots"));
 
 test("型号栏保留简短报价、完整证据提示和独立运行按钮", async ({ page, request }) => {
   expect(process.env.PLAYWRIGHT_BASE_URL).toBeFalsy();

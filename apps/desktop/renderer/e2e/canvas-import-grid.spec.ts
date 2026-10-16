@@ -5,7 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { AssetView, CanvasDocument, CanvasNode } from "../components/types";
 import type { MaterialDropEventView } from "../lib/client-api";
 
-const screenshotDirectory = resolve(process.cwd(), "../../../.codex-logs/2026-10-16-canvas-layout/screenshots");
+const screenshotDirectory = resolve(process.env.CANVAS_LAYOUT_EVIDENCE_DIR ?? resolve(process.cwd(), "../../../.codex-logs/2026-10-16-canvas-layout/screenshots"));
 const now = "2026-10-16T00:00:00.000Z";
 
 async function fixture(page: Page, origin: string, options: { fallbackDimensions?: boolean; order?: "filename" | "connection" } = {}) {

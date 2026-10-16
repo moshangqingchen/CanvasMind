@@ -1232,7 +1232,7 @@ test("切换同协议的不同站点会重置分组筛选和地址表单", async
 
 test("供应商可从地址扫描失败转手动分组，画布和智能体共用已有 Key", async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await mockSuppliers(page);
   await openSettings(page);
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
@@ -1300,14 +1300,14 @@ test("供应商可从地址扫描失败转手动分组，画布和智能体共�
   expect(api.writes.filter(write => write.apiKey)).toHaveLength(1);
   expect(api.writes.find(write => write.apiKey)?.apiKey).toBe("fixture-canvas-key");
   await page.screenshot({
-    path: "test-results-suppliers/suppliers-manual-flow.png",
+    path: testInfo.outputPath("suppliers-manual-flow.png"),
     fullPage: true,
   });
 });
 
 test("公开目录与实际 Key 结果分别呈现，陈旧缓存不冒充刷新成功", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1080 });
   await mockSuppliers(page, { existing: true, stale: true });
   await openSettings(page);
@@ -1335,12 +1335,12 @@ test("公开目录与实际 Key 结果分别呈现，陈旧缓存不冒充刷新
     group.locator("code").filter({ hasText: "scanned-image" }),
   ).toBeVisible();
   await page.screenshot({
-    path: "test-results-suppliers/suppliers-desktop.png",
+    path: testInfo.outputPath("suppliers-desktop.png"),
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
-    path: "test-results-suppliers/suppliers-mobile.png",
+    path: testInfo.outputPath("suppliers-mobile.png"),
     fullPage: true,
   });
   expect(

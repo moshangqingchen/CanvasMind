@@ -36,7 +36,9 @@ async function capture(page: Page, name: string) {
   });
 }
 async function captureRework(page: Page, name: string) {
-  const directory = resolve(repository, ".codex-logs/2026-10-16-redesign/out/assistant/rework/after");
+  const directory = process.env.NEURAL_EVIDENCE_DIR
+    ? join(output, "rework", "after")
+    : resolve(repository, ".codex-logs/2026-10-16-redesign/out/assistant/rework/after");
   await mkdir(directory, { recursive: true });
   await page.screenshot({ path: join(directory, `${name}.png`), animations: "allow" });
 }

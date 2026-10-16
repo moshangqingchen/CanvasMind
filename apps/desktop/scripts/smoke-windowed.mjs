@@ -24,9 +24,8 @@ async function backendIdentity(application) {
 }
 
 /** One lightweight normal-GPU startup/restart check, with no supplier requests. */
-export async function runWindowedSmoke({ electron, executablePath, baseArgs, environment, desktop, packaged }) {
+export async function runWindowedSmoke({ electron, executablePath, baseArgs, environment, output, packaged }) {
   const profileRoot = await mkdtemp(join(tmpdir(), "supercanvas-desktop-smoke-windowed-"));
-  const output = join(desktop, "release");
   await mkdir(output, { recursive: true });
   const args = [...baseArgs, "--smoke-test", "--smoke-windowed", `--smoke-profile=${profileRoot}`];
   const report = { packaged, windowed: true, profileRoot, checks: [], rendererErrors: [] };

@@ -850,7 +850,7 @@ test("项目成果隔离、版本查看与评审意见带入修改节点", async
   expect(designFixture.browserRunSubmissions).toEqual([]);
 });
 
-test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 数量", async ({ page, designFixture }) => {
+test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 数量", async ({ page, designFixture }, testInfo) => {
   test.setTimeout(90000);
   const pageErrors: string[] = [];
   page.on("pageerror", error => pageErrors.push(error.message));
@@ -890,7 +890,7 @@ test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 
   await history.getByRole("button", { name: previewName, exact: true }).click();
   await expect(history.getByRole("textbox", { name: "评审备注", exact: true })).toHaveValue("侧栏草稿仍然保留");
   await expect(history.locator(".library-inspector")).toHaveCSS("opacity", "1");
-  await page.screenshot({ path: "../../../.codex-temp/redesign-gallery-desktop.png" });
+  await page.screenshot({ path: testInfo.outputPath("redesign-gallery-desktop.png") });
   for (const width of [960, 640, 390]) {
     await page.setViewportSize({ width, height: 820 });
     const bounds = await history.boundingBox();
@@ -900,7 +900,7 @@ test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 
     expect(inspector!.x).toBeGreaterThanOrEqual(0);
     expect(inspector!.x + inspector!.width).toBeLessThanOrEqual(width);
   }
-  await page.screenshot({ path: "../../../.codex-temp/redesign-gallery-narrow.png" });
+  await page.screenshot({ path: testInfo.outputPath("redesign-gallery-narrow.png") });
   await page.emulateMedia({ reducedMotion: "reduce" });
   expect(await history.locator(".library-inspector").evaluate(element => getComputedStyle(element).animationName)).toBe("none");
   await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -911,6 +911,6 @@ test("新版图片库保留浏览、侧边评审草稿并限制大图库的 DOM 
     samples.sort((a,b)=>a-b);
     return {images:1000,samples:samples.length,p50:samples[Math.floor(samples.length*.5)],p95:samples[Math.floor(samples.length*.95)],max:samples.at(-1),mountedCards:document.querySelectorAll('.library-card').length};
   });
-  await writeFile(new URL("../../../../.codex-temp/redesign-gallery-1000-performance.json",import.meta.url),JSON.stringify(frames,null,2));
+  await writeFile(testInfo.outputPath("redesign-gallery-1000-performance.json"),JSON.stringify(frames,null,2));
   expect(pageErrors).toEqual([]);
 });
