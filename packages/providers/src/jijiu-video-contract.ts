@@ -17,6 +17,8 @@ const contracts: Readonly<Record<string, Contract>> = {
   "MinimaxH3特价版": { group: "视频-MnimaxH3", min: 4, max: 15, fields: ["reference_images", "reference_videos", "reference_audios"], note: "固定 2K 出片；resolution 使用供应商声明的字符串字段，未公布此线路完整输入枚举。" },
   "SD2.0满血稳定933-线路一": { group: "视频SD2.0", min: 4, max: 15, resolutions: ["720p"], images: 9, videos: 3, audios: 3, fields: ["images", "videos", "audios"] },
   "SD2.0满血稳定933-线路二": { group: "视频SD2.0", min: 5, max: 15, resolutions: ["720p"], images: 9, videos: 3, audios: 3, fields: ["images", "videos", "audios"] },
+  "SD2.0满血稳定933-线路三": { group: "视频SD2.0", min: 5, max: 15, resolutions: ["720p"], images: 9, videos: 3, audios: 3, httpsOnly: true, fields: ["images", "video_refs", "audio_refs"] },
+  "SD2.0满血稳定933-线路四": { group: "视频SD2.0", min: 4, max: 15, resolutions: ["720p"], images: 9, videos: 3, audios: 3, httpsOnly: true, fields: ["imageUrls", "videoUrls", "audioUrls"], note: "供应商说明此线路带数字水印，按次计费。" },
   "SD2.0fast稳定903A": { group: "视频SD2.0", min: 4, max: 15, resolutions: ["720p"], images: 9, videos: 0, audios: 3 },
   "SD2.0fast稳定900D": { group: "视频SD2.0", min: 5, max: 15, durations: [5, 10, 15], ratios: ["9:16"], resolutions: ["720p"], images: 9, videos: 0, audios: 0, fields: ["reference_images", undefined, undefined] },
   "SD2.0mini稳定900B": { group: "视频SD2.0", min: 5, max: 15, resolutions: ["720p"], images: 9, videos: 0, audios: 0, fields: ["image_urls", undefined, undefined] },
@@ -24,7 +26,7 @@ const contracts: Readonly<Record<string, Contract>> = {
   "SD2.5特价30-10-10-线路一": { group: "视频SD2.5", min: 5, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "videos", "audios"] },
   "SD2.5特价30-10-10-线路二": { group: "视频SD2.5", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, httpsOnly: true, fields: ["image_urls", "video_urls", "audio_urls"] },
   "SD2.5特价30-10-10-线路三": { group: "视频SD2.5", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "video_refs", "audio_refs"] },
-  "SD2.5特价30-10线路一": { group: "视频SD2.5", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 0, audios: 10, fields: ["image_urls", undefined, "audio_urls"] },
+  "SD2.5特价30-10线路一": { group: "视频SD2.5", min: 4, max: 30, resolutions: ["720p"], images: 30, videos: 0, audios: 10, fields: ["image_urls", undefined, "audio_urls"], note: "专属文档固定 720p；价格 schema 同时列出 480p/720p。报价保留原始档位，生成按专属文档使用 720p；480p 生成能力未实测。" },
   "SD2.5特价30-10线路二": { group: "视频SD2.5", min: 5, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "videos", "audios"] },
   "SD2.5特价900线路一": { group: "视频SD2.5", min: 5, max: 30, resolutions: ["720p"], images: 9, videos: 0, audios: 0, fields: ["images", undefined, "audios"] },
   "满血seedance-2.5全参A": { group: "稳定满血视频模型", min: 4, max: 30, resolutions: ["480p", "720p", "1080p"], images: 30, videos: 0, audios: 10, fields: ["imageUrls", undefined, "audioUrls"], note: "供应商说明此线路带数字水印，按次计费。" },
@@ -33,8 +35,8 @@ const contracts: Readonly<Record<string, Contract>> = {
     referenceOnly: true, httpsOnly: true, ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], mediaMinSeconds: 2, mediaTotalSeconds: 30, totalAssets: 50,
     note: "仅支持文生视频与参考生成；参考素材 HTTPS 链接，合计最多 50 个；视频与音频每段至少 2 秒，各类型总时长最多 30 秒。" },
   "稳定seedance-2.5全参D": { group: "稳定满血视频模型", min: 5, max: 30, resolutions: ["720p"], images: 30, videos: 10, audios: 10, fields: ["images", "videos", "audios"] },
-  "稳定seedance-2.5全参E": { group: "稳定满血视频模型", min: 4, max: 30, resolutions: ["480p", "720p"], images: 30, videos: 10, audios: 10, inputDurationBilling: true, fields: ["image_refs", "video_refs", "audio_refs"],
-    note: "官网专属指南 §5.4 与当前同型号目录声明 480p / 720p；带参考视频时按真实输入时长加输出时长计费，并传 reference_video_seconds。" },
+  "稳定seedance-2.5全参E": { group: "稳定满血视频模型", min: 4, max: 30, resolutions: ["480p", "720p"], images: 30, videos: 0, audios: 10, fields: ["image_refs", undefined, "audio_refs"],
+    note: "2026-10-14 官网专属指南 §5.4 明确不支持参考视频；支持 30 图 / 10 音频，480p / 720p，按输出秒数计费。" },
   "稳定seedance-2.5参图参音F": { group: "稳定满血视频模型", min: 4, max: 29, resolutions: ["720p"], images: 30, videos: 0, audios: 10, fields: ["images", undefined, "audios"] },
   "wan3.0-video": { group: "视频WAN3", min: 2, max: 30, resolutions: ["480p", "720p", "1080p"], images: 10, videos: 5, audios: 5, wan: true },
   "wan3.0-video-prime": { group: "视频WAN3", min: 2, max: 30, resolutions: ["480p", "720p", "1080p"], images: 10, videos: 5, audios: 5, wan: true },
@@ -63,6 +65,12 @@ export function jijiuVideoModel(id: string, current?: ModelDescriptor, group?: s
   const min = c.min, max = c.max;
   const metadata = { ...current?.metadata };
   for (const key of ["durationRangeUnverified", "durationRangeSource", "durationRangeFallbackFamily", "userFallbackDurationRange", "resolutionRangeUnverified", "videoParameterConfirmedDefaults", "videoResolutionAllowsCustom", "videoDurationValues", "videoSupportsAutomaticDuration"]) delete metadata[key];
+  // Retire only this exact line's former input-duration contract. Saved inputs
+  // remain on the request and are rejected below, rather than silently changed.
+  if (id === "稳定seedance-2.5全参E") {
+    delete metadata.billingIncludesInputDuration;
+    delete metadata.priceContractWarning;
+  }
   if (metadata.jijiuGroupUnavailable === true && groupAllowed(id, c, group)) { delete metadata.canvasUnavailableReason; delete metadata.canvasRunnable; }
   const parameters: ModelParameterDescriptor[] = [
     { key: "duration", label: "视频时长", control: c.wan || c.durations || min === max ? "select" : "number", valueType: "integer", step: 1,
@@ -89,7 +97,7 @@ export function jijiuVideoModel(id: string, current?: ModelDescriptor, group?: s
   return { ...current, id, name: current?.name ?? id, operations: ["video.generate", "video.image-to-video"], inputKinds: ["text", "image", "image[]", ...(c.videos !== 0 ? ["video" as const, "video[]" as const] : []), ...(c.audios !== 0 ? ["audio" as const, "audio[]" as const] : [])], outputKinds: ["video"], parameters,
     limits: { ...(c.images === undefined ? {} : { maxInputImages: c.images }), ...(c.videos === undefined ? {} : { maxInputVideos: c.videos }), ...(c.audios === undefined ? {} : { maxInputAudios: c.audios }), ...(c.wan ? { maxInputVideoDurationSeconds: 15 } : {}) },
     metadata: { ...metadata, supplier: "jijiu", modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared", protocol: "openai-videos", documentationUrl: JIJIU_VIDEO_DOCS,
-      endpointPath: "/v1/videos", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false, videoContractCheckedAt: "2026-10-13",
+      endpointPath: "/v1/videos", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false, videoContractCheckedAt: "2026-10-14",
       videoMinDuration: c.openDuration ? undefined : min, videoMaxDuration: c.openDuration ? undefined : max, ...(c.durations ? { videoDurationValues: [...c.durations] } : min === max ? { videoDurationValues: [min], videoParameterConfirmedDefaults: { duration: min } } : {}), videoSupportedResolutions: [...(c.resolutions ?? [])],
       videoParameterAliases: { duration: ["seconds", "duration_seconds"], aspect_ratio: ["ratio"] },
       ...(!c.resolutions?.length ? { resolutionRangeUnverified: true, videoResolutionAllowsCustom: true } : {}),
@@ -103,7 +111,7 @@ export function jijiuVideoModel(id: string, current?: ModelDescriptor, group?: s
       jijiuGroupUnavailable: !groupAllowed(id, c, group), ...(!groupAllowed(id, c, group) ? { canvasRunnable: false, canvasUnavailableReason: "当前极九分组未上架此完整型号。" } : {}) } };
 }
 const list = (v: unknown): unknown[] => v === undefined || v === "" ? [] : Array.isArray(v) ? v : [v];
-const aliases = { image: ["images", "imageUrls", "image_refs", "input_reference", "reference_images", "reference_image_urls", "image_urls", "image_url", "image"], video: ["reference_videos", "video_refs", "videos", "video_urls", "video_url"], audio: ["reference_audios", "audioUrls", "audio_refs", "audios", "audio_urls", "audio_url"] } as const;
+const aliases = { image: ["images", "imageUrls", "image_refs", "input_reference", "reference_images", "reference_image_urls", "image_urls", "image_url", "image"], video: ["reference_videos", "videoUrls", "video_refs", "videos", "video_urls", "video_url"], audio: ["reference_audios", "audioUrls", "audio_refs", "audios", "audio_urls", "audio_url"] } as const;
 function materialFields(c?: Contract): readonly [string, string | undefined, string | undefined] {
   return c?.fields ?? (c?.wan ? ["images", "videos", "audios"] : ["images", "reference_videos", "reference_audios"]);
 }
@@ -121,7 +129,7 @@ export function normalizeJijiuVideoParameters(request: NormalizedRequest): Recor
   if (seconds !== undefined && seconds !== "") p.seconds = seconds;
   if (ratio !== undefined && ratio !== "") p.aspect_ratio = ratio;
   for (const key of ["resolution", "size", "seed", "negative_prompt", "watermark", "prompt_optimizer", "callback_url", "metadata", "reference_video_seconds"])
-    if (s[key] !== undefined && s[key] !== "") p[key] = s[key];
+    if (s[key] !== undefined && s[key] !== "" && !(request.model === "稳定seedance-2.5全参E" && key === "reference_video_seconds")) p[key] = s[key];
   const fields = materialFields(fixed);
   for (const [kind, field] of [["image", fields[0]], ["video", fields[1]], ["audio", fields[2]]] as const) {
     if (!field) continue;
@@ -143,6 +151,8 @@ export function jijiuVideoRequestIssues(request: NormalizedRequest, current?: Mo
   const c = contract(request.model ?? "", current); if (!c) return [];
   const descriptor = jijiuVideoModel(request.model!, current)!, p = normalizeJijiuVideoParameters(request), source = request.parameters ?? {};
   const issues: ValidationIssue[] = [], add = (path: string, message: string) => issues.push({ path, code: "invalid_parameter", message });
+  if (request.model === "稳定seedance-2.5全参E" && source.reference_video_seconds !== undefined && source.reference_video_seconds !== "")
+    add("parameters.reference_video_seconds", "此线路已取消参考视频，按输出秒数计费；已保存的参考视频时长保留，请移除后提交。");
   if (!groupAllowed(request.model!, c, group)) add("model", "当前极九分组未上架此完整型号。");
   if (p.seconds !== undefined && (typeof p.seconds !== "number" || !Number.isSafeInteger(p.seconds) || (c.openDuration ? p.seconds <= 0 : p.seconds < c.min || p.seconds > c.max || c.durations && !c.durations.includes(p.seconds)))) add("parameters.duration", c.openDuration ? "视频时长必须为正整数秒；API真实范围由此分组上游校验，保留用户原值。" : c.durations ? `此型号时长仅支持 ${c.durations.join(" / ")} 秒；保留原值，请改选。` : `此型号时长必须为 ${c.min}–${c.max} 的整数秒${c.wan ? "，当前不接受 -1 自动时长" : ""}；保留原值，请改选。`);
   const durationAliases = ["duration", "seconds", "duration_seconds"].filter(key => source[key] !== undefined).map(key => source[key]);

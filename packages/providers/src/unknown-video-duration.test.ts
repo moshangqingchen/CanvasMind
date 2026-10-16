@@ -6,7 +6,7 @@ import { normalizeRemainingVideoParameters, remainingVideoModel, remainingVideoR
 
 const unconfirmed: { supplier: RemainingVideoSupplier; baseUrl: string; ids: string[]; required?: boolean; group?: string }[] = [
   { supplier: "chentu", baseUrl: "https://tu.988236.xyz", ids: ["sora-v3-pro"], required: true },
-  { supplier: "chentu", baseUrl: "https://tu.988236.xyz", ids: ["grok-imagine-video-1.5（按次）", "grok-video1.5-fast", "grok--video1.0", "minimax-h3 768p"] },
+  { supplier: "chentu", baseUrl: "https://tu.988236.xyz", ids: ["grok-video1.5-fast", "grok--video1.0", "minimax-h3 768p"] },
   { supplier: "cyberafei", baseUrl: "https://api.3365api.cn", ids: ["minimax-h3", "veo3.1", "veo3.1-fast", "veo3.1-lite", "omni-flash"] },
   { supplier: "mikoto", baseUrl: "https://api.mikoto.vip", ids: ["grok-imagine-video", "grok-imagine-video-1.5"] },
   { supplier: "hangzhale", baseUrl: "https://api.hangzhale.com", ids: ["grok-imagine-video", "grok-imagine-video-1.5"] },
@@ -14,6 +14,17 @@ const unconfirmed: { supplier: RemainingVideoSupplier; baseUrl: string; ids: str
 const cases = unconfirmed.flatMap(entry => entry.ids.map(id => ({ ...entry, id })));
 
 describe("documented native duration fields without exhaustive ranges", () => {
+  it("updates Chentu's newly documented 3–15 second Grok range while preserving an old out-of-range input", () => {
+    const id = "grok-imagine-video-1.5（按次）";
+    const model = remainingVideoModel("chentu", id, { id, name: id, operations: ["video.generate"], metadata: { durationRangeUnverified: true } })!;
+    expect(model.parameters?.find(parameter => parameter.key === "duration")).toMatchObject({ min: 3, max: 15 });
+    expect(model.metadata?.durationRangeUnverified).toBeUndefined();
+    const request = { connectionId: "offline", model: id, operation: "video.generate" as const, prompt: "offline", idempotencyKey: "no-submit", parameters: { duration: 38 } };
+    expect(normalizeRemainingVideoParameters("chentu", request).duration).toBe(38);
+    expect(remainingVideoRequestIssues("chentu", request)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.duration" })]));
+    expect(remainingVideoRequestIssues("chentu", { ...request, parameters: { duration: 15 } })).toEqual([]);
+    expect(request.parameters.duration).toBe(38);
+  });
   it.each(cases)("preserves typed $supplier / $id durations and never invents a default", async entry => {
     const context = { group: entry.group }, model = remainingVideoModel(entry.supplier, entry.id, undefined, context)!;
     const duration = model.parameters!.find(parameter => parameter.key === "duration")!;

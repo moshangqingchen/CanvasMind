@@ -70,7 +70,7 @@ describe("supplier video contracts", () => {
     expect(isRemainingVideoModel("chentu", "seedance2.0-900")).toBe(false);
     expect(isRemainingVideoModel("secure", "wan3.0")).toBe(true);
     expect(isRemainingVideoModel("secure", "wan3.0-prime")).toBe(true);
-    expect(remainingVideoModelIds("chentu")).toHaveLength(51);
+    expect(remainingVideoModelIds("chentu")).toHaveLength(64);
   });
 
   it.each(["wan3.0", "wan3.0-prime"])("retains new Secure group58 directory ID %s but applies its documented wire restriction", id => {

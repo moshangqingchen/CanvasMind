@@ -19,7 +19,7 @@ export function tokenComponentPricing(rates: readonly { id: string; label: strin
 
 /** Only unconditional component rates can be summarized or aggregated. */
 export function tokenComponentRate(pricing: StructuredModelPricing, tokenKind: string): number | undefined {
-  if (pricing.kind !== "token") return undefined;
+  if (pricing.kind !== "token" || pricing.timeMultipliers?.length) return undefined;
   const direct = tokenKind === "input" ? pricing.inputPerMillion : tokenKind === "output" ? pricing.outputPerMillion : undefined;
   if (direct !== undefined) return Number.isFinite(direct) && direct >= 0 ? direct : undefined;
   const rates = pricing.tiers?.filter(tier => tier.conditionMode === "all" && tier.conditions?.length === 1 &&
@@ -108,13 +108,15 @@ export function modelPriceAmount(pricing: StructuredModelPricing, parameters: Re
   if (amount === undefined || pricing.timeMultipliers === undefined) return amount;
   if (!Array.isArray(pricing.timeMultipliers) || !Number.isFinite(at.getTime()) || pricing.timeMultipliers.length > 8) return undefined;
   // Asia/Shanghai uses UTC+8; the clock is supplied by the caller, never request parameters.
-  const hour = new Date(at.getTime() + 8 * 60 * 60 * 1000).getUTCHours();
+  const local = new Date(at.getTime() + 8 * 60 * 60 * 1000);
+  const hour = local.getUTCHours(), weekday = local.getUTCDay();
   let multiplier = 1;
   for (const window of pricing.timeMultipliers) {
     if (!window || typeof window !== "object" || window.timeZone !== "Asia/Shanghai" || !Number.isInteger(window.startHour) || !Number.isInteger(window.endHour) ||
       window.startHour < 0 || window.startHour >= window.endHour || window.endHour > 24 ||
-      !Number.isFinite(window.multiplier) || window.multiplier < 0) return undefined;
-    if (hour >= window.startHour && hour < window.endHour) multiplier *= window.multiplier;
+      !Number.isFinite(window.multiplier) || window.multiplier < 0 ||
+      window.weekdaysOnly !== undefined && typeof window.weekdaysOnly !== "boolean") return undefined;
+    if (hour >= window.startHour && hour < window.endHour && (!window.weekdaysOnly || weekday > 0 && weekday < 6)) multiplier *= window.multiplier;
   }
   const result = Number((amount * multiplier).toPrecision(12));
   return Number.isFinite(result) ? result : undefined;

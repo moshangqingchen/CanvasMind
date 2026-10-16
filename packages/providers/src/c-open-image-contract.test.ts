@@ -11,6 +11,7 @@ import { applyGenimageImageCapabilities } from "./genimage-image-capabilities.js
 import { applyBananaImageCapabilities } from "./banana-image-contract.js";
 import { applyChuangxiangCurrentImageCapabilities } from "./chuangxiang-image-contract.js";
 import { applyChuangxiangMidjourneyCapabilities } from "./chuangxiang-midjourney-contract.js";
+import { applyUserImageSizePresets } from "./image-size-presets.js";
 
 const gpt = ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"];
 const scopes = [
@@ -32,6 +33,57 @@ const stale: ModelDescriptor = { id: gpt[0]!, name: gpt[0]!, operations: ["image
   metadata: { priceStatus: "partial", priceCheckedAt: "2026-09-20", priceLastAttemptStatus: "failed", imageResolutionProfiles: { "4K": { "16:9": "3840x2160" } } } };
 
 describe("C exact official groups preserve open image inputs without borrowed pixel matrices", () => {
+  it.each(gpt)("restores Synora 125 %s user size presets and sends every selected tier through the documented size field", async id => {
+    const config = { baseUrl: "https://synoralink.com/v1", modelGroup: "adobe全参生图", accountKeyGroupId: "125", usage: "canvas" };
+    const quality = id.includes("2.5") ? "max" : "high";
+    const raw: ModelDescriptor = { id, name: id, operations: ["image.generate", "image.edit"],
+      parameters: [{ key: "quality", label: "质量", control: "select", default: quality }],
+      metadata: { priceLabel: "2 006/张；2.5 008/张（分组说明参考）", supplierPriceGroupId: "125" } };
+    const original = structuredClone(raw);
+    const contract = applyCOpenImageCapabilities({ provider: "openai", config }, raw);
+    const projected = applyUserImageSizePresets(contract);
+    expect(raw).toEqual(original);
+    expect(cOpenImageRoute(config, id)).toMatchObject({ supplier: "synora", tiers: [], userSizePresets: true });
+    expect(cOpenImageRoute(config, id)?.quality).toBeUndefined();
+    expect(projected.metadata).toMatchObject({ imageSupportedResolutions: [], imagePixelBudgetPublished: false,
+      imageUserSizePresetSource: "user-request", imageUserSizePresetTiers: ["1K", "2K", "4K"], imageTierSource: "user-request",
+      priceLabel: original.metadata!.priceLabel, supplierPriceGroupId: "125" });
+    expect(projected.metadata?.imageFixedResolution).toBeUndefined();
+    expect(projected.metadata?.imageCustomDimensionRules).toBeUndefined();
+    const size = projected.parameters!.find(parameter => parameter.key === "size")!;
+    expect(size).toMatchObject({ control: "dimensions", allowCustomValue: true });
+    for (const field of ["min", "max", "step"] as const) expect(size[field]).toBeUndefined();
+    for (const tier of ["1K", "2K", "4K"])
+      expect(size.options?.filter(option => option.label.startsWith(`${tier} ·`))).toHaveLength(11);
+    expect(projected.parameters!.find(parameter => parameter.key === "quality")?.default).toBe(quality);
+    expect(applyUserImageSizePresets(applyCOpenImageCapabilities({ provider: "openai", config }, projected))).toEqual(projected);
+    const fetch = vi.fn<FetchImplementation>(async () => Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }));
+    const resolver = new StaticConnectionResolver([{ id: "synora125", provider: "openai", apiKey: "fixture", baseUrl: config.baseUrl,
+      settings: { ...config, scannedModelIds: [id], modelCatalogModels: [projected] } }]);
+    const adapter = new OpenAIImageAdapter(resolver, { fetch });
+    for (const tier of ["1K", "2K", "4K"]) {
+      const parameters = { size: "auto", size_tier: tier, aspect_ratio: "16:9", quality, n: 1 };
+      const before = structuredClone(parameters);
+      await adapter.submit({ connectionId: "synora125", operation: "image.generate", model: id, prompt: "offline fixture",
+        idempotencyKey: `mock-only-${tier}`, parameters });
+      const call = fetch.mock.calls.at(-1)!;
+      expect(String(call[0])).toBe("https://synoralink.com/v1/images/generations");
+      const body = JSON.parse(String(call[1]?.body));
+      expect(body).toMatchObject({ model: id, size: size.options!.find(option => option.label.startsWith(`${tier} · 16:9 ·`))!.value, quality, n: 1 });
+      for (const field of ["size_tier", "aspect_ratio", "resolution", "width", "height"]) expect(body).not.toHaveProperty(field);
+      expect(parameters).toEqual(before);
+    }
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+  it("keeps Synora 125's stable identity independent of same-name groups and fixed 99/115 restrictions", () => {
+    const config = { baseUrl: "https://synoralink.com", modelGroup: "renamed", accountKeyGroupId: "125" };
+    for (const id of gpt) expect(cOpenImageRoute(config, id)).toMatchObject({ tiers: [], userSizePresets: true });
+    expect(cOpenImageRoute({ ...config, modelGroup: "adobe全参生图", accountKeyGroupId: "999" }, gpt[0]!)).toBeUndefined();
+    expect(cOpenImageRoute({ ...config, accountKeyGroupId: undefined, modelGroup: "adobe全参生图" }, gpt[0]!)).toMatchObject({ tiers: [] });
+    expect(cOpenImageRoute(config, "gpt-image-2.5")).toBeUndefined();
+    expect(cOpenImageRoute({ ...config, accountKeyGroupId: "99" }, gpt[0]!)).toMatchObject({ tiers: ["4K"], quality: "medium" });
+    expect(cOpenImageRoute({ ...config, accountKeyGroupId: "115" }, gpt[1]!)).toMatchObject({ tiers: ["4K"] });
+  });
   it.each([...gpt, "gpt-image-2.5"])("sends current stable Monster 2's complete %s image fields without borrowing B-group measurements", async model => {
     const config = scopes.at(-1)!, quality = model.includes("2.5") ? "max" : "high";
     const fetch = vi.fn<FetchImplementation>(async () => Response.json({ data: [{ b64_json: "aW1hZ2U=" }] }));

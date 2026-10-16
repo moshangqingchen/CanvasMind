@@ -12,7 +12,7 @@ export function inferGenerationMediaKinds(id: string): GenerationMediaKind[] {
   if (/^(?:lyria-\d+(?:\.\d+)?(?:-pro)?|suno(?:[-_.].+)?|udio(?:[-_.].+)?|chirp-v\d+(?:[-_.].+)?|music-(?:generate|generation|generator|pro)(?:[-_.].+)?)$/iu.test(value)) return ["music"];
   if (/^grok(?:[-_.]imagine)?[-_.]image(?:$|[-_.])/iu.test(value) || /^kling(?:[-_.](?:v\d+|omni))?[-_.](?:image|text-to-image)(?:$|[-_.])/iu.test(value)) return ["image"];
   // Check output-video families first: image-to-video includes the word image.
-  if (/^(?:(?:sd\d+-)?seedance|(?:mm\d+-)?minimax[-_]?h\d|happyhorse|kling|runway|sora|veo|hailuo|luma|wan\d|grok[-_.](?:imagine[-_.])?video)(?:$|[-_.\d])/iu.test(value) ||
+  if (/^rh-minimaxh3(?:-pro)?-overseas$/iu.test(value) || /^(?:(?:sd\d+-)?seedance|(?:mm\d+-)?minimax[-_]?h\d|happyhorse|kling|runway|sora|veo|hailuo|luma|wan\d|grok[-_.](?:imagine[-_.])?video)(?:$|[-_.\d])/iu.test(value) ||
     /^video-(?:generate|generation|generator|pro|image-to-video|text-to-video)(?:$|[-_.])/iu.test(value) || value === "omni_video_edit") return ["video"];
   if (/^(?:gpt-image|(?:gemini[-_.].*[-_.])?image|gemini[-_.].*[-_.]image|gemini[-_.]nano[-_.]banana|nano[-_ ]?banana|dall[-_ ]?e|flux|stable[-_ ]?diffusion|sdxl|imagen|seedream|midjourney)(?:$|[-_.\d])/iu.test(value)) return ["image"];
   return [];

@@ -1,9 +1,9 @@
-/** Secure's standard WAN contract, read from its current DocsView on 2026-10-13.
+/** Secure's standard WAN contract, re-read from its current DocsView on 2026-10-14.
  * The standard endpoint defaults to 16:9; DashScope's adaptive default does not
  * apply to this transport. Keep both ratio aliases in the shared normalizer.
  */
 export const SECURE_WAN_VIDEO_CONTRACT = {
-  checkedAt: "2026-10-13",
+  checkedAt: "2026-10-14",
   min: 2, max: 30, images: 10, videos: 5, audios: 5,
   resolutions: ["480P", "720P", "1080P"], defaultResolution: "720P",
   ratios: ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],

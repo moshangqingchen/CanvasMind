@@ -631,6 +631,15 @@ export function bindScannedModelProtocols(
     modelOverrides: Object.fromEntries(Object.entries(connector.modelOverrides ?? {}).filter(([id]) => !miaowuPending.has(id))),
   });
   models = models.map(applyUserImageSizePresets);
+  // Contract enrichment can restore inferred capabilities, but cannot restore a
+  // model removed by a complete, exact-group official catalog observation.
+  models = models.map(model => {
+    const original = originalById.get(model.id);
+    return original?.metadata?.supplierAvailability20261014 && original.metadata.canvasRunnable === false
+      ? { ...model, metadata: { ...model.metadata, canvasRunnable: false,
+          canvasUnavailableReason: original.metadata.canvasUnavailableReason } }
+      : model;
+  });
   return {
     ...bound,
     models,

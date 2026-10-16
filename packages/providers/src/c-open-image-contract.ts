@@ -3,7 +3,7 @@ import { genimageImageRatioIssues } from "./genimage-image-capabilities.js";
 import { verifiedTransparentImageEvidence } from "./transparent-image-evidence.js";
 
 type Connection = { provider: string; config: Readonly<Record<string, unknown>> };
-export type COpenImageRoute = { supplier: "zhiyuan" | "synora" | "hang" | "monster"; group: string; tiers: string[]; quality?: "medium" | "high" | "max"; docs: string };
+export type COpenImageRoute = { supplier: "zhiyuan" | "synora" | "hang" | "monster"; group: string; tiers: string[]; quality?: "medium" | "high" | "max"; docs: string; userSizePresets?: true };
 const GPT_IDS = ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"];
 const COMPATIBLE_EXTRA_FIELDS = ["output_format", "output_compression", "background", "moderation", "user"];
 function measuredExtraFields(config: Readonly<Record<string, unknown>>, model: string, parameters: Readonly<Record<string, unknown>>, operation: ProviderOperation) {
@@ -40,6 +40,11 @@ export function cOpenImageRoute(config: Readonly<Record<string, unknown>>, model
       ["gpt  pro 0.12", "GPT pro", "GPT pro 企业级稳定"].includes(group) && (stable === undefined || stable === group))
     return { supplier: "zhiyuan", group, tiers: [], docs: "https://pool.chaozhiyuanai.com/docs" };
   if (origin === "https://synoralink.com" && GPT_IDS.includes(model)) {
+    // Group 125 uses the site's documented Images size field. Its own group
+    // has no published tier enum or fixed quality; canvas presets stay user
+    // choices and must not inherit group 99/115 restrictions.
+    if (stable ? stable === "125" : group === "adobe全参生图")
+      return { supplier: "synora", group, tiers: [], docs: "https://synoralink.com/docs", userSizePresets: true };
     if ((stable ? stable === "99" : group === "adobe中质量生图") && model === "gpt-image-2")
       return { supplier: "synora", group, tiers: ["4K"], quality: "medium", docs: "https://synoralink.com/docs" };
     if (stable ? ["115", "119"].includes(stable) : ["全参生图专线", "OAI官Key生图"].includes(group))
@@ -129,7 +134,7 @@ export function applyCOpenImageCapabilities(connection: Connection, model: Model
       imageNativeResolutionParameter: route.tiers.length ? "size_tier" : "size", imageResolutionTierParameter: "size_tier",
       cOpenImageContract: 1, imageOpenSizePreferences: true, imageNativeQualityOptions: true, imageSupportedResolutions: route.tiers,
       imageRequestResolutions: route.tiers, imageResolutionMode: "open-size-and-independent-preferences", imagePixelBudgetPublished: false,
-      imageTierSource: "official-group-description", imageSizeFieldContract: "supplier-open-string",
+      imageTierSource: route.userSizePresets ? "user-request" : "official-group-description", imageSizeFieldContract: "supplier-open-string",
       imageApplicationQualityDefault: quality, imageSupplierQualityDefault: null,
       imageAdditionalFieldContract: route.supplier === "synora" ? "supplier-linked-openai-compatible-images-reference"
         : restrictedExtras ? "not-declared-in-exact-supplier-material" : "existing-application-compatible-fields; current-exact-vendor-field-contract-not-revalidated",
@@ -138,5 +143,10 @@ export function applyCOpenImageCapabilities(connection: Connection, model: Model
       ...(measured ? { imageMeasuredAdditionalFields: { origin: "https://api.hangzhale.com", officialGroupId: "75", fullModelId: model.id,
         checkedAt: measured.checkedAt, operation: "image.generate", background: measured.request.background, output_format: measured.request.output_format,
         source: "same-exact-identity-original-transparent-png-evidence" } } : {}),
-      documentationUrl: route.docs, contractCheckedAt: "2026-10-12" } };
+      documentationUrl: route.docs, contractCheckedAt: route.userSizePresets ? "2026-10-16T03:14:17.378624Z" : "2026-10-12",
+      ...(route.userSizePresets ? {
+        imageContractDocumentUrl: "https://synoralink.com/assets/DocsView-52TR8_SV.js",
+        imageContractDocumentSha256: "7b7f1bd22df5a7d896d9385d0b5416a3b0f2531072b47c085c2925f8e740fb9f",
+        imageContractParameterCoverage: "supplier-linked-images-size-example-and-current-key-inventory; tiers-are-user-presets",
+      } : {}) } };
 }

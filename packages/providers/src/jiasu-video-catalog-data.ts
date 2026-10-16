@@ -1,4 +1,7 @@
-/** Public ai.jiasuapi.com/api/pricing video declarations captured 2026-10-09. Prices and account credentials are deliberately absent. */
+/** Public ai.jiasuapi.com/api/pricing declarations captured 2026-10-09,
+ * supplemented on 2026-10-14 for mini-503-J3 and the two new complete IDs.
+ * Older removed rows remain for historical task interpretation, not Key access.
+ * Prices and account credentials are deliberately absent. */
 export const JIASU_VIDEO_CATALOG = [
   {
     "id": "sd-2.0-933-720-fast-原生真人",
@@ -284,8 +287,16 @@ export const JIASU_VIDEO_CATALOG = [
   },
   {
     "id": "sd-2.0-mini-503-J3",
-    "description": "",
-    "apiParameters": null
+    "description": "5图3音频   支持人脸  最多12秒   720 p",
+    "apiParameters": [
+      {
+        "name": "resolution",
+        "type": "enum",
+        "default": "720p",
+        "range": "720p",
+        "description": "输出分辨率预设"
+      }
+    ]
   },
   {
     "id": "sd-2.0-J2",
@@ -561,6 +572,16 @@ export const JIASU_VIDEO_CATALOG = [
   },
   {
     "id": "doubao-seedance-2-0-260128",
+    "description": "",
+    "apiParameters": null
+  },
+  {
+    "id": "ov-Seedance 2.0-720p-nsp-gz-15s",
+    "description": "",
+    "apiParameters": null
+  },
+  {
+    "id": "seedance2.5-xing特惠",
     "description": "",
     "apiParameters": null
   }

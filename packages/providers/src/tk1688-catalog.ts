@@ -14,6 +14,8 @@ const text = (value: unknown, maximum = 8000) => typeof value === "string" ? val
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const money = (value: number) => String(Number(value.toPrecision(10)));
 const tiers = ["1K", "2K", "4K"] as const;
+const epochTime = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0 && value < 8640000000000
+  ? new Date(value * 1000).toISOString() : undefined;
 
 type PricedModel = { pricing?: StructuredModelPricing; priceLabel?: string; metadata?: Record<string, unknown>; parameters?: readonly ModelParameterDescriptor[]; operations?: ModelDescriptor["operations"] };
 const unavailableCnyPrice = "人民币价格暂不可用（汇率未读取）";
@@ -147,6 +149,8 @@ function skuModel(row: Row, checkedAt: string, status: Row | undefined): ModelDe
       tk1688QualitySource: facts.quality.length ? "merchant-description" : "official-image-station-common",
       tk1688CommonParameterSource: "https://tk1688.com/image-station/studio",
       tk1688MerchantId: row.supplier_id, tk1688Channel: row.channel_no,
+      ...(epochTime(row.created_time) ? { tk1688ListingCreatedAt: epochTime(row.created_time) } : {}),
+      ...(epochTime(row.last_price_change_at) ? { tk1688PriceChangedAt: epochTime(row.last_price_change_at) } : {}),
       tk1688ContextTokens: number(row.context_tokens), tk1688MaxOutputTokens: number(row.max_output_tokens),
       ...(declaredModalities ? { tk1688Modalities: declaredModalities } : {}),
       ...(typeof row.cache_unsupported === "boolean" ? { tk1688CacheUnsupported: row.cache_unsupported } : {}),
@@ -177,6 +181,8 @@ function smartModel(base: string, skus: ModelDescriptor[], checkedAt: string): M
   const priceLabel = unavailable ? unavailableCnyPrice : image ? `${range(priceValues)}/次（自动路由，实际价格由商家决定）`
     : `输入 ${range(tokenInputs)}/1M · 输出 ${range(tokenOutputs)}/1M（自动路由）`;
   const metadata = { ...first.metadata };
+  delete metadata.tk1688ListingCreatedAt;
+  delete metadata.tk1688PriceChangedAt;
   for (const key of ["tk1688ListingId", "tk1688MerchantId", "tk1688Channel", "tk1688FixedSize", "tk1688ReferenceSize", "tk1688ResolutionOptionsExclusive", "tk1688UnsupportedResolutions", "exclusiveResolutions", "imageUnsupportedResolutions", "fixedOutputCount", "tk1688OmitN", "tk1688OriginalPricing", "tk1688OriginalPriceLabel", "tk1688Modalities", "tk1688CacheUnsupported", "tk1688CacheReadPriceUsd", "tk1688CacheWritePriceUsd"]) delete metadata[key];
   return normalizeTk1688ImageSizeContract({ id: base, name: `${base} · 自动路由`, operations: first.operations,
     description: "自动选择商家。参数使用当前可选商家明确支持的交集；商家未公布或档位冲突时使用自动。",

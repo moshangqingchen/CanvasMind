@@ -8,6 +8,12 @@ import { seedanceDurationFallback, seedanceDurationFallbackDescription, seedance
 export const JIASU_VIDEO_DOCS = "https://aijiasu.apifox.cn/";
 export const JIASU_VIDEO_QUERY_DOCS = "https://aijiasu.apifox.cn/api-511071739";
 const specialMinimax = "minimax-h3-933-2k-支持真人";
+const october14CatalogIds = new Set(["sd-2.0-mini-503-J3", "ov-Seedance 2.0-720p-nsp-gz-15s", "seedance2.5-xing特惠"]);
+const compatibleProtocolEvidence = {
+  sourceUrl: "https://ai.jiasuapi.com/static/js/index.238e22c636.js",
+  checkedAt: "2026-10-14T23:32:27.812Z", sourceSha256: "654cea5eb78c5f8634027ac1b6c13fd5351ef49e4268a4c7d8300dd63400e10c",
+  submitAliases: ["/v1/videos", "/v1/video/generations"], outputSource: "poll.result_urls", retiredContentStatus: 410,
+};
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -100,7 +106,7 @@ function limitsFromDescription(description: string): Partial<NonNullable<ModelDe
   return limits;
 }
 function declaredRange(parameters: Row[], key: string): Row | undefined { return parameters.find(parameter => parameter.name === key); }
-const baseWireFields = ["duration", "ratio", "resolution", "images", "videos", "audios", "materials", "face"] as const;
+const baseWireFields = ["duration", "ratio", "resolution", "size", "images", "videos", "audios", "materials", "face"] as const;
 function additionalDeclarations(parameters: Row[]): Row[] {
   return parameters.filter(parameter => typeof parameter.name === "string" && /^[a-zA-Z][a-zA-Z\d_]{0,63}$/u.test(parameter.name) &&
     !["model", "prompt", "aspect_ratio", "seconds", ...baseWireFields].includes(parameter.name));
@@ -134,7 +140,8 @@ function durationParameter(id: string, facts: { description: string; apiParamete
     ? [...new Set(values.map(value => Number(value.replace("秒", ""))))].filter(value => value > 0) : [];
   const lower = /^(?:>=|≥)\s*(\d+)(?:秒)?$/u.exec(range), upper = /^(?:<=|≤)\s*(\d+)(?:秒)?$/u.exec(range);
   const min = match ? Number(match[1]) : number(declared?.min ?? declared?.minimum ?? lower?.[1]);
-  const max = match ? Number(match[2]) : number(declared?.max ?? declared?.maximum ?? upper?.[1]);
+  const proseMaximum = /最(?:长|多)\s*(\d+)\s*秒/u.exec(facts.description);
+  const max = match ? Number(match[2]) : number(declared?.max ?? declared?.maximum ?? upper?.[1] ?? proseMaximum?.[1]);
   const bounded = min !== undefined && max !== undefined && min > 0 && max >= min;
   const defaultValue = number(declared?.default);
   const validDefault = defaultValue !== undefined && Number.isInteger(defaultValue) && defaultValue > 0 &&
@@ -217,6 +224,8 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
       ...(evidence ? { description: evidence.allowedResolutions ? "当前佳速 vip 响应仅支持 720p；计费枚举不代表生成支持范围。" : "当前佳速 vip 的 480p 任务实际失败；保留官方报价，当前不可选择或提交 480p。720p/1080p 来自官方声明。" } : {}),
       ...(range?.required === true ? { required: true } : {}) },
   ];
+  parameters.push({ key: "size", label: "输出像素尺寸", control: "text", valueType: "string", allowCustomValue: true,
+    placeholder: "如 1280x720", description: "供应商 OpenAI 兼容说明中的 WIDTHxHEIGHT 像素字段；与 resolution 档位分别发送，留空不发送。" });
   parameters.push(...additionalDeclarations(facts.apiParameters).flatMap(row => { const parameter = declaredScalarParameter(row); return parameter ? [parameter] : []; }));
   const supported = (kind: "image" | "video" | "audio") => refs[{ image: "maxInputImages", video: "maxInputVideos", audio: "maxInputAudios" }[kind] as keyof typeof refs] !== 0;
   const { jiasuResolutionEvidence: _previousEvidence, jiasuDeclaredResolutions: _previousDeclared, jiasuContractGroup: _previousGroup,
@@ -231,7 +240,8 @@ export function jiasuVideoModel(id: string, current?: ModelDescriptor, group?: s
     limits: { ...current?.limits, ...refs }, metadata: { ...currentMetadata, supplier: "jiasu", modality: "video", catalogCapability: "video", operationsSource: "declared", outputKindsSource: "declared",
       protocol: "openai-videos", documentationUrl: id === specialMinimax ? "https://aijiasu.apifox.cn/api-520050937" : JIASU_VIDEO_DOCS,
       endpointPath: facts.apiExampleContract?.submitPath ?? "/v1/video/generations", endpointMethod: "POST", parameterSource: "supplier-documented-contract", protocolEvidence: "supplier-documentation", generationVerified: false,
-      videoContractCheckedAt: String(current?.metadata?.jiasuCatalogCheckedAt ?? "2026-10-09"), videoSupportedResolutions: sizes, videoMinDuration: duration.min, videoMaxDuration: duration.max,
+      videoContractCheckedAt: String(current?.metadata?.jiasuCatalogCheckedAt ?? (october14CatalogIds.has(id) ? "2026-10-14" : "2026-10-09")),
+      jiasuCompatibleProtocolEvidence: compatibleProtocolEvidence, videoSupportedResolutions: sizes, videoMinDuration: duration.min, videoMaxDuration: duration.max,
       ...(!duration.options?.length && (duration.min === undefined || duration.max === undefined) ? { durationRangeUnverified: true } : {}),
       ...seedanceDurationFallbackMetadata(durationFallback),
       ...(!sizes.length ? { resolutionRangeUnverified: true } : {}),
@@ -274,6 +284,7 @@ export function normalizeJiasuVideoParameters(request: NormalizedRequest, model?
   if (ratio !== undefined) p.ratio = ratio;
   const resolution = source.resolution !== undefined ? source.resolution : defaults.resolution;
   if (resolution !== undefined && resolution !== "") p.resolution = resolution;
+  if (source.size !== undefined && source.size !== "") p.size = source.size;
   for (const [kind, field] of [["image", "images"], ["video", "videos"], ["audio", "audios"]] as const) {
     const native = array(source[field]);
     const known = new Set(native.map(item => typeof item === "string" ? item : record(item).url));
@@ -305,6 +316,8 @@ export function jiasuVideoRequestIssues(request: NormalizedRequest, model?: Mode
   if (!request.operation.startsWith("video.")) add("operation", "此佳速型号只支持视频生成。");
   if (source.duration !== undefined && source.seconds !== undefined && source.duration !== source.seconds) add("parameters.duration", "duration 与 seconds 不能冲突。");
   if (source.aspect_ratio !== undefined && source.ratio !== undefined && source.aspect_ratio !== source.ratio) add("parameters.aspect_ratio", "aspect_ratio 与 ratio 不能冲突。");
+  if (p.size !== undefined && (typeof p.size !== "string" || !/^\d+x\d+$/u.test(p.size) || !p.size.split("x").every(value => Number.isSafeInteger(Number(value)) && Number(value) > 0)))
+    add("parameters.size", "输出像素尺寸必须为正整数 WIDTHxHEIGHT，例如 1280x720。");
   const extraFields = additionalDeclarations(declaration(request.model ?? "", model)?.apiParameters ?? []);
   for (const key of Object.keys(source)) if (!["seconds", "aspect_ratio", ...baseWireFields, ...extraFields.map(row => String(row.name))].includes(key)) add(`parameters.${key}`, `佳速合同未声明参数 ${key}；首尾帧请连接图片素材并选择对应角色。`);
   for (const row of extraFields) {

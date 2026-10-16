@@ -5,10 +5,43 @@ beforeEach(() => { isolatedNetwork.fetch.mockReset().mockRejectedValue(new Error
 afterEach(() => { try { expect(isolatedNetwork.fetch).not.toHaveBeenCalled(); } finally { vi.unstubAllGlobals(); } });
 import { chuangxiangCatalogPricing } from "./chuangxiang-catalog-pricing.js";
 import { parseSupplierCatalog, discoverSupplierCatalog } from "./supplier-catalog.js";
-import { modelPriceAmount } from "./media-billing.js";
+import { modelPriceAmount, tokenComponentRate } from "./media-billing.js";
 import { chuangxiangVideoModel } from "./chuangxiang-video-contract.js";
 
 describe("Chuangxiang plaza prices", () => {
+  it("applies the October 14 DeepSeek working-day peaks using Shanghai wall clock with exclusive endpoints", () => {
+    const row = { effective_rate_multiplier: .15, pricing: { billing_mode: "token", input_price: .0000015, output_price: .0000045, cache_read_price: .00000005 },
+      time_pricing: { timezone: "Asia/Shanghai", weekdays_only: true, periods: [
+        { start_time: "09:00:00", end_time: "12:00:00", multiplier: 2 }, { start_time: "14:00:00", end_time: "18:00:00", multiplier: 2 },
+      ] } };
+    const decoded = chuangxiangCatalogPricing(row)!;
+    expect(decoded.pricing.timeMultipliers).toEqual([
+      { timeZone: "Asia/Shanghai", startHour: 9, endHour: 12, multiplier: 2, weekdaysOnly: true },
+      { timeZone: "Asia/Shanghai", startHour: 14, endHour: 18, multiplier: 2, weekdaysOnly: true },
+    ]);
+    expect(decoded.priceLabel).toContain("上海时间周一至周五 9:00–12:00 ×2、14:00–18:00 ×2");
+    expect(tokenComponentRate(decoded.pricing, "input")).toBeUndefined();
+    for (const [at, expected] of [
+      ["2026-10-14T00:59:59Z", .225], ["2026-10-14T01:00:00Z", .45],
+      ["2026-10-14T03:59:59Z", .45], ["2026-10-14T04:00:00Z", .225],
+      ["2026-10-14T05:59:59Z", .225], ["2026-10-14T06:00:00Z", .45],
+      ["2026-10-14T09:59:59Z", .45], ["2026-10-14T10:00:00Z", .225],
+      ["2026-10-17T01:00:00Z", .225], ["2026-10-18T06:00:00Z", .225], ["2026-10-19T01:00:00Z", .45],
+    ] as const) expect(modelPriceAmount(decoded.pricing, { token_kind: "input", weekdaysOnly: false, timeZone: "UTC" }, new Date(at))).toBe(expected);
+    expect(modelPriceAmount(decoded.pricing, { token_kind: "cache_read" }, new Date("2026-10-14T01:00:00Z"))).toBe(.015);
+    const midnight = { ...decoded.pricing, timeMultipliers: [{ timeZone: "Asia/Shanghai" as const, startHour: 0, endHour: 1, multiplier: 2, weekdaysOnly: true }] };
+    // UTC Sunday has already become local Monday, and UTC Friday has become Saturday.
+    expect(modelPriceAmount(midnight, { token_kind: "input" }, new Date("2026-10-18T16:00:00Z"))).toBe(.45);
+    expect(modelPriceAmount(midnight, { token_kind: "input" }, new Date("2026-10-16T16:00:00Z"))).toBe(.225);
+    expect(modelPriceAmount(decoded.pricing, { token_kind: "input" }, new Date("invalid"))).toBeUndefined();
+    expect(row.time_pricing.periods).toHaveLength(2);
+    for (const time_pricing of ["unknown", {}, { ...row.time_pricing, timezone: "UTC" }, { ...row.time_pricing, weekdays_only: "true" },
+      { ...row.time_pricing, periods: [{ start_time: "09:30:00", end_time: "12:00:00", multiplier: 2 }] },
+      { ...row.time_pricing, periods: [...row.time_pricing.periods, row.time_pricing.periods[0]] }])
+      expect(chuangxiangCatalogPricing({ ...row, time_pricing })).toBeUndefined();
+    expect(modelPriceAmount({ ...decoded.pricing, timeMultipliers: [{ timeZone: "Asia/Shanghai", startHour: 9, endHour: 12, multiplier: 2, weekdaysOnly: "true" as unknown as boolean }] },
+      { token_kind: "input" })).toBeUndefined();
+  });
   it("preserves published cache components with only the model's effective multiplier", () => {
     const decoded = chuangxiangCatalogPricing({ effective_rate_multiplier: .75, pricing: { billing_mode: "token", input_price: 1e-5,
       output_price: 5e-5, cache_write_price: .0000125, cache_write_1h_price: .00002, cache_read_price: .000001, intervals: [] } })!;

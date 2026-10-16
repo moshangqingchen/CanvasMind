@@ -5,6 +5,24 @@ const record = (value: unknown): Record<string, unknown> => value && typeof valu
 const amount = (value: unknown): number | undefined => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const display = (value: number) => String(Number(value.toPrecision(10)));
 
+/** Only the documented whole-hour Shanghai windows are decoded. An unknown
+ * schedule must not silently become an unconditional base quote. */
+function timeMultipliers(value: unknown): StructuredModelPricing["timeMultipliers"] | false {
+  if (value === undefined || value === null) return undefined;
+  const time = record(value);
+  if (time.timezone !== "Asia/Shanghai" || typeof time.weekdays_only !== "boolean" || !Array.isArray(time.periods) || time.periods.length > 8) return false;
+  const windows: NonNullable<StructuredModelPricing["timeMultipliers"]>[number][] = [];
+  for (const value of time.periods) {
+    const period = record(value), start = /^(\d{2}):00:00$/u.exec(String(period.start_time)), end = /^(\d{2}):00:00$/u.exec(String(period.end_time));
+    const multiplier = amount(period.multiplier);
+    if (!start || !end || multiplier === undefined) return false;
+    const startHour = Number(start[1]), endHour = Number(end[1]);
+    if (startHour < 0 || startHour >= endHour || endHour > 24 || windows.some(window => startHour < window.endHour && endHour > window.startHour)) return false;
+    windows.push({ timeZone: "Asia/Shanghai", startHour, endHour, multiplier, weekdaysOnly: time.weekdays_only });
+  }
+  return windows.length ? windows : undefined;
+}
+
 export function isChuangxiangCatalogSource(siteUrl: string | undefined): boolean {
   try { return new URL(siteUrl ?? "").origin === "https://vapi.chuangxiangai.asia"; } catch { return false; }
 }
@@ -16,6 +34,12 @@ export function chuangxiangCatalogPricing(value: unknown, checkedAt = ""): { pri
   const row = record(value), raw = record(row.pricing), video = record(row.video_pricing);
   const multiplier = amount(row.effective_rate_multiplier);
   if (multiplier === undefined) return undefined;
+  const schedule = timeMultipliers(row.time_pricing);
+  if (schedule === false || schedule && raw.billing_mode !== "token") return undefined;
+  const timed = (priced: { pricing: StructuredModelPricing; priceLabel: string } | undefined) => priced && ({
+    ...priced, pricing: { ...priced.pricing, ...(schedule ? { timeMultipliers: schedule } : {}) },
+    priceLabel: priced.priceLabel + (schedule ? `；上海时间${schedule[0]?.weekdaysOnly ? "周一至周五" : "每日"} ${schedule.map(window => `${window.startHour}:00–${window.endHour}:00 ×${window.multiplier}`).join("、")}` : ""),
+  });
   const money = (value: number) => Number(value * multiplier).toPrecision(12);
   const scaled = (value: unknown) => { const n = amount(value); return n === undefined || !Number.isFinite(n * multiplier) ? undefined : Number(money(n)); };
   const base = { currency: "CNY", checkedAt, confidence: "snapshot" as const, sourceUrl: "https://vapi.chuangxiangai.asia/model-plaza" };
@@ -51,11 +75,11 @@ export function chuangxiangCatalogPricing(value: unknown, checkedAt = ""): { pri
           conditionMode: "all", conditions: [{ parameter: "token_kind", operator: "equals", value: rate.tokenKind },
             { parameter: "token_context_tier", operator: "equals", value: label }] });
       }
-      return { pricing: { ...base, kind: "token", tiers }, priceLabel: labels.join("；") };
+      return timed({ pricing: { ...base, kind: "token", tiers }, priceLabel: labels.join("；") });
     }
     const rates = components(raw);
     if (!rates) return undefined;
-    return tokenComponentPricing(rates, base);
+    return timed(tokenComponentPricing(rates, base));
   }
   const videoMode = video.billing_mode;
   if (videoMode === "per_request" || videoMode === "per_second") {

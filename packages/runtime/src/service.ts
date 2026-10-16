@@ -61,6 +61,7 @@ import {
   pdogImageSizeSelection,
   GenericRestAdapter,
   cangyuanMusicTransport,
+  cangyuanResultRetention,
   isCangyuanMusicRequest,
   modelSupportsGenerationMedia,
   AutoInterfaceAdapter,
@@ -117,6 +118,7 @@ import {
   downloadRemoteArtifact,
   consumeRemoteArtifact,
 } from "./remote-download.js";
+import { resultRetentionForInput, resultRetentionNote } from "./result-retention.js";
 import {
   aspectRatioFromPrompt,
   aspectRatioString,
@@ -1668,7 +1670,7 @@ export class RunService {
         try {
           ids.push(await this.archiveArtifact(artifact, runId, node.nodeId, index));
         } catch (error) {
-          throw new Error("已有结果归档失败，原始结果仍保留，可再次取回；未重新生成", { cause: error });
+          throw new Error(`已有结果归档失败，原始结果仍保留，可再次取回；未重新生成${resultRetentionNote(node.inputJson, artifact.kind)}`, { cause: error });
         }
       }
       const latestRun = await this.repository.getRun(runId);
@@ -3412,6 +3414,7 @@ export class RunService {
       );
     if (providerName === "cli" && !nodeRun.providerTaskId)
       await this.assertCliConnectionAvailable(connectionId, nodeRunId);
+    const resultRetention = cangyuanResultRetention(String(connectionConfig?.baseUrl ?? ""), operation.startsWith("video.") ? "video" : operation.startsWith("image.") ? "image" : undefined);
     const inputJson: JsonObject = {
       ...nodeRun.inputJson,
       provider: providerName,
@@ -3431,6 +3434,7 @@ export class RunService {
         role: asset.role ?? "reference",
       })),
       parameters: request.parameters ?? {},
+      ...(resultRetention ? { providerResultRetention: resultRetention } : {}),
       ...(imageMask ? { imageMask: { ...imageMask.provenance } } : {}),
       ...(providerName === "cli" ? {
         cliDeadlineAt: typeof nodeRun.inputJson.cliDeadlineAt === "number"
@@ -3702,7 +3706,7 @@ export class RunService {
       }
       const message = error instanceof Error ? error.message : String(error);
       throw new NeedsAttentionError(
-        `供应商任务已完成，但输出归档失败：${message}`,
+        `供应商任务已完成，但输出归档失败：${message}${resultRetentionNote(inputJson, operation.startsWith("video.") ? "video" : "image")}`,
         { code: "artifact_archive_failed", cause: error },
       );
     }
@@ -3759,6 +3763,7 @@ export class RunService {
     const outputNode = artifactKind === "image" || artifactKind === "video"
       ? (await this.repository.listNodeRuns(runId)).find(value => value.nodeId === nodeId) : undefined;
     const requestedOutputParameters = isRecord(outputNode?.inputJson.parameters) ? outputNode.inputJson.parameters : {};
+    const resultRetention = resultRetentionForInput(outputNode?.inputJson ?? {}, artifactKind);
     const outputParameters = artifactKind === "video" ? videoOutputParametersFromInput(outputNode?.inputJson ?? {}) : requestedOutputParameters;
     const id = createHash("sha256")
       .update(`${runId}\0${nodeId}\0${outputIndex}`)
@@ -3945,6 +3950,7 @@ export class RunService {
         runId,
         nodeId,
         outputIndex,
+        ...(resultRetention ? { providerResultRetention: resultRetention } : {}),
         ...(inspectedImage ? { ...inspectedImage.metadata,
           ...(reportedOutputMimeType ? { reportedOutputMimeType } : {}),
           ...(artifact.mimeType && artifact.mimeType !== inspectedImage.mimeType ? { providerOutputMimeType: artifact.mimeType } : {}),

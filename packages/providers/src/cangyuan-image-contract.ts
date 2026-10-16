@@ -2,6 +2,8 @@ import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, Vali
 import type { RestModelConnectorOverride, RestRequestMapping } from "./rest.js";
 import { userImageQualityOptions } from "./user-image-quality-presets.js";
 import { CANGYUAN_IMAGE_DOCUMENTS } from "./cangyuan-image-documents.js";
+import { cangyuanQualityParameterUnsupported, CANGYUAN_QUALITY_RESTRICTION_SOURCE } from "./cangyuan-current-restrictions.js";
+import { cangyuanResultRetention } from "./cangyuan-result-retention.js";
 
 const kTiers = ["1k", "2k", "4k"];
 const options = (values: readonly string[]) => values.map(value => ({ label: value, value }));
@@ -50,12 +52,13 @@ export function cangyuanDocumentedImageModel(model: ModelDescriptor): ModelDescr
   }
   // This is the user's quality preference over the existing Images quality field,
   // separate from a supplier declaration in a document that omitted it.
-  if (!doc.fields.quality && userImageQualityOptions(model.id).length) parameters.push({ key: "quality", label: "质量", control: "select", valueType: "string", operations,
+  if (!doc.fields.quality && !cangyuanQualityParameterUnsupported(model.id) && userImageQualityOptions(model.id).length) parameters.push({ key: "quality", label: "质量", control: "select", valueType: "string", operations,
     default: model.id.startsWith("gpt-image-2.5") ? "max" : "high", options: userImageQualityOptions(model.id),
     description: "用户指定的应用质量预设；按 Images 协议 quality 字段发送。" });
   if (doc.fields.mask) parameters.push({ key: "mask", label: "蒙版 HTTPS 地址", control: "text", valueType: "string", operations: ["image.edit"],
     ...(!doc.parameterRules && mj ? { visibleWhen: [{ parameter: "reference", values: ["editor"] }] } : {}), description: doc.fields.mask });
   const metadata = { ...model.metadata };
+  if (cangyuanQualityParameterUnsupported(model.id)) for (const key of ["imageUserQualityPresets", "imageUserQualityPresetSource", "imageUserQualitySourceParameter", "imageApplicationQualityDefault"]) delete metadata[key];
   // Discard inherited family pixel presets before installing this exact SKU.
   for (const key of ["imageNativeResolutionParameter", "imageNativeResolutionOptions", "imageOutputDimensions", "imageApproximateResolutions", "imageUnsupportedResolutions", "imageNativeQualityOptions"])
     delete metadata[key];
@@ -72,7 +75,9 @@ export function cangyuanDocumentedImageModel(model: ModelDescriptor): ModelDescr
       ...(x || nativeQuality ? { imageNativeResolutionParameter: x ? "tier" : "quality", imageNativeResolutionOptions: true, imageNativeQualityOptions: true } : { imageResolutionMode: fixedTier(model.id) ? "fixed-model-tier" : "provider-decided" }),
       ...(fixedTier(model.id) ? { imageFixedResolution: fixedTier(model.id)!.toUpperCase() } : {}),
       imagePixelBudgetPublished: Boolean(doc.dimensionRules), imageQualityOptionsCompleteEnum: Boolean(rules.quality?.enum),
-      ...(!doc.fields.quality && userImageQualityOptions(model.id).length ? { imageUserQualityPresetSource: "user-request", imageApplicationQualityDefault: model.id.startsWith("gpt-image-2.5") ? "max" : "high" } : {}),
+      ...(!doc.fields.quality && !cangyuanQualityParameterUnsupported(model.id) && userImageQualityOptions(model.id).length ? { imageUserQualityPresetSource: "user-request", imageApplicationQualityDefault: model.id.startsWith("gpt-image-2.5") ? "max" : "high" } : {}),
+      ...(cangyuanQualityParameterUnsupported(model.id) ? { imageQualityParameterUnsupported: true, imageQualityRestrictionSource: CANGYUAN_QUALITY_RESTRICTION_SOURCE } : {}),
+      resultRetention: cangyuanResultRetention("https://ai.cangyuansuanli.cn", "image"),
       ...(doc.dimensionRules ? { imageCustomDimensionRules: { alignment: doc.dimensionRules.step, maximumEdge: doc.dimensionRules.maxSide, maximumAspectRatio: doc.dimensionRules.maxAspectRatio, minimumPixels: doc.dimensionRules.minPixels, maximumPixels: doc.dimensionRules.maxPixels } } : {}),
       imageCustomPixels: doc.customPixels, imageOutputEncodingFields: doc.fields.output_format ? ["output_format"] : [],
       imageSizeOptionsCompleteEnum: doc.pixelOptions.length > 0 && !doc.customPixels,
@@ -92,7 +97,7 @@ export function cangyuanDocumentedImageTransport(id: string, parameters?: Readon
     { target: "/prompt", source: { kind: "request", path: "$.prompt" } },
     { target: "/size", source: { kind: "request", path: "$.parameters.aspect_ratio" }, omitIfUndefined: true, omitValues: ["auto"] },
     ...(doc.customPixels || doc.pixelOptions.length ? [{ target: "/size", source: { kind: "request" as const, path: "$.parameters.size" }, omitIfUndefined: true, omitValues: ["auto"] }] : []),
-    ...[...new Set([...Object.keys(doc.fields).filter(key => !["model", "prompt", "size", "images", "mask"].includes(key)), ...(userImageQualityOptions(id).length ? ["quality"] : [])])].map((key): RestRequestMapping => ({ target: `/${key}`,
+    ...[...new Set([...Object.keys(doc.fields).filter(key => !["model", "prompt", "size", "images", "mask"].includes(key)), ...(!cangyuanQualityParameterUnsupported(id) && userImageQualityOptions(id).length ? ["quality"] : [])])].map((key): RestRequestMapping => ({ target: `/${key}`,
       source: { kind: "request", path: `$.parameters.${key}` }, omitIfUndefined: true })),
   ];
   const response = { taskIdPath: "$.id", taskIdFallbackPaths: ["$.task_id"], statusPath: "$.status", errorPath: "$.error.message", progressPath: "$.progress" };

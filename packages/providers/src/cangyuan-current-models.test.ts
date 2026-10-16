@@ -25,6 +25,19 @@ function adapterFor(id: string, response: unknown = { data: [{ url: "https://ima
 }
 
 describe("Cangyuan current complete public IDs", () => {
+  it("preserves real image usage from sync and completed polls without inserting missing counts", async () => {
+    const usage = { prompt_tokens: 11, completion_tokens: 23, total_tokens: 34, input_tokens: 11, output_tokens: 23 };
+    const id = "gpt-image-2.5-flare-az";
+    const synchronous = adapterFor(id, { data: [{ url: "https://images.example/one.png" }], usage });
+    const completed = await synchronous.adapter.submit(request(id, { async: false }));
+    expect(completed.result).toMatchObject({ remote: { usage } });
+    const asynchronous = adapterFor(id, { id: "same-task", status: "running" });
+    const pending = await asynchronous.adapter.submit(request(id));
+    expect((pending.result as { remote: unknown }).remote).not.toHaveProperty("usage");
+    asynchronous.fetcher.mockResolvedValueOnce(Response.json({ id: "same-task", status: "completed", data: [{ url: "https://images.example/one.png" }], usage }));
+    expect((await asynchronous.adapter.poll(pending)).result).toMatchObject({ remote: { usage } });
+    expect(String(asynchronous.fetcher.mock.calls[1]![0])).toBe(`${baseUrl}/v1/images/generations/same-task`);
+  });
   it.each(Object.entries(CANGYUAN_IMAGE_DOCUMENTS))("maps exact document fields and creation-specific polling for %s", async (id, document) => {
     const model = descriptor(id);
     expect(model.metadata?.imageNativeParameterContract).toBe(true);
@@ -241,14 +254,16 @@ describe("2026-10-12 Cangyuan document changes", () => {
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ model: id, prompt: "offline contract test", ...parameters });
     for (const n of [0, 11, 1.5, "3"]) expect(cangyuanCurrentRequestIssues(request(id, { n }), baseUrl)).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.n" })]));
   });
-  it("retains the user's highest quality where a GPT document omitted quality", async () => {
+  it("preserves but rejects saved quality after this exact SKU explicitly disabled quality", async () => {
     for (const [id, quality] of [["gpt-image-2", "high"], ["gpt-image-2.5-flare", "max"]] as const) {
       const current = descriptor(id);
-      expect(current.parameters?.find(p => p.key === "quality")?.default).toBe(quality);
-      expect(current.metadata?.imageUserQualityPresetSource).toBe("user-request");
+      expect(current.parameters?.find(p => p.key === "quality")).toBeUndefined();
+      expect(current.metadata?.imageQualityParameterUnsupported).toBe(true);
       const { adapter, fetcher } = adapterFor(id);
-      await adapter.submit(request(id, { quality, n: 2, size: "3840x2160" }));
-      expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toMatchObject({ quality, n: 2, size: "3840x2160" });
+      const saved = request(id, { quality, n: 2, size: "3840x2160" });
+      await expect(adapter.submit(saved)).rejects.toThrow(/quality/u);
+      expect(saved.parameters?.quality).toBe(quality);
+      expect(fetcher).not.toHaveBeenCalled();
     }
   });
   it("enforces exact fixed-tier dimension rules and true enums while leaving recommendations open", () => {

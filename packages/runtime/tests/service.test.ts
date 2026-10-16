@@ -4501,6 +4501,32 @@ describe("RunService archive-only result recovery", () => {
     expect(provider.submit).not.toHaveBeenCalled();
   });
 
+  it.each([["image", "2 小时", 7200], ["video", "1 天", 86400]] as const)(
+    "preserves Cangyuan %s retention evidence without treating old task timestamps as expired or generating again",
+    async (kind, label, seconds) => {
+      const repository = await testRepository();
+      const { run, node } = await seed(repository);
+      const inputJson = { ...node.inputJson, supplierWebsiteUrl: "https://ai.cangyuansuanli.cn",
+        submittedAt: "2026-10-01T00:00:00Z" };
+      await repository.updateNodeRun(node.id, { inputJson });
+      const provider = neverGenerateAdapter();
+      provider.adapter.extractOutputs = async () => [{ kind, data: validPngBytes,
+        mimeType: kind === "image" ? "image/png" : "video/mp4", ...(kind === "video" ? { metadata: { fake: true } } : {}) }];
+      const storage = new RecoverableStorage(3);
+      const service = new AdapterRunService(provider.adapter, repository, storage);
+      await expect(service.recoverRunOutputs(run.id)).rejects.toThrow(`生成完成后保留 ${label}`);
+      expect((await repository.getNodeRun(node.id))?.inputJson).toEqual(inputJson);
+      storage.recover();
+      await service.recoverRunOutputs(run.id);
+      const [asset] = await repository.listAssets();
+      expect(asset?.metadata.providerResultRetention).toMatchObject({ seconds, startsAt: "generation-completed",
+        sourceUrl: "https://ai.cangyuansuanli.cn/api/notice", certainty: "supplier-declared" });
+      expect(asset?.metadata.providerResultRetention).not.toHaveProperty("expiresAt");
+      expect(provider.submit).not.toHaveBeenCalled();
+      expect(provider.poll).not.toHaveBeenCalled();
+    },
+  );
+
   it("refuses a JSON body labeled as PNG and preserves the saved provider response for recovery", async () => {
     const repository = await testRepository();
     const { run, node } = await seed(repository);

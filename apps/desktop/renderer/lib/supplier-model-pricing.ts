@@ -1,6 +1,7 @@
 import { pricingFromSupplierEvidence } from "./supplier-price-evidence";
 import {
   discoverSupplierCatalog,
+  applySupplierModelAvailability,
   normalizeSupplierSiteBase,
   supplierDirectoryBase,
   providerFetch,
@@ -583,7 +584,7 @@ export function applySupplierCatalogPrices(
         : "价格未公布";
   const incomplete = catalog.complete === false || ["failed", "unauthorized"].includes(catalog.status);
   const groupModelIds = [...models.map(model => model.id), ...((selected ?? generic)?.models.map(model => model.id) ?? [])];
-  return models.map((model) => {
+  const priced = models.map((model) => {
     const catalogModel = (selected ?? generic)?.models.find(item => item.id === model.id);
     // Public API evidence refreshes independently of every price early-return.
     if (selected && catalogModel && isJiasuApiUrl(sourceUrl)) model = { ...model,
@@ -878,6 +879,7 @@ export function applySupplierCatalogPrices(
     }
     return pricedModel;
   });
+  return applySupplierModelAvailability(priced, group, catalog, sourceUrl, options.supplierGroupId);
 }
 
 /** Only model-scoped lines can supply a documented price. */

@@ -32,7 +32,7 @@ export function chentuCatalogVideoPricing(value: unknown, options: {
   const base = amount(rates.base), sourceUrl = "https://tu.988236.xyz/api/pricing", checkedAt = options.checkedAt ?? "";
   const description = typeof row.description === "string" ? row.description.trim() : "";
   const currency = String(row.currency ?? options.currency ?? "CNY").toUpperCase();
-  const dollarProse = /\$\s*\d+(?:\.\d+)?\s*\/s\b/u.test(description);
+  const dollarProse = /\$\s*\d+(?:\.\d+)?\s*\/s\b/u.test(description) || /按秒\s*\$\s*\d+(?:\.\d+)?/u.test(description);
   const conflict = dollarProse && currency !== "USD";
   const includesInput = second && /输出\s*\+\s*参考视频/u.test(description);
   const metadata: Record<string, unknown> = {

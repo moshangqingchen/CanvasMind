@@ -20,6 +20,8 @@ import { isJijiuCatalogSource, jijiuCatalogMediaPricing } from "./jijiu-catalog-
 import { isJijiuApiUrl, jijiuVideoModel } from "./jijiu-video-contract.js";
 import { applyJijiuImageCapabilities } from "./jijiu-image-contract.js";
 import { normalizeCangyuanAudioCatalogModel } from "./cangyuan-audio-catalog.js";
+import { cangyuanCatalogVideoPricing } from "./cangyuan-catalog-video-pricing.js";
+import { isChuangxiangVideoModel } from "./chuangxiang-video-contract.js";
 import { readMonsterChannelPlaza, type SupplierChannelPlazaEvidence } from "./supplier-channel-plaza.js";
 export { isCyberAfeiUnpricedCatalogVideo } from "./cyberafei-catalog-evidence.js";
 
@@ -186,6 +188,7 @@ export function supplierDirectoryBase(value: string): string {
 export function parseSupplierKeyGroups(
   payload: unknown,
   kind: "newapi" | "sub2api",
+  options: { supplierSiteUrl?: string } = {},
 ): DiscoveredSupplierGroup[] | null {
   const root = record(payload);
   if (
@@ -196,7 +199,8 @@ export function parseSupplierKeyGroups(
   const data: unknown = root?.data ?? payload;
   const groups = new Map<string, DiscoveredSupplierGroup>();
   const add = (id: string, label: string, raw: Record<string, unknown>) => {
-    const details = parseSupplierGroupDetails(raw, "key-groups");
+    const details = parseSupplierGroupDetails(isChuangxiangCatalogSource(options.supplierSiteUrl)
+      ? { rate_multiplier_unit_scale: 10, ...raw } : raw, "key-groups");
     const officialId = kind === "sub2api" ? supplierGroupId(raw.id) : undefined;
     const key = officialId ? `site-id:${officialId}` : `name:${id}`;
     if (id && groups.size < 500 && !groups.has(key))
@@ -337,11 +341,18 @@ export function parseSupplierCatalog(
       const officialId = supplierGroupId(group.id);
       add(id, label, undefined, officialId);
       const saved = byGroup.get(officialId ? `site-id:${officialId}` : `name:${id}`);
-      const details = parseSupplierGroupDetails(group, "model-plaza");
+      const details = parseSupplierGroupDetails(isChuangxiangCatalogSource(priceDisplay.supplierSiteUrl)
+        ? { rate_multiplier_unit_scale: 10, ...group } : group, "model-plaza");
       if (saved && details) saved.details = details;
       for (const rawModel of Array.isArray(group.models) ? group.models : []) {
-        const model = modelFrom(rawModel);
+        let model = modelFrom(rawModel);
         if (!model) continue;
+        const videoBilling = record(record(rawModel)?.video_pricing)?.billing_mode;
+        if (isChuangxiangCatalogSource(priceDisplay.supplierSiteUrl) && officialId === "27" &&
+            isChuangxiangVideoModel(model.id) && ["per_request", "per_second"].includes(String(videoBilling))) {
+          model = { ...model, capability: "video", outputKinds: ["video"], metadata: { ...model.metadata,
+            catalogGenerationDeclarationSource: "chuangxiang-group-27-video-pricing" } };
+        }
         const current = isChuangxiangCatalogSource(priceDisplay.supplierSiteUrl) ? chuangxiangCatalogPricing(rawModel, priceDisplay.checkedAt) : undefined;
         if (isSub2apiPlazaPricingSource(priceDisplay.supplierSiteUrl)) {
           const plaza = sub2apiPlazaPricing(rawModel, group, { supplierSiteUrl: priceDisplay.supplierSiteUrl ?? "",
@@ -459,6 +470,15 @@ export function parseSupplierCatalog(
         outputKinds: [miaowuKind] } : {}), priceLabel: native?.priceLabel ?? "价格条件待确认",
         metadata: { ...model.metadata, ...(miaowuKind ? { catalogCapability: miaowuKind, outputKindsSource: "declared" } : {}),
           ...(native ? { miaowuCatalogPricing: native.pricing } : { miaowuCatalogPricingIncomplete: true, priceUnavailableReason: "官方价格条件待确认" }) } };
+    }
+    const cangyuan = cangyuanCatalogVideoPricing(raw, { supplierSiteUrl: priceDisplay.supplierSiteUrl, group: id,
+      multiplier: Number(ratios?.[id] ?? 1), currency: explicitCurrency || currency, checkedAt: priceDisplay.checkedAt });
+    if (cangyuan) {
+      const metadata = { ...model.metadata, ...cangyuan.metadata };
+      delete metadata.officialCatalogPricing;
+      return { ...model, priceLabel: cangyuan.priceLabel, metadata: { ...metadata,
+        ...(cangyuan.pricing ? { officialCatalogPricing: cangyuan.pricing,
+          officialCatalogPriceGroupVerified: typeof ratios?.[id] === "number" && Number.isFinite(ratios[id]) && Number(ratios[id]) >= 0 } : {}) } };
     }
     const chentu = chentuCatalogVideoPricing(raw, { supplierSiteUrl: priceDisplay.supplierSiteUrl, group: id,
       multiplier: Number(ratios?.[id] ?? 1), currency: explicitCurrency || currency, checkedAt: priceDisplay.checkedAt });
@@ -692,7 +712,7 @@ export async function discoverSupplierCatalog(
     const result = await probe(`${siteUrl}${path}`, siteHeaders(platform));
     const groups =
       result.status === 200
-        ? parseSupplierKeyGroups(result.payload, platform)
+        ? parseSupplierKeyGroups(result.payload, platform, { supplierSiteUrl: siteUrl })
         : null;
     if (groups)
       return {

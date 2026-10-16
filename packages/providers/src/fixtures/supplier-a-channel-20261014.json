@@ -1,0 +1,850 @@
+{
+  "secure/pricing/channels": {
+    "sourceUrl": "https://token.secure-skill.com/api/v1/pricing/channels",
+    "checkedAt": "2026-10-14T23:27:42.211Z",
+    "sha256": "8b92bf98ae68eee860981ee9ee8024f77ca58a3d32d930031c403111b02e501f",
+    "payload": {
+      "code": 0,
+      "message": "success",
+      "data": [
+        {
+          "name": "banana全系列",
+          "description": "支持banana 2，banana pro，gemini-nano-banana-2.1 的1k，2k，4k图片",
+          "platforms": [
+            {
+              "platform": "official_image2",
+              "groups": [
+                {
+                  "id": 33,
+                  "name": "图片模型",
+                  "platform": "official_image2",
+                  "subscription_type": "standard",
+                  "rate_multiplier": 1,
+                  "is_exclusive": false,
+                  "image_price_1k": null,
+                  "image_price_2k": null,
+                  "image_price_4k": null
+                }
+              ],
+              "supported_models": [
+                {
+                  "name": "gemini-2.5-flash-image",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.05,
+                    "intervals": [
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "1K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "2K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "4K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "gemini-3-pro-image",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.05,
+                    "intervals": [
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "1K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "2K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "4K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "gemini-3.0-pro-image",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.05,
+                    "intervals": [
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "1K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "2K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "4K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "gemini-3.0-pro-image-preview",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.07,
+                    "intervals": [
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "1K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "2K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "4K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "gemini-3.1-flash-image",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.05,
+                    "intervals": [
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "1K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "2K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "4K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "gemini-3.1-flash-image-preview",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.05,
+                    "intervals": [
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "1K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "2K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "4K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "gemini-nano-banana-2.1",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.05,
+                    "intervals": []
+                  }
+                },
+                {
+                  "name": "nano-banana-2",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.05,
+                    "intervals": [
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "1K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "2K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "4K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "nano-banana-pro",
+                  "platform": "official_image2",
+                  "pricing": {
+                    "billing_mode": "image",
+                    "input_price": null,
+                    "output_price": null,
+                    "reference_video_output_price": null,
+                    "output_price_1080p": null,
+                    "reference_video_output_price_1080p": null,
+                    "output_price_4k": null,
+                    "reference_video_output_price_4k": null,
+                    "output_price_480p": null,
+                    "reference_video_output_price_480p": null,
+                    "cache_write_price": null,
+                    "cache_read_price": null,
+                    "image_output_price": null,
+                    "per_request_price": 0.07,
+                    "intervals": [
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "1K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "2K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      },
+                      {
+                        "min_tokens": 0,
+                        "max_tokens": null,
+                        "tier_label": "4K",
+                        "input_price": null,
+                        "output_price": null,
+                        "cache_write_price": null,
+                        "cache_read_price": null,
+                        "per_request_price": 0.05
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "secure/groups/available": {
+    "sourceUrl": "https://token.secure-skill.com/api/v1/groups/available",
+    "checkedAt": "2026-10-14T23:27:41.984Z",
+    "sha256": "20fb011d68de47605582fb863d3f7011547a6494120c4b97646848c83ba976c9",
+    "payload": {
+      "code": 0,
+      "message": "success",
+      "data": [
+        {
+          "id": 55,
+          "name": "sd-2.5-条",
+          "description": "30图10视频10音频参考，时长4-30秒，5.5元一条720p",
+          "platform": "vipprompt",
+          "rate_multiplier": 1,
+          "is_exclusive": false,
+          "status": "active",
+          "subscription_type": "standard",
+          "daily_limit_usd": 0,
+          "weekly_limit_usd": 0,
+          "monthly_limit_usd": 0,
+          "allow_image_generation": false,
+          "image_rate_independent": false,
+          "image_rate_multiplier": 1,
+          "image_price_1k": null,
+          "image_price_2k": null,
+          "image_price_4k": null,
+          "video_billing_mode": "per_second",
+          "video_price": null,
+          "video_price_720p": null,
+          "video_price_1080p": null,
+          "video_price_4k": null,
+          "grok_video_rate_independent": false,
+          "grok_video_rate_multiplier": 1,
+          "grok_video_price_480p": null,
+          "grok_video_price_720p": null,
+          "grok_video_price_1080p": null,
+          "web_search_price_per_call": null,
+          "claude_code_only": false,
+          "fallback_group_id": null,
+          "fallback_group_id_on_invalid_request": null,
+          "allow_messages_dispatch": false,
+          "require_oauth_only": false,
+          "require_privacy_set": false,
+          "rpm_limit": 0,
+          "created_at": "2026-10-08T21:17:59.793773+08:00",
+          "updated_at": "2026-10-13T15:15:45.039203+08:00"
+        }
+      ]
+    }
+  },
+  "pdog/model-plaza": {
+    "sourceUrl": "https://ai.whyshy.cn/api/v1/model-plaza",
+    "checkedAt": "2026-10-14T23:27:36.903Z",
+    "sha256": "15c48f830ffec3ea1827a0818693cfa761577b62c28985f1d3d5dc09756da416",
+    "payload": {
+      "code": 0,
+      "message": "success",
+      "data": {
+        "description": "",
+        "groups": [
+          {
+            "id": 4,
+            "name": "【生图】image2/2.5-1K",
+            "description": "0.02/张\n模型ID：gpt-image-2/gpt-image-2.5/gpt-image-2.5-flare/gpt-image-2.5-sunburst",
+            "platform": "openai",
+            "subscription_type": "standard",
+            "rate_multiplier": 1,
+            "peak_rate_enabled": false,
+            "peak_start": "",
+            "peak_end": "",
+            "peak_rate_multiplier": 1,
+            "is_exclusive": false,
+            "image_rate_independent": false,
+            "image_rate_multiplier": 1,
+            "video_rate_independent": false,
+            "video_rate_multiplier": 1,
+            "long_context_pricing_enabled": true,
+            "models": [
+              {
+                "name": "gpt-image-2",
+                "platform": "openai",
+                "pricing": {
+                  "billing_mode": "image",
+                  "input_price": 5e-06,
+                  "output_price": 1e-05,
+                  "cache_write_price": 0,
+                  "cache_write_1h_price": null,
+                  "cache_read_price": 1.25e-06,
+                  "image_input_price": 8e-06,
+                  "image_output_price": 3e-05,
+                  "per_request_price": 0.02,
+                  "intervals": [
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "1K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    },
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "2K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    },
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "4K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    }
+                  ]
+                },
+                "official_pricing": {
+                  "input_price": 5e-06,
+                  "output_price": 1e-05,
+                  "cache_write_price": null,
+                  "cache_read_price": 1.25e-06
+                }
+              },
+              {
+                "name": "gpt-image-2.5-flare",
+                "platform": "openai",
+                "pricing": {
+                  "billing_mode": "image",
+                  "input_price": 5e-06,
+                  "output_price": 1e-05,
+                  "cache_write_price": 0,
+                  "cache_write_1h_price": null,
+                  "cache_read_price": 1.25e-06,
+                  "image_input_price": 8e-06,
+                  "image_output_price": 3e-05,
+                  "per_request_price": 0.02,
+                  "intervals": [
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "1K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    },
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "2K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    },
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "4K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    }
+                  ]
+                },
+                "official_pricing": {
+                  "input_price": 5e-06,
+                  "output_price": null,
+                  "cache_write_price": null,
+                  "cache_read_price": 1.25e-06
+                }
+              },
+              {
+                "name": "gpt-image-2.5-sunburst",
+                "platform": "openai",
+                "pricing": {
+                  "billing_mode": "image",
+                  "input_price": 5e-06,
+                  "output_price": 1e-05,
+                  "cache_write_price": 0,
+                  "cache_write_1h_price": null,
+                  "cache_read_price": 1.25e-06,
+                  "image_input_price": 8e-06,
+                  "image_output_price": 3e-05,
+                  "per_request_price": 0.02,
+                  "intervals": [
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "1K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    },
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "2K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    },
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "4K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.02
+                    }
+                  ]
+                },
+                "official_pricing": {
+                  "input_price": 5e-06,
+                  "output_price": null,
+                  "cache_write_price": null,
+                  "cache_read_price": 1.25e-06
+                }
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "name": "【生图】image2/2.5-2K4K(原生)",
+            "description": "0.08一张\n模型ID：gpt-image-2/gpt-image-2.5/gpt-image-2.5-flare/gpt-image-2.5-sunburst",
+            "platform": "openai",
+            "subscription_type": "standard",
+            "rate_multiplier": 1,
+            "peak_rate_enabled": false,
+            "peak_start": "",
+            "peak_end": "",
+            "peak_rate_multiplier": 1,
+            "is_exclusive": false,
+            "image_rate_independent": false,
+            "image_rate_multiplier": 1,
+            "video_rate_independent": false,
+            "video_rate_multiplier": 1,
+            "long_context_pricing_enabled": true,
+            "models": [
+              {
+                "name": "gpt-image-2",
+                "platform": "openai",
+                "pricing": {
+                  "billing_mode": "image",
+                  "input_price": 5e-06,
+                  "output_price": 0,
+                  "cache_write_price": 0,
+                  "cache_write_1h_price": null,
+                  "cache_read_price": 1.25e-06,
+                  "image_input_price": 8e-06,
+                  "image_output_price": 3e-05,
+                  "per_request_price": 0.08,
+                  "intervals": [
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "1K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.08
+                    },
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "2K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.08
+                    },
+                    {
+                      "min_tokens": 0,
+                      "max_tokens": null,
+                      "tier_label": "4K",
+                      "input_price": null,
+                      "output_price": null,
+                      "cache_write_price": null,
+                      "cache_write_1h_price": null,
+                      "cache_read_price": null,
+                      "input_multiplier": null,
+                      "output_multiplier": null,
+                      "cache_write_multiplier": null,
+                      "cache_read_multiplier": null,
+                      "per_request_price": 0.08
+                    }
+                  ]
+                },
+                "official_pricing": {
+                  "input_price": 5e-06,
+                  "output_price": 1e-05,
+                  "cache_write_price": null,
+                  "cache_read_price": 1.25e-06
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

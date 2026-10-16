@@ -88,7 +88,7 @@ describe("Jiasu exact video supplier contract", () => {
 
   it("classifies every published complete video ID, including short aliases, without borrowing another supplier", () => {
     const ids = jiasuVideoModelIds();
-    expect(ids).toHaveLength(27);
+    expect(ids).toHaveLength(29);
     const scan = scanProviderModelCatalog({ data: ids.map(id => ({ id })) }, { baseUrl: "https://ai.jiasuapi.com/v1", modelGroup: "vip" });
     expect(scan.models.every(model => model.outputKinds?.includes("video") && model.metadata?.canvasRunnable === true)).toBe(true);
     expect(scanProviderModelCatalog({ data: [{ id: "sd-2.0-J2" }] }, { baseUrl: "https://other.example/v1" }).models[0]?.operations).toEqual([]);

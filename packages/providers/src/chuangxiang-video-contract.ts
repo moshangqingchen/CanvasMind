@@ -34,7 +34,7 @@ export const isChuangxiangVideoModel = (id: string | undefined) => exactModels.h
 /** Public documentation describes capability, never the current Key's entitlement. */
 export function isChuangxiangVideoConnection(config: Readonly<Record<string, unknown>> | undefined, model?: string): boolean {
   if (!isChuangxiangVideoModel(model ?? (typeof config?.defaultModel === "string" ? config.defaultModel : undefined)) ||
-    String(config?.accountKeyGroup ?? config?.modelGroup ?? "") !== "视频" || config?.usage === "agent" || config?.usage === "disabled" || config?.supplierArchived === true) return false;
+    (config?.accountKeyGroupId != null ? String(config.accountKeyGroupId) !== "27" : String(config?.accountKeyGroup ?? config?.modelGroup ?? "") !== "视频") || config?.usage === "agent" || config?.usage === "disabled" || config?.supplierArchived === true) return false;
   try {
     const url = new URL(String(config?.baseUrl ?? ""));
     return url.origin === "https://vapi.chuangxiangai.asia" && !url.username && !url.password && !url.search && !url.hash && /^(?:\/v1)?\/?$/u.test(url.pathname);

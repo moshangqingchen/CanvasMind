@@ -39,21 +39,21 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     ["SD2.5特价30-10-10-线路三", "images", "video_refs", "audio_refs"],
     ["SD2.5特价30-10-10-线路二", "image_urls", "video_urls", "audio_urls"],
     ["满血seedance-2.5全参C", "images", "video_refs", "audio_refs"],
-    ["稳定seedance-2.5全参E", "image_refs", "video_refs", "audio_refs"],
+    ["稳定seedance-2.5全参E", "image_refs", undefined, "audio_refs"],
   ])("maps %s to its current exact material fields", async (id, imageField, videoField, audioField) => {
     const assets = [image, ...(videoField ? [video] : []), ...(audioField ? [audio] : [])];
-    const input = request(id!, { duration: 5, ...(id === "稳定seedance-2.5全参E" ? { reference_video_seconds: 6 } : {}) }, assets);
+    const input = request(id!, { duration: 5 }, assets);
     const f = fixture(id!, [Response.json({ id: "task-fixture", status: "queued" })]);
     await f.adapter.submit(input);
     const body = JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body));
     expect(body[imageField!]).toEqual([image.url]);
     if (videoField) expect(body[videoField]).toEqual([video.url]);
     if (audioField) expect(body[audioField]).toEqual([audio.url]);
-    if (id === "稳定seedance-2.5全参E") expect(body.reference_video_seconds).toBe(6);
+    if (id === "稳定seedance-2.5全参E") expect(body.reference_video_seconds).toBeUndefined();
   });
 
-  it("requires E reference-video seconds and does not turn H3 canvas presets into API bounds", () => {
-    expect(jijiuVideoRequestIssues(request("稳定seedance-2.5全参E", { duration: 5 }, [video]))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "parameters.reference_video_seconds" })]));
+  it("rejects E reference videos and does not turn H3 canvas presets into API bounds", () => {
+    expect(jijiuVideoRequestIssues(request("稳定seedance-2.5全参E", { duration: 5 }, [video]))).toEqual(expect.arrayContaining([expect.objectContaining({ path: "assets" })]));
     const h3 = jijiuVideoModel("MinimaxH3")!;
     expect(h3.metadata).toMatchObject({ videoDocumentedCanvasDurationRange: { min: 4, max: 15 }, videoApiDurationRangeUnverified: true, videoResolutionOutputUnverified: true });
     expect(h3.metadata?.videoMaxDuration).toBeUndefined();
@@ -67,9 +67,9 @@ describe("Jijiu exact official video contracts (offline only)", () => {
   });
 
   it("discovers the new exact IDs and retains historical contracts with chat endpoint labels", () => {
-    const ids = jijiuVideoModelIds(); expect(ids).toHaveLength(25);
+    const ids = jijiuVideoModelIds(); expect(ids).toHaveLength(27);
     const scan = scanProviderModelCatalog({ data: ids.map(id => ({ id, supported_endpoint_types: ["openai"] })) }, { baseUrl: "https://newapi.jijiucanvas.com/v1" });
-    expect(scan.models).toHaveLength(25);
+    expect(scan.models).toHaveLength(27);
     expect(scan.models.every(m => m.outputKinds?.includes("video") && m.metadata?.canvasRunnable === true)).toBe(true);
     expect(scanProviderModelCatalog({ data: [{ id: "SD2.5特价30-10-10-线路一" }] }, { baseUrl: "https://other.example/v1" }).models[0]?.metadata?.jijiuVideoContract).toBeUndefined();
   });
@@ -306,7 +306,7 @@ describe("Jijiu exact official video contracts (offline only)", () => {
     expect(jijiuVideoRequestIssues(request(id, { duration: 24 }, [video]))).toEqual([]);
     const cases = [request(id, { duration: 25 }, [video]), request(id, { duration: 5 }, [{ ...video, durationSeconds: 16 }]), request(id, {}, [video]), request(id, { duration: 5, reference_videos: [video.url] }), request(id, { duration: 5 }, [{ ...video, durationSeconds: undefined }])];
     for (const input of cases) { const f = fixture(id); await expect(f.adapter.submit(input)).rejects.toThrow(); expect(f.fetcher).not.toHaveBeenCalled(); }
-    for (const model of [id, "wan3.0-video-prime", "稳定seedance-2.5全参E"]) expect(jijiuVideoModel(model)?.metadata?.billingIncludesInputDuration).toBe(true);
+    for (const model of [id, "wan3.0-video-prime"]) expect(jijiuVideoModel(model)?.metadata?.billingIncludesInputDuration).toBe(true);
     expect(jijiuVideoModel("稳定seedance-2.5参图参音F")?.parameters?.find(p => p.key === "resolution")?.options).toEqual([{ label: "720p", value: "720p" }]);
   });
 

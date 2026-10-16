@@ -11,7 +11,7 @@ const ratios = ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 describe("Secure WAN current standard ratio contract", () => {
   it.each(["wan3.0-video", "wan3.0-video-prime"])("exposes every exact ratio and keeps the standard default for %s", model => {
     const descriptor = remainingVideoModel("secure", model, undefined, group)!;
-    expect(descriptor.metadata?.videoContractCheckedAt).toBe("2026-10-13");
+    expect(descriptor.metadata?.videoContractCheckedAt).toBe("2026-10-14");
     expect(descriptor.parameters?.find(parameter => parameter.key === "aspect_ratio")).toMatchObject({
       control: "select", default: "16:9", options: ratios.map(value => ({ label: value, value })),
     });

@@ -53,6 +53,30 @@ import { cyberAfeiCatalogFromPricing, resolveCyberAfeiScannedGroup } from "./cyb
 import { applyWeAiLivePricing, type WeAiLiveModelPricing } from "./weai-catalog";
 
 const weaiSnapshotOrigin = "https://asian-acc.we-token.cc";
+describe("2026-10-14 catalog removals through cached protocol enrichment", () => {
+  it.each([
+    ["https://ai.jiasuapi.com", "vip", "sd-2.0-mini-J1", undefined],
+    ["https://newapi.jijiucanvas.com", "稳定满血视频模型", "稳定seedance-2.5全参D", undefined],
+    ["https://vapi.chuangxiangai.asia", "视频新显示名", "sd10-seedance-2.0", "27"],
+  ])("keeps %s / %s / %s unavailable after rebind and permits a later return", (site, group, id, stableId) => {
+    const model: ModelDescriptor = { id: id!, name: id!, operations: ["video.generate"], outputKinds: ["video"], metadata: { canvasRunnable: true, liveInventory: true } };
+    const catalog: SupplierCatalogDiscovery = { kind: "newapi", status: "live", complete: true, checkedAt: "2026-10-15T00:00:00Z", groups: [{
+      id: group!, label: group!, source: "catalog", supplierGroupId: stableId,
+      models: [{ id: "other-current-model", capability: "video" }],
+    }] };
+    const connection = { provider: "openai", config: { baseUrl: site + "/v1", modelGroup: group, accountKeyGroup: group,
+      accountKeyGroupId: stableId, modelScanStatus: "live", scannedModelIds: [id] } };
+    const priced = applySupplierCatalogPrices([model], group!, catalog, site, { supplierGroupId: stableId });
+    const bound = bindScannedModelProtocols(connection, priced);
+    expect(bound.models[0]?.metadata?.canvasRunnable).toBe(false);
+    expect(bound.models[0]?.metadata?.canvasUnavailableReason).toBe("当前官方分组目录未列出此型号");
+    expect(bound.connector?.models?.some(entry => entry.id === id)).not.toBe(true);
+    catalog.groups[0]!.models.push({ id: id!, capability: "video" });
+    const returned = applySupplierCatalogPrices(bound.models, group!, catalog, site, { supplierGroupId: stableId });
+    expect(returned[0]?.metadata?.supplierAvailability20261014).toBeUndefined();
+    expect(bindScannedModelProtocols(connection, returned).models[0]?.metadata?.canvasRunnable).toBe(true);
+  });
+});
 describe("Jijiu current-Key pricing after a proven unnumbered group rename", () => {
   const site = "https://newapi.jijiucanvas.com";
   const checkedAt = "2026-10-13T01:04:08.364Z";

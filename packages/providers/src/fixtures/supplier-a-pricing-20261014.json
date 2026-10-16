@@ -1,0 +1,1576 @@
+{
+  "miaowu": {
+    "sourceUrl": "https://api.miaowuai.store/api/pricing",
+    "checkedAt": "2026-10-14T23:27:25.807Z",
+    "sha256": "f732647aeb3fed96603cf5c2b3a65e883181a7169ce4e9e925205acdef8282af",
+    "group_ratio": {
+      "default": 1
+    },
+    "supported_endpoint": {
+      "openai": {
+        "path": "/v1/chat/completions",
+        "method": "POST"
+      }
+    },
+    "allModelIds": [
+      "seedance-2.0",
+      "seedance-2.5",
+      "gpt-image-2.5-sunburst",
+      "doubao-seedance-2.0-fast",
+      "GPT-image-2",
+      "Image-nano-banana",
+      "minimax-h3",
+      "niji7",
+      "wan3.0-vedio-deal",
+      "dola-seedance-2.5",
+      "mjv8.2",
+      "gpt-image-2.5-flare",
+      "dola-seedance-2.0-fast",
+      "doubao-seedance-2.5",
+      "Image-nano-banana-2",
+      "Image-nano-banana-pro",
+      "doubao-seedance-2.0-mini",
+      "seedance-2.0-fast",
+      "seedance-2.0-mini",
+      "seedream-5-0-pro",
+      "wan3.0-video",
+      "seedance-2.5-deal",
+      "jimeng-seedance-2.5"
+    ],
+    "data": [
+      {
+        "model_name": "seedance-2.0",
+        "tags": "视频",
+        "vendor_id": 5,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.35714285714285715,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "default",
+          "中台调度"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "pricing_version": "5a90f2b86c08bd983a9a2e6d66c255f4eaef9c4bc934386d2b6ae84ef0ff1f1f",
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 4,
+          "seconds_max": 15,
+          "sizes": [
+            "480p",
+            "720p"
+          ],
+          "ratios": [
+            "1:1",
+            "9:16",
+            "16:9",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "4:3",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "3:4",
+              "width": 480,
+              "height": 640
+            },
+            {
+              "size": "480p",
+              "ratio": "21:9",
+              "width": 1120,
+              "height": 480
+            },
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.14285714285714285
+              },
+              {
+                "size": "480p",
+                "seconds_max": 15,
+                "price": 0.07142857142857142
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "niji7",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.028571428571428574,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "wan3.0-vedio-deal",
+        "tags": "视频",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "特价分组",
+          "deal",
+          "default",
+          "vip",
+          "内部"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 10,
+          "audios_max": 5,
+          "seconds_min": 5,
+          "seconds_max": 30,
+          "sizes": [
+            "480p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "resolutions": [
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "480p",
+              "ratio": "4:3",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "3:4",
+              "width": 480,
+              "height": 640
+            },
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            }
+          ],
+          "pricing": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "480p",
+                "seconds_max": 30,
+                "price": 0.014285714285714287
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "dola-seedance-2.5",
+        "tags": "视频",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "default",
+          "vip",
+          "内部",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 30,
+          "audios_max": 10,
+          "seconds_min": 4,
+          "seconds_max": 30,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.17857142857142858
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "mjv8.2",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.028571428571428574,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ]
+      },
+      {
+        "model_name": "dola-seedance-2.0-fast",
+        "tags": "视频",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "特价分组",
+          "default",
+          "vip",
+          "内部"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 4,
+          "seconds_max": 15,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "21:9",
+              "width": 1680,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.17857142857142858
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "doubao-seedance-2.0-mini",
+        "tags": "视频",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "vip",
+          "内部",
+          "特价分组",
+          "deal",
+          "default"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "seconds_min": 5,
+          "seconds_max": 15,
+          "sizes": [
+            "720p"
+          ],
+          "ratios": [
+            "9:16",
+            "16:9"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.14285714285714285
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "seedance-2.0-fast",
+        "tags": "视频",
+        "vendor_id": 5,
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.010714285714285714,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "default",
+          "中台调度"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 9,
+          "audios_max": 3,
+          "seconds_min": 4,
+          "seconds_max": 15,
+          "sizes": [
+            "480p",
+            "720p"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "4:3",
+            "3:4",
+            "9:16"
+          ],
+          "resolutions": [
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "4:3",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "3:4",
+              "width": 480,
+              "height": 640
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            }
+          ],
+          "pricing": {
+            "unit": "per_second",
+            "rules": [
+              {
+                "size": "720p",
+                "price": 0.05714285714285715
+              },
+              {
+                "size": "480p",
+                "seconds_max": 15,
+                "price": 0.028571428571428574
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "seedream-5-0-pro",
+        "tags": "图片",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "default",
+          "vip",
+          "特价分组"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "image_api": {
+          "modes": [
+            "text-to-image",
+            "image-to-image"
+          ],
+          "images_max": 5,
+          "sizes": [
+            "2K"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "resolutions": [
+            {
+              "size": "2K",
+              "ratio": "1:1",
+              "width": 1440,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "16:9",
+              "width": 2560,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "9:16",
+              "width": 1440,
+              "height": 2560
+            },
+            {
+              "size": "2K",
+              "ratio": "4:3",
+              "width": 1920,
+              "height": 1440
+            },
+            {
+              "size": "2K",
+              "ratio": "3:4",
+              "width": 1440,
+              "height": 1920
+            },
+            {
+              "size": "2K",
+              "ratio": "21:9",
+              "width": 3360,
+              "height": 1440
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "2K",
+                "price": 0.028571428571428574
+              }
+            ]
+          }
+        }
+      },
+      {
+        "model_name": "seedance-2.5-deal",
+        "tags": "视频",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "特价分组",
+          "deal",
+          "default",
+          "dreamina",
+          "vip",
+          "内部"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "video_api": {
+          "modes": [
+            "multi-ref-to-video"
+          ],
+          "images_max": 30,
+          "videos_max": 10,
+          "audios_max": 10,
+          "seconds_min": 4,
+          "seconds_max": 30,
+          "sizes": [
+            "720p",
+            "480p"
+          ],
+          "ratios": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "resolutions": [
+            {
+              "size": "720p",
+              "ratio": "16:9",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "9:16",
+              "width": 720,
+              "height": 1280
+            },
+            {
+              "size": "720p",
+              "ratio": "4:3",
+              "width": 960,
+              "height": 720
+            },
+            {
+              "size": "720p",
+              "ratio": "3:4",
+              "width": 720,
+              "height": 960
+            },
+            {
+              "size": "720p",
+              "ratio": "1:1",
+              "width": 720,
+              "height": 720
+            },
+            {
+              "size": "480p",
+              "ratio": "16:9",
+              "width": 854,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "9:16",
+              "width": 480,
+              "height": 854
+            },
+            {
+              "size": "480p",
+              "ratio": "4:3",
+              "width": 640,
+              "height": 480
+            },
+            {
+              "size": "480p",
+              "ratio": "3:4",
+              "width": 480,
+              "height": 640
+            },
+            {
+              "size": "480p",
+              "ratio": "1:1",
+              "width": 480,
+              "height": 480
+            }
+          ],
+          "pricing": {
+            "unit": "per_call",
+            "rules": [
+              {
+                "size": "720p",
+                "seconds_max": 30,
+                "price": 0.8571428571428571
+              },
+              {
+                "size": "480p",
+                "seconds_max": 30,
+                "price": 0.5714285714285714
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "jiasu": {
+    "sourceUrl": "https://ai.jiasuapi.com/api/pricing",
+    "checkedAt": "2026-10-14T23:27:34.393Z",
+    "sha256": "58e3e5eb5dc44a571edbed976447c706062ef600199660e1e831fb560e283100",
+    "group_ratio": {
+      "vip": 1
+    },
+    "supported_endpoint": {
+      "image-generation": {
+        "path": "/v1/images/generations",
+        "method": "POST"
+      },
+      "openai-video": {
+        "path": "/v1/video/generations",
+        "method": "POST"
+      }
+    },
+    "allModelIds": [
+      "gpt-image-2.5-flare-4k",
+      "ov-seedance-2.5-720p-nv",
+      "gpt-image-2.5-sunburst-4k",
+      "gpt-image-2-1k",
+      "sd-2.0-mini-503-J3",
+      "seedance2.0-933-V-111",
+      "sd-2.5-J2-xing",
+      "seedance2.5-全参真人",
+      "MiniMax-H3-jx",
+      "dola-2.5-3000-hm",
+      "seedance2.0-933-SVIP",
+      "seedance2.0-933-V-SVIP",
+      "seedance-2.0-J6",
+      "gpt-image-2-2k",
+      "gpt-image-2.5-1k",
+      "grok-1.5",
+      "minimanx-h3-zm",
+      "seedance-2.0-UP",
+      "minimax-h3",
+      "dola-sd-2.5",
+      "sd-2.5-J2",
+      "gpt-image-2-high",
+      "gpt-image-2.5-sunburst-1k",
+      "dola-sd-2.0",
+      "sd-2.0-fast-803-J3",
+      "dola-2.0-933-hm",
+      "dola-2.0-900-hm",
+      "sd-2.0-J4",
+      "gpt-image-2-4k",
+      "seedance2.5-xing特惠",
+      "wan-3.0-up",
+      "dola-2.5-301010-hm",
+      "minimaxh3-koko",
+      "Seedance2.0-933-X-SVIP",
+      "dola-sd-2.0-900",
+      "seedance2.0-mini-A",
+      "gpt-image-2.5-flare-1k",
+      "sd-2.0-fast-813-J3",
+      "sd-2.0-933-720-fast-原生真人",
+      "sd-2.0-fast-J4",
+      "seedance2.0-933-2-SVIP",
+      "ov-Seedance 2.0-720p-nsp-gz-15s",
+      "seedance2.0-满血",
+      "seedance2.0-720-满血真人",
+      "seedance-933-111",
+      "ov-seedance-2.5-480p-nv",
+      "sd-2.0-J2"
+    ],
+    "data": [
+      {
+        "model_name": "sd-2.0-mini-503-J3",
+        "description": "5图3音频   支持人脸  最多12秒   720 p",
+        "api_parameters": "[{\"name\":\"resolution\",\"type\":\"enum\",\"default\":\"720p\",\"range\":\"720p\",\"description\":\"输出分辨率预设\"}]",
+        "video_billing": {
+          "enabled": true,
+          "unit": "per_item",
+          "default_resolution": "720p",
+          "tiers": [
+            {
+              "key": "720p",
+              "price_per_second": 0.6,
+              "price_per_item": 0.6
+            }
+          ]
+        },
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 0.6,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "vip"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ]
+      },
+      {
+        "model_name": "seedance2.5-xing特惠",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "vip"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ]
+      },
+      {
+        "model_name": "ov-Seedance 2.0-720p-nsp-gz-15s",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "vip"
+        ],
+        "supported_endpoint_types": [
+          "openai-video"
+        ]
+      }
+    ]
+  },
+  "jijiu": {
+    "sourceUrl": "https://newapi.jijiucanvas.com/api/pricing",
+    "checkedAt": "2026-10-14T23:27:39.897Z",
+    "sha256": "343b7e719fff23f9f9a35f726be3fac40fbc4af0bd3513144d4ecc1fa6d82b77",
+    "group_ratio": {
+      "ChatGPT-Pro稳定号池": 0.18,
+      "auto": 1,
+      "default": 1,
+      "图片-GPT-image-2-2K/4K": 1,
+      "图片-GPT-image-2/2.5-1K": 1,
+      "图片-香蕉Pro1K/2K/4K": 1,
+      "稳定满血视频模型": 1,
+      "视频-MnimaxH3": 1,
+      "视频SD2.0": 1,
+      "视频SD2.5": 1,
+      "视频WAN3": 1,
+      "音频音乐生成模型": 1
+    },
+    "supported_endpoint": {
+      "anthropic": {
+        "path": "/v1/messages",
+        "method": "POST"
+      },
+      "gemini": {
+        "path": "/v1beta/models/{model}:generateContent",
+        "method": "POST"
+      },
+      "image-generation": {
+        "path": "/v1/images/generations",
+        "method": "POST"
+      },
+      "openai": {
+        "path": "/v1/chat/completions",
+        "method": "POST"
+      },
+      "openai-alpha-search": {
+        "path": "/v1/alpha/search",
+        "method": "POST"
+      },
+      "openai-response": {
+        "path": "/v1/responses",
+        "method": "POST"
+      },
+      "openai-response-compact": {
+        "path": "/v1/responses/compact",
+        "method": "POST"
+      },
+      "openai-video": {
+        "path": "/v1/video/generations",
+        "method": "POST"
+      }
+    },
+    "allModelIds": [
+      "gpt-image-2.5-sunburst",
+      "gpt-6-sol",
+      "SD2.0满血稳定933-线路二",
+      "Minimax漫剧优化版",
+      "MinimaxH3",
+      "Lyria-3pro音频音乐",
+      "wan3.0-video-prime-S",
+      "稳定seedance-2.5参图参音F",
+      "SD2.0满血稳定933-线路四",
+      "Lyria-3.5音频音乐",
+      "gpt-image-2-2K/4K",
+      "gemini-3.1-flash-image",
+      "满血seedance-2.5全参B",
+      "gpt-5.5",
+      "稳定seedance-2.5全参E",
+      "SD2.5特价30-10-10-线路二",
+      "SD2.0满血稳定933-线路三",
+      "gpt-image-2.5",
+      "gemini-3-pro-image",
+      "wan3.0-video",
+      "wan3.0-video-prime",
+      "满血seedance-2.5全参A",
+      "gemini-nano-banana-2.1",
+      "gpt-5.6-sol",
+      "SD2.5特价30-10线路二",
+      "MinimaxH3特价版",
+      "gpt-6-astra",
+      "gpt-6.1-sol",
+      "满血seedance-2.5全参C",
+      "SD2.5特价30-10-10-线路三",
+      "wan3.0-video-S",
+      "gpt-image-2",
+      "SD2.5特价900线路一",
+      "SD2.5特价30-10线路一",
+      "SD2.0满血稳定933-线路一"
+    ],
+    "data": [
+      {
+        "model_name": "wan3.0-video-prime-S",
+        "description": "视频生成：官k支持480、720、1080P分档定价，支持2-30s文生图生视频生成，10图5音频5视频；",
+        "icon": "Wan",
+        "tags": "视频模型",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "视频WAN3"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0.22) : u(\"resolution\")==\"1080p\" ? tier(\"1080P\", u(\"seconds\")*0.85) : tier(\"720P\", u(\"seconds\")*0.43))",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "description": {
+              "en": "Output resolution tier",
+              "zh": "输出分辨率档位"
+            },
+            "enumLabels": {
+              "1080p": {
+                "en": "1080P",
+                "zh": "1080P"
+              },
+              "480p": {
+                "en": "480P",
+                "zh": "480P"
+              },
+              "720p": {
+                "en": "720P",
+                "zh": "720P"
+              }
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "480P 5s",
+            "facts": {
+              "resolution": "480p",
+              "seconds": 5
+            }
+          },
+          {
+            "label": "720P 5s",
+            "facts": {
+              "resolution": "720p",
+              "seconds": 5
+            }
+          },
+          {
+            "label": "1080P 5s",
+            "facts": {
+              "resolution": "1080p",
+              "seconds": 5
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "SD2.0满血稳定933-线路四",
+        "description": "视频生成：支持 9 张参考图 + 3 个参考视频 + 3 个参考音频，720P；纯满血不卡脸，可生成 4-15 秒，带数字水印。",
+        "icon": "Jimeng.Color",
+        "tags": "视频模型",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 4.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "视频SD2.0"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "720p"
+            ],
+            "description": {
+              "en": "Output resolution tier",
+              "zh": "输出分辨率档位"
+            },
+            "enumLabels": {
+              "720p": {
+                "en": "720P",
+                "zh": "720P"
+              }
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "720P 5s · 按次",
+            "facts": {
+              "resolution": "720p",
+              "seconds": 5
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "稳定seedance-2.5全参E",
+        "description": "视频生成：稳定seedance-2.5全能参考，30图10音频，不支持参考视频，支持480P、720p，按分辨率按秒计费",
+        "icon": "Jimeng.Color",
+        "tags": "视频模型",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "稳定满血视频模型"
+        ],
+        "supported_endpoint_types": [
+          "openai",
+          "openai-video"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0.25) : tier(\"720P\", u(\"seconds\")*0.45))",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p"
+            ],
+            "description": {
+              "en": "Output resolution tier",
+              "zh": "输出分辨率档位"
+            },
+            "enumLabels": {
+              "480p": {
+                "en": "480P",
+                "zh": "480P"
+              },
+              "720p": {
+                "en": "720P",
+                "zh": "720P"
+              }
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "480P 5s",
+            "facts": {
+              "resolution": "480p",
+              "seconds": 5
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "SD2.5特价30-10-10-线路二",
+        "description": "视频生成：满参支持人脸，参考图/视频/音频，720P；4-30 秒；按次计费 ¥4.5/次",
+        "icon": "Jimeng.Color",
+        "tags": "视频模型",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 4.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "视频SD2.5"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_usage_schema": {
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "5s",
+            "facts": {
+              "seconds": 5
+            }
+          },
+          {
+            "label": "30s",
+            "facts": {
+              "seconds": 30
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "SD2.0满血稳定933-线路三",
+        "description": "视频生成：支持 9 张参考图 + 3 个参考视频 + 3 个参考音频；原生过真人不卡脸，可生成 5-15 秒。按次计费 ¥3.5/次。",
+        "icon": "Jimeng.Color",
+        "tags": "视频模型",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 3.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "视频SD2.0"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_usage_schema": {
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "5s",
+            "facts": {
+              "seconds": 5
+            }
+          },
+          {
+            "label": "15s",
+            "facts": {
+              "seconds": 15
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "SD2.5特价30-10线路二",
+        "description": "视频生成：支持 30 张参考图 + 10 个参考视频 + 10 个参考音频，720P；5-30 秒；按次计费 ¥1.3/次",
+        "icon": "Jimeng.Color",
+        "tags": "视频模型",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 1.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "视频SD2.5"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_usage_schema": {
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "5s",
+            "facts": {
+              "seconds": 5
+            }
+          },
+          {
+            "label": "15s",
+            "facts": {
+              "seconds": 15
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "满血seedance-2.5全参C",
+        "description": "满血seedance-2.5全能参考，30图10音频10视频。支持720p按秒计费",
+        "icon": "Jimeng.Color",
+        "tags": "视频模型",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "稳定满血视频模型"
+        ],
+        "supported_endpoint_types": [
+          "openai",
+          "openai-video"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "tier(\"720P\", u(\"seconds\") * 0.4)",
+        "billing_usage_schema": {
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "5s",
+            "facts": {
+              "seconds": 5
+            }
+          },
+          {
+            "label": "30s",
+            "facts": {
+              "seconds": 30
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "wan3.0-video-S",
+        "description": "视频生成：官k支持480、720、1080P分档定价，支持2-30s文生图生视频生成，10图5音频5视频；",
+        "icon": "Wan",
+        "tags": "视频模型",
+        "quota_type": 0,
+        "model_ratio": 37.5,
+        "model_price": 0,
+        "owner_by": "",
+        "completion_ratio": 1,
+        "enable_groups": [
+          "视频WAN3"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_mode": "tiered_expr",
+        "billing_expr": "(u(\"resolution\")==\"480p\" ? tier(\"480P\", u(\"seconds\")*0.12) : u(\"resolution\")==\"1080p\" ? tier(\"1080P\", u(\"seconds\")*0.45) : tier(\"720P\", u(\"seconds\")*0.23))",
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "description": {
+              "en": "Output resolution tier",
+              "zh": "输出分辨率档位"
+            },
+            "enumLabels": {
+              "1080p": {
+                "en": "1080P",
+                "zh": "1080P"
+              },
+              "480p": {
+                "en": "480P",
+                "zh": "480P"
+              },
+              "720p": {
+                "en": "720P",
+                "zh": "720P"
+              }
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "480P 5s",
+            "facts": {
+              "resolution": "480p",
+              "seconds": 5
+            }
+          },
+          {
+            "label": "720P 5s",
+            "facts": {
+              "resolution": "720p",
+              "seconds": 5
+            }
+          },
+          {
+            "label": "1080P 5s",
+            "facts": {
+              "resolution": "1080p",
+              "seconds": 5
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "SD2.5特价900线路一",
+        "description": "视频生成：支持 9 张参考图（不支持参考视频/音频），720P；5-30 秒；按次计费 ¥1/次",
+        "icon": "Jimeng.Color",
+        "tags": "视频模型",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 1.2,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "视频SD2.5"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_usage_schema": {
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "5s",
+            "facts": {
+              "seconds": 5
+            }
+          },
+          {
+            "label": "15s",
+            "facts": {
+              "seconds": 15
+            }
+          }
+        ]
+      },
+      {
+        "model_name": "SD2.5特价30-10线路一",
+        "description": "视频生成：doladoladoladola支持 30 张参考图 + 10 个参考音频，720P；4-30 秒；按次计费 ¥1.5/次",
+        "icon": "Jimeng.Color",
+        "tags": "视频模型",
+        "quota_type": 1,
+        "model_ratio": 0,
+        "model_price": 1.5,
+        "owner_by": "",
+        "completion_ratio": 0,
+        "enable_groups": [
+          "视频SD2.5"
+        ],
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "billing_usage_schema": {
+          "resolution": {
+            "enum": [
+              "720p",
+              "480p"
+            ],
+            "description": {
+              "en": "Output resolution tier",
+              "zh": "输出分辨率档位"
+            },
+            "enumLabels": {
+              "480p": {
+                "en": "480P",
+                "zh": "480P"
+              },
+              "720p": {
+                "en": "720P",
+                "zh": "720P"
+              }
+            }
+          },
+          "seconds": {
+            "type": "number",
+            "unit": "second",
+            "description": {
+              "en": "Video duration in seconds",
+              "zh": "视频时长（秒）"
+            }
+          },
+          "videos": {
+            "type": "number",
+            "unit": "count",
+            "unitLabel": {
+              "en": "call",
+              "zh": "次"
+            },
+            "description": {
+              "en": "Per call",
+              "zh": "每次生成"
+            }
+          }
+        },
+        "billing_usage_examples": [
+          {
+            "label": "720P · 按次",
+            "facts": {
+              "resolution": "720p",
+              "seconds": 5,
+              "videos": 1
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

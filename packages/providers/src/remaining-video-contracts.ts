@@ -55,6 +55,10 @@ interface VideoContract {
   chatVideo?: boolean;
   videoReferenceEncoding?: "prompt-urls";
   sourceVideoChat?: boolean;
+  /** Published limits whose exact wire fields are not yet available. */
+  declaredReferenceLimits?: { images?: number; videos?: number; audios?: number };
+  missingReferenceFields?: readonly ("video" | "audio")[];
+  resultRetentionSeconds?: number;
   docs: string; note?: string; checkedAt?: string;
 }
 const triple = ["16:9", "9:16", "1:1"] as const;
@@ -123,16 +127,43 @@ const chentuDirectory: VideoContract = { min: 1, resolutions: [], ratios: [], vi
   imageField: "images", secondsField: "duration", ratioField: "ratio", directoryContract: true, durationOptional: true, openResolution: true,
   docs: "https://tu.988236.xyz/docs/api-media.zh-CN.md", billingUnit: "request",
   note: "使用当前 Key 返回的完整型号与供应商通用视频接口。参考视频和音频字段尚未公开，当前接入提示词与图片；未限定参数由供应商校验，未进行收费生成验证。" };
-put("chentu", ["grok-imagine-video-1.5（按次）", "grok-video1.5-fast"], { ...chentuDirectory, images: 7 });
+put("chentu", ["grok-imagine-video-1.5（按次）"], { ...chentuDirectory, min: 3, max: 15, images: 7, checkedAt: "2026-10-14T23:27:28.591Z" });
+put("chentu", ["grok-video1.5-fast"], { ...chentuDirectory, images: 7 });
 put("chentu", ["grok--video1.0"], chentuDirectory);
 put("chentu", ["MiniMaxH3", "MiniMaxH3-720p", "MiniMaxH3-2k", "MiniMaxH3-2k-pro"], { ...chentuDirectory, min: 2, max: 15, images: 9 });
 put("chentu", ["H3量化版"], { ...chentuDirectory, min: 3, max: 10, images: 4 });
 put("chentu", ["minimax-h3 768p"], { ...chentuDirectory, images: 6 });
-// Fresh exact account catalog IDs. The first-party common guide explicitly
-// permits current Key IDs and image/images compatibility. It does not publish
-// a complete per-ID duration, resolution or reference-count range for these
-// two IDs; keep declared fields open instead of borrowing older H3 limits.
-put("chentu", ["MiniMaxH3-768p", "MiniMaxH3-480p"], { ...chentuDirectory, images: undefined, billingUnit: "second" });
+// Current exact-ID plaza declarations supersede the previously open range.
+// The audio count is declared, but the matching wire field is absent from the
+// common guide and /v1/video/model-capabilities returned 404 for all read Keys.
+put("chentu", ["MiniMaxH3-768p", "MiniMaxH3-480p"], { ...chentuDirectory, min: 5, max: 15, images: 9,
+  requiresImage: true, billingUnit: "second", declaredReferenceLimits: { images: 9, videos: 0, audios: 3 }, missingReferenceFields: ["audio"],
+  checkedAt: "2026-10-14T23:27:28.591Z", note: "当前型号说明要求参考图，时长 5–15 秒，最多 9 图、3 音频，不支持纯文生或参考视频。通用接口已公开 images；参考音频实际字段未公布，不能套用其他 MiniMax 型号。" });
+put("chentu", ["minimax_h3-768p", "minimax_h3-1080p"], { ...chentuDirectory, min: 4, max: 15, images: undefined,
+  billingUnit: "second", missingReferenceFields: ["video", "audio"],
+  checkedAt: "2026-10-14T23:27:28.591Z",
+  note: "型号原文为“支持933 4-15秒”，未定义数字简称，不能直接作为参考数量上限；公开 images 字段可用，参考视频和音频实际字段仍未公布。" });
+put("chentu", ["rh-minimaxh3-overseas", "rh-minimaxh3-pro-overseas"], { ...chentuDirectory, images: 5,
+  resolutions: ["720p"], openResolution: false, declaredReferenceLimits: { images: 5, videos: 0, audios: 3 }, missingReferenceFields: ["audio"],
+  resultRetentionSeconds: 900, checkedAt: "2026-10-14T23:27:28.591Z",
+  note: "型号说明仅保存结果 15 分钟，请在成功后及时归档；最多 5 图、3 音频，720p。参考音频字段和完整时长范围未公布，保留用户输入，不套用其他型号。" });
+put("chentu", ["seedance-933"], { ...chentuDirectory, min: 4, max: 15, resolutions: ["720p"], openResolution: false,
+  images: 9, declaredReferenceLimits: { images: 9, videos: 0, audios: 3 }, missingReferenceFields: ["audio"], checkedAt: "2026-10-14T23:27:28.591Z" });
+put("chentu", ["seedance2.0-933-V"], { ...chentuDirectory, min: 5, max: 15, resolutions: ["720p"], openResolution: false,
+  images: 9, billingUnit: "second", declaredReferenceLimits: { images: 9, videos: 3, audios: 3 }, missingReferenceFields: ["video", "audio"], checkedAt: "2026-10-14T23:27:28.591Z" });
+put("chentu", ["seedance2.5"], { ...chentuDirectory, min: 5, max: 30, resolutions: ["720p"], openResolution: false,
+  images: 30, billingUnit: "second", declaredReferenceLimits: { images: 30, videos: 10, audios: 10 }, missingReferenceFields: ["video", "audio"], checkedAt: "2026-10-14T23:27:28.591Z",
+  note: "同一型号说明同时写 4–30 秒和支持 5–30 秒；当前保留两项证据并校验共同范围 5–30 秒，旧 4 秒不静默改写。参考音视频字段仍未公布。" });
+put("chentu", ["seedance2.5-1"], { ...chentuDirectory, durations: [30], resolutions: ["720p"], openResolution: false,
+  images: 30, declaredReferenceLimits: { images: 30, videos: 10, audios: 10 }, missingReferenceFields: ["video", "audio"], checkedAt: "2026-10-14T23:27:28.591Z" });
+put("chentu", ["seedance2.5-2"], { ...chentuDirectory, min: 4, max: 30, resolutions: ["720p"], openResolution: false,
+  images: 30, declaredReferenceLimits: { images: 30, videos: 10, audios: 10 }, missingReferenceFields: ["video", "audio"], checkedAt: "2026-10-14T23:27:28.591Z" });
+put("chentu", ["wan3.0-image", "wan3.0-image-prime"], { ...chentuDirectory, requiresImage: true,
+  billingUnit: "second", resolutions: ["480P", "720P", "1080P"], openResolution: false, missingReferenceFields: ["audio"], checkedAt: "2026-10-14T23:27:28.591Z",
+  note: "此完整型号是图生视频，输出时长按秒计价。图片通过公开 images 字段发送；参考音频字段、数量和完整时长范围未公布。价格说明美元与站点金额币种冲突，保留原价说明。" });
+put("chentu", ["wan3.0-video", "wan3.0-video-prime"], { ...chentuDirectory,
+  billingUnit: "second", resolutions: ["480P", "720P", "1080P"], openResolution: false, missingReferenceFields: ["video", "audio"], checkedAt: "2026-10-14T23:27:28.591Z",
+  note: "输出与参考视频合计时长计费，音频不计；参考音视频字段、数量和完整时长范围未公布。已接通公开的提示词、images、比例、分辨率、时长和原任务查询下载。" });
 put("chentu", ["minimax_h3-768p-933"], { ...chentuDirectory, min: 4, max: 15, images: 9 });
 put("chentu", ["a-2.0-720p-v1"], { ...chentuDirectory, min: 5, max: 15, images: 9 });
 put("chentu", ["a-2.0-720p-v4"], { ...chentuDirectory, durations: [5, 10, 15], images: 9 });
@@ -465,6 +496,9 @@ export function remainingVideoModel(supplier: RemainingVideoSupplier, id: string
       ...(c.sourceVideoChat ? { videoEditEndpointPath: "/v1/chat/completions", videoReferenceEncoding: "prompt-urls", videoCoreEditOnly: true, sourceVideoPriceMode: "edit",
         videoEffectiveMode: c.chatVideo ? "edit" : "generate" } : {}),
       videoReferenceImageLimit: c.images, videoReferenceVideoLimit: c.videos, videoReferenceAudioLimit: c.audios,
+      ...(c.declaredReferenceLimits ? { supplierDeclaredReferenceLimits: c.declaredReferenceLimits } : {}),
+      ...(c.missingReferenceFields ? { missingReferenceWireFields: [...c.missingReferenceFields], referenceContractSourceUrl: "https://tu.988236.xyz/api/pricing" } : {}),
+      ...(c.resultRetentionSeconds ? { resultRetention: { seconds: c.resultRetentionSeconds, sourceUrl: "https://tu.988236.xyz/api/pricing", checkedAt: c.checkedAt, startsAt: "generation-completed", certainty: "supplier-declared" } } : {}),
       supportsFirstLastFrames: Boolean(c.frames), videoSupportsFirstLastFrames: Boolean(c.frames), allowFrameMediaMix: Boolean(c.allowFrameMediaMix), videoSupportedResolutions: [...c.resolutions],
       ...(c.billingUnit ? { billingUnit: c.billingUnit, billingLabel: c.billingUnit === "second" ? "按秒计费" : "按次计费" } : {}),
       videoParameterAliases: { ...(!c.omitDuration ? { duration: ["seconds"] } : {}), ...(!c.omitRatio ? { aspect_ratio: ["ratio"] } : {}) },
@@ -671,7 +705,9 @@ export function remainingVideoRequestIssues(supplier: RemainingVideoSupplier, re
     if (supplier === "weai" && kind === "image") counts.image += array(request.parameters?.image).length;
     if (supplier === "chentu" && kind === "image" && request.model?.startsWith("sp-kling-")) counts.image += array(request.parameters?.image_url).length;
     if (c.frames === "doubao-content") counts[kind] += content.filter(item => item.type === `${kind}_url` && !["first_frame", "last_frame"].includes(String(item.role))).length;
-    if (limit !== undefined && counts[kind] > limit) add("assets", limit ? `此型号最多接受 ${limit} 个${kind === "image" ? "参考图" : kind === "video" ? "参考视频" : "参考音频"}。` : `此型号不支持${kind === "image" ? "普通参考图" : kind === "video" ? "参考视频" : "参考音频"}。`);
+    if ((kind === "video" || kind === "audio") && c.missingReferenceFields?.includes(kind) && counts[kind])
+      add("assets", `此完整型号的${kind === "video" ? "视频" : "音频"}参考实际请求字段尚未公布；本次素材保留，请补齐同组接口说明后提交。`);
+    else if (limit !== undefined && counts[kind] > limit) add("assets", limit ? `此型号最多接受 ${limit} 个${kind === "image" ? "参考图" : kind === "video" ? "参考视频" : "参考音频"}。` : `此型号不支持${kind === "image" ? "普通参考图" : kind === "video" ? "参考视频" : "参考音频"}。`);
   }
   if (c.requiresImage && !counts.image && !(c.flow && assets.some(asset => asset.kind === "image"))) add("assets", "此型号必须提供参考图片。");
   if (c.requiresVideo && !counts.video) add("assets", "此型号必须提供源视频。");

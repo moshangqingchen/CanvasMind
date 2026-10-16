@@ -72,13 +72,16 @@ export function bananaImageRoute(connection: Connection, model: string): BananaR
     return { kind: "native", auth: "google", docs: "https://tk1688.com/docs", maxInputs: 14, inputLimitSource: "adapter",
       model, sizes: ["auto"], ratios: [], defaultSize: "auto", tk1688: true, ...(unavailableReason ? { unavailableReason } : {}) };
   }
-  if (url.hostname === "synoralink.com" && ["香蕉2专线", "香蕉pro专线", "香蕉官转"].includes(group)) {
+  const synoraGroupId = connection.config.accountKeyGroupId;
+  const synoraGroup = synoraGroupId != null ? ({ "116": "banana2", "117": "bananaPro", "100": "official" } as Record<string, string>)[String(synoraGroupId)]
+    : ({ "香蕉2专线": "banana2", "香蕉2": "banana2", "香蕉pro专线": "bananaPro", "香蕉pro": "bananaPro", "香蕉官转": "official" } as Record<string, string>)[group];
+  if (url.hostname === "synoralink.com" && synoraGroup) {
     const ids: Record<string, ReadonlySet<string>> = {
-      "香蕉2专线": new Set(["gemini-3.1-flash-image", "gemini-3.1-flash-image-preview", GEMINI_NANO_BANANA_21_MODEL]),
-      "香蕉pro专线": new Set(["gemini-3-pro-image", "gemini-3-pro-image-preview"]),
-      "香蕉官转": new Set(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]),
+      banana2: new Set(["gemini-3.1-flash-image", "gemini-3.1-flash-image-preview", GEMINI_NANO_BANANA_21_MODEL]),
+      bananaPro: new Set(["gemini-3-pro-image", "gemini-3-pro-image-preview"]),
+      official: new Set(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]),
     };
-    const documented = ids[group]!;
+    const documented = ids[synoraGroup]!;
     const unavailableReason = !documented.has(model) ? "当前 Synora 官方分组目录未声明此完整图片型号" : inventoryModelUnavailable(connection.config, model, "Synora", documented);
     return { kind: "native", auth: "bearer", docs: "https://synoralink.com/docs", maxInputs: 14, inputLimitSource: "adapter",
       model, sizes: ["auto"], ratios: [], defaultSize: "auto", synora: true, ...(unavailableReason ? { unavailableReason } : {}) };

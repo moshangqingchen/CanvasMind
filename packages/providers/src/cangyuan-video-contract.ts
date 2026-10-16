@@ -1,6 +1,7 @@
 import type { ModelDescriptor, ModelParameterDescriptor, NormalizedRequest, ValidationIssue } from "./contracts.js";
 import { CANGYUAN_CURRENT_VIDEO_CONTRACTS } from "./cangyuan-video-contract-data.js";
 import type { RestModelConnectorOverride, RestRequestMapping } from "./rest.js";
+import { cangyuanResultRetention } from "./cangyuan-result-retention.js";
 
 export const isCangyuanVideoModel = (id: string | undefined): boolean => !!CANGYUAN_CURRENT_VIDEO_CONTRACTS[id ?? ""];
 export function isCangyuanVideoRequest(model: string | undefined, baseUrl?: string): boolean {
@@ -42,6 +43,7 @@ export function cangyuanVideoModel(model: ModelDescriptor): ModelDescriptor {
       ...(model.id.startsWith("omni-v2v") ? { requiresInputVideo: true } : {}) },
     metadata: { ...model.metadata, modality: "video", operationsSource: "declared", outputKindsSource: "declared", catalogCapability: "video", documentationUrl: `https://ai.cangyuansuanli.cn/docs-static/models/${model.id}.json`,
       cangyuanVideoContractCheckedAt: c.checkedAt ?? "2026-10-07", videoContractFields: [...c.fields], payloadBuilder: "seedance-flat", remoteMediaUrlsOnly: true,
+      resultRetention: cangyuanResultRetention("https://ai.cangyuansuanli.cn", "video"),
       videoContractDocumentSha256: c.sourceSha256, videoContractSourceLastReviewed: c.sourceLastReviewed,
       ...(c.facePolicy ? { facePolicy: c.facePolicy } : {}), ...(c.fixedResolution ? { videoFixedResolution: c.fixedResolution } : {}),
       ...(c.warnings?.length ? { videoContractWarnings: [...c.warnings] } : {}),

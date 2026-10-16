@@ -24,7 +24,7 @@ export interface SupplierGroupDetails {
 }
 const tiers = ["1K", "2K", "4K"];
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-const referencePricePattern = /(?:[¥￥$]?\s*\d+(?:\.\d+)?\s*(?:元|分|毛|刀)?\s*(?:[/／]|一|每|1)\s*(?:张|次|请求|秒|s(?:ec(?:ond)?s?)?)(?![a-zA-Z])|(?:\d+|一|每)\s*张\s*[¥￥$]?\s*\d|量大\s*\d+(?:\.\d+)?\s*(?:分|毛|元))/iu;
+const referencePricePattern = /(?:[¥￥$]?\s*\d+(?:\.\d+)?\s*(?:元|分|毛|刀)?\s*(?:[/／]|一|每|1)\s*(?:张|条|次|请求|秒|s(?:ec(?:ond)?s?)?)(?![a-zA-Z])|(?:\d+|一|每)\s*(?:张|条)\s*[¥￥$]?\s*\d|量大\s*\d+(?:\.\d+)?\s*(?:分|毛|元))/iu;
 const leadingReferencePricePattern = new RegExp(`^(?:${referencePricePattern.source})`, "iu");
 const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
@@ -99,8 +99,15 @@ export function parseSupplierGroupDetails(row: Record<string, unknown>, source: 
     const amount = number(row[`image_price_${resolution.toLowerCase()}`]);
     return amount === undefined ? [] : [{ resolution, amount }];
   });
-  const rateMultiplier = number(row.rate_multiplier ?? row.ratio);
-  const imageRateMultiplier = row.image_rate_independent === true ? number(row.image_rate_multiplier) : undefined;
+  // Some official plazas publish tenths as raw group rates and explicitly
+  // declare their scale. Never derive that scale from a display name.
+  const rateScale = row.rate_multiplier_unit_scale === undefined ? 1 : number(row.rate_multiplier_unit_scale);
+  const scaledRate = (value: unknown) => {
+    const rate = number(value);
+    return rate !== undefined && rateScale !== undefined && rateScale > 0 ? Number((rate / rateScale).toPrecision(12)) : undefined;
+  };
+  const rateMultiplier = scaledRate(row.rate_multiplier ?? row.ratio);
+  const imageRateMultiplier = row.image_rate_independent === true ? scaledRate(row.image_rate_multiplier) : undefined;
   const concurrency = /(?:最大并发|并发上限|并发限制)\s*[:：]?\s*(\d+)/u.exec(description);
   const concurrencyLimit = number(row.concurrency_limit ?? row.max_concurrency) ?? (concurrency ? Number(concurrency[1]) : undefined);
   const rpmLimit = number(row.rpm_limit);

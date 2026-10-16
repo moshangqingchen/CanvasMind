@@ -54,7 +54,7 @@ export function modelPickerPriceData(model: ModelDescriptor | null | undefined):
     if (pricing.kind === "token") for (const [name, amount] of [["输入", pricing.inputPerMillion], ["输出", pricing.outputPerMillion], ["图片输出", pricing.imageOutputPerMillion]] as const)
       if (finite(amount) && amount >= 0) rates.push(`${name} ${amount} ${currency} / ${unit}`);
     for (const tier of pricing.tiers ?? []) if (finite(tier.price) && tier.price >= 0) rates.push(`${priceCondition(tier)} · ${tier.price} ${currency} / ${unit}`);
-    const times = pricing.timeMultipliers?.map(window => `上海 ${window.startHour}:00–${window.endHour}:00 ×${window.multiplier}`).join("；");
+    const times = pricing.timeMultipliers?.map(window => `上海 ${window.weekdaysOnly ? "周一至周五 " : ""}${window.startHour}:00–${window.endHour}:00 ×${window.multiplier}`).join("；");
     if (rates.length) return `${historical ? "上次记录 · " : ""}${rates.join("；")}${pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : ""}${times ? `；时段倍率：${times}` : ""}${metadata?.billingIncludesInputDuration === true ? "；计费时长：输入 + 输出视频" : ""}`;
   }
   // Some suppliers publish prose group prices without a structured tariff.

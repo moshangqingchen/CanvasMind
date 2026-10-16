@@ -3,6 +3,27 @@ import type { ModelDescriptor, ModelParameterDescriptor } from "./contracts.js";
 const tiers = ["1K", "2K", "4K"] as const;
 type Tier = typeof tiers[number];
 
+/** Merchant wording can switch origin mid-sentence: 原生1k 2k 超分4k.
+ * Keep the declaration separate from requested or measured output pixels. */
+function resolutionOrigins(description: string) {
+  const origins = new Map<Tier, Set<"native" | "upscaled">>();
+  for (const segment of description.split(/[，,。;；\n]|(?=(?<!非)(?<!不支持)(?<!禁止)(?<!not\s)(?:不支持|禁止|非|not\s+)?(?:原生|超分|放大|\bnative\b|\bupscal(?:e|ed|ing)\b))/iu)) {
+    const clause = segment.trim();
+    const origin = /^(?:原生|native\b)/iu.test(clause) ? "native"
+      : /^(?:超分|放大|upscal(?:e|ed|ing)\b)/iu.test(clause) ? "upscaled" : undefined;
+    if (!origin || /不支持|禁止|非原生|not\s+native/iu.test(clause)) continue;
+    for (const match of clause.matchAll(/(?<![\d.])([124](?:\s*[/、,，]?\s*[124]){0,2})\s*k\b/giu))
+      for (const digit of match[1]!.match(/[124]/gu) ?? []) {
+        const tier = `${digit}K` as Tier;
+        origins.set(tier, new Set([...(origins.get(tier) ?? []), origin]));
+      }
+  }
+  return {
+    nativeResolutions: tiers.filter(tier => origins.get(tier)?.size === 1 && origins.get(tier)?.has("native")),
+    upscaledResolutions: tiers.filter(tier => origins.get(tier)?.size === 1 && origins.get(tier)?.has("upscaled")),
+  };
+}
+
 /** A native output example does not make that pixel size the only legal size. */
 export function tk1688DescriptionFacts(description: string) {
   const supported = new Set<Tier>();
@@ -22,7 +43,10 @@ export function tk1688DescriptionFacts(description: string) {
   const qualityMatch = /(?:quality|质量)\s*(?:支持|档位|可选|为|[:：=])?\s*([a-z]+(?:(?:\s*[,，、/|]\s*)[a-z]+)+)/iu.exec(description);
   const quality = qualityMatch ? [...new Set(qualityMatch[1]!.toLowerCase().split(/\s*[,，、/|]\s*/u)
     .filter(value => ["auto", "low", "medium", "high", "max"].includes(value)))] : [];
-  return { resolutions: tiers.filter(tier => supported.has(tier)), unsupportedResolutions, exclusiveResolutions, referenceSize, fixedSize, omitN, quality };
+  const origins = resolutionOrigins(description);
+  return { resolutions: tiers.filter(tier => supported.has(tier)), unsupportedResolutions, exclusiveResolutions, referenceSize, fixedSize, omitN, quality,
+    nativeResolutions: origins.nativeResolutions.filter(tier => !unsupportedResolutions.includes(tier)),
+    upscaledResolutions: origins.upscaledResolutions.filter(tier => !unsupportedResolutions.includes(tier)) };
 }
 
 function openSizeParameter(): ModelParameterDescriptor {
@@ -51,6 +75,8 @@ export function normalizeTk1688ImageSizeContract<T extends Partial<ImageModel>>(
     metadata.tk1688ResolutionOptionsExclusive = facts.exclusiveResolutions;
     metadata.tk1688UnsupportedResolutions = facts.unsupportedResolutions;
     metadata.exclusiveResolutions = facts.exclusiveResolutions;
+    metadata.tk1688NativeResolutions = facts.nativeResolutions;
+    metadata.tk1688UpscaledResolutions = facts.upscaledResolutions;
     if (facts.unsupportedResolutions.length) metadata.imageUnsupportedResolutions = [...new Set([
       ...(Array.isArray(metadata.imageUnsupportedResolutions) ? metadata.imageUnsupportedResolutions : []), ...facts.unsupportedResolutions,
     ])];
@@ -62,6 +88,8 @@ export function normalizeTk1688ImageSizeContract<T extends Partial<ImageModel>>(
     delete metadata.imageUnsupportedResolutions;
     delete metadata.tk1688ResolutionOptionsExclusive;
     delete metadata.tk1688UnsupportedResolutions;
+    delete metadata.tk1688NativeResolutions;
+    delete metadata.tk1688UpscaledResolutions;
     if (typeof metadata.tk1688FixedSize === "string" && allFacts.some(fact =>
       fact.referenceSize === metadata.tk1688FixedSize && !fact.fixedSize)) delete metadata.tk1688FixedSize;
   }

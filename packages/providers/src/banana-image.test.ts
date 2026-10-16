@@ -195,6 +195,25 @@ describe("supplier banana image protocols", () => {
     expect(other.fetch).not.toHaveBeenCalled();
   });
   it.each([
+    ["116", "香蕉2专线", "香蕉2", "gemini-3.1-flash-image-preview"],
+    ["116", "香蕉2专线", "香蕉2", "gemini-nano-banana-2.1"],
+    ["117", "香蕉pro专线", "香蕉pro", "gemini-3-pro-image-preview"],
+  ])("keeps Synora group %s routing and reference bytes across its October 14 rename", async (groupId, oldName, newName, selected) => {
+    for (const group of [oldName, newName, "future display name"]) {
+      const f = fixture("https://synoralink.com/v1", { model: selected, group, provider: "rest", settings: { accountKeyGroupId: groupId } });
+      const original = structuredClone(f.config);
+      const task = await f.adapter.submit({ ...request, model: selected, parameters: {}, operation: "image.edit",
+        assets: [{ id: "ref", kind: "image", mimeType: "image/png", data: new Uint8Array(Buffer.from(png, "base64")) }] });
+      const [url, init] = f.fetch.mock.calls[0]!;
+      expect(String(url)).toBe(`https://synoralink.com/v1beta/models/${selected}:generateContent`);
+      expect(JSON.parse(String(init?.body)).contents[0].parts[1]).toEqual({ inlineData: { mimeType: "image/png", data: png } });
+      expect(await f.adapter.extractOutputs(task.result)).toHaveLength(1);
+      expect(f.config).toEqual(original);
+      expect(bananaImageRoute({ provider: "rest", config: { ...f.config, accountKeyGroupId: "125", modelGroup: oldName } }, selected)).toBeUndefined();
+    }
+    expect(bananaImageRoute({ provider: "openai", config: { baseUrl: "https://synoralink.com/v1", modelGroup: newName, scannedModelIds: [selected] } }, selected)?.synora).toBe(true);
+  });
+  it.each([
     ["https://genimage.pro/v1", undefined, "Authorization", "Bearer fixture-key", model],
     ["https://api.frimodel.com/v1", "gemini_image", "x-goog-api-key", "fixture-key", model],
     ["https://asian-acc.we-token.cc/v1", "adobe香蕉", "Authorization", "Bearer fixture-key", "gemini-3-pro-image"],
