@@ -1,3 +1,4 @@
+import { expectCompactPromptLine } from "./helpers/lod-expectations";
 import {
   expect,
   test,
@@ -141,16 +142,19 @@ function running(snapshot: RunSnapshot) {
 
 test("低缩放提示词按需进入编辑，点击后可立即输入并保存", async ({ page, request }) => {
   const value = graph(); value.viewport.zoom = .4;
+  value.nodes[0]!.data.parts = [{ type: "text", text: "低缩放保留的第一行\n第二行不应在概览中绘制" }];
   const canvas = await create(request, value); await open(page, canvas.id);
   const source = page.locator('.react-flow__node[data-id="source"]');
   const viewport = page.locator(".react-flow__viewport");
   const overview = source.locator(".prompt-overview");
   await expect(viewport).toHaveClass(/canvas-lod-compact/);
-  await expect(source.locator(".node-body")).toHaveCSS("visibility", "hidden");
-  await expect(overview).toBeHidden();
+  await expect(source.locator(".node-body")).toHaveCSS("visibility", "visible");
+  await expect(overview).toBeVisible();
+  await expect(overview).toContainText("低缩放保留的第一行");
+  await expectCompactPromptLine(overview);
   await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
-  // Compact LOD exposes the header. Reframe the selected node, then use a
-  // real wheel to verify immediate editing at a small but readable scale.
+  // Compact LOD keeps the title and first text line without mounting editors.
+  // Reframe with a real wheel before testing editing at a readable scale.
   await source.locator(".node-head").click();
   await page.getByRole("button", { name: "定位所选节点", exact: true }).click();
   await setCanvasZoomWithWheel(page, .6);
@@ -178,8 +182,9 @@ test("跨缩放阈值不会为未激活节点创建编辑器，激活输入仍�
   const first = page.locator('.react-flow__node[data-id="lazy-0"]');
   await expect(first.locator(".node-head")).toBeInViewport({ ratio: 1 });
   await expect(page.locator(".react-flow__viewport")).toHaveClass(/canvas-lod-compact/);
-  await expect(first.locator(".node-body")).toHaveCSS("visibility", "hidden");
-  await expect(first.locator(".prompt-overview")).toBeHidden();
+  await expect(first.locator(".node-body")).toHaveCSS("visibility", "visible");
+  await expect(first.locator(".prompt-overview")).toBeVisible();
+  await expectCompactPromptLine(first.locator(".prompt-overview"));
   await expect(page.locator(".tiptap-prompt")).toHaveCount(0);
   await first.locator(".node-head").click();
   await expect(first).toHaveClass(/selected/);
@@ -847,8 +852,9 @@ test("低缩放与窄窗口能用键盘读取完整中文名称、来源与实�
     name: "查看 原图结果 来源",
     exact: true,
   });
-  // Compact LOD deliberately keeps only headers/status. Retain the 40%
-  // keyboard name/tooltip check above, and verify the body action is hidden.
+  // At 40% the result artwork stays painted while its small action is hidden.
+  await expect(page.locator('.react-flow__node[data-id="result"] img')).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id="result"] .node-body')).toHaveCSS("visibility", "visible");
   await expect(info).toBeHidden();
   await setCanvasZoomWithWheel(page, 1);
   await info.focus();

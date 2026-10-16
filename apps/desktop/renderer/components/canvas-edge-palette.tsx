@@ -1,17 +1,28 @@
 "use client";
 import React, { memo, useMemo } from "react";
 import type { CanvasEdge } from "./types";
-import { collectEdgePalettePairs, edgePaletteId } from "../lib/canvas-edge-palette";
-export { edgePaletteId, type EdgeColorKind } from "../lib/canvas-edge-palette";
+import type { StudioEdgeState } from "../lib/canvas-edge-presentation";
+import { EDGE_FEATHER_ID, EDGE_TERMINAL_ID, edgeLightEnabled } from "../lib/canvas-edge-palette";
 
-/** Only used color pairs get shared definitions; stable edges skip geometry frames. */
+/** Only focused connections need light; all of them share the feather paints. */
 export const CanvasEdgePalette = memo(function CanvasEdgePalette({ edges }: { edges: readonly CanvasEdge[] }) {
-  const pairs = useMemo(() => collectEdgePalettePairs(edges), [edges]);
-  if (!pairs.length) return null;
+  const visible = useMemo(() => edges.some(edge => edgeLightEnabled(edge.selected,
+    edge.data?.studio as StudioEdgeState | undefined)), [edges]);
+  if (!visible) return null;
   return <svg width="0" height="0" className="canvas-edge-palette" aria-hidden="true" focusable="false" style={{ position: "absolute", pointerEvents: "none" }}>
-    <defs>{pairs.flatMap(({ source, target }) => [false, true].map(reversed =>
-      <linearGradient key={edgePaletteId(source, target, reversed)} id={edgePaletteId(source, target, reversed)} x1={reversed ? "100%" : "0%"} y1="0%" x2={reversed ? "0%" : "100%"} y2="0%">
-        <stop offset="0%" stopColor={`var(--edge-port-${source})`} /><stop offset="100%" stopColor={`var(--edge-port-${target})`} />
-      </linearGradient>))}</defs>
+    <defs>
+      <radialGradient id={EDGE_FEATHER_ID} cx="50%" cy="50%" r="50%" fx="68%" fy="50%">
+        <stop stopColor="var(--edge-light, #9cf5ff)" stopOpacity=".96" />
+        <stop offset=".2" stopColor="var(--edge-light, #9cf5ff)" stopOpacity=".82" />
+        <stop offset=".46" stopColor="var(--edge-light, #9cf5ff)" stopOpacity=".38" />
+        <stop offset=".74" stopColor="var(--edge-light, #9cf5ff)" stopOpacity=".09" />
+        <stop offset="1" stopColor="var(--edge-light, #9cf5ff)" stopOpacity="0" />
+      </radialGradient>
+      <radialGradient id={EDGE_TERMINAL_ID}>
+        <stop stopColor="var(--edge-terminal, #8aebff)" stopOpacity=".35" />
+        <stop offset=".38" stopColor="var(--edge-terminal, #8aebff)" stopOpacity=".16" />
+        <stop offset="1" stopColor="var(--edge-terminal, #8aebff)" stopOpacity="0" />
+      </radialGradient>
+    </defs>
   </svg>;
 });

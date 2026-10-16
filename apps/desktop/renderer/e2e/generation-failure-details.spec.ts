@@ -3,18 +3,20 @@ import type { RunErrorDetails, RunSnapshot } from "../components/types";
 
 async function expectFailureSummary(state: Locator) {
   await expect(state).toBeVisible();
-  await expect(state.locator(":scope > strong")).toContainText("失败");
-  await expect(state.locator(".node-error-summary > span")).toBeVisible();
-  await expect(state.locator(".node-error-summary > span")).toContainText(/\S/u);
-  await expect(state.getByRole("button", { name: /^查看原因：/u })).toBeVisible();
-  // The card stays compact; the complete diagnosis opens through its action.
-  await expect(state.getByLabel("失败诊断")).toHaveCount(0);
+  await expect(state.locator("strong").first()).toContainText("失败");
+  await expect(state.locator(".result-error-summary")).toBeVisible();
+  await expect(state.locator(".result-error-summary")).toContainText(/\S/u);
+  await expect(state.locator("summary").filter({ hasText: "查看完整错误详情" })).toBeVisible();
+  // The complete diagnosis stays hidden until the disclosure is opened.
+  await expect(state.getByLabel("失败诊断")).toBeHidden();
 }
 
 async function openFailureDetails(page: Page, state: Locator) {
-  await state.getByRole("button", { name: /^查看原因：/u }).click();
+  await state.locator("summary").filter({ hasText: "来源与任务" }).click();
+  await state.getByRole("button", { name: /^查看 .* 来源$/u }).click();
   const details = page.getByRole("dialog", { name: "结果来源与参数" });
   await expect(details).toBeVisible();
+  await details.locator("summary").filter({ hasText: "查看完整错误详情" }).click();
   await expect(details.getByLabel("失败诊断")).toBeVisible();
   await expect(details.getByRole("button", { name: "关闭来源详情", exact: true })).toHaveAttribute("title", "关闭来源详情（Esc）");
   return details;
@@ -85,9 +87,9 @@ const cases: Array<{ name: string; error: RunErrorDetails; reason: RegExp; charg
 for (const scenario of cases) test(`失败原因与扣费贯穿结果和历史：${scenario.name}`, async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const fixture = await failedGeneration(page, request, () => scenario.error, scenario.supplier);
-  if (scenario.forbidden) await expect(fixture.state).not.toContainText(scenario.forbidden);
+  if (scenario.forbidden) await expect(fixture.state.locator(".result-error-summary")).not.toContainText(scenario.forbidden);
   if (scenario.balanceLink) {
-    await fixture.state.locator(".result-error-details summary").click();
+    await fixture.state.locator("summary").filter({ hasText: "查看完整错误详情" }).click();
     await expect(fixture.state.getByRole("link", { name: /官网查看余额/ })).toHaveAttribute("href", "https://api.3365api.cn/");
   }
   const details = await openFailureDetails(page, fixture.state);
@@ -99,7 +101,7 @@ for (const scenario of cases) test(`失败原因与扣费贯穿结果和历史�
   await expect(diagnosis).toContainText(scenario.charge);
   await expect(diagnosis).toContainText("下一步");
   if (scenario.amount) await expect(diagnosis).toContainText(scenario.amount);
-  if (scenario.forbidden) await expect(details).not.toContainText(scenario.forbidden);
+  if (scenario.forbidden) await expect(diagnosis).not.toContainText(scenario.forbidden);
   await details.getByRole("button", { name: "关闭来源详情" }).click();
   await page.reload();
   await expectFailureSummary(fixture.state);
@@ -110,7 +112,7 @@ for (const scenario of cases) test(`失败原因与扣费贯穿结果和历史�
   await expect(details.getByLabel("失败诊断")).toContainText(scenario.reason);
   await expect(details.getByLabel("失败诊断")).toContainText(scenario.charge);
   if (scenario.amount) await expect(details.getByLabel("失败诊断")).toContainText(scenario.amount);
-  if (scenario.forbidden) await expect(details).not.toContainText(scenario.forbidden);
+  if (scenario.forbidden) await expect(diagnosis).not.toContainText(scenario.forbidden);
   await expect(details.getByText(/当前为第\s*\d+\s*张/)).toHaveCount(0);
   if (scenario.name.includes("精确金额")) {
     await page.screenshot({ path: testInfo.outputPath("generation-failure-charge.png") });
@@ -163,6 +165,7 @@ for (const status of ["succeeded", "cancelled"] as const) test(`来源详情以�
   } }));
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/canvas/${canvas.id}`);
+  await page.locator('.generated-result-state.failed summary').filter({ hasText: "来源与任务" }).click();
   await page.getByRole("button", { name: "查看 状态复查 来源", exact: true }).click();
   const details = page.getByRole("dialog", { name: "结果来源与参数" });
   const taskStatus = details.getByText("任务状态", { exact: true }).locator("+ dd");
@@ -173,6 +176,7 @@ for (const status of ["succeeded", "cancelled"] as const) test(`来源详情以�
     await expect(details.getByLabel("失败诊断")).toHaveCount(0);
     await expect(details).not.toContainText("扣费待确认");
   } else {
+    await details.locator("summary").filter({ hasText: "查看完整错误详情" }).click();
     const cancellation = details.getByRole("group", { name: "取消信息", exact: true });
     await expect(cancellation).toBeVisible();
     await expect(cancellation).toContainText("已扣费");

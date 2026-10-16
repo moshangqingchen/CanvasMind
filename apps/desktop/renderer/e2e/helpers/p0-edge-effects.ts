@@ -2,14 +2,16 @@ import type { Page } from "@playwright/test";
 
 export type EdgeGlowMode = "original" | "paused" | "hidden";
 
-// These direct-child relationships are the installed HEAD's SVG feedback tree.
-// Never target .studio-edge, its BaseEdge path, or the newer dash overlay itself.
+// Keep the old-mask A/B intervention scoped to the original SVG feedback tree.
+// Census both newer overlay families without changing either one's rendering.
 const selectors = {
   legacyMask: ".canvas-editor .studio-edge > defs > mask",
   legacyLight: ".canvas-editor .studio-edge > defs > mask > .studio-edge-light",
   legacyBeam: ".canvas-editor .studio-edge > .studio-edge-beam",
   modernOverlay: ".canvas-editor .studio-edge-motion",
   modernDash: ".canvas-editor .studio-edge-motion > svg > .studio-edge-dash",
+  modernLight: ".canvas-editor .studio-edge-motion .studio-edge-light",
+  modernBeam: ".canvas-editor .studio-edge-motion .studio-edge-beam",
   normalPath: ".canvas-editor .studio-edge > .react-flow__edge-path",
 } as const;
 const styleId = "p0-memory-legacy-edge-glow";
@@ -77,7 +79,8 @@ export async function sampleEdgeEffects(page: Page) {
       return { selector, count, ownDisplayNone, ownVisibilityHidden, ownAnimationPaused };
     };
     const legacy = { masks: census(selectors.legacyMask), lights: census(selectors.legacyLight), beams: census(selectors.legacyBeam) };
-    const modern = { overlays: census(selectors.modernOverlay), dashes: census(selectors.modernDash) };
+    const modern = { overlays: census(selectors.modernOverlay), dashes: census(selectors.modernDash),
+      lights: census(selectors.modernLight), beams: census(selectors.modernBeam) };
     const emptyAnimations = () => ({ count: 0, running: 0, paused: 0, finished: 0, idle: 0, pending: 0 });
     const animations = { document: emptyAnimations(), legacy: emptyAnimations(), modern: emptyAnimations() };
     const record = (summary: ReturnType<typeof emptyAnimations>, animation: Animation) => {
@@ -95,13 +98,13 @@ export async function sampleEdgeEffects(page: Page) {
       const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
       if (!(target instanceof Element)) continue;
       if (target.matches(`${selectors.legacyLight}, ${selectors.legacyBeam}`)) record(animations.legacy, animation);
-      if (target.matches(`${selectors.modernOverlay}, ${selectors.modernDash}`)) record(animations.modern, animation);
+      if (target.matches(`${selectors.modernOverlay}, ${selectors.modernDash}, ${selectors.modernLight}, ${selectors.modernBeam}`)) record(animations.modern, animation);
     }
     const legacyFeedbackCount = legacy.lights.count + legacy.beams.count;
-    const modernFeedbackCount = modern.overlays.count + modern.dashes.count;
+    const modernFeedbackCount = modern.overlays.count + modern.dashes.count + modern.lights.count + modern.beams.count;
     return {
       mode,
-      policy: "legacy-svg-feedback-only; modern-dash-unchanged",
+      policy: "legacy-svg-feedback-only; modern-feedback-unchanged",
       feedbackFamily: legacyFeedbackCount > 0 ? modernFeedbackCount > 0 ? "mixed" : "legacy"
         : modernFeedbackCount > 0 ? "modern" : "none",
       // Empty matches mean the requested arm did not affect any active feedback.

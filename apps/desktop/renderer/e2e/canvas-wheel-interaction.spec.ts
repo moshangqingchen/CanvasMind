@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { ModelDescriptor } from "@super-canvas/providers";
 
-type WheelSample = { trusted: boolean; interacting: boolean; motionDisplay: string; dashState: string; dashAnimation: string };
+type WheelSample = { trusted: boolean; interacting: boolean; motionDisplay: string; lightState: string; lightAnimation: string };
 type WheelFeedbackProbe = { samples: WheelSample[]; interactionMutations: number; parameterWheels: number };
 declare global { interface Window { __wheelFeedbackProbe?: WheelFeedbackProbe } }
 
@@ -80,15 +80,15 @@ async function observeWheelFeedback(page: Page) {
   await page.evaluate(() => {
     const root = document.querySelector<HTMLElement>(".canvas-wrap")!;
     const motion = root.querySelector<HTMLElement>('.studio-edge-motion[data-edge-id="wheel-edge"]')!;
-    const dash = motion.querySelector<SVGPathElement>(".studio-edge-dash")!;
+    const light = motion.querySelector<SVGGElement>(".studio-edge-light")!;
     const probe: WheelFeedbackProbe = { samples: [], interactionMutations: 0, parameterWheels: 0 };
     window.__wheelFeedbackProbe = probe;
     // Registered after the component's effect, on the same capture target. The
     // sample is synchronous, so a fast 160ms gesture cannot evade assertions.
     root.addEventListener("wheel", event => {
       probe.samples.push({ trusted: event.isTrusted, interacting: root.classList.contains("is-interacting"),
-        motionDisplay: getComputedStyle(motion).display, dashState: getComputedStyle(dash).animationPlayState,
-        dashAnimation: getComputedStyle(dash).animationName });
+        motionDisplay: getComputedStyle(motion).display, lightState: getComputedStyle(light).animationPlayState,
+        lightAnimation: getComputedStyle(light).animationName });
     }, { capture: true, passive: true });
     new MutationObserver(records => {
       probe.interactionMutations += records.filter(record => root.classList.contains("is-interacting") || record.oldValue?.includes("is-interacting")).length;
@@ -104,9 +104,11 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await page.emulateMedia({ reducedMotion });
     const f = await fixture(page);
     const motion = page.locator('.studio-edge-motion[data-edge-id="wheel-edge"]');
-    const dash = motion.locator(".studio-edge-dash");
-    if (reducedMotion === "reduce") { await expect(motion).toBeHidden(); await expect(dash).toHaveCSS("animation-name", "none"); }
-    else { await expect(motion).toBeVisible(); await expect(dash).toHaveCSS("animation-name", "edge-running-dash"); }
+    const light = motion.locator(".studio-edge-light");
+    await expect(light.locator("ellipse")).toHaveCount(2);
+    await expect(page.locator(".studio-edge-dash")).toHaveCount(0);
+    if (reducedMotion === "reduce") { await expect(motion).toBeHidden(); await expect(light).toHaveCSS("animation-name", "none"); }
+    else { await expect(motion).toBeVisible(); await expect(light).toHaveCSS("animation-name", /edge-light-flow/); }
     await observeWheelFeedback(page);
     await page.mouse.move(500, 740);
     expect(await page.evaluate(() => document.elementFromPoint(500, 740)?.classList.contains("react-flow__pane"))).toBe(true);
@@ -114,16 +116,16 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await page.mouse.wheel(0, -180);
     await expect.poll(() => page.evaluate(() => window.__wheelFeedbackProbe!.samples.length)).toBeGreaterThan(0);
     const samples = await page.evaluate(() => window.__wheelFeedbackProbe!.samples);
-    expect(samples.every(sample => sample.trusted && sample.interacting && sample.motionDisplay === "none" && sample.dashState === "paused")).toBe(true);
+    expect(samples.every(sample => sample.trusted && sample.interacting && sample.motionDisplay === "none" && sample.lightState === "paused")).toBe(true);
     await expect.poll(() => page.locator(".react-flow__viewport").getAttribute("style")).not.toBe(before);
     await expect.poll(() => page.evaluate(() => window.__wheelFeedbackProbe!.interactionMutations)).toBeGreaterThan(0);
     await expect(f.wrap).not.toHaveClass(/is-interacting/);
-    if (reducedMotion === "reduce") { await expect(motion).toBeHidden(); await expect(dash).toHaveCSS("animation-name", "none"); }
+    if (reducedMotion === "reduce") { await expect(motion).toBeHidden(); await expect(light).toHaveCSS("animation-name", "none"); }
     else {
       await expect(motion).toBeVisible();
-      await expect(dash).toHaveCSS("animation-play-state", "running");
-      const offset = await dash.evaluate(element => getComputedStyle(element).strokeDashoffset);
-      await expect.poll(() => dash.evaluate(element => getComputedStyle(element).strokeDashoffset)).not.toBe(offset);
+      await expect(light).toHaveCSS("animation-play-state", "running");
+      const offset = await light.evaluate(element => getComputedStyle(element).offsetDistance);
+      await expect.poll(() => light.evaluate(element => getComputedStyle(element).offsetDistance)).not.toBe(offset);
     }
     f.check();
   });

@@ -39,13 +39,16 @@ for (const scenario of ["unknown", "capacity"] as const) {
       await expect(result).toContainText("供应商任务号：未取得");
       await expect(result.getByRole("button", { name: /再次运行/ })).toHaveCount(0);
     } else {
-      await expect(result).toContainText("已接单，任务失败");
+      await expect(result.locator("strong").first()).toHaveText("生成失败");
       await expect(result).toContainText("img-bb5984b0-c8d2");
       await expect(result).toContainText("可用账号");
       await expect(result).not.toContainText("检查请求内容");
     }
+    await result.locator("summary").filter({ hasText: "来源与任务" }).click();
     await result.getByRole("button", { name: /查看 .* 来源/ }).click();
     const details = page.getByRole("dialog", { name: "结果来源与参数" });
+    await details.locator("summary").filter({ hasText: "查看完整错误详情" }).click();
+    if (scenario === "capacity") await expect(details.getByText("任务状态", { exact: true }).locator("+ dd")).toContainText("已接单，任务失败");
     if (scenario === "unknown") await expect(details.getByLabel("失败诊断")).toContainText("扣费待确认");
     await expect(details).toContainText("本地运行编号");
     await expect(details).toContainText("供应商任务号");

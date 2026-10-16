@@ -454,26 +454,52 @@ try {
   await page.getByRole("button", { name: "Fit View", exact: true }).click();
   await page.locator('.react-flow__node[data-id="prompt"] .node-title').click();
   const selectedOverlay = page.locator('.studio-edge-motion[data-edge-id="link"]');
-  const selectedLight = selectedOverlay.locator(".studio-edge-dash");
+  const selectedLight = selectedOverlay.locator(".studio-edge-light");
   const staticEdge = page.locator('.react-flow__edge[data-id="link"] .react-flow__edge-path');
   await selectedLight.waitFor({ state: "visible" });
-  assert.equal(await selectedLight.getAttribute("d"), await staticEdge.getAttribute("d"), "moving overlay must follow the actual static edge curve");
-  const animation = await selectedLight.evaluate(element => {
+  const animation = await selectedLight.evaluate((element, path) => {
     const style = getComputedStyle(element);
-    return { name: style.animationName, state: style.animationPlayState, dash: style.strokeDasharray };
-  });
-  assert.equal(animation.name, "edge-running-dash");
+    // Let the CSS parser normalize both paths instead of depending on its
+    // serialization of commas and whitespace in SVG path commands.
+    const expected = document.createElement("div");
+    expected.style.offsetPath = `path("${path}")`;
+    return { name: style.animationName, state: style.animationPlayState,
+      path: style.offsetPath, expectedPath: expected.style.offsetPath };
+  }, await staticEdge.getAttribute("d"));
+  assert.ok(animation.expectedPath, "the actual static edge curve must be a valid CSS motion path");
+  assert.equal(animation.path, animation.expectedPath, "moving light must follow the actual static edge curve");
+  // CSS modules scope keyframe names in the production build.
+  assert.match(animation.name, /edge-light-flow/u);
   assert.equal(animation.state, "running");
-  assert.notEqual(animation.dash, "none", "the bounded overlay must paint its moving dashes");
+  const featherPaint = await selectedLight.locator("ellipse").evaluateAll(elements => elements.map(element => {
+    const fill = element.getAttribute("fill")?.match(/^url\(#([^)]*)\)$/u);
+    return { rx: element.rx.baseVal.value, ry: element.ry.baseVal.value,
+      gradient: fill ? document.getElementById(fill[1])?.tagName : null };
+  }));
+  assert.equal(featherPaint.length, 2, "the moving light must paint both feather ellipses");
+  assert.ok(featherPaint.every(ellipse => ellipse.rx > 0 && ellipse.ry > 0 && ellipse.gradient === "radialGradient"), "both feathers must have nonzero geometry and a real gradient paint server");
+  assert.equal(await selectedOverlay.locator(".studio-edge-terminal-halo").count(), 2);
+  const terminalDistances = await staticEdge.evaluate(path => {
+    const endpoints = [path.getPointAtLength(0), path.getPointAtLength(path.getTotalLength())]
+      .map(point => new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM()));
+    return [...document.querySelectorAll('.studio-edge-motion[data-edge-id="link"] .studio-edge-terminal')]
+      .map((terminal, index) => {
+        const center = new DOMPoint(0, 0).matrixTransform(terminal.getScreenCTM());
+        return Math.hypot(center.x - endpoints[index].x, center.y - endpoints[index].y);
+      });
+  });
+  assert.equal(terminalDistances.length, 2, "the focused edge must retain both endpoint lights");
+  assert.ok(terminalDistances.every(distance => distance < 2), "the separate light layer must align with both static edge endpoints");
   const flowPositions = await selectedLight.evaluate(async (element) => {
     const positions = [];
     for (let frame = 0; frame < 6; frame++) {
       await new Promise(requestAnimationFrame);
-      positions.push(getComputedStyle(element).strokeDashoffset);
+      positions.push(getComputedStyle(element).offsetDistance);
     }
     return positions;
   });
-  assert.ok(new Set(flowPositions).size > 3, "selected desktop dashes must move continuously across consecutive frames");
+  assert.ok(flowPositions.every(position => position.endsWith("%") && Number.isFinite(parseFloat(position))), "moving light must expose an animated percentage along its curve");
+  assert.ok(new Set(flowPositions).size > 3, "selected desktop light must move continuously across consecutive frames");
   const staticStates = await staticEdge.evaluate(async element => {
     const states = [];
     for (let frame = 0; frame < 6; frame++) {
@@ -489,7 +515,7 @@ try {
   await page.locator(".react-flow__pane").click({ position: { x: 600, y: 700 } });
   await selectedOverlay.waitFor({ state: "detached" });
   assert.equal(await page.locator(".studio-edge-motion").count(), 0, "clearing selection must remove moving overlays");
-  report.checks.push("selected connections alone show continuously moving bounded dashes over unchanged static curves and clear with selection");
+  report.checks.push("selected connections alone show continuously moving bounded feather lights aligned with unchanged static curves and clear with selection");
   await page.getByRole("button", { name: "打开项目菜单", exact: true }).click();
   await page.getByRole("menuitem", { name: "导出结构 JSON", exact: true }).click();
   let exported;

@@ -142,11 +142,12 @@ for (const failure of ["submission", "provider", "multi-selection", "marquee-sel
     await page.getByRole("button", { name: "运行 失败参数测试 节点", exact: true }).click();
     const result = page.locator(".react-flow__node:has(.generated-result-state.failed)");
     await expect(result).toHaveCount(1);
-    await expect(result.locator(".node-error-summary > span")).toContainText("隔离测试：");
-    // Result cards keep a compact summary; the complete diagnosis is owned by
-    // the existing source-details modal rather than mounted inside the node.
-    await result.getByRole("button", { name: /^查看原因：/u }).click();
+    await expect(result.locator(".result-error-summary")).toContainText("隔离测试：");
+    // The compact summary retains an inline disclosure and source details.
+    await result.locator("summary").filter({ hasText: "来源与任务" }).click();
+    await result.getByRole("button", { name: /^查看 .* 来源$/u }).click();
     const failureDetails = page.getByRole("dialog", { name: "结果来源与参数", exact: true });
+    await failureDetails.locator("summary").filter({ hasText: "查看完整错误详情" }).click();
     await expect(failureDetails.getByLabel("失败诊断")).toContainText("隔离测试：");
     await failureDetails.getByRole("button", { name: "关闭来源详情", exact: true }).click();
     await expect(failureDetails).toBeHidden();

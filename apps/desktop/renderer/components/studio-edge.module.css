@@ -1,0 +1,39 @@
+.motion { pointer-events:none; }
+.beam { animation:edge-envelope 3.6s linear infinite; pointer-events:none; }
+.light {
+  offset-anchor:0px 0px;
+  offset-position:0px 0px;
+  offset-rotate:auto;
+  offset-distance:55%;
+  animation:edge-light-flow 3.6s linear infinite;
+}
+.effectScale {
+  transform:scale(clamp(.125,var(--canvas-edge-scale,1),2.5));
+  transform-origin:0 0;
+}
+
+/* Compact gestures pause only the small edge layer, with no node restyling. */
+:global([data-gesture-active="true"]) .motion,
+:global(.is-interacting) .motion,
+:global(.is-layout-animating) .motion,
+:global(.effects-paused) .motion,
+:global(.connections-hidden) .motion { display:none !important; }
+:global([data-gesture-active="true"]) .light,
+:global([data-gesture-active="true"]) .beam,
+:global(.is-interacting) .light,
+:global(.is-interacting) .beam,
+:global(.is-layout-animating) .light,
+:global(.is-layout-animating) .beam,
+:global(.effects-paused) .light,
+:global(.effects-paused) .beam,
+:global(.connections-hidden) .light,
+:global(.connections-hidden) .beam,
+:global(.canvas-lod-compact) .light,
+:global(.canvas-lod-compact) .beam { animation-play-state:paused !important; }
+:global(html[data-page-hidden="true"]) .motion,
+:global(html[data-motion="off"]) .motion { display:none !important; }
+:global(html[data-page-hidden="true"]) .light,
+:global(html[data-page-hidden="true"]) .beam { animation-play-state:paused !important; }
+@media (prefers-reduced-motion:reduce) { .motion { display:none !important; } }
+@keyframes edge-light-flow { from { offset-distance:0%; } to { offset-distance:100%; } }
+@keyframes edge-envelope { 0%,100% { opacity:0; } 8%,86% { opacity:1; } }

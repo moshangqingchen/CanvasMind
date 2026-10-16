@@ -69,6 +69,22 @@ describe("bounded edge motion paint", () => {
     expect(worldMargin * .02).toBeGreaterThanOrEqual(2.5 / 2);
   });
 
+  it("contains the rotated feather at its capped zoom scale without a canvas-size paint surface", () => {
+    const input = geometry(100, 300, -200, -400), points = actualCubic(input);
+    const base = edgeMotionBounds(input), feather = edgeMotionBounds(input, 132);
+    expect(feather).toEqual({ x: base.x - 68, y: base.y - 68, width: base.width + 136, height: base.height + 136 });
+    // The complete long ellipse lies within this radius after any tangent
+    // rotation. The scale cap prevents huge surfaces at the minimum zoom.
+    const radius = Math.hypot(17 + 35, 7) * 2.5;
+    expect(radius).toBeLessThan(132);
+    for (const point of points) {
+      expect(point.x - radius).toBeGreaterThan(feather.x);
+      expect(point.x + radius).toBeLessThan(feather.x + feather.width);
+      expect(point.y - radius).toBeGreaterThan(feather.y);
+      expect(point.y + radius).toBeLessThan(feather.y + feather.height);
+    }
+  });
+
   it("keeps each of a thousand edges local to its chord and reverse-control extension", () => {
     const directions = [Position.Left, Position.Right, Position.Top, Position.Bottom];
     for (let index = 0; index < 1000; index++) {

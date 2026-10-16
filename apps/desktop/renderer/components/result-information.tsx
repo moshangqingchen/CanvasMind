@@ -13,13 +13,16 @@ import { createPortal } from "react-dom";
 import { Copy, FileImage, X } from "lucide-react";
 import type { AssetView, CanvasNodeData, RunSnapshot } from "./types";
 import { localizeRunError } from "../lib/error-localization";
-import { runErrorTechnicalTitle } from "../lib/run-error-diagnostics";
-import { FailureDiagnosis } from "./failure-diagnosis";
+import { ResultFailureFeedback } from "./result-failure-feedback";
+import resultStyles from "./result-feedback.module.css";
 import { taskConnectionLabel, taskOutcomeLabel } from "../lib/task-evidence";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
 import { generationDetailsFromRun, resultElapsed, resultFileSize, resultPrompt, resultReferenceInputs } from "../lib/result-provenance";
 import { useDialogFocus } from "./use-dialog-focus";
 import { imageOutputDimensionNotice, imageOutputTransparencyLabel } from "../lib/image-output-notice";
+import { placeResultToolbar, resultToolbarUsableArea } from "../lib/result-toolbar-placement";
+import type { CanvasRect } from "../lib/canvas-usable-area";
+import { islandCanvasBounds } from "../lib/dynamic-island";
 
 /** Mounted only for an active result. Keep actions clear of the fixed canvas controls. */
 export function ResultToolbar({
@@ -31,36 +34,70 @@ export function ResultToolbar({
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [toolbarSize, setToolbarSize] = useState({ width: 440, height: 38 });
+  const [usableViewport, setUsableViewport] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   useLayoutEffect(() => {
     const element = toolbarRef.current;
     if (!element) return;
+    const canvas = element.closest<HTMLElement>(".react-flow") ?? element.closest<HTMLElement>(".canvas-wrap");
+    const editor = canvas?.closest<HTMLElement>(".canvas-editor");
+    const chromeSelector = '[data-canvas-island], .editor-rail, .canvas-toolbar, .react-flow__controls, .workspace > .inspector, .canvas-parameter-deck';
+    const obstacleSelector = '[data-canvas-island], .editor-rail, .canvas-toolbar, .react-flow__controls, .workspace > .inspector.mobile-open, .canvas-parameter-deck:not([hidden])';
+    const observed = new Set<Element>();
+    let frame = 0;
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(measure);
+    };
+    // No viewport transform observation or per-pan layout reads. Only chrome
+    // insertion/open/resize events invalidate the cached usable rectangle.
+    const mutations = new MutationObserver(schedule);
+    const observer = new ResizeObserver(schedule);
     const measure = () => {
+      frame = 0;
       const { width, height } = element.getBoundingClientRect();
       setToolbarSize(previous => previous.width === width && previous.height === height
         ? previous : { width, height });
+      if (!canvas || !editor) return;
+      const chrome = [...editor.querySelectorAll<HTMLElement>(chromeSelector)];
+      const targets = new Set<Element>([element, canvas, ...chrome]);
+      for (const target of observed) if (!targets.has(target)) { observer.unobserve(target); observed.delete(target); }
+      for (const target of targets) if (!observed.has(target)) { observer.observe(target); observed.add(target); }
+      mutations.disconnect();
+      mutations.observe(editor, { childList: true, attributes: true, attributeFilter: ["class", "style"] });
+      const workspace = editor.querySelector(".workspace");
+      if (workspace) mutations.observe(workspace, { childList: true, attributes: true, attributeFilter: ["class", "style"] });
+      const canvasWrap = canvas.closest(".canvas-wrap");
+      if (canvasWrap) mutations.observe(canvasWrap, { childList: true, attributes: true, attributeFilter: ["data-compact-tools"] });
+      for (const target of chrome) mutations.observe(target, { attributes: true,
+        attributeFilter: ["class", "style", "hidden", "data-slots", "data-alongside-agent"] });
+      const obstacles: CanvasRect[] = [], bottomChrome: CanvasRect[] = [];
+      for (const target of chrome.filter(target => target.matches(obstacleSelector))) {
+        const bounds = target.getBoundingClientRect();
+        if (target.matches(".canvas-toolbar, .react-flow__controls")) bottomChrome.push(bounds);
+        else obstacles.push(target.hasAttribute("data-dynamic-island") ? islandCanvasBounds(bounds) : bounds);
+      }
+      const next = resultToolbarUsableArea(canvas.getBoundingClientRect(), obstacles, bottomChrome);
+      setUsableViewport(previous => previous && previous.x === next.x && previous.y === next.y &&
+        previous.width === next.width && previous.height === next.height ? previous : next);
     };
-    const observer = new ResizeObserver(measure);
     observer.observe(element);
+    observed.add(element);
     measure();
-    return () => observer.disconnect();
+    window.addEventListener("resize", schedule);
+    return () => {
+      observer.disconnect(); mutations.disconnect();
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+    };
   }, []);
   const transform = useStore((state) => {
     const node = state.nodeLookup.get(nodeId);
     if (!node) return "translate(0px, 80px)";
     const [tx, ty, zoom] = state.transform,
       p = node.internals.positionAbsolute;
-    const center = (p.x + (node.measured.width ?? 320) / 2) * zoom + tx;
-    const bottom = (p.y + (node.measured.height ?? 240)) * zoom + ty + 12;
-    const halfWidth = toolbarSize.width / 2;
-    const x = Math.max(
-      Math.min(halfWidth + 80, state.width / 2 + 32),
-      Math.min(center, state.width - Math.min(halfWidth + 12, state.width / 2 - 32)),
-    );
-    // Wrapped action rows must also remain above the fixed canvas controls.
-    const maxY = Math.max(8, state.height - 72 - toolbarSize.height);
-    const minY = Math.min(80, maxY);
-    const y = bottom <= maxY ? bottom : p.y * zoom + ty - toolbarSize.height - 12;
-    return `translate(${x}px, ${Math.max(minY, Math.min(y, maxY))}px) translate(-50%, 0)`;
+    const { x, y } = placeResultToolbar({ x: p.x * zoom + tx, y: p.y * zoom + ty,
+      width: (node.measured.width ?? 320) * zoom, height: (node.measured.height ?? 240) * zoom },
+      toolbarSize, usableViewport ?? { width: state.width, height: state.height });
+    return `translate(${x}px, ${y}px)`;
   });
   return (
     <NodeToolbar nodeId={nodeId} isVisible style={{ transform }}>
@@ -155,8 +192,7 @@ export function ResultInformation({
   overlay?: boolean;
   actionLabel?: string;
 }) {
-  const [open, setOpen] = useState(false),
-    [copy, setCopy] = useState("复制任务编号");
+  const [open, setOpen] = useState(false);
   const dialogLeaseId = useId();
   const onConfigurationOpenChange = data.onConfigurationOpenChange;
   useLayoutEffect(() => {
@@ -175,7 +211,6 @@ export function ResultInformation({
   const close = () => setOpen(false);
   const dialog = useDialogFocus(open, close);
   const taskId = data.generatedFromRunId ?? data.generatedPendingRequestId;
-  const [errorCopy, setErrorCopy] = useState("复制错误详情");
   const [loadedRun, setLoadedRun] = useState<{ id: string; node: RunSnapshot["nodes"][number] } | null>(null);
   const [detailsState, setDetailsState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [copiedDetail, setCopiedDetail] = useState("");
@@ -188,7 +223,8 @@ export function ResultInformation({
   const prompt = resultPrompt(data, details);
   const parameters = runNode?.request?.parameters ?? data.generatedParameters;
   const status = runNode?.status ?? data.generatedStatus;
-  const error = localizeRunError(runNode ? runNode.errorJson : data.generatedError, { provider: runNode?.request?.provider ?? data.generatedProvider, supplier: runNode?.request?.supplier ?? data.generatedSupplier, status, providerTaskStatus: details.taskEvidence?.status });
+  const rawError = runNode ? runNode.errorJson : data.generatedError;
+  const error = localizeRunError(rawError, { provider: runNode?.request?.provider ?? data.generatedProvider, supplier: runNode?.request?.supplier ?? data.generatedSupplier, status, providerTaskStatus: details.taskEvidence?.status });
   const statusLabel = taskOutcomeLabel(status, details.taskEvidence, runNode?.recoveryAction ?? data.generatedRecoveryAction) ?? (status ? pendingGeneratedResultLabel(status, details.submissionPhase) : "未记录");
   const operationLabel = ({ "image.generate": "文生图", "image.edit": "参考图生成 / 编辑", "video.generate": "文生视频", "video.image-to-video": "图生视频" } as Record<string, string>)[details.operation ?? ""] ?? details.operation ?? "未记录";
   const unit = data.assetKind === "video" ? "个" : "张";
@@ -248,8 +284,6 @@ export function ResultInformation({
         onClick={(e) => {
           e.stopPropagation();
           setLoadedDimensions(null);
-          setCopy("复制任务编号");
-          setErrorCopy("复制错误详情");
           setLoadedRun(null);
           setDetailsState(data.generatedFromRunId ? "loading" : "unavailable");
           setCopiedDetail("");
@@ -261,7 +295,7 @@ export function ResultInformation({
       {open
         ? createPortal(
             <div
-              className="modal-backdrop result-info-backdrop"
+              className="modal-backdrop result-info-backdrop canvas-surface"
               role="presentation"
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -295,16 +329,16 @@ export function ResultInformation({
                   <h3>{data.label}</h3>
                   {error || status === "failed" || status === "needs_attention" || status === "cancelled" ? <section aria-label="完整错误详情">
                     <h4>{status === "cancelled" ? "取消信息" : "错误详情"}</h4>
-                    <FailureDiagnosis error={error} status={status} providerTaskStatus={details.taskEvidence?.status} recoveryAction={runNode?.recoveryAction ?? data.generatedRecoveryAction} />
+                    <ResultFailureFeedback error={error} rawError={rawError} status={status}
+                      taskId={details.taskEvidence?.taskId} runId={taskId}
+                      providerTaskStatus={details.taskEvidence?.status} recoveryAction={runNode?.recoveryAction ?? data.generatedRecoveryAction}
+                      context={{ connection: runNode?.request?.connectionName ?? data.generatedConnectionName,
+                        supplier: runNode?.request?.supplier ?? data.generatedSupplier, modelGroup: data.generatedGroup,
+                        model: runNode?.request?.model ?? data.generatedModel, taskEvidence: details.taskEvidence }} />
                     <details>
-                      <summary>{runErrorTechnicalTitle(error)}</summary>
+                      <summary>完整错误记录</summary>
                       <pre>{error ? JSON.stringify(error, null, 2) : "该任务未记录原始错误"}</pre>
                     </details>
-                    <button type="button" className="button" onClick={() => {
-                      void navigator.clipboard.writeText(JSON.stringify(error, null, 2))
-                        .then(() => setErrorCopy("已复制"))
-                        .catch(() => setErrorCopy("复制失败，请选中文字手动复制"));
-                    }}>{errorCopy}</button>
                   </section> : null}
                   <dl>
                     <dt>任务状态</dt>
@@ -358,9 +392,9 @@ export function ResultInformation({
                     <dt>耗时（含排队）</dt>
                     <dd>{resultElapsed(data.generatedCreatedAt, details.finishedAt ?? asset?.createdAt)}</dd>
                     <dt>供应商任务号</dt>
-                    <dd>{details.taskEvidence?.taskId ?? "未取得"}{details.taskEvidence?.taskId ? <button type="button" className="icon-button" aria-label="复制供应商任务号" title="复制供应商任务号" onClick={() => copyDetail(details.taskEvidence!.taskId, "供应商任务号")}><Copy size={15} aria-hidden="true" /></button> : null}</dd>
+                    <dd className={resultStyles.taskId}><code className={resultStyles.identifier}>{details.taskEvidence?.taskId ?? "未取得"}</code>{details.taskEvidence?.taskId ? <button type="button" className="icon-button" aria-label="复制供应商任务号" title="复制供应商任务号" onClick={() => copyDetail(details.taskEvidence!.taskId, "供应商任务号")}><Copy size={15} aria-hidden="true" /></button> : null}</dd>
                     <dt>本地运行编号</dt>
-                    <dd>{taskId ?? "尚未分配"}</dd>
+                    <dd><code className={resultStyles.identifier}>{taskId ?? "尚未分配"}</code></dd>
                   </dl>
                   <section aria-label="参考素材详情" className="result-info-section">
                     <h4>参考素材{references ? ` · ${references.length} 个` : ""}</h4>
@@ -395,27 +429,23 @@ export function ResultInformation({
                   <div className="result-info-actions">
                   {taskId ? (
                     <button
-                      className="button"
+                      className="icon-button"
                       type="button"
-                      onClick={() => {
-                        void navigator.clipboard
-                          .writeText(taskId)
-                          .then(() => setCopy("已复制"))
-                          .catch(() => setCopy("复制失败，请选中编号手动复制"));
-                      }}
+                      aria-label="复制任务编号"
+                      title="复制任务编号"
+                      onClick={() => copyDetail(taskId, "任务编号")}
                     >
                       <Copy size={14} aria-hidden="true" />
-                      {copy}
                     </button>
                   ) : null}
-                  <button type="button" className="button" onClick={() => copyDetail(JSON.stringify({
+                  <button type="button" className="icon-button" aria-label="复制完整信息" title="复制完整信息" onClick={() => copyDetail(JSON.stringify({
                     label: data.label, taskId, status, error, model: runNode?.request?.model ?? data.generatedModel,
                     connection: runNode?.request?.connectionName ?? data.generatedConnectionName,
                     group: data.generatedGroup, ...details, references, prompt, parameters,
                     referenceImageCount: references && !unknownCount ? imageCount : undefined,
                     actualDimensions: dimensions, createdAt: data.generatedCreatedAt,
                     file: asset ? { name: asset.name, mimeType: asset.mimeType, size: asset.size, savedAt: asset.createdAt } : undefined,
-                  }, null, 2), "完整信息")}><Copy size={14} aria-hidden="true" />复制完整信息</button>
+                  }, null, 2), "完整信息")}><Copy size={14} aria-hidden="true" /></button>
                   </div>
                   {copiedDetail ? <p className="result-info-note" role="status">{copiedDetail}</p> : null}
                 </div>

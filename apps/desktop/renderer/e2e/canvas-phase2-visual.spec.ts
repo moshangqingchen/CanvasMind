@@ -146,10 +146,12 @@ test("第二阶段隔离视觉证据与完整控件", async ({ page, request }, 
   await expect(page.locator(".react-flow__node")).toHaveCount(12);
   await shot("canvas-states");
   const failedResult = page.locator('.react-flow__node[data-id="result-failed"]');
-  const diagnose = failedResult.getByRole("button", { name: "查看原因：失败 · 图片结果", exact: true });
+  await failedResult.locator("summary").filter({ hasText: "来源与任务" }).click();
+  const diagnose = failedResult.getByRole("button", { name: "查看 失败 · 图片结果 来源", exact: true });
   await assertUnobstructed(diagnose);
   await diagnose.click();
   const failure = page.getByRole("dialog", { name: "结果来源与参数", exact: true });
+  await failure.locator("summary").filter({ hasText: "查看完整错误详情" }).click();
   const diagnosis = failure.getByRole("group", { name: "失败诊断", exact: true });
   await expect(diagnosis).toBeVisible();
   await expect(diagnosis).toContainText("隔离示例：模拟生成失败，可查看原因");

@@ -96,7 +96,8 @@ for (const { history, kind, failed } of [
         }
         await page.screenshot({ path: test.info().outputPath(`reuse-toolbar-${width}.png`) });
       }
-      await toolbar.getByRole("button", { name: "复用 历史图片 提示词" }).click();
+      await toolbar.getByRole("button", { name: "更多结果操作", exact: true }).click();
+      await page.getByRole("menuitem", { name: "复用 历史图片 提示词", exact: true }).click();
       await page.locator('.react-flow__node.selected .prompt-overview').click();
       const editor = page.locator('.react-flow__node.selected [contenteditable="true"]');
       await expect(editor).toBeVisible();
@@ -146,19 +147,22 @@ test("历史提示词缺失时保留画布，读取失败后可重试", async ({
   try {
     await page.goto(`/canvas/${fixture.id}`);
     await page.locator('.react-flow__node[data-id="result"] .generated-result-viewport').click();
-    const reuse = page.getByRole("button", { name: "复用 历史图片 提示词" });
-    await reuse.click();
+    const reuse = async () => {
+      await page.getByRole("button", { name: "更多结果操作", exact: true }).click();
+      await page.getByRole("menuitem", { name: "复用 历史图片 提示词", exact: true }).click();
+    };
+    await reuse();
     await expect(page.getByText("读取原提示词或生成配置失败，请重试", { exact: true })).toBeVisible();
     state = "missing";
-    await reuse.click();
+    await reuse();
     await expect(page.getByText("这张结果没有保存可复用的提示词", { exact: true })).toBeVisible();
     expect((await (await request.get(`/api/canvas/${fixture.id}`)).json()).graph.nodes).toHaveLength(fixture.nodes.length);
     state = "configuration-missing";
-    await reuse.click();
+    await reuse();
     await expect(page.getByText("这张结果缺少原供应商、模型或生成参数，无法完整复用", { exact: true })).toBeVisible();
     expect((await (await request.get(`/api/canvas/${fixture.id}`)).json()).graph.nodes).toHaveLength(fixture.nodes.length);
     state = "ready";
-    await reuse.click();
+    await reuse();
     await page.locator('.react-flow__node.selected .prompt-overview').click();
     await expect(page.locator('.react-flow__node.selected [contenteditable="true"]')).toContainText("标题：新品上市");
   } finally {

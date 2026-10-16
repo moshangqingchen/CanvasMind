@@ -24,8 +24,8 @@ function controlPoint(position: Position, x: number, y: number, otherX: number, 
   }
 }
 
-/** A cubic lies inside its control-point hull; keep stroke/dash paint local. */
-export function edgeMotionBounds({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature = .3 }: EdgeMotionGeometry): {
+/** A cubic lies inside its control-point hull; keep moving paint local. */
+export function edgeMotionBounds({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature = .3 }: EdgeMotionGeometry, margin = 64): {
   x: number; y: number; width: number; height: number;
 } {
   const [sourceControlX, sourceControlY] = controlPoint(sourcePosition, sourceX, sourceY, targetX, targetY, curvature);
@@ -36,5 +36,6 @@ export function edgeMotionBounds({ sourceX, sourceY, targetX, targetY, sourcePos
   const bottom = Math.max(sourceY, sourceControlY, targetControlY, targetY);
   // At min zoom .02, a 2.5px non-scaling stroke has a 62.5 world-pixel
   // half-width. A fixed margin covers it without a per-edge zoom subscription.
-  return { x: left - 64, y: top - 64, width: right - left + 128, height: bottom - top + 128 };
+  // Feathered lights can request their larger, capped paint extent separately.
+  return { x: left - margin, y: top - margin, width: right - left + margin * 2, height: bottom - top + margin * 2 };
 }

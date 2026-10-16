@@ -62,7 +62,8 @@ for (const sourceKind of ["uploaded", "generated"] as const) {
     await page.goto(`/canvas/${project.id}`);
     const source = page.locator('.react-flow__node[data-id="source"]');
     await source.locator(sourceKind === "generated" ? ".generated-result-viewport" : ".asset-node-preview").click();
-    await page.getByRole("button", { name: "绘制蒙版", exact: true }).click();
+    const maskAction = page.getByRole("button", { name: sourceKind === "generated" ? "改版：绘制蒙版，局部修改" : "绘制蒙版", exact: true });
+    await maskAction.click();
     const editor = page.getByRole("dialog", { name: "涂抹重绘区域" });
     const canvas = editor.locator('canvas[aria-label="在原图上涂抹需要重绘的区域"]');
     const save = editor.getByRole("button", { name: "保存并创建局部重绘", exact: true });
@@ -70,8 +71,8 @@ for (const sourceKind of ["uploaded", "generated"] as const) {
     await expect(editor.getByRole("button", { name: "画笔", exact: true })).toBeEnabled();
     await page.keyboard.press("Escape");
     await expect(editor).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "绘制蒙版", exact: true })).toBeFocused();
-    await page.getByRole("button", { name: "绘制蒙版", exact: true }).click();
+    await expect(maskAction).toBeFocused();
+    await maskAction.click();
     await expect(editor.getByRole("button", { name: "画笔", exact: true })).toBeEnabled();
     await expect(save).toBeDisabled();
     expect(await canvas.evaluate((element: HTMLCanvasElement) => [element.width, element.height])).toEqual([1024, 768]);

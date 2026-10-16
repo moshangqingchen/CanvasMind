@@ -31,6 +31,7 @@ import { collectIslandTasks, failedIslandStatuses, islandCanvasBounds, type Isla
 
 import { useRouter } from "next/navigation";
 import { CanvasInteractionFeedback, canvasMotionEnabled, useCanvasMotion } from "./canvas-motion";
+import { CanvasPortLabels } from "./canvas-port-labels";
 import { createNodePresentationCache, useStableNodeContent, useStableNodeDefinitions } from "../lib/stable-node-content";
 import { useStableNodePresentationData } from "../lib/stable-node-presentation";
 import { createLazySnapshot } from "../lib/lazy-snapshot";
@@ -10436,6 +10437,7 @@ function CanvasShell({
         >
           <div className="canvas-aurora" aria-hidden="true" />
           <CanvasInteractionFeedback />
+          <CanvasPortLabels />
           {canvasToolbar}
           <ReactFlow
             nodes={renderedNodes}

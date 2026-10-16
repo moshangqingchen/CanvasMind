@@ -1,0 +1,100 @@
+.actionsWrap:global(.generated-result-actions-wrap) {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:7px;
+  width:max-content;
+  max-width:none;
+}
+.actionsWrap .actions {
+  display:flex;
+  flex-wrap:nowrap;
+  align-items:center;
+  gap:2px;
+  padding:4px;
+  border:1px solid var(--line-strong);
+  border-radius:12px;
+  background:var(--surface-floating);
+  box-shadow:var(--shadow-e2);
+  white-space:nowrap;
+}
+.actionsWrap .actions button, .actionsWrap .actions a {
+  flex:0 0 auto;
+  min-width:28px;
+  min-height:28px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  padding:6px;
+  border:0;
+  border-radius:7px;
+  background:transparent;
+  color:var(--text);
+  font:inherit;
+  font-size:11px;
+  line-height:1;
+  text-decoration:none;
+  cursor:pointer;
+}
+.actionsWrap .actions button:hover, .actionsWrap .actions a:hover, .menu button:hover { background:var(--panel-2); }
+.actionsWrap .actions button:disabled, .menu button:disabled { opacity:.4; cursor:default; }
+.actionsWrap .actions button:focus-visible, .actionsWrap .actions a:focus-visible, .menu button:focus-visible, .details summary:focus-visible {
+  outline:2px solid var(--focus-ring);
+  outline-offset:2px;
+}
+.actions .editButton { padding-inline:9px; }
+.zoom { display:flex; gap:1px; padding-inline:3px; border-inline:1px solid var(--line); }
+.actions .downloadButton > span, .actions .downloadButton > svg:last-child { display:none; }
+.menu {
+  box-sizing:border-box;
+  width:226px;
+  max-width:calc(100vw - 16px);
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:6px;
+  border:1px solid var(--line-strong);
+  border-radius:12px;
+  background:var(--surface-floating);
+  color:var(--text);
+  box-shadow:var(--shadow-e2);
+  overflow-wrap:anywhere;
+}
+.menu button { display:flex; align-items:center; gap:9px; width:100%; padding:9px 10px; border:0; border-radius:7px; background:transparent; color:inherit; text-align:left; font-size:12px; cursor:pointer; }
+.prompt { max-height:160px; overflow:auto; padding:9px; border-top:1px solid var(--line); color:var(--text-secondary); font-size:11px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; user-select:text; }
+.failureCard[data-result-problem] { background:var(--surface-node); border-color:var(--line); box-shadow:inset 3px 0 0 var(--status-fail); }
+.failureCard[data-result-problem]::before { content:""; position:absolute; z-index:2; top:12px; bottom:12px; left:0; width:2px; border-radius:2px; background:var(--status-fail); pointer-events:none; }
+.failureCard:global(.node-card):global(.selected)[data-result-problem] { box-shadow:inset 3px 0 0 var(--status-fail), 0 0 0 1px color-mix(in srgb,var(--accent) 16%,transparent),var(--shadow-e1); }
+:global(.is-interacting) .failureCard:global(.node-card):global(.selected)[data-result-problem],
+:global(.canvas-lod-compact) .failureCard:global(.node-card):global(.selected)[data-result-problem] { box-shadow:none; }
+.failureState:global(.generated-result-state) { align-items:stretch; justify-content:flex-start; gap:8px; padding:12px; color:var(--text); background:var(--surface-node); text-align:left; overflow:auto; overflow-wrap:anywhere; overscroll-behavior:contain; }
+.failureState > svg { color:var(--status-fail); align-self:flex-start; }
+.failureState > strong { color:var(--text); }
+.failureState > * { min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.failureHeading { box-sizing:border-box; position:sticky; top:-12px; z-index:2; display:flex; align-items:center; gap:7px; min-height:42px; margin-top:-12px; padding-top:12px; padding-bottom:10px; padding-left:52px; padding-right:28px; background:var(--surface-node); line-height:1.4; }
+.failureHeading::before { content:""; position:absolute; z-index:-1; inset:0 -12px; background:var(--surface-node); pointer-events:none; }
+.failureHeading > svg { flex:0 0 auto; color:var(--status-fail); }
+.failureState .primaryRetry { align-self:flex-start; min-height:28px; margin-top:0; padding:6px 10px; border:1px solid var(--accent); border-radius:8px; background:var(--accent); color:var(--on-accent); font-size:11px; font-weight:600; }
+.sourceDetails { min-width:0; color:var(--text-secondary); font-size:11px; line-height:1.6; }
+.sourceDetails > summary { width:max-content; max-width:100%; cursor:pointer; }
+.sourceDetails > :not(summary) { margin-top:7px; }
+.nodeFailureSummary { box-sizing:border-box; width:100%; min-width:0; max-height:50%; overflow:auto; padding:10px 14px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--surface-node); overflow-wrap:anywhere; }
+:global(.canvas-lod-compact) .nodeFailureSummary { visibility:hidden; pointer-events:none; }
+.feedback { width:100%; min-width:0; color:var(--text); font-size:11px; line-height:1.6; text-align:left; overflow-wrap:anywhere; user-select:text; }
+/* Outrank the legacy canvas result summary without changing other screens. */
+.feedback > p.summary:global(.result-error-summary) { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; margin:0; white-space:normal; overflow-wrap:anywhere; }
+.details { width:100%; min-width:0; margin-top:7px; }
+.details > summary { width:max-content; max-width:100%; color:var(--text-secondary); cursor:pointer; font-size:11px; }
+.technical { display:grid; gap:10px; min-width:0; margin-top:8px; padding:10px; border:1px solid var(--line); border-radius:9px; background:var(--panel-2); color:var(--text); }
+.technical dl { display:grid; grid-template-columns:auto minmax(0,1fr); gap:6px 9px; margin:0; }
+.technical dt { color:var(--text-secondary); }
+.technical dd { min-width:0; margin:0; overflow-wrap:anywhere; }
+.technical pre, .technical code { font-family:var(--font-mono,Consolas,monospace); white-space:pre-wrap; word-break:normal; overflow-wrap:anywhere; }
+.technical pre { max-width:100%; margin:4px 0 0; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--surface-node); color:var(--text); font-size:10px; line-height:1.6; }
+.taskId { display:flex; align-items:flex-start; gap:5px; }
+.taskId code { min-width:0; flex:1; }
+.identifier { font-family:var(--font-mono,Consolas,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.copyIcon { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px; padding:0; border:1px solid var(--line); border-radius:5px; background:transparent; color:var(--text-secondary); cursor:pointer; }
+.technical button, .technical a { justify-self:start; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.copyStatus { color:var(--text-secondary); font-size:10px; }

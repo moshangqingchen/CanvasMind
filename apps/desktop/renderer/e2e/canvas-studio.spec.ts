@@ -75,7 +75,7 @@ test("studio canvas keeps navigation, view toggles and draft starters usable", a
   await page.screenshot({ path: testInfo.outputPath("studio-compact.png") });
 });
 
-test("selected connections isolate bounded dashed feedback and preserve switching, motion preferences and clearing", async ({ page, request }, testInfo) => {
+test("selected connections isolate bounded feathered light and preserve switching, motion preferences and clearing", async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   const graph = {
     schemaVersion: 1,
@@ -99,35 +99,43 @@ test("selected connections isolate bounded dashed feedback and preserve switchin
   const stroke = edge.locator(".react-flow__edge-path");
   const otherStroke = otherEdge.locator(".react-flow__edge-path");
   const motion = page.locator('.studio-edge-motion[data-edge-id="idea-image"]');
-  const dash = motion.locator(".studio-edge-dash");
-  const offset = () => dash.evaluate(element => getComputedStyle(element).strokeDashoffset);
+  const light = motion.locator(".studio-edge-light");
+  const offset = () => light.evaluate(element => getComputedStyle(element).offsetDistance);
+  const idleOpacity = await otherStroke.evaluate(element => getComputedStyle(element).opacity);
   await expect(page.locator(".studio-edge.is-flowing")).toHaveCount(0);
   await expect(page.locator(".studio-edge mask, .studio-edge filter, .studio-edge-beam")).toHaveCount(0);
   await edge.locator(".react-flow__edge-interaction").hover();
   await expect(page.locator(".studio-edge.is-flowing")).toHaveCount(0);
-  await expect(stroke).toHaveCSS("stroke-width", "2.5px");
-  await expect(otherStroke).toHaveCSS("opacity", await page.locator("html").getAttribute("data-theme") === "dark" ? "0.7" : "1");
+  await expect(stroke).toHaveCSS("stroke-width", "1.25px");
+  await expect(otherStroke).toHaveCSS("opacity", idleOpacity);
   await page.locator('.react-flow__node[data-id="image"] .node-title').click();
   await expect(edge.locator(".studio-edge.is-flowing")).toHaveCount(1);
   await expect(otherEdge.locator(".studio-edge.is-flowing")).toHaveCount(0);
-  await expect(dash).toHaveCSS("animation-name", "edge-running-dash");
+  await expect(light).toHaveCSS("animation-name", /edge-light-flow/);
+  await expect(motion.locator("ellipse")).toHaveCount(2);
+  await expect(motion.locator(".studio-edge-terminal")).toHaveCount(2);
+  await expect(page.locator(".studio-edge-dash, .studio-edge mask, .studio-edge filter")).toHaveCount(0);
   await expect(stroke).toHaveCSS("animation-name", "none");
   await expect(stroke).toHaveCSS("stroke-dasharray", "none");
   await expect(stroke).toHaveCSS("vector-effect", "non-scaling-stroke");
-  await expect(otherStroke).toHaveCSS("opacity", await page.locator("html").getAttribute("data-theme") === "dark" ? "0.7" : "1");
+  await expect(otherStroke).toHaveCSS("opacity", idleOpacity);
   const initial = await offset();
   await expect.poll(offset).not.toBe(initial);
-  const samples = await dash.evaluate(async element => {
+  const samples = await light.evaluate(async element => {
     const values: string[] = [];
-    for (let i = 0; i < 6; i++) { await new Promise(requestAnimationFrame); values.push(getComputedStyle(element).strokeDashoffset); }
+    for (let i = 0; i < 6; i++) { await new Promise(requestAnimationFrame); values.push(getComputedStyle(element).offsetDistance); }
     return values;
   });
   expect(new Set(samples).size).toBeGreaterThan(3);
-  const bounds = await motion.locator("svg").evaluate(element => {
-    const svg = element as SVGSVGElement, box = svg.querySelector("path")!.getBBox(), view = svg.viewBox.baseVal;
+  const pathBounds = await stroke.evaluate(element => {
+    const box = (element as SVGPathElement).getBBox();
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
+  const bounds = await motion.locator("svg").evaluate((element, box) => {
+    const view = (element as SVGSVGElement).viewBox.baseVal;
     return { contained: box.x >= view.x && box.y >= view.y && box.x + box.width <= view.x + view.width && box.y + box.height <= view.y + view.height,
       width: view.width, height: view.height };
-  });
+  }, pathBounds);
   expect(bounds.contained).toBe(true);
   expect(bounds.width).toBeLessThan(2000);
   expect(bounds.height).toBeLessThan(1000);
@@ -136,7 +144,7 @@ test("selected connections isolate bounded dashed feedback and preserve switchin
   await page.mouse.down();
   await expect(motion).toBeHidden();
   await expect(stroke).toBeVisible();
-  await expect(dash).toHaveCSS("animation-play-state", "paused");
+  await expect(light).toHaveCSS("animation-play-state", "paused");
   await page.mouse.up();
   await expect(motion).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("studio-selected-flow.png") });
@@ -149,14 +157,14 @@ test("selected connections isolate bounded dashed feedback and preserve switchin
   await expect(edge.locator(".studio-edge.is-flowing")).toHaveCount(1);
   await expect(otherEdge.locator(".studio-edge.is-flowing")).toHaveCount(0);
   await page.getByRole("button", { name: "画布动效", exact: true }).click();
-  await expect(dash).toHaveCSS("animation-name", "none");
+  await expect(light).toHaveCSS("animation-name", "none");
   await expect(motion).toBeHidden();
   await expect(stroke).toBeVisible();
   const paused = await offset();
   await page.waitForTimeout(250);
   expect(await offset()).toBe(paused);
   await page.getByRole("button", { name: "画布动效", exact: true }).click();
-  await expect(dash).toHaveCSS("animation-play-state", "running");
+  await expect(light).toHaveCSS("animation-play-state", "running");
   await expect.poll(offset).not.toBe(paused);
   await page.locator('.react-flow__node[data-id="idea"] .node-title').click();
   await expect(page.locator(".studio-edge.is-focused")).toHaveCount(2);
@@ -173,12 +181,12 @@ test("selected connections isolate bounded dashed feedback and preserve switchin
   expect(["none", "normal"]).toContain(selectedDecoration.content);
   expect(selectedDecoration).toMatchObject({ borderStyle: "none", borderWidth: "0px", shadow: "none", animation: "none" });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(dash).toHaveCSS("animation-name", "none");
+  await expect(light).toHaveCSS("animation-name", "none");
   await expect(motion).toBeHidden();
   const reduced = await offset();
   await page.waitForTimeout(100);
   expect(await offset()).toBe(reduced);
-  await page.screenshot({ path: testInfo.outputPath("studio-dashed-detail.png") });
+  await page.screenshot({ path: testInfo.outputPath("studio-feathered-detail.png") });
   await page.getByRole("button", { name: "显示连线", exact: true }).click();
   await expect(page.locator(".react-flow__edges")).toHaveCSS("visibility", "hidden");
   await expect(motion).toBeHidden();

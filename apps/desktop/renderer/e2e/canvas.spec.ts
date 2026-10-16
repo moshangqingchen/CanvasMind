@@ -2412,13 +2412,22 @@ test.describe("超级画布完整验收", () => {
     await expect(runningResult).toHaveCount(1);
     const runningResultId = await runningResult.getAttribute("data-id");
     const runningEdge = page.locator(`.react-flow__edge[data-id="edge-generated-${runningResultId}"]`);
-    await expect(runningEdge.locator(".studio-edge.is-running.is-flowing")).toHaveCount(1);
+    await expect(runningEdge.locator(".studio-edge.is-running")).toHaveCount(1);
+    await expect(runningEdge.locator(".studio-edge.is-flowing")).toHaveCount(0);
     await expect(runningEdge.locator(".react-flow__edge-path")).toHaveCSS("animation-name", "none");
-    const runningMotion = page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${runningResultId}"].is-running`);
+    const runningMotion = page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${runningResultId}"]`);
+    await expect(runningMotion).toHaveCount(0);
+    // A running task keeps its status and static connection. Selecting its
+    // endpoint adds only the local feather; clearing selection removes it.
+    await node.locator(".node-head").click();
+    await expect(runningEdge.locator(".studio-edge.is-running.is-focused.is-flowing")).toHaveCount(1);
     await expect(runningMotion).toBeVisible();
     await expect(runningMotion).toHaveCSS("overflow", "hidden");
-    await expect(runningMotion.locator(".studio-edge-dash")).toHaveCount(1);
-    await expect(runningMotion.locator(".studio-edge-dash")).toHaveCSS("animation-name", "edge-running-dash");
+    await expect(runningMotion.locator(".studio-edge-light")).toHaveCount(1);
+    await expect(runningMotion.locator("ellipse")).toHaveCount(2);
+    await expect(runningMotion.locator(".studio-edge-light")).toHaveCSS("animation-name", /edge-light-flow/);
+    await clickBlankCanvas(page);
+    await expect(runningMotion).toHaveCount(0);
     await expect(button).toHaveText("再生成一张");
     await page.reload();
     await expect(results).toHaveCount(2);
@@ -2522,7 +2531,7 @@ test.describe("超级画布完整验收", () => {
           1,
         );
       }
-      // Selection adds one local dash overlay; the queued task itself never
+      // Selection adds one local feather overlay; the queued task itself never
       // animates the main SVG or starts an autonomous flow.
       await sourceNode.locator(".node-head").click();
       for (const resultNodeId of pendingNodeIds) {
@@ -2533,7 +2542,9 @@ test.describe("超级画布完整验收", () => {
         await expect(edge.locator(".react-flow__edge-path")).toHaveCSS("animation-name", "none");
         await expect(motion).toBeVisible();
         await expect(motion).toHaveCSS("overflow", "hidden");
-        await expect(motion.locator(".studio-edge-dash")).toHaveCount(1);
+        await expect(motion.locator(".studio-edge-light")).toHaveCount(1);
+        await expect(motion.locator("ellipse")).toHaveCount(2);
+        await expect(motion.locator(".studio-edge-light")).toHaveCSS("animation-name", /edge-light-flow/);
       }
       await clickBlankCanvas(page);
       for (const resultNodeId of pendingNodeIds) await expect(page.locator(`.studio-edge-motion[data-edge-id="edge-generated-${resultNodeId}"]`)).toHaveCount(0);
@@ -2835,7 +2846,21 @@ test.describe("超级画布完整验收", () => {
       await expect(failedState).toContainText(
         "模拟供应商按测试场景返回了生成失败",
       );
-      await expect(failedState).toContainText("错误类型：模拟测试错误");
+      // Technical fields now live in a labelled disclosure; the summary stays
+      // readable without exposing every diagnostic row on the card.
+      const errorDetails = failedState.locator("details").filter({
+        has: page.getByText("查看完整错误详情", { exact: true }),
+      });
+      await expect(failedState.locator(".result-error-summary")).toBeVisible();
+      await expect(errorDetails).not.toHaveAttribute("open");
+      await errorDetails.locator("summary").click();
+      const errorType = errorDetails.locator("dt").filter({ hasText: /^错误类型$/u });
+      await expect(errorType).toBeVisible();
+      await expect(errorType.locator("+ dd")).toHaveText("模拟测试错误");
+      const errorCode = errorDetails.locator("dt").filter({ hasText: /^错误代码$/u });
+      await expect(errorCode.locator("+ dd")).toHaveText("fake_provider_failure");
+      await errorDetails.locator("summary").click();
+      await expect(errorDetails).not.toHaveAttribute("open");
       const failedLayout = await failedState.evaluate((element) => {
         const childRects = Array.from(element.children)
           .filter((child) => getComputedStyle(child).display !== "none")
@@ -3120,10 +3145,26 @@ test.describe("超级画布完整验收", () => {
     expect(resultActionsBounds).not.toBeNull();
     expect(resultActionsBounds!.y).toBeGreaterThanOrEqual(64);
     expect(resultActionsBounds!.y + resultActionsBounds!.height).toBeLessThan(650);
+    const visibleInspector = (await inspector.boundingBox())!;
+    expect(resultActionsBounds!.x < visibleInspector.x + visibleInspector.width &&
+      resultActionsBounds!.x + resultActionsBounds!.width > visibleInspector.x &&
+      resultActionsBounds!.y < visibleInspector.y + visibleInspector.height &&
+      resultActionsBounds!.y + resultActionsBounds!.height > visibleInspector.y).toBe(false);
+    for (const control of await resultActions.locator("button, a").all()) {
+      await expect(control).toBeInViewport({ ratio: 1 });
+      expect(await control.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return hit === element || Boolean(hit && element.contains(hit));
+      })).toBe(true);
+      if (await control.isEnabled()) await control.click({ trial: true });
+    }
+    await page.screenshot({ path: test.info().outputPath("toolbar-with-open-inspector.png") });
     const actionWrap = page.locator(".generated-result-actions-wrap");
     await actionWrap.evaluate(element => { element.style.maxWidth = "180px"; });
     await expect.poll(async () => (await resultActions.boundingBox())!.height)
-      .toBeGreaterThan(resultActionsBounds!.height);
+      .toBe(resultActionsBounds!.height);
+    await expect(resultActions).toHaveCSS("flex-wrap", "nowrap");
     await expect.poll(async () => {
       const bounds = (await resultActions.boundingBox())!;
       return bounds.y + bounds.height;
@@ -3145,12 +3186,24 @@ test.describe("超级画布完整验收", () => {
     await expect(
       resultActions.getByRole("button", { name: "下载 E2E 可缩放图片" }),
     ).toHaveAttribute("aria-haspopup", "dialog");
-    await resultActions
-      .getByRole("button", { name: "查看 E2E 可缩放图片 原提示词" })
+    const moreActions = resultActions.getByRole("button", { name: "更多结果操作", exact: true });
+    await moreActions.focus();
+    await page.keyboard.press("ArrowDown");
+    const resultMenu = page.getByRole("menu", { name: "更多结果操作", exact: true });
+    await expect(resultMenu.getByRole("menuitem", { name: "查看 E2E 可缩放图片 原提示词" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(resultMenu).toBeHidden();
+    await expect(moreActions).toBeFocused();
+    await moreActions.click();
+    await card.click();
+    await expect(resultMenu).toBeHidden();
+    await moreActions.click();
+    await resultMenu
+      .getByRole("menuitem", { name: "查看 E2E 可缩放图片 原提示词" })
       .click();
     await expect(page.getByRole("note")).toContainText("E2E 原始生成提示词");
-    await resultActions
-      .getByRole("button", { name: "反推 E2E 可缩放图片 提示词" })
+    await resultMenu
+      .getByRole("menuitem", { name: "反推 E2E 可缩放图片 提示词" })
       .click();
     await expect(
       page.getByRole("textbox", { name: "创作任务要求" }),
@@ -3303,8 +3356,9 @@ test.describe("超级画布完整验收", () => {
       width: (element as HTMLElement).offsetWidth,
       height: (element as HTMLElement).offsetHeight,
     }));
-    await firstResult.locator(".result-error-details summary").click();
-    await expect(firstResult.locator(".result-error-details")).toHaveJSProperty("open", true);
+    const errorDetails = firstResult.locator("details").filter({ has: page.locator("summary").filter({ hasText: "查看完整错误详情" }) });
+    await errorDetails.locator(":scope > summary").click();
+    await expect(errorDetails).toHaveJSProperty("open", true);
     // Selection can restart the card's translate/scale animation. Measure its
     // settled footprint rather than an in-flight transform against the wrapper.
     await expect.poll(() => firstResult.locator(".generated-result-node").evaluate(element =>
@@ -3506,15 +3560,15 @@ test.describe("超级画布完整验收", () => {
     const heldCompatibleStyle = await targetHandle.evaluate(element => {
       const style = getComputedStyle(element);
       const probe = document.createElement("span");
-      probe.style.color = "var(--port-image)";
-      document.body.append(probe);
-      const typeColor = getComputedStyle(probe).color;
+      probe.style.color = "var(--handle-active, var(--accent))";
+      element.append(probe);
+      const activeColor = getComputedStyle(probe).color;
       probe.remove();
       return { interacting: Boolean(element.closest(".is-interacting")), scale: style.scale,
-        background: style.backgroundColor, shadow: style.boxShadow, typeColor };
+        background: style.backgroundColor, shadow: style.boxShadow, activeColor };
     });
     await testInfo.attach("held-compatible-port-style", { body: JSON.stringify(heldCompatibleStyle), contentType: "application/json" });
-    expect(heldCompatibleStyle).toMatchObject({ interacting: true, scale: "1.2", background: heldCompatibleStyle.typeColor });
+    expect(heldCompatibleStyle).toMatchObject({ interacting: true, scale: "1.2", background: heldCompatibleStyle.activeColor });
     expect(heldCompatibleStyle.shadow).not.toBe("none");
     expect(heldCompatibleStyle.shadow).toContain("4px");
     const incompatibleHandle = target.locator('.react-flow__handle.target[data-port-kind="text"]');

@@ -71,8 +71,10 @@ test("远景滚轮不反复改根交互样式，节点保持挂载且近景仍�
   if (await agent.getAttribute("aria-expanded") === "true") await agent.click();
   await source.locator(".node-head").click();
   await expect(source).toHaveClass(/selected/);
-  const dash = page.locator('.studio-edge-motion[data-edge-id="lod-edge"] .studio-edge-dash');
-  await expect(dash).toHaveCount(1);
+  const light = page.locator('.studio-edge-motion[data-edge-id="lod-edge"] .studio-edge-light');
+  await expect(light).toHaveCount(1);
+  await expect(light.locator("ellipse")).toHaveCount(2);
+  await expect(page.locator(".studio-edge-dash")).toHaveCount(0);
   const point = await page.locator(".react-flow__pane").evaluate(element => {
     const bounds = element.getBoundingClientRect();
     for (const x of [.75, .6, .85]) for (const y of [.7, .8, .55]) {
@@ -91,7 +93,7 @@ test("远景滚轮不反复改根交互样式，节点保持挂载且近景仍�
   const wrap = page.locator(".canvas-wrap");
   await expect(viewport).toHaveClass(/canvas-lod-compact/);
   await expect(wrap).not.toHaveClass(/is-interacting/);
-  await expect(dash).toHaveCSS("animation-play-state", "paused");
+  await expect(light).toHaveCSS("animation-play-state", "paused");
   await page.waitForTimeout(250);
   await startAudit(page);
   // Match the performance benchmark's real wheel sequence and trailing window.
@@ -106,12 +108,12 @@ test("远景滚轮不反复改根交互样式，节点保持挂载且近景仍�
   expect(far).toMatchObject({ initialNodes: 2, finalNodes: 2, addedNodes: 0, removedNodes: 0, sameNodes: true });
   await expect(viewport).toHaveClass(/canvas-lod-compact/);
   await expect(wrap).not.toHaveClass(/is-interacting/);
-  await expect(dash).toHaveCSS("animation-play-state", "paused");
+  await expect(light).toHaveCSS("animation-play-state", "paused");
 
   await page.mouse.wheel(0, -1200);
   await expect(viewport).not.toHaveClass(/canvas-lod-compact/);
   await expect(wrap).not.toHaveClass(/is-interacting/);
-  await expect(dash).toHaveCSS("animation-play-state", "running");
+  await expect(light).toHaveCSS("animation-play-state", "running");
   await startAudit(page);
   await page.mouse.wheel(0, -60);
   await expect(wrap).toHaveClass(/is-interacting/);

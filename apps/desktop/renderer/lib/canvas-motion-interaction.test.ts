@@ -5,6 +5,14 @@ type Registration = { type: string; listener: EventListenerOrEventListenerObject
 
 /** A small event tree, so a child's stopPropagation really excludes ancestors' bubble listeners. */
 class EventSurface {
+  readonly dataset: Record<string, string> = {};
+  readonly styleValues = new Map<string, string>();
+  readonly style = {
+    setProperty: (name: string, value: string) => { this.styleValues.set(name, value); },
+    removeProperty: (name: string) => { const old = this.styleValues.get(name) ?? ""; this.styleValues.delete(name); return old; },
+  };
+  edgeLayer: EventSurface | null = null;
+  querySelector(selector: string) { return selector === ".react-flow__edgelabel-renderer" ? this.edgeLayer : null; }
   readonly registrations: Registration[] = [];
   readonly classes = new Set<string>();
   readonly classWrites: Array<{ name: string; enabled: boolean }> = [];
@@ -162,6 +170,7 @@ beforeEach(() => {
   slots.length = 0; cursor = 0; effects = [];
   flowState = { transform: [0, 0, 1] }; flowSubscriptions.clear();
   canvas = new EventSurface(); flow = new EventSurface(canvas);
+  canvas.edgeLayer = new EventSurface(canvas);
   testWindow = new EventSurface(); testDocument = new EventSurface();
   vi.stubGlobal("React", React);
   vi.stubGlobal("window", Object.assign(testWindow, { setTimeout, clearTimeout }));
@@ -170,6 +179,23 @@ beforeEach(() => {
 afterEach(() => { unmount(); vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("CanvasInteractionFeedback wheel lifecycle", () => {
+  it("pauses focused light at compact zoom without promoting canvas-wide styles, and cleans its local state", () => {
+    mount();
+    const edges = canvas.edgeLayer!;
+    expect(edges.styleValues.get("--canvas-edge-scale")).toBe("1");
+    zoomTo(.4);
+    expect(edges.styleValues.get("--canvas-edge-scale")).toBe("2.5");
+    wheel();
+    expect(interacting()).toBe(false);
+    expect(edges.dataset.gestureActive).toBe("true");
+    expect(canvas.styleValues.size).toBe(0);
+    expect(canvas.dataset.gestureActive).toBeUndefined();
+    vi.advanceTimersByTime(160);
+    expect(edges.dataset.gestureActive).toBe("false");
+    unmount();
+    expect(edges.styleValues.size).toBe(0);
+    expect(edges.dataset.gestureActive).toBeUndefined();
+  });
   it("observes wheel passively before React Flow stops propagation and restores effects after 160ms", () => {
     mount();
     const childHandler = vi.fn((event: Event) => { expect(interacting()).toBe(true); event.stopPropagation(); });

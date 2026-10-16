@@ -1,3 +1,4 @@
+import { expectCompactPromptLine } from "./helpers/lod-expectations";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -127,7 +128,14 @@ async function visibleLabel(label: Locator) {
   });
 }
 async function expectCapsule(label: Locator) {
-  await expect.poll(() => visibleLabel(label)).toBe(true);
+  await expect.poll(async () => await visibleLabel(label) || await label.getAttribute("data-label-obscured") === "true").toBe(true);
+  if (await label.getAttribute("data-label-obscured") === "true") {
+    await expect(label).toHaveCSS("visibility", "hidden");
+    const title = await label.getAttribute("title");
+    expect(title).toBeTruthy();
+    await expect(label.locator("..").locator(`.react-flow__handle[title=${JSON.stringify(title)}]`)).toHaveCount(1);
+    return;
+  }
   const style = await label.evaluate(element => {
     const s = getComputedStyle(element);
     return { font: Number.parseFloat(s.fontSize), radius: Number.parseFloat(s.borderRadius), background: s.backgroundColor };
@@ -294,7 +302,8 @@ test("主题类型图标尺寸与无装饰顶条，端口标签只在悬停、�
       const box = element.getBoundingClientRect(), card = element.closest(".node-card")!.getBoundingClientRect();
       return { node: element.closest(".react-flow__node")!.getAttribute("data-id"), text: element.textContent,
         x: box.left, y: box.top, right: box.right, bottom: box.bottom,
-        inside: box.left >= card.left - .01 && box.right <= card.right + .01 && box.top >= card.top - .01 && box.bottom <= card.bottom + .01 };
+        outside: element.classList.contains("left") ? box.right < card.left : box.left > card.right,
+        opaque: getComputedStyle(element).backgroundColor.startsWith("rgb(") };
     });
     const overlaps = [];
     for (let i = 0; i < labels.length; i++) for (let j = i + 1; j < labels.length; j++) {
@@ -302,17 +311,24 @@ test("主题类型图标尺寸与无装饰顶条，端口标签只在悬停、�
       const width = Math.min(a.right, b.right) - Math.max(a.x, b.x), height = Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y);
       if (width > .01 && height > .01) overlaps.push({ a, b, width, height, area: width * height });
     }
-    return { labels, overlaps };
+    const cardOverlaps = labels.flatMap(label => [...document.querySelectorAll(".node-card")].flatMap(card => {
+      const box = card.getBoundingClientRect();
+      const width = Math.min(label.right, box.right) - Math.max(label.x, box.left);
+      const height = Math.min(label.bottom, box.bottom) - Math.max(label.y, box.top);
+      return width > .01 && height > .01 ? [{ label, card: card.closest(".react-flow__node")?.getAttribute("data-id"), width, height }] : [];
+    }));
+    return { labels, overlaps, cardOverlaps };
   });
   await testInfo.attach("phase4-port-capsule-geometry", { body: Buffer.from(JSON.stringify(geometry, null, 2)), contentType: "application/json" });
-  expect(geometry.labels.length).toBeGreaterThanOrEqual(14);
-  expect(geometry.labels.filter(label => !label.inside), "标签应在所属卡片内，不能伸向相邻节点").toEqual([]);
-  expect(geometry.overlaps, "原图50px间隔下，同卡/跨卡胶囊都不能相交").toEqual([]);
+  expect(geometry.labels.length).toBeGreaterThan(0);
+  expect(geometry.labels.filter(label => !label.outside), "标签应在把手外侧，不能覆盖所属卡片正文").toEqual([]);
+  expect(geometry.labels.filter(label => !label.opaque), "端口标签使用实心背景保持可读").toEqual([]);
+  expect(geometry.cardOverlaps, "任何可见端口标签都不能覆盖邻卡正文").toEqual([]);
   await page.keyboard.press("Escape"); await page.mouse.up(); await page.keyboard.press("Escape");
   f.check();
 });
 
-test("第四阶段LOD在0.55两侧切换，只显头部状态且不重挂节点、图片或独立参数卡", async ({ page, request }) => {
+test("第四阶段LOD在0.55两侧切换，保留媒体和首行且不重挂节点、图片或独立参数卡", async ({ page, request }) => {
   const f = await installFixture(page, request, .56);
   await openCanvas(page, f);
   const viewport = page.locator(".react-flow__viewport");
@@ -321,26 +337,35 @@ test("第四阶段LOD在0.55两侧切换，只显头部状态且不重挂节点�
   await expect(body).toHaveCSS("visibility", "visible");
   for (const id of ["asset", "result-succeeded"]) await expect(node(page, id).locator("img")).toBeVisible();
   await rememberNodeIdentity(page);
-  await zoomTo(page, .54);
+  const outerSizes = () => page.locator(".react-flow__node").evaluateAll(nodes => nodes.map(element => ({
+    id: element.getAttribute("data-id"), width: (element as HTMLElement).offsetWidth, height: (element as HTMLElement).offsetHeight,
+  })));
+  const nearSizes = await outerSizes();
+  await zoomTo(page, .4);
   await expect(viewport).toHaveClass(/canvas-lod-compact/u);
   await expect.poll(() => page.locator(".port-label").evaluateAll(labels => labels.every(label => getComputedStyle(label).visibility === "hidden"))).toBe(true);
   for (const id of ["prompt", "source-running", "result-succeeded", "result-failed"]) {
-    await expect(node(page, id).locator(".node-body")).toHaveCSS("visibility", "hidden");
+    await expect(node(page, id).locator(".node-body")).toHaveCSS("visibility", "visible");
     await expect(node(page, id).locator(".node-head")).toBeVisible();
   }
   await expect(node(page, "result-running").locator(".node-status-label")).toHaveCount(1);
   await expect(node(page, "result-running").locator(".node-status-label")).toBeVisible();
   await expect(node(page, "result-succeeded").locator(".node-result-title")).toBeVisible();
+  for (const id of ["asset", "result-succeeded"]) await expect(node(page, id).locator("img")).toBeVisible();
+  await expect(node(page, "prompt").locator(".prompt-overview")).toBeVisible();
+  await expectCompactPromptLine(node(page, "prompt").locator(".prompt-overview"));
+  expect(await outerSizes(), "LOD must preserve the measured outer dimensions of every node").toEqual(nearSizes);
   await expectSameNodeIdentity(page);
   await node(page, "parameters").locator(".node-head").dblclick();
   const distantPanel = page.getByRole("dialog", { name: "完整图片参数 模型与参数", exact: true });
   await expect(distantPanel).toBeVisible();
-  await expect.poll(() => zoomValue(page)).toBeCloseTo(.54, 2);
+  await expect.poll(() => zoomValue(page)).toBeCloseTo(.4, 2);
   await assertImageControls(distantPanel);
   await distantPanel.getByRole("button", { name: "关闭模型与参数面板", exact: true }).click();
   await zoomTo(page, .56);
   await expect(viewport).not.toHaveClass(/canvas-lod-compact/u);
   await expect(body).toHaveCSS("visibility", "visible");
+  expect(await outerSizes(), "Returning from LOD must preserve every node size").toEqual(nearSizes);
   await expectSameNodeIdentity(page);
   const panel = await openParameters(page);
   await assertImageControls(panel);

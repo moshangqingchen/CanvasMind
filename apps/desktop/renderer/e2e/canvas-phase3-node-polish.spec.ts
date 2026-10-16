@@ -26,8 +26,7 @@ test("节点正文不被端口列挤窄，图标按钮统一且缺报价不留�
   await expect(prompt.locator(".node-body")).toHaveCSS("text-align", "left");
   await expect(prompt.locator(".node-body")).toHaveCSS("padding-left", "12px");
   await expect(prompt.locator(".node-body")).toHaveCSS("padding-right", "12px");
-  // Phase4 keeps the full-width body. Port capsules are transient overlays
-  // inside the card, rather than permanent columns outside its two edges.
+  // Transient port capsules sit outside the handles and preserve the full body.
   await page.mouse.move(4, 4);
   await expect.poll(() => prompt.locator(".port-label").evaluateAll(labels => labels.every(label => {
     const s = getComputedStyle(label);
@@ -39,7 +38,7 @@ test("节点正文不被端口列挤窄，图标按钮统一且缺报价不留�
     return Array.from(element.querySelectorAll(".port-label")).every(label => {
       const rect = label.getBoundingClientRect(), s = getComputedStyle(label);
       return s.visibility === "visible" && Number(s.opacity) === 1 && Number.parseFloat(s.borderRadius) >= 6 &&
-        rect.left >= card.left - .01 && rect.right <= card.right + .01;
+        (label.classList.contains("left") ? rect.right < card.left : rect.left > card.right);
     });
   })).toBe(true);
   await expect(generation.locator(".node-config-summary")).toBeVisible();

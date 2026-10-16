@@ -36,8 +36,12 @@ async function keyboardFocus(page: Page, control: Locator, offset = "2px") {
   expect(await control.evaluate(element => element.matches(":focus-visible"))).toBe(true);
   await expect(control).toHaveCSS("outline-style", "solid");
   await expect(control).toHaveCSS("outline-width", "2px");
-  await expect(control).toHaveCSS("outline-color", await control.evaluate(() => {
-    const probe = document.createElement("span"); probe.style.color = "var(--focus-ring)"; document.body.append(probe);
+  await expect(control).toHaveCSS("outline-color", await control.evaluate(element => {
+    // Canvas controls inherit the restored canvas palette, which differs from
+    // the workspace body's palette.
+    const probe = document.createElement("span");
+    probe.style.color = getComputedStyle(element).getPropertyValue("--focus-ring").trim();
+    document.body.append(probe);
     const color = getComputedStyle(probe).color; probe.remove(); return color;
   }));
   await expect(control).toHaveCSS("outline-offset", offset);

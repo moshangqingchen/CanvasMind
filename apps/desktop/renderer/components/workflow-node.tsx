@@ -5,6 +5,7 @@ import { cliOperationForNode } from "../lib/cli-input-ports";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import musicStyles from "./music-node.module.css";
+import resultStyles from "./result-feedback.module.css";
 import {
   Handle,
   NodeResizeControl,
@@ -24,37 +25,26 @@ import {
   AlignVerticalSpaceBetween,
   CircleAlert,
   Brush,
-  CopyPlus,
-  Download,
   ExternalLink,
-  FileText,
   Film,
   Image as ImageIcon,
   LoaderCircle,
   Music,
   Play,
   RotateCcw,
-  ScanText,
   Send,
   SlidersHorizontal,
   Sparkles,
   Type,
   Upload,
   X,
-  ZoomIn,
-  ZoomOut,
 } from "lucide-react";
 import { renderPromptParts } from "@super-canvas/core";
-import {
-  assetDownloadPath,
-  downloadAssetPreferLocal,
-} from "../lib/asset-download";
-import { ImageDownloadButton } from "./image-download-button";
 import { localizeRunError } from "../lib/error-localization";
-import { runErrorDiagnostic, runErrorTechnicalTitle } from "../lib/run-error-diagnostics";
 import { taskOutcomeLabel, taskOutcomeNote } from "../lib/task-evidence";
 import { TaskEvidence } from "./task-evidence";
-import { FailureDiagnosis } from "./failure-diagnosis";
+import { ResultActions } from "./result-actions";
+import { ResultFailureFeedback } from "./result-failure-feedback";
 import { ReadableName, ResultInformation, ResultToolbar, WaitElapsed } from "./result-information";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
 import { cleanModelDisplayName } from "../lib/model-display";
@@ -1103,11 +1093,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
   const selectNode = (event?: { ctrlKey: boolean; metaKey: boolean }) =>
     data.onSelect?.(Boolean(event?.ctrlKey || event?.metaKey));
   const [mediaZoom, setMediaZoom] = useState(1);
-  const [resultPromptOpen, setResultPromptOpen] = useState(false);
-  const [reusingPrompt, setReusingPrompt] = useState(false);
   const [recoveringResult, setRecoveringResult] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [failureOpen, setFailureOpen] = useState(false);
   const completionFlash = useRef<HTMLSpanElement>(null);
   const visualStatus = nodeVisualStatus(data.generatedResult ? data.generatedStatus ?? (data.assetId ? "succeeded" : "queued") : data.status);
   const previousStatus = useRef(visualStatus);
@@ -1188,7 +1175,6 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
     providerTaskStatus: data.generatedDetails?.taskEvidence?.status,
   }) as RunErrorDetails | null;
   const generatedError = generatedErrorDetails?.message ?? null;
-  const generatedErrorDiagnostic = runErrorDiagnostic(generatedErrorDetails);
   const generatedProvenance = generatedResult
     ? generatedResultProvenance(data)
     : null;
@@ -1290,133 +1276,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
         </div>
       </NodeToolbar> : null}
       {selected && (data.selectionSize ?? 1) <= 1 && generatedResult && !generatedPending ? <ResultToolbar nodeId={id}>
-        <div className="generated-result-actions-wrap nodrag nopan nowheel">
-          <div
-            className="generated-result-actions"
-            role="toolbar"
-            aria-label="生成结果操作"
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            {hasArchivedGeneratedMedia && data.assetKind === "image" && data.assetId && !fakeResult &&
-              <button type="button" title="绘制蒙版，局部修改" aria-label="绘制蒙版" onClick={event => {
-                event.stopPropagation(); data.onEditMask?.(data.assetId!);
-              }}><Brush size={13} />蒙版</button>}
-            {hasArchivedGeneratedMedia &&
-            data.assetKind === "image" &&
-            inputPreviewUrl &&
-            !fakeResult ? (
-              <div
-                className="generated-result-zoom"
-                role="group"
-                aria-label="图片缩放"
-              >
-                <button
-                  type="button"
-                  aria-label="缩小图片"
-                  title="缩小"
-                  disabled={mediaZoom <= 0.5}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    updateMediaZoom(mediaZoom - 0.25);
-                  }}
-                >
-                  <ZoomOut size={14} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="还原图片缩放"
-                  title="还原"
-                  disabled={mediaZoom === 1}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    updateMediaZoom(1);
-                  }}
-                >
-                  <RotateCcw size={13} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="放大图片"
-                  title="放大"
-                  disabled={mediaZoom >= 3}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    updateMediaZoom(mediaZoom + 0.25);
-                  }}
-                >
-                  <ZoomIn size={14} />
-                </button>
-              </div>
-            ) : null}
-            {data.assetId && data.assetKind === "image" ? (
-              <ImageDownloadButton assetId={data.assetId} filename={inputAsset?.name} ariaLabel={`下载 ${data.label}`} onOpenChange={data.onConfigurationOpenChange} />
-            ) : data.assetId ? (
-              <a
-                href={assetDownloadPath(data.assetId)}
-                download={inputAsset?.name ?? true}
-                aria-label={`下载 ${data.label}`}
-                title="下载结果"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void downloadAssetPreferLocal(
-                    data.assetId!,
-                    inputAsset?.name,
-                  );
-                }}
-              >
-                <Download size={13} />
-                <span>下载</span>
-              </a>
-            ) : null}
-            <button
-              type="button"
-              aria-label={`查看 ${data.label} 原提示词`}
-              aria-expanded={resultPromptOpen}
-              title="查看原提示词"
-              onClick={(event) => {
-                event.stopPropagation();
-                setResultPromptOpen((open) => !open);
-              }}
-            >
-              <FileText size={13} />
-              <span>原提示词</span>
-            </button>
-            <button
-              type="button"
-              aria-label={`复用 ${data.label} 提示词`}
-              title="复用提示词到新生成节点"
-              disabled={reusingPrompt || !data.onReusePrompt}
-              onClick={async (event) => {
-                event.stopPropagation();
-                setReusingPrompt(true);
-                try { await data.onReusePrompt?.(); }
-                finally { setReusingPrompt(false); }
-              }}
-            >
-              {reusingPrompt ? <LoaderCircle size={13} /> : <CopyPlus size={13} />}
-              <span>复用提示词</span>
-            </button>
-            <button
-              type="button"
-              aria-label={`反推 ${data.label} 提示词`}
-              title="交给智能体反推提示词"
-              onClick={(event) => {
-                event.stopPropagation();
-                data.onPrepareReversePrompt?.();
-              }}
-            >
-              <ScanText size={13} />
-              <span>反推提示词</span>
-            </button>
-          </div>
-          {resultPromptOpen ? (
-            <div className="generated-result-prompt-popover" role="note">
-              <strong>原提示词</strong>
-              <p>{generatedPrompt}</p>
-            </div>
-          ) : null}
-        </div>
+        <ResultActions data={data} filename={inputAsset?.name} prompt={generatedPrompt}
+          hasMedia={hasArchivedGeneratedMedia} zoom={mediaZoom} onZoom={updateMediaZoom} />
       </ResultToolbar> : null}
       {selected && (data.selectionSize ?? 1) <= 1 && <NodeResizeControl
         position="bottom-right" className="node-resize-corner" aria-label={`调整 ${data.label} 节点尺寸`}
@@ -1436,7 +1297,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
         onResizeStart={() => data.onResizeStart?.()}
       ><span aria-hidden="true" /></NodeResizeControl>}
       <div
-        className={`node-card ${selected ? "selected" : ""} ${generatedResult ? "generated-result-node" : ""}`}
+        className={`node-card ${selected ? "selected" : ""} ${generatedResult ? "generated-result-node" : ""} ${generatedProblem ? resultStyles.failureCard : ""}`}
         data-node-type={data.nodeType}
         data-node-status={visualStatus}
         data-mask-edit={maskEdit || undefined}
@@ -1448,6 +1309,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
         data-generated-result={generatedResult || undefined}
         data-result-kind={generatedResult ? data.assetKind : undefined}
         data-generated-status={generatedResult ? generatedStatus : undefined}
+        data-result-problem={generatedResult && generatedProblem || undefined}
         data-media-zoom={generatedResult ? mediaZoom : undefined}
         onClick={(event) => {
           event.stopPropagation();
@@ -1482,10 +1344,8 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
           </div>
           <NodeStateLabel key={`${visualStatus}:${data.generatedCreatedAt}`} status={visualStatus} since={data.generatedCreatedAt} result />
         </div>}
-        {visualStatus === "failed" && !generatedResult && <div className="node-error-summary nodrag nopan nowheel">
-          <span title={data.runError?.message}>{data.runError?.message ?? "运行失败，请查看原因"}</span>
-          <button type="button" onClick={event => { event.stopPropagation(); setFailureOpen(open => !open); }}>查看原因</button>
-          {failureOpen && <FailureDiagnosis error={localizeRunError(data.runError) as RunErrorDetails | null} status={data.status} />}
+        {visualStatus === "failed" && !generatedResult && <div className={`${resultStyles.nodeFailureSummary} nodrag nopan nowheel`}>
+          <ResultFailureFeedback error={localizeRunError(data.runError)} rawError={data.runError} status={data.status} />
         </div>}
         <div className="node-body">
           {data.nodeType === "prompt" ? (
@@ -1559,7 +1419,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                     </div>
                   ) : (generatedProblem || generatedCancelled) && !hasArchivedGeneratedMedia ? (
                     <div
-                      className={`generated-result-state nopan nowheel ${
+                      className={`generated-result-state ${resultStyles.failureState} nopan nowheel ${
                         generatedCancelled
                           ? "cancelled"
                           : generatedNeedsAttention
@@ -1568,18 +1428,22 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                       }`}
                       role="status"
                     >
-                      <CircleAlert size={23} />
-                      <strong>
-                        {generatedCancelled
-                          ? data.generatedProvider === "cli" && data.generatedCliCancelSupported !== true ? "已停止跟踪" : "生成已取消"
-                          : taskOutcomeLabel(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction)}
-                      </strong>
-                      <ResultInformation nodeId={id} data={data} asset={inputAsset} />
-                      <TaskEvidence request={{ supplier: data.generatedSupplier, connectionName: data.generatedConnectionName, modelGroup: data.generatedGroup }} evidence={data.generatedDetails?.taskEvidence} />
-                      {generatedProblem ? <div className="node-error-summary">
-                        <span title={generatedError ?? undefined}>{generatedError ?? "任务失败，请查看原因"}</span>
-                        <ResultInformation nodeId={id} data={data} asset={inputAsset} actionLabel="查看原因" />
-                      </div> : generatedError ? <span className="result-error-summary">{generatedError}</span> : null}
+                      {generatedProblem ? <div className={resultStyles.failureHeading}>
+                        <CircleAlert size={16} aria-hidden="true" />
+                        <strong>{generatedFailed ? "生成失败" : taskOutcomeLabel(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction)}</strong>
+                      </div> : <>
+                        <CircleAlert size={23} />
+                        <strong>{data.generatedProvider === "cli" && data.generatedCliCancelSupported !== true ? "已停止跟踪" : "生成已取消"}</strong>
+                      </>}
+                      {!generatedProblem ? <>
+                        <ResultInformation nodeId={id} data={data} asset={inputAsset} />
+                        <TaskEvidence request={{ supplier: data.generatedSupplier, connectionName: data.generatedConnectionName, modelGroup: data.generatedGroup }} evidence={data.generatedDetails?.taskEvidence} />
+                      </> : null}
+                      {generatedProblem || generatedError ? <ResultFailureFeedback error={generatedErrorDetails} rawError={data.generatedError}
+                        taskId={data.generatedDetails?.taskEvidence?.taskId} runId={data.generatedFromRunId}
+                        status={generatedStatus} providerTaskStatus={data.generatedDetails?.taskEvidence?.status}
+                        recoveryAction={data.generatedRecoveryAction}
+                        context={{ connection: data.generatedConnectionName, supplier: data.generatedSupplier, modelGroup: data.generatedGroup, model: data.generatedModel, taskEvidence: data.generatedDetails?.taskEvidence }} /> : null}
                       {!generatedProblem && taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction) ? (
                         <small className="generated-result-attention-note">
                           {taskOutcomeNote(generatedStatus, data.generatedDetails?.taskEvidence, data.generatedRecoveryAction)}
@@ -1587,75 +1451,9 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                       ) : null}
                       {generatedNeedsAttention && data.generatedPendingRequestId ? <button type="button" className="generated-result-retry nodrag nopan" onClick={(event) => {event.stopPropagation();data.onReconcileTask?.();}}>核对任务</button> : null}
                       {generatedNeedsAttention && data.generatedProvider === "cli" && data.onCancelTask ? <button type="button" className="generated-result-retry nodrag nopan" disabled={cancelling} title="停止本地跟踪后，请到网站核对任务是否完成" onClick={async event => { event.stopPropagation(); setCancelling(true); try { await data.onCancelTask?.(); } finally { setCancelling(false); } }}>{cancelling ? "正在处理" : "停止跟踪"}</button> : null}
-                      {generatedFailed ? <small>可先查看详情排查原因，再重新生成。</small> : null}
-                      <details className="result-error-details nodrag nopan" onClick={(event) => event.stopPropagation()}>
-                      <summary>{runErrorTechnicalTitle(generatedErrorDetails)}</summary>
-                      <p>{generatedError}</p>
-                      <button type="button" className="result-info-button" onClick={(event) => {
-                        const button = event.currentTarget;
-                        void navigator.clipboard.writeText(JSON.stringify({ error: generatedErrorDetails ?? data.generatedError, connection: data.generatedConnectionName, supplier: data.generatedSupplier, modelGroup: data.generatedGroup, model: data.generatedModel, runId: data.generatedFromRunId, taskEvidence: data.generatedDetails?.taskEvidence }, null, 2)).then(() => {button.textContent = "已复制";}).catch(() => {button.textContent = "复制失败，请手动选择";});
-                      }}>复制错误详情</button>
-                      {generatedErrorDetails?.type ||
-                      generatedErrorDetails?.code ? (
-                        <small className="generated-result-error-meta">
-                          {generatedErrorDetails.type
-                            ? `错误类型：${generatedErrorDetails.type}`
-                            : null}
-                          {generatedErrorDetails.type &&
-                          generatedErrorDetails.code
-                            ? " · "
-                            : null}
-                          {generatedErrorDetails.code
-                            ? `代码：${generatedErrorDetails.code}`
-                            : null}
-                        </small>
-                      ) : null}
-                      {generatedErrorDetails?.api ? (
-                        <small className="generated-result-error-api">
-                          接口协议：{generatedErrorDetails.api}
-                        </small>
-                      ) : null}
-                      {generatedErrorDetails?.statusCode ||
-                      generatedErrorDiagnostic ? (
-                        <small className="generated-result-error-upstream">
-                          {generatedErrorDetails?.statusCode
-                            ? `HTTP ${generatedErrorDetails.statusCode}`
-                            : null}
-                          {generatedErrorDetails?.statusCode &&
-                          generatedErrorDiagnostic
-                            ? " · "
-                            : null}
-                          {generatedErrorDiagnostic}
-                        </small>
-                      ) : null}
-                      {generatedErrorDetails?.actionUrl ? (
-                        <a
-                          className="generated-result-error-doc generated-result-error-action nodrag nopan"
-                          href={generatedErrorDetails.actionUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          onPointerDown={(event) => event.stopPropagation()}
-                        >
-                          <ExternalLink size={10} />
-                          {generatedErrorDetails.actionLabel ??
-                            "前往供应商官网"}
-                        </a>
-                      ) : null}
-                      {generatedErrorDetails?.docsUrl ? (
-                        <a
-                          className="generated-result-error-doc nodrag nopan"
-                          href={generatedErrorDetails.docsUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          onPointerDown={(event) => event.stopPropagation()}
-                        >
-                          <ExternalLink size={10} /> API 错误文档
-                        </a>
-                      ) : null}
-                      </details>
                       {generatedFailed && data.onRegenerate ? (
                         <button
-                          className="generated-result-retry nodrag nopan"
+                          className={`generated-result-retry ${resultStyles.primaryRetry} nodrag nopan`}
                           type="button"
                           aria-label={`再次运行 ${data.label}，原地替换失败结果`}
                           title="重新生成会发起新的请求，并可能产生新的费用"
@@ -1668,6 +1466,11 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
                           <RotateCcw size={11} /> 重新生成
                         </button>
                       ) : null}
+                      {generatedProblem ? <details className={`${resultStyles.sourceDetails} nodrag nopan nowheel`} onClick={event => event.stopPropagation()}>
+                        <summary>来源与任务</summary>
+                        <ResultInformation nodeId={id} data={data} asset={inputAsset} />
+                        <TaskEvidence request={{ supplier: data.generatedSupplier, connectionName: data.generatedConnectionName, modelGroup: data.generatedGroup }} evidence={data.generatedDetails?.taskEvidence} />
+                      </details> : null}
                       {generatedRecoveryAvailable && data.onRecoverResult ? (
                         <button
                           className="generated-result-retry nodrag nopan"

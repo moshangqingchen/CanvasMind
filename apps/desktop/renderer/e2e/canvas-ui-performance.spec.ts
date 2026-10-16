@@ -156,13 +156,22 @@ async function runCorePerformanceMatrix(browser: Browser, request: APIRequestCon
   const created = await request.post("/api/canvas", { data: { title: "120 节点精简交替基准", graph } });
   expect(created.ok()).toBeTruthy();
   const canvas = await created.json() as { id: string };
-  const combinations: CoreMatrixCombination[] = [
+  const allCombinations: CoreMatrixCombination[] = [
     { id: "A", theme: "light", frost: true }, { id: "B", theme: "dark", frost: true },
     { id: "C", theme: "light", frost: false }, { id: "D", theme: "dark", frost: false },
   ];
+  const rounds = Number(process.env.UI_PERF_CORE_ROUNDS ?? 5);
+  if (!Number.isInteger(rounds) || rounds < 1 || rounds > 5) throw new Error("UI_PERF_CORE_ROUNDS must be an integer from 1 to 5");
+  const requestedCombinations = (process.env.UI_PERF_CORE_COMBINATIONS ?? "A,B,C,D").split(",");
+  if (!requestedCombinations.length || new Set(requestedCombinations).size !== requestedCombinations.length || requestedCombinations.some(id => !allCombinations.some(combination => combination.id === id))) throw new Error("Invalid UI_PERF_CORE_COMBINATIONS");
+  const combinations = allCombinations.filter(combination => requestedCombinations.includes(combination.id));
+  const sequence = `${combinations.map(combination => combination.id).join("")} × ${rounds}`;
   const coreGestures = new Set((process.env.UI_PERF_CORE_GESTURES ?? "drag,pan,zoom").split(","));
   if ([...coreGestures].some(name => !["drag", "pan", "zoom"].includes(name))) throw new Error("UI_PERF_CORE_GESTURES must contain drag, pan or zoom");
   const captureParameters = process.env.UI_PERF_CORE_PARAMETERS !== "0";
+  const tracePan = process.env.UI_PERF_CORE_TRACE_PAN === "1";
+  const diagnosticLod = process.env.UI_PERF_CORE_DIAGNOSTIC_LOD;
+  if (diagnosticLod && !["hide-body", "flatten-clip"].includes(diagnosticLod)) throw new Error("Invalid diagnostic LOD style");
   const liveDocument = process.env.UI_PERF_CORE_LIVE === "1";
   let liveWarmupComplete = false;
   const attempts: Array<Record<string, unknown>> = [];
@@ -174,10 +183,11 @@ async function runCorePerformanceMatrix(browser: Browser, request: APIRequestCon
     environment: "日常使用环境（低可用内存）", ...performanceMemoryEnvironment,
     browser: browser.version(), cpuRate: throttling, viewport: { width: 1600, height: 1000 },
     fixture: { nodes: 120, edges: 80, sourceImages: 8, sourceImage: "2048 × 1536", provider: "Fake" },
-    sequence: liveDocument ? "ABCD × 5; one persistent live document; three warm parameter opens per arm" : "ABCD × 5; one document-first and two warm parameter opens per document; one persistent browser/context/page",
+    sequence: !captureParameters ? `${sequence}; gestures only; one persistent browser/context/page; ${liveDocument ? "one live document" : "one new document per arm"}`
+      : liveDocument ? `${sequence}; one persistent live document; three warm parameter opens per arm` : `${sequence}; one document-first and two warm parameter opens per document; one persistent browser/context/page`,
     cachePolicy: liveDocument ? "One unmeasured parameter opening before all arms; all timed openings are warm, not cold. No inter-arm navigation, storage reset or GC." : "A new document per arm resets application/module state; HTTP and V8 compilation caches remain warm in the same context",
     liveDocument,
-    gestures: [...coreGestures], captureParameters,
+    gestures: [...coreGestures], captureParameters, diagnosticPanTrace: tracePan, diagnosticLod,
     externalRequests, externalRequestCount: externalRequests.length, generationRequests, attempts, accepted });
   const partial = async () => writeFile(join(output, "core-matrix-partial.json"), JSON.stringify(report(), null, 2));
   const context = await browser.newContext({ baseURL, viewport: { width: 1600, height: 1000 }, reducedMotion: "no-preference",
@@ -206,7 +216,7 @@ async function runCorePerformanceMatrix(browser: Browser, request: APIRequestCon
   const cdp = await context.newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: throttling });
   try {
-  for (let round = 1; round <= 5; round++) for (const combination of combinations) {
+  for (let round = 1; round <= rounds; round++) for (const combination of combinations) {
     let complete = false;
     for (let attempt = 0; attempt <= 3 && !complete; attempt++) {
       process.env.UI_PERF_EFFECT = "frosted";
@@ -268,6 +278,18 @@ async function runCorePerformanceMatrix(browser: Browser, request: APIRequestCon
         arm.loadedTheme = await page.locator("html").getAttribute("data-theme");
         expect(arm.loadedTheme).toBe(combination.theme);
         expect(gate?.config).toEqual({ effect: "frosted", arm: combination.frost ? "A" : "B" });
+        if (diagnosticLod) {
+          const changed = round % 2 === 0;
+          arm.diagnosticLodStyle = changed ? diagnosticLod : "production";
+          if (changed) {
+            const before = await page.locator(".react-flow__node").evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return [r.width, r.height]; }));
+            await page.addStyleTag({ content: diagnosticLod === "hide-body"
+              ? ".canvas-editor .canvas-lod-compact .node-body { visibility:hidden !important; }"
+              : ".canvas-editor .canvas-lod-compact .node-card .prompt-overview,.canvas-editor .canvas-lod-compact .node-card .tiptap-prompt { clip-path:none !important; min-height:0 !important; max-height:1lh !important; padding-block:0 !important; overflow:hidden !important; }" });
+            const after = await page.locator(".react-flow__node").evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return [r.width, r.height]; }));
+            expect(after, "Diagnostic must preserve measured outer node dimensions").toEqual(before);
+          }
+        }
         let availableBeforeBytes = 0;
         let memoryWaitMs = 0;
         const start = async () => {
@@ -345,9 +367,27 @@ async function runCorePerformanceMatrix(browser: Browser, request: APIRequestCon
         if (coreGestures.has("pan")) {
         const pan = await exposedPerformancePanePoint(page);
         await page.mouse.move(pan.point.x, pan.point.y);
+        const tracingComplete = tracePan ? new Promise<{ stream?: string }>(resolve => cdp.once("Tracing.tracingComplete", resolve)) : null;
+        if (tracePan) await cdp.send("Tracing.start", { categories: "devtools.timeline,disabled-by-default-devtools.timeline,blink.user_timing,v8,latencyInfo", transferMode: "ReturnAsStream" });
+        try {
         await start(); await page.mouse.down({ button: "middle" });
         for (let i = 1; i <= 60; i++) { await page.mouse.move(pan.point.x + i, pan.point.y + i / 3); await page.waitForTimeout(12); }
         await page.mouse.up({ button: "middle" }); await stop("pan-agent-open");
+        } finally {
+          if (tracingComplete) {
+            await cdp.send("Tracing.end");
+            const { stream } = await tracingComplete;
+            if (!stream) throw new Error("Pan diagnostic trace did not return a stream");
+            let trace = "";
+            for (;;) {
+              const part = await cdp.send("IO.read", { handle: stream });
+              trace += part.base64Encoded ? Buffer.from(part.data, "base64").toString("utf8") : part.data;
+              if (part.eof) break;
+            }
+            await cdp.send("IO.close", { handle: stream });
+            await writeFile(join(output, `pan-round-${round}-${combination.id}-attempt-${attempt}.trace.json`), trace);
+          }
+        }
         }
         if (coreGestures.has("zoom")) {
         const zoom = await exposedPerformancePanePoint(page);
@@ -401,7 +441,7 @@ async function runCorePerformanceMatrix(browser: Browser, request: APIRequestCon
     await context.close();
     await writeFile(join(output, "core-matrix-results.json"), JSON.stringify(report(), null, 2));
   }
-  expect(accepted).toHaveLength(20);
+  expect(accepted).toHaveLength(rounds * combinations.length);
 }
 
 // Both opt-in benchmarks use temporary data and never submit generation. The
@@ -558,7 +598,14 @@ test("120 个混合节点的交互与主要面板性能基准", async ({ page, r
   await page.getByRole("button", { name: "Fit View", exact: true }).click();
   await page.waitForTimeout(1000);
   if (process.env.UI_PERF_DIAGNOSTIC_PAUSE_EDGES === "1") {
-    await page.addStyleTag({ content: ".canvas-editor .studio-edge .studio-edge-dash { animation-play-state: paused !important; }" });
+    await page.addStyleTag({ content: `
+      .canvas-editor .studio-edge .studio-edge-dash,
+      .canvas-editor .studio-edge > defs > mask > .studio-edge-light,
+      .canvas-editor .studio-edge > .studio-edge-beam,
+      .canvas-editor .studio-edge-motion .studio-edge-dash,
+      .canvas-editor .studio-edge-motion .studio-edge-light,
+      .canvas-editor .studio-edge-motion .studio-edge-beam { animation-play-state: paused !important; }
+    ` });
   }
   const promotionTargets = (process.env.UI_PERF_DIAGNOSTIC_PROMOTE ?? "").split(",").filter(name => ["nodes", "edges", "node"].includes(name));
   if (promotionTargets.length) {
@@ -714,8 +761,12 @@ test("120 个混合节点的交互与主要面板性能基准", async ({ page, r
       if (i === 1 && process.env.UI_PERF_DIAGNOSTIC_GESTURES_ONLY === "1" && !requestedCanvasPerfSwitch()) {
         const held = await page.evaluate(() => ({ interacting: document.querySelector(".canvas-wrap")?.classList.contains("is-interacting"),
           promotion: Object.fromEntries(["nodes", "edges", "node"].map(name => [name, Array.from(new Set(Array.from(document.querySelectorAll(`.react-flow__${name}`)).map(element => getComputedStyle(element).willChange)))])),
-          edges: Array.from(document.querySelectorAll(".studio-edge-dash")).map(edge => ({ className: edge.getAttribute("class"), playState: getComputedStyle(edge).animationPlayState,
-            animationName: getComputedStyle(edge).animationName, display: getComputedStyle(edge).display, parent: edge.parentElement?.getAttribute("class") })) }));
+          edges: Array.from(document.querySelectorAll(".studio-edge-dash, .studio-edge > defs > mask > .studio-edge-light, .studio-edge > .studio-edge-beam, .studio-edge-motion .studio-edge-light, .studio-edge-motion .studio-edge-beam")).map(edge => {
+            const style = getComputedStyle(edge), overlay = edge.closest(".studio-edge-motion");
+            return { className: edge.getAttribute("class"), playState: style.animationPlayState, animationName: style.animationName,
+              display: style.display, offsetPath: style.offsetPath, offsetDistance: style.offsetDistance,
+              overlayDisplay: overlay ? getComputedStyle(overlay).display : null, parent: edge.parentElement?.getAttribute("class") };
+          }) }));
         await writeFile(join(output!, `${phase}-held-pan-${iteration}.json`), JSON.stringify(held, null, 2));
       }
     }

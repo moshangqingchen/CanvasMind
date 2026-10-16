@@ -23,21 +23,25 @@ for (const source of ["local_validation", "legacy_local", "provider_response"] a
     await page.goto(`/canvas/${canvas.id}`);
     const state = page.locator('.react-flow__node[data-id="result"] .generated-result-state.failed');
     const title = local ? "技术详情与本地校验" : "技术详情与供应商原文";
-    await state.getByText(title, { exact: true }).click();
-    await expect(state.locator(".generated-result-error-upstream")).toHaveText(
-      local ? `本地校验：${reason}` : `HTTP 400 · 供应商原文：${reason}`,
-    );
-    await expect(state.locator(".generated-result-error-upstream")).not.toContainText("上游：");
+    const summary = state.locator("summary").filter({ hasText: "查看完整错误详情" });
+    await expect(summary).toHaveAttribute("title", title);
+    await summary.click();
+    await expect(state.getByText(local ? `本地校验：${reason}` : `供应商原文：${reason}`, { exact: true })).toBeVisible();
+    if (!local) await expect(state.getByText("HTTP 状态", { exact: true }).locator("+ dd")).toHaveText("400");
+    await expect(state).not.toContainText("上游：");
+    await state.locator("summary").filter({ hasText: "来源与任务" }).click();
     await state.getByRole("button", { name: "查看 错误来源验收 来源", exact: true }).focus();
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: "结果来源与参数" });
     await expect(dialog).toBeVisible();
     const errorDetails = dialog.getByRole("region", { name: "完整错误详情", exact: true });
-    await errorDetails.getByText(title, { exact: true }).click();
-    await expect(errorDetails.locator("pre")).toContainText(local ? '"source": "local_validation"' : '"source": "provider_response"');
-    if (local) await expect(errorDetails.locator("pre")).not.toContainText("providerMessage");
+    await errorDetails.getByText("完整错误记录", { exact: true }).click();
+    const record = errorDetails.locator("details").filter({ has: page.getByText("完整错误记录", { exact: true }) }).locator("pre");
+    await expect(record).toContainText(local ? '"source": "local_validation"' : '"source": "provider_response"');
+    if (local) await expect(record).not.toContainText("providerMessage");
     await dialog.getByRole("button", { name: "关闭来源详情" }).click();
     await page.reload();
-    await expect(state.getByText(title, { exact: true })).toBeVisible();
+    await expect(summary).toBeVisible();
+    await expect(summary).toHaveAttribute("title", title);
   });
 }
