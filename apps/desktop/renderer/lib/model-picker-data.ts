@@ -62,6 +62,29 @@ export function modelPickerPriceData(model: ModelDescriptor | null | undefined):
   return modelPickerPriceLabelData(label);
 }
 
+export function modelPickerPriceCompact(model: ModelDescriptor | null | undefined): string {
+  const detail = modelPickerPriceData(model);
+  if (!model || detail === "—") return "—";
+  model = applyUserImageSizePresets(normalizeTk1688CnyModel(model));
+  if (model.metadata?.priceSource === "generated-result" && record(model.metadata.measuredPrice) &&
+      typeof model.metadata.priceLabel === "string" && model.metadata.priceLabel.trim())
+    return detail.replace(/\s*·\s*实测(?:请求)?参数：[\s\S]*$/u, "");
+  const pricing = model.pricing;
+  if (!pricing) return detail;
+  const historical = detail.startsWith("上次记录 · ") ? "上次记录 · " : "";
+  const confidence = pricing.confidence === "estimate" ? "（参考）" : pricing.confidence === "snapshot" ? "（目录快照）" : "";
+  const times = pricing.timeMultipliers?.length ? " · 时段倍率" : "";
+  if (pricing.kind === "token") return `${historical}Token 计价${confidence}${times}`;
+  const tiers = (pricing.tiers ?? []).filter(tier => finite(tier.price) && tier.price >= 0);
+  const amounts = tiers.map(tier => tier.price);
+  if (finite(pricing.unitAmount) && pricing.unitAmount >= 0) amounts.unshift(pricing.unitAmount);
+  if (!amounts.length) return detail;
+  const minimum = Math.min(...amounts), maximum = Math.max(...amounts);
+  const currency = pricing.currency === "credits" ? "额度" : pricing.currency;
+  const scope = amounts.length > 1 ? ` · ${amounts.length} 档` : tiers[0] ? ` · ${priceCondition(tiers[0])}` : "";
+  return `${historical}${minimum === maximum ? minimum : `${minimum}–${maximum}`} ${currency} / ${priceUnit(pricing)}${confidence}${scope}${times}${model.metadata?.billingIncludesInputDuration === true ? " · 输入+输出时长" : ""}`;
+}
+
 export function modelPickerPriceLabelData(label: unknown): string {
   if (typeof label !== "string" || !label.trim() || /未确认|待确认|待核验|待验证|未验证|不支持|不可运行|未知|未公布|查询失败|需登录|未取得/u.test(label)) return "—";
   return /按.*计费/u.test(label) || /\d/u.test(label) && /[¥￥$]|CNY|USD|RMB|credits|额度|积分|元|\/\s*(?:秒|次|张|1M)|每(?:秒|次|张|百万)|一(?:秒|次|张)/iu.test(label) ? label : "—";

@@ -48,7 +48,7 @@ import { ResultFailureFeedback } from "./result-failure-feedback";
 import { ReadableName, ResultInformation, ResultToolbar, WaitElapsed } from "./result-information";
 import { pendingGeneratedResultLabel } from "../lib/pending-run-reconciliation";
 import { cleanModelDisplayName } from "../lib/model-display";
-import { modelPickerPriceData } from "../lib/model-picker-data";
+import { modelPickerPriceCompact, modelPickerPriceData } from "../lib/model-picker-data";
 import { SupplierBillingSummary } from "./supplier-billing-summary";
 import { useSupplierBillingOverview } from "../lib/client-supplier-billing";
 import { billingCompact } from "../lib/supplier-billing-display";
@@ -659,6 +659,7 @@ export function GenerationNodeBody({
   const billingAccounts = useSupplierBillingOverview(uiActive);
   const selectedModel = modelOptions.find((model) => model.id === data.model);
   const modelPriceLabel = useMemo(() => modelPickerPriceData(selectedModel), [selectedModel]);
+  const modelPriceCompact = useMemo(() => modelPickerPriceCompact(selectedModel), [selectedModel]);
   const hasReferenceVideo = data.linkedAssets?.some(asset => asset.kind === "video") === true;
   const priceParameters = { ...parameters,
     has_reference_video: hasReferenceVideo,
@@ -1038,7 +1039,7 @@ export function GenerationNodeBody({
           type="button"
           aria-label={`打开 ${data.label} 模型与参数`}
           aria-haspopup="dialog"
-          title={`${connectionName} · ${modelName} · ${summary || "使用 API 默认参数"}`}
+          title={`${connectionName} · ${modelName}${modelPriceLabel !== "—" ? ` · ${modelPriceLabel}` : ""} · ${summary || "使用 API 默认参数"}`}
           // Defer source selection until the native click has been delivered.
           // Selecting on pointerdown can reconcile this node before pointerup
           // and swallow the first click that was meant to open its parameters.
@@ -1054,7 +1055,7 @@ export function GenerationNodeBody({
             <strong>
               {currentConnectionOption?.supplierLabel ?? connectionName} · {modelName}
             </strong>
-            {modelPriceLabel && modelPriceLabel !== "—" ? <small className="node-model-price" title={modelPriceLabel}>{modelPriceLabel}</small> : null}
+            {modelPriceCompact !== "—" ? <small className="node-model-price">{modelPriceCompact}</small> : null}
           </span>
         </button>
         <button
@@ -1069,6 +1070,7 @@ export function GenerationNodeBody({
         >
           <X size={12} />
         </button>
+        <span className="node-toolbar-divider" aria-hidden="true" />
         <button
           className="node-run-button"
           type="button"
@@ -1186,7 +1188,7 @@ function WorkflowNodeComponent({ id, data, selected }: NodeProps<CanvasNode>) {
       {selected && data.selectionAlignmentVisible === true ? <NodeToolbar
         isVisible
         position={Position.Right}
-        offset={12}
+        offset={56}
       >
         <div
           className="selection-alignment-toolbar nodrag nopan nowheel"

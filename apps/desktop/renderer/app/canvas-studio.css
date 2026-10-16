@@ -41,8 +41,8 @@
 .canvas-editor .node-title { min-width:0; gap:7px; }
 .canvas-editor .node-title .readable-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .canvas-name-tooltip { position:fixed; z-index:2000; max-width:min(360px,calc(100vw - 16px)); padding:10px 12px; border:1px solid var(--line-strong); border-radius:9px; background:var(--surface-floating); color:var(--status-running); font:12px/1.7 system-ui,sans-serif; overflow-wrap:anywhere; box-shadow:var(--shadow-e1); pointer-events:none; }
-.canvas-editor .node-config-copy strong { font-size:11px; line-height:1.5; }
-.canvas-editor .node-config-copy small { font-size:10px; }
+.canvas-editor .node-config-copy strong { font-size:12px; line-height:1.2; }
+.canvas-editor .node-config-copy small { font-size:11px; line-height:1.2; }
 .canvas-editor .node-config-summary,.canvas-editor .node-run-button,.canvas-editor .node-delete-button { min-height:32px; }
 .result-info-button { border:1px solid var(--line-strong); border-radius:6px; padding:4px 7px; background:var(--surface-floating); color:var(--status-running); font-size:11px; cursor:pointer; line-height:1.4; }
 .canvas-editor .generated-result-provenance-overlay.result-info-button { pointer-events:auto; z-index:3; width:auto; max-width:calc(100% - 20px); }

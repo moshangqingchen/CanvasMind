@@ -1,5 +1,7 @@
 import { arePortKindsCompatible, type PortKind } from "@super-canvas/core";
 import { modelSupportsGenerationMedia } from "@super-canvas/providers/model-media";
+import { orderedIncomingCanvasEdges, sortCanvasArrangementItems, type CanvasArrangementOrder } from "./canvas-arrangement";
+import { placeCanvasBatch } from "./canvas-placement";
 import type {
   ModelDescriptor,
   ProviderOperation,
@@ -295,6 +297,8 @@ export interface TidyCanvasRect extends PositionedCanvasRect {
   generatedFromNodeId?: string;
   canvasGroupId?: string;
   nodeType?: string;
+  fileName?: string;
+  label?: string;
   selected?: boolean;
   /** Handle centers relative to the node, measured by React Flow. */
   portCenters?: {
@@ -321,6 +325,7 @@ export interface TidyCanvasOptions {
   /** Available screen height; omitted callers retain legacy row packing. */
   viewportHeight?: number;
   selectedIds?: readonly string[];
+  arrangementOrder?: CanvasArrangementOrder;
 }
 
 type CanvasPoint = { x: number; y: number };
@@ -331,6 +336,7 @@ interface TidyLayoutBlock {
   width: number;
   height: number;
   offsets: Map<string, CanvasPoint>;
+  fanInGrid?: boolean;
 }
 interface TidyComponentLayout {
   id: string;
@@ -458,7 +464,8 @@ function layoutPortY(node: TidyCanvasRect, direction: "source" | "target", handl
 }
 
 /** Preserve manual groups as rigid blocks; attach only ungrouped results. */
-function tidyLayoutBlocks(nodes: readonly TidyCanvasRect[], edges: readonly TidyCanvasEdge[], resultGap: number, gridGap: number, resultColumns: number) {
+function tidyLayoutBlocks(nodes: readonly TidyCanvasRect[], edges: readonly TidyCanvasEdge[], resultGap: number, gridGap: number, resultColumns: number,
+  arrangementOrder: CanvasArrangementOrder) {
   const byId = new Map(nodes.map(node => [node.id, node]));
   const order = new Map(nodes.map((node, index) => [node.id, index]));
   const parents = new Map(nodes.map(node => [node.id, node.id]));
@@ -543,7 +550,49 @@ function tidyLayoutBlocks(nodes: readonly TidyCanvasRect[], edges: readonly Tidy
     const height = Math.max(...items.map(node => offsets.get(node.id)!.y + node.height));
     blocks.push({ id, source: base[0]!, members: items, width, height, offsets });
   }
-  return { blocks, ownerIds: new Map(nodes.map(node => [node.id, root(node.id)])) };
+  const ownerIds = new Map(nodes.map(node => [node.id, root(node.id)]));
+  const incoming = new Set<string>(), targets = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    const source = ownerIds.get(edge.source), target = ownerIds.get(edge.target);
+    if (!source || !target || source === target) continue;
+    incoming.add(target);
+    const output = targets.get(source) ?? new Set<string>();
+    output.add(edge.target); targets.set(source, output);
+  }
+  const siblings = new Map<string, TidyLayoutBlock[]>();
+  for (const block of blocks) {
+    const output = targets.get(block.id);
+    if (block.members.length !== 1 || block.source.canvasGroupId || incoming.has(block.id) || !output?.size) continue;
+    // A prompt feeding the same target stays beside the grid, not inside it.
+    const key = JSON.stringify([block.source.nodeType ?? "", ...[...output].sort((a, b) => order.get(a)! - order.get(b)!)]);
+    const group = siblings.get(key) ?? [];
+    group.push(block); siblings.set(key, group);
+  }
+  const combined = new Map<string, TidyLayoutBlock>(), merged = new Set<string>();
+  for (const group of siblings.values()) {
+    if (group.length < 4) continue;
+    const first = group[0]!, targetIds = targets.get(first.id)!;
+    const targetId = [...targetIds].sort((a, b) => order.get(a)! - order.get(b)!)[0]!;
+    const connectionOrder = new Map<string, number>();
+    for (const edge of orderedIncomingCanvasEdges(targetId, edges)) {
+      const source = ownerIds.get(edge.source);
+      if (source && !connectionOrder.has(source)) connectionOrder.set(source, connectionOrder.size);
+    }
+    const connected = [...group].sort((a, b) => (connectionOrder.get(a.id) ?? Infinity) -
+      (connectionOrder.get(b.id) ?? Infinity) || order.get(a.id)! - order.get(b.id)! || a.id.localeCompare(b.id));
+    const items = sortCanvasArrangementItems(connected.map(block => block.source), arrangementOrder,
+      node => node.fileName || node.label, node => node.id);
+    const columnWidth = layoutExtent(Math.max(...items.map(node => node.width)));
+    const grid = packedCanvasRectGrid(items.map(node => ({ id: node.id, width: columnWidth,
+      height: layoutExtent(node.height) })), Math.max(24, gridGap), Math.min(5, Math.max(2, Math.ceil(Math.sqrt(items.length)))));
+    combined.set(first.id, { id: first.id, source: items[0]!, members: items,
+      width: grid.width, height: grid.height, offsets: grid.offsets, fanInGrid: true });
+    for (const block of group) {
+      merged.add(block.id);
+      ownerIds.set(block.source.id, first.id);
+    }
+  }
+  return { blocks: blocks.flatMap(block => combined.get(block.id) ?? (merged.has(block.id) ? [] : [block])), ownerIds };
 }
 
 /** Project desired Y positions onto the current order with the minimum gap. */
@@ -706,7 +755,8 @@ export function tidyCanvasRectPositions(nodes: readonly TidyCanvasRect[], edges:
   const componentGap = layoutExtent(options.componentGap ?? 160);
   const maxWidth = Math.max(1, (options.viewportWidth ?? 1280) * 2.5);
   const nodeOrder = new Map(scope.map((node, index) => [node.id, index]));
-  const { blocks, ownerIds } = tidyLayoutBlocks(scope, edges, resultGap, gridGap, options.maxResultColumns ?? 3);
+  const arrangementOrder = options.arrangementOrder ?? "filename";
+  const { blocks, ownerIds } = tidyLayoutBlocks(scope, edges, resultGap, gridGap, options.maxResultColumns ?? 3, arrangementOrder);
   const byId = new Map(blocks.map(block => [block.id, block]));
   const nodeById = new Map(scope.map(node => [node.id, node]));
   const outgoing = new Map(blocks.map(block => [block.id, new Set<string>()]));
@@ -717,8 +767,10 @@ export function tidyCanvasRectPositions(nodes: readonly TidyCanvasRect[], edges:
     if (!source || !target || source === target) continue;
     outgoing.get(source)!.add(target); incoming.get(target)!.add(source);
     const sourceNode = nodeById.get(edge.source)!, targetNode = nodeById.get(edge.target)!;
+    const sourceBlock = byId.get(source)!;
     portLinks.push({ source, target, deltaY:
-      byId.get(source)!.offsets.get(edge.source)!.y + layoutPortY(sourceNode, "source", edge.sourceHandle) -
+      (sourceBlock.fanInGrid ? sourceBlock.height / 2 :
+        sourceBlock.offsets.get(edge.source)!.y + layoutPortY(sourceNode, "source", edge.sourceHandle)) -
       byId.get(target)!.offsets.get(edge.target)!.y - layoutPortY(targetNode, "target", edge.targetHandle) });
   }
   const visited = new Set<string>(), components: TidyComponentLayout[] = [], isolated: TidyLayoutBlock[] = [];
@@ -747,7 +799,10 @@ export function tidyCanvasRectPositions(nodes: readonly TidyCanvasRect[], edges:
       const index = types.indexOf(block.source.generatedFromNodeId ? "result" : block.source.nodeType ?? "");
       return index < 0 ? types.length : index;
     };
-    isolated.sort((a, b) => type(a) - type(b) || nodeOrder.get(a.id)! - nodeOrder.get(b.id)!);
+    const sorted = sortCanvasArrangementItems(isolated, arrangementOrder,
+      block => block.source.fileName || block.source.label, block => block.id);
+    const sortedOrder = new Map(sorted.map((block, index) => [block.id, index]));
+    isolated.sort((a, b) => type(a) - type(b) || sortedOrder.get(a.id)! - sortedOrder.get(b.id)!);
   }
   const cards = isolated.map(block => ({ id: block.id, width: layoutExtent(block.width), height: layoutExtent(block.height) }));
   const packing = packTidyWorkflowRows(components, cards, maxWidth, componentGap, nodeGap,
@@ -761,6 +816,26 @@ export function tidyCanvasRectPositions(nodes: readonly TidyCanvasRect[], edges:
   for (const block of isolated) {
     const offset = packing.tray.offsets.get(block.id)!;
     positions.set(block.id, { x: originX + offset.x, y: originY + packing.trayY + offset.y });
+  }
+  if (scope.length < nodes.length) {
+    const scopeIds = new Set(scope.map(node => node.id));
+    const outside = nodes.filter(node => !scopeIds.has(node.id));
+    const collides = outside.some(obstacle => scope.some(node => {
+      const point = positions.get(node.id)!;
+      return point.x < obstacle.position.x + obstacle.width + 24 && point.x + node.width + 24 > obstacle.position.x &&
+        point.y < obstacle.position.y + obstacle.height + 24 && point.y + node.height + 24 > obstacle.position.y;
+    }));
+    if (collides) {
+      const left = Math.min(...scope.map(node => positions.get(node.id)!.x));
+      const top = Math.min(...scope.map(node => positions.get(node.id)!.y));
+      const width = Math.max(...scope.map(node => positions.get(node.id)!.x + node.width)) - left;
+      const height = Math.max(...scope.map(node => positions.get(node.id)!.y + node.height)) - top;
+      const clear = placeCanvasBatch([{ id: "selection", width, height }], { x: left, y: top }, outside).get("selection")!;
+      for (const node of scope) {
+        const point = positions.get(node.id)!;
+        positions.set(node.id, { x: point.x + clear.x - left, y: point.y + clear.y - top });
+      }
+    }
   }
   return positions;
 }

@@ -282,18 +282,20 @@
 .canvas-editor .node-card .node-inline-editor, .canvas-editor .node-card .prompt-node-editor, .canvas-editor .node-card .tiptap-prompt { background:var(--node-editor-background); border-color:var(--line); color:var(--node-editor-ink); font-size:13px; line-height:1.6; box-shadow:none; }
 .canvas-editor .prompt-overview { color:var(--prompt-overview-ink); padding:0; font-size:13px; line-height:1.6; text-align:left; align-content:start; }
 /* Empty footer padding must not intercept controls on an overlapping node. */
-.canvas-editor .node-inline-toolbar { gap:8px; min-height:48px; margin-inline:calc(0px - var(--node-inset-left)) calc(0px - var(--node-inset-right)); margin-bottom:-12px; padding:8px 12px; border-top:1px solid var(--line); background:transparent; pointer-events:none; }
+.canvas-editor .node-inline-toolbar { grid-template-columns:minmax(0,1fr) auto 1px auto; align-items:center; gap:8px; min-height:38px; margin-inline:calc(0px - var(--node-inset-left)) calc(0px - var(--node-inset-right)); margin-bottom:-12px; padding:2px 12px; border-top:1px solid var(--line); background:transparent; pointer-events:none; }
 .canvas-editor .node-inline-toolbar button, .canvas-editor .node-inline-toolbar select { height:32px; min-height:32px; pointer-events:auto; }
-.canvas-editor .node-config-summary { border-color:transparent; border-radius:var(--radius-control); background:transparent; }
+.canvas-editor .node-config-summary { padding:0 !important; border-color:transparent; border-radius:var(--radius-control); background:transparent; }
 .canvas-editor .node-config-copy strong { color:var(--text); font-size:12px; font-weight:500; }
 .canvas-editor .node-config-copy small { color:var(--text-secondary); font-size:11px; font-variant-numeric:tabular-nums; }
-.canvas-editor .node-card .node-inline-toolbar .node-run-button { width:28px; height:28px; min-height:28px; min-width:28px; padding:0; border:0 !important; border-radius:var(--radius-control); background:transparent !important; color:var(--text) !important; box-shadow:none; font-size:12px; font-weight:500; }
-.canvas-editor .node-run-button > span { display:none; }
+.canvas-editor .node-card .node-inline-toolbar .node-run-button { width:auto; height:28px; min-height:28px; min-width:64px; padding:0 10px; border:0 !important; border-radius:999px; background:var(--accent) !important; color:var(--on-accent) !important; box-shadow:none; font-size:12px; font-weight:500; }
 .canvas-editor .node-card .node-delete-button, .canvas-editor .node-actions > button { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; min-height:28px; padding:0; border:0; border-radius:var(--radius-control); background:transparent; color:var(--text-secondary); }
 .canvas-editor .node-actions > button:hover { background:color-mix(in srgb, var(--selection-ink) 6.00%, transparent); color:var(--text); }
-.canvas-editor .node-card .node-inline-toolbar .node-run-button:hover:not(:disabled) { background:color-mix(in srgb, var(--selection-ink) 6.00%, transparent) !important; border-color:var(--line-strong) !important; }
-.canvas-editor .node-card .node-delete-button { border-color:transparent; background:transparent; color:var(--text-secondary); }
+.canvas-editor .node-card .node-inline-toolbar .node-run-button:hover:not(:disabled) { background:var(--accent-strong) !important; }
+.canvas-editor .node-card .node-delete-button { width:24px; border-color:transparent; background:transparent; color:var(--text-tertiary); }
 .canvas-editor .node-card .node-delete-button:hover { color:var(--status-fail); }
+@container (max-width:319px) {
+  .canvas-editor .node-card .node-inline-toolbar .node-run-button { min-width:28px; padding:0 8px; }
+}
 .canvas-editor .node-linked-asset, .canvas-editor .node-preview { background:transparent; border-color:var(--line); border-radius:var(--radius-control); color:var(--text-secondary); }
 .canvas-editor .node-linked-asset-copy strong, .canvas-editor .node-config-copy strong { color:var(--text); }
 .canvas-editor :is(.node-linked-asset-copy small, .node-linked-limit) { color:var(--text-secondary); }

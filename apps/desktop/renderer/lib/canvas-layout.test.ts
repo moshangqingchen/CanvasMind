@@ -22,6 +22,129 @@ function assertNoOverlap(nodes: readonly TidyCanvasRect[], positions: Positions)
 }
 
 describe("left-to-right canvas layout", () => {
+  it("packs ten fan-in siblings in a four-column reading grid and centers the entire grid on the target port", () => {
+    const sources = Array.from({ length: 10 }, (_, index) => rect(`asset-${index}`, 40, index * 200,
+      { fileName: `${10 - index}.png`, nodeType: "asset-input", width: index === 3 ? 280 : 240,
+        height: index === 5 ? 240 : 160, portCenters: { source: [{ id: "image", y: 80 }], target: [] } }));
+    const target = rect("target", 500, 100, { height: 220,
+      portCenters: { source: [], target: [{ id: "references", y: 58 }] } });
+    const nodes = [...sources, target];
+    const edges = sources.map(source => ({ source: source.id, sourceHandle: "image", target: target.id, targetHandle: "references" }));
+    const positions = tidyCanvasRectPositions(nodes, edges);
+    const expected = [...sources].reverse();
+    for (let index = 0; index < expected.length; index++) {
+      const point = positions.get(expected[index]!.id)!;
+      expect(point.x).toBe(40 + index % 4 * (280 + 24));
+      if (index % 4) expect(point.y).toBe(positions.get(expected[index - 1]!.id)!.y);
+      if (index >= 4) expect(point.y).toBeGreaterThan(positions.get(expected[index - 4]!.id)!.y);
+    }
+    const top = Math.min(...sources.map(source => positions.get(source.id)!.y));
+    const bottom = Math.max(...sources.map(source => positions.get(source.id)!.y + source.height));
+    expect(positions.get(target.id)!.y + 58).toBe((top + bottom) / 2);
+    expect(positions.get(target.id)!.x).toBeGreaterThan(Math.max(...sources.map(source => positions.get(source.id)!.x + source.width)));
+    expect(tidyCanvasRectPositions(moved(nodes, positions), edges)).toEqual(positions);
+    assertNoOverlap(nodes, positions);
+  });
+
+  it("uses target reference numbering instead of the source-node array when connection order is selected", () => {
+    const sources = ["10", "2", "1", "3", "4", "5"].map((name, index) =>
+      rect(`asset-${name}`, index * 300, 0, { fileName: `${name}.png`, nodeType: "asset-input" }));
+    const nodes = [...sources, rect("target", 2000, 0)];
+    const order = ["3", "10", "4", "2", "5", "1"];
+    const edges = order.map(id => ({ source: `asset-${id}`, target: "target" }));
+    const connected = tidyCanvasRectPositions(nodes, edges, { arrangementOrder: "connection" });
+    const named = tidyCanvasRectPositions(nodes, edges, { arrangementOrder: "filename" });
+    const readingOrder = (positions: Positions) => [...sources].sort((a, b) =>
+      positions.get(a.id)!.y - positions.get(b.id)!.y || positions.get(a.id)!.x - positions.get(b.id)!.x).map(node => node.id);
+    expect(readingOrder(connected)).toEqual(order.map(id => `asset-${id}`));
+    expect(readingOrder(named)).toEqual(["1", "2", "3", "4", "5", "10"].map(id => `asset-${id}`));
+    expect(new Set(sources.map(source => connected.get(source.id)!.x)).size).toBe(3);
+    expect(new Set(sources.map(source => connected.get(source.id)!.y)).size).toBe(2);
+    assertNoOverlap(nodes, connected);
+    assertNoOverlap(nodes, named);
+  });
+
+  it("only combines singleton ungrouped sources with no scoped upstream and exactly the same target set", () => {
+    const sources = Array.from({ length: 4 }, (_, index) => rect(`asset-${index}`, index * 300, 800,
+      { nodeType: "asset-input", fileName: `${index}.png` }));
+    const nodes = [...sources, rect("target", 1800, 0), rect("other", 1800, 400),
+      rect("upstream", -500, 100), rect("group-a", -500, 400, { canvasGroupId: "group" }),
+      rect("group-b", -180, 460, { canvasGroupId: "group" })];
+    const edges = [...sources.map(source => ({ source: source.id, target: "target" })),
+      { source: "asset-3", target: "other" }, { source: "upstream", target: "asset-2" },
+      { source: "group-a", target: "target" }, { source: "group-b", target: "target" }];
+    const positions = tidyCanvasRectPositions(nodes, edges);
+    expect(positions.get("asset-0")!.x).toBe(positions.get("asset-1")!.x);
+    expect(positions.get("asset-0")!.y).not.toBe(positions.get("asset-1")!.y);
+    expect(positions.get("group-b")!.x - positions.get("group-a")!.x).toBe(320);
+    expect(positions.get("group-b")!.y - positions.get("group-a")!.y).toBe(60);
+    assertNoOverlap(nodes, positions);
+  });
+
+  it("keeps a prompt feeding the same target outside the asset grid", () => {
+    const sources = Array.from({ length: 4 }, (_, index) => rect(`asset-${index}`, 0, index * 200,
+      { nodeType: "asset-input", fileName: `${index}.png` }));
+    const prompt = rect("prompt", 0, 900, { nodeType: "prompt", label: "提示词", width: 360 });
+    const nodes = [...sources, prompt, rect("target", 1600, 200)];
+    const edges = [...sources, prompt].map(source => ({ source: source.id, target: "target" }));
+    const positions = tidyCanvasRectPositions(nodes, edges);
+    expect(new Set(sources.map(source => positions.get(source.id)!.x)).size).toBe(2);
+    const gridBottom = Math.max(...sources.map(source => positions.get(source.id)!.y + source.height));
+    const gridTop = Math.min(...sources.map(source => positions.get(source.id)!.y));
+    const promptTop = positions.get("prompt")!.y;
+    expect(promptTop >= gridBottom || promptTop + prompt.height <= gridTop).toBe(true);
+    assertNoOverlap(nodes, positions);
+  });
+
+  it("arranges selected fan-in siblings without expanding a group or pulling in outside upstream nodes", () => {
+    const sources = Array.from({ length: 4 }, (_, index) => rect(`asset-${index}`, 0, index * 200,
+      { nodeType: "asset-input", fileName: `${4 - index}.png` }));
+    const nodes = [...sources, rect("target", 1600, 200), rect("outside", -500, -500),
+      rect("group-a", 400, 1600, { canvasGroupId: "group" }), rect("group-b", 720, 1660, { canvasGroupId: "group" })];
+    const edges = [...sources.map(source => ({ source: source.id, target: "target" })),
+      { source: "outside", target: "asset-0" }];
+    const selectedIds = [...sources.map(source => source.id), "target"];
+    const positions = tidyCanvasRectPositions(nodes, edges, { selectedIds });
+    expect(new Set(sources.map(source => positions.get(source.id)!.x)).size).toBe(2);
+    for (const node of nodes.filter(node => !selectedIds.includes(node.id))) expect(positions.get(node.id)).toEqual(node.position);
+    assertNoOverlap(nodes, positions);
+  });
+
+  it("naturally sorts each isolated type and fills rows from left to right", () => {
+    const names = ["10.png", "2.png", "1.png", "4.png", "3.png", "5.png"];
+    const nodes = names.map((fileName, index) => rect(fileName, index * 280, index * 20,
+      { fileName, nodeType: "asset-input" }));
+    nodes.splice(2, 0, rect("prompt", 1600, 40, { nodeType: "prompt", label: "A prompt" }));
+    const named = tidyCanvasRectPositions(nodes, [], { arrangementOrder: "filename", viewportWidth: 400 });
+    const connected = tidyCanvasRectPositions(nodes, [], { arrangementOrder: "connection", viewportWidth: 400 });
+    expect(named.get("1.png")!.y).toBe(named.get("2.png")!.y);
+    expect(named.get("1.png")!.x).toBeLessThan(named.get("2.png")!.x);
+    expect(named.get("4.png")!.y).toBeGreaterThan(named.get("3.png")!.y);
+    expect(connected.get("10.png")!.x).toBeLessThan(connected.get("2.png")!.x);
+    expect(named.get("prompt")!.y).toBeGreaterThanOrEqual(named.get("10.png")!.y);
+    assertNoOverlap(nodes, named);
+    assertNoOverlap(nodes, connected);
+  });
+
+  it("moves a selected workflow as a whole only when its arranged bounds hit an outside card", () => {
+    const selected = [rect("source", 0, 0), rect("target", 900, 400)];
+    const edges = [{ source: "source", target: "target" }];
+    const baseline = tidyCanvasRectPositions(selected, edges);
+    const blocker = rect("outside", 360, 0);
+    const nodes = [...selected, blocker];
+    const positions = tidyCanvasRectPositions(nodes, edges, { selectedIds: ["source", "target"] });
+    expect(positions.get("outside")).toEqual(blocker.position);
+    const shift = { x: positions.get("source")!.x - baseline.get("source")!.x,
+      y: positions.get("source")!.y - baseline.get("source")!.y };
+    expect(shift).not.toEqual({ x: 0, y: 0 });
+    expect(positions.get("target")).toEqual({ x: baseline.get("target")!.x + shift.x, y: baseline.get("target")!.y + shift.y });
+    expect(tidyCanvasRectPositions(moved(nodes, positions), edges, { selectedIds: ["source", "target"] })).toEqual(positions);
+    const distant = { ...blocker, position: { x: 1800, y: 1800 } };
+    const clear = tidyCanvasRectPositions([...selected, distant], edges, { selectedIds: ["source", "target"] });
+    for (const node of selected) expect(clear.get(node.id)).toEqual(baseline.get(node.id));
+    assertNoOverlap(nodes, positions);
+  });
+
   it("balances four independent workflows against usable viewport height while preserving their anchor and reading order", () => {
     const fixture = workflowFixture(4);
     const nodes = [...fixture.nodes, rect("loose-a", 5000, 3000, { nodeType: "asset-input" }),

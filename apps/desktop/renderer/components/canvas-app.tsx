@@ -32,6 +32,10 @@ import { collectIslandTasks, failedIslandStatuses, islandCanvasBounds, type Isla
 import { useRouter } from "next/navigation";
 import { CanvasInteractionFeedback, canvasMotionEnabled, useCanvasMotion } from "./canvas-motion";
 import { CanvasPortLabels } from "./canvas-port-labels";
+import { CanvasBatchOutput } from "./canvas-batch-output";
+import batchStyles from "./canvas-batch-output.module.css";
+import { batchOutputSources, batchConnectionSummary, checkCanvasConnection, planBatchConnections, type BatchConnectionSource } from "../lib/batch-connections";
+import { orderedIncomingCanvasEdges, readCanvasArrangementOrder, writeCanvasArrangementOrder, type CanvasArrangementOrder } from "../lib/canvas-arrangement";
 import { createNodePresentationCache, useStableNodeContent, useStableNodeDefinitions } from "../lib/stable-node-content";
 import { useStableNodePresentationData } from "../lib/stable-node-presentation";
 import { createLazySnapshot } from "../lib/lazy-snapshot";
@@ -40,6 +44,8 @@ import { createNodePortLayoutCache } from "../lib/node-port-layout-cache";
 import { canvasUsableArea } from "../lib/canvas-usable-area";
 import { createCanvasViewportHydration } from "../lib/canvas-viewport-hydration";
 import { newNodePlacement } from "../lib/new-node-placement";
+import { placeCanvasBatch, repairCanvasBatch } from "../lib/canvas-placement";
+import { sortCanvasArrangementItems } from "../lib/canvas-arrangement";
 import { acknowledgeSubmissions, forgetSubmission, hiddenResult, hideRemovedResults, readSubmissions, linkSubmission, needsTaskReconciliation, rememberSubmission, restoreSubmissions } from "../lib/submission-journal";
 import { acknowledgeCanvasDraft, canvasDraftRecovery, discardCanvasDraft, readCanvasDraft, writeCanvasDraft } from "../lib/canvas-drafts";
 import { trackCanvasSave, waitForCanvasSaves } from "../lib/canvas-save-barrier";
@@ -58,6 +64,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Controls,
   MiniMap,
@@ -123,7 +130,6 @@ import {
 } from "lucide-react";
 import {
   arePortKindsCompatible,
-  wouldCreateCycle,
   renderPromptParts,
   readImageDesignReview,
   type NodeRunStatus,
@@ -443,8 +449,7 @@ function clampInspectorWidth(width: number): number {
 interface ConnectionMenuState {
   x: number;
   y: number;
-  source: string;
-  sourceHandle: string;
+  sources: BatchConnectionSource[];
   sourceKind: PortKind;
 }
 
@@ -686,7 +691,55 @@ function createAssetInputNode(
       ),
     ],
   };
+  const width = positiveDimension(asset.metadata.width, asset.metadata.originalWidth);
+  const height = positiveDimension(asset.metadata.height, asset.metadata.originalHeight);
+  if (width && height && asset.kind !== "audio") setImportedNodeAspectRatio(node, width / height);
   return node;
+}
+
+const importFileAspectRatios = new WeakMap<File, number>();
+interface CanvasImportBatch {
+  nodeIds: string[];
+  positions: Map<string, { x: number; y: number }>;
+  anchor: { x: number; y: number };
+  lastAt?: number;
+  projectId: string | null;
+}
+
+function setImportedNodeAspectRatio(node: CanvasNode, ratio: number) {
+  node.style = { ...node.style, width: 300, height: Math.min(760, Math.max(230, 300 / ratio + 82)) };
+  node.data = { ...node.data, mediaAspectRatio: ratio };
+}
+
+function repairImportedNodes(nodes: CanvasNode[], batches: ReadonlyMap<string, CanvasImportBatch>, nodeId: string): CanvasNode[] {
+  const batch = batches.get(nodeId);
+  if (!batch) return nodes;
+  const ids = new Set(batch.nodeIds);
+  const rect = (node: CanvasNode) => ({ id: node.id, position: node.position,
+    width: positiveDimension(node.style?.width) ?? nodeDimensions(node).width,
+    height: positiveDimension(node.style?.height) ?? nodeDimensions(node).height });
+  const positions = repairCanvasBatch(nodes.filter(node => ids.has(node.id)).map(rect), batch.positions,
+    nodes.filter(node => !ids.has(node.id) && !node.hidden).map(rect));
+  const next = nodes.map(node => {
+    const position = positions.get(node.id);
+    if (!position || (position.x === node.position.x && position.y === node.position.y)) return node;
+    batch.positions.set(node.id, position);
+    return { ...node, position };
+  });
+  return next;
+}
+
+function placeImportedNodeBatch(
+  added: CanvasNode[], occupied: readonly CanvasNode[], anchor: { x: number; y: number },
+  batches: Map<string, CanvasImportBatch>, projectId: string | null,
+): CanvasNode[] {
+  const positions = placeCanvasBatch(added.map(node => ({ id: node.id, ...nodeDimensions(node) })), anchor,
+    occupied.filter(node => !node.hidden).map(node => ({ id: node.id, position: node.position, ...nodeDimensions(node) })));
+  const batch: CanvasImportBatch = { nodeIds: added.map(node => node.id), positions, anchor, projectId };
+  return added.map(node => {
+    batches.set(node.id, batch);
+    return { ...node, selected: true, position: positions.get(node.id)! };
+  });
 }
 
 interface PendingAssetImport {
@@ -852,6 +905,8 @@ function createPendingAssetInputNode(
       ),
     ],
   };
+  const ratio = importFileAspectRatios.get(file);
+  if (ratio) setImportedNodeAspectRatio(node, ratio);
   return { node, ...(previewUrl ? { previewUrl } : {}) };
 }
 
@@ -2846,6 +2901,7 @@ function CanvasShell({
     nodeId: string;
     handleId: string;
     kind: PortKind;
+    sources?: BatchConnectionSource[];
   } | null>(null);
   const connectionStartRef = useRef<{
     nodeId: string;
@@ -2863,6 +2919,19 @@ function CanvasShell({
   const layoutAnimationRef = useRef<LayoutAnimation | null>(null);
   const tidyCanvasLayoutRef = useRef<(() => void) | null>(null);
   const [layoutAnimating, setLayoutAnimating] = useState(false);
+  const [arrangementOrder, setArrangementOrder] = useState<CanvasArrangementOrder>(readCanvasArrangementOrder);
+  const [arrangementMenuOpen, setArrangementMenuOpen] = useState(false);
+  const arrangementMenuRef = useRef<HTMLDivElement | null>(null);
+  const arrangementPopupRef = useRef<HTMLDivElement | null>(null);
+  const [arrangementMenuPosition, setArrangementMenuPosition] = useState<{ x: number; y: number; host: HTMLElement | null }>({ x: 0, y: 0, host: null });
+  useEffect(() => {
+    if (!arrangementMenuOpen) return;
+    const dismiss = (event: PointerEvent) => { if (!arrangementMenuRef.current?.contains(event.target as Node) && !arrangementPopupRef.current?.contains(event.target as Node)) setArrangementMenuOpen(false); };
+    const keydown = (event: KeyboardEvent) => { if (event.key === "Escape") setArrangementMenuOpen(false); };
+    window.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", keydown);
+    return () => { window.removeEventListener("pointerdown", dismiss); window.removeEventListener("keydown", keydown); };
+  }, [arrangementMenuOpen]);
   const updateNodeInternals = useUpdateNodeInternals();
   const portLayoutSignatureRef = useRef<ReadonlyMap<string, string>>(new Map());
   const [getPortLayoutSignature] = useState(createNodePortLayoutCache);
@@ -2872,6 +2941,12 @@ function CanvasShell({
   const pendingNativeDropsRef = useRef(new Map<string, PendingNativeDrop[]>());
   const bridgeHandledNativeDropsRef = useRef(new Map<string, number>());
   const pendingPreviewUrlsRef = useRef(new Map<string, string>());
+  const importBatchesRef = useRef(new Map<string, CanvasImportBatch>());
+  const bridgeImportBatchRef = useRef<CanvasImportBatch | null>(null);
+  useEffect(() => {
+    importBatchesRef.current.clear();
+    bridgeImportBatchRef.current = null;
+  }, [canvasId]);
   const nativeUploadInProgressRef = useRef(new Set<string>());
   const activeBridgeDropsRef = useRef(new Set<string>());
   const materialDropPollRef = useRef<(() => Promise<void>) | null>(null);
@@ -4408,93 +4483,10 @@ function CanvasShell({
 
   const connectionCheck = useCallback(
     (connection: Connection) => {
-      const source = nodeDefinitions.find((node) => node.id === connection.source);
-      const target = nodeDefinitions.find((node) => node.id === connection.target);
-      const sourceKind = nodePortKind(
-        source ?? ({} as CanvasNode),
-        connection.sourceHandle,
-        "source",
-      );
-      const targetInputs = target ? effectiveInputsForNode(target) : undefined;
-      const targetKind = targetInputs?.find(
-        (input) => input.id === connection.targetHandle,
-      )?.kind as PortKind | undefined;
-      const targetPort = targetInputs?.find(
-        (input) => input.id === connection.targetHandle,
-      );
-      if (
-        !source ||
-        !target ||
-        !sourceKind ||
-        !targetKind ||
-        !arePortKindsCompatible(sourceKind, targetKind)
-      ) {
-        return {
-          valid: false,
-          source,
-          target,
-          sourceKind,
-          targetKind,
-          targetPort,
-          reason: `不能连接 ${sourceKind ?? "?"} → ${targetKind ?? "?"}`,
-        };
-      }
-      if (
-        wouldCreateCycle({ nodes: nodeDefinitions, edges }, connection.source, connection.target)
-      ) {
-        return {
-          valid: false,
-          source,
-          target,
-          sourceKind,
-          targetKind,
-          targetPort,
-          reason: "这条连线会形成循环，画布只支持无环工作流",
-        };
-      }
-      if (hasEdgeForNodePair(edges, connection.source, connection.target)) {
-        return {
-          valid: false,
-          source,
-          target,
-          sourceKind,
-          targetKind,
-          targetPort,
-          reason: "同一图片只能连接目标节点的一个接口",
-        };
-      }
-      if (
-        targetPort &&
-        !targetPort.multiple &&
-        edges.some(
-          (edge) =>
-            edge.target === connection.target &&
-            edge.targetHandle === connection.targetHandle &&
-            !(
-              edge.source === connection.source &&
-              edge.target === connection.target
-            ),
-        )
-      ) {
-        return {
-          valid: false,
-          source,
-          target,
-          sourceKind,
-          targetKind,
-          targetPort,
-          reason: `${targetPort.label} 只能连接一个上游节点`,
-        };
-      }
-      return {
-        valid: true,
-        source,
-        target,
-        sourceKind,
-        targetKind,
-        targetPort,
-        reason: "",
-      };
+      const target = nodeDefinitions.find(node => node.id === connection.target);
+      const effectiveNodes = target ? nodeDefinitions.map(node => node.id === target.id
+        ? { ...node, data: { ...node.data, inputs: effectiveInputsForNode(node) } } : node) : nodeDefinitions;
+      return checkCanvasConnection(effectiveNodes, edges, connection);
     },
     [edges, effectiveInputsForNode, nodeDefinitions],
   );
@@ -4603,8 +4595,7 @@ function CanvasShell({
     setConnectionMenu({
       x: Math.min(Math.max(12, rawX), Math.max(12, window.innerWidth - 188)),
       y: Math.min(Math.max(70, rawY), Math.max(70, window.innerHeight - 170)),
-      source: source.id,
-      sourceHandle: state.fromHandle.id ?? "output",
+      sources: [{ nodeId: source.id, handleId: state.fromHandle.id ?? "output", kind }],
       sourceKind: kind,
     });
   }, []);
@@ -4620,75 +4611,68 @@ function CanvasShell({
     [connectionCheck],
   );
 
+  const batchPlanForTarget = useCallback((sources: BatchConnectionSource[], target: CanvasNode, targetHandle: string, allNodes: CanvasNode[], currentEdges: CanvasEdge[]) => {
+    const options = modelOptionsForNode(target, connections, connectionModels);
+    const model = modelDescriptorForSavedSelectionOrDefault(options, target.data.model, target.data.parameters);
+    const maxInputImages = model?.limits?.maxInputImages;
+    const effectiveTarget = { ...target, data: { ...target.data, inputs: effectiveInputsForNode(target) } };
+    const plan = planBatchConnections({ sources, targetId: target.id, targetHandle,
+      nodes: allNodes.map(node => node.id === target.id ? effectiveTarget : node), edges: currentEdges, maxInputImages });
+    return { ...plan, edges: plan.edges.map(edge => ({ ...edge, id: `edge-${crypto.randomUUID().slice(0, 8)}` })), maxInputImages };
+  }, [connectionModels, connections, effectiveInputsForNode]);
+
+  const onBatchConnectEnd = useCallback((point: { x: number; y: number } | null, sources: BatchConnectionSource[]) => {
+    setConnectingFrom(null);
+    if (!point || !canEditCanvas()) return;
+    const element = document.elementFromPoint(point.x, point.y);
+    const targetId = element?.closest<HTMLElement>(".react-flow__node")?.dataset.id;
+    if (targetId) {
+      const state = useCanvasStore.getState();
+      const target = state.nodes.find(node => node.id === targetId);
+      if (!target) return;
+      const inputs = effectiveInputsForNode(target) ?? [];
+      const portId = element?.closest<HTMLElement>(".react-flow__handle.target")?.dataset.handleid;
+      const compatible = (port: typeof inputs[number]) => arePortKindsCompatible(sources[0]!.kind, port.kind as PortKind);
+      const port = inputs.find(port => port.id === portId && compatible(port)) ?? inputs.find(port => port.multiple && compatible(port));
+      if (!port) { showToast("此节点没有兼容的多素材输入端口，请拖到兼容的输入端口"); return; }
+      const plan = batchPlanForTarget(sources, target, port.id, state.nodes, state.edges);
+      if (plan.edges.length) {
+        checkpoint(true);
+        const nextEdges = [...state.edges, ...plan.edges];
+        setEdges(nextEdges); scheduleSave(state.nodes, nextEdges);
+      }
+      showToast(batchConnectionSummary(plan.edges.length, target.data.label, plan.skipped, plan.maxInputImages));
+    } else if (element?.closest(".react-flow__pane")) {
+      setConnectionMenu({ x: Math.min(Math.max(12, point.x), Math.max(12, window.innerWidth - 188)),
+        y: Math.min(Math.max(70, point.y), Math.max(70, window.innerHeight - 170)), sources, sourceKind: sources[0]!.kind });
+    } else showToast("请拖到节点输入或空白画布");
+  }, [batchPlanForTarget, canEditCanvas, checkpoint, effectiveInputsForNode, scheduleSave, setEdges, showToast]);
+
   const addConnectedNode = useCallback(
     (targetType: AutoConnectNodeType) => {
-      if (!connectionMenu) return;
-      const targetHandle = getAutoConnectionTargetHandle(
-        connectionMenu.sourceKind,
-        targetType,
-      );
-      if (!targetHandle) {
-        showToast("没有兼容此输出类型的节点输入");
-        setConnectionMenu(null);
-        return;
-      }
-      checkpoint(true);
-      const position = reactFlowRef.current?.screenToFlowPosition({
-        x: connectionMenu.x,
-        y: connectionMenu.y,
-      }) ?? { x: 400, y: 240 };
-      const node = configureNewGenerationNode(
-        createNode(targetType, position, nodes.length),
-        connections,
-      );
+      if (!connectionMenu || !canEditCanvas()) return;
+      const state = useCanvasStore.getState();
+      const position = reactFlowRef.current?.screenToFlowPosition({ x: connectionMenu.x, y: connectionMenu.y }) ?? { x: 400, y: 240 };
+      const node = configureNewGenerationNode(createNode(targetType, position, state.nodes.length), connections);
       if (!node) {
-        showToast("没有可用的 API 连接，请先配置并测试 API");
-        setSettingsOpen(true);
-        setConnectionMenu(null);
-        return;
+        showToast("没有可用的 API 连接，请先配置并测试 API"); setSettingsOpen(true); setConnectionMenu(null); return;
       }
-      const targetPort = node.data.inputs?.find(
-        (input) => input.id === targetHandle,
-      );
-      if (
-        !targetPort ||
-        !arePortKindsCompatible(
-          connectionMenu.sourceKind,
-          targetPort.kind as PortKind,
-        )
-      ) {
-        showToast("没有兼容此输出类型的节点输入");
-        setConnectionMenu(null);
-        return;
-      }
-      const edge: CanvasEdge = {
-        id: `edge-${crypto.randomUUID().slice(0, 8)}`,
-        source: connectionMenu.source,
-        sourceHandle: connectionMenu.sourceHandle,
-        target: node.id,
-        targetHandle,
-        type: "smoothstep",
-      };
-      const nextNodes = [...nodes, node];
-      const nextEdges = [...edges, edge];
-      setNodes(nextNodes);
-      setEdges(nextEdges);
-      setSelectedId(node.id);
-      setConnectionMenu(null);
+      const inputs = effectiveInputsForNode(node) ?? [];
+      const preferred = getAutoConnectionTargetHandle(connectionMenu.sourceKind, targetType);
+      const targetPort = connectionMenu.sources.length > 1
+        ? inputs.find(port => port.multiple && arePortKindsCompatible(connectionMenu.sourceKind, port.kind as PortKind))
+        : inputs.find(port => port.id === preferred && arePortKindsCompatible(connectionMenu.sourceKind, port.kind as PortKind));
+      if (!targetPort) { showToast("没有兼容此输出类型的节点输入"); setConnectionMenu(null); return; }
+      const nextNodes = [...state.nodes, node];
+      const plan = batchPlanForTarget(connectionMenu.sources, node, targetPort.id, nextNodes, state.edges);
+      if (!plan.edges.length) { showToast(batchConnectionSummary(0, node.data.label, plan.skipped, plan.maxInputImages)); setConnectionMenu(null); return; }
+      checkpoint(true);
+      const nextEdges = [...state.edges, ...plan.edges];
+      setNodes(nextNodes); setEdges(nextEdges); setSelectedId(node.id); setConnectionMenu(null);
       scheduleSave(nextNodes, nextEdges);
+      if (connectionMenu.sources.length > 1) showToast(batchConnectionSummary(plan.edges.length, node.data.label, plan.skipped, plan.maxInputImages));
     },
-    [
-      checkpoint,
-      connectionMenu,
-      connections,
-      edges,
-      nodes,
-      scheduleSave,
-      setEdges,
-      setNodes,
-      setSelectedId,
-      showToast,
-    ],
+    [batchPlanForTarget, canEditCanvas, checkpoint, connectionMenu, connections, effectiveInputsForNode, scheduleSave, setEdges, setNodes, setSelectedId, showToast],
   );
 
   const insertNodeAt = useCallback(
@@ -5064,14 +5048,9 @@ function CanvasShell({
       flushPendingEditorEdits();
       const state = useCanvasStore.getState();
       const center = reactFlowRef.current?.screenToFlowPosition({ x: window.innerWidth / 2 - 180, y: window.innerHeight / 2 - 120 }) ?? { x: 360, y: 220 };
-      const added: CanvasNode[] = [];
-      for (const [index, asset] of prepared.entries()) {
-        const node = createAssetInputNode(asset, { x: center.x + (index % 3) * 340, y: center.y + Math.floor(index / 3) * 360 }, state.nodes.length + index);
-        node.position = closestAvailableVerticalPosition({ id: node.id, position: node.position, ...nodeDimensions(node) }, nodeDimensions(node),
-          [...state.nodes, ...added].map(item => ({ id: item.id, position: item.position, ...nodeDimensions(item) })));
-        node.selected = true;
-        added.push(node);
-      }
+      const ordered = sortCanvasArrangementItems(prepared, arrangementOrder, asset => asset.name, asset => asset.id);
+      const added = placeImportedNodeBatch(ordered.map((asset, index) => createAssetInputNode(asset, center, state.nodes.length + index)),
+        state.nodes, center, importBatchesRef.current, targetProjectId);
       checkpoint(true);
       setAssets(existing => [...prepared, ...existing.filter(asset => !prepared.some(item => item.id === asset.id))]);
       const nextNodes = [...state.nodes.map(node => ({ ...node, selected: false })), ...added];
@@ -5087,7 +5066,7 @@ function CanvasShell({
     } finally {
       if (projectFilesImport.current === controller) projectFilesImport.current = null;
     }
-  }, [checkpoint, closeProjectFiles, scheduleSave, setNodes, setSelectedId, showToast]);
+  }, [arrangementOrder, checkpoint, closeProjectFiles, scheduleSave, setNodes, setSelectedId, showToast]);
 
   const openImageMask = useCallback((assetId: string, editNodeId?: string) => {
     const asset = assets.find(item => item.id === assetId);
@@ -5680,7 +5659,7 @@ function CanvasShell({
       if (!Number.isFinite(ratio) || ratio <= 0) return;
       setNodes((current) => {
         let changed = false;
-        const next = current.map((node) => {
+        let next = current.map((node) => {
           if (node.id !== nodeId) return node;
           const previous = node.data.mediaAspectRatio;
           const width = nodeDimensions(node).width;
@@ -5705,7 +5684,10 @@ function CanvasShell({
             data: { ...node.data, mediaAspectRatio: ratio },
           };
         });
-        if (changed) scheduleSave(next, useCanvasStore.getState().edges);
+        if (changed) {
+          next = repairImportedNodes(next, importBatchesRef.current, nodeId);
+          scheduleSave(next, useCanvasStore.getState().edges);
+        }
         return changed ? next : current;
       });
     },
@@ -7322,6 +7304,13 @@ function CanvasShell({
     () => nodes.filter((node) => node.selected),
     [nodes],
   );
+  const batchSources = useMemo(() => batchOutputSources(selectedCanvasNodes), [selectedCanvasNodes]);
+  const batchBounds = useMemo(() => {
+    const x = Math.min(...selectedCanvasNodes.map(node => node.position.x));
+    const y = Math.min(...selectedCanvasNodes.map(node => node.position.y));
+    return { x, y, width: Math.max(...selectedCanvasNodes.map(node => node.position.x + nodeDimensions(node).width)) - x,
+      height: Math.max(...selectedCanvasNodes.map(node => node.position.y + nodeDimensions(node).height)) - y };
+  }, [selectedCanvasNodes]);
   const canvasGroups = useMemo(() => {
     const grouped = new Map<string, CanvasNode[]>();
     for (const node of nodes) {
@@ -7518,6 +7507,8 @@ function CanvasShell({
       return {
         id: node.id,
         nodeType: node.data.nodeType,
+        fileName: assets.find(asset => asset.id === node.data.assetId)?.name,
+        label: node.data.label,
         position: node.position,
         ...dimensions,
         portCenters: { source: portCenters("output"), target: portCenters("input") },
@@ -7542,7 +7533,7 @@ function CanvasShell({
     const positions = tidyCanvasRectPositions(
       layoutNodes,
       layoutEdges,
-      { selectedIds, viewportWidth: usable.width, viewportHeight: usable.height },
+      { selectedIds, viewportWidth: usable.width, viewportHeight: usable.height, arrangementOrder },
     );
     let changed = false;
     const nextNodes = state.nodes.map((node) => {
@@ -7612,7 +7603,7 @@ function CanvasShell({
       frame(1);
       complete();
     }
-  }, [readUsableCanvas, canEditCanvas, checkpoint, geometryCheckpoints, scheduleSave, showToast, undo]);
+  }, [arrangementOrder, assets, readUsableCanvas, canEditCanvas, checkpoint, geometryCheckpoints, scheduleSave, showToast, undo]);
   useEffect(() => { tidyCanvasLayoutRef.current = tidyCanvasLayout; }, [tidyCanvasLayout]);
 
   const applyAgentCanvasResult = useCallback(
@@ -7744,7 +7735,7 @@ function CanvasShell({
     const directAssetsForNode = (nodeId: string) => {
       const seen = new Set<string>();
       const linked: AssetView[] = [];
-      for (const edge of incomingEdges.get(nodeId) ?? []) {
+      for (const edge of orderedIncomingCanvasEdges(nodeId, incomingEdges.get(nodeId) ?? [])) {
         const source = nodeById.get(edge.source);
         if (!source) continue;
         const ids = [
@@ -7839,12 +7830,12 @@ function CanvasShell({
           ? (effectiveInputsForNode(node) ?? [])
               .filter(
                 (input) =>
-                  connectionCheck({
-                    source: connectingFrom.nodeId,
-                    sourceHandle: connectingFrom.handleId,
+                  (connectingFrom.sources ?? [{ nodeId: connectingFrom.nodeId, handleId: connectingFrom.handleId, kind: connectingFrom.kind }]).some(source => connectionCheck({
+                    source: source.nodeId,
+                    sourceHandle: source.handleId,
                     target: node.id,
                     targetHandle: input.id,
-                  }).valid,
+                  }).valid),
               )
               .map((input) => input.id)
           : [];
@@ -7901,7 +7892,7 @@ function CanvasShell({
           ),
           connectionPreviewActive: Boolean(connectingFrom),
           connectionHighlight:
-            connectingFrom?.nodeId === node.id
+            (connectingFrom?.nodeId === node.id || connectingFrom?.sources?.some(source => source.nodeId === node.id))
               ? "source"
               : compatibleInputIds.length > 0
                 ? "compatible"
@@ -8548,7 +8539,7 @@ function CanvasShell({
     [connectionSourceKind],
   );
   const placeAssetsOnCanvas = useCallback(
-    (items: AssetView[], position: { x: number; y: number }) => {
+    (items: AssetView[], position: { x: number; y: number }, shouldCheckpoint = true) => {
       if (!canEditCanvas()) return;
       const media = items.filter(
         (asset): asset is AssetView & { kind: "image" | "video" | "audio" } =>
@@ -8557,21 +8548,17 @@ function CanvasShell({
           asset.kind === "audio",
       );
       if (media.length === 0) return;
-      checkpoint(true);
+      if (shouldCheckpoint) checkpoint(true);
       const state = useCanvasStore.getState();
-      const added = media.map((asset, index) =>
-        createAssetInputNode(
-          asset,
-          { x: position.x + index * 28, y: position.y + index * 36 },
-          state.nodes.length + index,
-        ),
-      );
-      const nextNodes = [...state.nodes, ...added];
+      const ordered = sortCanvasArrangementItems(media, arrangementOrder, asset => asset.name, asset => asset.id);
+      const added = placeImportedNodeBatch(ordered.map((asset, index) => createAssetInputNode(asset, position, state.nodes.length + index)),
+        state.nodes, position, importBatchesRef.current, activeProjectIdRef.current);
+      const nextNodes = [...state.nodes.map(node => ({ ...node, selected: false })), ...added];
       setNodes(nextNodes);
       setSelectedId(added.at(-1)?.id ?? null);
       scheduleSave(nextNodes, state.edges);
     },
-    [canEditCanvas, checkpoint, scheduleSave, setNodes, setSelectedId],
+    [arrangementOrder, canEditCanvas, checkpoint, scheduleSave, setNodes, setSelectedId],
   );
 
   const handleUpload = useCallback(
@@ -8608,6 +8595,15 @@ function CanvasShell({
           }
           if (importable !== file)
             showToast(`已自动转换为可导入格式：${importable.name}`, "success");
+          if (importable.type.startsWith("image/") && typeof createImageBitmap === "function") {
+            try {
+              const bitmap = await createImageBitmap(importable);
+              if (bitmap.width > 0 && bitmap.height > 0) importFileAspectRatios.set(importable, bitmap.width / bitmap.height);
+              bitmap.close();
+            } catch {
+              // The preview load will supply dimensions for unsupported bitmap codecs.
+            }
+          }
           return importable;
         } catch (error) {
           showToast(
@@ -8642,15 +8638,15 @@ function CanvasShell({
   );
 
   const beginPendingAssetImports = useCallback(
-    (files: readonly File[], position: { x: number; y: number }) => {
+    (files: readonly File[], position: { x: number; y: number }, importedAssets: readonly AssetView[] = []) => {
       if (!canEditCanvas()) return [];
-      if (files.length === 0) return [];
+      if (files.length === 0 && importedAssets.length === 0) return [];
       checkpoint(true);
       const state = useCanvasStore.getState();
-      const pending = files.map((file, index): PendingAssetImport => {
+      const pending = sortCanvasArrangementItems(files, arrangementOrder, file => file.name).map((file, index): PendingAssetImport => {
         const created = createPendingAssetInputNode(
           file,
-          { x: position.x + index * 28, y: position.y + index * 36 },
+          position,
           state.nodes.length + index,
         );
         if (created.previewUrl)
@@ -8665,16 +8661,19 @@ function CanvasShell({
           ...(created.previewUrl ? { previewUrl: created.previewUrl } : {}),
         };
       });
-      const additions = pending.map((item) => item.node);
-      const nextNodes = [...state.nodes, ...additions];
+      const imported = importedAssets.map((asset, index) => createAssetInputNode(asset, position, state.nodes.length + pending.length + index));
+      const ordered = sortCanvasArrangementItems([...imported, ...pending.map(item => item.node)], arrangementOrder, node => node.data.label, node => node.id);
+      const additions = placeImportedNodeBatch(ordered, state.nodes, position, importBatchesRef.current, activeProjectIdRef.current);
+      const nextNodes = [...state.nodes.map(node => ({ ...node, selected: false })), ...additions];
       useCanvasStore.setState({
         nodes: nextNodes,
         selectedId: additions.at(-1)?.id ?? null,
       });
       graphRef.current = { nodes: nextNodes, edges: state.edges };
+      if (imported.length > 0) scheduleSave(nextNodes, state.edges);
       return pending;
     },
-    [canEditCanvas, checkpoint],
+    [arrangementOrder, canEditCanvas, checkpoint, scheduleSave],
   );
 
   const completePendingAssetImport = useCallback(
@@ -8691,16 +8690,21 @@ function CanvasShell({
         pendingNode.position,
         state.nodes.indexOf(pendingNode),
       );
-      const nextNodes = state.nodes.map((node) =>
+      if (typeof completed.data.mediaAspectRatio === "number") {
+        const width = nodeDimensions(pendingNode).width;
+        completed.style = { ...pendingNode.style, width, height: Math.min(760, Math.max(230, width / completed.data.mediaAspectRatio + 82)) };
+      }
+      const nextNodes = repairImportedNodes(state.nodes.map((node) =>
         node.id === nodeId
           ? {
               ...completed,
               id: nodeId,
               position: node.position,
-              ...(node.style ? { style: node.style } : {}),
+              selected: node.selected,
+              ...(node.style && !completed.data.mediaAspectRatio ? { style: node.style } : {}),
             }
           : node,
-      );
+      ), importBatchesRef.current, nodeId);
       useCanvasStore.setState({ nodes: nextNodes });
       graphRef.current = { nodes: nextNodes, edges: state.edges };
       revokePendingPreview(nodeId);
@@ -8785,6 +8789,7 @@ function CanvasShell({
       polling = true;
       try {
         const drops = await fetchMaterialDrops();
+        let pollBatch: CanvasImportBatch | null = null;
         for (const drop of drops) {
           // A fetch started before the agent lock may finish after it. Leave
           // these unclaimed events queued for the next poll, after the agent's
@@ -8912,9 +8917,31 @@ function CanvasShell({
               return node;
             })();
           if (!existingPendingNode) {
-            checkpoint(true);
             const state = useCanvasStore.getState();
-            const nextNodes = [...state.nodes, optimisticNode];
+            const previousBatch = pollBatch ?? bridgeImportBatchRef.current;
+            const continuesBatch = previousBatch && previousBatch.projectId === activeProjectIdRef.current &&
+              (pollBatch === previousBatch || now - (previousBatch.lastAt ?? 0) <= 1_500) &&
+              Math.abs(previousBatch.anchor.x - position.x) <= 24 && Math.abs(previousBatch.anchor.y - position.y) <= 24;
+            const batch: CanvasImportBatch = continuesBatch ? previousBatch : {
+              nodeIds: [], positions: new Map(), anchor: position, projectId: activeProjectIdRef.current,
+            };
+            if (!continuesBatch) checkpoint(true);
+            batch.nodeIds.push(optimisticNode.id);
+            batch.lastAt = Date.now();
+            pollBatch = batch;
+            bridgeImportBatchRef.current = batch;
+            const ids = new Set(batch.nodeIds);
+            const batchNodes = [...state.nodes.filter(node => {
+              const expected = batch.positions.get(node.id);
+              return ids.has(node.id) && expected && Math.abs(expected.x - node.position.x) < .5 && Math.abs(expected.y - node.position.y) < .5;
+            }), optimisticNode];
+            const movableIds = new Set(batchNodes.map(node => node.id));
+            const ordered = sortCanvasArrangementItems(batchNodes, arrangementOrder, node => node.data.label, node => node.id);
+            batch.positions = placeCanvasBatch(ordered.map(node => ({ id: node.id, ...nodeDimensions(node) })), batch.anchor,
+              state.nodes.filter(node => !movableIds.has(node.id) && !node.hidden).map(node => ({ id: node.id, position: node.position, ...nodeDimensions(node) })));
+            importBatchesRef.current.set(optimisticNode.id, batch);
+            const nextNodes = [...state.nodes, optimisticNode].map(node => ({ ...node,
+              selected: ids.has(node.id), position: batch.positions.get(node.id) ?? node.position }));
             useCanvasStore.setState({
               nodes: nextNodes,
               selectedId: optimisticNode.id,
@@ -9013,6 +9040,7 @@ function CanvasShell({
       }
     };
   }, [
+    arrangementOrder,
     canvasId,
     checkpoint,
     completePendingAssetImport,
@@ -9284,7 +9312,7 @@ function CanvasShell({
             (item) => !downloadedAssets.some((asset) => asset.id === item.id),
           ),
         ]);
-        placeAssetsOnCanvas(downloadedAssets, position);
+        if (files.length === 0) placeAssetsOnCanvas(downloadedAssets, position);
       }
       if (files.length === 0) {
         showToast(
@@ -9295,11 +9323,7 @@ function CanvasShell({
         );
         return;
       }
-      const filePosition = {
-        x: position.x + downloadedAssets.length * 28,
-        y: position.y + downloadedAssets.length * 36,
-      };
-      const pending = beginPendingAssetImports(files, filePosition);
+      const pending = beginPendingAssetImports(files, position, downloadedAssets);
       const registeredAt = Date.now();
       for (const item of pending) {
         const contentKey = nativeDropContentKey(item.file);
@@ -9387,7 +9411,7 @@ function CanvasShell({
                     !downloadedAssets.some((asset) => asset.id === item.id),
                 ),
               ]);
-              placeAssetsOnCanvas(downloadedAssets, position);
+              placeAssetsOnCanvas(downloadedAssets, position, false);
             }
           } catch (error) {
             sourceFailures = [
@@ -9889,6 +9913,7 @@ function CanvasShell({
             </div>
             <div className="toolbar-group canvas-toolbar-segment" data-group="actions">
               <button className="button small canvas-locate-button" type="button" aria-label="定位所选节点" disabled={!selectedId} title={`定位：${selectedNode?.data.label ?? "所选节点"}（L）`} onClick={() => { if (selectedId) locateCanvasNode(selectedId); }}><ScanLine size={14} /><span>定位所选</span></button>
+              <div className={batchStyles.split} ref={arrangementMenuRef}>
               <button
                 className="button small canvas-tidy-button"
                 type="button"
@@ -9900,6 +9925,20 @@ function CanvasShell({
                 <LayoutGrid size={13} />
                 <span>一键整理</span>
               </button>
+              <button className="button small" type="button" aria-label="排列顺序" aria-haspopup="menu" aria-expanded={arrangementMenuOpen}
+                title="排列顺序" onClick={event => {
+                  const button = event.currentTarget.getBoundingClientRect(), wrap = canvasWrapRef.current?.getBoundingClientRect();
+                  setArrangementMenuPosition({ x: button.right - (wrap?.left ?? 0), y: button.top - (wrap?.top ?? 0) - 8, host: canvasWrapRef.current });
+                  setArrangementMenuOpen(open => !open);
+                }}>▾</button>
+              {arrangementMenuOpen && arrangementMenuPosition.host && createPortal(<div ref={arrangementPopupRef} className={batchStyles.menu} role="menu" aria-label="排列顺序"
+                style={{ left: arrangementMenuPosition.x, top: arrangementMenuPosition.y }}>
+                {([['filename', '按文件名称'], ['connection', '按连线顺序']] as const).map(([order, label]) => <button key={order} type="button" role="menuitemradio" aria-checked={arrangementOrder === order}
+                  onClick={() => { setArrangementOrder(order); writeCanvasArrangementOrder(order); setArrangementMenuOpen(false); }}>
+                  <span className={batchStyles.check}>{arrangementOrder === order ? '✓' : ''}</span>{label}
+                </button>)}
+              </div>, arrangementMenuPosition.host)}
+              </div>
               <button
                 className="button small canvas-group-button"
                 type="button"
@@ -9927,7 +9966,7 @@ function CanvasShell({
           </div>
   ), [canvasMode, drawingTool, changeCanvasMode, activateDrawingTool, brushColor, brushSize,
     selectedDrawingIds.size, mergingDrawings, mergeSelectedDrawings, selectedId, selectedNode?.data.label,
-    locateCanvasNode, tidyCanvasLayout, nodes.length, layoutAnimating, selectedCanvasNodes.length,
+    locateCanvasNode, tidyCanvasLayout, nodes.length, layoutAnimating, selectedCanvasNodes.length, arrangementMenuOpen, arrangementOrder, arrangementMenuPosition,
     selectedHasGroup, groupSelectedNodes, ungroupSelectedNodes, canvasOcclusionStyle]);
   const canvasControls = useMemo(() => (
 <Controls
@@ -10478,6 +10517,8 @@ function CanvasShell({
             deleteKeyCode={null}
             proOptions={reactFlowProOptions}
           >
+            <CanvasBatchOutput sources={batchSources} bounds={batchBounds} hidden={layoutAnimating || (canvasMode !== "pan" && canvasMode !== "select")}
+              onStart={source => { setConnectionMenu(null); setConnectingFrom({ ...source, sources: batchSources }); }} onEnd={onBatchConnectEnd} />
             <ViewportPortal>
               <div className="canvas-group-layer" aria-label="节点分组">
                 {canvasGroups.map((group) => (

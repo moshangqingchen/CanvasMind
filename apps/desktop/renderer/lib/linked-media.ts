@@ -1,5 +1,6 @@
 import type { ModelDescriptor } from "@super-canvas/providers";
 import type { AssetView, CanvasEdge, CanvasNode } from "../components/types";
+import { orderedIncomingCanvasEdges } from "./canvas-arrangement";
 
 export type MediaDurationMap = Readonly<Record<string, number>>;
 
@@ -22,8 +23,7 @@ export function directLinkedAssetsForNode(
   const seen = new Set<string>();
   const linked: AssetView[] = [];
 
-  for (const edge of edges) {
-    if (edge.target !== targetId) continue;
+  for (const edge of orderedIncomingCanvasEdges(targetId, edges)) {
     const source = nodeById.get(edge.source);
     if (!source) continue;
     const ids = nodeAssetIds(source);
