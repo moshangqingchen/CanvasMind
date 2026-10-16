@@ -28,7 +28,7 @@ async function createFixture(request: APIRequestContext, name: string) {
 }
 async function settings(page: Page, name: string) {
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
   const mobileSupplier = dialog.getByLabel("当前供应商", { exact: true });
   // The settings surface paints before its deferred supplier content. The
@@ -77,7 +77,7 @@ test("供应商右键、键盘菜单、隐藏恢复及彻底删除不复活", as
   await page.keyboard.press("Enter");
   await expect(item).toHaveCount(0);
   await page.reload();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await expect(
     page.locator(".sm-supplier-item").filter({ hasText: name }),
   ).toHaveCount(0);

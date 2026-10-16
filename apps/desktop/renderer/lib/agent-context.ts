@@ -7,6 +7,24 @@ export const AGENT_SYSTEM_CHARACTERS = 16_000;
 export const AGENT_OBSERVATION_CHARACTERS = 16_000;
 type Message = DirectorAdapterInput["messages"][number];
 
+/** Small, read-only orientation. Full node bodies remain behind the existing tools. */
+export function shortAgentCanvas(canvas: { title?: string; revision?: number; graph: unknown } | null, selectedNodeIds: readonly string[]) {
+  if (!canvas || !canvas.graph || typeof canvas.graph !== "object" || Array.isArray(canvas.graph)) return null;
+  const graph = canvas.graph as { nodes?: unknown[]; edges?: unknown[] };
+  const nodes = Array.isArray(graph.nodes) ? graph.nodes.filter((node): node is Record<string, unknown> => Boolean(node) && typeof node === "object" && !Array.isArray(node)) : [];
+  const selected = new Set(selectedNodeIds);
+  const ordered = [...nodes.filter(node => typeof node.id === "string" && selected.has(node.id)), ...nodes.filter(node => typeof node.id !== "string" || !selected.has(node.id))];
+  return compactObservation({ title: canvas.title, revision: canvas.revision, nodeCount: nodes.length,
+    edgeCount: Array.isArray(graph.edges) ? graph.edges.length : undefined,
+    nodes: ordered.slice(0, 8).map(node => {
+      const data = node.data && typeof node.data === "object" && !Array.isArray(node.data) ? node.data as Record<string, unknown> : {};
+      const content = typeof data.text === "string" ? data.text : typeof data.prompt === "string" ? data.prompt : undefined;
+      return { id: node.id, type: data.nodeType ?? node.type, label: data.label, selected: selected.has(String(node.id)),
+        ...(content ? { textExcerpt: clipContextText(content, 120) } : {}) };
+    }), ...(nodes.length > 8 ? { truncated: true, omittedNodes: nodes.length - 8 } : {}),
+  }, 2400);
+}
+
 export function clipContextText(value: string, maximum: number): string {
   if (value.length <= maximum) return value;
   const marker = "\n[内容过长，已省略中段；需要细节时请按 ID 查询]";

@@ -3,6 +3,7 @@ import "./globals.css";
 import "./studio-theme.css";
 import "./canvas-studio.css";
 import "./theme-tokens.css";
+import "../components/neural-tokens.css";
 import { MotionPreferenceBridge } from "../components/canvas-motion";
 import { DesktopBridge } from "../components/desktop-bridge";
 import { ThemeBridge } from "../components/theme-bridge";

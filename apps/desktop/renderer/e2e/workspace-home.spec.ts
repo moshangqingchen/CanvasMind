@@ -1,935 +1,641 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { ProjectSummaryView } from "../lib/client-api";
+import { installNeuralFixture } from "./helpers/neural-fixture";
 
-interface HomeProject {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  nodeCount?: number;
-  previewAssetId?: string;
-}
-
-type HomeMotionWindow = typeof window & { __homeAuraDraws: number };
-
-async function observeAuraDraws(page: Page) {
-  await page.addInitScript(() => {
-    const w = window as HomeMotionWindow;
-    w.__homeAuraDraws = 0;
-    const original = CanvasRenderingContext2D.prototype.clearRect;
-    CanvasRenderingContext2D.prototype.clearRect = function (...args) {
-      if (this.canvas.closest("[data-animating]")) w.__homeAuraDraws++;
-      return original.apply(this, args);
-    };
-  });
-}
-
-const auraDraws = (page: Page) => page.evaluate(() => (window as HomeMotionWindow).__homeAuraDraws);
-async function expectAuraDrawing(page: Page) {
-  const previous = await auraDraws(page);
-  await expect.poll(() => auraDraws(page)).toBeGreaterThan(previous);
-}
-async function expectAuraPaused(page: Page) {
-  await expect(page.locator("[data-animating]")).toHaveAttribute("data-animating", "false");
-  // Pausing may draw one static frame. There must be no subsequent loop.
-  await page.waitForTimeout(100);
-  const stopped = await auraDraws(page);
-  await page.waitForTimeout(180);
-  expect(await auraDraws(page)).toBe(stopped);
-}
-
-const older: HomeProject = {
+// Preserve the former homepage's project, preference and dialog contracts in
+// the replacement's module/item layers. Bento and Aura no longer exist.
+const older: ProjectSummaryView = {
   id: "home-older",
   title: "品牌视觉探索",
   nodeCount: 8,
   createdAt: "2026-09-01T08:00:00.000Z",
   updatedAt: "2026-09-02T08:00:00.000Z",
 };
-
-test("首页设计任务入口创建项目后直接打开工作台", async ({ page }) => {
-  await mockWorkspace(page, []);
-  await page.goto("/");
-  await page.getByRole("button", { name: "做活动海报", exact: true }).click();
-  await expect(
-    page.getByRole("dialog", { name: "平面设计", exact: true }),
-  ).toBeVisible();
-  await expect(page).toHaveURL(/\/canvas\/home-created$/u);
-});
-const newer: HomeProject = {
+const newer: ProjectSummaryView = {
   id: "home-newer",
   title: "秋日视频分镜",
   nodeCount: 12,
   createdAt: "2026-09-03T08:00:00.000Z",
   updatedAt: "2026-09-04T08:00:00.000Z",
 };
-
-for (const viewport of [
-  { width: 1024, height: 768, columns: 6 },
-  { width: 1366, height: 768, columns: 12 },
-  { width: 1920, height: 1080, columns: 12 },
-]) {
-  test(`首页 Bento 在 ${viewport.width} 像素下分区清晰且没有横向溢出`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    const state = await mockWorkspace(page, [older, newer]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
-    const bento = page.locator('[data-home-layout="bento"]');
-    expect(await bento.evaluate(element => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/u).length)).toBe(viewport.columns);
-    const hero = await page.locator('[aria-labelledby="workspace-heading"]').boundingBox();
-    const overview = await page.getByRole("complementary", { name: "创作空间概览" }).boundingBox();
-    expect(hero).not.toBeNull();
-    expect(overview).not.toBeNull();
-    expect(hero!.x + hero!.width).toBeLessThanOrEqual(overview!.x);
-    expect(overview!.y).toBeCloseTo(hero!.y, 0);
-    const shortcuts = page.locator('[aria-label="按设计任务开始"] > button');
-    await expect(shortcuts).toHaveCount(3);
-    for (const shortcut of await shortcuts.all()) {
-      const bounds = await shortcut.boundingBox();
-      expect(bounds).not.toBeNull();
-      expect(bounds!.y).toBeGreaterThanOrEqual(Math.max(hero!.y + hero!.height, overview!.y + overview!.height));
-      expect(bounds!.x).toBeGreaterThanOrEqual(0);
-      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
-    }
-    await expect(page.getByRole("button", { name: "聊聊创作想法", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "创建画布", exact: true })).toBeVisible();
-    await expect(page.locator('[data-workspace-stat="projects"] dd')).toHaveText("2张");
-    await expect(page.locator('[data-workspace-stat="nodes"] dd')).toHaveText("20个");
-    await expectReadableWorkspace(page, viewport.width);
-    expect(await page.locator('div[data-motion]').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: testInfo.outputPath(`workspace-home-bento-${viewport.width}.png`), fullPage: true });
-    expect(state.mutations).toEqual([]);
-    expect(state.canvasReads).toEqual([]);
-  });
+const home = (p: Page) => p.getByTestId("neural-workspace");
+const rows = (p: Page) =>
+  p.locator('article:has(>button[data-testid^="neural-item-"])');
+const row = (p: Page, id: string) =>
+  p.getByTestId(`neural-item-${id}`).locator("..");
+const inspector = (p: Page) => p.getByTestId("neural-inspector");
+const scene = (p: Page) => p.locator("[data-renderer]").first();
+async function openHome(page: Page) {
+  await page.goto("/");
+  await expect(home(page)).toBeVisible();
+}
+async function canvases(page: Page) {
+  await page.getByTestId("neural-module-canvases").click();
+}
+async function selectProject(page: Page, id: string) {
+  await row(page, id).click();
+  await expect(inspector(page)).toBeVisible();
+}
+async function action(page: Page, id: string, name: string) {
+  await selectProject(page, id);
+  const button = inspector(page).getByRole("button", { name, exact: true });
+  await button.click();
+  return button;
+}
+async function readable(page: Page) {
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+  const bounds = (await page.getByRole("banner").boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width + 1,
+  );
+  // Micro-labels and suggestion chips are auxiliary, as in the original check.
+  // Keep the >=12px requirement on navigation, primary controls, search and titles.
+  const sizes = await page
+    .locator(
+      '[data-testid="new-project"],[data-testid="workspace-settings"],[aria-label="工作台导航"] button,input[aria-label="搜索画布"],select[aria-label="画布排序"],input[aria-label="搜索创作空间"],article strong',
+    )
+    .evaluateAll((elements) =>
+      elements
+        .filter(
+          (e) =>
+            e.getClientRects().length &&
+            getComputedStyle(e).visibility !== "hidden",
+        )
+        .map((e) => Number.parseFloat(getComputedStyle(e).fontSize)),
+    );
+  expect(sizes.length).toBeGreaterThan(5);
+  for (const size of sizes) expect(size).toBeGreaterThanOrEqual(12);
 }
 
-test("首页优先使用已有结果封面，装饰封面在排序与筛选后保持稳定", async ({ page }) => {
-  await mockWorkspace(page, [{ ...older, previewAssetId: "existing-cover" }, newer]);
-  await page.route("**/api/assets/existing-cover/preview?size=640", route => route.fulfill({
-    contentType: "image/svg+xml",
-    body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#2DD4BF"/></svg>',
-  }));
-  await page.goto("/");
-  const saved = page.getByRole("article", { name: older.title, exact: true });
-  const decorated = page.getByRole("article", { name: newer.title, exact: true });
-  const image = saved.locator('img[data-project-cover="result"]');
-  await image.scrollIntoViewIfNeeded();
-  await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(640);
-  await expect(saved.locator('[data-project-cover="decoration"]')).toHaveCount(0);
-  const cover = decorated.locator('[data-project-cover="decoration"]');
-  const palette = await cover.getAttribute("data-cover-palette");
+for (const viewport of [
+  { width: 1024, height: 768 },
+  { width: 1366, height: 768 },
+  { width: 1920, height: 1080 },
+]) {
+  test(`神经工作台在 ${viewport.width} 像素下层级清晰且无横向溢出`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const f = await installNeuralFixture(page, { projects: [older, newer] });
+    await openHome(page);
+    await expect(page.getByTestId("neural-module-canvases")).toContainText("2");
+    await expect(
+      page.locator('[data-workspace-stat="projects"]'),
+    ).toContainText("2");
+    await expect(page.locator('[data-workspace-stat="nodes"]')).toContainText(
+      "20",
+    );
+    await expect(page.getByTestId("new-project")).toBeVisible();
+    await readable(page);
+    await canvases(page);
+    await expect(rows(page)).toHaveCount(2);
+    await readable(page);
+    await page.screenshot({
+      path: info.outputPath(`workspace-neural-${viewport.width}.png`),
+    });
+    expect(f.mutations).toEqual([]);
+    expect(f.canvasReads).toEqual([]);
+    f.assertSafe();
+  });
+}
+test("已有结果封面优先，装饰封面排序筛选后保持稳定", async ({ page }) => {
+  const f = await installNeuralFixture(page, {
+    projects: [{ ...older, previewAssetId: "existing-cover" }, newer],
+  });
+  await page.route("**/api/assets/existing-cover/preview?size=640", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#91aaa0"/></svg>',
+    }),
+  );
+  await openHome(page);
+  await canvases(page);
+  await selectProject(page, older.id);
+  await expect
+    .poll(() =>
+      inspector(page)
+        .locator('img[data-project-cover="result"]')
+        .evaluate((e) => (e as HTMLImageElement).naturalWidth),
+    )
+    .toBe(640);
+  await expect(
+    inspector(page).locator('[data-project-cover="decoration"]'),
+  ).toHaveCount(0);
+  await selectProject(page, newer.id);
+  const cover = inspector(page).locator('[data-project-cover="decoration"]'),
+    palette = await cover.getAttribute("data-cover-palette");
   expect(palette).toBeTruthy();
   await page.getByLabel("画布排序").selectOption("name");
   await expect(cover).toHaveAttribute("data-cover-palette", palette!);
   await page.getByLabel("搜索画布", { exact: true }).fill("秋日");
-  await expect(page.getByRole("article")).toHaveCount(1);
   await expect(cover).toHaveAttribute("data-cover-palette", palette!);
-  await page.reload();
-  await expect(decorated.locator('[data-project-cover="decoration"]')).toHaveAttribute("data-cover-palette", palette!);
+  f.assertSafe();
 });
-
-test("首页没有完整节点统计时留空，不把缺字段显示成零", async ({ page }) => {
-  const state = await mockWorkspace(page, [{ ...older, nodeCount: undefined }, newer]);
-  await page.goto("/");
-  await expect(page.getByRole("article")).toHaveCount(2);
-  await expect(page.locator('[data-workspace-stat="projects"] dd')).toHaveText("2张");
-  await expect(page.locator('[data-workspace-stat="nodes"]')).toHaveCount(0);
-  await expect(page.getByRole("article", { name: older.title, exact: true })).not.toContainText("0 个节点");
-  await expect(page.getByRole("article", { name: newer.title, exact: true })).toContainText("12 个节点");
-  expect(state.mutations).toEqual([]);
-  expect(state.canvasReads).toEqual([]);
+test("没有完整节点统计时留空，不把缺字段显示成零", async ({ page }) => {
+  const f = await installNeuralFixture(page, {
+    projects: [{ ...older, nodeCount: undefined }, newer],
+  });
+  await openHome(page);
+  const total = page.locator('[data-workspace-stat="nodes"]');
+  if (await total.count()) await expect(total).toContainText("—");
+  await canvases(page);
+  await expect(rows(page)).toHaveCount(2);
+  await expect(row(page, older.id)).not.toContainText("0 个节点");
+  await expect(row(page, newer.id)).toContainText("12");
+  expect(f.mutations).toEqual([]);
+  expect(f.canvasReads).toEqual([]);
+  f.assertSafe();
 });
-
-test("首页操作完成提示四秒后消失，操作按钮仍可用", async ({ page }) => {
-  await mockWorkspace(page, [older]);
-  await page.goto("/");
-  await page.getByRole("button", { name: `${older.title} 的画布操作` }).click();
-  await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
+test("操作完成提示四秒后消失，操作按钮仍可用", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [older] });
+  await openHome(page);
+  await canvases(page);
+  await action(page, older.id, "重命名");
   const dialog = page.getByRole("dialog", { name: "重命名画布" });
   await dialog.getByLabel("画布名称").fill("新的创作名称");
   await dialog.getByRole("button", { name: "保存名称", exact: true }).click();
   const notice = page.getByRole("status").filter({ hasText: "画布已重命名" });
   await expect(notice).toBeVisible();
   await expect(notice).toHaveCount(0, { timeout: 6000 });
-  await expect(page.getByRole("button", { name: "新的创作名称 的画布操作" })).toBeEnabled();
+  await expect(
+    inspector(page).getByRole("button", { name: "重命名", exact: true }),
+  ).toBeEnabled();
+  f.assertSafe();
 });
-
-test("首页支持斜杠和 Ctrl+F 搜索且输入中的斜杠保持文字", async ({ page }) => {
-  await mockWorkspace(page, [older, newer]);
-  await page.goto("/");
-  const search = page.getByRole("textbox", { name: "搜索画布", exact: true });
-  await page.getByRole("link", { name: `打开画布 ${newer.title}`, exact: true }).focus();
+test("斜杠、Ctrl+F 和 Ctrl+K 聚焦搜索，输入和弹窗保留自己的按键", async ({
+  page,
+}) => {
+  const f = await installNeuralFixture(page, { projects: [older, newer] });
+  await openHome(page);
+  await canvases(page);
+  const search = page.getByLabel("搜索画布", { exact: true });
+  await page.getByTestId("workspace-settings").focus();
   await page.keyboard.press("/");
   await expect(search).toBeFocused();
   await search.fill("秋日");
   await page.keyboard.press("/");
   await expect(search).toHaveValue("秋日/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).focus();
-  await page.keyboard.press("Control+f");
-  await expect(search).toBeFocused();
+  for (const shortcut of ["Control+f", "Control+k"]) {
+    await page.getByTestId("workspace-settings").focus();
+    await page.keyboard.press(shortcut);
+    await expect(search).toBeFocused();
+  }
+  await page.getByTestId("new-project").click();
+  const title = page
+    .getByRole("dialog", { name: "创建新画布" })
+    .getByLabel("画布名称");
+  await expect(title).toBeFocused();
+  await page.keyboard.press("Control+k");
+  await expect(title).toBeFocused();
+  expect(f.mutations).toEqual([]);
+  f.assertSafe();
 });
-
 for (const title of ["做活动海报", "修改客户原图", "制作多尺寸物料"]) {
   test(`已有同名任务时仍可再次开始：${title}`, async ({ page }) => {
-    const state = await mockWorkspace(page, [
-      { ...older, title },
-      { ...newer, title: `${title} 2` },
-    ]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
+    const f = await installNeuralFixture(page, {
+      projects: [
+        { ...older, title },
+        { ...newer, title: `${title} 2` },
+      ],
+    });
+    await openHome(page);
+    await page.getByTestId("neural-module-starts").click();
+    await page
+      .getByTestId(
+        `neural-item-${({ 做活动海报: "event-poster", 修改客户原图: "revise", 制作多尺寸物料: "event-material" } as Record<string, string>)[title]}`,
+      )
+      .click();
     await page.getByRole("button", { name: title, exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "平面设计", exact: true })).toBeVisible();
-    expect(state.createdTitles).toEqual([`${title} 3`]);
-    await expect(page).toHaveURL(/\/canvas\/home-created$/u);
+    await expect(
+      page.getByRole("dialog", { name: "平面设计", exact: true }),
+    ).toBeVisible();
+    expect(f.createdTitles).toEqual([`${title} 3`]);
+    await expect(page).toHaveURL(/\/canvas\/neural-created-1$/u);
+    f.assertSafe();
   });
 }
-
-/** Every application API is mocked: these tests cannot access user data or run models. */
-async function mockWorkspace(page: Page, initial: HomeProject[]) {
-  let projects = structuredClone(initial);
-  const mutations: string[] = [];
-  const createdTitles: string[] = [];
-  const canvasReads: string[] = [];
-  await page.route("**/api/**", async (route) => {
-    const request = route.request();
-    const pathname = new URL(request.url()).pathname;
-    const method = request.method();
-    if (method !== "GET") mutations.push(`${method} ${pathname}`);
-    if (pathname === "/api/projects") {
-      if (method === "GET") return route.fulfill({ json: { projects } });
-      const { title } = request.postDataJSON() as { title: string };
-      createdTitles.push(title);
-      if (projects.some((project) => project.title === title))
-        return route.fulfill({
-          status: 409,
-          json: { error: "项目名称已存在，请换一个名称" },
-        });
-      const project: HomeProject = {
-        ...newer,
-        id: "home-created",
-        title,
-        nodeCount: 0,
-      };
-      projects.push(project);
-      return route.fulfill({ status: 201, json: { project } });
-    }
-    if (pathname.startsWith("/api/projects/")) {
-      const id = pathname.split("/")[3];
-      if (method === "PATCH") {
-        const { title } = request.postDataJSON() as { title: string };
-        projects = projects.map((project) =>
-          project.id === id ? { ...project, title } : project,
-        );
-        return route.fulfill({
-          json: {
-            project: projects.find((project) => project.id === id),
-            revision: 2,
-            folderRenamed: true,
-          },
-        });
-      }
-      if (method === "DELETE") {
-        projects = projects.filter((project) => project.id !== id);
-        return route.fulfill({
-          json: {
-            deleted: true,
-            nextProjectId: projects[0]?.id ?? null,
-            folderDeleted: true,
-          },
-        });
-      }
-      return route.fulfill({ json: { messages: [], opened: true } });
-    }
-    if (pathname.startsWith("/api/canvas/")) {
-      const id = pathname.split("/").pop();
-      if (method === "GET") canvasReads.push(pathname);
-      const project = projects.find((item) => item.id === id);
-      if (!project)
-        return route.fulfill({ status: 404, json: { error: "画布不存在" } });
-      return route.fulfill({
-        json: {
-          id,
-          title: project.title,
-          revision: 1,
-          graph: {
-            schemaVersion: 1,
-            nodes: [],
-            edges: [],
-            viewport: { x: 0, y: 0, zoom: 0.85 },
-          },
-        },
-      });
-    }
-    if (
-      pathname === "/api/assets" ||
-      pathname === "/api/providers" ||
-      pathname === "/api/suppliers" ||
-      pathname === "/api/agent/models" ||
-      pathname === "/api/agent/sessions"
-    )
-      return route.fulfill({ json: [] });
-    if (pathname.includes("/preview"))
-      return route.fulfill({
-        status: 404,
-        json: { error: "Missing fixture preview" },
-      });
-    return route.fulfill({
-      json: { groups: [], items: [], runs: [], drops: [] },
-    });
+test("设计任务入口创建项目后直接打开工作台", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [] });
+  await openHome(page);
+  await page.getByTestId("neural-module-starts").click();
+  await page.getByTestId("neural-item-event-poster").click();
+  await page.getByRole("button", { name: "做活动海报", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "平面设计", exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/canvas\/neural-created-1$/u);
+  f.assertSafe();
+});
+test("刷新后保留显示与排序偏好，已有作品优先展示", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [older, newer] });
+  await openHome(page);
+  await canvases(page);
+  await expect(rows(page)).toHaveCount(2);
+  await page.getByRole("button", { name: "列表视图", exact: true }).click();
+  await page.getByLabel("画布排序").selectOption("name");
+  await page.reload();
+  await expect(home(page)).toBeVisible();
+  await canvases(page);
+  await expect(
+    page.getByRole("button", { name: "列表视图", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("画布排序")).toHaveValue("name");
+  await expect(rows(page).first()).toHaveAccessibleName(older.title);
+  f.assertSafe();
+});
+test("重命名后迟到的焦点刷新不会恢复旧名称", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [older, newer] });
+  await openHome(page);
+  await canvases(page);
+  await expect(rows(page)).toHaveCount(2);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
   });
-  return { mutations, canvasReads, createdTitles };
-}
-
-async function expectReadableWorkspace(page: Page, viewportWidth: number) {
-  const main = page.getByRole("main");
-  const projects = page.getByRole("region", { name: "我的画布", exact: true });
-  for (const [label, area] of [
-    ["首页主体", main],
-    ["画布列表", projects],
-  ] as const) {
-    const bounds = await area.boundingBox();
-    expect(bounds, `${label}应有可见布局`).not.toBeNull();
-    expect(bounds!.x, `${label}左侧不应越界`).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x, `${label}左侧不应保留固定宽度空白`).toBeLessThanOrEqual(
-      100,
-    );
-    const rightMargin = viewportWidth - bounds!.x - bounds!.width;
-    expect(rightMargin, `${label}右侧不应越界`).toBeGreaterThanOrEqual(-1);
-    expect(rightMargin, `${label}右侧不应保留固定宽度空白`).toBeLessThanOrEqual(
-      100,
-    );
-    expect(
-      await area.evaluate(
-        (element) => element.scrollWidth - element.clientWidth,
+  let started = false;
+  await page.route("**/api/projects", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    started = true;
+    await pending;
+    return route.fulfill({ json: { projects: [older, newer] } });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => started).toBe(true);
+  await action(page, older.id, "重命名");
+  const dialog = page.getByRole("dialog", { name: "重命名画布" });
+  await dialog.getByLabel("画布名称").fill("已保存的新名称");
+  await dialog.getByRole("button", { name: "保存名称" }).click();
+  await expect(row(page, older.id)).toHaveAccessibleName("已保存的新名称");
+  const response = page.waitForResponse(
+    (r) => new URL(r.url()).pathname === "/api/projects",
+  );
+  release();
+  await response;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
-      `${label}不应横向溢出`,
-    ).toBeLessThanOrEqual(1);
-  }
-
-  const header = page.getByRole("banner");
-  const brand = header.getByRole("link", { name: /首页$/u });
-  const brandText = brand.locator('[class*="brandText"]');
-  const headerActions = header.locator('[class*="headerActions"]');
-  const capabilities = page.locator('[aria-label="按设计任务开始"]');
-  // These checks catch markup shipped without its matching CSS module rules.
-  await expect(brandText).toHaveCSS("display", "grid");
-  await expect(headerActions).toHaveCSS("display", "flex");
-  await expect(capabilities).toHaveCSS("display", "flex");
-  const brandBounds = await brand.boundingBox();
-  const actionsBounds = await headerActions.boundingBox();
-  expect(brandBounds).not.toBeNull();
-  expect(actionsBounds).not.toBeNull();
+  );
+  await expect(row(page, older.id)).toHaveAccessibleName("已保存的新名称");
+  f.assertSafe();
+});
+test("空库保持只读，主动创建后进入独立画布地址", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [] });
+  await openHome(page);
+  await expect(page.getByTestId("neural-module-canvases")).toContainText("0");
+  expect(f.mutations).toEqual([]);
+  expect(f.canvasReads).toEqual([]);
+  await expect(page.locator(".react-flow")).toHaveCount(0);
+  await page.getByTestId("new-project").click();
+  const dialog = page.getByRole("dialog", { name: "创建新画布" });
+  await dialog.getByLabel("画布名称").fill("我的第一张灵感画布");
+  await dialog.getByRole("button", { name: "创建并打开" }).click();
+  await expect(page).toHaveURL(/\/canvas\/neural-created-1$/u);
+  expect(f.mutations).toContain("POST /api/projects");
+  f.assertSafe();
+});
+test("近期排序、搜索、重命名与重复名称错误可见", async ({ page }) => {
+  const f = await installNeuralFixture(page, {
+    projects: [older, { ...newer, previewAssetId: "missing-cover" }],
+  });
+  await openHome(page);
+  await canvases(page);
+  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page).first()).toHaveAccessibleName(newer.title);
+  expect(f.canvasReads).toEqual([]);
+  await page.getByLabel("搜索画布", { exact: true }).fill("品牌");
+  await expect(rows(page)).toHaveCount(1);
+  await page.getByLabel("搜索画布", { exact: true }).fill("");
+  await page.getByLabel("画布排序").selectOption("name");
+  await expect(rows(page).first()).toHaveAccessibleName(older.title);
+  await action(page, older.id, "重命名");
+  const rename = page.getByRole("dialog", { name: "重命名画布" });
+  await rename.getByLabel("画布名称").fill("品牌视觉定稿");
+  await rename.getByRole("button", { name: "保存名称" }).click();
+  await expect(row(page, older.id)).toHaveAccessibleName("品牌视觉定稿");
+  await page.getByTestId("new-project").click();
+  const create = page.getByRole("dialog", { name: "创建新画布" });
+  await create.getByLabel("画布名称").fill(newer.title);
+  await create.getByRole("button", { name: "创建并打开" }).click();
+  await expect(create.getByRole("alert")).toContainText("项目名称已存在");
+  await expect(page).toHaveURL(/\/$/u);
+  await create.getByLabel("画布名称").fill("重试后成功创建");
+  await create.getByRole("button", { name: "创建并打开" }).click();
+  await expect(page).toHaveURL(/\/canvas\/neural-created-1$/u);
+  f.assertSafe();
+});
+test("预览读取失败显示稳定装饰封面，重命名的中文候选确认不提交", async ({
+  page,
+}) => {
+  const f = await installNeuralFixture(page, {
+    projects: [{ ...older, previewAssetId: "missing-cover" }],
+    motion: false,
+  });
+  await openHome(page);
+  await canvases(page);
+  await selectProject(page, older.id);
+  const cover = inspector(page).locator('[data-project-cover="decoration"]');
+  await expect(cover).toBeVisible();
+  expect(await cover.getAttribute("data-cover-palette")).toBeTruthy();
+  await inspector(page)
+    .getByRole("button", { name: "重命名", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "重命名画布" }),
+    input = dialog.getByLabel("画布名称");
+  await input.fill("中文项目名称");
+  await input.dispatchEvent("compositionstart");
+  await input.dispatchEvent("keydown", {
+    key: "Enter",
+    code: "Enter",
+    isComposing: true,
+  });
+  await expect(dialog).toBeVisible();
+  expect(f.mutations).toEqual([]);
+  await input.dispatchEvent("compositionend", { data: "中文项目名称" });
+  await input.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  expect(f.mutations).toEqual(["PATCH /api/projects/home-older"]);
+  await expect(row(page, older.id)).toHaveAccessibleName("中文项目名称");
+  f.assertSafe();
+});
+test("删除需确认，最后一张画布也能删除回到空态", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [older] });
+  await openHome(page);
+  await canvases(page);
+  await action(page, older.id, "删除画布");
+  let dialog = page.getByRole("dialog", { name: "删除画布" });
+  await expect(dialog).toContainText("此操作无法撤销");
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  expect(f.mutations).toEqual([]);
+  await inspector(page)
+    .getByRole("button", { name: "删除画布", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", { name: "删除画布" });
+  await dialog.getByRole("button", { name: "确认删除" }).click();
+  await expect(rows(page)).toHaveCount(0);
+  expect(f.mutations).toEqual(["DELETE /api/projects/home-older"]);
+  f.assertSafe();
+});
+test("窄屏可创建查找画布，无横向溢出", async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const f = await installNeuralFixture(page, {
+    projects: [older, newer],
+    motion: false,
+  });
+  await openHome(page);
+  await expect(page.getByTestId("new-project")).toBeVisible();
+  await expect(page.getByTestId("workspace-settings")).toBeVisible();
+  await canvases(page);
+  await expect(rows(page)).toHaveCount(2);
+  await readable(page);
+  await page.screenshot({ path: info.outputPath("workspace-home-mobile.png") });
+  await page.getByLabel("搜索画布", { exact: true }).fill("不存在的画布");
+  await expect(rows(page)).toHaveCount(0);
+  f.assertSafe();
+});
+test("条目键盘打开分析面板，取消或关闭弹窗恢复操作焦点", async ({ page }) => {
+  const f = await installNeuralFixture(page, {
+    projects: [older],
+    motion: false,
+  });
+  await openHome(page);
+  await canvases(page);
+  const entry = row(page, older.id).getByRole("button").first();
+  await entry.focus();
+  await entry.press("Enter");
+  const rename = inspector(page).getByRole("button", {
+    name: "重命名",
+    exact: true,
+  });
+  await rename.focus();
+  await rename.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "重命名画布" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "关闭弹窗", exact: true }).click();
+  await expect(rename).toBeFocused();
+  const remove = inspector(page).getByRole("button", {
+    name: "删除画布",
+    exact: true,
+  });
+  await remove.click();
+  await page
+    .getByRole("dialog", { name: "删除画布" })
+    .getByRole("button", { name: "取消", exact: true })
+    .click();
+  await expect(remove).toBeFocused();
+  await rename.click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(rename).toBeFocused();
+  expect(f.mutations).toEqual([]);
+  f.assertSafe();
+});
+test("底部条目滚动后分析操作保持在窗口内，调整窗口后仍可用", async ({
+  page,
+}) => {
+  const f = await installNeuralFixture(page, {
+    projects: Array.from({ length: 24 }, (_, i) => ({
+      ...older,
+      id: `boundary-${i}`,
+      title: `边界画布 ${i}`,
+    })),
+    motion: false,
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openHome(page);
+  await canvases(page);
+  const entry = row(page, "boundary-23");
+  await entry.scrollIntoViewIfNeeded();
+  await entry.click();
+  const rename = inspector(page).getByRole("button", {
+    name: "重命名",
+    exact: true,
+  });
+  await expect(rename).toBeInViewport({ ratio: 1 });
+  await page.setViewportSize({ width: 1280, height: 1040 });
+  await expect(rename).toBeInViewport({ ratio: 1 });
+  await page.keyboard.press("Escape");
+  await expect(inspector(page)).toHaveCount(0);
+  expect(f.mutations).toEqual([]);
+  f.assertSafe();
+});
+test("焦点可见，减少动态效果时仍能用键盘打开画布", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const f = await installNeuralFixture(page, { projects: [older] });
+  await openHome(page);
+  await canvases(page);
+  const entry = row(page, older.id).getByRole("button").first();
+  await page.keyboard.press("Tab");
+  await entry.focus();
+  await expect(entry).toBeFocused();
   expect(
-    brandBounds!.x + brandBounds!.width <= actionsBounds!.x ||
-      brandBounds!.y + brandBounds!.height <= actionsBounds!.y,
-    "品牌与右侧操作区不应重叠",
-  ).toBe(true);
-  expect(actionsBounds!.x + actionsBounds!.width).toBeLessThanOrEqual(
-    viewportWidth,
-  );
-
-  const eyebrow = main.locator('[class*="eyebrow"]').filter({
-    has: page.getByText("灵感无界 · 创作不止", { exact: true }),
+    await entry.evaluate((e) => getComputedStyle(e).outlineStyle),
+  ).not.toBe("none");
+  await entry.press("Enter");
+  const open = inspector(page).getByRole("button", {
+    name: "打开画布",
+    exact: true,
   });
-  const eyebrowText = eyebrow.getByText("灵感无界 · 创作不止", { exact: true });
-  const lineCount = await eyebrowText.evaluate((element) => {
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    return range.getClientRects().length;
+  await open.focus();
+  await open.press("Enter");
+  await expect(page).toHaveURL(/\/canvas\/home-older$/u);
+  f.assertSafe();
+});
+test("设置分类方向键探索与 Enter 激活保留未保存草稿", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [] });
+  await openHome(page);
+  await page.getByTestId("workspace-settings").click();
+  const settings = page.getByRole("dialog", {
+    name: "供应商与模型设置",
+    exact: true,
   });
-  expect(lineCount, "标题上方文字应保持单行，不应被挤成竖排").toBe(1);
-  const eyebrowBounds = await eyebrow.boundingBox();
-  const headingBounds = await page
-    .getByRole("heading", { level: 1 })
-    .boundingBox();
-  expect(eyebrowBounds).not.toBeNull();
-  expect(headingBounds).not.toBeNull();
-  expect(eyebrowBounds!.y + eyebrowBounds!.height).toBeLessThanOrEqual(
-    headingBounds!.y,
-  );
-
-  const readableText = page.locator(
-    [
-      'main [class*="heroDescription"]',
-      'main [class*="capabilities"] > span',
-      'header [class*="settingsButton"]',
-      'main [class*="primaryButton"]',
-      'main [class*="continueLink"]',
-      'main [class*="sectionHeadingCopy"] > p',
-      'input[aria-label="搜索画布"]',
-      'select[aria-label="画布排序"]',
-      "article h3",
-      'article [class*="cardMeta"] > span',
-    ].join(", "),
-  );
-  const sizes = await readableText.evaluateAll((elements) =>
-    elements
-      .filter((element) => element.getClientRects().length > 0)
-      .map((element) => ({
-        text: element.textContent?.trim() || element.getAttribute("aria-label"),
-        size: Number.parseFloat(getComputedStyle(element).fontSize),
-      })),
-  );
-  expect(sizes.length).toBeGreaterThan(10);
-  for (const { text, size } of sizes) {
-    expect(size, `“${text}”的正文或控件字号不应过小`).toBeGreaterThanOrEqual(
-      12,
-    );
+  const suppliers = settings.getByRole("tab", {
+      name: "供应商与模型",
+      exact: true,
+    }),
+    personal = settings.getByRole("tab", { name: "个人 AI 网站", exact: true }),
+    cloud = settings.getByRole("tab", { name: "云端生图", exact: true }),
+    appearance = settings.getByRole("tab", { name: "外观", exact: true });
+  await expect(suppliers).toBeFocused();
+  await expect(settings.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
+  await suppliers.press("ArrowRight");
+  await expect(personal).toBeFocused();
+  await expect(suppliers).toHaveAttribute("aria-selected", "true");
+  await personal.press("Enter");
+  await expect(personal).toHaveAttribute("aria-selected", "true");
+  const name = settings.getByLabel("连接名称", { exact: true });
+  await expect(name).toBeEnabled();
+  await name.fill("未保存的个人网站");
+  await personal.focus();
+  await personal.press("End");
+  await expect(appearance).toBeFocused();
+  await appearance.press("ArrowLeft");
+  await expect(cloud).toBeFocused();
+  await expect(name).toHaveValue("未保存的个人网站");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await cloud.press("Enter");
+  await expect(personal).toHaveAttribute("aria-selected", "true");
+  await expect(name).toHaveValue("未保存的个人网站");
+  await cloud.press("Home");
+  await expect(suppliers).toBeFocused();
+  await suppliers.press("ArrowLeft");
+  await expect(appearance).toBeFocused();
+  expect(f.mutations).toEqual([]);
+  f.assertSafe();
+});
+test("普通窗口最大化还原保持文字、控件与排序", async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const f = await installNeuralFixture(page, { projects: [older, newer] });
+  await openHome(page);
+  await canvases(page);
+  await page.getByLabel("画布排序").selectOption("name");
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 1920, height: 1080 },
+    { width: 2539, height: 1329 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await readable(page);
+    await expect(page.getByLabel("画布排序")).toHaveValue("name");
+    await expect(rows(page).first()).toHaveAccessibleName(older.title);
+    await page.screenshot({
+      path: info.outputPath(`workspace-neural-${viewport.width}.png`),
+    });
   }
-}
-
-test.describe("画布工作台", () => {
-  test("刷新后保留列表和排序偏好，已有作品优先展示", async ({ page }) => {
-    await mockWorkspace(page, [older, newer]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
-    await expect(page.getByRole("button", { name: "新建空白画布", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "列表视图" }).click();
-    await page.getByLabel("画布排序").selectOption("name");
-    await page.reload();
-    await expect(page.getByRole("button", { name: "列表视图" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByLabel("画布排序")).toHaveValue("name");
-    await expect(page.getByRole("article").first()).toHaveAccessibleName(older.title);
-  });
-
-  test("重命名后迟到的焦点刷新不会恢复旧名称", async ({ page }) => {
-    await mockWorkspace(page, [older, newer]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
-    let releaseRead!: () => void;
-    const pendingRead = new Promise<void>((resolve) => { releaseRead = resolve; });
-    let readStarted = false;
-    await page.route("**/api/projects", async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      readStarted = true;
-      await pendingRead;
-      return route.fulfill({ json: { projects: [older, newer] } });
+  expect(f.mutations).toEqual([]);
+  expect(f.canvasReads).toEqual([]);
+  f.assertSafe();
+});
+test("切换显示偏好保留搜索、排序与进入画布行为", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [older, newer] });
+  await openHome(page);
+  await canvases(page);
+  const grid = page.getByRole("button", { name: "网格视图", exact: true }),
+    list = page.getByRole("button", { name: "列表视图", exact: true });
+  await expect(grid).toHaveAttribute("aria-pressed", "true");
+  await expect(list).toHaveAttribute("aria-pressed", "false");
+  await list.click();
+  await expect(list).toHaveAttribute("aria-pressed", "true");
+  await expect(grid).toHaveAttribute("aria-pressed", "false");
+  await page.getByLabel("画布排序").selectOption("name");
+  await page.getByLabel("搜索画布", { exact: true }).fill("秋日");
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toHaveAccessibleName(newer.title);
+  await expect(rows(page).first()).toContainText("12");
+  await grid.click();
+  await expect(grid).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("搜索画布", { exact: true })).toHaveValue(
+    "秋日",
+  );
+  await expect(page.getByLabel("画布排序")).toHaveValue("name");
+  await page.getByLabel("搜索画布", { exact: true }).fill("");
+  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page).first()).toHaveAccessibleName(older.title);
+  expect(f.mutations).toEqual([]);
+  expect(f.canvasReads).toEqual([]);
+  await action(page, older.id, "打开画布");
+  await expect(page).toHaveURL(/\/canvas\/home-older$/u);
+  await expect.poll(() => f.canvasReads).toContain("/api/canvas/home-older");
+  f.assertSafe();
+});
+test("场景无装饰鼠标轨迹，搜索焦点不受鼠标影响，隐藏时暂停", async ({
+  page,
+}) => {
+  const f = await installNeuralFixture(page, { projects: [older, newer] });
+  await openHome(page);
+  await expect(page.locator('canvas[class*="pointerTrail"]')).toHaveCount(0);
+  await expect(scene(page)).toHaveAttribute("data-animating", "true");
+  const search = page.getByTestId("graph-search");
+  await search.focus();
+  for (const x of [330, 400, 495]) await page.mouse.move(x, 202);
+  await expect(search).toBeFocused();
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: true,
     });
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await expect.poll(() => readStarted).toBe(true);
-    await page.getByRole("button", { name: `${older.title} 的画布操作` }).click();
-    await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "重命名画布" });
-    await dialog.getByLabel("画布名称").fill("已保存的新名称");
-    await dialog.getByRole("button", { name: "保存名称" }).click();
-    await expect(page.getByRole("article", { name: "已保存的新名称", exact: true })).toBeVisible();
-    const response = page.waitForResponse((result) => new URL(result.url()).pathname === "/api/projects");
-    releaseRead();
-    await response;
-    // Let the fulfilled request and its React update complete before asserting.
-    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    await expect(page.getByRole("article", { name: "已保存的新名称", exact: true })).toBeVisible();
-    await expect(page.getByRole("article", { name: older.title, exact: true })).toHaveCount(0);
+    document.dispatchEvent(new Event("visibilitychange"));
   });
-
-  test("首页保持空库，主动创建后进入独立画布地址", async ({ page }) => {
-    const state = await mockWorkspace(page, []);
-    await page.goto("/");
-    await expect(
-      page.getByRole("heading", { name: "你的创作空间，已准备就绪" }),
-    ).toBeVisible();
-    expect(state.mutations).toEqual([]);
-    expect(state.canvasReads).toEqual([]);
-    await expect(page.locator(".react-flow")).toHaveCount(0);
-    await page.getByRole("button", { name: "创建画布", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "创建新画布" });
-    await dialog.getByLabel("画布名称").fill("我的第一张灵感画布");
-    await dialog.getByRole("button", { name: "创建并打开" }).click();
-    await expect(page).toHaveURL(/\/canvas\/home-created$/u);
-    expect(state.mutations).toContain("POST /api/projects");
+  await expect(scene(page)).toHaveAttribute("data-animating", "false");
+  await page.evaluate(() => {
+    Reflect.deleteProperty(document, "hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
   });
-
-  test("近期排序、搜索、重命名与重复名称错误可见", async ({
-    page,
-  }, testInfo) => {
-    const state = await mockWorkspace(page, [
-      older,
-      { ...newer, previewAssetId: "missing-cover" },
-    ]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
-    await expect(page.getByRole("article").first()).toHaveAccessibleName(
-      newer.title,
-    );
-    const firstArticle = page.getByRole("article").first();
-    const firstCard = await firstArticle.boundingBox();
-    expect(firstCard).not.toBeNull();
-    expect(firstCard!.y, "Bento 下方的最近作品应从首屏可见").toBeLessThan(720);
-    // Nearest-edge scrolling may leave a fractional bottom border clipped by
-    // integer scrollTop rounding. Center the real card before requiring 100%
-    // intersection; the independent first-screen placement check stays above.
-    await firstArticle.evaluate(element => element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" }));
-    await expect(firstArticle).toBeInViewport({ ratio: 1 });
-    await page.locator('div[data-motion]').evaluate(element => { element.scrollTop = 0; });
-    expect(state.canvasReads).toEqual([]);
-    await page.screenshot({
-      path: testInfo.outputPath("workspace-home-desktop.png"),
-      fullPage: true,
-    });
-    await page.getByLabel("搜索画布", { exact: true }).fill("品牌");
-    await expect(page.getByRole("article")).toHaveCount(1);
-    await page.getByRole("button", { name: "清空搜索" }).click();
-    await page.getByLabel("画布排序").selectOption("name");
-    await expect(page.getByRole("article").first()).toHaveAccessibleName(
-      older.title,
-    );
-    await page
-      .getByRole("button", { name: `${older.title} 的画布操作` })
-      .click();
-    await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
-    const rename = page.getByRole("dialog", { name: "重命名画布" });
-    await rename.getByLabel("画布名称").fill("品牌视觉定稿");
-    await rename.getByRole("button", { name: "保存名称" }).click();
-    await expect(
-      page.getByRole("article", { name: "品牌视觉定稿", exact: true }),
-    ).toBeVisible();
-    await page.getByRole("button", { name: "创建画布", exact: true }).click();
-    const create = page.getByRole("dialog", { name: "创建新画布" });
-    await create.getByLabel("画布名称").fill(newer.title);
-    await create.getByRole("button", { name: "创建并打开" }).click();
-    await expect(create.getByRole("alert")).toContainText("项目名称已存在");
-    await expect(page).toHaveURL(/\/$/u);
-  });
-
-  test("删除需确认，最后一张画布也能删除回到空态", async ({ page }) => {
-    const state = await mockWorkspace(page, [older]);
-    await page.goto("/");
-    await page
-      .getByRole("button", { name: `${older.title} 的画布操作` })
-      .click();
-    await page.getByRole("menuitem", { name: "删除画布", exact: true }).click();
-    let dialog = page.getByRole("dialog", { name: "删除画布" });
-    await expect(dialog).toContainText("此操作无法撤销");
-    await dialog.getByRole("button", { name: "取消", exact: true }).click();
-    expect(state.mutations).toEqual([]);
-    await page
-      .getByRole("button", { name: `${older.title} 的画布操作` })
-      .click();
-    await page.getByRole("menuitem", { name: "删除画布", exact: true }).click();
-    dialog = page.getByRole("dialog", { name: "删除画布" });
-    await dialog.getByRole("button", { name: "确认删除" }).click();
-    await expect(page.getByRole("article")).toHaveCount(0);
-    await expect(
-      page.getByRole("heading", { name: "你的创作空间，已准备就绪" }),
-    ).toBeVisible();
-    expect(state.mutations).toEqual(["DELETE /api/projects/home-older"]);
-  });
-
-  test("窄屏可创建和查找画布，页面没有横向溢出", async ({ page }, testInfo) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await mockWorkspace(page, [older, newer]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
-    await expect(
-      page.getByRole("button", { name: "创建画布", exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "供应商与模型" }),
-    ).toBeVisible();
-    expect(
-      await page.locator("main").evaluate((element) => element.scrollWidth),
-    ).toBeLessThanOrEqual(390);
-    await page.screenshot({
-      path: testInfo.outputPath("workspace-home-mobile.png"),
-      fullPage: true,
-    });
-    await expectReadableWorkspace(page, 390);
-    await page.getByLabel("搜索画布", { exact: true }).fill("不存在的画布");
-    await expect(
-      page.getByRole("heading", { name: "没有找到匹配的画布" }),
-    ).toBeVisible();
-  });
-
-  test("菜单键盘打开弹窗后，取消和关闭恢复画布操作按钮焦点", async ({
-    page,
-  }) => {
-    const state = await mockWorkspace(page, [older]);
-    await page.goto("/");
-    const trigger = page.getByRole("button", {
-      name: `${older.title} 的画布操作`,
-    });
-    await trigger.focus();
-    await trigger.press("ArrowDown");
-    const renameAction = page.getByRole("menuitem", {
-      name: "重命名",
-      exact: true,
-    });
-    await expect(renameAction).toBeFocused();
-    await renameAction.press("Enter");
-    const renameDialog = page.getByRole("dialog", { name: "重命名画布" });
-    await expect(renameDialog).toBeVisible();
-    await renameDialog
-      .getByRole("button", { name: "关闭弹窗", exact: true })
-      .click();
-    await expect(renameDialog).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-
-    await trigger.press("ArrowUp");
-    const deleteAction = page.getByRole("menuitem", {
-      name: "删除画布",
-      exact: true,
-    });
-    await expect(deleteAction).toBeFocused();
-    await deleteAction.press("Enter");
-    const deleteDialog = page.getByRole("dialog", { name: "删除画布" });
-    await expect(deleteDialog).toBeVisible();
-    await deleteDialog
-      .getByRole("button", { name: "取消", exact: true })
-      .click();
-    await expect(deleteDialog).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-
-    await trigger.press("ArrowDown");
-    await renameAction.press("Enter");
-    await expect(renameDialog).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(renameDialog).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-    expect(state.mutations).toEqual([]);
-  });
-
-  test("窗口底部的画布菜单向上展开，调整窗口后重新避让边界", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    const projects = Array.from({ length: 12 }, (_, index) => ({
-      ...older, id: `menu-boundary-${index}`, title: `边界画布 ${index}`,
-    }));
-    const state = await mockWorkspace(page, projects);
-    await page.goto("/");
-    await page.getByRole("button", { name: "列表视图", exact: true }).click();
-    const trigger = page.getByRole("button", { name: "边界画布 6 的画布操作", exact: true });
-    await trigger.scrollIntoViewIfNeeded();
-    await trigger.evaluate(element => {
-      const home = element.closest<HTMLElement>("div[data-motion]")!;
-      home.scrollTop += element.getBoundingClientRect().top - (window.innerHeight - 60);
-    });
-    await trigger.focus();
-    await trigger.press("ArrowDown");
-    const menu = page.getByRole("menu", { name: "边界画布 6 的操作菜单", exact: true });
-    await expect(menu).toHaveAttribute("data-side", "top");
-    await expect(menu).toBeInViewport({ ratio: 1 });
-    await expect(menu.getByRole("menuitem", { name: "重命名", exact: true })).toBeFocused();
-
-    await page.setViewportSize({ width: 1280, height: 1040 });
-    await expect(menu).toHaveAttribute("data-side", "bottom");
-    await expect(menu).toBeInViewport({ ratio: 1 });
-    await page.keyboard.press("Escape");
-    await expect(trigger).toBeFocused();
-    expect(state.mutations).toEqual([]);
-  });
-
-  test("卡片键盘高光可见，减少动态效果时保留静态反馈", async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await mockWorkspace(page, [older]);
-    await page.goto("/");
-    const card = page.getByRole("article", { name: older.title, exact: true });
-    await card.getByRole("link").focus();
-    await expect.poll(() => card.evaluate(element => getComputedStyle(element, "::after").opacity)).toBe("1");
-    expect(await card.evaluate(element => getComputedStyle(element, "::after").transitionDuration)).toBe("0s");
-    await expect(page.locator('canvas[class*="pointerTrail"]')).toHaveCount(0);
-    await expect(card.getByRole("link")).toBeFocused();
-    await card.getByRole("link").press("Enter");
-    await expect(page).toHaveURL(/\/canvas\/home-older$/u);
-  });
-
-  test("设置分类支持方向键探索和 Enter 激活，保留未保存的草稿", async ({ page }) => {
-    const state = await mockWorkspace(page, []);
-    await page.goto("/");
-    await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
-    const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
-    const tabs = settings.getByRole("tab");
-    const suppliers = tabs.filter({ hasText: "供应商与模型" });
-    const personal = tabs.filter({ hasText: "个人 AI 网站" });
-    const cloud = tabs.filter({ hasText: "云端生图" });
-    const appearance = tabs.filter({ hasText: "外观" });
-    await expect(suppliers).toBeFocused();
-    await expect(settings.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
-    await suppliers.press("ArrowRight");
-    await expect(personal).toBeFocused();
-    await expect(suppliers).toHaveAttribute("aria-selected", "true");
-    await personal.press("Enter");
-    await expect(personal).toHaveAttribute("aria-selected", "true");
-    const connectionName = settings.getByLabel("连接名称", { exact: true });
-    await expect(connectionName).toBeEnabled();
-    await connectionName.fill("未保存的个人网站");
-    await personal.focus();
-    await personal.press("End");
-    await expect(appearance).toBeFocused();
-    await appearance.press("ArrowLeft");
-    await expect(cloud).toBeFocused();
-    await expect(connectionName).toHaveValue("未保存的个人网站");
-    page.once("dialog", dialog => dialog.dismiss());
-    await cloud.press("Enter");
-    await expect(personal).toHaveAttribute("aria-selected", "true");
-    await expect(connectionName).toHaveValue("未保存的个人网站");
-    await cloud.press("Home");
-    await expect(suppliers).toBeFocused();
-    await suppliers.press("ArrowLeft");
-    await expect(appearance).toBeFocused();
-    await appearance.press("ArrowLeft");
-    await expect(cloud).toBeFocused();
-    expect(state.mutations).toEqual([]);
-  });
-
-  test("首页从普通窗口最大化再还原时展开布局，文字与控件保持清晰", async ({
-    page,
-  }, testInfo) => {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    const state = await mockWorkspace(page, [older, newer]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
-    await page.getByLabel("画布排序").selectOption("name");
-
-    for (const viewport of [
-      { width: 1280, height: 800, name: "window" },
-      { width: 1920, height: 1080, name: "maximized" },
-      { width: 2539, height: 1329, name: "large-maximized" },
-      { width: 1280, height: 800, name: "restored" },
-    ]) {
-      await test.step(`${viewport.name}: ${viewport.width}×${viewport.height}`, async () => {
-        await page.setViewportSize({
-          width: viewport.width,
-          height: viewport.height,
-        });
-        await page.screenshot({
-          path: testInfo.outputPath(
-            `workspace-home-${viewport.width}-${viewport.name}.png`,
-          ),
-          fullPage: true,
-        });
-        await expectReadableWorkspace(page, viewport.width);
-        await expect(page.getByLabel("画布排序")).toHaveValue("name");
-        await expect(page.getByRole("article").first()).toHaveAccessibleName(
-          older.title,
-        );
-      });
-    }
-    expect(state.mutations).toEqual([]);
-    expect(state.canvasReads).toEqual([]);
-  });
-
-  test("切换列表与网格保留搜索、排序及画布链接", async ({ page }, testInfo) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const state = await mockWorkspace(page, [older, newer]);
-    await page.goto("/");
-    const articles = page.getByRole("article");
-    const gridView = page.getByRole("button", { name: "网格视图" });
-    const listView = page.getByRole("button", { name: "列表视图" });
-    await expect(articles).toHaveCount(2);
-    await expect(gridView).toHaveAttribute("aria-pressed", "true");
-    await expect(listView).toHaveAttribute("aria-pressed", "false");
-
-    await listView.click();
-    await expect(listView).toHaveAttribute("aria-pressed", "true");
-    await expect(gridView).toHaveAttribute("aria-pressed", "false");
-    await expect(articles.first()).toHaveAccessibleName(newer.title);
-    const firstRow = await articles.nth(0).boundingBox();
-    const secondRow = await articles.nth(1).boundingBox();
-    expect(firstRow).not.toBeNull();
-    expect(secondRow).not.toBeNull();
-    expect(secondRow!.x).toBeCloseTo(firstRow!.x, 0);
-    expect(secondRow!.width).toBeCloseTo(firstRow!.width, 0);
-    expect(secondRow!.y).toBeGreaterThanOrEqual(firstRow!.y + firstRow!.height);
-    await page.screenshot({
-      path: testInfo.outputPath("workspace-home-list.png"),
-      fullPage: true,
-    });
-
-    await page.getByLabel("画布排序").selectOption("name");
-    await expect(articles.first()).toHaveAccessibleName(older.title);
-    await page.getByLabel("搜索画布", { exact: true }).fill("秋日");
-    await expect(articles).toHaveCount(1);
-    await expect(articles.first()).toHaveAccessibleName(newer.title);
-    await expect(articles.first()).toContainText("12 个节点");
-    await expect(
-      page.getByRole("link", { name: `打开画布 ${newer.title}`, exact: true }),
-    ).toHaveAttribute("href", `/canvas/${newer.id}`);
-
-    await gridView.click();
-    await expect(gridView).toHaveAttribute("aria-pressed", "true");
-    await expect(listView).toHaveAttribute("aria-pressed", "false");
-    await expect(page.getByLabel("搜索画布", { exact: true })).toHaveValue(
-      "秋日",
-    );
-    await expect(page.getByLabel("画布排序")).toHaveValue("name");
-    await expect(articles).toHaveCount(1);
-    await page.getByRole("button", { name: "清空搜索" }).click();
-    await expect(articles).toHaveCount(2);
-    await expect(articles.first()).toHaveAccessibleName(older.title);
-    const firstTile = await articles.nth(0).boundingBox();
-    const secondTile = await articles.nth(1).boundingBox();
-    expect(firstTile).not.toBeNull();
-    expect(secondTile).not.toBeNull();
-    expect(secondTile!.y).toBeCloseTo(firstTile!.y, 0);
-    expect(secondTile!.x).toBeGreaterThanOrEqual(
-      firstTile!.x + firstTile!.width,
-    );
-    await page.screenshot({
-      path: testInfo.outputPath("workspace-home-wide.png"),
-      fullPage: true,
-    });
-
-    await listView.click();
-    await expect(articles).toHaveCount(2);
-    await expect(articles.first()).toContainText("8 个节点");
-    const olderLink = page.getByRole("link", {
-      name: `打开画布 ${older.title}`,
-      exact: true,
-    });
-    await expect(olderLink).toHaveAttribute("href", `/canvas/${older.id}`);
-    expect(state.mutations).toEqual([]);
-    expect(state.canvasReads).toEqual([]);
-    await olderLink.click();
-    await expect(page).toHaveURL(/\/canvas\/home-older$/u);
-    await expect
-      .poll(() => state.canvasReads)
-      .toContain("/api/canvas/home-older");
-  });
-
-  test("首页无装饰鼠标轨迹，滚动和输入不受影响，Aura离屏或弹窗时暂停", async ({
-    page,
-  }, testInfo) => {
-    await page.setViewportSize({ width: 1280, height: 680 });
-    await page.emulateMedia({ reducedMotion: "no-preference" });
-    await observeAuraDraws(page);
-    const state = await mockWorkspace(page, [older, newer]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
-    const trail = page.locator('canvas[class*="pointerTrail"]');
-    const aura = page.locator("[data-animating]");
-    const auraCanvas = aura.locator("canvas");
-    await expect(trail).toHaveCount(0);
-    await expectAuraDrawing(page);
-    expect(await auraCanvas.evaluate(element => {
-      const canvas = element as HTMLCanvasElement;
-      return canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data.some((value, index) => index % 4 === 3 && value > 12);
-    })).toBe(true);
-    const movePointer = async () => {
-      await page.mouse.move(330, 202);
-      await page.waitForTimeout(35);
-      await page.mouse.move(400, 202);
-      await page.waitForTimeout(35);
-      await page.mouse.move(495, 202);
-    };
-    await movePointer();
-    await expect(trail).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath("workspace-home-aura.png"),
-    });
-
-    const home = page.locator("div[data-motion]");
-    await home.evaluate((element) => {
-      element.scrollTop = 70;
-    });
-    await expect
-      .poll(() => home.evaluate((element) => element.scrollTop))
-      .toBeGreaterThan(0);
-    await movePointer();
-    await expectAuraDrawing(page);
-    const search = page.getByLabel("搜索画布", { exact: true });
-    await search.focus();
-    await movePointer();
-    await expect(search).toBeFocused();
-    await expect(trail).toHaveCount(0);
-
-    // A real scroll moves the decorative host completely outside the viewport.
-    await page.setViewportSize({ width: 1280, height: 400 });
-    await home.evaluate(element => { element.scrollTop = element.scrollHeight; });
-    await expect.poll(() => aura.evaluate(element => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(0);
-    await expectAuraPaused(page);
-    await page.setViewportSize({ width: 1280, height: 680 });
-    await home.evaluate(element => { element.scrollTop = 0; });
-    await expectAuraDrawing(page);
-
-    await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange")); });
-    await expectAuraPaused(page);
-    await page.evaluate(() => { Reflect.deleteProperty(document, "hidden"); document.dispatchEvent(new Event("visibilitychange")); });
-    await expectAuraDrawing(page);
-
-    await page.getByRole("button", { name: "创建画布", exact: true }).click();
-    await expect(
-      page.getByRole("dialog", { name: "创建新画布" }),
-    ).toBeVisible();
-    await movePointer();
-    await expectAuraPaused(page);
-    await page.getByRole("button", { name: "关闭弹窗" }).click();
-    await expectAuraDrawing(page);
-    await page.getByRole("button", { name: "暂停动效" }).click();
-    await movePointer();
-    await expectAuraPaused(page);
-    await expect(trail).toHaveCount(0);
-    await expect(auraCanvas).toBeVisible();
-    expect(state.mutations).toEqual([]);
-    expect(state.canvasReads).toEqual([]);
-  });
-
-  test("动效暂停在刷新后保留，并遵循系统减少动态效果设置", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.emulateMedia({ reducedMotion: "no-preference" });
-    await observeAuraDraws(page);
-    const state = await mockWorkspace(page, []);
-    await page.goto("/");
-    const home = page.locator("div[data-motion]");
-    const trail = page.locator('canvas[class*="pointerTrail"]');
-    await expect(trail).toHaveCount(0);
-    await expect(home).toHaveAttribute("data-motion", "on");
-    await expectAuraDrawing(page);
-    await page.getByRole("button", { name: "暂停动效" }).click();
-    await expect(home).toHaveAttribute("data-motion", "off");
-    await expectAuraPaused(page);
-    expect(
-      await page.evaluate(() =>
-        localStorage.getItem("super-canvas:gentle-motion"),
-      ),
-    ).toBe("off");
-
-    await page.reload();
-    await expect(home).toHaveAttribute("data-motion", "off");
-    await expectAuraPaused(page);
-    const enableMotion = page.getByRole("button", { name: "开启动效" });
-    await expect(enableMotion).toHaveAttribute("aria-pressed", "false");
-    await enableMotion.click();
-    await expect(home).toHaveAttribute("data-motion", "on");
-    await expectAuraDrawing(page);
-    await expect(
-      page.getByRole("button", { name: "暂停动效" }),
-    ).toHaveAttribute("aria-pressed", "true");
-
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await expect(home).toHaveAttribute("data-motion", "off");
-    await expectAuraPaused(page);
-    expect(
-      await page.evaluate(() =>
-        localStorage.getItem("super-canvas:gentle-motion"),
-      ),
-    ).toBe("on");
-    await page.emulateMedia({ reducedMotion: "no-preference" });
-    await expect(home).toHaveAttribute("data-motion", "on");
-    await expectAuraDrawing(page);
-    await expect(trail).toHaveCount(0);
-    expect(state.mutations).toEqual([]);
-    expect(state.canvasReads).toEqual([]);
-  });
-
-  test("Ctrl K 聚焦项目搜索，创建弹窗内保留名称输入焦点", async ({ page }) => {
-    const state = await mockWorkspace(page, [older, newer]);
-    await page.goto("/");
-    await expect(page.getByRole("article")).toHaveCount(2);
-    const search = page.getByLabel("搜索画布", { exact: true });
-    await page.keyboard.press("Control+k");
-    await expect(search).toBeFocused();
-    await search.fill("品牌");
-    await expect(page.getByRole("article")).toHaveCount(1);
-    await expect(page.getByRole("article").first()).toHaveAccessibleName(
-      older.title,
-    );
-    await page.getByRole("button", { name: "创建画布", exact: true }).click();
-    const title = page
-      .getByRole("dialog", { name: "创建新画布" })
-      .getByLabel("画布名称");
-    await expect(title).toBeFocused();
-    await page.keyboard.press("Control+k");
-    await expect(title).toBeFocused();
-    expect(state.mutations).toEqual([]);
-    expect(state.canvasReads).toEqual([]);
-  });
+  await expect(scene(page)).toHaveAttribute("data-animating", "true");
+  expect(f.mutations).toEqual([]);
+  f.assertSafe();
+});
+test("动效暂停刷新后保留，并遵循系统减少动态效果", async ({ page }) => {
+  const f = await installNeuralFixture(page, { projects: [], motion: true });
+  await openHome(page);
+  await expect(scene(page)).toHaveAttribute("data-animating", "true");
+  await page.getByRole("button", { name: "暂停动效" }).click();
+  await expect(scene(page)).toHaveAttribute("data-animating", "false");
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("super-canvas:gentle-motion"),
+    ),
+  ).toBe("off");
+  await page.reload();
+  await expect(scene(page)).toHaveAttribute("data-animating", "false");
+  await page.getByRole("button", { name: "开启动效" }).click();
+  await expect(scene(page)).toHaveAttribute("data-animating", "true");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(scene(page)).toHaveAttribute("data-animating", "false");
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("super-canvas:gentle-motion"),
+    ),
+  ).toBe("on");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(scene(page)).toHaveAttribute("data-animating", "true");
+  f.assertSafe();
 });

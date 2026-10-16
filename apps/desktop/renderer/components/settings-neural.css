@@ -1,0 +1,158 @@
+/* Scoped aliases keep the drawer consistent above both workspace and canvas. */
+.neural-settings {
+  --text:var(--neural-text);--text-secondary:var(--neural-text-secondary);--muted:var(--neural-text-secondary);
+  --line:var(--neural-line);--line-strong:var(--neural-line-strong);
+  --panel:color-mix(in srgb,var(--neural-text) 3%,transparent);--panel-2:color-mix(in srgb,var(--neural-text) 2%,transparent);--panel-3:color-mix(in srgb,var(--neural-text) 6%,transparent);
+  --surface-floating:var(--neural-bg);--input-bg:color-mix(in srgb,var(--neural-bg) 72%,transparent);
+  --bg:var(--neural-bg);--selection-ink:var(--neural-text);--surface-node:var(--panel);--panel-bg:var(--panel);--border:var(--neural-line);
+  --focus-ring:var(--neural-gold);--accent:var(--neural-gold);--on-accent:var(--neural-bg);--status-fail:var(--neural-danger);
+  --primary-fill:var(--neural-text);--highlight:var(--neural-silver);--success:var(--neural-accounts);
+  --status-success:var(--neural-accounts);--status-warn:var(--neural-suppliers);--status-running:var(--neural-starts);
+  --success-wash:color-mix(in srgb,var(--neural-accounts) 10%,transparent);--warning-wash:color-mix(in srgb,var(--neural-suppliers) 10%,transparent);
+  --danger-wash:color-mix(in srgb,var(--neural-danger) 10%,transparent);--info-wash:color-mix(in srgb,var(--neural-silver) 7%,transparent);
+  --sm-ink:var(--neural-text);--sm-muted:var(--neural-text-secondary);--sm-border:var(--neural-line);--sm-accent:var(--neural-gold);
+}
+.neural-settings.sm-settings-backdrop { padding:16px;background:color-mix(in srgb,var(--neural-bg) 66%,transparent);-webkit-backdrop-filter:blur(9px) saturate(85%);backdrop-filter:blur(9px) saturate(85%); }
+.neural-settings .sm-settings-dialog {
+  position:relative;width:min(1440px,calc(100vw - 32px));height:calc(100dvh - 32px);display:grid;
+  grid-template-columns:184px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);isolation:isolate;
+  border:1px solid var(--neural-line-strong);border-radius:14px;background:var(--neural-glass);color:var(--neural-text);
+  -webkit-backdrop-filter:blur(14px) saturate(120%);backdrop-filter:blur(14px) saturate(120%);
+  box-shadow:inset 0 1px 0 var(--neural-line-strong),0 32px 100px color-mix(in srgb,var(--neural-bg) 55%,transparent);
+  font-variant-numeric:tabular-nums;animation:neural-settings-arrive 600ms var(--neural-spring-ease) both;
+}
+.neural-settings .sm-settings-dialog::before { content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:radial-gradient(ellipse at 14% 0%,color-mix(in srgb,var(--neural-gold) 4%,transparent),transparent 48%);pointer-events:none; }
+.neural-settings .sm-settings-header { grid-column:1 / -1;padding:22px 28px;min-height:84px;background:transparent;border-bottom:1px solid var(--neural-line); }
+.neural-settings .sm-settings-header::before { display:none; }
+.sm-settings-title { display:flex;align-items:center;gap:15px;min-width:0; }
+.neural-settings .sm-settings-header h2 { display:flex;align-items:center;gap:14px;font-size:19px;font-weight:500;letter-spacing:.02em; }
+.neural-settings .sm-settings-header p { margin-top:7px;color:var(--neural-text-secondary);font-size:12px; }
+.sm-settings-orbit { position:relative;flex:0 0 auto;width:28px;height:28px;border:1px solid color-mix(in srgb,var(--neural-silver) 40%,transparent);border-radius:50%;box-shadow:0 0 19px color-mix(in srgb,var(--neural-gold) 12%,transparent),inset 0 0 12px color-mix(in srgb,var(--neural-gold) 9%,transparent); }
+.sm-settings-orbit::before { content:"";position:absolute;inset:5px;border-radius:46% 54% 58% 42%;border:1px solid var(--neural-gold);transform:rotate(-24deg); }
+.sm-settings-orbit::after { content:"";position:absolute;width:3px;height:3px;top:3px;right:4px;border-radius:50%;background:var(--neural-gold);box-shadow:0 0 8px var(--neural-gold); }
+.neural-settings .sm-micro-label { font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:10px;font-weight:400;letter-spacing:.14em;color:var(--neural-text-muted);line-height:1.5; }
+.sm-settings-rail { display:flex;flex-direction:column;min-width:0;min-height:0;padding:26px 14px 22px;border-right:1px solid var(--neural-line); }
+.sm-settings-rail-title { display:flex;flex-direction:column;gap:5px;margin:0 12px 24px;font-size:11px;color:var(--neural-text-secondary); }
+.neural-settings .sm-settings-tabs { display:flex;flex-direction:column;min-width:0;max-width:100%;gap:7px;padding:0;margin:0;background:none;border-radius:0; }
+.neural-settings .sm-settings-tabs button { position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:60px;padding:11px 12px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--neural-text-secondary);text-align:left;transition:background 150ms ease,border-color 150ms ease,color 150ms ease; }
+.neural-settings .sm-settings-tabs button>span { display:grid;gap:5px; }
+.neural-settings .sm-settings-tabs button>svg { flex-shrink:0;opacity:.75; }
+.neural-settings .sm-settings-tabs button:hover { background:var(--panel-2);color:var(--neural-text); }
+.neural-settings .sm-settings-tabs button[aria-selected="true"] { background:var(--panel-3);border-color:var(--neural-line);color:var(--neural-text);box-shadow:inset 0 1px 0 var(--neural-line); }
+.sm-settings-tab-point { width:4px;height:4px;flex:0 0 auto;margin-left:auto;border-radius:50%;background:var(--neural-text-muted);opacity:.35; }
+.neural-settings [aria-selected="true"] .sm-settings-tab-point { background:var(--neural-gold);opacity:1;box-shadow:0 0 8px color-mix(in srgb,var(--neural-gold) 50%,transparent); }
+.sm-settings-rail-brand { margin-top:auto;padding:35px 12px 0;font-size:12px;letter-spacing:.32em;line-height:1.8;color:var(--neural-text-muted); }
+.sm-settings-rail-brand>span { display:block;margin-top:12px;font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:8px;letter-spacing:.1em;line-height:1.8; }
+.sm-settings-body { display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden; }
+.neural-settings[data-settings-context="canvas"] .sm-settings-body { background:color-mix(in srgb,var(--neural-bg) 94%,transparent);border-bottom-right-radius:13px; }
+.neural-settings .sm-manager { grid-template-columns:224px minmax(0,1fr);min-width:0; }
+.neural-settings .sm-sidebar { min-width:0;padding:25px 14px 18px;background:transparent; }
+.neural-settings .sm-sidebar-heading { padding:0 5px 20px; }
+.neural-settings .sm-kicker { font-size:10px;font-weight:400;letter-spacing:.08em; }
+.neural-settings .sm-sidebar-heading h3 { margin-top:9px;font-size:16px;font-weight:500; }
+.neural-settings .sm-main { padding:28px 32px 40px;background:transparent;scrollbar-gutter:stable; }
+.neural-settings .sm-detail-heading { gap:12px; }
+.neural-settings .sm-detail-heading h2 { font-size:24px;font-weight:400;letter-spacing:-.02em; }
+.neural-settings .sm-detail-heading p { font-size:11px;line-height:1.7; }
+.neural-settings .sm-supplier-avatar { background:color-mix(in srgb,var(--neural-suppliers) 8%,transparent);color:var(--neural-suppliers);border:1px solid color-mix(in srgb,var(--neural-suppliers) 20%,transparent);border-radius:50%;box-shadow:none; }
+.neural-settings .sm-supplier-avatar-large { width:44px;height:44px;font-weight:400;font-size:18px; }
+.neural-settings .sm-supplier-row { border-radius:10px;margin-bottom:8px; }
+.neural-settings .sm-supplier-row.is-selected { background:var(--panel-3);border-color:var(--neural-line-strong);box-shadow:inset 0 1px 0 var(--neural-line); }
+.neural-settings .sm-supplier-item { background:transparent;border-radius:0; }
+.neural-settings .sm-supplier-label strong { font-size:13px;font-weight:500; }
+.neural-settings .sm-supplier-label small { font-size:11px;line-height:1.6; }
+.neural-settings .sm-connection-count { position:absolute;right:13px;bottom:45px;font-size:12px;font-weight:400;background:transparent;color:var(--neural-text-secondary); }
+.neural-settings .sm-supplier-item { padding-right:36px;gap:8px; }
+.neural-settings .sm-supplier-item .sm-supplier-avatar { width:30px;height:30px;font-size:13px; }
+.neural-settings .sm-supplier-actions { margin:0 12px; }
+.neural-settings .sm-supplier-actions button { padding-left:0;padding-right:0;font-size:11px; }
+.neural-settings .sm-supplier-more { top:10px; }
+.neural-settings .sm-button { min-height:33px;padding:8px 12px;background:transparent;color:var(--neural-text-secondary);border-color:var(--neural-line-strong);box-shadow:none; }
+.neural-settings .sm-button:hover:not(:disabled) { background:var(--panel-3);color:var(--neural-text); }
+.neural-settings .sm-button.sm-primary,.neural-settings .sm-button.sm-primary-soft,.neural-settings .sm-button.is-primary,.neural-settings .button.primary { background:var(--neural-text);color:var(--neural-bg);border-color:transparent;box-shadow:none; }
+.neural-settings .sm-button.sm-primary:hover:not(:disabled),.neural-settings .sm-button.sm-primary-soft:hover:not(:disabled) { background:var(--neural-text);color:var(--neural-bg);border-color:var(--neural-gold); }
+.neural-settings .sm-add-supplier { margin-bottom:18px;min-height:38px; }
+.neural-settings .sm-search { background:var(--input-bg);border-radius:8px;border-color:var(--neural-line); }
+.neural-settings .sm-search:focus-within { border-color:var(--neural-gold);outline:2px solid var(--neural-gold);outline-offset:2px;box-shadow:none; }
+.neural-settings .sm-settings-body :is(input,textarea,select):not([type="checkbox"]):not([type="radio"]) { color:var(--neural-text);background:var(--input-bg);border-color:var(--neural-line-strong);border-radius:7px; }
+.neural-settings .sm-settings-body .sm-search input { background:transparent;border:0; }
+.neural-settings :is(input,textarea,select)::placeholder { color:var(--neural-text-muted); }
+.neural-settings :is(input,textarea,select) { accent-color:var(--neural-gold); }
+.neural-settings :is(button,input,textarea,select,a,summary):focus-visible { outline:2px solid var(--neural-gold);outline-offset:2px;box-shadow:none; }
+.neural-settings .sm-search input:focus-visible,.neural-settings .sm-settings-dialog:focus-visible { outline:none; }
+.neural-settings .sm-supplier-overview { gap:10px; }
+.neural-settings .sm-supplier-overview>div { padding:18px;border:1px solid var(--neural-line);border-radius:12px;background:var(--panel);box-shadow:inset 0 1px 0 var(--neural-line); }
+.neural-settings .sm-supplier-overview>div>strong,.neural-settings .sm-supplier-overview time { font-size:26px;font-weight:300;letter-spacing:-.03em; }
+.neural-settings .sm-supplier-overview>div>span { font-size:11px; }
+.neural-settings .sm-supplier-overview>div>span>.sm-micro-label { display:block;margin-top:5px;font-size:10px; }
+.neural-settings .sm-supplier-overview small { font-size:10px;line-height:1.8; }
+.neural-settings .sm-detail-tabs { gap:4px;padding:4px;background:var(--panel-2);border:1px solid var(--neural-line);border-radius:9px; }
+.neural-settings .sm-detail-tabs button { border-radius:6px; }
+.neural-settings .sm-detail-tabs button[aria-selected="true"] { background:var(--panel-3);color:var(--neural-text);font-weight:500;box-shadow:inset 0 1px 0 var(--neural-line-strong); }
+.neural-settings :is(.sm-basics,.sm-form-card,.sm-group-card,.sm-model-family,.sm-account-details,.sm-history,.sm-refresh-report,.sm-notice) { background:var(--panel);border-color:var(--neural-line);border-radius:12px;box-shadow:none; }
+.neural-settings .sm-group-card { overflow:clip; }
+.neural-settings .sm-group-heading,.neural-settings .sm-model-family-toggle { background:var(--panel-2); }
+.neural-settings .sm-model-family-toggle:hover { background:var(--panel-3); }
+.neural-settings .sm-model-family-name strong { font-size:13px;font-weight:500; }
+.neural-settings .sm-model-columns { background:var(--neural-bg);font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:10px;letter-spacing:.06em; }
+.neural-settings .sm-model-item { background:transparent; }
+.neural-settings .sm-model-item:hover { background:var(--panel-2); }
+.neural-settings .sm-model-name strong { font-size:13px; }
+.neural-settings .sm-model-price { font-size:12px; }
+.neural-settings .sm-notice.is-error { color:var(--neural-danger);background:color-mix(in srgb,var(--neural-danger) 5%,transparent);border-color:color-mix(in srgb,var(--neural-danger) 18%,transparent); }
+.neural-settings .sm-section-label { display:flex;align-items:center;gap:10px;margin-bottom:16px;font-size:11px;color:var(--neural-text-secondary); }
+.neural-settings .sm-appearance-panel,.neural-settings .sm-simple-panel { flex:1;overflow:auto;min-height:0;padding:42px; }
+.neural-settings .sm-appearance-card,.neural-settings .sm-simple-card { max-width:720px;margin:0;padding:30px;border:1px solid var(--neural-line);border-radius:13px;background:var(--panel);box-shadow:inset 0 1px 0 var(--neural-line); }
+.neural-settings .sm-appearance-heading,.neural-settings .sm-simple-panel h3 { margin:0 0 16px;font-weight:400;font-size:23px;letter-spacing:-.02em; }
+.neural-settings .sm-appearance-description,.neural-settings .sm-simple-panel p { max-width:650px;font-size:12px;line-height:1.85;color:var(--neural-text-secondary); }
+.neural-settings .sm-appearance-card .theme-control { max-width:350px;margin:30px 0;padding:16px;border:1px solid var(--neural-line-strong);background:var(--panel-2);border-radius:9px; }
+.neural-settings .sm-simple-form { max-width:620px;display:grid;gap:21px;margin-top:28px; }
+.neural-settings .sm-simple-form .field { display:grid;gap:10px;font-size:12px; }
+.neural-settings .sm-simple-form .field input { width:100%;padding:11px 12px;border:1px solid var(--neural-line-strong);font:inherit; }
+.neural-settings .sm-simple-form small { line-height:1.8;color:var(--neural-text-secondary); }
+.neural-settings .sm-simple-form [role="status"] { font-size:12px;line-height:1.8; }
+.neural-settings .sm-simple-form>.button { width:fit-content;min-height:38px;padding:9px 20px;border-radius:999px; }
+@keyframes neural-settings-arrive { from { opacity:0;transform:translateX(28px); } to { opacity:1;transform:translateX(0); } }
+@media(max-width:1180px) {
+  .neural-settings .sm-settings-dialog { grid-template-columns:157px minmax(0,1fr); }
+  .neural-settings .sm-manager { grid-template-columns:199px minmax(0,1fr); }
+  .neural-settings .sm-main { padding:25px 22px 32px; }
+  .sm-settings-rail { padding-inline:9px; }
+  .neural-settings .sm-settings-tabs button { padding-inline:9px;gap:8px; }
+  .neural-settings .sm-settings-tabs button>svg { width:14px; }
+  .neural-settings .sm-detail-heading { flex-wrap:wrap; }
+  .neural-settings .sm-detail-status-actions { justify-content:flex-start; }
+  .neural-settings .sm-supplier-overview>div { padding:13px; }
+  .neural-settings .sm-supplier-overview small { display:block; }
+}
+@media(max-width:850px) {
+  .neural-settings.sm-settings-backdrop { padding:8px; }
+  .neural-settings .sm-settings-dialog { width:calc(100vw - 16px);height:calc(100dvh - 16px);grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr); }
+  .neural-settings .sm-settings-header { min-height:70px;padding:16px 20px; }
+  .sm-settings-rail { padding:8px 12px;border-right:0;border-bottom:1px solid var(--neural-line); }
+  .sm-settings-rail-title,.sm-settings-rail-brand { display:none; }
+  .neural-settings .sm-settings-tabs { flex-direction:row;overflow-x:auto; }
+  .neural-settings .sm-settings-tabs button { width:auto;min-width:124px;min-height:49px;flex:1; }
+  .sm-settings-tab-point { display:none; }
+  .neural-settings .sm-appearance-panel,.neural-settings .sm-simple-panel { padding:24px; }
+}
+@media(max-width:700px) {
+  .neural-settings .sm-settings-header { display:flex; }
+  .neural-settings .sm-settings-header h2 { display:block;font-size:17px; }
+  .neural-settings .sm-settings-header h2>.sm-micro-label { display:block;margin-top:4px; }
+  .neural-settings .sm-settings-header p { display:none; }
+  .neural-settings .sm-manager { display:flex;flex-direction:column; }
+  .neural-settings .sm-sidebar { flex:0 0 auto;max-height:225px;padding:14px;border-right:0;border-bottom:1px solid var(--neural-line); }
+  .neural-settings .sm-sidebar-heading { padding-bottom:10px; }
+  .neural-settings .sm-refresh-all { margin-bottom:6px; }
+  .neural-settings .sm-add-supplier { margin-bottom:8px; }
+  .neural-settings .sm-main { padding:20px 16px; }
+  .neural-settings .sm-supplier-overview>div:last-child { grid-column:auto;display:block; }
+  .neural-settings .sm-supplier-overview { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .neural-settings .sm-supplier-overview>div>strong,.neural-settings .sm-supplier-overview time { font-size:22px; }
+  .neural-settings .sm-supplier-overview small { display:none; }
+  .neural-settings .sm-appearance-card,.neural-settings .sm-simple-card { padding:22px; }
+}
+@media(prefers-reduced-motion:reduce) { .neural-settings .sm-settings-dialog { animation:neural-settings-fade 150ms ease both!important; } }
+html[data-motion="off"] .neural-settings .sm-settings-dialog { animation:neural-settings-fade 150ms ease both!important; }
+@keyframes neural-settings-fade { from { opacity:0; } to { opacity:1; } }

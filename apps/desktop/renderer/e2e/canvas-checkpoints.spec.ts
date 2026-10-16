@@ -1,3 +1,4 @@
+import { openWorkspaceProject } from "./helpers/workspace-navigation";
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 
 type Position = { x: number; y: number };
@@ -81,7 +82,7 @@ test("连续拖动定期合并草稿，松手、CtrlS与离页保存最新位置
 test("未松手时离开失败保存的画布，重新进入仍恢复最后拖动位置", async ({ page, request }) => {
   const id = await createCanvas(request);
   await page.goto("/");
-  await page.locator(`a[href="/canvas/${id}"]`).last().click();
+  await openWorkspaceProject(page, id);
   const header = page.locator('.react-flow__node[data-id="checkpoint"] .node-head');
   await header.waitFor();
   await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("已保存");
@@ -99,7 +100,7 @@ test("未松手时离开失败保存的画布，重新进入仍恢复最后拖�
   await expect(page).toHaveURL(/\/$/u);
   await page.mouse.up();
   await page.unroute(`**/api/canvas/${id}`);
-  await page.locator(`a[href="/canvas/${id}"]`).last().click();
+  await openWorkspaceProject(page, id);
   await header.waitFor();
   await expect.poll(() => position(page)).toEqual(last);
   await expect.poll(() => serverPosition(request, id)).toEqual(last);

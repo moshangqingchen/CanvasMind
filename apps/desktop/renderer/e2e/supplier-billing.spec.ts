@@ -54,7 +54,7 @@ async function fixture(page: Page, request: APIRequestContext) {
 test("供应商管理独立刷新、失败保留数值、批量刷新且不触发生成", async ({ page, request }, info) => {
   const data = await fixture(page, request);
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await page.getByText("账号账务与生成方式", { exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
   const billing = dialog.getByRole("region", { name: "供应商余额与消耗" });
@@ -96,7 +96,7 @@ test("供应商后台重读期间仍可批量刷新已加载账务", async ({ pa
     await route.fallback();
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
   const billing = dialog.getByRole("region", { name: "供应商余额与消耗" });
   const batch = dialog.getByRole("button", { name: "刷新全部余额与消耗", exact: true });
@@ -183,7 +183,7 @@ test("未提供今日消耗的站点保留字段并解释原因，刷新后可�
   data.suppliers[0]!.state!.billing = { ...data.suppliers[0]!.state!.billing!, status: "partial", todayUsed: undefined,
     todayStatus: "unsupported", todayError: "此站点暂不支持今日消耗查询", error: "此站点暂不支持今日消耗查询" };
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   const billing = page.getByRole("dialog", { name: "供应商与模型设置" }).getByRole("region", { name: "供应商余额与消耗" });
   await page.getByText("账号账务与生成方式", { exact: true }).click();
   await expect(billing).toContainText("今日消耗 暂不支持");
@@ -199,7 +199,7 @@ test("账务保留不同字段的币种与小额消耗，并说明来源和换�
   data.suppliers[0]!.state!.billing = { ...data.suppliers[0]!.state!.billing!, balanceUnit: "CNY", usedUnit: "USD", todayUnit: "USD",
     used: .000001, todayUsed: .000002, unitBasis: "declared-currency", unitNote: "按站点返回的币种显示，未自动换算。" };
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   const billing = page.getByRole("dialog", { name: "供应商与模型设置" }).getByRole("region", { name: "供应商余额与消耗" });
   await page.getByText("账号账务与生成方式", { exact: true }).click();
   await expect(billing).toContainText("余额 10 CNY");

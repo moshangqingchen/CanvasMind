@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { RefreshCw, Pause, Play, Copy, ExternalLink } from "lucide-react";
 import type {
   SupplierVerificationRecord,
@@ -409,7 +410,10 @@ function SupplierVerificationSession({
           保存有效连接并读取模型后，会自动建立核验计划。没有可执行协议的型号会显示原因。
         </p>
       )}
-      <AssetPreviewModal key={previewAsset?.id ?? "no-verification-preview"} asset={previewAsset} returnFocus={previewTrigger} onClose={() => setPreviewAsset(null)} />
+      {previewAsset && typeof document !== "undefined" && createPortal(
+        <div className="neural-settings"><AssetPreviewModal key={previewAsset.id} asset={previewAsset} returnFocus={previewTrigger} onClose={() => setPreviewAsset(null)} /></div>,
+        document.body,
+      )}
     </section>
   );
 }

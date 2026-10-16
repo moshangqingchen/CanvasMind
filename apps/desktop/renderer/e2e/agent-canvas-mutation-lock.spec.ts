@@ -175,7 +175,7 @@ test("智能体放入画布期间拒绝全局编辑入口，响应正常应用�
   });
   expect(copied).toBe("1");
   await page.getByRole("button", { name: "打开智能体", exact: true }).click();
-  await page.getByRole("button", { name: "第一次确认：放入画布", exact: true }).click();
+  await page.getByRole("button", { name: "放入画布", exact: true }).click();
   await expect.poll(() => held).toBe(true);
   await expect(page.locator(".canvas-editor")).toHaveAttribute("inert", "");
   await settleFrame(page);

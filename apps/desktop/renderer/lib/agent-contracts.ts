@@ -126,7 +126,7 @@ export const AgentProposalSchema = z
   });
 export type AgentProposal = z.infer<typeof AgentProposalSchema>;
 const AgentDecisionCoreSchema = z.union([
-  z.object({ type: z.literal("reply"), message: text }).strict(),
+  z.object({ type: z.literal("reply"), message: text, suggestPlan: z.boolean().optional() }).strict(),
   z
     .object({
       type: z.literal("clarify"),
@@ -287,6 +287,7 @@ export interface AgentSession {
 export type AgentTurnStatus = "succeeded" | "failed" | "cancelled";
 export type AgentEvent =
   | { type: "stage"; message: string }
+  | { type: "delta"; turnId: string; text: string; reset?: boolean }
   | { type: "session"; session: AgentSession }
   | { type: "error"; message: string }
   | { type: "done"; status?: AgentTurnStatus };

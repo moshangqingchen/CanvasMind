@@ -32,7 +32,7 @@ async function publish(page: Page, patch: Record<string, unknown>) {
 }
 
 async function openUpdate(page: Page) {
-  await expect(page.getByText("我的画布", { exact: true }).first()).toBeVisible();
+  await expect(page.getByTestId("neural-workspace")).toBeVisible();
   await page.waitForFunction(() => (window as unknown as { updateBridgeReady(): boolean }).updateBridgeReady());
   await page.evaluate(() => (window as unknown as { openUpdateFixture(): void }).openUpdateFixture());
   return page.getByRole("dialog", { name: "超级画布更新" });

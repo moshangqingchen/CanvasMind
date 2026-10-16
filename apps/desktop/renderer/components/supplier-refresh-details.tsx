@@ -62,7 +62,7 @@ export function SupplierRefreshDetails({ supplierName, result, running, canRefre
   const groupChangeCount = (groups?.added.length ?? 0) + (groups?.missing.length ?? 0) + (groups?.renamed.length ?? 0);
   const changesAvailable = Boolean(result && !result.snapshotOnly);
   const billingSource = billingSourceLabel(result?.billing);
-  return createPortal(<div className={styles.backdrop} onPointerDown={event => {
+  return createPortal(<div className={`${styles.backdrop} neural-settings`} onPointerDown={event => {
     if (event.target === event.currentTarget) onClose();
   }}>
     <section ref={ref} role="dialog" aria-modal="true" aria-labelledby="supplier-refresh-title"

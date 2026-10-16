@@ -88,7 +88,6 @@ import {
   Archive,
   ArrowLeft,
   ArrowUpRight,
-  Bot,
   CircleAlert,
   CircleCheck,
   Circle,
@@ -309,6 +308,7 @@ import {
   weAiSizePresetForTier,
 } from "../lib/weai-catalog";
 import { AgentPanel, preloadAgentPanel } from "./lazy-agent-panel";
+import { MiniLightCore } from "./mini-light-core";
 import { schedulePanelPreload } from "../lib/panel-preload";
 import { AgentCanvasContext, type AgentCanvasBridge } from "./agent-canvas-context";
 import { CanvasSaveConflictModal } from "./canvas-save-conflict-modal";
@@ -408,9 +408,9 @@ const GENERATED_RESULT_EDGE_PREFIX = "edge-generated-";
 // footprint while a result is empty so a later failure cannot cover its neighbor.
 const GENERATED_RESULT_ERROR_MIN_HEIGHT = 280;
 const MATERIAL_DROP_LEASE_STORAGE_KEY = "super-canvas:material-drop-consumer";
-const INSPECTOR_MIN_WIDTH = 300;
-const INSPECTOR_DEFAULT_WIDTH = 380;
-const INSPECTOR_MAX_WIDTH = 720;
+const INSPECTOR_MIN_WIDTH = 360;
+const INSPECTOR_DEFAULT_WIDTH = 440;
+const INSPECTOR_MAX_WIDTH = 640;
 const INSPECTOR_WIDTH_STORAGE_KEY = "super-canvas:inspector-width";
 
 type CanvasInteractionMode = "pan" | "select" | "draw" | "select-drawing";
@@ -2365,7 +2365,7 @@ function ProjectSidebar({
             aria-selected={leftMode === "agent"}
             onClick={() => onLeftModeChange("agent")}
           >
-            <Bot size={14} />
+            <MiniLightCore size={14} />
             <span>智能体</span>
           </button>
         </div>
@@ -9745,7 +9745,7 @@ function CanvasShell({
     { id: "history", label: "历史生成", description: "查看作品、比稿与继续修改", group: "工作台", icon: <History size={18} />, onSelect: () => setHistoryOpen(true) },
     { id: "tasks", label: "任务中心", description: "查看运行历史与任务进度", group: "工作台", icon: <Play size={18} />, onSelect: () => setRunHistoryOpen(true) },
     { id: "files", label: "项目文件", description: "查看当前项目成品和草稿", group: "工作台", icon: <FolderOpen size={18} />, onSelect: openProjectFiles },
-    { id: "agent", label: mobileInspectorOpen ? "收起智能体面板" : "展开智能体面板", description: "对话、分镜与创作方案", group: "工作台", icon: <Bot size={18} />, onSelect: () => setMobileInspectorOpen((open) => !open) },
+    { id: "agent", label: mobileInspectorOpen ? "收起智能体面板" : "展开智能体面板", description: "对话、分镜与创作方案", group: "工作台", icon: <MiniLightCore size={18} />, onSelect: () => setMobileInspectorOpen((open) => !open) },
     { id: "settings", label: "供应商与模型设置", description: "管理 API、密钥和可用模型", group: "工作台", icon: <KeyRound size={18} />, onSelect: () => setSettingsOpen(true) },
     { id: "shortcuts", label: "键盘快捷键", shortcut: "?", group: "工作台", icon: <Keyboard size={18} />, onSelect: () => setShortcutsOpen(true) },
     ...nodes.filter((node) => !node.hidden).map((node): CanvasCommand => ({
@@ -10022,7 +10022,7 @@ function CanvasShell({
             aria-expanded={mobileInspectorOpen}
             title={mobileInspectorOpen ? "收起智能体面板" : "展开智能体面板"}
           >
-            <Bot size={15} />
+            <MiniLightCore size={15} />
             <span>智能体</span>
           </button>
           <button
@@ -10139,7 +10139,7 @@ function CanvasShell({
             <div className="project-menu-theme" role="none"><ThemeControl compact /></div>
             <div className="project-menu-divider" />
             <button type="button" role="menuitem" onClick={() => { setProjectMenuOpen(false); flushPendingEditorEdits(); setCommandMenuOpen(true); }}><Search size={14} />搜索节点与操作<span className="project-menu-hint">Ctrl+K</span></button>
-            <button type="button" role="menuitem" onClick={() => { setProjectMenuOpen(false); setMobileInspectorOpen(open => !open); }}><Bot size={14} />智能体</button>
+            <button type="button" role="menuitem" onClick={() => { setProjectMenuOpen(false); setMobileInspectorOpen(open => !open); }}><MiniLightCore size={14} />智能体</button>
             <button type="button" role="menuitem" onClick={() => { setProjectMenuOpen(false); setSettingsOpen(true); }}><KeyRound size={14} />API 设置</button>
             <button type="button" role="menuitem" aria-label="打开项目文件" onClick={() => { setProjectMenuOpen(false); openProjectFiles(); }}><FolderOpen size={14} />项目文件</button>
             <button type="button" role="menuitem" aria-label="键盘快捷键" onClick={() => { setProjectMenuOpen(false); setShortcutsOpen(true); }}><Keyboard size={14} />键盘快捷键<span className="project-menu-hint">?</span></button>
@@ -10282,7 +10282,7 @@ function CanvasShell({
           <button type="button" aria-label="打开任务中心" onClick={() => setRunHistoryOpen(true)}><Play size={20} /><span>任务</span></button>
           <button type="button" aria-label="项目文件" title="项目文件" disabled={initialization.status !== "ready"} onClick={openProjectFiles}><FolderOpen size={20} /><span>项目文件</span></button>
           <span className="rail-divider" />
-          <button type="button" aria-label="打开智能体" aria-pressed={mobileInspectorOpen} onClick={() => { setMobileInspectorOpen(true); setMobileProjectsOpen(false); }}><Bot size={20} /><span>智能体</span></button>
+          <button type="button" aria-label="打开智能体" aria-pressed={mobileInspectorOpen} onClick={() => { setMobileInspectorOpen(true); setMobileProjectsOpen(false); }}><MiniLightCore size={20} /><span>智能体</span></button>
         </nav>
         {mobileProjectsOpen ? <ProjectSidebar
           projects={projects}
@@ -10670,7 +10670,7 @@ function CanvasShell({
                     });
                   }}
                 >
-                  <Bot size={13} /> 创作分镜
+                  <MiniLightCore size={13} /> 创作分镜
                 </button>
               </div>
               <p className="canvas-empty-hint">

@@ -22,7 +22,7 @@ test("核验记录按分组显示不同型号，切换筛选不会提交付费�
     } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await page.locator(".sm-supplier-item").filter({ hasText: name }).click();
   await page.getByRole("tab", { name: "核验记录", exact: true }).click();
   const panel = page.getByRole("region", { name: "供应商自动核验" });
@@ -76,7 +76,7 @@ test("核验缩略图在应用内打开受保护原图，关闭后保留核验�
   });
   try {
     await page.goto("/");
-    await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+    await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
     await page.locator(".sm-supplier-item").filter({ hasText: name }).click();
     await page.getByRole("tab", { name: "核验记录", exact: true }).click();
     const panel = page.getByRole("region", { name: "供应商自动核验" });

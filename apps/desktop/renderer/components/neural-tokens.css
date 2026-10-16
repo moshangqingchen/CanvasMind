@@ -1,0 +1,84 @@
+/* The studio's only color definitions. WebGL reads these same computed tokens. */
+:root,
+[data-theme="dark"] {
+  --neural-spring-ease: linear(0, .1219, .3374, .5372, .6916, .8009, .8744, .9221, .9523, .9712, .9827, .9897, .994, .9965, .998, .9988, .9994, .9997, .9998, .9999, 1);
+  --neural-bg: #0b0b0a;
+  --neural-bg-center: #141412;
+  --neural-text: #ecebe6;
+  --neural-dim-text: #ecebe6;
+  --neural-text-secondary: rgba(236, 235, 230, .62);
+  --neural-text-muted: rgba(236, 235, 230, .38);
+  --neural-line: rgba(255, 255, 255, .08);
+  --neural-line-strong: rgba(255, 255, 255, .16);
+  --neural-glass: rgba(20, 20, 18, .55);
+  --neural-glass-solid: #181816;
+  --neural-glass-highlight: rgba(244, 242, 236, .07);
+  --neural-glass-hover: rgba(244, 242, 236, .045);
+  --neural-input: rgba(8, 8, 7, .46);
+  --neural-backdrop: rgba(6, 6, 5, .64);
+  --neural-shadow: rgba(0, 0, 0, .3);
+  --neural-silver: #f4f2ec;
+  --neural-ember: #ffb45a;
+  --neural-ember-light: #ffe2a8;
+  --neural-gold: #ecd39e;
+  --neural-canvases: #c3bcf2;
+  --neural-suppliers: #ecc98f;
+  --neural-accounts: #ace0cf;
+  --neural-starts: #acd6e8;
+  --neural-rose: #e3b3c4;
+  --neural-danger: #e58a8a;
+  --neural-core-shell: #10100e;
+  --neural-core-line: #c9c9c0;
+  --neural-button: #ecebe6;
+  --neural-button-text: #0b0b0a;
+  --neural-focus: #ecd39e;
+  --neural-scrollbar: rgba(236, 235, 230, .19);
+}
+
+[data-theme="light"] {
+  --neural-bg: #f3f2ee;
+  --neural-bg-center: #faf9f5;
+  --neural-text: #242522;
+  --neural-dim-text: #000000;
+  --neural-text-secondary: rgba(36, 37, 34, .72);
+  --neural-text-muted: rgba(36, 37, 34, .58);
+  --neural-line: rgba(43, 43, 38, .12);
+  --neural-line-strong: rgba(43, 43, 38, .23);
+  --neural-glass: rgba(255, 255, 252, .67);
+  --neural-glass-solid: #faf9f5;
+  --neural-glass-highlight: rgba(255, 255, 255, .9);
+  --neural-glass-hover: rgba(255, 255, 255, .62);
+  --neural-input: rgba(242, 240, 233, .63);
+  --neural-backdrop: rgba(62, 62, 55, .24);
+  --neural-shadow: rgba(50, 44, 32, .1);
+  --neural-silver: #777b76;
+  --neural-ember: #b3762a;
+  --neural-ember-light: #cd9d4c;
+  --neural-gold: #8a6c35;
+  --neural-canvases: #70619b;
+  --neural-suppliers: #967135;
+  --neural-accounts: #3d806a;
+  --neural-starts: #477f96;
+  --neural-rose: #a45f7b;
+  --neural-danger: #ad4b60;
+  --neural-core-shell: #e2e0d6;
+  --neural-core-line: #696d67;
+  --neural-button: #242522;
+  --neural-button-text: #faf9f5;
+  --neural-focus: #94713a;
+  --neural-scrollbar: rgba(36, 37, 34, .24);
+}
+
+.neural-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+.neural-scene > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

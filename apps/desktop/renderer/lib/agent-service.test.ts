@@ -905,6 +905,62 @@ describe("agent orchestration", () => {
     await runAgentTurn(input(s.id), () => {});
     expect(mocks.complete).toHaveBeenCalledTimes(8);
   });
+  it("emits real message deltas before completion and persists an optional plan suggestion without granting production", async () => {
+    const s = await createAgentSession("canvas");
+    let release!: (value: unknown) => void;
+    mocks.complete.mockImplementationOnce(async (_connection, request) => {
+      request.onTextDelta('{"decision":"{\\"type\\":\\"reply\\",\\"message\\":\\"先定主视觉');
+      return new Promise(resolve => { release = resolve; });
+    });
+    const events = vi.fn();
+    const pending = runAgentTurn(input(s.id), events);
+    await vi.waitFor(() => expect(events.mock.calls.some(([event]) => event.type === "delta" && event.text === "先定主视觉")).toBe(true));
+    expect((await getAgentSession(s.id)).messages.filter(message => message.role === "assistant")).toEqual([]);
+    expect(mocks.complete.mock.calls[0][1].requireComplete).toBe(true);
+    expect(mocks.complete.mock.calls[0][1].system).toContain('"nodeCount":0');
+    release({ output: { type: "reply", message: "先定主视觉，再做尺寸延展。", suggestPlan: true } });
+    await expect(pending).resolves.toBe("succeeded");
+    const restored = await getAgentSession(s.id);
+    expect(restored.messages.at(-1)).toMatchObject({ content: "先定主视觉，再做尺寸延展。", metadata: { suggestPlan: true, kind: "message" } });
+    expect(restored.plans).toEqual([]);
+    expect(mocks.loadCatalog).not.toHaveBeenCalled();
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it("clears unvalidated previews before the one completed-response schema repair", async () => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockImplementationOnce(async (_connection, request) => {
+      request.onTextDelta('{"type":"tool","message":"已执行');
+      return { output: '{"type":"tool","message":"已执行' };
+    }).mockImplementationOnce(async (_connection, request) => {
+      request.onTextDelta('{"type":"reply","message":"回复已整理"}');
+      return { output: { type: "reply", message: "回复已整理" } };
+    });
+    const events = vi.fn();
+    await runAgentTurn(input(s.id), events);
+    expect(mocks.complete).toHaveBeenCalledTimes(2);
+    expect(events.mock.calls.filter(([event]) => event.type === "delta" && event.reset)).toHaveLength(2);
+    expect(events.mock.calls.some(([event]) => event.type === "stage" && event.message.includes("整理回复格式"))).toBe(true);
+    const restored = await getAgentSession(s.id);
+    expect(restored.messages.filter(message => message.role === "assistant").map(message => message.content)).toEqual(["回复已整理"]);
+    expect(restored.plans).toEqual([]);
+    expect(mocks.createRunFromPrepared).not.toHaveBeenCalled();
+  });
+  it("never repairs or replays a failed live stream even after partial preview text", async () => {
+    const s = await createAgentSession("canvas");
+    mocks.complete.mockImplementationOnce(async (_connection, request) => {
+      request.onTextDelta('{"type":"reply","message":"收到的部分');
+      throw new Error("connection reset during stream");
+    });
+    const events = vi.fn();
+    await expect(runAgentTurn(input(s.id), events)).rejects.toThrow("connection reset");
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect(events.mock.calls.some(([event]) => event.type === "delta" && event.text === "收到的部分")).toBe(true);
+    const restored = await getAgentSession(s.id);
+    expect(restored.messages[0].metadata.turnStatus).toBe("failed");
+    expect(restored.messages.some(message => message.content === "收到的部分")).toBe(false);
+    expect(await runAgentTurn(input(s.id), () => {})).toBe("failed");
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+  });
   it("repairs malformed output only once and never creates nodes", async () => {
     const s = await createAgentSession("canvas");
     mocks.complete.mockResolvedValue({

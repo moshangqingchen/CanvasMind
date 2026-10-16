@@ -1,9 +1,10 @@
-import type { DirectorAdapterInput, DirectorAdapterResult, DirectorProtocol, ResolvedDirectorConnection } from "@super-canvas/director";
+import type { DirectorAdapterResult, DirectorProtocol, ResolvedDirectorConnection } from "@super-canvas/director";
 import type { JsonObject, ProviderConnectionRecord } from "@super-canvas/db";
 import { repository } from "./server";
 import { agentModelEvidenceFingerprint, createAgentModelEvidence } from "./agent-model-capabilities";
 import { directorAdapterRegistry } from "./director-adapters";
-import { DirectorAdapterError, isRecord } from "./director-adapters/shared";
+import { DirectorAdapterError, isRecord, type StreamingDirectorInput } from "./director-adapters/shared";
+export type AgentModelCallInput = StreamingDirectorInput;
 
 interface RuntimeProfile {
   fingerprint: string;
@@ -36,12 +37,12 @@ function applyProfile(connection: ResolvedDirectorConnection, profile?: RuntimeP
   };
 }
 
-/** Only an explicit unsupported endpoint/parameter response permits one retry. */
+/** Only an explicit unsupported endpoint/parameter rejection permits negotiation. */
 export function agentCompatibilityFallback(connection: ResolvedDirectorConnection, error: unknown): Partial<RuntimeProfile> | undefined {
   if (!(error instanceof DirectorAdapterError) || error.code !== "upstream" || ![400, 404, 405, 415, 422].includes(error.status ?? 0)) return;
   const detail = error.message.toLowerCase();
   // Some gateways encode balance or access failures as HTTP 400. Never retry those.
-  if (/余额|额度|欠费|鉴权|权限|quota|credit|balance|billing|payment|unauthori|forbidden|api.?key/u.test(detail)) return;
+  if (/余额|额度|欠费|鉴权|权限|认证|计费|扣费|quota|credit|balance|billing|payment|funds|unauthori|unauthenticated|authentication|authorization|forbidden|(?:access|permission)[ _-]?denied|not[ _-]?authorized|\bauth[ _-]?(?:failed|failure|error|denied|invalid|expired)\b|\b(?:invalid|expired|missing)[ _-]?(?:bearer[ _-]?token|credentials?)\b|\b(?:bearer[ _-]?token|credentials?)[ _-]?(?:failed|invalid|expired|missing|rejected)\b|invalid[ _-]?(?:access[ _-]?)?token|(?:access[ _-]?)?token[ _-]?(?:expired|invalid)|\bbudget[ _-]?(?:exceeded|exhausted|depleted|limit)\b|\brate[ _-]?limit(?:[ _-]?(?:exceeded|reached))?\b|api.?key/u.test(detail)) return;
   const unsupported = /unsupported|not supported|not support|unknown parameter|unrecognized|not allowed|不支持|未知参数|不允许/u.test(detail);
   if (unsupported && /response_format|json_schema|structured.output|text\.format/u.test(detail) && connection.capabilities.structuredOutput)
     return { disableStructuredOutput: true };
@@ -59,7 +60,7 @@ export function agentCompatibilityFallback(connection: ResolvedDirectorConnectio
   if (["openai-chat-completions", "generic-openai-compatible"].includes(connection.protocol)) return { protocol: "openai-responses" };
 }
 
-export async function completeAgentModel(connection: ResolvedDirectorConnection, input: DirectorAdapterInput): Promise<DirectorAdapterResult> {
+export async function completeAgentModel(connection: ResolvedDirectorConnection, input: AgentModelCallInput): Promise<DirectorAdapterResult> {
   const original = await repository.getConnection(connection.id);
   const fingerprint = original ? agentModelEvidenceFingerprint(original) : undefined;
   const cached = profileFor(original, connection.model);
@@ -70,6 +71,11 @@ export async function completeAgentModel(connection: ResolvedDirectorConnection,
     protocol: current.protocol,
     verifiedAt: new Date().toISOString(),
   };
+  let textDeltaReceived = false;
+  const requestInput: AgentModelCallInput = input.onTextDelta ? { ...input, onTextDelta: text => {
+    textDeltaReceived = true;
+    input.onTextDelta?.(text);
+  } } : input;
   let result: DirectorAdapterResult;
   const observedInputs = Object.fromEntries((input.attachments ?? []).map(attachment => [`${attachment.kind}Input`, true]));
   const saveEvidence = async (inputCapabilities: { imageInput?: boolean; audioInput?: boolean; videoInput?: boolean }, successfulProfile?: RuntimeProfile) => {
@@ -106,7 +112,8 @@ export async function completeAgentModel(connection: ResolvedDirectorConnection,
     }
   };
   try {
-    result = await directorAdapterRegistry.get(current.protocol).complete(current, input);
+    input.signal?.throwIfAborted();
+    result = await directorAdapterRegistry.get(current.protocol).complete(current, requestInput);
   } catch (error) {
     if (error instanceof DirectorAdapterError && error.code === "upstream" && [400, 415, 422].includes(error.status ?? 0) &&
       /unsupported|not supported|does not support|不支持/iu.test(error.message) &&
@@ -117,14 +124,19 @@ export async function completeAgentModel(connection: ResolvedDirectorConnection,
       if (Object.keys(unsupportedInputs).length) await saveEvidence(unsupportedInputs);
     }
     const fallback = agentCompatibilityFallback(current, error);
-    if (!fallback || input.signal?.aborted || (input.attachments?.some(a => a.kind !== "image") && fallback.protocol === "openai-responses")) throw error;
+    if (!fallback || input.signal?.aborted || textDeltaReceived ||
+      (error instanceof DirectorAdapterError && error.responseBodyReceived) ||
+      (input.attachments?.some(attachment => attachment.kind !== "image") && fallback.protocol === "openai-responses")) throw error;
+    // Only one explicit, pre-output 4xx rejection can negotiate a compatible
+    // request. A second failure escapes directly; partial/ambiguous turns are
+    // never reissued. The ordinary adapter transport also keeps eval accounting.
     profile = { ...profile, ...fallback,
       ...(fallback.unsupportedReasoningEfforts ? { unsupportedReasoningEfforts: [...new Set([
         ...(profile.unsupportedReasoningEfforts ?? []), ...fallback.unsupportedReasoningEfforts,
       ])] } : {}),
     };
     current = applyProfile(current, profile);
-    result = await directorAdapterRegistry.get(current.protocol).complete(current, input);
+    result = await directorAdapterRegistry.get(current.protocol).complete(current, requestInput);
   }
   input.signal?.throwIfAborted();
   await saveEvidence(observedInputs, profile);

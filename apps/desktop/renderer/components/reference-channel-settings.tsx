@@ -33,17 +33,20 @@ export function ReferenceChannelSettings() {
     } catch (failure) { setError(failure instanceof Error ? failure.message : "保存失败"); }
     finally { setBusy(false); }
   }
-  return <div role="tabpanel" id="sm-reference-panel" style={{ padding: "28px 36px", overflowY: "auto", minHeight: 0 }}>
+  return <div role="tabpanel" id="sm-reference-panel" className="sm-simple-panel">
+    <div className="sm-simple-card">
+    <span className="sm-section-label">素材通道 <span className="sm-micro-label" aria-hidden="true">ASSET CHANNEL</span></span>
     <h3>本机素材通道</h3>
     <p>素材保存在本机。需要公网参考素材的模型，会通过你的域名读取带签名的临时链接，有效期为 1 小时。</p>
     <p>读取期间需要保持电脑联网、程序运行。素材会经过 Cloudflare 并交给所选供应商处理；持有有效链接的人也可以读取该素材。</p>
-    <div style={{ maxWidth: 620, display: "grid", gap: 18, marginTop: 24 }}>
+    <div className="sm-simple-form">
       <label><input type="checkbox" aria-label="启用本机素材通道" checked={enabled} disabled={busy || !status} onChange={event => setEnabled(event.target.checked)} /> 启用本机素材通道</label>
       <label className="field">素材域名<input aria-label="素材域名" placeholder="https://你的域名" value={baseUrl} disabled={busy || !status} onChange={event => setBaseUrl(event.target.value)} /></label>
       <label className="field">Cloudflare 隧道凭据<input aria-label="Cloudflare 隧道凭据" type="password" autoComplete="off" value={tunnelToken} disabled={busy || !status} placeholder={status?.tokenConfigured ? "已加密保存，留空保留原凭据" : "粘贴现有隧道的安装命令或 Token"} onChange={event => setTunnelToken(event.target.value)} /></label>
       <small>凭据由 Windows 加密保存在本机。将此域名的 Cloudflare 隧道服务地址设为 http://127.0.0.1:3210。</small>
       <div role="status">{error || status?.message || (status?.enabled ? "等待连接" : "素材通道已关闭")}</div>
       <button className="button primary" type="button" onClick={() => void save()} disabled={busy || !status}>{busy ? "正在保存…" : enabled ? "保存并连接" : "保存并关闭"}</button>
+    </div>
     </div>
   </div>;
 }

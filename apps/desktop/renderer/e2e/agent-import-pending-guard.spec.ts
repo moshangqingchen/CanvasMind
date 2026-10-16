@@ -111,7 +111,7 @@ test("素材上传未完成时拒绝智能体放入，导入保存并刷新方�
     await expect(pending).toHaveCount(1);
     const importedNodeId = (await pending.getAttribute("data-id"))!;
     await page.getByRole("button", { name: "打开智能体", exact: true }).click();
-    const approve = page.getByRole("button", { name: "第一次确认：放入画布", exact: true });
+    const approve = page.getByRole("button", { name: "放入画布", exact: true });
     await approve.click();
     await expect(page.getByRole("alert").filter({ hasText: "素材仍在导入，请等待导入完成后重试" })).toBeVisible();
     expect(counts.materialize).toBe(0);
@@ -125,7 +125,7 @@ test("素材上传未完成时拒绝智能体放入，导入保存并刷新方�
     await expect(page.locator(`.react-flow__node[data-id="${importedNodeId}"] img`)).toBeVisible();
     // Keep the real revision boundary: a refreshed plan, rather than silently
     // accepting its old base revision, is what can now be safely materialized.
-    await page.getByRole("button", { name: "刷新方案与模型", exact: true }).click();
+    await page.getByRole("button", { name: "检查方案与模型", exact: true }).click();
     await expect.poll(() => counts.refresh).toBe(1);
     await expect(approve).toBeEnabled();
     await approve.click();

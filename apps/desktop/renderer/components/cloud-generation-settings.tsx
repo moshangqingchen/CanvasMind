@@ -32,7 +32,9 @@ export function CloudGenerationSettings() {
     } catch (error) { setFailed(true); setMessage(error instanceof Error ? error.message : "保存失败"); }
     finally { setBusy(false); }
   }
-  return <section id="sm-cloud-panel" role="tabpanel" className="sm-basics" style={{ overflow: "auto", padding: 24 }}>
+  return <section id="sm-cloud-panel" role="tabpanel" className="sm-simple-panel">
+    <div className="sm-simple-card">
+    <span className="sm-section-label">云端生图 <span className="sm-micro-label" aria-hidden="true">CLOUD GENERATION</span></span>
     <h3>Cloudflare 云端生图</h3>
     <p className="sm-muted">云端完成生成后保存结果 24 小时，到期自动删除。画布取回本地后长期保留，断网或重开软件可在有效期内继续取回。每个供应商可单独选择，连接测试不会调用模型生图。</p>
     <div className="sm-form-grid">
@@ -42,5 +44,6 @@ export function CloudGenerationSettings() {
     <p className="sm-muted">勾选供应商的“使用 Cloudflare 云端生图”后，该供应商的新生图与编辑请求会经此服务发送；提示词、参考图和 API Key 会由你自己的 Cloudflare 后台处理。</p>
     <button className="sm-button is-primary" disabled={busy || !loaded || !endpoint.trim()} onClick={() => void saveAndTest()}>{busy ? "正在检查…" : "保存并测试连接"}</button>
     {message && <p className={`sm-notice${failed ? " is-error" : ""}`} role="status">{message}</p>}
+    </div>
   </section>;
 }

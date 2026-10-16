@@ -1,3 +1,5 @@
+import { openWorkspaceProject } from "./helpers/workspace-navigation";
+import { agentModelTrigger, agentModelRow, openAgentModels, closeAgentModels, chooseAgentModel, expectAgentModel } from "./helpers/agent-controls";
 import { readFile } from "node:fs/promises";
 import {
   expect,
@@ -1144,8 +1146,8 @@ test.describe("超级画布完整验收", () => {
       await page.screenshot({ path: testInfo.outputPath("canvas-initialization-error-can-leave.png") });
       await home.click();
       await expect(page).toHaveURL(/\/$/u);
-      await expect(page.getByRole("heading", { name: "我的画布", exact: true })).toBeVisible();
-      await page.locator(`a[href="/canvas/${healthy.id}"]`).last().click();
+      await expect(page.getByTestId("neural-workspace")).toBeVisible();
+      await openWorkspaceProject(page, healthy.id);
       await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
       const editor = page.locator('.react-flow__node[data-id="e2e-prompt"] .tiptap-prompt');
       await expect(editor).toContainText("电影感的未来城市");
@@ -1168,11 +1170,12 @@ test.describe("超级画布完整验收", () => {
     await openWorkspace(page);
     await page.getByRole("button", { name: "打开智能体", exact: true }).click();
     const inspector = page.locator("aside.inspector");
-    await expect(inspector.getByText("创作助手", { exact: true })).toBeVisible();
+    await expect(inspector.getByRole("button", { name: "切换对话", exact: true })).toContainText("创作助手");
     await expect(page.getByRole("button", { name: "打开超级导演", exact: true })).toHaveCount(0);
     await expect(inspector.getByRole("tab", { name: "导演台", exact: true })).toHaveCount(0);
     await expect(inspector.getByRole("button", { name: "智能体模型设置", exact: true })).toHaveCount(0);
-    await inspector.getByRole("button", { name: "管理供应商与模型", exact: true }).click();
+    const modelDialog = await openAgentModels(page);
+    await modelDialog.getByRole("button", { name: "管理供应商与模型", exact: true }).click();
     const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
     await expect(settings.getByRole("button", { name: "添加供应商", exact: true })).toBeVisible();
     await expect(settings.getByRole("tab", { name: "导演设置", exact: true })).toHaveCount(0);
@@ -1193,13 +1196,14 @@ test.describe("超级画布完整验收", () => {
     });
     await openWorkspace(page);
     await page.getByRole("button", { name: "打开智能体", exact: true }).click();
-    const inspector = page.locator("aside.inspector");
-    await expect(inspector.getByLabel("智能体 API 供应商")).toHaveValue("saved-supplier");
-    await expect(inspector.getByLabel("智能体模型群组")).toHaveValue(groupId);
-    const models = inspector.getByLabel("智能体模型", { exact: true });
-    await expect(models.locator('option[value]:not([value=""])')).toHaveCount(2);
-    await models.selectOption("existing-canvas-key\ngpt-5.4-mini");
-    await expect(models).toHaveValue("existing-canvas-key\ngpt-5.4-mini");
+    const models = await openAgentModels(page);
+    const group = models.locator(`[data-supplier-id="saved-supplier"] [data-model-group="${groupId}"]`);
+    await expect(group).toBeVisible();
+    await expect(group.locator("button[data-model-key]")).toHaveCount(2);
+    await expect(agentModelRow(group, "existing-canvas-key\ngpt-5.4")).toBeVisible();
+    await closeAgentModels(page);
+    await chooseAgentModel(page, "existing-canvas-key\ngpt-5.4-mini");
+    await expectAgentModel(page, "existing-canvas-key\ngpt-5.4-mini");
     expect(writes).toEqual([]);
   });
 
@@ -1273,10 +1277,10 @@ test.describe("超级画布完整验收", () => {
     await editor.fill("返回主界面前的最新灵感");
     await page.getByRole("button", { name: "返回主界面", exact: true }).click();
     await expect(page).toHaveURL(/\/$/u);
-    await expect(page.getByRole("heading", { name: "我的画布", exact: true })).toBeVisible();
+    await expect(page.getByTestId("neural-workspace")).toBeVisible();
     const persisted = await getJson<CanvasResponse>(page.request, `/api/canvas/${before.id}`);
     expect(JSON.stringify(persisted.graph.nodes.find((node) => node.id === "e2e-prompt")?.data.parts)).toContain("返回主界面前的最新灵感");
-    await page.locator(`a[href="/canvas/${before.id}"]`).last().click();
+    await openWorkspaceProject(page, before.id);
     await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     await expect(editor).toContainText("返回主界面前的最新灵感");
   });
@@ -1284,7 +1288,7 @@ test.describe("超级画布完整验收", () => {
   test("保存失败时浏览器后退仍保留完整草稿，重新进入可恢复并保存", async ({ page, request }) => {
     const canvas = await getJson<CanvasResponse>(request, "/api/canvas");
     await page.goto("/");
-    await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
+    await openWorkspaceProject(page, canvas.id);
     await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("已保存");
     const canvasRoute = `**/api/canvas/${canvas.id}`;
     const failSave = async (route: Route) => {
@@ -1298,7 +1302,7 @@ test.describe("超级画布完整验收", () => {
     await editor.fill("浏览器后退时保留的离线草稿");
     await page.goBack();
     await expect(page).toHaveURL(/\/$/u);
-    await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
+    await openWorkspaceProject(page, canvas.id);
     await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
     await expect(editor).toContainText("浏览器后退时保留的离线草稿");
     await page.unroute(canvasRoute, failSave);
@@ -1315,7 +1319,7 @@ test.describe("超级画布完整验收", () => {
   test("保存冲突会阻止返回按钮离开，浏览器后退再进入仍保留冲突副本", async ({ page, request }) => {
     const canvas = await getJson<CanvasResponse>(request, "/api/canvas");
     await page.goto("/");
-    await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
+    await openWorkspaceProject(page, canvas.id);
     await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("已保存");
     const latest = await getJson<CanvasResponse>(request, `/api/canvas/${canvas.id}`);
     const serverGraph = structuredClone(latest.graph);
@@ -1334,7 +1338,7 @@ test.describe("超级画布完整验收", () => {
     await expect(page.getByRole("button", { name: "处理画布保存冲突" })).toContainText("保存冲突");
     await page.goBack();
     await expect(page).toHaveURL(/\/$/u);
-    await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
+    await openWorkspaceProject(page, canvas.id);
     conflict = page.getByRole("dialog", { name: "画布已在其他窗口更新" });
     await expect(conflict).toBeVisible();
     await expect(page.locator('.react-flow__node[data-id="e2e-prompt"] .canvas-prompt-content')).toContainText("需要保留的本地冲突副本");
@@ -1364,7 +1368,7 @@ test.describe("超级画布完整验收", () => {
     const saved = await getJson<CanvasResponse>(request, `/api/canvas/${canvas.id}`);
     expect(saved.graph.drawings).toHaveLength(1);
     expect(saved.graph.drawings![0]!.points.length).toBeGreaterThanOrEqual(4);
-    await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
+    await openWorkspaceProject(page, canvas.id);
     await expect(page.locator(".canvas-drawing-stroke:not(.active)")).toHaveCount(1);
   });
 
@@ -1388,7 +1392,7 @@ test.describe("超级画布完整验收", () => {
     };
     try {
       await page.goto("/");
-      await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
+      await openWorkspaceProject(page, canvas.id);
       await expect(page.getByRole("button", { name: "画布自动保存状态" })).toContainText("已保存");
       await page.route(canvasRoute, holdFirstSave);
       await page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview').click();
@@ -1398,10 +1402,10 @@ test.describe("超级画布完整验收", () => {
       await editor.fill("A 画布应保留的最新第二版");
       await page.goBack();
       await expect(page).toHaveURL(/\/$/u);
-      await page.locator(`a[href="/canvas/${other.id}"]`).last().click();
+      await openWorkspaceProject(page, other.id);
       await expect(page.getByRole("heading", { name: "让灵感，在这里发生" })).toBeVisible();
       await page.goBack();
-      await page.locator(`a[href="/canvas/${canvas.id}"]`).last().click();
+      await openWorkspaceProject(page, canvas.id);
       await expect(page).toHaveURL(new RegExp(`/canvas/${canvas.id}$`, "u"));
       releaseSave?.();
       await expect(page.locator('.react-flow__node[data-id="e2e-prompt"] .prompt-overview')).toContainText("A 画布应保留的最新第二版");
@@ -3208,10 +3212,11 @@ test.describe("超级画布完整验收", () => {
     await expect(
       page.getByRole("textbox", { name: "创作任务要求" }),
     ).toHaveValue(/反推一份可复现画面主体/u);
-    const agentComposer = page.locator('aside.inspector [aria-label="通用创作智能体"]');
-    await expect(agentComposer.getByLabel("智能体 API 供应商")).toBeVisible();
-    await expect(agentComposer.getByLabel("智能体模型群组")).toBeVisible();
-    await expect(agentComposer.getByLabel("智能体模型", { exact: true })).toBeVisible();
+    await expect(agentModelTrigger(page)).toBeVisible();
+    const modelPicker = await openAgentModels(page);
+    await expect(modelPicker.getByLabel("供应商与模型目录", { exact: true })).toBeVisible();
+    await expect(modelPicker.getByRole("button", { name: "管理供应商与模型", exact: true })).toBeVisible();
+    await closeAgentModels(page);
     const zoomToolbar = resultActions.getByRole("group", {
       name: "图片缩放",
     });

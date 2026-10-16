@@ -115,7 +115,7 @@ test("智能体事务中到达的素材桥事件留在队列，响应应用后�
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => firstPollHeld).toBe(true);
     await page.getByRole("button", { name: "打开智能体", exact: true }).click();
-    await page.getByRole("button", { name: "第一次确认：放入画布", exact: true }).click();
+    await page.getByRole("button", { name: "放入画布", exact: true }).click();
     await expect.poll(() => agentRequestHeld).toBe(true);
     await expect(page.locator(".canvas-editor")).toHaveAttribute("inert", "");
     dropAvailable = true;

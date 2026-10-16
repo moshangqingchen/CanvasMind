@@ -26,7 +26,7 @@ interface Props {
   label?: string;
 }
 
-function tokenPrice(model: Tk1688TextModel): string {
+export function tk1688TextModelPrice(model: Tk1688TextModel): string {
   const label = model.metadata?.priceLabel;
   if (typeof label === "string" && label.trim()) return label;
   const price = model.pricing;
@@ -121,7 +121,7 @@ export function Tk1688TextModelSelect({
             <strong>{route ?? "已保存线路"}</strong>
             {summary ? ` · ${summary}` : " · 目录未提供商家说明"}
           </p>
-          <p className={styles.price} aria-label={`${label}报价`}>{tokenPrice(current)}</p>
+          <p className={styles.price} aria-label={`${label}报价`}>{tk1688TextModelPrice(current)}</p>
           <details className={styles.details}>
             <summary>完整模型 ID</summary>
             <code>{current.id}</code>

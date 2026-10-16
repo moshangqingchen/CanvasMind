@@ -23,6 +23,7 @@ import {
   structuredSystemPrompt,
   usageFrom,
   type SourceCandidate,
+  type StreamingDirectorInput,
 } from "./shared";
 import { probeGoogleCapabilities } from "./probe";
 
@@ -131,7 +132,7 @@ export class GoogleGenerateContentAdapter implements DirectorModelAdapter {
 
   async complete(
     connection: DirectorConnection,
-    input: DirectorAdapterInput,
+    input: StreamingDirectorInput,
   ): Promise<DirectorAdapterResult> {
     assertAttachmentCapabilities(connection, input);
     const outputTokens = adapterOutputTokenLimit(input);
@@ -143,8 +144,8 @@ export class GoogleGenerateContentAdapter implements DirectorModelAdapter {
       connection,
       adapterEndpoint(
         connection,
-        `/models/${encodeURIComponent(model)}:generateContent`,
-      ),
+        `/models/${encodeURIComponent(model)}:${input.onTextDelta ? "streamGenerateContent" : "generateContent"}`,
+      ) + (input.onTextDelta ? "?alt=sse" : ""),
       {
         method: "POST",
         headers: adapterHeaders(connection, {
@@ -185,6 +186,7 @@ export class GoogleGenerateContentAdapter implements DirectorModelAdapter {
         }),
       },
       input.signal,
+      input.onTextDelta,
     );
     const finishReason = adapterFinishReason(payload, this.protocol, input);
     const result = geminiResult(payload);

@@ -32,7 +32,7 @@ test("desktop startup refreshes catalogs in the background and notifies the canv
     await route.continue();
   });
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1, name: /从一个想法，\s*开始创作。/u })).toBeVisible();
+  await expect(page.getByTestId("neural-workspace")).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as unknown as { catalogUpgradeNotifications: number }).catalogUpgradeNotifications)).toBe(1);
   expect(starts).toBeGreaterThan(0);
   expect(polls).toBeGreaterThan(0);

@@ -15,7 +15,7 @@ import { refreshAllSupplierAccounts, seedSupplierBilling, useSupplierBillingOver
 import { billingCompact } from "../lib/supplier-billing-display";
 import { groupTk1688Models, tk1688ModelFamily, tk1688RouteLabel, tk1688RouteSummary, type Tk1688DisplayModel } from "../lib/tk1688-model-display";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { supplierIdentityPresentation } from "../lib/supplier-identity-presentation";
 import {
   Check,
@@ -84,6 +84,7 @@ import { inventoryModels } from "../lib/model-availability";
 import { buildSupplierRefreshResult, recordSupplierRefreshResult, refreshAllSuppliers, refreshSupplier, supplierRefreshStatus, subscribeSupplierRefresh, type SupplierRefreshProgress, type SupplierRefreshResult } from "../lib/refresh-suppliers";
 import { SupplierRefreshDetails, SupplierRefreshIndicator } from "./supplier-refresh-details";
 import { supplierCatalogDisplayPrice, supplierModelDirectoryDiff } from "../lib/supplier-model-directory-diff";
+import { settingsSupplierTarget } from "../lib/settings-target";
 
 const DEFAULT_API_URLS: Record<string, string> = {
   cangyuan: "https://ai.cangyuansuanli.cn",
@@ -193,9 +194,13 @@ function savedModels(connection?: ProviderConnectionView): ModelDescriptor[] {
 export function SupplierManager({
   initialCangyuanGroup,
   onConnectionsChanged,
+  targetSupplierId,
+  startAdding = false,
 }: {
   initialCangyuanGroup?: string | null;
   onConnectionsChanged?: (connections: ProviderConnectionView[]) => void;
+  targetSupplierId?: string | null;
+  startAdding?: boolean;
 }) {
   const { requestLeave, confirmDiscard } = useSettingsLeaveGuard();
   const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
@@ -204,11 +209,11 @@ export function SupplierManager({
   const [billingMessage, setBillingMessage] = useState("");
   const [connections, setConnections] = useState<ProviderConnectionView[]>([]);
   const [selectedId, setSelectedId] = useState(
-    initialCangyuanGroup ? "template:cangyuan" : "",
+    targetSupplierId ?? (initialCangyuanGroup ? "template:cangyuan" : ""),
   );
   const [query, setQuery] = useState("");
   const [detailSession, setDetailSession] = useState(0);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startAdding);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState<SupplierRefreshProgress>({ running: false, runningIds: [], total: 0, completed: 0, current: "", results: [] });
@@ -431,18 +436,20 @@ export function SupplierManager({
     return items;
   }, [suppliers, connections, showHidden]);
 
-  const selected =
-    entries.find((entry) => entry.id === selectedId) ??
-    (initialCangyuanGroup
-      ? entries.find((entry) => entry.supplierKey === "cangyuan")
-      : undefined) ??
-    entries[0];
-  selectedRef.current = selected?.id;
+  const selected = settingsSupplierTarget(entries, selectedId, initialCangyuanGroup);
+  useLayoutEffect(() => { selectedRef.current = selected?.id; }, [selected?.id]);
   const visibleEntries = entries.filter((entry) =>
     `${entry.name} ${entry.siteUrl} ${entry.apiUrl}`
       .toLocaleLowerCase()
       .includes(query.toLocaleLowerCase()),
   );
+  const supplierListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!targetSupplierId || loading) return;
+    const row = Array.from(supplierListRef.current?.querySelectorAll<HTMLElement>("[data-supplier-id]") ?? [])
+      .find(element => element.dataset.supplierId === selected?.id);
+    row?.scrollIntoView({ block: "nearest", behavior: "instant" });
+  }, [targetSupplierId, loading, selected?.id]);
 
   function updateRecord(record: SupplierRecord, originId?: string) {
     setSuppliers((current) => {
@@ -568,7 +575,7 @@ export function SupplierManager({
             aria-label="搜索供应商"
           />
         </label>
-        <div className="sm-supplier-list">
+        <div className="sm-supplier-list" ref={supplierListRef}>
           {visibleEntries.map((entry) => {
             const count = connections.filter((connection) =>
               supplierOwnsConnection(entry, connection),
@@ -579,6 +586,7 @@ export function SupplierManager({
               <div
                 className={`sm-supplier-row${!adding && selected?.id === entry.id ? " is-selected" : ""}`}
                 key={entry.id}
+                data-supplier-id={entry.id}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   openMenu(entry, event.clientX, event.clientY);
@@ -598,6 +606,7 @@ export function SupplierManager({
                   type="button"
                   className={`sm-supplier-item ${!adding && selected?.id === entry.id ? "is-selected" : ""}`}
                   title={entry.name}
+                  aria-pressed={!adding && selected?.id === entry.id}
                   key={entry.id}
                   onClick={() => {
                     if (selected?.id === entry.id && !adding) return;
@@ -1367,9 +1376,9 @@ function SupplierDetail({
         </div>
       </header>
       <section className="sm-supplier-overview" aria-label="供应商目录概览">
-        <div data-supplier-stat="groups"><span>当前分组</span><strong>{groups.length}</strong><small>保留站点目录与手动分组</small></div>
-        <div data-supplier-stat="models"><span>目录型号</span><strong>{catalogModelCount ?? "—"}</strong><small>按已保存的分组记录统计</small></div>
-        <div data-supplier-stat="updated"><span>目录成功更新</span>{record?.scanLastSuccessAt ?
+        <div data-supplier-stat="groups"><span>当前分组 <span className="sm-micro-label" aria-hidden="true">GROUPS</span></span><strong>{groups.length}</strong><small>保留站点目录与手动分组</small></div>
+        <div data-supplier-stat="models"><span>目录型号 <span className="sm-micro-label" aria-hidden="true">MODELS</span></span><strong>{catalogModelCount ?? "—"}</strong><small>按已保存的分组记录统计</small></div>
+        <div data-supplier-stat="updated"><span>目录成功更新 <span className="sm-micro-label" aria-hidden="true">UPDATED</span></span>{record?.scanLastSuccessAt ?
           <time dateTime={record.scanLastSuccessAt} title={new Date(record.scanLastSuccessAt).toLocaleString("zh-CN")}>
             {new Date(record.scanLastSuccessAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}
             <small>{new Date(record.scanLastSuccessAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</small>

@@ -274,7 +274,7 @@ async function mockSuppliers(
 
 async function openSettings(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await expect(
     page.getByRole("dialog", { name: "供应商与模型设置" }),
   ).toBeVisible();
@@ -394,7 +394,7 @@ test("参考图临时链接默认关闭，独立保存与关闭不触发生图�
   expect(api.writes).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("reference-hosting-setting.png") });
   await page.reload();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await dialog.getByRole("tab", { name: "模型与分组", exact: true }).click();
   await expect(hosting).toBeChecked();
   await hosting.uncheck();
@@ -788,7 +788,7 @@ test("供应商分组和手动分组可独立收起，手动分组删除后刷�
   await expect(manual.locator(".sm-group-card")).toHaveCount(0);
   await expect(platform.locator(".sm-group-card")).toHaveCount(1);
   await page.reload();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await expect(
     dialog.getByRole("heading", { name: "my-manual", exact: true }),
   ).toHaveCount(0);
@@ -813,7 +813,7 @@ test("读取密钥分组说明，区分分辨率限制和后台标价，并保�
     await expect(row.locator("small")).toHaveText(resolution === "4K" ? "分组说明排除项" : "分组说明列出项");
   }
   await page.reload();
-  await page.getByRole("button", {name:"供应商与模型",exact:true}).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await expect(details).toContainText("仅支持 1K / 2K；不支持 4K");
 });
 
@@ -832,7 +832,7 @@ test("登录扫描后自动填入已有分组 Key，并展示同步结果与模�
   await expect(dialog.getByLabel("vip API Key", { exact: true })).toHaveAttribute("placeholder", "已从站点自动填入 · 留空保留原 Key");
   await expect(dialog.getByRole("button", { name: "测试并读取", exact: true })).toBeEnabled();
   await page.reload();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
   await expect(dialog.getByText("● 已从站点同步 Key", { exact: true })).toBeVisible();
   await expect(dialog.getByLabel("账号密钥同步结果")).toContainText("已自动填入 1 个分组 Key");
@@ -916,7 +916,7 @@ test("访问令牌保存扫描、留空保留、更新和清除，响应与输�
   expect(requests.find((request) => request.path.endsWith("/scan"))?.body).not.toHaveProperty("siteLogin");
   expect(mock.suppliers()[0]?.siteLogin).toEqual({ authMode: "access-token", configured: true, userId: "123" });
   await page.reload();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
   await expect(dialog.getByLabel("登录方式", { exact: true })).toHaveValue("access-token");
   await expect(token).toHaveValue("");
@@ -1025,7 +1025,7 @@ test("访问令牌切换方式清空待输入秘密，空令牌拒绝保存，�
     }
   }
   await expect(dialog).toBeHidden();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
   await expect(mode).toHaveValue("password");
   await expect(dialog.getByLabel("站点账号", { exact: true })).toHaveValue("saved@example.com");
@@ -1054,7 +1054,7 @@ test("访问令牌仅修改用户 ID 也提示未保存，放弃后恢复公开�
   await confirmation.accept();
   await close;
   await expect(dialog).toBeHidden();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
   await expect(dialog.getByLabel("登录方式", { exact: true })).toHaveValue("access-token");
   await expect(dialog.getByLabel("站点用户 ID（选填）", { exact: true })).toHaveValue("123");

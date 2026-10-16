@@ -18,7 +18,7 @@ test("本机素材通道保存后清空凭据输入，重开设置保留状态",
     };
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await page.getByRole("tab", { name: "素材通道", exact: true }).click();
   await page.getByRole("checkbox", { name: "启用本机素材通道" }).check();
   await page.getByLabel("素材域名", { exact: true }).fill("https://assets.example.com");
@@ -29,7 +29,7 @@ test("本机素材通道保存后清空凭据输入，重开设置保留状态",
   await expect(page.getByRole("dialog", { name: "供应商与模型设置" }).getByRole("status")).toContainText("素材通道已连通");
   await expect(credential).toHaveValue("");
   await page.getByRole("button", { name: "关闭设置", exact: true }).click();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await page.getByRole("tab", { name: "素材通道", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "启用本机素材通道" })).toBeChecked();
   await expect(page.getByLabel("素材域名", { exact: true })).toHaveValue("https://assets.example.com");

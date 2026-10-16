@@ -23,6 +23,7 @@ import {
   structuredSystemPrompt,
   usageFrom,
   type SourceCandidate,
+  type StreamingDirectorInput,
 } from "./shared";
 import { probeOpenAICompatibleCapabilities } from "./probe";
 
@@ -189,7 +190,7 @@ export class OpenAIResponsesAdapter implements DirectorModelAdapter {
 
   async complete(
     connection: DirectorConnection,
-    input: DirectorAdapterInput,
+    input: StreamingDirectorInput,
   ): Promise<DirectorAdapterResult> {
     assertAttachmentCapabilities(connection, input);
     const outputTokens = adapterOutputTokenLimit(input);
@@ -242,6 +243,7 @@ export class OpenAIResponsesAdapter implements DirectorModelAdapter {
         }),
       },
       input.signal,
+      input.onTextDelta,
     );
     const finishReason = adapterFinishReason(payload, this.protocol, input);
     const text = responseText(payload);

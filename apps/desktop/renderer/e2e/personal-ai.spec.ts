@@ -37,7 +37,7 @@ async function mockPersonalAi(page: Page) {
 
 async function openPersonalAi(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await page.getByRole("tab", { name: "个人 AI 网站", exact: true }).click();
   return page.getByRole("tabpanel", { name: "个人 AI 网站", exact: true });
 }
@@ -52,7 +52,7 @@ test("即梦预留连接无需 Key，保存和重新打开均不执行 CLI", asy
   expect(api.saves[0]).not.toHaveProperty("apiKey");
   await expect(panel.getByRole("button", { name: "检测连接", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "关闭设置", exact: true }).click();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await page.getByRole("tab", { name: "个人 AI 网站", exact: true }).click();
   await expect(panel.getByLabel("连接名称", { exact: true })).toHaveValue("即梦");
   expect(api.actions).toEqual([]);

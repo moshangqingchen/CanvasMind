@@ -67,7 +67,7 @@ async function fixture(page: Page, modelReadStatus: 200 | 401 = 200) {
     else await route.fulfill({ json: [connection] });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
   await expect(dialog.getByRole("heading", { name: "词元", exact: true })).toBeVisible();
   await expect(dialog.locator(".sm-model-family")).toHaveCount(2);

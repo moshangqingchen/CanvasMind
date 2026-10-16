@@ -1,0 +1,13 @@
+.core { position:relative; display:inline-block; flex:0 0 auto; border-radius:50%; isolation:isolate; color:var(--neural-silver); background:radial-gradient(ellipse, color-mix(in srgb,var(--neural-ember) 28%,transparent),transparent 66%); animation:breathe 4.5s ease-in-out infinite; }
+.core::before { content:""; position:absolute; inset:-24%; border-radius:50%; background:radial-gradient(ellipse,color-mix(in srgb,var(--neural-silver) 13%,transparent),transparent 68%); }
+.shell { position:absolute; inset:12%; border:1px solid color-mix(in srgb,var(--neural-silver) 64%,transparent); border-radius:43% 57% 48% 52%; transform:rotate(-18deg); box-shadow:inset 0 0 5px color-mix(in srgb,var(--neural-ember) 22%,transparent); }
+.shell::before,.shell::after { content:""; position:absolute; inset:8% 17%; border:1px solid color-mix(in srgb,var(--neural-gold) 76%,transparent); clip-path:polygon(0 0,92% 14%,100% 78%,20% 100%,0 0); border-radius:30% 55% 38% 60%; transform:rotate(47deg); }
+.shell::after { inset:0 27%; transform:rotate(-25deg); border-color:color-mix(in srgb,var(--neural-silver) 65%,transparent); }
+.ember { position:absolute; inset:36%; border-radius:50%; background:var(--neural-ember-light); box-shadow:0 0 6px var(--neural-ember),0 0 12px color-mix(in srgb,var(--neural-ember) 45%,transparent); }
+.core[data-state="thinking"] .shell { animation:turn 2.3s linear infinite; }
+.core[data-state="streaming"] { animation:breathe 1s ease-in-out infinite; }
+.core[data-state="error"] { --neural-ember:var(--neural-danger); --neural-ember-light:var(--neural-danger); --neural-gold:var(--neural-danger); opacity:.8; }
+@keyframes breathe { 50% { transform:scale(1.035); opacity:.8; } }
+@keyframes turn { to { transform:rotate(342deg); } }
+:global([data-motion="off"]) .core,:global([data-motion="off"]) .shell,:global([data-page-hidden="true"]) .core,:global([data-page-hidden="true"]) .shell { animation:none; }
+@media(prefers-reduced-motion:reduce) { .core,.shell { animation:none !important; } }

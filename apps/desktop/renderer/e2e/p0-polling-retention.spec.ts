@@ -5,6 +5,7 @@ import type { AgentModelOption } from "../lib/agent-models";
 import { createMemoryFixture, installMemoryRoutes } from "./helpers/p0-memory-fixture";
 import { launchMemoryTarget } from "./helpers/p0-memory-launcher";
 import { MemorySampler, observeNetwork } from "./helpers/p0-memory-metrics";
+import { agentModelTrigger, openAgentModels } from "./helpers/agent-controls";
 
 // Accelerated cleanup regression, not a replacement for the real-time P0 soak.
 // Run explicitly with the isolated P0 configuration and P0_MEMORY_RETENTION=1.
@@ -142,7 +143,9 @@ async function pollingCase(
     const toggle = target.page.getByRole("button", { name: "智能体面板", exact: true });
     const panel = target.page.getByRole("region", { name: "通用创作智能体", exact: true });
     if (!await panel.isVisible()) await toggle.click();
-    await expect(panel.getByLabel("智能体模型", { exact: true }).locator("option").last()).toHaveText("P0 retained model");
+    const displayedModel = panel.getByLabel("智能体模型", { exact: true }).locator("option").last()
+      .or(agentModelTrigger(target.page).locator(":scope > span").first());
+    await expect(displayedModel).toHaveText("P0 retained model");
     await expect.poll(() => state.agentReads).toBeGreaterThanOrEqual(1);
     await finishResponses(target.page, state.agentReads);
     const now = await target.page.evaluate(() => Date.now());
@@ -241,13 +244,15 @@ test("P0 changed agent list publishes and a late older request cannot replace th
   test.skip(!enabled, "Requires explicit P0_MEMORY_RETENTION=1 and the isolated P0 configuration");
   test.setTimeout(6 * 60_000);
   await pollingCase(request, testInfo, "changed-and-race", async ({ page, sampler, state, details }) => {
-    const select = page.getByRole("region", { name: "通用创作智能体", exact: true }).getByLabel("智能体模型", { exact: true });
+    const panel = page.getByRole("region", { name: "通用创作智能体", exact: true });
+    const displayedModel = panel.getByLabel("智能体模型", { exact: true }).locator("option").last()
+      .or(agentModelTrigger(page).locator(":scope > span").first());
     state.body = state.body.replace("P0 retained model", "P0 changed model");
     let before = state.agentReads;
     await page.clock.fastForward(5000);
     await expect.poll(() => state.agentReads).toBe(before + 1);
     await finishResponses(page, before + 1);
-    await expect(select.locator("option").last()).toHaveText("P0 changed model");
+    await expect(displayedModel).toHaveText("P0 changed model");
     await sampler.sample("changed-list");
 
     let release: (() => void) | undefined;
@@ -262,13 +267,14 @@ test("P0 changed agent list publishes and a late older request cannot replace th
       state.body = state.body.replace("P0 changed model", "P0 newest model");
       // A manual refresh can overlap the interval request. It must win even
       // when the older response finishes later; no generation is submitted.
+      if (await agentModelTrigger(page).count()) await openAgentModels(page);
       await page.getByRole("button", { name: "刷新模型列表", exact: true }).click();
       await expect.poll(() => state.agentReads).toBe(before + 2);
       await finishResponses(page, parsedBefore + 1);
-      await expect(select.locator("option").last()).toHaveText("P0 newest model");
+      await expect(displayedModel).toHaveText("P0 newest model");
     } finally { release?.(); }
     await finishResponses(page, parsedBefore + 2);
-    await expect(select.locator("option").last()).toHaveText("P0 newest model");
+    await expect(displayedModel).toHaveText("P0 newest model");
     await sampler.sample("newest-list-survives-late-response");
     Object.assign(details, { changedListPublished: true, lateOlderResponseIgnored: true,
       overlappingReads: state.agentReads - before, parsedResponses: await parsedResponses(page) - parsedBefore });

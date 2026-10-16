@@ -11,7 +11,7 @@ test("极光结构首屏预览", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   const fixture = await installPhase3LargeFixture(page, { imageParameters: true });
   await page.goto("/");
-  await expect(page.getByText("我的画布", { exact: true }).first()).toBeVisible();
+  await expect(page.getByTestId("neural-workspace")).toBeVisible();
   await page.screenshot({ path: join(output!, "home-1366.png") });
   await page.goto(`/canvas/${fixture.canvasId}`);
   await expect(page.locator('[data-canvas-island="project"]')).toBeVisible();

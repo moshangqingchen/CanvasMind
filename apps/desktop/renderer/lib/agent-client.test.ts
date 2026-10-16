@@ -5,6 +5,22 @@ import type { AgentSession, AgentTurnInput } from "./agent-contracts";
 const input: AgentTurnInput = { canvasId: "canvas", sessionId: "s", requestId: "r", connectionId: "key", modelId: "text", message: "hello", attachmentAssetIds: [], selectedNodeIds: [] };
 afterEach(() => vi.unstubAllGlobals());
 describe("agent event stream", () => {
+  it("delivers delta/reset frames incrementally before the authoritative session and terminal event", async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+    const fetch = vi.fn().mockResolvedValue(new Response(body));
+    vi.stubGlobal("fetch", fetch);
+    const events = vi.fn();
+    const pending = streamAgentTurn(input, events, new AbortController().signal);
+    const encoder = new TextEncoder();
+    controller.enqueue(encoder.encode('data: {"type":"delta","turnId":"turn","text":"","reset":true}\n\ndata: {"type":"delta","turnId":"turn","text":"你好"}\n\n'));
+    await vi.waitFor(() => expect(events).toHaveBeenCalledTimes(2));
+    expect(events.mock.calls[1][0]).toEqual({ type: "delta", turnId: "turn", text: "你好" });
+    controller.enqueue(encoder.encode('data: {"type":"done","status":"succeeded"}\n\n'));
+    await pending;
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(body.locked).toBe(false);
+  });
   it("does not emit buffered events after the caller cancels the turn", async () => {
     const controller = new AbortController();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(

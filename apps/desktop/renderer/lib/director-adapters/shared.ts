@@ -8,12 +8,14 @@ import {
   type DirectorSource,
 } from "@super-canvas/director";
 import { providerFetch } from "@super-canvas/providers";
+import { createModelStream } from "./model-stream";
 
 export const DIRECTOR_ADAPTER_TIMEOUT_MS = 120_000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_ERROR_DETAIL_LENGTH = 500;
 
 export type JsonRecord = Record<string, unknown>;
+export type StreamingDirectorInput = DirectorAdapterInput & { readonly onTextDelta?: (text: string) => void };
 
 export class DirectorAdapterError extends Error {
   readonly code:
@@ -26,17 +28,20 @@ export class DirectorAdapterError extends Error {
     | "upstream";
   readonly status?: number;
   readonly retryable: boolean;
+  /** A successful response body has started; replay could repeat a billed turn. */
+  readonly responseBodyReceived: boolean;
 
   constructor(
     code: DirectorAdapterError["code"],
     message: string,
-    options?: { status?: number; retryable?: boolean },
+    options?: { status?: number; retryable?: boolean; responseBodyReceived?: boolean },
   ) {
     super(message);
     this.name = "DirectorAdapterError";
     this.code = code;
     this.status = options?.status;
     this.retryable = options?.retryable ?? false;
+    this.responseBodyReceived = options?.responseBodyReceived ?? false;
   }
 }
 
@@ -274,136 +279,80 @@ function upstreamMessage(
   return `${connection.supplier}导演模型拒绝了请求${suffix}`;
 }
 
-async function boundedResponseText(response: Response): Promise<string> {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const parts: string[] = [];
-  let bytes = 0;
-  try {
-    while (true) {
-      const part = await reader.read();
-      if (part.done) break;
-      bytes += part.value.byteLength;
-      if (bytes > MAX_RESPONSE_BYTES) {
-        await reader.cancel().catch(() => undefined);
-        throw new DirectorAdapterError(
-          "invalid_response",
-          "导演模型返回的数据超过安全大小限制",
-        );
-      }
-      parts.push(decoder.decode(part.value, { stream: true }));
-    }
-    parts.push(decoder.decode());
-    return parts.join("");
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-/** Aggregate streamed model output into the same envelope as a JSON response. */
-function eventStreamPayload(raw: string, connection: ResponseConnection): unknown {
-  const choices = new Map<number, JsonRecord>();
-  const responseParts = new Map<string, string>();
-  let response: JsonRecord = {};
-  let usage: unknown;
-  let citations: unknown[] = [];
-  let terminal = false;
-  let responses = false;
-  for (const frame of raw.replace(/\r\n?/gu, "\n").split("\n\n")) {
-    const lines = frame.split("\n");
-    const eventName = lines.filter(line => line.startsWith("event:")).at(-1)?.slice(6).trim();
-    const data = lines.filter(line => line.startsWith("data:"))
-      .map(line => line.slice(5).trimStart()).join("\n");
-    if (!data) continue;
-    if (data.trim() === "[DONE]") { terminal = true; continue; }
-    let event: unknown;
-    try { event = JSON.parse(data); } catch {
-      throw new DirectorAdapterError("invalid_response", "模型返回了无法解析的流式数据");
-    }
-    if (!isRecord(event)) continue;
-    const eventType = typeof event.type === "string" ? event.type : eventName;
-    if (event.error || eventType === "error" || eventType === "response.failed") {
-      const detail = isRecord(event.response) ? event.response : event;
-      throw new DirectorAdapterError("upstream", upstreamMessage(connection, 502, detail), { status: 502 });
-    }
-    if (Array.isArray(event.citations)) citations = event.citations;
-    if (Array.isArray(event.choices)) {
-      for (const item of event.choices) {
-        if (!isRecord(item)) continue;
-        const index = typeof item.index === "number" ? item.index : 0;
-        const previous = choices.get(index) ?? { index, message: { role: "assistant", content: "" } };
-        const message = previous.message as JsonRecord;
-        if (isRecord(item.message)) Object.assign(message, item.message);
-        const delta = isRecord(item.delta) ? item.delta : item;
-        for (const key of ["content", "text"] as const) {
-          if (typeof delta[key] === "string") message.content = String(message.content ?? "") + delta[key];
-          else if (Array.isArray(delta[key])) message.content = String(message.content ?? "") + (textFromStructuredValue(delta[key]) ?? "");
-        }
-        if (delta.parsed !== undefined) message.parsed = delta.parsed;
-        if (Array.isArray(delta.annotations)) {
-          message.annotations = [...(Array.isArray(message.annotations) ? message.annotations : []), ...delta.annotations];
-        }
-        if (Array.isArray(delta.tool_calls)) {
-          const calls = Array.isArray(message.tool_calls) ? message.tool_calls as JsonRecord[] : [];
-          for (const call of delta.tool_calls) {
-            if (!isRecord(call)) continue;
-            const n = typeof call.index === "number" ? call.index : 0;
-            const prior = calls[n] ?? { function: {} };
-            if (isRecord(call.function)) {
-              const fn = isRecord(prior.function) ? prior.function : {};
-              for (const key of ["name", "arguments"] as const)
-                if (typeof call.function[key] === "string") fn[key] = String(fn[key] ?? "") + call.function[key];
-              prior.function = fn;
-            }
-            calls[n] = prior;
-          }
-          message.tool_calls = calls;
-        }
-        if (item.finish_reason) { previous.finish_reason = item.finish_reason; terminal = true; }
-        choices.set(index, previous);
-      }
-      if (event.usage) usage = event.usage;
-    }
-    if (eventType?.startsWith("response.")) {
-      responses = true;
-      if (isRecord(event.response)) response = { ...response, ...event.response };
-      if (eventType === "response.output_text.delta" && typeof event.delta === "string") {
-        const key = `${event.output_index ?? 0}:${event.content_index ?? 0}`;
-        responseParts.set(key, (responseParts.get(key) ?? "") + event.delta);
-      }
-      if (eventType === "response.output_text.done" && typeof event.text === "string")
-        responseParts.set(`${event.output_index ?? 0}:${event.content_index ?? 0}`, event.text);
-      if (eventType === "response.completed") { response.status = "completed"; terminal = true; }
-      if (eventType === "response.incomplete")
-        throw new DirectorAdapterError("invalid_response", "模型未完整返回结果，请调整输出长度或分批处理");
-    }
-  }
-  if (!terminal) throw new DirectorAdapterError("invalid_response", "模型连接在结果完成前中断，请检查记录后重试");
-  if (responses) {
-    if (response.status !== "completed") throw new DirectorAdapterError("invalid_response", "模型连接在结果完成前中断，请检查记录后重试");
-    return { ...response, ...(responseParts.size ? { output_text: [...responseParts.values()].join("\n") } : {}) };
-  }
-  return { choices: [...choices.values()].sort((a, b) => Number(a.index) - Number(b.index)), usage, citations };
-}
-
 /** Decode JSON or SSE once, retaining size limits and sanitized provider errors. */
 export async function readModelResponse(
   response: Response,
   connection: ResponseConnection,
+  onTextDelta?: (text: string) => void,
+  signal?: AbortSignal,
+  onResponseBodyChunk?: () => void,
 ): Promise<unknown> {
+  const declaredEventStream = /text\/event-stream/iu.test(response.headers.get("content-type") ?? "");
   const declaredLength = Number(response.headers.get("content-length") ?? 0);
   if (declaredLength > MAX_RESPONSE_BYTES) {
     await response.body?.cancel().catch(() => undefined);
     throw new DirectorAdapterError("invalid_response", "导演模型返回的数据超过安全大小限制");
   }
-  const raw = await boundedResponseText(response);
+  // Read each SSE frame as it arrives. A final envelope is still assembled for
+  // existing strict schema validation, finish reasons, citations and usage.
+  const read = async () => {
+    if (!response.body) return { raw: "", streamed: false, payload: undefined as unknown };
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    const parts: string[] = [];
+    let bytes = 0, pending = "", mode: "pending" | "json" | "sse" = response.ok && declaredEventStream ? "sse" : "pending";
+    const stream = createModelStream((kind, detail) => {
+      if (kind === "upstream") throw new DirectorAdapterError("upstream", upstreamMessage(connection, 502, detail), { status: 502 });
+      throw new DirectorAdapterError("invalid_response", detail === "interrupted"
+        ? "模型连接在结果完成前中断，请检查记录后重试" : detail === "incomplete"
+          ? "模型未完整返回结果，请调整输出长度或分批处理" : "模型返回了无法解析的流式数据");
+    }, onTextDelta);
+    const consume = (chunk: string, final = false) => {
+      if (mode === "json") { parts.push(chunk); return; }
+      pending += chunk;
+      if (mode === "pending") {
+        const prefix = pending.trimStart();
+        if (!final && (!prefix || /^(?:d|da|dat|data|e|ev|eve|even|event)$/u.test(prefix))) return;
+        mode = response.ok && /^(?:data:|event:|:)/u.test(prefix) ? "sse" : "json";
+        if (mode === "json") { parts.push(pending); pending = ""; return; }
+      }
+      let separator: RegExpExecArray | null;
+      while (!stream.complete && (separator = /\r\n\r\n|\n\n|\r\r|\r\n\n|\n\r\n/u.exec(pending))) {
+        stream.accept(pending.slice(0, separator.index).replace(/\r\n?/gu, "\n"));
+        pending = pending.slice(separator.index + separator[0].length);
+      }
+      if (final && pending.trim()) { stream.accept(pending.replace(/\r\n?/gu, "\n")); pending = ""; }
+    };
+    const abort = () => { void reader.cancel(signal?.reason).catch(() => undefined); };
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      signal?.throwIfAborted();
+      while (true) {
+        const part = await reader.read();
+        signal?.throwIfAborted();
+        if (part.done) { consume(decoder.decode(), true); break; }
+        // Ordinary JSON rejection bodies only explain a 4xx. A declared SSE
+        // response has started streaming even on 4xx; comments, metadata and
+        // split UTF-8 bytes count before decoding or parsing assistant text.
+        if ((response.ok || declaredEventStream) && part.value.byteLength) onResponseBodyChunk?.();
+        bytes += part.value.byteLength;
+        if (bytes > MAX_RESPONSE_BYTES) throw new DirectorAdapterError("invalid_response", "导演模型返回的数据超过安全大小限制");
+        consume(decoder.decode(part.value, { stream: true }));
+        if (mode === "sse" && stream.complete) break;
+      }
+      return mode === "sse" ? { raw: "", streamed: true, payload: stream.finish() } : { raw: parts.join(""), streamed: false, payload: undefined as unknown };
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+  };
+  const readResult = await read();
+  if (readResult.streamed) return readResult.payload;
+  const raw = readResult.raw;
   let payload: unknown = null;
   if (raw) {
     try {
-      payload = response.ok && (/text\/event-stream/iu.test(response.headers.get("content-type") ?? "") || /^(?:event:|data:|:)/u.test(raw.trimStart()))
-        ? eventStreamPayload(raw, connection)
-        : JSON.parse(raw) as unknown;
+      payload = JSON.parse(raw) as unknown;
     } catch (error) {
       if (error instanceof DirectorAdapterError) throw error;
       if (response.ok) {
@@ -431,6 +380,7 @@ export async function requestJson(
   url: string,
   init: RequestInit,
   externalSignal?: AbortSignal,
+  onTextDelta?: (text: string) => void,
 ): Promise<unknown> {
   if (!connection.apiKey.trim()) {
     throw new DirectorAdapterError(
@@ -441,6 +391,7 @@ export async function requestJson(
 
   const controller = new AbortController();
   let timedOut = false;
+  let responseBodyReceived = false;
   const abort = () => controller.abort(externalSignal?.reason);
   if (externalSignal?.aborted) abort();
   else externalSignal?.addEventListener("abort", abort, { once: true });
@@ -462,20 +413,25 @@ export async function requestJson(
       cache: "no-store",
       signal: controller.signal,
     });
-    return await readModelResponse(response, connection);
+    return await readModelResponse(response, connection, onTextDelta, controller.signal, () => { responseBodyReceived = true; });
   } catch (error) {
-    if (error instanceof DirectorAdapterError) throw error;
     if (controller.signal.aborted) {
       throw new DirectorAdapterError(
         timedOut ? "timeout" : "aborted",
         timedOut ? "导演模型请求超时" : "导演模型请求已取消",
-        { retryable: timedOut },
+        { retryable: timedOut, responseBodyReceived: responseBodyReceived || (error instanceof DirectorAdapterError && error.responseBodyReceived) },
       );
+    }
+    if (error instanceof DirectorAdapterError) {
+      if (!responseBodyReceived || error.responseBodyReceived) throw error;
+      throw new DirectorAdapterError(error.code, error.message, {
+        status: error.status, retryable: error.retryable, responseBodyReceived,
+      });
     }
     throw new DirectorAdapterError(
       "network",
       `无法连接${connection.supplier}导演模型`,
-      { retryable: true },
+      { retryable: true, responseBodyReceived },
     );
   } finally {
     clearTimeout(timeout);
@@ -523,7 +479,12 @@ export function strictDecisionFromCandidates(
       }
     }
     const message = candidates.find((c): c is string => typeof c === "string" && Boolean(c.trim()));
-    if (message) return { type: "reply", message: message.trim().slice(0, 32_000) };
+    if (message) {
+      // A completed but malformed structured decision must reach the service's
+      // schema-repair path, never become a durable assistant claim verbatim.
+      if (/^\s*(?:\{|\[|```)/u.test(message)) return message;
+      return { type: "reply", message: message.trim().slice(0, 32_000) };
+    }
     throw new DirectorAdapterError("invalid_response", "模型未返回可用内容，请检查记录后重试");
   }
   for (const candidate of candidates) {
@@ -543,6 +504,7 @@ export function strictDecisionFromCandidates(
     if (typeof candidate !== "string") continue;
     const text = candidate.trim();
     if (!text) continue;
+    if (/^(?:\{|\[|```)/u.test(text)) throw new DirectorAdapterError("invalid_response", "模型返回的结构化决策不完整或格式无效");
     return { type: "reply", message: text.slice(0, 32_000) };
   }
   // Some gateways wrap ordinary text in a minimal object while omitting the

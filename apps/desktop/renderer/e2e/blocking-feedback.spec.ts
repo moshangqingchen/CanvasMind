@@ -146,7 +146,7 @@ test("生产画布焦点不被旧样式覆盖，缩放控件内侧焦点可见",
   await keyboardFocus(page, page.locator(".react-flow__controls-button").first(), "-3px");
   await page.getByRole("button", { name: "打开智能体", exact: true }).click();
   await keyboardFocus(page, page.locator("#inspector-agent-panel .agent-composer textarea").first());
-  await keyboardFocus(page, page.getByRole("combobox", { name: "智能体 API 供应商", exact: true }).last());
+  await keyboardFocus(page, page.getByRole("region", { name: "通用创作智能体", exact: true }).getByRole("button", { name: "对话模型", exact: true }));
   const canvasBackground = await page.locator(".canvas-editor").evaluate(element => getComputedStyle(element).backgroundColor);
   const focusColor = await page.locator(".canvas-editor").evaluate(element => {
     const probe = document.createElement("span"); probe.style.color = "var(--focus-ring)"; element.append(probe);

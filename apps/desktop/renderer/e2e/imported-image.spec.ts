@@ -136,7 +136,7 @@ for (const failure of ["none", "preview", "original"] as const) {
         // Finish the renderer's aspect-ratio save before editing its canvas
         // through the API; a pagehide save must not overwrite the replacement.
         await page.getByRole("button", { name: "返回主界面", exact: true }).click();
-        await expect(page.getByRole("heading", { name: "我的画布" })).toBeVisible();
+        await expect(page.getByTestId("neural-workspace")).toBeVisible();
         const saved = await (await request.get(`/api/canvas/${canvasId}`)).json();
         for (const node of saved.graph.nodes) if (node.data.assetId === asset.id) node.data.assetId = replacement.id;
         expect((await request.put(`/api/canvas/${canvasId}`, { data: { graph: saved.graph } })).ok()).toBeTruthy();

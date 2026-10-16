@@ -50,7 +50,7 @@ async function fixture(page: Page, count = 3, options: { metadata?: boolean; gro
     } else await route.fulfill({ json: connections });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").click();
   const dialog = page.getByRole("dialog", { name: "供应商与模型设置" });
   await expect(dialog.getByRole("heading", { name: "主供应商", exact: true })).toBeVisible();
   await expect(dialog.locator('.sm-model-item').first()).toBeVisible();
@@ -62,15 +62,16 @@ for (const viewport of [
   { width: 1366, height: 768 },
   { width: 1920, height: 1080 },
 ]) {
-  test(`供应商概览在 ${viewport.width} 像素下使用实色 Bento 且没有遮挡`, async ({ page }, testInfo) => {
+  test(`供应商概览在 ${viewport.width} 像素下使用玻璃设置面板且没有遮挡`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     await page.emulateMedia({ reducedMotion: "reduce" });
     const { dialog, writes } = await fixture(page, 125);
-    await expect(dialog).toHaveCSS("border-top-left-radius", "20px");
+    await expect(dialog).toHaveCSS("border-top-left-radius", "14px");
     expect(await dialog.evaluate(element => {
       const color = getComputedStyle(element).backgroundColor;
       return color.startsWith("rgba") ? Number.parseFloat(color.slice(color.lastIndexOf(",") + 1)) : 1;
-    })).toBe(1);
+    })).toBeGreaterThan(0);
+    await expect(dialog).toHaveCSS("backdrop-filter", "blur(14px) saturate(1.2)");
     const bounds = await dialog.boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(8);
@@ -259,7 +260,7 @@ test("取消切换和关闭会保留未保存配置，确认放弃后清理内�
   expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("memory-only-draft-secret");
   await leave(() => dialog.getByRole("button", { name: "关闭设置", exact: true }).click(), true);
   await expect(dialog).toBeHidden();
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").click();
   await dialog.getByRole("tab", { name: "连接配置", exact: true }).click();
   await expect(dialog.getByLabel("供应商名称", { exact: true })).toHaveValue("主供应商");
   await expect(key).toHaveValue("");

@@ -8,6 +8,7 @@ import { fetchConnections, saveConnection, type ProviderConnectionView } from ".
 import { CLI_DEFAULT_TIMEOUTS, cliSettings, cliStatusLabel, deleteCliConnection, fetchCliDemoTemplate, runCliConnectionAction, type CliSettings } from "../lib/cli-connections";
 import { modelDescriptorsFromConnectionConfig } from "../lib/model-parameters";
 import { useSettingsDraft, useSettingsLeaveGuard } from "./settings-draft-guard";
+import { settingsAccountTarget } from "../lib/settings-target";
 import styles from "./personal-ai-settings.module.css";
 
 type Draft = CliSettings & { name: string; argumentsJson: string };
@@ -20,7 +21,7 @@ function draftFrom(connection: ProviderConnectionView): Draft {
   return { ...newDraft("custom"), ...saved, name: connection.name, args: saved.args ?? [], argumentsJson: JSON.stringify(saved.args ?? [], null, 2) };
 }
 
-export function PersonalAiSettings() {
+export function PersonalAiSettings({ targetConnectionId, startAdding = false }: { targetConnectionId?: string | null; startAdding?: boolean } = {}) {
   const [connections, setConnections] = useState<ProviderConnectionView[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<Draft>(newDraft);
@@ -30,6 +31,7 @@ export function PersonalAiSettings() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const active = useRef(true);
+  const connectionsRef = useRef<HTMLDivElement>(null);
   const selected = connections.find(connection => connection.id === selectedId);
   const dirty = JSON.stringify(draft) !== baseline;
   const { requestLeave } = useSettingsLeaveGuard();
@@ -40,12 +42,18 @@ export function PersonalAiSettings() {
     void fetchConnections().then(items => {
       if (!active.current) return;
       setConnections(items);
-      const first = items.find(connection => connection.provider === "cli");
+      const first = settingsAccountTarget(items, targetConnectionId, startAdding);
       if (first) { const value = draftFrom(first); setDraft(value); setBaseline(JSON.stringify(value)); setSelectedId(first.id); }
     }).catch(cause => { if (active.current) setError(cause instanceof Error ? cause.message : "无法读取个人 AI 网站"); })
       .finally(() => { if (active.current) setLoading(false); });
     return () => { active.current = false; };
-  }, []);
+  }, [targetConnectionId, startAdding]);
+  useEffect(() => {
+    if (loading || !targetConnectionId) return;
+    const row = Array.from(connectionsRef.current?.querySelectorAll<HTMLElement>("[data-connection-id]") ?? [])
+      .find(element => element.dataset.connectionId === targetConnectionId);
+    row?.scrollIntoView({ block: "nearest", behavior: "instant" });
+  }, [loading, targetConnectionId]);
   const patch = (value: Partial<Draft>) => setDraft(current => ({ ...current, ...value }));
   async function chooseTemplate(template: "jimeng" | "custom" | "demo") {
     if (!requestLeave(() => undefined, { action: "新建个人 AI 网站连接" })) return;
@@ -98,6 +106,7 @@ export function PersonalAiSettings() {
   const cliConnections = connections.filter(connection => connection.provider === "cli");
   return <div id="sm-personal-ai-panel" className={styles.panel} role="tabpanel" aria-label="个人 AI 网站">
     <aside className={styles.sidebar}>
+      <span className="sm-section-label">个人账号 <span className="sm-micro-label" aria-hidden="true">ACCOUNTS</span></span>
       <h3><Terminal size={17} />个人 AI 网站</h3>
       <p>使用你已登录的本机 CLI，将个人网站账号接入画布。</p>
       <div className={styles.templates} aria-label="新建个人 AI 网站">
@@ -105,8 +114,8 @@ export function PersonalAiSettings() {
         <button disabled={busy || loading} onClick={() => void chooseTemplate("custom")}><Plus size={14} />自定义网站</button>
         <button disabled={busy || loading} onClick={() => void chooseTemplate("demo")}><Plus size={14} />模拟连接</button>
       </div>
-      <div className={styles.connections} aria-label="已保存的个人 AI 网站连接">
-        {loading ? <p>正在读取连接…</p> : cliConnections.length === 0 ? <p>尚未保存个人网站连接</p> : cliConnections.map(connection => <button key={connection.id} className={selectedId === connection.id ? styles.selected : ""} disabled={busy} onClick={() => requestLeave(() => applyDraft(draftFrom(connection), connection.id), { action: "切换个人 AI 网站连接" })}><strong>{connection.name}</strong><span>{cliStatusLabel(connection)}</span></button>)}
+      <div ref={connectionsRef} className={styles.connections} aria-label="已保存的个人 AI 网站连接">
+        {loading ? <p>正在读取连接…</p> : cliConnections.length === 0 ? <p>尚未保存个人网站连接</p> : cliConnections.map(connection => <button key={connection.id} data-connection-id={connection.id} aria-pressed={selectedId === connection.id} className={selectedId === connection.id ? styles.selected : ""} disabled={busy} onClick={() => requestLeave(() => applyDraft(draftFrom(connection), connection.id), { action: "切换个人 AI 网站连接" })}><strong>{connection.name}</strong><span>{cliStatusLabel(connection)}</span></button>)}
       </div>
     </aside>
     <section className={styles.content} aria-label="个人 AI 网站连接配置">
@@ -132,7 +141,7 @@ export function PersonalAiSettings() {
       </div>
       {dirty && <p className={styles.note}>保存修改后，可以检测或同步。</p>}
       {busy && <p role="status">正在处理…</p>}{message && <p role="status">{message}</p>}{error && <p role="alert" className={styles.error}>{error}</p>}
-      <section className={styles.models} aria-label="已同步的模型与参数"><h3>模型与参数 <span>{models.length}</span></h3>{models.length > 0 && (selected?.config.cliStatus as { state?: string } | undefined)?.state !== "ready" && <p>上次同步的目录；连接恢复并检测成功后才能生成。</p>}{models.length ? models.map(model => <article key={model.id}><strong>{model.name}</strong><code>{model.id}</code><p>{(model.parameters ?? []).map(parameter => `${parameter.label}${parameter.options?.length ? `：${parameter.options.map(option => option.label).join(" / ")}` : ""}`).join(" · ") || "此模型未声明可调参数"}</p></article>) : <p>等待接入后同步。画布会按所选模型显示它实际支持的参数。</p>}</section>
+      <section className={styles.models} aria-label="已同步的模型与参数"><h3>模型与参数 <span className="sm-micro-label" aria-hidden="true">MODEL PARAMETERS</span> <span>{models.length}</span></h3>{models.length > 0 && (selected?.config.cliStatus as { state?: string } | undefined)?.state !== "ready" && <p>上次同步的目录；连接恢复并检测成功后才能生成。</p>}{models.length ? models.map(model => <article key={model.id}><strong>{model.name}</strong><code>{model.id}</code><p>{(model.parameters ?? []).map(parameter => `${parameter.label}${parameter.options?.length ? `：${parameter.options.map(option => option.label).join(" / ")}` : ""}`).join(" · ") || "此模型未声明可调参数"}</p></article>) : <p>等待接入后同步。画布会按所选模型显示它实际支持的参数。</p>}</section>
     </section>
   </div>;
 }

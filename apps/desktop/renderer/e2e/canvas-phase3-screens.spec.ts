@@ -175,7 +175,7 @@ test("供应商菜单 Esc 只关闭最上层并返回焦点", async ({ page }) =
   const fixture = await installPhase3LargeFixture(page);
   await page.setViewportSize(sizes[0]!);
   await page.goto("/");
-  const opener = page.getByRole("button", { name: "供应商与模型", exact: true });
+  const opener = page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true }));
   await opener.click();
   const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
   const more = settings.getByRole("button", { name: `${fixture.supplier.name} 的更多操作`, exact: true });
@@ -201,7 +201,7 @@ test("供应商长列表窗口化保留离屏草稿并支持局部搜索快捷�
   test.setTimeout(90_000);
   const fixture = await installPhase3LargeFixture(page);
   await page.setViewportSize(sizes[0]!); await page.goto("/");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
   const groups = settings.getByRole("list", { name: "供应商分组列表", exact: true });
   const connectionTab = settings.getByRole("tab", { name: "连接配置", exact: true });
@@ -251,7 +251,7 @@ test("供应商长列表窗口化保留离屏草稿并支持局部搜索快捷�
   await settings.getByRole("button", { name: "清除分组筛选", exact: true }).click();
   await settings.getByRole("button", { name: "供应商分组 304 收起", exact: true }).click();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+  await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
   await expect(settings.getByRole("button", { name: "供应商分组 304 展开", exact: true })).toHaveAttribute("aria-expanded", "false");
   expect(fixture.errors).toEqual([]); expect(fixture.prohibited).toEqual([]);
 });
@@ -275,7 +275,7 @@ test("第三阶段供应商真实滚动 1366x768", async ({ page }) => {
     errors: fixture.errors, warnings: fixture.warnings, unexpected: fixture.unexpected, prohibited: fixture.prohibited }, null, 2));
   for (let i = 0; i < repetitions; i++) {
     await beginCapture(page);
-    await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+    await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
     await expect(settings.locator(".sm-model-item").first()).toBeAttached();
     await ready(settings.getByLabel("搜索供应商", { exact: true }));
     const opening = await endCapture(page);
@@ -306,7 +306,7 @@ for (const size of sizes.slice(0, 2)) {
     test.setTimeout(60_000); page.setDefaultTimeout(10_000);
     await mkdir(output!, { recursive: true }); await page.setViewportSize(size);
     const fixture = await installPhase3LargeFixture(page);
-    await page.goto("/"); await page.getByRole("button", { name: "供应商与模型", exact: true }).click();
+    await page.goto("/"); await page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click();
     await showSupplierModelTable(page.getByRole("dialog", { name: "供应商与模型设置", exact: true }));
     await page.waitForTimeout(250);
     await page.screenshot({ path: join(output!, `${phase}-settings-table-${size.width}x${size.height}.png`) });
@@ -444,11 +444,11 @@ for (const size of sizes) {
     };
     try {
       await page.goto("/");
-      await expect(page.getByText("我的画布", { exact: true }).first()).toBeVisible();
+      await expect(page.getByTestId("neural-workspace")).toBeVisible();
       await shot("home", page.locator("body"));
 
       const settings = page.getByRole("dialog", { name: "供应商与模型设置", exact: true });
-      await measure("supplier", () => page.getByRole("button", { name: "供应商与模型", exact: true }).click(),
+      await measure("supplier", () => page.getByTestId("workspace-settings").or(page.getByRole("button", { name: "供应商与模型", exact: true })).click(),
         settings.getByLabel("搜索供应商", { exact: true }), settings.locator(".sm-detail"), settings.locator(".sm-model-item").first(), () => page.keyboard.press("Escape"));
       await shot("settings", settings);
       await showSupplierModelTable(settings);

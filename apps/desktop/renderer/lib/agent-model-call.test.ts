@@ -16,6 +16,7 @@ const input = { system: "system", messages: [{ role: "user" as const, content: "
 const reply = { output: { type: "reply", message: "hello" } };
 beforeEach(async () => {
   vi.clearAllMocks();
+  mocks.complete.mockReset();
   mocks.repository = new MemoryRepository();
   await mocks.repository.saveConnection({ id: connection.id, name: connection.name, provider: "openai", encryptedSecret: "encrypted", config: { baseUrl: connection.baseUrl, modelGroup: "group-a" } });
 });
@@ -28,6 +29,8 @@ describe("agent compatibility negotiation", () => {
     ["upstream", 400, "余额不足 unsupported endpoint"],
     ["upstream", 404, "model not found"],
     ["upstream", 429, "too many requests"],
+    ["upstream", 500, "unsupported response_format"],
+    ["upstream", 502, "endpoint /chat/completions not supported"],
   ] as const)("does not retry %s/%s", async (code, status, message) => {
     const error = new DirectorAdapterError(code, message, { status });
     mocks.complete.mockRejectedValue(error);
@@ -35,22 +38,111 @@ describe("agent compatibility negotiation", () => {
     await expect(completeAgentModel(connection, input)).rejects.toBe(error);
     expect(mocks.complete).toHaveBeenCalledTimes(1);
   });
-  it("retries one explicitly unsupported endpoint and persists its exact credential/model profile", async () => {
-    mocks.complete.mockRejectedValueOnce(new DirectorAdapterError("upstream", "endpoint /chat/completions not supported", { status: 404 })).mockResolvedValue(reply);
-    await completeAgentModel(connection, input);
-    expect(mocks.complete.mock.calls.map(call => call[0].protocol)).toEqual(["openai-chat-completions", "openai-responses"]);
-    const record = await mocks.repository.getConnection(connection.id);
-    expect(record?.config.agentRuntimeProfiles).toMatchObject({ text: { protocol: "openai-responses", fingerprint: agentModelEvidenceFingerprint(record!) } });
-    expect(record?.config.agentModelEvidence).toMatchObject({ text: { protocol: "openai-responses", capabilities: { text: true, reasoning: true }, reasoningOptions: [{ value: "high" }] } });
+  it("negotiates an explicitly rejected endpoint once and caches the successful protocol", async () => {
+    const error = new DirectorAdapterError("upstream", "endpoint /chat/completions not supported", { status: 404 });
+    mocks.complete.mockRejectedValueOnce(error).mockResolvedValue(reply);
+    await expect(completeAgentModel(connection, input)).resolves.toBe(reply);
+    expect(mocks.complete).toHaveBeenCalledTimes(2);
+    expect(mocks.complete.mock.calls[1][0].protocol).toBe("openai-responses");
+    expect((await mocks.repository.getConnection(connection.id))?.config.agentRuntimeProfiles).toMatchObject({ text: { protocol: "openai-responses" } });
     await completeAgentModel(connection, input);
     expect(mocks.complete.mock.calls[2][0].protocol).toBe("openai-responses");
+    expect(mocks.complete).toHaveBeenCalledTimes(3);
   });
-  it("removes only an explicitly unsupported optional parameter and bounds negotiation to one retry", async () => {
-    mocks.complete.mockRejectedValue(new DirectorAdapterError("upstream", "unsupported response_format parameter", { status: 400 }));
-    await expect(completeAgentModel(connection, input)).rejects.toThrow("response_format");
+  it("uses an existing matching compatibility profile before dispatch", async () => {
+    const record = (await mocks.repository.getConnection(connection.id))!;
+    await mocks.repository.saveConnection({ ...record, config: { ...record.config,
+      agentRuntimeProfiles: { text: { protocol: "openai-responses", fingerprint: agentModelEvidenceFingerprint(record), verifiedAt: "2026-10-16" } },
+    } });
+    mocks.complete.mockResolvedValue(reply);
+    await completeAgentModel(connection, input);
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect(mocks.complete.mock.calls[0][0].protocol).toBe("openai-responses");
+    expect((await mocks.repository.getConnection(connection.id))?.config.agentModelEvidence).toMatchObject({ text: { protocol: "openai-responses", capabilities: { text: true, reasoning: true } } });
+  });
+  it.each([400, 404, 405, 415, 422])("negotiates a pre-output unsupported schema rejection (%s) and persists only the successful profile", async status => {
+    mocks.complete.mockRejectedValueOnce(new DirectorAdapterError("upstream", "unsupported response_format parameter", { status })).mockResolvedValue(reply);
+    await expect(completeAgentModel(connection, input)).resolves.toBe(reply);
     expect(mocks.complete).toHaveBeenCalledTimes(2);
+    expect(mocks.complete.mock.calls[0][0]).toMatchObject({ protocol: "openai-chat-completions", capabilities: { structuredOutput: true } });
     expect(mocks.complete.mock.calls[1][0]).toMatchObject({ protocol: "openai-chat-completions", capabilities: { structuredOutput: false } });
+    const record = await mocks.repository.getConnection(connection.id);
+    expect(record?.config.agentRuntimeProfiles).toMatchObject({ text: { disableStructuredOutput: true, fingerprint: agentModelEvidenceFingerprint(record!) } });
+    expect(record?.config.modelGroup).toBe("group-a");
+    expect(record?.encryptedSecret).toBe("encrypted");
+  });
+  it("does not negotiate twice or persist a failed fallback", async () => {
+    mocks.complete.mockRejectedValueOnce(new DirectorAdapterError("upstream", "unsupported response_format", { status: 400 }))
+      .mockRejectedValueOnce(new DirectorAdapterError("upstream", "unsupported reasoning_effort", { status: 400 }));
+    await expect(completeAgentModel(connection, input)).rejects.toThrow("reasoning_effort");
+    expect(mocks.complete).toHaveBeenCalledTimes(2);
     expect((await mocks.repository.getConnection(connection.id))?.config.agentRuntimeProfiles).toBeUndefined();
+  });
+  it("merges a rejected thinking enum with a matching cached profile without disabling supported levels", async () => {
+    const record = (await mocks.repository.getConnection(connection.id))!;
+    await mocks.repository.saveConnection({ ...record, config: { ...record.config,
+      agentRuntimeProfiles: { text: { protocol: connection.protocol, fingerprint: agentModelEvidenceFingerprint(record), unsupportedReasoningEfforts: ["max"], verifiedAt: "2026-10-16" } },
+    } });
+    mocks.complete.mockRejectedValueOnce(new DirectorAdapterError("upstream", "reasoning_effort high not supported", { status: 422 })).mockResolvedValue(reply);
+    await completeAgentModel(connection, input);
+    expect(mocks.complete.mock.calls[1][0].reasoningEffort).toBeUndefined();
+    expect((await mocks.repository.getConnection(connection.id))?.config.agentRuntimeProfiles).toMatchObject({ text: { unsupportedReasoningEfforts: ["max", "high"] } });
+    await completeAgentModel({ ...connection, reasoningEffort: "low" }, input);
+    expect(mocks.complete.mock.calls[2][0].reasoningEffort).toBe("low");
+  });
+  it("negotiates an absent reasoning parameter without claiming support for the rejected effort", async () => {
+    mocks.complete.mockRejectedValueOnce(new DirectorAdapterError("upstream", "unsupported reasoning_effort parameter", { status: 400 })).mockResolvedValue(reply);
+    await completeAgentModel(connection, input);
+    expect(mocks.complete.mock.calls[1][0].reasoningEffort).toBeUndefined();
+    const record = await mocks.repository.getConnection(connection.id);
+    expect(record?.config.agentRuntimeProfiles).toMatchObject({ text: { disableReasoning: true } });
+    expect(record?.config.agentModelEvidence).toMatchObject({ text: { capabilities: { text: true } } });
+    expect((record?.config.agentModelEvidence as Record<string, Record<string, unknown>>).text.reasoningOptions).toBeUndefined();
+  });
+  it.each(["余额不足", "额度用尽", "billing", "payment required", "authentication failed", "authorization denied", "鉴权失败", "认证失败", "access denied", "invalid api key", "Permission denied", "Unauthenticated", "Invalid token", "Not authorized", "Access token expired", "permission_denied", "invalid_access_token", "Invalid bearer token", "Auth failed", "Budget exceeded", "Rate limit exceeded", "Invalid credentials", "credentials expired", "auth_failed", "rate_limit_exceeded"])("does not negotiate a 400 that mentions %s even alongside an unsupported parameter", async detail => {
+    const error = new DirectorAdapterError("upstream", `${detail}: unsupported response_format`, { status: 400 });
+    mocks.complete.mockRejectedValue(error);
+    await expect(completeAgentModel(connection, input)).rejects.toBe(error);
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect((await mocks.repository.getConnection(connection.id))?.config.agentRuntimeProfiles).toBeUndefined();
+  });
+  it("does not negotiate after a raw successful response chunk even before text is parsed", async () => {
+    const error = new DirectorAdapterError("upstream", "unsupported response_format", { status: 400, responseBodyReceived: true });
+    mocks.complete.mockRejectedValue(error);
+    const onTextDelta = vi.fn();
+    await expect(completeAgentModel(connection, { ...input, onTextDelta })).rejects.toBe(error);
+    expect(onTextDelta).not.toHaveBeenCalled();
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect((await mocks.repository.getConnection(connection.id))?.config.agentRuntimeProfiles).toBeUndefined();
+  });
+  it("does not negotiate after any text callback even if the next error resembles a compatible 4xx", async () => {
+    mocks.complete.mockImplementationOnce(async (_connection, request) => {
+      request.onTextDelta("");
+      throw new DirectorAdapterError("upstream", "unsupported response_format", { status: 400 });
+    });
+    await expect(completeAgentModel(connection, { ...input, onTextDelta: vi.fn() })).rejects.toThrow("response_format");
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+  });
+  it("does not negotiate when the request is aborted during a compatible rejection", async () => {
+    const controller = new AbortController();
+    mocks.complete.mockImplementationOnce(async () => {
+      controller.abort();
+      throw new DirectorAdapterError("upstream", "unsupported response_format", { status: 400 });
+    });
+    await expect(completeAgentModel(connection, { ...input, signal: controller.signal })).rejects.toThrow("response_format");
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect((await mocks.repository.getConnection(connection.id))?.config.agentRuntimeProfiles).toBeUndefined();
+  });
+  it("does not dispatch an already aborted request", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(completeAgentModel(connection, { ...input, signal: controller.signal })).rejects.toThrow();
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+  it("does not switch audio input to the image-only Responses protocol", async () => {
+    mocks.complete.mockRejectedValue(new DirectorAdapterError("upstream", "endpoint /chat/completions not supported", { status: 404 }));
+    await expect(completeAgentModel(connection, { ...input, attachments: [{ kind: "audio", url: "data:audio/mpeg;base64,AA==" }] })).rejects.toThrow("endpoint");
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
   });
   it("merges verified image input and thinking levels without changing the key or its group", async () => {
     mocks.complete.mockResolvedValue(reply);
@@ -86,13 +178,27 @@ describe("agent compatibility negotiation", () => {
     expect((await mocks.repository.getConnection(connection.id))?.config.agentModelEvidence).toBeUndefined();
     expect(mocks.complete).toHaveBeenCalledTimes(1);
   });
-  it("remembers an explicitly rejected thinking value without disabling every other level", async () => {
-    mocks.complete.mockRejectedValueOnce(new DirectorAdapterError("upstream", "reasoning_effort value max is not supported; use high", { status: 400 })).mockResolvedValue(reply);
+  it("applies a saved unsupported thinking value before dispatch without disabling other levels", async () => {
+    const record = (await mocks.repository.getConnection(connection.id))!;
+    await mocks.repository.saveConnection({ ...record, config: { ...record.config,
+      agentRuntimeProfiles: { text: { protocol: connection.protocol, fingerprint: agentModelEvidenceFingerprint(record), unsupportedReasoningEfforts: ["max"], verifiedAt: "2026-10-16" } },
+    } });
+    mocks.complete.mockResolvedValue(reply);
     await completeAgentModel({ ...connection, reasoningEffort: "max" }, input);
-    expect(mocks.complete.mock.calls[1][0].reasoningEffort).toBeUndefined();
-    const record = await mocks.repository.getConnection(connection.id);
-    expect(record?.config.agentRuntimeProfiles).toMatchObject({ text: { unsupportedReasoningEfforts: ["max"] } });
+    expect(mocks.complete.mock.calls[0][0].reasoningEffort).toBeUndefined();
     await completeAgentModel(connection, input);
-    expect(mocks.complete.mock.calls[2][0].reasoningEffort).toBe("high");
+    expect(mocks.complete.mock.calls[1][0].reasoningEffort).toBe("high");
+    expect(mocks.complete).toHaveBeenCalledTimes(2);
+  });
+  it("does not replay or persist success after a partial text stream fails", async () => {
+    const delta = vi.fn();
+    mocks.complete.mockImplementationOnce(async (_connection, request) => {
+      request.onTextDelta('{"type":"reply","message":"一半');
+      throw new DirectorAdapterError("network", "connection reset");
+    });
+    await expect(completeAgentModel(connection, { ...input, onTextDelta: delta })).rejects.toThrow("connection reset");
+    expect(delta).toHaveBeenCalledTimes(1);
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect((await mocks.repository.getConnection(connection.id))?.config.agentRuntimeProfiles).toBeUndefined();
   });
 });
