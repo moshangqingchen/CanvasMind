@@ -11,23 +11,16 @@
       "types": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    },
-    "./node": {
-      "types": "./src/knowledge-node.ts",
-      "import": "./dist/knowledge-node.js",
-      "default": "./dist/knowledge-node.js"
     }
   },
   "files": [
     "dist",
-    "src",
-    "knowledge"
+    "src"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "sync:knowledge": "node scripts/sync-knowledge.mjs"
+    "test": "vitest run"
   },
   "dependencies": {
     "@super-canvas/core": "workspace:*",

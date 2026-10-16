@@ -141,8 +141,6 @@ async function scenario(page: Page, mode: "text" | "media" | "failure" | "discon
     }
     if (path === `/api/agent/sessions/${session.id}`)
       return route.fulfill({ json: session });
-    if (path === "/api/agent/legacy")
-      return route.fulfill({ json: { sessions: [{ id: "old-director", title: "旧导演任务", readOnly: true, messages: [{ role: "assistant", content: "旧分镜历史" }] }] } });
     if (path === "/api/agent/turn") {
       turns++;
       const input = request.postDataJSON();
@@ -579,12 +577,22 @@ for (const mode of ["failure", "disconnect"] as const) {
   });
 }
 
-test("旧导演历史可只读查看，没有方案执行入口", async ({ page }) => {
+test("旧对话保留本地与项目聊天，不读取旧导演记录", async ({ page }) => {
   const s = await scenario(page, "text");
+  let legacyRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/agent/legacy") legacyRequests++;
+  });
+  await page.evaluate(() => localStorage.setItem("super-canvas:agent-history:v2:agent-e2e",
+    JSON.stringify([{ text: "本地聊天历史" }])));
+  await page.route("**/api/projects/agent-e2e/chat", (route) => route.fulfill({
+    json: { messages: [{ role: "assistant", content: "项目聊天历史" }] },
+  }));
   await page.getByRole("button", { name: "旧对话", exact: true }).click();
-  await expect(page.getByText("历史任务：旧导演任务", { exact: true })).toBeVisible();
-  await expect(page.getByText("智能体：旧分镜历史", { exact: true })).toBeVisible();
+  await expect(page.getByText("本地聊天历史", { exact: true })).toBeVisible();
+  await expect(page.getByText("项目聊天历史", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "第二次确认：开始生成" })).toHaveCount(0);
+  expect(legacyRequests).toBe(0);
   expect(s.counts().executed).toBe(0);
 });
 

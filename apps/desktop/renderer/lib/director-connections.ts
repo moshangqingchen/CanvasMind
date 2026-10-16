@@ -22,10 +22,8 @@ import {
 import { providerConnectionSupplierKey } from "./provider-connection-options";
 import { requireServerMasterKey } from "./master-key";
 import { repository } from "./server";
-import type { DirectorPublicProfile } from "./director-contracts";
 import { unsupportedAgentModelReason } from "./agent-model-support";
 
-export const DEFAULT_DIRECTOR_PROFILE_ID = "default";
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -164,107 +162,5 @@ export async function resolveDirectorConnection(
     allowLocalhost:
       process.env.NODE_ENV !== "production" &&
       connection.config.allowLocalhost === true,
-  };
-}
-
-export async function getDirectorProfile(): Promise<DirectorProfileRecord | null> {
-  return repository.getDirectorProfile(DEFAULT_DIRECTOR_PROFILE_ID);
-}
-
-export async function saveDirectorProfileConfiguration(input: {
-  brainConnectionId: string;
-  brainModelId: string;
-  protocol?: DirectorProtocol;
-  researchConnectionId?: string | null;
-  reasoningEffort?: string | null;
-  capabilities?: DirectorModelCapabilities;
-  manualRates?: Record<string, number>;
-}): Promise<DirectorProfileRecord> {
-  const connection = await repository.getConnection(input.brainConnectionId);
-  if (!connection) throw new Error("导演大脑连接不存在");
-  const unsupported = unsupportedAgentModelReason(connection.config, { id: input.brainModelId });
-  if (unsupported) throw new Error(unsupported);
-  if ((connection.config.usage === "disabled" || connection.config.supplierArchived === true))
-    throw new Error("请选择未停用的供应商分组");
-  if (!connection.encryptedSecret)
-    throw new Error("导演大脑连接尚未配置 API Key");
-  if (input.researchConnectionId) {
-    const research = await repository.getConnection(input.researchConnectionId);
-    if (!research?.encryptedSecret)
-      throw new Error("研究连接不存在或未配置 API Key");
-  }
-  const current = await getDirectorProfile();
-  const protocol = input.protocol ?? explicitProtocol(connection.config);
-  const capabilities =
-    input.capabilities ?? configuredCapabilities(connection.config, protocol);
-  const nextConfig: JsonObject = {
-    ...(current?.config ?? {}),
-    protocol,
-    capabilities,
-    directorCapabilities: capabilities,
-    ...(input.manualRates ? { manualRates: input.manualRates } : {}),
-  };
-  if (input.reasoningEffort === null) {
-    delete nextConfig.reasoningEffort;
-  } else if (input.reasoningEffort) {
-    nextConfig.reasoningEffort = input.reasoningEffort;
-  }
-  return repository.saveDirectorProfile({
-    id: DEFAULT_DIRECTOR_PROFILE_ID,
-    brainConnectionId: input.brainConnectionId,
-    brainModelId: input.brainModelId.trim(),
-    researchConnectionId: input.researchConnectionId ?? null,
-    config: nextConfig,
-  });
-}
-
-export async function publicDirectorProfile(
-  input?: DirectorProfileRecord | null,
-): Promise<DirectorPublicProfile> {
-  const profile = input === undefined ? await getDirectorProfile() : input;
-  if (!profile) {
-    return {
-      id: DEFAULT_DIRECTOR_PROFILE_ID,
-      configured: false,
-      connected: false,
-    };
-  }
-  const connection = await repository.getConnection(profile.brainConnectionId);
-  const unsupported = unsupportedAgentModelReason(connection?.config ?? {}, { id: profile.brainModelId }) ??
-    unsupportedAgentModelReason(profile.config);
-  let connected = false;
-  if (connection?.encryptedSecret && !unsupported) {
-    try {
-      connected = Boolean(
-        decryptSecret(connection.encryptedSecret, requireServerMasterKey()),
-      );
-    } catch {
-      connected = false;
-    }
-  }
-  const protocol = connection && !unsupported
-    ? explicitProtocol({
-        ...connection.config,
-        ...(profile.config.protocol
-          ? { directorProtocol: profile.config.protocol }
-          : {}),
-      })
-    : undefined;
-  return {
-    id: profile.id,
-    configured: true,
-    brainConnectionId: profile.brainConnectionId,
-    brainConnectionName: connection?.name,
-    brainModelId: profile.brainModelId,
-    protocol,
-    ...(stringValue(profile.config.reasoningEffort)
-      ? { reasoningEffort: stringValue(profile.config.reasoningEffort) }
-      : {}),
-    researchConnectionId: profile.researchConnectionId ?? undefined,
-    connected,
-    ...(protocol
-      ? { capabilities: configuredCapabilities(profile.config, protocol) }
-      : {}),
-    updatedAt: profile.updatedAt,
   };
 }

@@ -177,7 +177,6 @@ export async function installPhase3LargeFixture(page: Page, options: { imagePara
     if (path === "/api/agent/models") return route.fulfill({ json: [agentModel] });
     if (path === "/api/agent/sessions") return route.fulfill({ json: [{ id: session.id, title: session.title }] });
     if (path === `/api/agent/sessions/${session.id}`) return route.fulfill({ json: session });
-    if (path === "/api/agent/legacy") return route.fulfill({ json: { sessions: [] } });
     if (path === "/api/integrations/material-drops") return route.fulfill({ json: [] });
     unexpected.push(`${method} ${path}`);
     return route.fulfill({ status: 404, json: { error: `Missing phase3 UI fixture: ${method} ${path}` } });

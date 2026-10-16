@@ -73,7 +73,7 @@ pnpm dev
 
 定稿图片可在作品详情完成交付核对，导出原始图片及 `delivery.json`。检查由用户逐项确认，导出不重绘图片。完整项目包 v2 携带所引用图片的评审状态和备注，导入时建立新的评审版本，继续兼容 v1 项目包。使用说明见 [平面设计](docs/graphic-design.md)、[图片比稿与定稿](docs/image-design.md)。
 
-智能体配置与使用请参阅 [通用创作智能体](docs/creative-agent.md)。旧导演会话以只读历史保留，知识快照维护仍可运行 `pnpm director:sync -- --source "D:\path\to\超级导演"`。
+智能体配置与使用请参阅 [通用创作智能体](docs/creative-agent.md)。旧导演产品入口已移除，既有历史记录继续原样保存在资料库中。
 
 常用快捷键（应用内按 `?` 或 `Ctrl+/` 可随时打开这张表）：
 
@@ -298,7 +298,7 @@ apps/desktop       Electron 主进程、托盘、资料迁移、更新与打包
 apps/desktop/renderer           桌面内嵌 Next.js 画布界面与本地 HTTP API（仍是 App 必需源码）
 packages/core      图、端口、Prompt、状态机与重试规则
 packages/db        本地 JSON Repository 与内存测试存储
-packages/director  超级导演规划与内置知识库
+packages/director  创作智能体与平面设计共用的协议、类型和图编译
 packages/providers Provider Adapter 与密钥加密
 packages/runtime   DAG 运行、恢复、归档与事件
 packages/storage   本地素材与项目存储

@@ -142,21 +142,6 @@ export interface DirectorCallDraft {
   readonly dependsOn?: readonly string[];
 }
 
-export type DirectorDecision =
-  | { readonly type: "reply"; readonly message: string }
-  | {
-      readonly type: "clarify";
-      readonly message: string;
-      readonly questions: readonly string[];
-    }
-  | {
-      readonly type: "proposal";
-      readonly summary: string;
-      readonly assumptions: readonly string[];
-      readonly calls: readonly DirectorCallDraft[];
-      readonly releaseHold?: boolean;
-    };
-
 export interface DirectorCatalogCandidate {
   readonly connectionId: string;
   readonly connectionName: string;

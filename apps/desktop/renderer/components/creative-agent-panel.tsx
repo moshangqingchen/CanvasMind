@@ -676,19 +676,10 @@ export const AgentPanel = memo(function AgentPanel(props: Props) {
                 const saved = JSON.parse(localStorage.getItem(agentHistoryStorageKey(props.canvasId)) ?? "[]");
                 if (Array.isArray(saved)) local = saved;
               } catch { /* Older local history may be incomplete. */ }
-              const [remote, history] = await Promise.all([
-                fetchProjectChat(props.canvasId),
-                agentRequest<{ sessions: Array<{ title: string; messages: Array<{ role: string; content: string }> }> }>(
-                  `/legacy?canvasId=${encodeURIComponent(props.canvasId)}`, undefined, "GET",
-                ),
-              ]);
+              const remote = await fetchProjectChat(props.canvasId);
               setLegacy([
                 ...local.flatMap((m) => typeof m?.text === "string" ? [m.text] : []),
                 ...remote.map((m) => m.content),
-                ...history.sessions.flatMap((s) => [
-                  `历史任务：${s.title}`,
-                  ...s.messages.map((m) => `${m.role === "user" ? "你" : "智能体"}：${m.content}`),
-                ]),
               ]);
             })
           }

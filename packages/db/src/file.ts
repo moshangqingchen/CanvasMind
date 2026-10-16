@@ -159,9 +159,66 @@ function compactSnapshot(snapshot: MemoryRepositorySnapshot | undefined): {
   };
 }
 
-function readSnapshot(path: string): MemoryRepositorySnapshotInput | undefined {
+const directorSnapshotFields = [
+  "directorProfiles",
+  "directorSessions",
+  "directorMessages",
+  "directorProposals",
+] as const;
+
+type DirectorSnapshotField = (typeof directorSnapshotFields)[number];
+
+/** The document has already passed JSON.parse; retain only its top-level values. */
+function readDirectorFieldJson(contents: string): Map<DirectorSnapshotField, string> {
+  const fields = new Map<DirectorSnapshotField, string>();
+  const skipString = (start: number): number => {
+    let index = start + 1;
+    while (index < contents.length) {
+      if (contents[index] === "\\") index += 2;
+      else if (contents[index++] === '"') break;
+    }
+    return index;
+  };
+  let index = contents.indexOf("{") + 1;
+  while (index < contents.length) {
+    while (/\s/u.test(contents[index] ?? "")) index += 1;
+    if (contents[index] === "}") break;
+    const keyEnd = skipString(index);
+    const key = JSON.parse(contents.slice(index, keyEnd)) as DirectorSnapshotField;
+    index = keyEnd;
+    while (/\s/u.test(contents[index] ?? "")) index += 1;
+    index += 1; // Colon between the key and its value.
+    while (/\s/u.test(contents[index] ?? "")) index += 1;
+    const start = index;
+    let depth = 0;
+    while (index < contents.length) {
+      const character = contents[index];
+      if (character === '"') {
+        index = skipString(index);
+        continue;
+      }
+      if (character === "{" || character === "[") depth += 1;
+      else if (character === "}" || character === "]") {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (character === "," && depth === 0) break;
+      index += 1;
+    }
+    if (directorSnapshotFields.includes(key))
+      fields.set(key, contents.slice(start, index).trimEnd());
+    if (contents[index] === "}") break;
+    index += 1;
+  }
+  return fields;
+}
+
+function readSnapshot(path: string): {
+  snapshot: MemoryRepositorySnapshotInput;
+  directorFieldJson: Map<DirectorSnapshotField, string>;
+} | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/u, "")) as {
+    const contents = readFileSync(path, "utf8").replace(/^\uFEFF/u, "");
+    const parsed = JSON.parse(contents) as {
       version?: unknown;
       canvases?: unknown;
       revisions?: unknown;
@@ -196,7 +253,10 @@ function readSnapshot(path: string): MemoryRepositorySnapshotInput | undefined {
     ) {
       throw new Error(`Unsupported local database format: ${path}`);
     }
-    return parsed as unknown as MemoryRepositorySnapshotInput;
+    return {
+      snapshot: parsed as unknown as MemoryRepositorySnapshotInput,
+      directorFieldJson: readDirectorFieldJson(contents),
+    };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
@@ -216,9 +276,14 @@ export class FileRepository extends MemoryRepository {
   private needsSnapshotWrite: boolean;
   private readonly path: string;
   private readonly replaceFile: typeof rename;
+  private readonly preservedDirectorFields = new Map<
+    string,
+    { originalJson: string; loadedJson: string }
+  >();
 
   constructor(path: string, replaceFile: typeof rename = rename) {
-    const stored = readSnapshot(path);
+    const storedFile = readSnapshot(path);
+    const stored = storedFile?.snapshot;
     const compacted = compactSnapshot(
       stored ? migrateMemoryRepositorySnapshot(stored) : undefined,
     );
@@ -226,6 +291,29 @@ export class FileRepository extends MemoryRepository {
     this.path = path;
     this.replaceFile = replaceFile;
     this.needsSnapshotWrite = compacted.changed || stored?.version === 1;
+    const loadedSnapshot = this.exportSnapshotView();
+    for (const [field, originalJson] of storedFile?.directorFieldJson ?? []) {
+      this.preservedDirectorFields.set(field, {
+        originalJson,
+        loadedJson: JSON.stringify(loadedSnapshot[field]),
+      });
+    }
+  }
+
+  private serializeSnapshot(snapshot: MemoryRepositorySnapshot): string {
+    const properties: string[] = [];
+    for (const [key, value] of Object.entries(snapshot)) {
+      const serialized = JSON.stringify(value);
+      if (serialized === undefined) continue;
+      const preserved = this.preservedDirectorFields.get(key);
+      // Current agent sessions share these tables. Preserve untouched historical
+      // JSON verbatim, while allowing genuine agent mutations to persist normally.
+      const json = preserved?.loadedJson === serialized
+        ? preserved.originalJson
+        : serialized;
+      properties.push(`${JSON.stringify(key)}:${json}`);
+    }
+    return `{${properties.join(",")}}`;
   }
 
   private async replaceSnapshot(
@@ -278,7 +366,7 @@ export class FileRepository extends MemoryRepository {
         const compacted = compactSnapshot(this.exportSnapshotView());
         const snapshot = compacted.snapshot ?? this.exportSnapshotView();
         this.applyCompactedRecords(snapshot);
-        const contents = JSON.stringify(snapshot);
+        const contents = this.serializeSnapshot(snapshot);
         const temporaryPath = `${this.path}.${process.pid}.${++this.writeSequence}.tmp`;
         await this.replaceSnapshot(temporaryPath, contents);
         this.completedWriteGeneration = generation;

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   DIRECTOR_DECISION_JSON_SCHEMA,
   DirectorDecisionSchema,
-  ExchangeRateTableSchema,
   GenerationRequirementsSchema,
   parseDirectorDecision,
 } from "../src/schemas.js";
@@ -109,17 +108,6 @@ describe("director schemas", () => {
       GenerationRequirementsSchema.safeParse({
         operation: "video.generate",
         count: 2,
-      }).success,
-    ).toBe(false);
-  });
-
-  it("validates rate windows and uppercase currency keys", () => {
-    expect(
-      ExchangeRateTableSchema.safeParse({
-        base: "CNY",
-        checkedAt: "2026-08-30T00:00:00.000Z",
-        validUntil: "2026-08-29T00:00:00.000Z",
-        rates: { usd: 7 },
       }).success,
     ).toBe(false);
   });

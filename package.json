@@ -24,7 +24,6 @@
     "benchmark:repository": "pnpm --filter @super-canvas/db build && node scripts/benchmark-repository.mjs",
     "gc:storage": "node scripts/storage-gc.mjs",
     "gc:storage:apply": "node scripts/storage-gc.mjs --apply",
-    "director:sync": "node scripts/sync-super-director.mjs",
     "format": "pnpm exec prettier --write ."
   },
   "devDependencies": {

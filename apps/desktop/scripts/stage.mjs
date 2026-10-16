@@ -110,11 +110,6 @@ try {
 } catch (e) {
   if (e.code !== "ENOENT") throw e;
 }
-await cp(
-  join(workspace, "packages/director/knowledge"),
-  join(server, "packages/director/knowledge"),
-  { recursive: true },
-);
 // A trace must never introduce live application data, env files or junctions.
 await cp(
   join(workspace, "packages/providers/examples"),
@@ -177,5 +172,5 @@ await writeFile(
   ),
 );
 console.log(
-  "Standalone server, knowledge snapshot and verified Node.js runtime staged.",
+  "Standalone server and verified Node.js runtime staged.",
 );

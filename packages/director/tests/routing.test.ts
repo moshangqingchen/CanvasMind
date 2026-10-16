@@ -6,7 +6,6 @@ import type {
   ExchangeRateTable,
 } from "../src/types.js";
 import {
-  fingerprintCatalog,
   parametersForRequirements,
   quoteCandidate,
   routeDirectorCall,
@@ -365,12 +364,5 @@ describe("director routing", () => {
         now: NOW,
       }).selected,
     ).toBeUndefined();
-  });
-
-  it("fingerprints price and capability changes deterministically", () => {
-    const first = candidate("a", 1);
-    const second = candidate("a", 2);
-    expect(fingerprintCatalog([first])).toBe(fingerprintCatalog([first]));
-    expect(fingerprintCatalog([first])).not.toBe(fingerprintCatalog([second]));
   });
 });

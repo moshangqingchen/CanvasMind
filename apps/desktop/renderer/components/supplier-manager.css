@@ -830,16 +830,6 @@
   text-align:center;
   margin-top:15px;
 }
-.sm-director-tab {
-  flex:1;
-  min-height:0;
-  overflow:auto;
-  padding:28px 38px;
-}
-.sm-director-tab .director-brain-settings {
-  max-width:900px;
-  margin:0 auto;
-}
 .sm-spin {
   animation:sm-spin 1s linear infinite;
 }
@@ -975,9 +965,6 @@
   }
   .sm-form-card {
     padding:20px;
-  }
-  .sm-director-tab {
-    padding:20px 16px;
   }
 }
 

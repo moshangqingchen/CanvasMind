@@ -67,6 +67,6 @@ pnpm build
 
 `pnpm build` 与 `pnpm desktop:build` 均构建 Windows x64 安装包，输出到 `apps/desktop/release`。`pnpm desktop:build --unpacked` 只构建未安装版。`pnpm build:runtime` 只构建内嵌 UI、API 与共享包，供跨平台质量校验，不产出 Electron 安装包；桌面启动与打包需要 Windows。
 
-生产构建使用独立 `.next-desktop` 输出，补齐静态资源和导演知识库。stage 校验不含环境文件、画布数据库、凭据文件或符号链接，并验证内置 Node.js 的官方 SHA-256。后端仅监听回环地址，每次启动使用独立访问令牌；渲染层不直接取得 Node.js 权限或主密钥。
+生产构建使用独立 `.next-desktop` 输出并补齐静态资源。旧导演知识库已移除，既有历史记录保留。stage 校验不含环境文件、画布数据库、凭据文件或符号链接，并验证内置 Node.js 的官方 SHA-256。后端仅监听回环地址，每次启动使用独立访问令牌；渲染层不直接取得 Node.js 权限或主密钥。
 
 发布验收应覆盖无 Node.js 的普通 Windows 用户环境、中文路径、旧资料迁移、Fake Provider 运行、退出保存、托盘运行及两个正式版本之间的安装更新。没有新版本 Release 时，线上更新只能验证“无更新”和网络失败分支。

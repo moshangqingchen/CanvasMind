@@ -1,11 +1,7 @@
 import { z } from "zod";
 
-import { DIRECTOR_PROTOCOLS } from "./types.js";
-
 const identifier = z.string().trim().min(1).max(128);
 const isoDateTime = z.string().datetime({ offset: true });
-
-export const DirectorProtocolSchema = z.enum(DIRECTOR_PROTOCOLS);
 
 export const DirectorModelCapabilitiesSchema = z
   .object({
@@ -22,50 +18,6 @@ export const DirectorModelCapabilitiesSchema = z
     probeSource: z.enum(["live", "provider-catalog", "manual"]).optional(),
   })
   .strict();
-
-export const DirectorConnectionDescriptorSchema = z
-  .object({
-    id: identifier,
-    name: z.string().trim().min(1).max(200),
-    provider: identifier,
-    supplier: z.string().trim().min(1).max(200),
-    baseUrl: z.string().url(),
-    protocol: DirectorProtocolSchema,
-    model: identifier,
-    enabled: z.boolean(),
-    reasoningEffort: z.string().trim().min(1).max(64).optional(),
-    capabilities: DirectorModelCapabilitiesSchema,
-    allowLocalhost: z.boolean().optional(),
-  })
-  .strict();
-
-export const ExchangeRateTableSchema = z
-  .object({
-    base: z.literal("CNY"),
-    checkedAt: isoDateTime,
-    validUntil: isoDateTime,
-    rates: z.record(z.number().finite().positive()),
-    source: z.string().trim().min(1).optional(),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (Date.parse(value.validUntil) <= Date.parse(value.checkedAt)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["validUntil"],
-        message: "validUntil must be later than checkedAt",
-      });
-    }
-    for (const currency of Object.keys(value.rates)) {
-      if (!/^[A-Z]{3}$/u.test(currency)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["rates", currency],
-          message: "Currency keys must be uppercase ISO 4217 codes",
-        });
-      }
-    }
-  });
 
 const InputCountsSchema = z
   .object({

@@ -23,7 +23,7 @@ import { completeAgentModel } from "./agent-model-call";
 import { agentModelEvidenceFingerprint } from "./agent-model-capabilities";
 import { agentAttachmentError, selectAgentAttachments } from "./agent-attachment-policy";
 import { safeAgentError } from "./agent-errors";
-import { loadDirectorAttachments } from "./director-service";
+import { loadDirectorAttachments } from "./agent-attachments";
 import { loadAgentModels, resolveAgentModel } from "./agent-models";
 import { loadAgentCatalog } from "./agent-catalog";
 import { compileAgentGraph } from "./agent-graph";
@@ -293,17 +293,6 @@ export async function listAgentSessions(canvasId: string) {
     .filter((s) => s.metadata.conversationType === "agent-task")
     .map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt }));
 }
-export async function listLegacyAgentHistory(canvasId: string) {
-  if (!(await repository.getCanvas(canvasId))) throw new AgentError("画布不存在", 404);
-  const sessions = (await repository.listDirectorSessions(canvasId)).filter(s => s.metadata.conversationType !== "agent-task");
-  return { sessions: await Promise.all(sessions.map(async s => ({
-    id: s.id, title: s.title, createdAt: s.createdAt, updatedAt: s.updatedAt, readOnly: true as const,
-    messages: (await repository.listDirectorMessages(s.id))
-      .filter(m => m.role !== "system" && m.metadata.kind !== "tool" && m.metadata.kind !== "model_call")
-      .map(m => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt })),
-  }))) };
-}
-
 async function finishAgentRequest(messageId: string, status: "succeeded" | "failed" | "cancelled", error?: unknown) {
   const message = await repository.getDirectorMessage(messageId);
   if (!message || message.metadata.turnStatus !== "running") return;

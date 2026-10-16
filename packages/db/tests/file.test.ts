@@ -486,6 +486,61 @@ describe("FileRepository", () => {
     ]);
   });
 
+  it("preserves historical director field bytes through normal saves without hiding current agent edits", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "state.json");
+    const historicalFields = {
+      directorProfiles: String.raw`[
+  { "id": "old-profile", "brainConnectionId": "brain", "brainModelId": "model", "config": {"escaped":"\u4f60\u597d","nested":["},]", "quoted \"value\""],"rate":1e+02,"zero":-0}, "createdAt":"before", "updatedAt":"before", "unknown":true }
+]`.replaceAll("\n", "\r\n"),
+      directorSessions: String.raw`[
+  { "id":"old-session", "canvasId":"canvas", "profileId":"old-profile", "title":"旧对话", "metadata":{"unknown":{"b":2,"a":1}}, "createdAt":"before", "updatedAt":"before" }
+]`,
+      directorMessages: String.raw`[
+  { "id":"old-message", "sessionId":"old-session", "role":"assistant", "content":"历史\n内容 \\ 保留", "metadata":{"provider":{"unrecognized":[null,true,0,1.00]}}, "createdAt":"before" }
+]`,
+      directorProposals: String.raw`[
+  { "id":"old-proposal", "sessionId":"old-session", "canvasId":"canvas", "version":1, "status":"draft", "baseCanvasRevision":0, "plan":{"nodes":[],"futureField":{"original":"\u753b布"}}, "quote":{}, "knowledgeVersion":"old", "catalogFingerprint":"old", "expiresAt":"later", "createdAt":"before", "updatedAt":"before" }
+]`,
+    };
+    const original = `{
+      "version":2, "canvases":[], "revisions":[], "assets":[], "connections":[],
+      ${Object.entries(historicalFields).map(([key, value]) => `${JSON.stringify(key)}:${value}`).join(",\n")},
+      "runs":[], "nodeRuns":[], "webhookKeys":[]
+    }`;
+    await writeFile(path, original, "utf8");
+
+    const repository = new FileRepository(path);
+    const canvas = await repository.ensureDefaultCanvas();
+    await repository.saveCanvas({ id: canvas.id, title: "正常保存", graph: { nodes: [] } });
+    const saved = await readFile(path);
+    for (const [key, value] of Object.entries(historicalFields)) {
+      const prefix = Buffer.from(`${JSON.stringify(key)}:`);
+      const start = saved.indexOf(prefix) + prefix.length;
+      expect(saved.indexOf(prefix)).toBeGreaterThanOrEqual(0);
+      expect(saved.subarray(start, start + Buffer.byteLength(value))).toEqual(Buffer.from(value));
+    }
+    expect(JSON.parse(saved.toString("utf8")).canvases[0].title).toBe("正常保存");
+
+    // These persisted tables also hold the current creative agent's records.
+    // Their genuine edits must not be replaced by the historical source text.
+    const restored = new FileRepository(path);
+    await restored.updateDirectorMessage("old-message", { content: "智能体更新" });
+    const edited = await readFile(path, "utf8");
+    const parsed = JSON.parse(edited);
+    expect(parsed.directorMessages[0].content).toBe("智能体更新");
+    expect(parsed.directorMessages[0].metadata).toEqual(JSON.parse(historicalFields.directorMessages)[0].metadata);
+    expect(parsed.directorSessions[0]).toMatchObject({
+      title: "旧对话",
+      metadata: { unknown: { b: 2, a: 1 } },
+    });
+    expect(parsed.directorSessions[0].updatedAt).not.toBe("before");
+    for (const key of ["directorProfiles", "directorProposals"] as const)
+      expect(edited).toContain(`${JSON.stringify(key)}:${historicalFields[key]}`);
+    await expect(new FileRepository(path).getDirectorMessage("old-message")).resolves.toMatchObject({ content: "智能体更新" });
+  });
+
   it("continues saving after one persistence failure", async () => {
     const directory = await mkdtemp(join(tmpdir(), "super-canvas-db-"));
     temporaryDirectories.push(directory);

@@ -58,14 +58,12 @@ import {
   getAgentSession,
   stopAgentTurn,
   listAgentSessions,
-  listLegacyAgentHistory,
   agentReadTools,
 } from "./agent-service";
 import { AgentArtifactSchema, AgentDecisionSchema } from "./agent-contracts";
 import { POST as materializePOST } from "../app/api/agent/plans/[id]/materialize/route";
 import { POST as preflightPOST } from "../app/api/agent/plans/[id]/preflight/route";
 import { POST as executePOST } from "../app/api/agent/plans/[id]/execute/route";
-import { POST as legacyApprovePOST } from "../app/api/director/proposals/[id]/approve/route";
 import { POST as turnPOST } from "../app/api/agent/turn/route";
 import { POST as plansPOST } from "../app/api/agent/plans/route";
 
@@ -1024,11 +1022,10 @@ describe("agent orchestration", () => {
     expect(restored.messages.some(message => message.metadata.status === "cancelled")).toBe(false);
     expect(mocks.complete).not.toHaveBeenCalled();
   });
-  it("exposes old director conversations read-only and rejects continuing them", async () => {
+  it("rejects continuing an old director conversation", async () => {
     await mocks.repository.createDirectorSession({ id: "old", canvasId: "canvas", profileId: null, title: "旧导演会话", metadata: {} });
     await mocks.repository.createDirectorMessage({ id: "old-user", sessionId: "old", role: "user", content: "历史问题", metadata: {} });
     await createAgentSession("canvas");
-    expect(await listLegacyAgentHistory("canvas")).toMatchObject({ sessions: [{ id: "old", readOnly: true, messages: [{ content: "历史问题" }] }] });
     await expect(runAgentTurn(input("old"), () => {})).rejects.toThrow("不存在");
     expect(mocks.complete).not.toHaveBeenCalled();
   });
@@ -1072,21 +1069,13 @@ describe("agent HTTP integration with isolated adapters", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  it("enforces the separate request schemas and blocks the legacy approval endpoint", async () => {
+  it("enforces separate materialization, preflight and execution requests", async () => {
     const s = await createAgentSession("canvas");
     const p = await createAgentPlan(s.id, proposal());
     const ctx = { params: Promise.resolve({ id: p.id }) };
     expect(
       (await executePOST(request({ version: 1, confirmed: true }), ctx)).status,
     ).toBe(400);
-    const legacy = await legacyApprovePOST(
-      request({ version: 1, canvasRevision: p.baseCanvasRevision }),
-      ctx,
-    );
-    expect(legacy.status).toBe(409);
-    expect(await legacy.json()).toMatchObject({
-      error: expect.stringContaining("分别确认"),
-    });
     expect(
       (
         await preflightPOST(

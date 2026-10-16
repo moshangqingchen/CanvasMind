@@ -108,7 +108,6 @@ async function studioFixture(page: Page, startEmpty = false) {
     });
     if (path === "/api/assets") return route.fulfill({ json: [] });
     if (path === `/api/projects/${canvasId}/chat` && request.method() === "GET") return route.fulfill({ json: { messages: [] } });
-    if (path === "/api/agent/legacy") return route.fulfill({ json: { sessions: [] } });
     // These GET routes return top-level arrays, including the foreground material-drop poll.
     if (request.method() === "GET" && ["/api/providers", "/api/suppliers", "/api/runs", "/api/integrations/material-drops"].includes(path)) {
       return route.fulfill({ json: [] });
